@@ -2,7 +2,7 @@
 # Credentials referenced here are generated locally by `cloudflared tunnel create`
 # and must NEVER be committed (see .gitignore in this folder).
 
-tunnel: gio-server
+tunnel: 36f8270d-52a2-4635-b9f2-f5174307e76e
 credentials-file: /etc/cloudflared/creds.json
 
 ingress:
