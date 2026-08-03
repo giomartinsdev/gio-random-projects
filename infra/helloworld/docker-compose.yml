@@ -1,0 +1,7 @@
+services:
+  helloworld:
+    image: traefik/whoami:latest
+    container_name: helloworld
+    restart: unless-stopped
+    ports:
+      - "80"

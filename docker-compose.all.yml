@@ -7,3 +7,4 @@
 # independently in Openship, pointed at its own subfolder.
 include:
   - infra/cloudflared/docker-compose.yml
+  - infra/helloworld/docker-compose.yml
