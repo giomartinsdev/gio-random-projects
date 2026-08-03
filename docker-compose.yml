@@ -1,0 +1,6 @@
+# Convenience umbrella — brings up every infra subsystem at once via `docker
+# compose up -d` from the repo root. Each subsystem still deploys
+# independently in Openship (pointed at its own subfolder); this file doesn't
+# change that, it just saves typing when doing everything manually on the box.
+include:
+  - infra/cloudflared/docker-compose.yml
