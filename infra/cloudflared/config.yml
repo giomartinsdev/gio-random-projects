@@ -6,9 +6,6 @@ tunnel: 36f8270d-52a2-4635-b9f2-f5174307e76e
 credentials-file: /etc/cloudflared/creds.json
 
 ingress:
-  - hostname: openship.giomartins.dev
-    service: http://localhost:3001
-
   - hostname: arcane.giomartins.dev
     service: http://localhost:3552
 
