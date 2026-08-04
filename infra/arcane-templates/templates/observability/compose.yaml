@@ -80,6 +80,25 @@ services:
       - loki
       - tempo
 
+  # Bundled here (not a separate deployment) so dashboards-sync can reach
+  # it by service name on the compose's own network — no public tunnel,
+  # no Cloudflare Access token, same reasoning as prefect-net for the
+  # Prefect worker. Ports still published to the host so the console and
+  # S3 API stay reachable the same way they were before (minio.giomartins.dev
+  # already routes to host port 9001, matching the console port below).
+  minio:
+    image: quay.io/minio/minio:${MINIO_VERSION:-latest}
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+
   # Grafana's file provider only reads local disk — there's no native S3
   # dashboard source — so this sidecar bridges MinIO to that disk: it
   # mirrors a bucket into the shared `grafana-dashboards` volume once at
@@ -93,24 +112,25 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        until mc alias set src "$$MINIO_ENDPOINT" "$$MINIO_ACCESS_KEY" "$$MINIO_SECRET_KEY"; do
-          echo "waiting for minio at $$MINIO_ENDPOINT..."
+        until mc alias set src http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do
+          echo "waiting for minio..."
           sleep 3
         done
-        mc mb --ignore-existing src/"$$MINIO_BUCKET"
+        mc mb --ignore-existing src/"$$MINIO_DASHBOARDS_BUCKET"
         mkdir -p /dashboards
         while true; do
-          mc mirror --watch --overwrite --remove src/"$$MINIO_BUCKET" /dashboards || true
+          mc mirror --watch --overwrite --remove src/"$$MINIO_DASHBOARDS_BUCKET" /dashboards || true
           echo "mirror exited, retrying in 3s..."
           sleep 3
         done
     environment:
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-      MINIO_BUCKET: ${MINIO_DASHBOARDS_BUCKET:-grafana-dashboards}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_DASHBOARDS_BUCKET: ${MINIO_DASHBOARDS_BUCKET:-grafana-dashboards}
     volumes:
       - grafana-dashboards:/dashboards
+    depends_on:
+      - minio
 
 volumes:
   loki-data:
@@ -118,6 +138,7 @@ volumes:
   prometheus-data:
   grafana-data:
   grafana-dashboards:
+  minio-data:
 
 # Inline file contents mounted straight into each container — no shell
 # needed on the image's side (works even on scratch-based images like
