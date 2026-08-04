@@ -1,0 +1,18 @@
+x-arcane:
+  urls:
+    - https://github.com/ahmetoner/whisper-asr-webservice
+
+services:
+  whisper-asr:
+    image: onerahmet/openai-whisper-asr-webservice:${WHISPER_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-9000}:9000"
+    environment:
+      ASR_MODEL: ${ASR_MODEL:-base}
+      ASR_ENGINE: ${ASR_ENGINE:-openai_whisper}
+    volumes:
+      - whisper-cache:/root/.cache
+
+volumes:
+  whisper-cache:

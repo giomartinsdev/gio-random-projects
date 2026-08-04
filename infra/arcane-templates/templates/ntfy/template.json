@@ -1,0 +1,7 @@
+{
+  "name": "ntfy",
+  "description": "Simple pub-sub push notification service — send alerts to your phone/desktop via HTTP or a tiny client library.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["notifications", "self-hosted"]
+}

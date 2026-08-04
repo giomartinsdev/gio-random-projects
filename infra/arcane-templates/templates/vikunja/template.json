@@ -1,0 +1,7 @@
+{
+  "name": "Vikunja",
+  "description": "Self-hosted to-do / task management app with projects, labels, and Kanban boards.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["productivity", "tasks", "self-hosted"]
+}

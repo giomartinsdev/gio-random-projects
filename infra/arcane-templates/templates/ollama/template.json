@@ -1,0 +1,7 @@
+{
+  "name": "Ollama",
+  "description": "Run open-source LLMs locally (Llama, Mistral, Qwen, and more) behind a simple API.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["ai", "llm", "self-hosted"]
+}

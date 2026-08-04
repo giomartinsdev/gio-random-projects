@@ -1,0 +1,7 @@
+{
+  "name": "Healthchecks",
+  "description": "Cron job and background task monitoring — pings you when a scheduled job doesn't check in on time.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["monitoring", "cron", "self-hosted"]
+}

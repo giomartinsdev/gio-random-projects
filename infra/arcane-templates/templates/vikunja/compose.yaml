@@ -1,0 +1,22 @@
+x-arcane:
+  urls:
+    - https://vikunja.io
+
+services:
+  vikunja:
+    image: vikunja/vikunja:${VIKUNJA_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3456}:3456"
+    environment:
+      VIKUNJA_SERVICE_JWTSECRET: ${VIKUNJA_SERVICE_JWTSECRET}
+      VIKUNJA_SERVICE_PUBLICURL: ${VIKUNJA_SERVICE_PUBLICURL:-http://localhost:3456}
+      VIKUNJA_DATABASE_TYPE: sqlite
+      VIKUNJA_DATABASE_PATH: /db/vikunja.db
+    volumes:
+      - vikunja-db:/db
+      - vikunja-files:/app/vikunja/files
+
+volumes:
+  vikunja-db:
+  vikunja-files:

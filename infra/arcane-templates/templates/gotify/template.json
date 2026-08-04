@@ -1,0 +1,7 @@
+{
+  "name": "Gotify",
+  "description": "Self-hosted push notification server with a simple REST API.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["notifications", "self-hosted"]
+}

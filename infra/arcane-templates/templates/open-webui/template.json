@@ -1,0 +1,7 @@
+{
+  "name": "Open WebUI",
+  "description": "Chat UI for Ollama and other LLM backends — the ChatGPT-style front-end for self-hosted models.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["ai", "llm", "chat"]
+}

@@ -1,22 +1,264 @@
 {
   "$schema": "https://registry.getarcane.app/schema.json",
   "name": "gio's Custom Templates",
-  "description": "Custom Arcane templates for gio-server infra — apps not in the official community registry.",
+  "description": "Custom Arcane templates for gio-server infra \u2014 apps not in the official community registry.",
   "author": "giomartinsdev",
   "url": "https://github.com/giomartinsdev/gio-random-projects",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "templates": [
     {
       "id": "9router",
       "name": "9Router",
-      "description": "Self-hosted AI API proxy/router — OpenAI-compatible endpoint with multi-provider LLM failover routing.",
+      "description": "Self-hosted AI API proxy/router \u2014 OpenAI-compatible endpoint with multi-provider LLM failover routing.",
       "version": "1.0.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/9router/compose.yaml",
       "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/9router/.env.example",
       "documentation_url": "https://github.com/decolua/9router",
       "content_hash": "b7ded186b0e50b979209c68efb06cf599258644f5d41f2da6b0247a957fb4a91",
-      "tags": ["ai", "proxy", "llm"]
+      "tags": [
+        "ai",
+        "proxy",
+        "llm"
+      ]
+    },
+    {
+      "id": "changedetection",
+      "name": "changedetection.io",
+      "description": "Monitor websites for content changes and get notified \u2014 price drops, restock alerts, page diffs.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/changedetection/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/changedetection/.env.example",
+      "documentation_url": "https://changedetection.io",
+      "content_hash": "d1d31cf2d7045879b8fbed6e7b4b5ba14782933d9a75c6b5654c3189c2e74a7a",
+      "tags": [
+        "monitoring",
+        "automation",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "flowise",
+      "name": "Flowise",
+      "description": "Drag-and-drop low-code builder for LLM apps, agents, and workflows.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/flowise/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/flowise/.env.example",
+      "documentation_url": "https://flowiseai.com",
+      "content_hash": "502bbf11b1ae7cc5351c66a274a27f06ef354b4eb55dd8cfd06def3846b8751f",
+      "tags": [
+        "ai",
+        "llm",
+        "low-code",
+        "automation"
+      ]
+    },
+    {
+      "id": "gotify",
+      "name": "Gotify",
+      "description": "Self-hosted push notification server with a simple REST API.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/gotify/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/gotify/.env.example",
+      "documentation_url": "https://gotify.net",
+      "content_hash": "624d1ab61ad8105eeaa05f89e309551ec12eeffc4bea0811bccb4d0237d70ca0",
+      "tags": [
+        "notifications",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "healthchecks",
+      "name": "Healthchecks",
+      "description": "Cron job and background task monitoring \u2014 pings you when a scheduled job doesn't check in on time.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/healthchecks/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/healthchecks/.env.example",
+      "documentation_url": "https://healthchecks.io",
+      "content_hash": "e9a95da538a7e601e0b579332ff052999357a83e8a9db56ee4a00ce97aa1f996",
+      "tags": [
+        "monitoring",
+        "cron",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "miniflux",
+      "name": "Miniflux",
+      "description": "Minimalist, fast self-hosted RSS/Atom feed reader.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/miniflux/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/miniflux/.env.example",
+      "documentation_url": "https://miniflux.app",
+      "content_hash": "559a0c38dc347e6fd39f81c0e5c39152cc5ea170746988734b07f60ba5e9bb1d",
+      "tags": [
+        "rss",
+        "reader",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "ntfy",
+      "name": "ntfy",
+      "description": "Simple pub-sub push notification service \u2014 send alerts to your phone/desktop via HTTP or a tiny client library.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/ntfy/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/ntfy/.env.example",
+      "documentation_url": "https://ntfy.sh",
+      "content_hash": "1721bdf01b6a953a6862bc1e44c5e8f291f5b9b5cd0a3387bd2fa814fc16df5b",
+      "tags": [
+        "notifications",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "description": "Run open-source LLMs locally (Llama, Mistral, Qwen, and more) behind a simple API.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/ollama/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/ollama/.env.example",
+      "documentation_url": "https://ollama.com",
+      "content_hash": "60743d9842d1d9f10cbaddbb096c752a54144aa87b0ac42b93849db1390f0edb",
+      "tags": [
+        "ai",
+        "llm",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "open-webui",
+      "name": "Open WebUI",
+      "description": "Chat UI for Ollama and other LLM backends \u2014 the ChatGPT-style front-end for self-hosted models.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/open-webui/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/open-webui/.env.example",
+      "documentation_url": "https://openwebui.com",
+      "content_hash": "6f39c6924b1648ca30925e9641d5aec9a98f7f27711ff8b6cd77ab4be94ed634",
+      "tags": [
+        "ai",
+        "llm",
+        "chat"
+      ]
+    },
+    {
+      "id": "searxng",
+      "name": "SearXNG",
+      "description": "Privacy-respecting metasearch engine \u2014 aggregates results from other search engines without tracking you.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/searxng/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/searxng/.env.example",
+      "documentation_url": "https://docs.searxng.org",
+      "content_hash": "3a5ea2638c910b0f78bb4330e21db71e9b71226ba9ba6baeee2a37a4a7d761a6",
+      "tags": [
+        "search",
+        "privacy",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "shlink",
+      "name": "Shlink",
+      "description": "Self-hosted URL shortener with a REST API and usage analytics.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/shlink/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/shlink/.env.example",
+      "documentation_url": "https://shlink.io",
+      "content_hash": "538d02bacee90c351497d9a26afd638b53438f34c8789f25c5ec1b45389ca9f4",
+      "tags": [
+        "url-shortener",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "trilium",
+      "name": "Trilium Notes",
+      "description": "Hierarchical, self-hosted note-taking app for large personal knowledge bases.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/trilium/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/trilium/.env.example",
+      "documentation_url": "https://github.com/TriliumNext/Notes",
+      "content_hash": "87cdec39b8e622388d9f4c78113f3d1c05058109ad0a6e9658757b3823f1b833",
+      "tags": [
+        "notes",
+        "productivity",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "umami",
+      "name": "Umami",
+      "description": "Simple, fast, privacy-focused self-hosted alternative to Google Analytics.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/umami/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/umami/.env.example",
+      "documentation_url": "https://umami.is",
+      "content_hash": "812cbd2d33c4fa05e10ef1c4bb97a32c88c384f8f2e1b32dbd071b8d576586bd",
+      "tags": [
+        "analytics",
+        "privacy",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "vikunja",
+      "name": "Vikunja",
+      "description": "Self-hosted to-do / task management app with projects, labels, and Kanban boards.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/vikunja/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/vikunja/.env.example",
+      "documentation_url": "https://vikunja.io",
+      "content_hash": "777ecb8211dedd898fcbf45a0ecc080a30baaf1c1347e6973ffe54e84c984fca",
+      "tags": [
+        "productivity",
+        "tasks",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "watchtower",
+      "name": "Watchtower",
+      "description": "Automatically updates running containers to the latest image and cleans up the old ones.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/watchtower/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/watchtower/.env.example",
+      "documentation_url": "https://containrrr.dev/watchtower/",
+      "content_hash": "f8d2b9fd895e47d55531690f8569b5421eba85cea067e80b6ea5960d4a9d9363",
+      "tags": [
+        "automation",
+        "docker",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "whisper-asr",
+      "name": "Whisper ASR Webservice",
+      "description": "Self-hosted speech-to-text API powered by OpenAI Whisper.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/whisper-asr/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/whisper-asr/.env.example",
+      "documentation_url": "https://github.com/ahmetoner/whisper-asr-webservice",
+      "content_hash": "cba1b42193683ae403de7fcff7035a0ae11a407dc168d3ba4cb67425b841777f",
+      "tags": [
+        "ai",
+        "speech-to-text",
+        "transcription"
+      ]
     }
   ]
 }

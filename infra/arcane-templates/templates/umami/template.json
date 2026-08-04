@@ -1,0 +1,7 @@
+{
+  "name": "Umami",
+  "description": "Simple, fast, privacy-focused self-hosted alternative to Google Analytics.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["analytics", "privacy", "self-hosted"]
+}

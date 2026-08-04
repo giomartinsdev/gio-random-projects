@@ -1,0 +1,7 @@
+{
+  "name": "Flowise",
+  "description": "Drag-and-drop low-code builder for LLM apps, agents, and workflows.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["ai", "llm", "low-code", "automation"]
+}

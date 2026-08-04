@@ -1,0 +1,7 @@
+{
+  "name": "SearXNG",
+  "description": "Privacy-respecting metasearch engine — aggregates results from other search engines without tracking you.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["search", "privacy", "self-hosted"]
+}
