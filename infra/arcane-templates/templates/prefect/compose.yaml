@@ -22,9 +22,12 @@ services:
       - prefect-server
     # Idempotent: work-pool create fails (harmlessly) if the pool already
     # exists from a previous start, so this is safe to re-run on every boot.
+    # prefect-docker isn't in the base image — the docker worker type
+    # can't start without it ("Unable to start worker...").
     entrypoint: ["sh", "-c"]
     command:
       - |
+        pip install --no-cache-dir prefect-docker
         prefect work-pool create ${PREFECT_WORK_POOL:-docker-pool} --type docker || true
         exec prefect worker start --pool ${PREFECT_WORK_POOL:-docker-pool}
     environment:
