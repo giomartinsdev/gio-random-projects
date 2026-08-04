@@ -4,7 +4,7 @@
   "description": "Custom Arcane templates for gio-server infra — apps not in the official community registry.",
   "author": "giomartinsdev",
   "url": "https://github.com/giomartinsdev/gio-random-projects",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "templates": [
     {
       "id": "9router",
@@ -173,12 +173,12 @@
       "id": "prefect",
       "name": "Prefect Server",
       "description": "Workflow orchestration platform — schedule, run, and monitor data pipelines. Single-node setup with Prefect's built-in SQLite backend (not the full Postgres+Redis cluster topology).",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/prefect/compose.yaml",
       "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/prefect/.env.example",
       "documentation_url": "https://www.prefect.io/",
-      "content_hash": "dc3736d2c543f124db47e81fa99aa25b16610a3763d0a255f377f15eeb655061",
+      "content_hash": "13ec19dc18104c566d237c09c02c514f546dc75d0288853123e3f7fb6adadc6a",
       "tags": [
         "workflow",
         "orchestration",

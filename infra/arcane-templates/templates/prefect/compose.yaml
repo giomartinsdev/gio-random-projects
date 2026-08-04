@@ -12,6 +12,14 @@ services:
     environment:
       PREFECT_SERVER_API_HOST: 0.0.0.0
       PREFECT_UI_API_URL: ${PREFECT_UI_API_URL:-http://localhost:4200/api}
+      # Off by default. Every Prefect client fetches a CSRF token before
+      # state-mutating calls regardless of whether the server supports it —
+      # with this off, GET /api/csrf-token 422s ("CSRF protection is
+      # disabled") on every single one of those calls, which auto-traced
+      # httpx spans then show as error spans, drowning real errors in the
+      # noise (confirmed: this is what was showing as errors in flow-run
+      # traces, not an actual problem in the flow).
+      PREFECT_SERVER_CSRF_PROTECTION_ENABLED: "true"
     volumes:
       - prefect-data:/root/.prefect
     networks:
