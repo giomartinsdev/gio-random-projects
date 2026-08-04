@@ -1,5 +1,5 @@
 {
-  "title": "Prefect Flow Overview (v6)",
+  "title": "Prefect Flow Overview (v7)",
   "uid": "prefect-flow-overview",
   "schemaVersion": 39,
   "editable": true,
@@ -59,7 +59,7 @@
           "refId": "A",
           "datasource": { "type": "tempo", "uid": "tempo" },
           "queryType": "traceql",
-          "query": "{ resource.service.name =~ \"${service:regex}\" && resource.telemetry.sdk.name = \"opentelemetry\" }",
+          "query": "{ resource.service.name =~ \"${service:regex}\" && resource.telemetry.sdk.name = \"opentelemetry\" && span.prefect.run.type != nil }",
           "limit": 50,
           "tableType": "traces"
         }
