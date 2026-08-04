@@ -16,6 +16,7 @@ push: null
 
 pull:
   - prefect.deployments.steps.git_clone:
+      id: pull_code
       repository: https://github.com/giomartinsdev/gio-random-projects.git
       branch: main
   - prefect.deployments.steps.pip_install_requirements:
@@ -27,4 +28,10 @@ deployments:
     entrypoint: flows/example_flow.py:example_flow
     work_pool:
       name: docker-pool
+      # Flow-run containers must be on the same docker network as
+      # prefect-server (see infra/arcane-templates/templates/prefect) or
+      # they can't resolve it by name — "httpcore.ConnectError: Name or
+      # service not known".
+      job_variables:
+        networks: ["prefect-net"]
     schedule: null

@@ -14,6 +14,8 @@ services:
       PREFECT_UI_API_URL: ${PREFECT_UI_API_URL:-http://localhost:4200/api}
     volumes:
       - prefect-data:/root/.prefect
+    networks:
+      - prefect-net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
       interval: 5s
@@ -47,6 +49,8 @@ services:
         exec prefect worker start --pool ${PREFECT_WORK_POOL:-docker-pool}
     environment:
       PREFECT_API_URL: http://prefect-server:4200/api
+    networks:
+      - prefect-net
     volumes:
       # Docker work pool: the worker launches each flow run as a sibling
       # container via the host's own Docker daemon.
@@ -54,3 +58,12 @@ services:
 
 volumes:
   prefect-data:
+
+networks:
+  # Named explicitly (not left to compose's auto-generated
+  # "<project>_default") so prefect.yaml deployments can reference it by a
+  # stable name in job_variables.networks — flow-run containers the worker
+  # spawns need to be on this SAME network to resolve "prefect-server" at
+  # all. Without it: "httpcore.ConnectError: Name or service not known".
+  prefect-net:
+    name: ${PREFECT_NETWORK:-prefect-net}
