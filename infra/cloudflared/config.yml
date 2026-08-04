@@ -12,6 +12,9 @@ ingress:
   - hostname: 9router.giomartins.dev
     service: http://localhost:20128
 
+  - hostname: minio.giomartins.dev
+    service: http://localhost:9001
+
   # Add new services below, one hostname per block, most specific first.
   # - hostname: example.giomartins.dev
   #   service: http://localhost:PORT
