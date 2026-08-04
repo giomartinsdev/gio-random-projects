@@ -29,6 +29,7 @@
         "enable": true,
         "iconColor": "red",
         "datasource": { "type": "tempo", "uid": "tempo" },
+        "queryType": "traceql",
         "query": "{ resource.service.name =~ \"${service:regex}\" && status = error }"
       }
     ]
