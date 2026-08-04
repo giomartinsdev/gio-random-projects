@@ -18,6 +18,9 @@ ingress:
   - hostname: observability.giomartins.dev
     service: http://localhost:3000
 
+  - hostname: otel.giomartins.dev
+    service: http://localhost:4318
+
   # Add new services below, one hostname per block, most specific first.
   # - hostname: example.giomartins.dev
   #   service: http://localhost:PORT

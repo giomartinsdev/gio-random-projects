@@ -120,6 +120,50 @@ Then add it to `prefect.yaml`'s `deployments:` list, with
 `work_pool.job_variables.networks: ["prefect-net"]`. Push to `main` — CI
 deploys it automatically (`.github/workflows/prefect-deploy.yml`).
 
+## Tracing
+
+Every flow/task run is automatically traced to the observability stack
+(`observability.giomartins.dev`) — Tempo, browseable in Grafana. **No code
+changes needed per flow**: Prefect generates the spans itself; the
+deployment's `job_variables` in `prefect.yaml` just need to be copied onto
+each new deployment for the export to actually happen:
+
+```yaml
+work_pool:
+  name: docker-pool
+  job_variables:
+    networks: ["prefect-net"]
+    command: "opentelemetry-instrument prefect flow-run execute"
+    env:
+      OTEL_SERVICE_NAME: <flow-name>   # change per deployment
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
+      OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id={{ prefect.blocks.secret.cf-acess-client-id }},CF-Access-Client-Secret={{ prefect.blocks.secret.cf-acess-client-secret }}"
+      OTEL_BSP_SCHEDULE_DELAY: "100"
+```
+
+Why each piece is there (found by testing, not guessing):
+- `command` swaps the container's default `prefect flow-run execute` for
+  the same thing wrapped in `opentelemetry-instrument` — installing the
+  OTel packages alone does **not** export anything; the wrapper is what
+  actually activates Prefect's built-in span generation.
+- The `run_shell_script: opentelemetry-bootstrap -a install` pull step
+  (already in `prefect.yaml`) auto-detects and installs the right
+  instrumentor for whatever a flow imports (`requests`, `httpx`,
+  `sqlalchemy`, ...) — this is what makes it agnostic per flow; nothing
+  to declare.
+- `OTEL_EXPORTER_OTLP_ENDPOINT` goes out over the public tunnel (not the
+  internal `prefect-net` network) because the observability stack is a
+  separate Arcane deployment on its own Docker network — same reasoning
+  as CI authenticating through Cloudflare Access, and why the headers
+  reference the `cf-acess-client-id` / `cf-acess-client-secret` **Secret
+  blocks** (Blocks tab in the Prefect UI) instead of a plaintext value.
+- `OTEL_BSP_SCHEDULE_DELAY: "100"` — the default 5s batch-export interval
+  loses spans on a flow that finishes in under 5 seconds (the container
+  exits before the batch flushes). Confirmed by testing: about half the
+  runs silently dropped their trace without this.
+
 ## Running checks locally
 
 ```

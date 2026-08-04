@@ -22,6 +22,12 @@ pull:
   - prefect.deployments.steps.pip_install_requirements:
       directory: "{{ pull_code.directory }}/flows"
       requirements_file: requirements.txt
+  # Auto-detects + installs the right OTel instrumentation packages for
+  # whatever libraries this flow actually imports (requests, httpx,
+  # sqlalchemy, ...) — this is what makes tracing agnostic per flow: no
+  # flow has to know or declare which instrumentors it needs.
+  - prefect.deployments.steps.run_shell_script:
+      script: opentelemetry-bootstrap -a install
 
 deployments:
   - name: greeting
@@ -30,4 +36,20 @@ deployments:
       name: docker-pool
       job_variables:
         networks: ["prefect-net"]
+        # Auto-traces every task/flow run with zero code changes — Prefect
+        # generates the spans itself (see flows/README.md "Tracing"),
+        # `opentelemetry-instrument` just has to be in front of the
+        # process for them to actually export anywhere.
+        command: "opentelemetry-instrument prefect flow-run execute"
+        env:
+          OTEL_SERVICE_NAME: greeting
+          OTEL_TRACES_EXPORTER: otlp
+          OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+          OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
+          OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id={{ prefect.blocks.secret.cf-acess-client-id }},CF-Access-Client-Secret={{ prefect.blocks.secret.cf-acess-client-secret }}"
+          # BatchSpanProcessor's default 5s flush interval loses spans on a
+          # short-lived flow run (the container exits before it fires) —
+          # confirmed by testing: without this, traces were silently
+          # dropped about half the time.
+          OTEL_BSP_SCHEDULE_DELAY: "100"
     schedule: null
