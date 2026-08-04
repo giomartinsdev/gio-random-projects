@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from flows.greeting_etl.extract import NameExtractor
-from flows.greeting_etl.load import GreetingLoader
-from flows.greeting_etl.schemas import GreetingInput, GreetingResult, RawName
-from flows.greeting_etl.transform import GreetingTransformer
+from flows.greeting.etl.extract import NameExtractor
+from flows.greeting.etl.load import GreetingLoader
+from flows.greeting.etl.transform import GreetingTransformer
+from flows.greeting.schemas import GreetingInput, GreetingResult, RawName
 
-scenarios("../features/greeting_etl.feature")
+scenarios("../features/greeting.feature")
 
 
 @given(parsers.parse('a greeting input with name "{name}"'), target_fixture="payload")

@@ -3,8 +3,8 @@ from __future__ import annotations
 import io
 import logging
 
-from flows.greeting_etl.load import GreetingLoader
-from flows.greeting_etl.schemas import GreetingResult
+from flows.greeting.etl.load import GreetingLoader
+from flows.greeting.schemas import GreetingResult
 
 
 def test_loader_logs_the_message() -> None:

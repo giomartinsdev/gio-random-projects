@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from flows.greeting_etl.schemas import RawName
-from flows.greeting_etl.transform import GreetingTransformer
+from flows.greeting.etl.transform import GreetingTransformer
+from flows.greeting.schemas import RawName
 
 
 def test_transformer_builds_a_hello_message() -> None:

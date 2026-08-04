@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from flows.base import Transformer
-from flows.greeting_etl.schemas import GreetingResult, RawName
+from flows.greeting.schemas import GreetingResult, RawName
+from flows.shared.transformer import Transformer
 
 
 class GreetingTransformer(Transformer[RawName, GreetingResult]):

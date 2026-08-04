@@ -7,10 +7,10 @@ from __future__ import annotations
 
 from prefect import flow, task
 
-from flows.greeting_etl.extract import NameExtractor
-from flows.greeting_etl.load import GreetingLoader
-from flows.greeting_etl.schemas import GreetingInput, GreetingResult, RawName
-from flows.greeting_etl.transform import GreetingTransformer
+from flows.greeting.etl.extract import NameExtractor
+from flows.greeting.etl.load import GreetingLoader
+from flows.greeting.etl.transform import GreetingTransformer
+from flows.greeting.schemas import GreetingInput, GreetingResult, RawName
 
 
 @task
@@ -29,7 +29,7 @@ def load(data: GreetingResult) -> None:
 
 
 @flow(log_prints=True)
-def greeting_etl(payload: GreetingInput = GreetingInput(name="gio")) -> GreetingResult:
+def greeting(payload: GreetingInput = GreetingInput(name="gio")) -> GreetingResult:
     raw = extract(payload)
     result = transform(raw)
     load(result)
@@ -37,4 +37,4 @@ def greeting_etl(payload: GreetingInput = GreetingInput(name="gio")) -> Greeting
 
 
 if __name__ == "__main__":
-    greeting_etl()
+    greeting()

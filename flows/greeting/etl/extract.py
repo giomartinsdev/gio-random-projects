@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from flows.base import Extractor
-from flows.greeting_etl.schemas import GreetingInput, RawName
+from flows.greeting.schemas import GreetingInput, RawName
+from flows.shared.extractor import Extractor
 
 
 class NameExtractor(Extractor[RawName]):

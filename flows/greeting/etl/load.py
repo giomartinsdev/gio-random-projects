@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from flows.base import Loader
-from flows.greeting_etl.schemas import GreetingResult
+from flows.greeting.schemas import GreetingResult
+from flows.shared.loader import Loader
 
 
 class GreetingLoader(Loader[GreetingResult]):

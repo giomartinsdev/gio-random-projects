@@ -24,8 +24,8 @@ pull:
       requirements_file: requirements.txt
 
 deployments:
-  - name: greeting-etl
-    entrypoint: flows/greeting_etl/flow.py:greeting_etl
+  - name: greeting
+    entrypoint: flows/greeting/flow.py:greeting
     work_pool:
       name: docker-pool
       job_variables:

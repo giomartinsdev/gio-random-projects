@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from flows.greeting_etl.extract import NameExtractor
-from flows.greeting_etl.schemas import GreetingInput
+from flows.greeting.etl.extract import NameExtractor
+from flows.greeting.schemas import GreetingInput
 
 
 def test_extractor_returns_the_input_name() -> None:
