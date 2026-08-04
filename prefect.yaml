@@ -1,0 +1,30 @@
+# Prefect deployment config.
+#
+# Flows live under flows/, one file per flow (add new ones to the
+# `deployments` list below as you go). No image build/push: the worker
+# clones this repo fresh from git on every run (see the `pull` step),
+# so a new deployment is just a git push + `prefect deploy`.
+#
+# CI runs `prefect deploy --all` on every push to flows/** or this file
+# — see .github/workflows/prefect-deploy.yml.
+
+name: gio-random-projects
+prefect-version: "3"
+
+build: null
+push: null
+
+pull:
+  - prefect.deployments.steps.git_clone:
+      repository: https://github.com/giomartinsdev/gio-random-projects.git
+      branch: main
+  - prefect.deployments.steps.pip_install_requirements:
+      directory: "{{ pull_code.directory }}/flows"
+      requirements_file: requirements.txt
+
+deployments:
+  - name: example-flow
+    entrypoint: flows/example_flow.py:example_flow
+    work_pool:
+      name: docker-pool
+    schedule: null

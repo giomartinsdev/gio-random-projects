@@ -4,7 +4,7 @@
   "description": "Custom Arcane templates for gio-server infra \u2014 apps not in the official community registry.",
   "author": "giomartinsdev",
   "url": "https://github.com/giomartinsdev/gio-random-projects",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "templates": [
     {
       "id": "9router",
@@ -158,7 +158,7 @@
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/prefect/compose.yaml",
       "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/prefect/.env.example",
       "documentation_url": "https://www.prefect.io/",
-      "content_hash": "222d2c9a63ea0208c79eb5972697d4253c14fe948fb0a5c6bc6976bd5ef7efd3",
+      "content_hash": "f541e7d9fb0ae8601ea20fa7f218b0fabbe54abc569e61b49bc17709d7e97b3f",
       "tags": [
         "workflow",
         "orchestration",

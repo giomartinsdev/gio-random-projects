@@ -15,5 +15,24 @@ services:
     volumes:
       - prefect-data:/root/.prefect
 
+  prefect-worker:
+    image: prefecthq/prefect:${PREFECT_VERSION:-3-latest}
+    restart: unless-stopped
+    depends_on:
+      - prefect-server
+    # Idempotent: work-pool create fails (harmlessly) if the pool already
+    # exists from a previous start, so this is safe to re-run on every boot.
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        prefect work-pool create ${PREFECT_WORK_POOL:-docker-pool} --type docker || true
+        exec prefect worker start --pool ${PREFECT_WORK_POOL:-docker-pool}
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+    volumes:
+      # Docker work pool: the worker launches each flow run as a sibling
+      # container via the host's own Docker daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+
 volumes:
   prefect-data:
