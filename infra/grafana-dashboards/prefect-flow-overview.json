@@ -1,5 +1,5 @@
 {
-  "title": "Prefect Flow Overview (v7)",
+  "title": "Prefect Flow Overview (v8)",
   "uid": "prefect-flow-overview",
   "schemaVersion": 39,
   "editable": true,
@@ -138,7 +138,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{service_name=~\"${service:regex}\"} != \"HTTP Request:\" != \"Requirement already satisfied\" != \"Running pip as\" != \"UpgradePrompt\""
+          "expr": "{service_name=~\"${service:regex}\"} | scope_name =~ `flows\\..*`"
         }
       ]
     }
