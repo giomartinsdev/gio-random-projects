@@ -29,6 +29,9 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
+      # Tempo's metrics-generator remote_writes span-metrics/service-graph
+      # data here — off by default, Prometheus otherwise 405s every write.
+      - "--web.enable-remote-write-receiver"
     configs:
       - source: prometheus_config
         target: /etc/prometheus/prometheus.yml
@@ -134,6 +137,32 @@ configs:
             path: /var/tempo/wal
           local:
             path: /var/tempo/blocks
+      # Without this, TraceQL metrics queries (rate(), the "Rate" panel
+      # Grafana shows by default on a service's trace view) 500 with
+      # "error finding generators: empty ring" — the metrics-generator
+      # component doesn't run at all until it's configured. local_blocks
+      # serves those queries against recent, not-yet-flushed data;
+      # service-graphs/span-metrics remote_write the rest to Prometheus.
+      # (local_blocks is Tempo 2.x only — removed in 3.0.)
+      metrics_generator:
+        registry:
+          external_labels:
+            source: tempo
+        storage:
+          path: /var/tempo/generator/wal
+          remote_write:
+            - url: http://prometheus:9090/api/v1/write
+              send_exemplars: true
+        traces_storage:
+          path: /var/tempo/generator/traces
+        processor:
+          local_blocks:
+            filter_server_spans: false
+            flush_to_storage: true
+      overrides:
+        defaults:
+          metrics_generator:
+            processors: [service-graphs, span-metrics, local-blocks]
 
   prometheus_config:
     content: |

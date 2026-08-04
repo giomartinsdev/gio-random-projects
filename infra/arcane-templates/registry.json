@@ -4,7 +4,7 @@
   "description": "Custom Arcane templates for gio-server infra \u2014 apps not in the official community registry.",
   "author": "giomartinsdev",
   "url": "https://github.com/giomartinsdev/gio-random-projects",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "templates": [
     {
       "id": "9router",
@@ -126,7 +126,7 @@
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/observability/compose.yaml",
       "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/observability/.env.example",
       "documentation_url": "https://grafana.com/oss/",
-      "content_hash": "5cead8d2196617704c7ff57a8d7a9fdc05e238cec460b36119a8614c515b17ec",
+      "content_hash": "06338b9fb8f61534d1c1e2e39bfff07a1a1049a5983dd1c5feef27abfd27d4de",
       "tags": [
         "observability",
         "opentelemetry",
