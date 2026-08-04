@@ -1,0 +1,19 @@
+x-arcane:
+  urls:
+    - https://www.prefect.io/
+
+services:
+  prefect-server:
+    image: prefecthq/prefect:${PREFECT_VERSION:-3-latest}
+    restart: unless-stopped
+    command: ["prefect", "server", "start"]
+    ports:
+      - "${APP_PORT:-4200}:4200"
+    environment:
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_UI_API_URL: ${PREFECT_UI_API_URL:-http://localhost:4200/api}
+    volumes:
+      - prefect-data:/root/.prefect
+
+volumes:
+  prefect-data:

@@ -1,0 +1,7 @@
+{
+  "name": "Prefect Server",
+  "description": "Workflow orchestration platform — schedule, run, and monitor data pipelines. Single-node setup with Prefect's built-in SQLite backend (not the full Postgres+Redis cluster topology).",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["workflow", "orchestration", "data-engineering"]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Docker Registry",
+  "description": "Private Docker image registry (registry:2) for push/pull of your own images. No auth built in — keep it off the public internet, or put it behind Cloudflare Access / your own htpasswd.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["registry", "docker", "self-hosted"]
+}

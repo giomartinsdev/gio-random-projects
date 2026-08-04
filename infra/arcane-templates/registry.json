@@ -4,7 +4,7 @@
   "description": "Custom Arcane templates for gio-server infra \u2014 apps not in the official community registry.",
   "author": "giomartinsdev",
   "url": "https://github.com/giomartinsdev/gio-random-projects",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "templates": [
     {
       "id": "9router",
@@ -147,6 +147,38 @@
         "ai",
         "llm",
         "chat"
+      ]
+    },
+    {
+      "id": "prefect",
+      "name": "Prefect Server",
+      "description": "Workflow orchestration platform \u2014 schedule, run, and monitor data pipelines. Single-node setup with Prefect's built-in SQLite backend (not the full Postgres+Redis cluster topology).",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/prefect/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/prefect/.env.example",
+      "documentation_url": "https://www.prefect.io/",
+      "content_hash": "222d2c9a63ea0208c79eb5972697d4253c14fe948fb0a5c6bc6976bd5ef7efd3",
+      "tags": [
+        "workflow",
+        "orchestration",
+        "data-engineering"
+      ]
+    },
+    {
+      "id": "registry",
+      "name": "Docker Registry",
+      "description": "Private Docker image registry (registry:2) for push/pull of your own images. No auth built in \u2014 keep it off the public internet, or put it behind Cloudflare Access / your own htpasswd.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/registry/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/registry/.env.example",
+      "documentation_url": "https://docs.docker.com/registry/",
+      "content_hash": "4d1abfdae33ce3e886dfd9ebec36a6f529518d3afd24f225a9088d43fcbe3ad9",
+      "tags": [
+        "registry",
+        "docker",
+        "self-hosted"
       ]
     },
     {
