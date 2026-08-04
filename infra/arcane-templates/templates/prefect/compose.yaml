@@ -14,20 +14,35 @@ services:
       PREFECT_UI_API_URL: ${PREFECT_UI_API_URL:-http://localhost:4200/api}
     volumes:
       - prefect-data:/root/.prefect
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
 
   prefect-worker:
     image: prefecthq/prefect:${PREFECT_VERSION:-3-latest}
     restart: unless-stopped
     depends_on:
-      - prefect-server
+      prefect-server:
+        # Without this the worker races the server's first-boot DB
+        # migration ("database is locked") and its own API port not being
+        # open yet ("All connection attempts failed") — a plain
+        # container-started depends_on isn't enough here.
+        condition: service_healthy
     # Idempotent: work-pool create fails (harmlessly) if the pool already
     # exists from a previous start, so this is safe to re-run on every boot.
     # prefect-docker isn't in the base image — the docker worker type
-    # can't start without it ("Unable to start worker...").
+    # can't start without it. `set -e` + an explicit import check turn a
+    # silent pip failure into a loud, diagnosable container crash instead
+    # of the confusing runtime "dependencies missing" error.
     entrypoint: ["sh", "-c"]
     command:
       - |
-        pip install --no-cache-dir prefect-docker
+        set -e
+        python -m pip install --no-cache-dir --root-user-action=ignore prefect-docker
+        python -c "import prefect_docker"
         prefect work-pool create ${PREFECT_WORK_POOL:-docker-pool} --type docker || true
         exec prefect worker start --pool ${PREFECT_WORK_POOL:-docker-pool}
     environment:
