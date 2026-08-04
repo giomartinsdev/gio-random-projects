@@ -9,6 +9,9 @@ ingress:
   - hostname: openship.giomartins.dev
     service: http://localhost:3001
 
+  - hostname: arcane.giomartins.dev
+    service: http://localhost:3552
+
   # Add new services below, one hostname per block, most specific first.
   # - hostname: example.giomartins.dev
   #   service: http://localhost:PORT
