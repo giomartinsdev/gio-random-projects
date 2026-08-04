@@ -122,11 +122,13 @@ deploys it automatically (`.github/workflows/prefect-deploy.yml`).
 
 ## Tracing
 
-Every flow/task run is automatically traced to the observability stack
-(`observability.giomartins.dev`) — Tempo, browseable in Grafana. **No code
-changes needed per flow**: Prefect generates the spans itself; the
-deployment's `job_variables` in `prefect.yaml` just need to be copied onto
-each new deployment for the export to actually happen:
+Every flow/task run is automatically traced *and* logged to the
+observability stack (`observability.giomartins.dev`) — Tempo and Loki,
+browseable in Grafana. **No code changes needed per flow**: Prefect
+generates the spans itself and stdlib `logging` (what `get_run_logger()`
+uses) is what ships to Loki; the deployment's `job_variables` in
+`prefect.yaml` just need to be copied onto each new deployment for the
+export to actually happen:
 
 ```yaml
 work_pool:
@@ -137,10 +139,13 @@ work_pool:
     env:
       OTEL_SERVICE_NAME: <flow-name>   # change per deployment
       OTEL_TRACES_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_PYTHON_LOG_CORRELATION: "true"
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
       OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id={{ prefect.blocks.secret.cf-acess-client-id }},CF-Access-Client-Secret={{ prefect.blocks.secret.cf-acess-client-secret }}"
       OTEL_BSP_SCHEDULE_DELAY: "100"
+      OTEL_BLRP_SCHEDULE_DELAY: "100"
 ```
 
 Why each piece is there (found by testing, not guessing):
@@ -153,16 +158,31 @@ Why each piece is there (found by testing, not guessing):
   instrumentor for whatever a flow imports (`requests`, `httpx`,
   `sqlalchemy`, ...) — this is what makes it agnostic per flow; nothing
   to declare.
+- `OTEL_LOGS_EXPORTER: otlp` turns on the same wrapper's logging
+  instrumentor — without it, `OTEL_TRACES_EXPORTER` alone only ships
+  spans, nothing shows up in Loki.
+- `OTEL_PYTHON_LOG_CORRELATION: "true"` stamps `trace_id`/`span_id` onto
+  every log record emitted while a span is active, so a log line in Loki
+  can be matched back to its span in Tempo instead of correlating by eye
+  on timestamps.
 - `OTEL_EXPORTER_OTLP_ENDPOINT` goes out over the public tunnel (not the
   internal `prefect-net` network) because the observability stack is a
   separate Arcane deployment on its own Docker network — same reasoning
   as CI authenticating through Cloudflare Access, and why the headers
   reference the `cf-acess-client-id` / `cf-acess-client-secret` **Secret
   blocks** (Blocks tab in the Prefect UI) instead of a plaintext value.
-- `OTEL_BSP_SCHEDULE_DELAY: "100"` — the default 5s batch-export interval
-  loses spans on a flow that finishes in under 5 seconds (the container
-  exits before the batch flushes). Confirmed by testing: about half the
-  runs silently dropped their trace without this.
+- `OTEL_BSP_SCHEDULE_DELAY` / `OTEL_BLRP_SCHEDULE_DELAY` — the default 5s
+  batch-export interval (spans and logs each have their own batch
+  processor) loses data on a flow that finishes in under 5 seconds (the
+  container exits before the batch flushes). Confirmed by testing: about
+  half the runs silently dropped their trace without the span-processor
+  one; the log-record-processor one is the same fix for logs.
+
+A pre-built "Prefect Flow Overview" dashboard (traces, request/error rate,
+p95 latency, and logs, filterable by `OTEL_SERVICE_NAME`) lives at
+`infra/grafana-dashboards/prefect-flow-overview.json` — drop it in the
+observability stack's `grafana-dashboards` MinIO bucket, or import it
+directly in Grafana (Dashboards → New → Import → paste JSON).
 
 ## Running checks locally
 
