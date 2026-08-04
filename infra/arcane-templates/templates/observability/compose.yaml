@@ -64,6 +64,8 @@ services:
     configs:
       - source: grafana_datasources
         target: /etc/grafana/provisioning/datasources/datasources.yaml
+      - source: grafana_dashboards_provider
+        target: /etc/grafana/provisioning/dashboards/dashboards.yaml
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
@@ -72,16 +74,50 @@ services:
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
     volumes:
       - grafana-data:/var/lib/grafana
+      - grafana-dashboards:/var/lib/grafana/dashboards
     depends_on:
       - prometheus
       - loki
       - tempo
+
+  # Grafana's file provider only reads local disk — there's no native S3
+  # dashboard source — so this sidecar bridges MinIO to that disk: it
+  # mirrors a bucket into the shared `grafana-dashboards` volume once at
+  # startup, then keeps watching for changes (`mc mirror --watch`), so
+  # dropping/editing a dashboard JSON in the bucket updates Grafana within
+  # seconds with no restart. Grafana's own file-provider poll (10s below)
+  # is what actually reloads the UI after the file lands.
+  dashboards-sync:
+    image: minio/mc:${MC_VERSION:-latest}
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until mc alias set src "$$MINIO_ENDPOINT" "$$MINIO_ACCESS_KEY" "$$MINIO_SECRET_KEY"; do
+          echo "waiting for minio at $$MINIO_ENDPOINT..."
+          sleep 3
+        done
+        mc mb --ignore-existing src/"$$MINIO_BUCKET"
+        mkdir -p /dashboards
+        while true; do
+          mc mirror --watch --overwrite --remove src/"$$MINIO_BUCKET" /dashboards || true
+          echo "mirror exited, retrying in 3s..."
+          sleep 3
+        done
+    environment:
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_DASHBOARDS_BUCKET:-grafana-dashboards}
+    volumes:
+      - grafana-dashboards:/dashboards
 
 volumes:
   loki-data:
   tempo-data:
   prometheus-data:
   grafana-data:
+  grafana-dashboards:
 
 # Inline file contents mounted straight into each container — no shell
 # needed on the image's side (works even on scratch-based images like
@@ -238,3 +274,17 @@ configs:
               datasourceUid: loki
             serviceMap:
               datasourceUid: prometheus
+
+  grafana_dashboards_provider:
+    content: |
+      apiVersion: 1
+      providers:
+        - name: minio-dashboards
+          folder: MinIO
+          type: file
+          disableDeletion: false
+          updateIntervalSeconds: 10
+          allowUiUpdates: true
+          options:
+            path: /var/lib/grafana/dashboards
+            foldersFromFilesStructure: true

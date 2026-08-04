@@ -1,15 +1,15 @@
 {
   "$schema": "https://registry.getarcane.app/schema.json",
   "name": "gio's Custom Templates",
-  "description": "Custom Arcane templates for gio-server infra \u2014 apps not in the official community registry.",
+  "description": "Custom Arcane templates for gio-server infra — apps not in the official community registry.",
   "author": "giomartinsdev",
   "url": "https://github.com/giomartinsdev/gio-random-projects",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "templates": [
     {
       "id": "9router",
       "name": "9Router",
-      "description": "Self-hosted AI API proxy/router \u2014 OpenAI-compatible endpoint with multi-provider LLM failover routing.",
+      "description": "Self-hosted AI API proxy/router — OpenAI-compatible endpoint with multi-provider LLM failover routing.",
       "version": "1.0.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/9router/compose.yaml",
@@ -25,7 +25,7 @@
     {
       "id": "changedetection",
       "name": "changedetection.io",
-      "description": "Monitor websites for content changes and get notified \u2014 price drops, restock alerts, page diffs.",
+      "description": "Monitor websites for content changes and get notified — price drops, restock alerts, page diffs.",
       "version": "1.0.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/changedetection/compose.yaml",
@@ -73,7 +73,7 @@
     {
       "id": "healthchecks",
       "name": "Healthchecks",
-      "description": "Cron job and background task monitoring \u2014 pings you when a scheduled job doesn't check in on time.",
+      "description": "Cron job and background task monitoring — pings you when a scheduled job doesn't check in on time.",
       "version": "1.0.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/healthchecks/compose.yaml",
@@ -105,7 +105,7 @@
     {
       "id": "ntfy",
       "name": "ntfy",
-      "description": "Simple pub-sub push notification service \u2014 send alerts to your phone/desktop via HTTP or a tiny client library.",
+      "description": "Simple pub-sub push notification service — send alerts to your phone/desktop via HTTP or a tiny client library.",
       "version": "1.0.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/ntfy/compose.yaml",
@@ -120,20 +120,21 @@
     {
       "id": "observability",
       "name": "Observability Stack",
-      "description": "OpenTelemetry Collector + Grafana + Loki + Tempo + Prometheus, wired together \u2014 send traces/metrics/logs to one OTLP endpoint and query all three in Grafana with datasources pre-provisioned.",
-      "version": "1.0.0",
+      "description": "OpenTelemetry Collector + Grafana + Loki + Tempo + Prometheus, wired together — send traces/metrics/logs to one OTLP endpoint and query all three in Grafana with datasources pre-provisioned. Dashboards can be dropped into a MinIO bucket and are auto-synced into Grafana.",
+      "version": "1.1.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/observability/compose.yaml",
       "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/observability/.env.example",
       "documentation_url": "https://grafana.com/oss/",
-      "content_hash": "06338b9fb8f61534d1c1e2e39bfff07a1a1049a5983dd1c5feef27abfd27d4de",
+      "content_hash": "0dc6ad78cd6da69b49695ad9ac07738a8b024570b245fc48212ff4c1d3538569",
       "tags": [
         "observability",
         "opentelemetry",
         "grafana",
         "loki",
         "tempo",
-        "prometheus"
+        "prometheus",
+        "minio"
       ]
     },
     {
@@ -155,7 +156,7 @@
     {
       "id": "open-webui",
       "name": "Open WebUI",
-      "description": "Chat UI for Ollama and other LLM backends \u2014 the ChatGPT-style front-end for self-hosted models.",
+      "description": "Chat UI for Ollama and other LLM backends — the ChatGPT-style front-end for self-hosted models.",
       "version": "1.0.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/open-webui/compose.yaml",
@@ -171,7 +172,7 @@
     {
       "id": "prefect",
       "name": "Prefect Server",
-      "description": "Workflow orchestration platform \u2014 schedule, run, and monitor data pipelines. Single-node setup with Prefect's built-in SQLite backend (not the full Postgres+Redis cluster topology).",
+      "description": "Workflow orchestration platform — schedule, run, and monitor data pipelines. Single-node setup with Prefect's built-in SQLite backend (not the full Postgres+Redis cluster topology).",
       "version": "1.0.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/prefect/compose.yaml",
@@ -187,7 +188,7 @@
     {
       "id": "registry",
       "name": "Docker Registry",
-      "description": "Private Docker image registry (registry:2) for push/pull of your own images. No auth built in \u2014 keep it off the public internet, or put it behind Cloudflare Access / your own htpasswd.",
+      "description": "Private Docker image registry (registry:2) for push/pull of your own images. No auth built in — keep it off the public internet, or put it behind Cloudflare Access / your own htpasswd.",
       "version": "1.0.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/registry/compose.yaml",
@@ -203,7 +204,7 @@
     {
       "id": "searxng",
       "name": "SearXNG",
-      "description": "Privacy-respecting metasearch engine \u2014 aggregates results from other search engines without tracking you.",
+      "description": "Privacy-respecting metasearch engine — aggregates results from other search engines without tracking you.",
       "version": "1.0.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/searxng/compose.yaml",
