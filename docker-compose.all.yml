@@ -8,4 +8,3 @@
 include:
   - infra/cloudflared/docker-compose.yml
   - infra/helloworld/docker-compose.yml
-  - infra/9router/docker-compose.yml
