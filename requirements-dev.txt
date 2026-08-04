@@ -1,0 +1,4 @@
+-r flows/requirements.txt
+mypy>=1.10,<2
+pytest>=8,<9
+pytest-bdd>=7,<8

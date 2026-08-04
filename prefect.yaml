@@ -1,7 +1,7 @@
 # Prefect deployment config.
 #
-# Flows live under flows/, one file per flow (add new ones to the
-# `deployments` list below as you go). No image build/push: the worker
+# Flows live under flows/, one folder per flow (see flows/README.md for
+# the ETL pattern each folder follows). No image build/push: the worker
 # clones this repo fresh from git on every run (see the `pull` step),
 # so a new deployment is just a git push + `prefect deploy`.
 #
@@ -24,14 +24,10 @@ pull:
       requirements_file: requirements.txt
 
 deployments:
-  - name: example-flow
-    entrypoint: flows/example_flow.py:example_flow
+  - name: greeting-etl
+    entrypoint: flows/greeting_etl/flow.py:greeting_etl
     work_pool:
       name: docker-pool
-      # Flow-run containers must be on the same docker network as
-      # prefect-server (see infra/arcane-templates/templates/prefect) or
-      # they can't resolve it by name — "httpcore.ConnectError: Name or
-      # service not known".
       job_variables:
         networks: ["prefect-net"]
     schedule: null

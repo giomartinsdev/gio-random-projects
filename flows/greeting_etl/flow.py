@@ -1,0 +1,40 @@
+"""Orchestration only. Prefect's @task wraps each ETL class call so every
+stage shows up as its own task run in the UI (retries, caching, logs) —
+the classes themselves stay Prefect-agnostic and unit-testable on their own.
+"""
+
+from __future__ import annotations
+
+from prefect import flow, task
+
+from flows.greeting_etl.extract import NameExtractor
+from flows.greeting_etl.load import GreetingLoader
+from flows.greeting_etl.schemas import GreetingInput, GreetingResult, RawName
+from flows.greeting_etl.transform import GreetingTransformer
+
+
+@task
+def extract(payload: GreetingInput) -> RawName:
+    return NameExtractor(payload).extract()
+
+
+@task
+def transform(data: RawName) -> GreetingResult:
+    return GreetingTransformer().transform(data)
+
+
+@task
+def load(data: GreetingResult) -> None:
+    GreetingLoader().load(data)
+
+
+@flow(log_prints=True)
+def greeting_etl(payload: GreetingInput = GreetingInput(name="gio")) -> GreetingResult:
+    raw = extract(payload)
+    result = transform(raw)
+    load(result)
+    return result
+
+
+if __name__ == "__main__":
+    greeting_etl()
