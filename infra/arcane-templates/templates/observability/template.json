@@ -1,0 +1,7 @@
+{
+  "name": "Observability Stack",
+  "description": "OpenTelemetry Collector + Grafana + Loki + Tempo + Prometheus, wired together — send traces/metrics/logs to one OTLP endpoint and query all three in Grafana with datasources pre-provisioned.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["observability", "opentelemetry", "grafana", "loki", "tempo", "prometheus"]
+}

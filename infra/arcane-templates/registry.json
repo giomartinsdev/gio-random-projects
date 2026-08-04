@@ -4,7 +4,7 @@
   "description": "Custom Arcane templates for gio-server infra \u2014 apps not in the official community registry.",
   "author": "giomartinsdev",
   "url": "https://github.com/giomartinsdev/gio-random-projects",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "templates": [
     {
       "id": "9router",
@@ -115,6 +115,25 @@
       "tags": [
         "notifications",
         "self-hosted"
+      ]
+    },
+    {
+      "id": "observability",
+      "name": "Observability Stack",
+      "description": "OpenTelemetry Collector + Grafana + Loki + Tempo + Prometheus, wired together \u2014 send traces/metrics/logs to one OTLP endpoint and query all three in Grafana with datasources pre-provisioned.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/observability/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/observability/.env.example",
+      "documentation_url": "https://grafana.com/oss/",
+      "content_hash": "5cead8d2196617704c7ff57a8d7a9fdc05e238cec460b36119a8614c515b17ec",
+      "tags": [
+        "observability",
+        "opentelemetry",
+        "grafana",
+        "loki",
+        "tempo",
+        "prometheus"
       ]
     },
     {
