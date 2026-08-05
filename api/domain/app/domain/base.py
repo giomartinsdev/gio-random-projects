@@ -7,14 +7,18 @@ follow:
    SQLModel's own metadata collects every `table=True` subclass the moment
    its module is imported; infrastructure/db.py just has to import the
    whole domain package once and call `SQLModel.metadata.create_all()`.
+   `Document` is the same thing for a schemaless row (one JSONB column
+   instead of individual typed ones) — subclass `Document` instead of
+   `Entity` when the upstream shape isn't yours to define a migration for.
 
-2. `DomainEvent` — subclass one of the five verb bases below
-   (`GetById`, `ListAll`, `Create`, `Update`, `Delete`) parameterized with a
-   concrete `Entity`, e.g. `class GetUser(GetById[User])`. That's enough:
-   `__init_subclass__` resolves the concrete entity from the generic
-   parameter, binds it to the class, and registers the class in
-   `EVENT_REGISTRY` — which is what the presentation layer walks to build
-   routes. No manual registration step, ever.
+2. `DomainEvent` — subclass one of the six verb bases below
+   (`GetById`, `ListAll`, `Create`, `CreateMany`, `Update`, `Delete`)
+   parameterized with a concrete `Entity`/`Document`, e.g.
+   `class GetUser(GetById[User])`. That's enough: `__init_subclass__`
+   resolves the concrete entity from the generic parameter, binds it to
+   the class, and registers the class in `EVENT_REGISTRY` — which is
+   what the presentation layer walks to build routes. No manual
+   registration step, ever.
 
 Custom behavior beyond plain CRUD: override `handle()` on the leaf event
 class itself; the verb base's default implementation is just what runs if
@@ -23,9 +27,14 @@ you don't.
 
 from __future__ import annotations
 
+from datetime import (
+    datetime,  # noqa: TC003 — SQLModel/Pydantic resolve field annotations at class-creation time, not just for static typing
+)
 from typing import Any, ClassVar, cast
 
 from pydantic import BaseModel
+from sqlalchemy import JSON, Column
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Session, SQLModel, select
 
 
@@ -33,6 +42,25 @@ class Entity(SQLModel):
     """Base for every domain entity (aggregate root)."""
 
     id: int | None = Field(default=None, primary_key=True)
+
+
+class Document(Entity):
+    """Base for schemaless entities — the payload lives in one JSONB
+    column instead of individual typed columns, so an upstream schema
+    change (a new field in a third-party feed, say) never needs a
+    migration. Still an `Entity` underneath (gets `id` for free, and
+    every generic verb below works on it exactly like a relational one)
+    — "non-relational" here just means how ONE row's shape is stored,
+    not a different storage engine.
+
+    `JSON().with_variant(JSONB, "postgresql")` — real JSONB in
+    production, plain JSON on SQLite (what tests/local dev use by
+    default, see infrastructure/db.py) since SQLite has no JSONB type of
+    its own.
+    """
+
+    data: dict[str, Any] = Field(sa_column=Column(JSON().with_variant(JSONB, "postgresql")))
+    captured_at: datetime
 
 
 EVENT_REGISTRY: list[type[DomainEvent[Any]]] = []
@@ -95,6 +123,25 @@ class Create[TEntity: Entity](DomainEvent[TEntity]):
         session.commit()
         session.refresh(entity)
         return cast("TEntity", entity)
+
+
+class CreateMany[TEntity: Entity](DomainEvent[TEntity]):
+    """Insert many rows in one dispatch/one audit-log record — for a
+    high-frequency batch producer (a poller landing hundreds of rows
+    every few minutes, say) where dispatching one event per row would
+    be one HTTP round-trip and one domain_event_store row per row.
+    Unlike `Create`, the leaf event's own fields aren't the row shape —
+    override `to_entities()` to say how the event's fields become a
+    list of entities."""
+
+    def to_entities(self) -> list[TEntity]:
+        raise NotImplementedError(f"{type(self).__name__} must implement to_entities()")
+
+    def handle(self, session: Session) -> int:
+        entities = self.to_entities()
+        session.add_all(entities)
+        session.commit()
+        return len(entities)
 
 
 class Update[TEntity: Entity](DomainEvent[TEntity]):

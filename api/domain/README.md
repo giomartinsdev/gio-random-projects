@@ -65,16 +65,72 @@ exist, and `POST /events/get-order`, `/list-orders`, `/create-order`,
    on startup; `infrastructure/db.py` then calls
    `SQLModel.metadata.create_all()`, which creates anything missing.
 
-2. **`DomainEvent[TEntity]`** and its five verb bases (`GetById`,
-   `ListAll`, `Create`, `Update`, `Delete`) — subclassing one of them
-   parameterized with a concrete `Entity` (e.g. `GetById[Order]`) is
-   enough for `__init_subclass__` to resolve which entity the event is
-   bound to and register the class in `EVENT_REGISTRY`.
-   `presentation/router_factory.py` walks that registry and adds one
-   route per event, named from the event class (`GetOrder` → `get-order`).
+2. **`DomainEvent[TEntity]`** and its six verb bases (`GetById`,
+   `ListAll`, `Create`, `CreateMany`, `Update`, `Delete`) — subclassing
+   one of them parameterized with a concrete `Entity` (e.g.
+   `GetById[Order]`) is enough for `__init_subclass__` to resolve which
+   entity the event is bound to and register the class in
+   `EVENT_REGISTRY`. `presentation/router_factory.py` walks that
+   registry and adds one route per event, named from the event class
+   (`GetOrder` → `get-order`).
 
 Custom behavior beyond plain CRUD: override `handle(self, session)` on the
 leaf event class. The verb base's version is just what runs if you don't.
+
+## Non-relational data: `Document`
+
+Subclass `Document` (in `app/domain/base.py`) instead of `Entity` when the
+row's shape isn't yours to define a migration for — a third-party feed,
+say, where a new field showing up shouldn't require a schema change here.
+`Document` is still an `Entity` underneath (gets `id` for free, works with
+every verb base above); the difference is one extra `data` column typed
+as real Postgres `JSONB` in production (`sqlite`'s plain `JSON` in
+tests/local dev, since sqlite has no `JSONB` of its own) instead of
+individual typed columns, plus a required `captured_at`.
+
+```python
+# app/domain/bus_position/entity.py
+from app.domain.base import Document
+
+
+class BusPosition(Document, table=True):
+    """See flows/bus_gps_poller for what actually lands in `data`."""
+```
+
+Pairs naturally with `CreateMany` for a high-frequency batch producer (a
+poller landing hundreds of rows every few minutes) — one dispatch, one
+`domain_event_store` audit row, instead of one HTTP round-trip and one
+audit row per individual row:
+
+```python
+# app/domain/bus_position/events.py
+from datetime import datetime
+
+from pydantic import BaseModel
+
+from app.domain.base import CreateMany
+from app.domain.bus_position.entity import BusPosition
+
+
+class BusPositionInput(BaseModel):
+    vehicle_id: str
+    latitude: float
+    longitude: float
+    captured_at: datetime
+
+
+class CreateBusPositions(CreateMany[BusPosition]):
+    positions: list[BusPositionInput]
+
+    def to_entities(self) -> list[BusPosition]:
+        return [
+            BusPosition(data=p.model_dump(mode="json"), captured_at=p.captured_at)
+            for p in self.positions
+        ]
+```
+
+`POST /events/create-bus-positions` then accepts `{"positions": [...]}`
+and returns the count inserted.
 
 ## Known limitation: schema evolution
 
