@@ -23,5 +23,12 @@ def create_db_and_tables() -> None:
 
 
 def get_session() -> Generator[Session, None, None]:
-    with Session(engine) as session:
+    # expire_on_commit=False: an event's handle() commits, then
+    # dispatcher.py commits again (the event-store audit row) — the
+    # second commit would otherwise expire every attribute on whatever
+    # entity handle() just returned (SQLAlchemy's default), so FastAPI
+    # serializes an empty object instead of the row. Values already read
+    # this request stay valid past a commit; nothing here re-queries
+    # stale data across requests since each request gets its own session.
+    with Session(engine, expire_on_commit=False) as session:
         yield session

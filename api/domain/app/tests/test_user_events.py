@@ -35,7 +35,10 @@ def client() -> Generator[TestClient, None, None]:
     SQLModel.metadata.create_all(engine)
 
     def override_get_session() -> Iterator[Session]:
-        with Session(engine) as session:
+        # expire_on_commit=False — matches infrastructure/db.py's real
+        # get_session(); dispatcher.py's own commit (event-store audit
+        # row) would otherwise expire whatever handle() just returned.
+        with Session(engine, expire_on_commit=False) as session:
             yield session
 
     app = create_app()
