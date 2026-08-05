@@ -64,3 +64,29 @@ deployments:
           OTEL_BSP_SCHEDULE_DELAY: "100"
           OTEL_BLRP_SCHEDULE_DELAY: "100"
     schedule: null
+
+  - name: user-crud-test
+    entrypoint: flows/user_crud_test/flow.py:user_crud_test
+    parameters:
+      gateway_url: https://gateway.giomartins.dev
+      # Not Secret.load() inside the flow (see flows/README.md) — supplied
+      # here instead, same templating as the OTel headers below. Create
+      # this Secret block in the Prefect UI (Blocks tab) with one of the
+      # gateway's own GATEWAY_API_KEYS values.
+      api_key: "{{ prefect.blocks.secret.gateway-api-key }}"
+    work_pool:
+      name: docker-pool
+      job_variables:
+        networks: ["prefect-net"]
+        command: "opentelemetry-instrument prefect flow-run execute"
+        env:
+          OTEL_SERVICE_NAME: user-crud-test
+          OTEL_TRACES_EXPORTER: otlp
+          OTEL_LOGS_EXPORTER: otlp
+          OTEL_PYTHON_LOG_CORRELATION: "true"
+          OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+          OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
+          OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id={{ prefect.blocks.secret.cf-acess-client-id }},CF-Access-Client-Secret={{ prefect.blocks.secret.cf-acess-client-secret }}"
+          OTEL_BSP_SCHEDULE_DELAY: "100"
+          OTEL_BLRP_SCHEDULE_DELAY: "100"
+    schedule: null

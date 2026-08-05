@@ -120,6 +120,21 @@ Then add it to `prefect.yaml`'s `deployments:` list, with
 `work_pool.job_variables.networks: ["prefect-net"]`. Push to `main` — CI
 deploys it automatically (`.github/workflows/prefect-deploy.yml`).
 
+### When a flow isn't ETL: `user_crud_test/`
+
+`user_crud_test/` deliberately doesn't have an `etl/` folder — it's a
+smoke test exercising `api/gateway`'s User CRUD events end to end, not
+a data pipeline, so Extract/Transform/Load doesn't fit. Same spirit
+elsewhere still applies: a Prefect-agnostic class (`client.py`'s
+`GatewayClient` — no `@task`, no `prefect` import, unit-testable alone),
+`flow.py` wraps each CRUD step in its own `@task`, typed schemas, tests
+inside the flow's own folder. Secrets (the gateway API key) are supplied
+via the deployment's own `parameters:` in `prefect.yaml` templating
+`{{ prefect.blocks.secret.gateway-api-key }}` — not `Secret.load()`
+inside the flow — matching how `job_variables.env` already does this
+for the OTel headers, and keeping the flow callable/testable without a
+Prefect server or blocks available.
+
 ## Tracing
 
 Every flow/task run is automatically traced *and* logged to the
