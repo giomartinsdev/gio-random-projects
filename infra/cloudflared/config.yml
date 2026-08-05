@@ -30,6 +30,15 @@ ingress:
   - hostname: registry.giomartins.dev
     service: http://localhost:5000
 
+  # Also deliberately NOT behind Cloudflare Access — the gateway's whole
+  # purpose is being an authenticated API endpoint for plain HTTP callers
+  # (X-API-Key header, see api/gateway/app/auth.py), the same category of
+  # client that can't do Access's browser-redirect/custom-header dance.
+  # Stacking Access in front would just block real callers before they
+  # ever reach the gateway's own auth, for no defense-in-depth gain.
+  - hostname: gateway.giomartins.dev
+    service: http://localhost:8000
+
   # Add new services below, one hostname per block, most specific first.
   # - hostname: example.giomartins.dev
   #   service: http://localhost:PORT
