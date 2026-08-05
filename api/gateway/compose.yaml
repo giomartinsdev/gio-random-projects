@@ -20,10 +20,19 @@ services:
   gateway:
     image: ${REGISTRY_HOST:-localhost:5000}/gateway:${GATEWAY_VERSION:-latest}
     restart: unless-stopped
+    # gateway and domain are separate compose projects (separate Docker
+    # networks) — "localhost" inside this container means this container,
+    # not the host, so it can never reach domain's published port that
+    # way. host.docker.internal resolves to the host's own IP from
+    # inside any container (Linux needs this extra_hosts entry — Docker
+    # Desktop/Mac has it built in, but a plain Linux Engine, which is
+    # what gio-server runs, doesn't unless told to).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${GATEWAY_PORT:-8000}:8000"
     environment:
-      GATEWAY_UPSTREAM_URL: ${GATEWAY_UPSTREAM_URL:-http://localhost:8001}
+      GATEWAY_UPSTREAM_URL: ${GATEWAY_UPSTREAM_URL:-http://host.docker.internal:8001}
       GATEWAY_API_KEYS: ${GATEWAY_API_KEYS:-dev-key:local}
       GATEWAY_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_REQUEST_TIMEOUT_SECONDS:-10.0}
       OTEL_SERVICE_NAME: gateway
