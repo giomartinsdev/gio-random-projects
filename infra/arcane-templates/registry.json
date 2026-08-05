@@ -4,7 +4,7 @@
   "description": "Custom Arcane templates for gio-server infra — apps not in the official community registry.",
   "author": "giomartinsdev",
   "url": "https://github.com/giomartinsdev/gio-random-projects",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "templates": [
     {
       "id": "9router",
@@ -188,13 +188,13 @@
     {
       "id": "registry",
       "name": "Docker Registry",
-      "description": "Private Docker image registry (registry:2) for push/pull of your own images. No auth built in — keep it off the public internet, or put it behind Cloudflare Access / your own htpasswd.",
-      "version": "1.0.0",
+      "description": "Private Docker image registry (registry:2) for push/pull of your own images, secured with htpasswd basic auth out of the box — set REGISTRY_USER/REGISTRY_PASSWORD and `docker login` with them.",
+      "version": "1.1.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/registry/compose.yaml",
       "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/registry/.env.example",
       "documentation_url": "https://docs.docker.com/registry/",
-      "content_hash": "4d1abfdae33ce3e886dfd9ebec36a6f529518d3afd24f225a9088d43fcbe3ad9",
+      "content_hash": "5e7e3a5bdf244fb405cbcf445ac9dd5d60fc3ef2a6229374b73372dfc96535dd",
       "tags": [
         "registry",
         "docker",
