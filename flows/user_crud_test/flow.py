@@ -8,6 +8,7 @@ from __future__ import annotations
 import uuid
 
 from prefect import flow, task
+from prefect.cache_policies import NO_CACHE
 
 from flows.shared.logger import get_logger
 from flows.user_crud_test.client import GatewayClient
@@ -15,13 +16,20 @@ from flows.user_crud_test.schemas import UserPayload, UserResult
 
 logger = get_logger(__name__)
 
+# NO_CACHE on every task here: Prefect's default cache policy hashes task
+# inputs to key a result, and GatewayClient (holding an httpx.Client, an
+# unpicklable thread lock) can't be hashed — confirmed by testing, this
+# doesn't fail the run, just logs a noisy warning and skips caching. These
+# tasks have side effects against a real server anyway; caching them was
+# never correct regardless of the serialization issue.
 
-@task
+
+@task(cache_policy=NO_CACHE)
 def create_user(client: GatewayClient, payload: UserPayload) -> UserResult:
     return client.create_user(payload)
 
 
-@task
+@task(cache_policy=NO_CACHE)
 def get_user(client: GatewayClient, user_id: int) -> UserResult:
     result = client.get_user(user_id)
     if result is None:
@@ -29,7 +37,7 @@ def get_user(client: GatewayClient, user_id: int) -> UserResult:
     return result
 
 
-@task
+@task(cache_policy=NO_CACHE)
 def update_user(client: GatewayClient, user_id: int, name: str) -> UserResult:
     result = client.update_user(user_id, name=name)
     if result is None:
@@ -37,12 +45,12 @@ def update_user(client: GatewayClient, user_id: int, name: str) -> UserResult:
     return result
 
 
-@task
+@task(cache_policy=NO_CACHE)
 def delete_user(client: GatewayClient, user_id: int) -> bool:
     return client.delete_user(user_id)
 
 
-@task
+@task(cache_policy=NO_CACHE)
 def confirm_deleted(client: GatewayClient, user_id: int) -> None:
     result = client.get_user(user_id)
     if result is not None:
