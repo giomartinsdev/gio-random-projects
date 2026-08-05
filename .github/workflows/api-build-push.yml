@@ -27,8 +27,39 @@ jobs:
           echo "Discovered services: $services"
           echo "services=$services" >> "$GITHUB_OUTPUT"
 
-  build-and-push:
+  test:
     needs: discover
+    if: needs.discover.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.discover.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - working-directory: api/${{ matrix.service }}
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        working-directory: api/${{ matrix.service }}
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Type check (pyright)
+        working-directory: api/${{ matrix.service }}
+        run: pyright .
+
+      - name: Test (pytest)
+        working-directory: api/${{ matrix.service }}
+        run: pytest -v
+
+  build-and-push:
+    needs: [discover, test]
     if: needs.discover.outputs.services != '[]'
     runs-on: ubuntu-latest
     strategy:
@@ -40,7 +71,7 @@ jobs:
       # registry.giomartins.dev sits behind Cloudflare Access (Service
       # Auth), same as prefect.giomartins.dev — but unlike Prefect's own
       # HTTP client (which can be told to attach custom headers via
-      # PREFECT_CLIENT_CUSTOM_HEADERS, see prefect-deploy.yml), the Docker
+      # PREFECT_CLIENT_CUSTOM_HEADERS, see flows-ci.yml's deploy job), the Docker
       # client has no equivalent option: it can't send CF-Access-Client-Id
       # /Secret on push/pull. This nginx sidecar is the workaround —
       # terminates plain HTTP on localhost, injects those two headers on

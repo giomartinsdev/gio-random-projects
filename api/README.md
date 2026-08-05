@@ -5,6 +5,13 @@ deployable API. `.github/workflows/api-build-push.yml` discovers them
 dynamically on every push — add a new one and it starts building/pushing
 to `registry.giomartins.dev` with zero workflow changes.
 
+Each discovered service also gets its own `ruff check`/`ruff format
+--check`/`pyright .`/`pytest` run in CI (the `test` job) before
+`build-and-push` runs — a failing lint, type, or test result blocks the
+image build entirely, add `requirements-dev.txt` + a `pyproject.toml`
+with `[tool.ruff]`/`[tool.pyright]` sections to any new service (copy
+`domain/` or `gateway/`'s) to get this for free.
+
 ## Adding a new API
 
 ```

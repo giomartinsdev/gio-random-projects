@@ -29,7 +29,8 @@ def load(data: GreetingResult) -> None:
 
 
 @flow(log_prints=True)
-def greeting(payload: GreetingInput = GreetingInput(name="gio")) -> GreetingResult:
+def greeting(payload: GreetingInput | None = None) -> GreetingResult:
+    payload = payload or GreetingInput(name="gio")
     raw = extract(payload)
     result = transform(raw)
     load(result)

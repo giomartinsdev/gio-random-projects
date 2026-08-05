@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
 
 from flows.shared.logger import Loggable
 
-TOut = TypeVar("TOut")
 
-
-class Extractor(Loggable, ABC, Generic[TOut]):
+class Extractor[TOut](Loggable, ABC):
     """Reads from a source and returns a typed model. No transform logic here."""
 
     @abstractmethod

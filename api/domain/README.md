@@ -18,6 +18,7 @@ app/domain/<name>/
 # app/domain/order/entity.py
 from app.domain.base import Entity
 
+
 class Order(Entity, table=True):
     customer_email: str
     total_cents: int
@@ -28,18 +29,27 @@ class Order(Entity, table=True):
 from app.domain.base import Create, Delete, GetById, ListAll, Update
 from app.domain.order.entity import Order
 
-class GetOrder(GetById[Order]): pass
-class ListOrders(ListAll[Order]): pass
+
+class GetOrder(GetById[Order]):
+    pass
+
+
+class ListOrders(ListAll[Order]):
+    pass
+
 
 class CreateOrder(Create[Order]):
     customer_email: str
     total_cents: int
 
+
 class UpdateOrder(Update[Order]):
     customer_email: str | None = None
     total_cents: int | None = None
 
-class DeleteOrder(Delete[Order]): pass
+
+class DeleteOrder(Delete[Order]):
+    pass
 ```
 
 That's it. On next startup: the `order` table gets created if it doesn't
@@ -95,6 +105,8 @@ Postgres instead (e.g. `postgresql+psycopg://user:pass@host:5432/db`).
 ## Checks
 
 ```bash
-mypy app main.py
+ruff check .
+ruff format --check .
+pyright .
 pytest
 ```

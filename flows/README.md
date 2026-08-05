@@ -34,7 +34,7 @@ flows/
 
 1. **Every ETL stage is a class**, one class per file, inheriting from
    `Extractor[T]` / `Transformer[TIn, TOut]` / `Loader[T]` in `flows/shared/`.
-   Generic type parameters make the contract explicit — mypy catches a
+   Generic type parameters make the contract explicit — pyright catches a
    `Transformer` wired to the wrong `Extractor`'s output at the point
    they're assembled in `flow.py`, not at runtime.
 
@@ -85,6 +85,8 @@ flows/my_flow/
 ```python
 # flows/my_flow/schemas.py
 class MyInput(BaseModel): ...
+
+
 class MyResult(BaseModel): ...
 ```
 
@@ -92,6 +94,7 @@ class MyResult(BaseModel): ...
 # flows/my_flow/etl/extract.py
 from flows.shared.extractor import Extractor
 from flows.my_flow.schemas import MyInput, MyRaw
+
 
 class MyExtractor(Extractor[MyRaw]):
     def __init__(self, payload: MyInput) -> None:
@@ -107,13 +110,14 @@ from prefect import flow, task
 from flows.my_flow.etl.extract import MyExtractor
 from flows.my_flow.schemas import MyInput, MyResult
 
+
 @task
 def extract(payload: MyInput) -> MyRaw:
     return MyExtractor(payload).extract()
 
+
 @flow(log_prints=True)
-def my_flow(payload: MyInput) -> MyResult:
-    ...
+def my_flow(payload: MyInput) -> MyResult: ...
 ```
 
 Then add it to `prefect.yaml`'s `deployments:` list, with
@@ -203,10 +207,14 @@ directly in Grafana (Dashboards → New → Import → paste JSON).
 
 ```
 pip install -r requirements-dev.txt
-mypy flows
+ruff check flows
+ruff format --check flows
+pyright flows
 pytest flows -v
 ```
 
-Both run in CI on every push touching `flows/**`
-(`.github/workflows/flows-ci.yml`) — untyped defs and failing
-scenarios/tests fail the build.
+All four run in CI on every push touching `flows/**`
+(`.github/workflows/flows-ci.yml`) — lint violations, untyped defs, and
+failing scenarios/tests fail the build. Prefect deployment only runs
+(`deploy` job) once all three pass, so a broken flow never gets
+deployed.

@@ -5,6 +5,13 @@ for the framework because it has no behavior independent of a real
 domain exercising it.
 """
 
+# httpx's TestClient.post()/.json() surfaces Unknown/Any through its own
+# stubs regardless of caller code (confirmed: a minimal reproduction hits
+# the same "Unknown" on TestClient's own `auth` default sentinel) — these
+# tests assert against raw wire-level JSON responses, exactly the case
+# where that's unavoidable rather than a real typing gap.
+# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
+
 from collections.abc import Generator, Iterator
 
 import pytest
@@ -65,7 +72,9 @@ def test_create_user_returns_the_created_row(client: TestClient) -> None:
 
 def test_get_user_returns_the_same_row_that_was_created(client: TestClient) -> None:
     # Given a created user
-    created = client.post("/events/create-user", json={"name": "gio", "email": "gio@example.com"}).json()
+    created = client.post(
+        "/events/create-user", json={"name": "gio", "email": "gio@example.com"}
+    ).json()
 
     # When fetching it by id via GetUser
     response = client.post("/events/get-user", json={"id": created["id"]})
@@ -101,7 +110,9 @@ def test_list_users_includes_every_created_user(client: TestClient) -> None:
 
 def test_update_user_applies_only_the_fields_provided(client: TestClient) -> None:
     # Given a created user
-    created = client.post("/events/create-user", json={"name": "gio", "email": "gio@example.com"}).json()
+    created = client.post(
+        "/events/create-user", json={"name": "gio", "email": "gio@example.com"}
+    ).json()
 
     # When updating only the name
     response = client.post("/events/update-user", json={"id": created["id"], "name": "gio martins"})
@@ -125,7 +136,9 @@ def test_update_user_returns_none_for_a_missing_id(client: TestClient) -> None:
 
 def test_delete_user_removes_the_row_and_get_confirms_it(client: TestClient) -> None:
     # Given a created user
-    created = client.post("/events/create-user", json={"name": "gio", "email": "gio@example.com"}).json()
+    created = client.post(
+        "/events/create-user", json={"name": "gio", "email": "gio@example.com"}
+    ).json()
 
     # When deleting it
     delete_response = client.post("/events/delete-user", json={"id": created["id"]})

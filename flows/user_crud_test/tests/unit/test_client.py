@@ -17,7 +17,7 @@ from flows.user_crud_test.schemas import UserPayload
 API_KEY = "test-key"
 
 
-class _FakeGateway:
+class FakeGateway:
     """In-memory User store mimicking api/domain's event routes closely
     enough to exercise GatewayClient's own request/response handling."""
 
@@ -63,7 +63,7 @@ class _FakeGateway:
 
 @pytest.fixture()
 def gateway_client() -> GatewayClient:
-    fake = _FakeGateway()
+    fake = FakeGateway()
     http_client = httpx.Client(transport=httpx.MockTransport(fake.handler))
     return GatewayClient(base_url="http://fake-gateway", api_key=API_KEY, client=http_client)
 

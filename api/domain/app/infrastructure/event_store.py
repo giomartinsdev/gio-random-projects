@@ -10,17 +10,20 @@ whether app/domain/ discovery would have also found it.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlmodel import Field, SQLModel
 
 
 class DomainEventRecord(SQLModel, table=True):
-    __tablename__ = "domain_event_store"
+    # SQLAlchemy's own stubs declare __tablename__ as a `declared_attr`
+    # descriptor; a plain string is the standard/idiomatic SQLModel
+    # pattern and works fine at runtime, but doesn't match that stub.
+    __tablename__ = "domain_event_store"  # pyright: ignore[reportAssignmentType]
 
     id: int | None = Field(default=None, primary_key=True)
     event_type: str
     entity_type: str
     payload: str
     result: str | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

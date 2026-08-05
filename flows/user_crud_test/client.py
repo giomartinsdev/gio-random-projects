@@ -33,7 +33,9 @@ class GatewayClient:
         data = response.json()
         return UserResult.model_validate(data) if data is not None else None
 
-    def update_user(self, user_id: int, name: str | None = None, email: str | None = None) -> UserResult | None:
+    def update_user(
+        self, user_id: int, name: str | None = None, email: str | None = None
+    ) -> UserResult | None:
         payload: dict[str, object] = {"id": user_id}
         if name is not None:
             payload["name"] = name

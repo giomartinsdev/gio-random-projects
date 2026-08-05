@@ -26,32 +26,35 @@ import importlib.machinery
 import importlib.util
 import inspect
 import sys
-from types import ModuleType
-from typing import Any, Callable, Iterable, Sequence
+from typing import TYPE_CHECKING
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Sequence
+    from types import ModuleType
+
 tracer = trace.get_tracer("auto-tracer")
 
 
-def _wrap_func(func: Callable[..., Any], span_name: str) -> Callable[..., Any]:
+def _wrap_func[**P, R](func: Callable[P, R], span_name: str) -> Callable[P, R]:
     if inspect.iscoroutinefunction(func):
 
         @functools.wraps(func)
-        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+        async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             with tracer.start_as_current_span(span_name) as span:
                 try:
-                    return await func(*args, **kwargs)
+                    return await func(*args, **kwargs)  # type: ignore[no-any-return]
                 except Exception as e:
                     span.record_exception(e)
                     span.set_status(StatusCode.ERROR, str(e))
                     raise
 
-        return async_wrapper
+        return async_wrapper  # type: ignore[return-value]
 
     @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         with tracer.start_as_current_span(span_name) as span:
             try:
                 return func(*args, **kwargs)
@@ -63,24 +66,26 @@ def _wrap_func(func: Callable[..., Any], span_name: str) -> Callable[..., Any]:
     return wrapper
 
 
-def _wrap_classmethod(func: classmethod[Any, Any, Any], span_name: str) -> classmethod[Any, Any, Any]:
+def _wrap_classmethod[**P, R](
+    func: classmethod[type, P, R], span_name: str
+) -> classmethod[type, P, R]:
     original = func.__func__
     if inspect.iscoroutinefunction(original):
 
         @functools.wraps(original)
-        async def async_wrapper(cls: type, *args: Any, **kwargs: Any) -> Any:
+        async def async_wrapper(cls: type, *args: P.args, **kwargs: P.kwargs) -> R:
             with tracer.start_as_current_span(span_name) as span:
                 try:
-                    return await original(cls, *args, **kwargs)
+                    return await original(cls, *args, **kwargs)  # type: ignore[no-any-return]
                 except Exception as e:
                     span.record_exception(e)
                     span.set_status(StatusCode.ERROR, str(e))
                     raise
 
-        return classmethod(async_wrapper)
+        return classmethod(async_wrapper)  # type: ignore[return-value]
 
     @functools.wraps(original)
-    def wrapper(cls: type, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(cls: type, *args: P.args, **kwargs: P.kwargs) -> R:
         with tracer.start_as_current_span(span_name) as span:
             try:
                 return original(cls, *args, **kwargs)
@@ -92,24 +97,24 @@ def _wrap_classmethod(func: classmethod[Any, Any, Any], span_name: str) -> class
     return classmethod(wrapper)
 
 
-def _wrap_staticmethod(func: staticmethod[Any, Any], span_name: str) -> staticmethod[Any, Any]:
+def _wrap_staticmethod[**P, R](func: staticmethod[P, R], span_name: str) -> staticmethod[P, R]:
     original = func.__func__
     if inspect.iscoroutinefunction(original):
 
         @functools.wraps(original)
-        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+        async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             with tracer.start_as_current_span(span_name) as span:
                 try:
-                    return await original(*args, **kwargs)
+                    return await original(*args, **kwargs)  # type: ignore[no-any-return]
                 except Exception as e:
                     span.record_exception(e)
                     span.set_status(StatusCode.ERROR, str(e))
                     raise
 
-        return staticmethod(async_wrapper)
+        return staticmethod(async_wrapper)  # type: ignore[return-value]
 
     @functools.wraps(original)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         with tracer.start_as_current_span(span_name) as span:
             try:
                 return original(*args, **kwargs)
@@ -133,9 +138,12 @@ def _instrument_class(cls: type, module_name: str) -> None:
         span_name = f"{module_name}.{cls.__name__}.{name}"
 
         if isinstance(raw, classmethod):
-            setattr(cls, name, _wrap_classmethod(raw, span_name))
+            # raw comes from cls.__dict__.get(name) — genuinely Any at
+            # this point, since it's arbitrary reflection over whatever
+            # class this hook happens to instrument.
+            setattr(cls, name, _wrap_classmethod(raw, span_name))  # pyright: ignore[reportUnknownArgumentType]
         elif isinstance(raw, staticmethod):
-            setattr(cls, name, _wrap_staticmethod(raw, span_name))
+            setattr(cls, name, _wrap_staticmethod(raw, span_name))  # pyright: ignore[reportUnknownArgumentType]
         elif inspect.isfunction(raw):
             setattr(cls, name, _wrap_func(raw, span_name))
 
@@ -151,7 +159,7 @@ def _instrument_module(module: ModuleType) -> None:
         span_name = f"{module_name}.{func_name}"
         setattr(module, func_name, _wrap_func(func_obj, span_name))
 
-    for cls_name, cls_obj in inspect.getmembers(module, predicate=inspect.isclass):
+    for _cls_name, cls_obj in inspect.getmembers(module, predicate=inspect.isclass):
         if cls_obj.__module__ != module_name:
             continue
         _instrument_class(cls_obj, module_name)
@@ -175,7 +183,7 @@ class _AutoTraceImportHook(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         return any(fullname == p or fullname.startswith(p + ".") for p in self.packages)
 
     def find_spec(
-        self, fullname: str, path: Sequence[str] | None, target: ModuleType | None = None
+        self, fullname: str, _path: Sequence[str] | None, _target: ModuleType | None = None
     ) -> importlib.machinery.ModuleSpec | None:
         if not self._matches(fullname) or fullname in self._resolving:
             return None
@@ -208,7 +216,7 @@ _hook: _AutoTraceImportHook | None = None
 
 
 def install(packages: list[str]) -> None:
-    global _hook
+    global _hook  # noqa: PLW0603 — module-level singleton, install-once guard below
     if _hook is not None:
         return
     _hook = _AutoTraceImportHook(packages)

@@ -23,7 +23,7 @@ you don't.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Generic, TypeVar, cast
+from typing import Any, ClassVar, cast
 
 from pydantic import BaseModel
 from sqlmodel import Field, Session, SQLModel, select
@@ -35,19 +35,17 @@ class Entity(SQLModel):
     id: int | None = Field(default=None, primary_key=True)
 
 
-TEntity = TypeVar("TEntity", bound=Entity)
-
 EVENT_REGISTRY: list[type[DomainEvent[Any]]] = []
 
 
-class DomainEvent(BaseModel, Generic[TEntity]):
+class DomainEvent[TEntity: Entity](BaseModel):
     """Base for every domain event. See module docstring for the contract."""
 
     model_config = {"arbitrary_types_allowed": True}
 
     __entity__: ClassVar[type[Entity]]
 
-    def __init_subclass__(cls, **kwargs: Any) -> None:
+    def __init_subclass__(cls, **kwargs: Any) -> None:  # noqa: ANN401 — matches object.__init_subclass__'s own signature
         super().__init_subclass__(**kwargs)
         # Pydantic v2 has its own generics machinery (`Model[Concrete]`
         # synthesizes a real intermediate class, cached, distinct from
@@ -62,11 +60,11 @@ class DomainEvent(BaseModel, Generic[TEntity]):
                 EVENT_REGISTRY.append(cls)
                 return
 
-    def handle(self, session: Session) -> Any:
+    def handle(self, session: Session) -> Any:  # noqa: ANN401 — every verb subclass overrides with its own concrete return type
         raise NotImplementedError(f"{type(self).__name__} must implement handle()")
 
 
-class GetById(DomainEvent[TEntity]):
+class GetById[TEntity: Entity](DomainEvent[TEntity]):
     """Fetch a single entity by primary key. Returns None if not found."""
 
     id: int
@@ -79,14 +77,14 @@ class GetById(DomainEvent[TEntity]):
         return cast("TEntity | None", session.get(self.__entity__, self.id))
 
 
-class ListAll(DomainEvent[TEntity]):
+class ListAll[TEntity: Entity](DomainEvent[TEntity]):
     """Fetch every row of the bound entity."""
 
     def handle(self, session: Session) -> list[TEntity]:
         return cast("list[TEntity]", list(session.exec(select(self.__entity__)).all()))
 
 
-class Create(DomainEvent[TEntity]):
+class Create[TEntity: Entity](DomainEvent[TEntity]):
     """Insert a new row. Every field the leaf event declares (besides
     inherited ones) is passed straight to the entity's constructor — the
     event's own fields ARE the typed creation payload."""
@@ -99,7 +97,7 @@ class Create(DomainEvent[TEntity]):
         return cast("TEntity", entity)
 
 
-class Update(DomainEvent[TEntity]):
+class Update[TEntity: Entity](DomainEvent[TEntity]):
     """Patch an existing row. Only fields explicitly set on the event are
     applied (`exclude_unset=True`) — declare update fields as optional
     with a None default on the leaf event so callers can omit what they're
@@ -119,7 +117,7 @@ class Update(DomainEvent[TEntity]):
         return cast("TEntity", entity)
 
 
-class Delete(DomainEvent[TEntity]):
+class Delete[TEntity: Entity](DomainEvent[TEntity]):
     """Delete a row by id. Returns whether a row was actually deleted."""
 
     id: int

@@ -7,13 +7,27 @@ on:
       - "flows/**"
       - "pyproject.toml"
       - "requirements-dev.txt"
+      - "prefect.yaml"
+      - ".github/workflows/flows-ci.yml"
   pull_request:
     paths:
       - "flows/**"
       - "pyproject.toml"
       - "requirements-dev.txt"
+      - "prefect.yaml"
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check flows
+      - run: ruff format --check flows
+
   typecheck:
     runs-on: ubuntu-latest
     steps:
@@ -22,7 +36,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
-      - run: mypy flows
+      - run: pyright flows
 
   test:
     runs-on: ubuntu-latest
@@ -33,3 +47,31 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
       - run: pytest flows -v
+
+  deploy:
+    # Only on an actual push to main, never for a pull_request build —
+    # and only once lint/typecheck/test all pass, so a broken flow never
+    # gets deployed even if this push also touched prefect.yaml.
+    if: github.event_name == 'push'
+    needs: [lint, typecheck, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install "prefect>=3,<4"
+
+      - name: Deploy flows
+        env:
+          PREFECT_API_URL: https://prefect.giomartins.dev/api
+          # Prefect is behind Cloudflare Access — CI authenticates as a
+          # service via these headers. Create the Service Token under
+          # Zero Trust → Access → Service Auth → Service Tokens, then set
+          # both secrets in this repo's Settings → Secrets → Actions.
+          PREFECT_CLIENT_CUSTOM_HEADERS: >-
+            {"CF-Access-Client-Id": "${{ secrets.CF_ACCESS_CLIENT_ID }}",
+            "CF-Access-Client-Secret": "${{ secrets.CF_ACCESS_CLIENT_SECRET }}"}
+        run: prefect deploy --all

@@ -8,9 +8,12 @@ were imported. Call discover_domain() (infrastructure/discovery.py) first.
 from __future__ import annotations
 
 import os
-from collections.abc import Generator
+from typing import TYPE_CHECKING
 
 from sqlmodel import Session, SQLModel, create_engine
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./dev.db")
 

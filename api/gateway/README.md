@@ -45,7 +45,9 @@ GATEWAY_UPSTREAM_URL=http://localhost:8000 GATEWAY_API_KEYS=dev-key:local uvicor
 ## Checks
 
 ```bash
-mypy app
+ruff check .
+ruff format --check .
+pyright .
 pytest
 ```
 

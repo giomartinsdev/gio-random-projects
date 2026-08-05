@@ -4,6 +4,13 @@ property of dispatch() itself, not something any individual event opts
 into. See app/service/dispatcher.py.
 """
 
+# httpx's TestClient.post()/.json() surfaces Unknown/Any through its own
+# stubs regardless of caller code (confirmed: a minimal reproduction hits
+# the same "Unknown" on TestClient's own `auth` default sentinel) — these
+# tests assert against raw wire-level JSON responses, exactly the case
+# where that's unavoidable rather than a real typing gap.
+# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
+
 from collections.abc import Generator, Iterator
 
 import pytest
@@ -46,7 +53,9 @@ def test_dispatching_an_event_records_it_in_the_event_store(
     client, engine = client_and_engine
 
     # Given a CreateUser event dispatched through the API
-    created = client.post("/events/create-user", json={"name": "gio", "email": "gio@example.com"}).json()
+    created = client.post(
+        "/events/create-user", json={"name": "gio", "email": "gio@example.com"}
+    ).json()
 
     # When reading the event store directly
     with Session(engine) as session:
@@ -62,11 +71,15 @@ def test_dispatching_an_event_records_it_in_the_event_store(
     assert f'"id":{created["id"]}' in record.result.replace(" ", "")
 
 
-def test_each_dispatched_event_gets_its_own_record(client_and_engine: tuple[TestClient, Engine]) -> None:
+def test_each_dispatched_event_gets_its_own_record(
+    client_and_engine: tuple[TestClient, Engine],
+) -> None:
     client, engine = client_and_engine
 
     # Given a user created, then fetched, then updated
-    created = client.post("/events/create-user", json={"name": "gio", "email": "gio@example.com"}).json()
+    created = client.post(
+        "/events/create-user", json={"name": "gio", "email": "gio@example.com"}
+    ).json()
     client.post("/events/get-user", json={"id": created["id"]})
     client.post("/events/update-user", json={"id": created["id"], "name": "gio martins"})
 

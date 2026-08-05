@@ -4,9 +4,13 @@ query string, body) minus the headers that shouldn't cross a proxy hop.
 
 from __future__ import annotations
 
-import httpx
-from fastapi import Request
+from typing import TYPE_CHECKING
+
 from fastapi.responses import Response
+
+if TYPE_CHECKING:
+    import httpx
+    from fastapi import Request
 
 # Headers that are either connection-specific (never meaningful past a
 # proxy hop) or gateway-internal (the credential that got this request
@@ -24,11 +28,20 @@ _STRIPPED_REQUEST_HEADERS = {
     "upgrade",
     "x-api-key",
 }
-_STRIPPED_RESPONSE_HEADERS = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+_STRIPPED_RESPONSE_HEADERS = {
+    "content-encoding",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+}
 
 
-async def forward(request: Request, client: httpx.AsyncClient, upstream_url: str, path: str) -> Response:
-    headers = {k: v for k, v in request.headers.items() if k.lower() not in _STRIPPED_REQUEST_HEADERS}
+async def forward(
+    request: Request, client: httpx.AsyncClient, upstream_url: str, path: str
+) -> Response:
+    headers = {
+        k: v for k, v in request.headers.items() if k.lower() not in _STRIPPED_REQUEST_HEADERS
+    }
     body = await request.body()
 
     upstream_response = await client.request(
@@ -40,7 +53,9 @@ async def forward(request: Request, client: httpx.AsyncClient, upstream_url: str
     )
 
     response_headers = {
-        k: v for k, v in upstream_response.headers.items() if k.lower() not in _STRIPPED_RESPONSE_HEADERS
+        k: v
+        for k, v in upstream_response.headers.items()
+        if k.lower() not in _STRIPPED_RESPONSE_HEADERS
     }
     return Response(
         content=upstream_response.content,

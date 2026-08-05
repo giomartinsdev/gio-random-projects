@@ -1,16 +1,49 @@
-[tool.mypy]
-python_version = "3.14"
-strict = true
-plugins = ["pydantic.mypy"]
-mypy_path = ".."
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+fix = true
+show-fixes = true
 
-[[tool.mypy.overrides]]
-module = "sqlmodel.*"
-ignore_missing_imports = true
+[tool.ruff.lint]
+select = [
+    "E", "F", "I", "UP", "B", "C4", "T20", "SIM", "N", "Q", "RUF",
+    "ASYNC", "S", "PTH", "ERA", "PL", "PERF", "ANN", "ARG", "RET", "TCH",
+]
+ignore = [
+    "E501",  # line length — formatter handles this
+    "S603",  # subprocess without shell=True
+    "S607",  # starting a process with a partial path
+    "B008",  # FastAPI's own DI idiom is Depends(...) as a default arg
+]
+
+[tool.ruff.lint.per-file-ignores]
+"app/tests/**" = ["S101", "PLR2004", "ANN"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pyright]
+include = ["app", "main.py"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+# api/shared/ lives one level up (Docker COPYs it in at build time, see
+# api/README.md) and app/domain/user's own tests import via `app.*` —
+# both need the parent dir on the search path same as pytest's
+# pythonpath below.
+extraPaths = [".."]
+# Prefect isn't used here, but FastAPI/SQLModel's own decorators
+# (@app.get, @field_validator, ...) are fully typed — no blanket
+# decorator exemption needed like flows/ has for Prefect.
 
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]
 # api/shared/ lives one level up (it's shared with sibling services, see
 # api/README.md) — Docker COPYs it in at build time, but locally it's a
-# sibling dir pytest/mypy won't find on their own without this.
+# sibling dir pytest/pyright won't find on their own without this.
 pythonpath = [".."]

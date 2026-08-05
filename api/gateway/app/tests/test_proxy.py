@@ -4,6 +4,15 @@ exercises the exact same code path a real deployment uses, just without
 real network I/O.
 """
 
+# Fake upstream's route handlers are only ever invoked via the
+# @upstream.get/@upstream.post decorator, never referenced by name. And
+# httpx's TestClient.get()/.post()/.json() surfaces Unknown/Any through
+# its own stubs regardless of caller code (confirmed: a minimal
+# reproduction hits the same "Unknown" on TestClient's own `auth`
+# default sentinel) — these tests assert against raw wire-level JSON
+# responses, exactly the case where that's unavoidable.
+# pyright: reportUnusedFunction=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
+
 from collections.abc import Generator
 
 import httpx

@@ -1,22 +1,35 @@
+# FastAPI route handlers nested inside create_app() below are only ever
+# invoked via the @app.get/@app.api_route decorator, never referenced by
+# name — invisible to reportUnusedFunction's static analysis.
+# pyright: reportUnusedFunction=false
+
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-from typing import Any
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from typing import TYPE_CHECKING
 
 import httpx
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import Response
+from fastapi.responses import (
+    Response,  # noqa: TC002 — FastAPI resolves route return-type annotations at runtime (get_type_hints), so this can't be TYPE_CHECKING-only
+)
 
 from app.auth import require_api_key
 from app.config import settings
 from app.proxy import forward
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator, Callable
 
-def _make_lifespan(transport: httpx.AsyncBaseTransport | None) -> Any:
+
+def _make_lifespan(
+    transport: httpx.AsyncBaseTransport | None,
+) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        async with httpx.AsyncClient(timeout=settings.request_timeout_seconds, transport=transport) as client:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+        async with httpx.AsyncClient(
+            timeout=settings.request_timeout_seconds, transport=transport
+        ) as client:
             app.state.http_client = client
             yield
 

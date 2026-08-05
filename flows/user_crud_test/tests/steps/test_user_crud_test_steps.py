@@ -6,7 +6,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from flows.user_crud_test.client import GatewayClient
 from flows.user_crud_test.schemas import UserPayload, UserResult
-from flows.user_crud_test.tests.unit.test_client import API_KEY, _FakeGateway
+from flows.user_crud_test.tests.unit.test_client import API_KEY, FakeGateway
 
 scenarios("../features/user_crud_test.feature")
 
@@ -16,7 +16,7 @@ def gateway_client() -> GatewayClient:
     """Test setup, not a Gherkin-visible action — a plain pytest fixture
     rather than a @given step, since no scenario says "Given a gateway
     client" in the feature file itself."""
-    fake = _FakeGateway()
+    fake = FakeGateway()
     http_client = httpx.Client(transport=httpx.MockTransport(fake.handler))
     return GatewayClient(base_url="http://fake-gateway", api_key=API_KEY, client=http_client)
 
@@ -25,7 +25,7 @@ def gateway_client() -> GatewayClient:
     parsers.parse('a user payload with name "{name}" and email "{email}"'),
     target_fixture="payload",
 )
-def _given_user_payload(name: str, email: str, gateway_client: GatewayClient) -> UserPayload:
+def _given_user_payload(name: str, email: str) -> UserPayload:
     return UserPayload(name=name, email=email)
 
 
@@ -40,7 +40,9 @@ def _when_fetched(created: UserResult, gateway_client: GatewayClient) -> UserRes
 
 
 @when(parsers.parse('the user\'s name is updated to "{name}"'), target_fixture="updated")
-def _when_updated(created: UserResult, gateway_client: GatewayClient, name: str) -> UserResult | None:
+def _when_updated(
+    created: UserResult, gateway_client: GatewayClient, name: str
+) -> UserResult | None:
     return gateway_client.update_user(created.id, name=name)
 
 
