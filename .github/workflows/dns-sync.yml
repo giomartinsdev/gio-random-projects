@@ -28,6 +28,12 @@ jobs:
 
       - run: pip install pyyaml
 
+      # TUNNEL_ID isn't a GitHub secret (it's already public, committed in
+      # infra/cloudflared/config.yml) so Actions won't auto-redact it —
+      # this repo is public, mask it in logs anyway rather than have the
+      # sync script's own output repeat it.
+      - run: echo "::add-mask::36f8270d-52a2-4635-b9f2-f5174307e76e"
+
       # Requires two repo secrets (Settings → Secrets → Actions):
       #   CLOUDFLARE_API_TOKEN — create at Cloudflare → My Profile → API
       #     Tokens → Create Token, permission Zone / DNS / Edit, scoped

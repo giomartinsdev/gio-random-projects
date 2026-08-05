@@ -3,6 +3,13 @@ config, pointed at this tunnel — via the Cloudflare API directly, so this
 never depends on a cert.pem living on some server's filesystem (see
 dns-sync.yml's header comment for why that mattered).
 
+This repo is public — logs from this script are too. Output is
+deliberately terse (hostname + outcome only): never the tunnel target,
+never a raw Cloudflare API response body, which can echo back
+account-identifying details GitHub's secret masking has no way to know
+about (it only redacts exact matches of registered secret *values*, not
+arbitrary account metadata a response body might contain).
+
 Usage: python3 sync_cloudflare_dns.py <path-to-cloudflared-config.yml>
 Env: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID, TUNNEL_ID
 """
@@ -26,6 +33,15 @@ def _extract_hostnames(config_path: str) -> list[str]:
     return [entry["hostname"] for entry in config.get("ingress", []) if "hostname" in entry]
 
 
+def _sanitized_error_detail(raw_body: bytes) -> str:
+    try:
+        parsed = json.loads(raw_body)
+        messages = [e.get("message", "unknown error") for e in parsed.get("errors", [])]
+        return "; ".join(messages) if messages else "unknown error"
+    except (json.JSONDecodeError, AttributeError):
+        return "unknown error (non-JSON response)"
+
+
 def _request(method: str, path: str, token: str, payload: dict[str, object] | None = None) -> dict[str, object]:
     body = json.dumps(payload).encode() if payload is not None else None
     request = urllib.request.Request(
@@ -41,11 +57,11 @@ def _request(method: str, path: str, token: str, payload: dict[str, object] | No
         with urllib.request.urlopen(request) as response:
             return json.loads(response.read())
     except urllib.error.HTTPError as error:
-        details = error.read().decode()
-        raise RuntimeError(f"{method} {path} failed: {error.code} {details}") from error
+        detail = _sanitized_error_detail(error.read())
+        raise RuntimeError(f"HTTP {error.code}: {detail}") from error
 
 
-def _upsert(hostname: str, target: str, zone_id: str, token: str) -> None:
+def _upsert(hostname: str, target: str, zone_id: str, token: str) -> str:
     existing = _request("GET", f"/zones/{zone_id}/dns_records?type=CNAME&name={hostname}", token)
     results = existing.get("result")
     record_id = results[0]["id"] if isinstance(results, list) and results else None
@@ -54,10 +70,9 @@ def _upsert(hostname: str, target: str, zone_id: str, token: str) -> None:
 
     if record_id:
         _request("PUT", f"/zones/{zone_id}/dns_records/{record_id}", token, payload)
-        print(f"updated  {hostname} -> {target}")
-    else:
-        _request("POST", f"/zones/{zone_id}/dns_records", token, payload)
-        print(f"created  {hostname} -> {target}")
+        return "updated"
+    _request("POST", f"/zones/{zone_id}/dns_records", token, payload)
+    return "created"
 
 
 def main() -> None:
@@ -75,7 +90,8 @@ def main() -> None:
     failures = []
     for hostname in hostnames:
         try:
-            _upsert(hostname, target, zone_id, token)
+            outcome = _upsert(hostname, target, zone_id, token)
+            print(f"{outcome:8} {hostname}")
         except Exception as error:  # noqa: BLE001 — report every failure, don't stop at the first
             print(f"FAILED   {hostname}: {error}")
             failures.append(hostname)
