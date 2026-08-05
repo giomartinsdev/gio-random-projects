@@ -1,11 +1,24 @@
 # Pulls the image .github/workflows/api-build-push.yml already builds
-# and pushes on every change to api/gateway/** — not a local build, so
-# `docker login registry.giomartins.dev` first if it's private (it is;
-# see infra/arcane-templates/templates/registry). Brings up gateway only;
-# point GATEWAY_UPSTREAM_URL at wherever domain-api actually runs.
+# and pushes on every change to api/gateway/** — not a local build.
+#
+# Defaults to localhost:5000 (the registry's own port), NOT
+# registry.giomartins.dev, deliberately: this compose is meant to run on
+# the same Docker host as the registry (Arcane does), and pulling
+# through the public hostname goes through Cloudflare Access — which a
+# plain `docker login`/pull can't satisfy (no way to send
+# CF-Access-Client-Id/Secret) any more than push could, see
+# api-build-push.yml's own header-injecting-proxy workaround for CI. On
+# a same-host pull that detour is pure liability: Access intercepts,
+# returns its own HTML login redirect page, and Docker chokes trying to
+# treat that HTML as the binary manifest/blob it asked for — confirmed
+# by reproducing this exact failure and reading dockerd's own logs
+# (`mediatype=text/html` where a blob was expected). Needs
+# `docker login localhost:5000` once (same registry credentials) —
+# localhost:5000 must also be in the daemon's insecure-registries (it
+# has no TLS of its own; Cloudflare normally provides that).
 services:
   gateway:
-    image: registry.giomartins.dev/gateway:${GATEWAY_VERSION:-latest}
+    image: ${REGISTRY_HOST:-localhost:5000}/gateway:${GATEWAY_VERSION:-latest}
     restart: unless-stopped
     ports:
       - "${GATEWAY_PORT:-8000}:8000"
