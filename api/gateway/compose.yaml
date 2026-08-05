@@ -39,7 +39,7 @@ services:
     environment:
       GATEWAY_UPSTREAM_URL: ${GATEWAY_UPSTREAM_URL:-http://host.docker.internal:8001}
       GATEWAY_API_KEYS: ${GATEWAY_API_KEYS:-dev-key:local}
-      GATEWAY_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_REQUEST_TIMEOUT_SECONDS:-10.0}
+      GATEWAY_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_REQUEST_TIMEOUT_SECONDS:-60.0}
       OTEL_SERVICE_NAME: gateway
       OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
       # Logs were never being exported at all before this line existed —

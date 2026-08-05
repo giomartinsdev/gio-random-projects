@@ -15,7 +15,14 @@ class GatewayBusPositionLoader(Loader[list[BusPositionCapture]]):
     def __init__(self, gateway_url: str, api_key: str, client: httpx.Client | None = None) -> None:
         super().__init__()
         self._base_url = gateway_url.rstrip("/")
-        self._client = client or httpx.Client()
+        # httpx's own default (5s) is nowhere near enough for a batch
+        # that can be tens of thousands of rows (a full city-wide SPPO
+        # poll) — confirmed live: the gateway needs longer than that
+        # just to receive, validate, and bulk-insert the request body.
+        # Comfortably above the gateway's own GATEWAY_REQUEST_TIMEOUT_SECONDS
+        # (60s) so a slow upstream surfaces as the gateway's own timeout
+        # error, not an ambiguous client-side one.
+        self._client = client or httpx.Client(timeout=90.0)
         self._headers = {"X-API-Key": api_key}
 
     def load(self, data: list[BusPositionCapture]) -> None:

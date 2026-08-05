@@ -23,7 +23,11 @@ class Settings(BaseSettings):
 
     upstream_url: str = "http://api:8000"
     api_keys: str = ""
-    request_timeout_seconds: float = 10.0
+    # 10.0 was fine for single-row CRUD but too tight for a bulk-create
+    # batch (bus_gps_poller can post tens of thousands of rows in one
+    # event) — confirmed live: a 35k-row SPPO poll timed out end to end
+    # at the old default.
+    request_timeout_seconds: float = 60.0
 
     @property
     def parsed_api_keys(self) -> dict[str, str]:
