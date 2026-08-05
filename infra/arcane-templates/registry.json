@@ -4,7 +4,7 @@
   "description": "Custom Arcane templates for gio-server infra — apps not in the official community registry.",
   "author": "giomartinsdev",
   "url": "https://github.com/giomartinsdev/gio-random-projects",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "templates": [
     {
       "id": "9router",
@@ -99,6 +99,22 @@
       "tags": [
         "rss",
         "reader",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "nocodb",
+      "name": "NocoDB",
+      "description": "No-code spreadsheet UI over an existing Postgres/MySQL/SQLite database — browse and edit rows in a table/Kanban/gallery view.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/nocodb/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/nocodb/.env.example",
+      "documentation_url": "https://docs.nocodb.com",
+      "content_hash": "135805d734528f93468ae6ee4aa0e9117a73bdb3a807e77ed5671fb3ab7148d4",
+      "tags": [
+        "database",
+        "admin",
         "self-hosted"
       ]
     },

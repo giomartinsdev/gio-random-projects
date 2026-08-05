@@ -1,0 +1,7 @@
+{
+  "name": "NocoDB",
+  "description": "No-code spreadsheet UI over an existing Postgres/MySQL/SQLite database — browse and edit rows in a table/Kanban/gallery view.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["database", "admin", "self-hosted"]
+}
