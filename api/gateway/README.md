@@ -1,10 +1,10 @@
 # Gateway
 
-Auth + reverse proxy in front of `../api`. Python 3.14, FastAPI, httpx.
-Every request needs a valid `X-API-Key` header (checked in `app/auth.py`)
-before it's forwarded anywhere — the API behind it never has to think
-about authentication at all, and never sees the key itself (stripped
-before forwarding, see `app/proxy.py`).
+Auth + reverse proxy in front of `../domain-api`. Python 3.14, FastAPI,
+httpx. Every request needs a valid `X-API-Key` header (checked in
+`app/auth.py`) before it's forwarded anywhere — the API behind it never
+has to think about authentication at all, and never sees the key itself
+(stripped before forwarding, see `app/proxy.py`).
 
 ```
 client --X-API-Key--> gateway --(no key, plain proxy)--> api --> db
@@ -29,6 +29,11 @@ name" side of the mapping is just a label, not a secret.
   body) passes through unchanged.
 - `/health` is unauthenticated on purpose — it's what a container
   healthcheck hits.
+
+## Telemetry
+
+Automatic, zero-code — see `../README.md#telemetry` for how it works
+(same mechanism across every service under `api/`).
 
 ## Running locally
 

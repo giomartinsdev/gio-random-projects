@@ -77,6 +77,11 @@ yet since it wasn't asked for and auto-applying destructive migrations on
 every boot is its own hazard (see the "coloque a version no nome" style
 caution about auto-running things you haven't reviewed).
 
+## Telemetry
+
+Automatic, zero-code — see `../README.md#telemetry` for how it works
+(same mechanism across every service under `api/`).
+
 ## Running locally
 
 ```bash

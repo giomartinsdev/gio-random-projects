@@ -92,7 +92,10 @@ jobs:
       - name: Build and push ${{ matrix.service }}
         uses: docker/build-push-action@v6
         with:
-          context: api/${{ matrix.service }}
+          # Context is api/ (not api/<service>/) so each Dockerfile can
+          # COPY the shared/ telemetry package — see api/README.md.
+          context: api
+          file: api/${{ matrix.service }}/Dockerfile
           push: true
           tags: |
             localhost:5050/${{ matrix.service }}:latest

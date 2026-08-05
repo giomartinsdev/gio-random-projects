@@ -4,10 +4,6 @@ strict = true
 plugins = ["pydantic.mypy"]
 mypy_path = ".."
 
-[[tool.mypy.overrides]]
-module = "sqlmodel.*"
-ignore_missing_imports = true
-
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]
 # api/shared/ lives one level up (it's shared with sibling services, see
