@@ -1,0 +1,20 @@
+# Pulls the image .github/workflows/api-build-push.yml already builds
+# and pushes on every change to api/gateway/** — not a local build, so
+# `docker login registry.giomartins.dev` first if it's private (it is;
+# see infra/arcane-templates/templates/registry). Brings up gateway only;
+# point GATEWAY_UPSTREAM_URL at wherever domain-api actually runs.
+services:
+  gateway:
+    image: registry.giomartins.dev/gateway:${GATEWAY_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-8000}:8000"
+    environment:
+      GATEWAY_UPSTREAM_URL: ${GATEWAY_UPSTREAM_URL:-http://localhost:8001}
+      GATEWAY_API_KEYS: ${GATEWAY_API_KEYS:-dev-key:local}
+      GATEWAY_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_REQUEST_TIMEOUT_SECONDS:-10.0}
+      OTEL_SERVICE_NAME: gateway
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-https://otel.giomartins.dev}
+      OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id=${CF_ACCESS_CLIENT_ID:-},CF-Access-Client-Secret=${CF_ACCESS_CLIENT_SECRET:-}"
