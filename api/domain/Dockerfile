@@ -6,13 +6,13 @@ FROM python:3.14-slim
 
 WORKDIR /app
 
-COPY domain-api/requirements.txt .
+COPY domain/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
     && opentelemetry-bootstrap -a install
 
 COPY shared shared
-COPY domain-api/app app
-COPY domain-api/main.py .
+COPY domain/app app
+COPY domain/main.py .
 
 RUN useradd --create-home appuser \
     && chown -R appuser:appuser /app

@@ -1,0 +1,48 @@
+# Pulls the image .github/workflows/api-build-push.yml already builds and
+# pushes on every change to api/domain/** — not a local build. Defaults to
+# localhost:5000 (not the public registry.giomartins.dev), same reasoning
+# as api/gateway/compose.yaml: this runs on the same Docker host as the
+# registry, so there's no reason to detour through Cloudflare Access.
+#
+# Requires POSTGRES_PASSWORD (no default — same "refuse to boot without
+# it" pattern as infra/arcane-templates/templates/registry).
+
+services:
+  domain:
+    image: ${REGISTRY_HOST:-localhost:5000}/domain:${DOMAIN_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${DOMAIN_PORT:-8001}:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-domain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-domain}
+      OTEL_SERVICE_NAME: domain
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      OTEL_LOGS_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      OTEL_PYTHON_LOG_CORRELATION: "true"
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-https://otel.giomartins.dev}
+      # See api/gateway/compose.yaml's comment — set CF_ACCESS_CLIENT_ID /
+      # CF_ACCESS_CLIENT_SECRET, NOT OTEL_EXPORTER_OTLP_HEADERS directly,
+      # or this template silently overwrites it with empty values.
+      OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id=${CF_ACCESS_CLIENT_ID:-},CF-Access-Client-Secret=${CF_ACCESS_CLIENT_SECRET:-}"
+
+  postgres:
+    image: postgres:${POSTGRES_VERSION:-17-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-domain}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-domain}
+    volumes:
+      - domain-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-domain}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  domain-postgres-data:

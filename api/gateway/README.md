@@ -1,6 +1,6 @@
 # Gateway
 
-Auth + reverse proxy in front of `../domain-api`. Python 3.14, FastAPI,
+Auth + reverse proxy in front of `../domain`. Python 3.14, FastAPI,
 httpx. Every request needs a valid `X-API-Key` header (checked in
 `app/auth.py`) before it's forwarded anywhere — the API behind it never
 has to think about authentication at all, and never sees the key itself

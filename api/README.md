@@ -75,19 +75,20 @@ environment:
 ```
 
 Verified locally end to end (debug OTel collector, real requests through
-both services): a request into `domain-api` produces one trace spanning
+both services): a request into `domain` produces one trace spanning
 the FastAPI HTTP span → `app.service.dispatcher.dispatch` →
 `app.domain.base.Create.handle` → the SQLAlchemy insert; a request
 through `gateway` produces `app.auth.require_api_key` →
-`app.proxy.forward` → the outbound httpx call to `domain-api`, all under
+`app.proxy.forward` → the outbound httpx call to `domain`, all under
 one trace id.
 
 ## Current services
 
-- **`domain-api/`** — the DDD/event-driven domain API (Python 3.14,
-  FastAPI, SQLModel). See `domain-api/README.md` for how *its* internal
-  convention works (define an entity + events, everything else is
-  automatic) — that's a separate, inner convention from this folder's
+- **`domain/`** — the DDD/event-driven domain API (Python 3.14,
+  FastAPI, SQLModel) + its own Postgres, brought up together via
+  `domain/compose.yaml`. See `domain/README.md` for how the API's
+  internal convention works (define an entity + events, everything else
+  is automatic) — that's a separate, inner convention from this folder's
   "one Dockerfile = one deployable service" one.
-- **`gateway/`** — auth + reverse proxy in front of `domain-api`. See
-  `gateway/README.md`.
+- **`gateway/`** — auth + reverse proxy in front of `domain`, brought up
+  alone via `gateway/compose.yaml`. See `gateway/README.md`.
