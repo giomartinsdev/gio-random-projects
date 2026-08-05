@@ -39,6 +39,14 @@ ingress:
   - hostname: gateway.giomartins.dev
     service: http://localhost:8000
 
+  # Browser UI with its own login, but sitting directly on top of the
+  # domain DB — same category as arcane/prefect/observability above
+  # (a human clicking through a browser, which Access's redirect/header
+  # dance works fine for), so it gets the same defense-in-depth: an
+  # Access Application must be configured for this hostname too.
+  - hostname: nocodb.giomartins.dev
+    service: http://localhost:8089
+
   # Add new services below, one hostname per block, most specific first.
   # - hostname: example.giomartins.dev
   #   service: http://localhost:PORT
