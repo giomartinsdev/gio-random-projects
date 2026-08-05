@@ -13,7 +13,9 @@ real network I/O.
 # responses, exactly the case where that's unavoidable.
 # pyright: reportUnusedFunction=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
 
-from collections.abc import Generator
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import httpx
 import pytest
@@ -22,6 +24,9 @@ from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.main import create_app
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 VALID_KEY = "test-key-123"
 CLIENT_NAME = "test-client"
@@ -45,7 +50,7 @@ def _build_fake_upstream() -> FastAPI:
 
 
 @pytest.fixture()
-def gateway_client() -> Generator[TestClient, None, None]:
+def gateway_client() -> Generator[TestClient]:
     settings.api_keys = f"{VALID_KEY}:{CLIENT_NAME}"
     transport = httpx.ASGITransport(app=_build_fake_upstream())
     app = create_app(transport=transport)

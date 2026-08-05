@@ -12,7 +12,9 @@ domain exercising it.
 # where that's unavoidable rather than a real typing gap.
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
 
-from collections.abc import Generator, Iterator
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,9 +25,12 @@ from app.infrastructure.db import get_session
 from app.infrastructure.discovery import discover_domain
 from app.presentation.app import create_app
 
+if TYPE_CHECKING:
+    from collections.abc import Generator, Iterator
+
 
 @pytest.fixture()
-def client() -> Generator[TestClient, None, None]:
+def client() -> Generator[TestClient]:
     # discover_domain() first: SQLModel.metadata only has a table for User
     # (or any entity) once its module has actually been imported — on a
     # test process's very first run, nothing has imported it yet, so

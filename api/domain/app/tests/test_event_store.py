@@ -11,11 +11,12 @@ into. See app/service/dispatcher.py.
 # where that's unavoidable rather than a real typing gap.
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
 
-from collections.abc import Generator, Iterator
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -24,9 +25,14 @@ from app.infrastructure.discovery import discover_domain
 from app.infrastructure.event_store import DomainEventRecord
 from app.presentation.app import create_app
 
+if TYPE_CHECKING:
+    from collections.abc import Generator, Iterator
+
+    from sqlalchemy import Engine
+
 
 @pytest.fixture()
-def client_and_engine() -> Generator[tuple[TestClient, Engine], None, None]:
+def client_and_engine() -> Generator[tuple[TestClient, Engine]]:
     discover_domain()
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool

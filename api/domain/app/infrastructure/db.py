@@ -25,7 +25,7 @@ def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
 
 
-def get_session() -> Generator[Session, None, None]:
+def get_session() -> Generator[Session]:
     # expire_on_commit=False: an event's handle() commits, then
     # dispatcher.py commits again (the event-store audit row) — the
     # second commit would otherwise expire every attribute on whatever

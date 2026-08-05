@@ -4,11 +4,19 @@ Call this AFTER infrastructure.discovery.discover_domain() has run, or
 EVENT_REGISTRY will still be empty — see presentation/app.py's lifespan.
 """
 
+# Deliberately NO `from __future__ import annotations` here: the
+# `payload: event_cls` annotation below is a live closure variable, not
+# a module-level name — with postponed evaluation on, that annotation
+# becomes the *string* "event_cls" instead, which FastAPI's
+# get_type_hints() can't resolve (it's not in the function's globals),
+# silently breaking request body validation for every route (confirmed
+# by testing: every route started 422ing once this was turned on).
+
 import re
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from sqlmodel import Session
+from sqlmodel import Session  # noqa: TC002 — see module docstring note on annotations above
 
 from app.domain.base import EVENT_REGISTRY, DomainEvent
 from app.infrastructure.db import get_session
