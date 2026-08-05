@@ -32,3 +32,15 @@ manifest/blob Docker asked for, and Docker chokes trying to parse HTML
 as binary image content. Restart the daemon (`systemctl restart docker`)
 after editing — this setting isn't hot-reloadable. See `api/compose.yaml`
 for the docker login step this also requires.
+
+**Arcane itself isn't tracked here** — it was installed via its own
+official installer (not a compose file in this repo, chicken-and-egg
+problem: it's the tool that manages everything else's compose files),
+so nothing here persists its container config across a reinstall.
+Concretely: its restart policy defaulted to `no`, not `unless-stopped`
+like every app template in `infra/arcane-templates/` — a Docker daemon
+restart (e.g. after the `insecure-registries` change above) killed it
+and it didn't come back on its own. Fixed live with
+`docker update --restart=unless-stopped arcane` (no downtime, doesn't
+recreate the container) — but redo this (or pass the equivalent flag)
+if Arcane is ever reinstalled from scratch.
