@@ -21,6 +21,15 @@ ingress:
   - hostname: otel.giomartins.dev
     service: http://localhost:4318
 
+  # Deliberately NOT behind Cloudflare Access, unlike prefect/otel above —
+  # the Docker CLI can't do Access's browser-redirect or custom-header
+  # login dance, but it already sends plain HTTP Basic Auth on
+  # `docker login`, which is exactly what this registry's own htpasswd
+  # auth (see infra/arcane-templates/templates/registry) expects. The
+  # registry gates itself; the tunnel here is just TLS + DNS.
+  - hostname: registry.giomartins.dev
+    service: http://localhost:5000
+
   # Add new services below, one hostname per block, most specific first.
   # - hostname: example.giomartins.dev
   #   service: http://localhost:PORT
