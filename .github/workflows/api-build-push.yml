@@ -1,4 +1,9 @@
-name: Build and push API image
+name: Build and push API images
+
+# Discovers every subfolder of api/ that has a Dockerfile — see
+# api/README.md — and builds+pushes each one as its own image. Adding a
+# new API under api/<name>/ with a Dockerfile is the only thing needed to
+# get it building here; nothing in this file names a specific service.
 
 on:
   push:
@@ -8,20 +13,39 @@ on:
       - ".github/workflows/api-build-push.yml"
 
 jobs:
-  build-and-push:
+  discover:
     runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.list.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: list
+        run: |
+          services=$(find api -mindepth 2 -maxdepth 2 -name Dockerfile \
+            -exec dirname {} \; | xargs -n1 basename | sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "Discovered services: $services"
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+
+  build-and-push:
+    needs: discover
+    if: needs.discover.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.discover.outputs.services) }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
-      # Unlike prefect.giomartins.dev/otel.giomartins.dev, this registry is
-      # NOT behind Cloudflare Access — `docker login` sends plain HTTP
-      # Basic Auth, which is exactly what the registry's own htpasswd auth
-      # expects (see infra/arcane-templates/templates/registry). Create
-      # these two secrets in this repo's Settings → Secrets → Actions,
-      # matching whatever REGISTRY_USER/REGISTRY_PASSWORD the registry
-      # deployment itself was given.
+      # Deliberately NOT behind Cloudflare Access, unlike prefect/otel —
+      # `docker login`/push send plain HTTP Basic Auth, which is exactly
+      # what the registry's own htpasswd gate expects (see
+      # infra/arcane-templates/templates/registry). Create these two
+      # secrets in this repo's Settings → Secrets → Actions, matching
+      # whatever REGISTRY_USER/REGISTRY_PASSWORD the registry deployment
+      # itself was given.
       - name: Log in to registry.giomartins.dev
         uses: docker/login-action@v3
         with:
@@ -29,13 +53,13 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Build and push
+      - name: Build and push ${{ matrix.service }}
         uses: docker/build-push-action@v6
         with:
-          context: ./api
+          context: api/${{ matrix.service }}
           push: true
           tags: |
-            registry.giomartins.dev/domain-api:latest
-            registry.giomartins.dev/domain-api:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            registry.giomartins.dev/${{ matrix.service }}:latest
+            registry.giomartins.dev/${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
