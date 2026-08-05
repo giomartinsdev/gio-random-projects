@@ -28,6 +28,16 @@ services:
       GATEWAY_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_REQUEST_TIMEOUT_SECONDS:-10.0}
       OTEL_SERVICE_NAME: gateway
       OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      # Logs were never being exported at all before this line existed —
+      # only traces were configured, so Loki had nothing from the gateway
+      # regardless of what the Access headers below were set to.
+      OTEL_LOGS_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      OTEL_PYTHON_LOG_CORRELATION: "true"
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-https://otel.giomartins.dev}
+      # Set CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET in .env — NOT
+      # OTEL_EXPORTER_OTLP_HEADERS directly, that gets overwritten by this
+      # template regardless of what .env sets it to (confirmed: an earlier
+      # deploy had OTEL_EXPORTER_OTLP_HEADERS set directly in .env and it
+      # was silently ignored, headers came through empty).
       OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id=${CF_ACCESS_CLIENT_ID:-},CF-Access-Client-Secret=${CF_ACCESS_CLIENT_SECRET:-}"
