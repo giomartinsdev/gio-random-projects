@@ -1,7 +1,7 @@
 {
   "name": "Docker Registry",
   "description": "Private Docker image registry (registry:2) for push/pull of your own images, secured with htpasswd basic auth out of the box — set REGISTRY_USER/REGISTRY_PASSWORD and `docker login` with them.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "giomartinsdev",
   "tags": ["registry", "docker", "self-hosted"]
 }

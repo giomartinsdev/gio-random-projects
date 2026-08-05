@@ -39,6 +39,15 @@ services:
       REGISTRY_AUTH: htpasswd
       REGISTRY_AUTH_HTPASSWD_REALM: "Registry Realm"
       REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+      # Without this, blob-upload responses embed an ABSOLUTE Location URL
+      # built from whatever Host header the registry saw — which escapes
+      # any reverse proxy in front of it (Cloudflare Tunnel/Access here).
+      # The client follows that Location directly on the next request,
+      # bypassing the proxy (and whatever auth it injected) entirely.
+      # Confirmed by reproducing the failure locally without this, then
+      # fixing it: relative URLs resolve against the original request's
+      # host, so every follow-up request stays on the same path in.
+      REGISTRY_HTTP_RELATIVEURLS: "true"
     volumes:
       - registry-data:/var/lib/registry
       - registry-auth:/auth:ro

@@ -37,19 +37,55 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-buildx-action@v3
+      # registry.giomartins.dev sits behind Cloudflare Access (Service
+      # Auth), same as prefect.giomartins.dev — but unlike Prefect's own
+      # HTTP client (which can be told to attach custom headers via
+      # PREFECT_CLIENT_CUSTOM_HEADERS, see prefect-deploy.yml), the Docker
+      # client has no equivalent option: it can't send CF-Access-Client-Id
+      # /Secret on push/pull. This nginx sidecar is the workaround —
+      # terminates plain HTTP on localhost, injects those two headers on
+      # every request via envsubst'd config, forwards to the real
+      # (HTTPS, Access-protected) registry. Docker only ever talks to
+      # localhost:5050; nginx is what actually reaches Cloudflare.
+      - name: Start Cloudflare Access header-injecting proxy
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          cat > /tmp/default.conf.template <<'EOF'
+          server {
+              listen 5050;
+              client_max_body_size 0;
+              location / {
+                  proxy_pass https://registry.giomartins.dev;
+                  proxy_set_header Host registry.giomartins.dev;
+                  proxy_set_header CF-Access-Client-Id "${CF_ACCESS_CLIENT_ID}";
+                  proxy_set_header CF-Access-Client-Secret "${CF_ACCESS_CLIENT_SECRET}";
+                  proxy_ssl_server_name on;
+              }
+          }
+          EOF
+          docker run -d --name access-proxy --network host \
+            -e CF_ACCESS_CLIENT_ID \
+            -e CF_ACCESS_CLIENT_SECRET \
+            -v /tmp/default.conf.template:/etc/nginx/templates/default.conf.template:ro \
+            nginx:alpine
+          sleep 2
+          docker logs access-proxy
 
-      # Deliberately NOT behind Cloudflare Access, unlike prefect/otel —
-      # `docker login`/push send plain HTTP Basic Auth, which is exactly
-      # what the registry's own htpasswd gate expects (see
-      # infra/arcane-templates/templates/registry). Create these two
-      # secrets in this repo's Settings → Secrets → Actions, matching
-      # whatever REGISTRY_USER/REGISTRY_PASSWORD the registry deployment
-      # itself was given.
-      - name: Log in to registry.giomartins.dev
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          driver-opts: network=host
+          config-inline: |
+            [registry."localhost:5050"]
+              http = true
+              insecure = true
+
+      - name: Log in to registry (via the local Access-proxy)
         uses: docker/login-action@v3
         with:
-          registry: registry.giomartins.dev
+          registry: localhost:5050
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
@@ -59,7 +95,7 @@ jobs:
           context: api/${{ matrix.service }}
           push: true
           tags: |
-            registry.giomartins.dev/${{ matrix.service }}:latest
-            registry.giomartins.dev/${{ matrix.service }}:${{ github.sha }}
+            localhost:5050/${{ matrix.service }}:latest
+            localhost:5050/${{ matrix.service }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
