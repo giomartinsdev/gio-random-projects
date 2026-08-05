@@ -19,6 +19,11 @@
 services:
   gateway:
     image: ${REGISTRY_HOST:-localhost:5000}/gateway:${GATEWAY_VERSION:-latest}
+    # Without this, `docker compose up` skips pulling when an image
+    # already exists locally under this exact tag — see domain/compose.yaml,
+    # where this exact gap was confirmed to leave a stale image running
+    # after a redeploy despite the container itself being recreated.
+    pull_policy: always
     restart: unless-stopped
     # gateway and domain are separate compose projects (separate Docker
     # networks) — "localhost" inside this container means this container,

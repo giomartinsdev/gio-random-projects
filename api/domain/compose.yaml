@@ -10,6 +10,13 @@
 services:
   domain:
     image: ${REGISTRY_HOST:-localhost:5000}/domain:${DOMAIN_VERSION:-latest}
+    # Without this, `docker compose up` skips pulling when an image
+    # already exists locally under this exact tag — confirmed the hard
+    # way: redeployed after a code change, container recreated (new
+    # Created timestamp), but it was still running the stale image
+    # because "latest" resolved to whatever was already cached, never
+    # re-fetched from the registry.
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       postgres:
