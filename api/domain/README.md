@@ -65,14 +65,13 @@ exist, and `POST /events/get-order`, `/list-orders`, `/create-order`,
    on startup; `infrastructure/db.py` then calls
    `SQLModel.metadata.create_all()`, which creates anything missing.
 
-2. **`DomainEvent[TEntity]`** and its six verb bases (`GetById`,
-   `ListAll`, `Create`, `CreateMany`, `Update`, `Delete`) — subclassing
-   one of them parameterized with a concrete `Entity` (e.g.
-   `GetById[Order]`) is enough for `__init_subclass__` to resolve which
-   entity the event is bound to and register the class in
-   `EVENT_REGISTRY`. `presentation/router_factory.py` walks that
-   registry and adds one route per event, named from the event class
-   (`GetOrder` → `get-order`).
+2. **`DomainEvent[TEntity]`** and its five verb bases (`GetById`,
+   `ListAll`, `Create`, `Update`, `Delete`) — subclassing one of them
+   parameterized with a concrete `Entity` (e.g. `GetById[Order]`) is
+   enough for `__init_subclass__` to resolve which entity the event is
+   bound to and register the class in `EVENT_REGISTRY`.
+   `presentation/router_factory.py` walks that registry and adds one
+   route per event, named from the event class (`GetOrder` → `get-order`).
 
 Custom behavior beyond plain CRUD: override `handle(self, session)` on the
 leaf event class. The verb base's version is just what runs if you don't.
@@ -89,48 +88,59 @@ tests/local dev, since sqlite has no `JSONB` of its own) instead of
 individual typed columns, plus a required `captured_at`.
 
 ```python
-# app/domain/bus_position/entity.py
+# app/domain/vehicle_position/entity.py
+from sqlmodel import Field
+
 from app.domain.base import Document
 
 
-class BusPosition(Document, table=True):
-    """See flows/bus_gps_poller for what actually lands in `data`."""
+class VehiclePosition(Document, table=True):
+    """One row per vehicle, overwritten every poll — see
+    flows/bus_gps_poller for what lands in `data`."""
+
+    id: str = Field(primary_key=True)  # a natural key, not autoincrement
 ```
 
-Pairs naturally with `CreateMany` for a high-frequency batch producer (a
-poller landing hundreds of rows every few minutes) — one dispatch, one
-`domain_event_store` audit row, instead of one HTTP round-trip and one
-audit row per individual row:
+For a high-frequency batch producer (a poller landing thousands of rows
+every few minutes), override `id`'s type to a natural key and `handle()`
+to upsert (`session.merge()`, not `session.add()`) — the "current known
+state per key" shape, not an ever-growing append-only history:
 
 ```python
-# app/domain/bus_position/events.py
+# app/domain/vehicle_position/events.py
 from datetime import datetime
 
 from pydantic import BaseModel
+from sqlmodel import Session
 
-from app.domain.base import CreateMany
-from app.domain.bus_position.entity import BusPosition
+from app.domain.base import DomainEvent
+from app.domain.vehicle_position.entity import VehiclePosition
 
 
-class BusPositionInput(BaseModel):
+class VehiclePositionInput(BaseModel):
     vehicle_id: str
     latitude: float
     longitude: float
     captured_at: datetime
 
 
-class CreateBusPositions(CreateMany[BusPosition]):
-    positions: list[BusPositionInput]
+class RecordVehiclePositions(DomainEvent[VehiclePosition]):
+    positions: list[VehiclePositionInput]
 
-    def to_entities(self) -> list[BusPosition]:
-        return [
-            BusPosition(data=p.model_dump(mode="json"), captured_at=p.captured_at)
-            for p in self.positions
-        ]
+    def handle(self, session: Session) -> int:
+        for p in self.positions:
+            session.merge(
+                VehiclePosition(
+                    id=p.vehicle_id, data=p.model_dump(mode="json"), captured_at=p.captured_at
+                )
+            )
+        session.commit()
+        return len(self.positions)
 ```
 
-`POST /events/create-bus-positions` then accepts `{"positions": [...]}`
-and returns the count inserted.
+`POST /events/record-vehicle-positions` then accepts `{"positions":
+[...]}`, upserts by `vehicle_id`, and returns the count processed — the
+table stays bounded by fleet size no matter how often it's polled.
 
 ## Known limitation: schema evolution
 

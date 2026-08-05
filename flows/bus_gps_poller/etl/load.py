@@ -7,10 +7,12 @@ from flows.shared.loader import Loader
 
 
 class GatewayBusPositionLoader(Loader[list[BusPositionCapture]]):
-    """Posts the whole batch as one CreateBusPositions event through the
-    gateway — one HTTP round-trip and one domain_event_store audit row
-    per poll, not one per position (see api/domain/app/domain/base.py's
-    CreateMany)."""
+    """Posts the whole batch as one RecordVehiclePositions event through
+    the gateway — one HTTP round-trip and one domain_event_store audit
+    row per poll, not one per position. The domain side upserts by
+    vehicle_id (see api/domain/app/domain/vehicle_position/events.py),
+    so this keeps landing the same "latest known position" row per
+    vehicle every poll rather than growing an append-only history."""
 
     def __init__(self, gateway_url: str, api_key: str, client: httpx.Client | None = None) -> None:
         super().__init__()
@@ -31,7 +33,7 @@ class GatewayBusPositionLoader(Loader[list[BusPositionCapture]]):
             return
 
         response = self._client.post(
-            f"{self._base_url}/events/create-bus-positions",
+            f"{self._base_url}/events/record-vehicle-positions",
             json={"positions": [position.model_dump(mode="json") for position in data]},
             headers=self._headers,
         )

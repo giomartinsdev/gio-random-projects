@@ -50,8 +50,8 @@ def test_load_posts_the_whole_batch_as_one_request_with_the_api_key_header() -> 
     # When loading two captures
     loader.load([_capture("B1"), _capture("B2")])
 
-    # Then exactly one request hit create-bus-positions with both rows and the api key
-    assert seen["path"] == "/events/create-bus-positions"
+    # Then exactly one request hit record-vehicle-positions with both rows and the api key
+    assert seen["path"] == "/events/record-vehicle-positions"
     assert seen["api_key"] == API_KEY
     body = seen["body"]
     assert isinstance(body, dict)
