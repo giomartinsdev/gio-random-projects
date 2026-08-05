@@ -10,6 +10,13 @@ services:
       - "${APP_PORT:-8080}:8080"
     environment:
       NC_DB: ${NC_DB}
+      # NocoDB's SSRF protection blocks connecting to any private/internal
+      # host by default — including the very Docker-network hostname
+      # (e.g. "postgres") this template exists to reach. Without this,
+      # adding that DB as a data source fails with "connection to
+      # internal host is not allowed" even though NC_DB itself (used as
+      # NocoDB's own metadata store) connects to the same host fine.
+      NC_ALLOW_LOCAL_EXTERNAL_DBS: "true"
     volumes:
       - nocodb-data:/usr/app/data
 

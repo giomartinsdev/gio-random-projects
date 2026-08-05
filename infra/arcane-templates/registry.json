@@ -4,7 +4,7 @@
   "description": "Custom Arcane templates for gio-server infra — apps not in the official community registry.",
   "author": "giomartinsdev",
   "url": "https://github.com/giomartinsdev/gio-random-projects",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "templates": [
     {
       "id": "9router",
@@ -106,12 +106,12 @@
       "id": "nocodb",
       "name": "NocoDB",
       "description": "No-code spreadsheet UI over an existing Postgres/MySQL/SQLite database — browse and edit rows in a table/Kanban/gallery view.",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "giomartinsdev",
       "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/nocodb/compose.yaml",
       "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/nocodb/.env.example",
       "documentation_url": "https://docs.nocodb.com",
-      "content_hash": "135805d734528f93468ae6ee4aa0e9117a73bdb3a807e77ed5671fb3ab7148d4",
+      "content_hash": "3de550f0a6a8895e489de38f4e27d4e8a0e1f8d3fc89de5029be5c5845b20b9c",
       "tags": [
         "database",
         "admin",
