@@ -181,3 +181,7 @@ def test_requests_over_the_rate_limit_are_rejected(
 
     # Then the requests within the limit succeed and the rest are throttled
     assert [r.status_code for r in responses] == [200, 200, 429]
+    # ...and the 429 tells a bulk caller how long to back off, rather
+    # than leaving it to guess (see flows/vehicle_position_archiver's
+    # etl/load.py, the caller this actually matters for)
+    assert "retry-after" in responses[-1].headers

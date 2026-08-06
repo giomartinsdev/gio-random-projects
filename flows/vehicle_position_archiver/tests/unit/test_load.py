@@ -11,11 +11,14 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from flows.vehicle_position_archiver.etl import load as load_module
 from flows.vehicle_position_archiver.etl.load import GatewayArchiveLoader
 from flows.vehicle_position_archiver.schemas import ArchivePlan
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    import pytest
 
 API_KEY = "test-key"
 BUCKET = "vehicle-position-archive"
@@ -109,3 +112,54 @@ def test_load_chunks_very_large_delete_batches() -> None:
 
     # Then the delete happened in two requests, not one oversized one
     assert len(delete_calls) == 2
+
+
+def test_load_retries_after_a_429_instead_of_crashing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a fake gateway that rate-limits the first attempt, then succeeds
+    sleeps: list[float] = []
+    monkeypatch.setattr(load_module.time, "sleep", sleeps.append)
+
+    attempts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request.url.path)
+        if request.url.path == "/events/create-bucket" and len(attempts) == 1:
+            return httpx.Response(429, headers={"Retry-After": "3"}, json={"error": "slow down"})
+        if request.url.path == "/events/delete-vehicle-position-history-batch":
+            return httpx.Response(200, json=1)
+        return httpx.Response(200, json=True)
+
+    loader = GatewayArchiveLoader(
+        "https://gateway.example", API_KEY, BUCKET, _fake_gateway(handler)
+    )
+    plan = ArchivePlan(object_key="k.parquet", parquet_bytes=b"x", archived_ids=[1])
+
+    # When loading
+    loader.load(plan)
+
+    # Then it waited the Retry-After duration and succeeded on the retry,
+    # without ever raising
+    assert sleeps == [3.0]
+    assert attempts.count("/events/create-bucket") == 2
+
+
+def test_load_gives_up_after_repeated_429s() -> None:
+    # Given a fake gateway that never stops rate-limiting
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"Retry-After": "0"}, json={"error": "slow down"})
+
+    loader = GatewayArchiveLoader(
+        "https://gateway.example", API_KEY, BUCKET, _fake_gateway(handler)
+    )
+    plan = ArchivePlan(object_key="k.parquet", parquet_bytes=b"x", archived_ids=[1])
+
+    # When loading
+    # Then it eventually gives up rather than retrying forever
+    try:
+        loader.load(plan)
+    except httpx.HTTPStatusError as exc:
+        assert exc.response.status_code == 429
+    else:
+        raise AssertionError("expected an HTTPStatusError")

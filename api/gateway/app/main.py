@@ -41,7 +41,13 @@ def _rate_limit_key(request: Request) -> str:
     return request.headers.get("x-api-key") or get_remote_address(request)
 
 
-limiter = Limiter(key_func=_rate_limit_key)
+# headers_enabled — a rate-limited response includes Retry-After (and
+# X-RateLimit-*), so a well-behaved bulk caller (flows/vehicle_position_archiver,
+# which can legitimately need hundreds of requests for one archive pass
+# after a backlog builds up) knows exactly how long to back off instead
+# of guessing. Confirmed live: without this, a 429 carried no signal at
+# all, and that flow's own retry had no better option than crashing.
+limiter = Limiter(key_func=_rate_limit_key, headers_enabled=True)
 
 
 # Module-level, not nested inside create_app() — @limiter.limit(...)
