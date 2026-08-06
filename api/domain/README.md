@@ -53,9 +53,17 @@ class DeleteOrder(Delete[Order]):
 ```
 
 That's it. On next startup: the `order` table gets created if it doesn't
-exist, and `POST /events/get-order`, `/list-orders`, `/create-order`,
-`/update-order`, `/delete-order` all exist and work — each just does
-`Event(**request_body).handle(session)`.
+exist, and `GET /events/get-order`, `GET /events/list-orders`,
+`POST /events/create-order`, `PATCH /events/update-order`,
+`DELETE /events/delete-order` all exist and work, grouped under an
+"Order" tag in Swagger UI. Each verb base declares its own
+`__http_method__` (see `app/domain/base.py`) — `GetById`/`ListAll` are
+`GET`, `Create` is `POST`, `Update` is `PATCH`, `Delete` is `DELETE` —
+and `presentation/router_factory.py` reads it per event, so a route's
+HTTP verb always matches what it actually does. `GET`/`DELETE` events
+take their fields as query parameters (`?id=1`); everything else takes
+a JSON body. Either way it's still just
+`Event(**request_body_or_query_params).handle(session)`.
 
 ## Why this works — the two-part contract (`app/domain/base.py`)
 
@@ -75,6 +83,13 @@ exist, and `POST /events/get-order`, `/list-orders`, `/create-order`,
 
 Custom behavior beyond plain CRUD: override `handle(self, session)` on the
 leaf event class. The verb base's version is just what runs if you don't.
+
+An event that doesn't fit any of the five verbs — a command, not a
+CRUD op (`CreateBucket`, `DeleteVehiclePositionHistoryBatch`) —
+subclasses `DomainEvent[SomeEntity]` directly instead of a verb base, and inherits
+`POST` as its `__http_method__` unless it overrides that too (see
+`app/domain/object_storage/events.py`'s `PutObject`/`GetObject`/
+`ListObjects`/`DeleteObject` for examples that do).
 
 ## Non-relational data: `Document`
 
@@ -152,16 +167,36 @@ for illustration.)
 `RecordVehiclePositions` also appends one row per vehicle to
 `VehiclePositionHistory` (a `Document` keyed by autoincrement `id`, not
 `vehicle_id`, since there are many rows per vehicle) — genuinely
-append-only, so it needs its own bound. `ArchiveVehiclePositionHistory`
-(`app/domain/vehicle_position/archive_events.py`) prunes it back to the
-10 most recent rows per vehicle on a schedule (hourly, via
-`flows/vehicle_position_archiver`): a `ROW_NUMBER() OVER (PARTITION BY
-vehicle_id ORDER BY captured_at DESC)` window-function query finds
-everything past the 10 most recent per vehicle, writes it to one
-Parquet file, uploads it to MinIO (`app/infrastructure/object_storage.py`
-— needs `MINIO_ENDPOINT_URL`/`MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`/
-`MINIO_ARCHIVE_BUCKET` set), then deletes those rows from Postgres.
-Gives "how has this vehicle moved recently" without an unbounded table.
+append-only. Unlike the rest of this section, the domain does **not**
+bound that table itself: `app/domain/vehicle_position/history_events.py`
+only exposes `ListVehiclePositionHistory` (every row, unfiltered) and
+`DeleteVehiclePositionHistoryBatch` (delete exactly these ids) — no
+opinion on *when* a row is old enough to go. `flows/vehicle_position_archiver`
+owns that decision end to end (rank rows per vehicle, keep the 10 most
+recent, write the rest to Parquet on MinIO via this domain's own
+`object_storage` events, then call `DeleteVehiclePositionHistoryBatch`)
+— see that flow's own docs and `history_events.py`'s module docstring.
+
+### Where a rule belongs: domain vs. flow
+
+The domain stays a **pure CRUD/storage layer** — every event either
+persists exactly what it's given or fetches/deletes exactly what it's
+asked for, with no embedded policy about *when*, *how much*, or *why*.
+`ListVehiclePositionHistory`/`DeleteVehiclePositionHistoryBatch` above
+are the clearest example of that split; a Prefect flow is where the
+actual decision-making (thresholds, schedules, ranking) lives instead.
+
+That's a different question from "does this event do more than one
+plain CRUD operation?" — `RecordVehiclePositions`' chunked
+`INSERT ... ON CONFLICT` upsert and its "overwrite latest state,
+append history" shape aren't a policy choice that could reasonably
+change independently; they're what correctly persisting this data
+*means*, inseparable from the DB transaction itself. That kind of
+multi-step persistence mechanic stays in `handle()`. The dividing line:
+if an event's `handle()` is deciding something a product/ops person
+could reasonably want to tune or explain ("keep how many?", "how
+often?", "which one wins?"), that decision belongs in a flow calling
+generic domain primitives instead — not inside `handle()`.
 
 ### MinIO/object-storage management
 
@@ -176,12 +211,14 @@ other event.
 This is for a caller that only has a gateway API key — MinIO's own S3
 API (`minio-api.giomartins.dev`, see `infra/cloudflared/config.yml`) is
 deliberately NOT behind Cloudflare Access, but that's for SigV4-signing
-server callers like `ArchiveVehiclePositionHistory` above, which can't
-do Access's browser-redirect dance any more than a plain HTTP caller
-can. The MinIO console (`minio.giomartins.dev`) IS behind Access, which
-blocks that same kind of caller from the opposite direction. These
-events are the answer either way: manage MinIO through the domain,
-authenticated the same way every other event is.
+server callers (boto3, `get_s3_client()` in `app/infrastructure/object_storage.py`),
+which can't do Access's browser-redirect dance any more than a plain
+HTTP caller can. The MinIO console (`minio.giomartins.dev`) IS behind
+Access, which blocks that same kind of caller from the opposite
+direction. These events are the answer either way: manage MinIO
+through the domain, authenticated the same way every other event is —
+`flows/vehicle_position_archiver` itself is exactly such a caller, using
+`PutObject`/`CreateBucket` instead of talking to MinIO directly.
 
 ## Known limitation: schema evolution
 

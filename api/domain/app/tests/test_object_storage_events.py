@@ -129,7 +129,7 @@ def test_put_then_get_object_round_trips_binary_data(client: TestClient) -> None
     client.post("/events/create-bucket", json={"bucket": "reports"})
     payload = base64.b64encode(b"\x00\x01binary-data").decode("ascii")
 
-    put_response = client.post(
+    put_response = client.put(
         "/events/put-object",
         json={
             "bucket": "reports",
@@ -138,8 +138,8 @@ def test_put_then_get_object_round_trips_binary_data(client: TestClient) -> None
             "content_type": "application/octet-stream",
         },
     )
-    get_response = client.post(
-        "/events/get-object", json={"bucket": "reports", "key": "2026/report.bin"}
+    get_response = client.get(
+        "/events/get-object", params={"bucket": "reports", "key": "2026/report.bin"}
     )
 
     assert put_response.status_code == 200
@@ -150,8 +150,8 @@ def test_put_then_get_object_round_trips_binary_data(client: TestClient) -> None
 
 
 def test_get_object_returns_none_for_missing_key(client: TestClient) -> None:
-    response = client.post(
-        "/events/get-object", json={"bucket": "reports", "key": "does-not-exist"}
+    response = client.get(
+        "/events/get-object", params={"bucket": "reports", "key": "does-not-exist"}
     )
 
     assert response.status_code == 200
@@ -161,12 +161,12 @@ def test_get_object_returns_none_for_missing_key(client: TestClient) -> None:
 def test_list_objects_returns_keys_under_prefix(client: TestClient) -> None:
     client.post("/events/create-bucket", json={"bucket": "reports"})
     for key in ["2026/a.bin", "2026/b.bin", "2025/c.bin"]:
-        client.post(
+        client.put(
             "/events/put-object",
             json={"bucket": "reports", "key": key, "data_base64": base64.b64encode(b"x").decode()},
         )
 
-    response = client.post("/events/list-objects", json={"bucket": "reports", "prefix": "2026/"})
+    response = client.get("/events/list-objects", params={"bucket": "reports", "prefix": "2026/"})
 
     keys = sorted(item["key"] for item in response.json())
     assert keys == ["2026/a.bin", "2026/b.bin"]
@@ -174,7 +174,7 @@ def test_list_objects_returns_keys_under_prefix(client: TestClient) -> None:
 
 def test_delete_object_removes_it(client: TestClient) -> None:
     client.post("/events/create-bucket", json={"bucket": "reports"})
-    client.post(
+    client.put(
         "/events/put-object",
         json={
             "bucket": "reports",
@@ -183,10 +183,10 @@ def test_delete_object_removes_it(client: TestClient) -> None:
         },
     )
 
-    delete_response = client.post(
-        "/events/delete-object", json={"bucket": "reports", "key": "gone.bin"}
+    delete_response = client.delete(
+        "/events/delete-object", params={"bucket": "reports", "key": "gone.bin"}
     )
-    get_response = client.post("/events/get-object", json={"bucket": "reports", "key": "gone.bin"})
+    get_response = client.get("/events/get-object", params={"bucket": "reports", "key": "gone.bin"})
 
     assert delete_response.json() is True
     assert get_response.json() is None

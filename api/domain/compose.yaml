@@ -35,17 +35,16 @@ services:
       # CF_ACCESS_CLIENT_SECRET, NOT OTEL_EXPORTER_OTLP_HEADERS directly,
       # or this template silently overwrites it with empty values.
       OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id=${CF_ACCESS_CLIENT_ID:-},CF-Access-Client-Secret=${CF_ACCESS_CLIENT_SECRET:-}"
-      # ArchiveVehiclePositionHistory's Parquet archive target — MinIO
-      # is a separate Arcane project (the observability stack), so this
-      # reaches it via its own public S3 API hostname (not behind
-      # Cloudflare Access — boto3 can't do that header dance any more
-      # than the Docker CLI could, see infra/cloudflared/config.yml's
-      # registry.giomartins.dev comment) rather than joining that
-      # project's docker network directly.
+      # Target for app/domain/object_storage/events.py's CreateBucket/
+      # PutObject/etc. — MinIO is a separate Arcane project (the
+      # observability stack), so this reaches it via its own public S3
+      # API hostname (not behind Cloudflare Access — boto3 can't do that
+      # header dance any more than the Docker CLI could, see
+      # infra/cloudflared/config.yml's registry.giomartins.dev comment)
+      # rather than joining that project's docker network directly.
       MINIO_ENDPOINT_URL: ${MINIO_ENDPOINT_URL:-https://minio-api.giomartins.dev}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-      MINIO_ARCHIVE_BUCKET: ${MINIO_ARCHIVE_BUCKET:-vehicle-position-archive}
 
   postgres:
     image: postgres:${POSTGRES_VERSION:-17-alpine}

@@ -1,36 +1,57 @@
-"""Same class-based, Prefect-agnostic shape as flows/bus_gps_poller
-(etl/ + a thin @task wrapper), just with only a Load stage: all the
-actual work (prune-to-10-per-vehicle, write Parquet, upload to MinIO)
-happens in the domain API's own ArchiveVehiclePositionHistory.handle()
-— this flow only exists to dispatch that event on a schedule, so
-there's nothing to extract or transform.
+"""Same class-based, Prefect-agnostic ETL shape as flows/bus_gps_poller.
+Unlike bus_gps_poller, the "business rule" this flow enforces — keep
+only the `keep_per_vehicle` most recent VehiclePositionHistory rows per
+vehicle — used to live server-side in api/domain. It moved here so the
+domain stays a pure CRUD/storage layer with no embedded policy; see
+api/domain/app/domain/vehicle_position/history_events.py's module
+docstring for the full reasoning.
 """
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from prefect import flow, task
 
+from flows.vehicle_position_archiver.etl.extract import GatewayHistoryExtractor
 from flows.vehicle_position_archiver.etl.load import GatewayArchiveLoader
+from flows.vehicle_position_archiver.etl.transform import ArchivePlanner
+
+if TYPE_CHECKING:
+    from flows.vehicle_position_archiver.schemas import ArchivePlan, VehiclePositionHistoryRow
 
 
 @task(retries=3, retry_delay_seconds=30)
-def load(gateway_url: str, api_key: str) -> None:
-    GatewayArchiveLoader(gateway_url, api_key).load(None)
+def extract(gateway_url: str, api_key: str) -> list[VehiclePositionHistoryRow]:
+    return GatewayHistoryExtractor(gateway_url, api_key).extract()
+
+
+@task
+def transform(rows: list[VehiclePositionHistoryRow], keep_per_vehicle: int) -> ArchivePlan:
+    return ArchivePlanner(keep_per_vehicle).transform(rows)
+
+
+@task(retries=3, retry_delay_seconds=30)
+def load(plan: ArchivePlan, gateway_url: str, api_key: str, archive_bucket: str) -> None:
+    GatewayArchiveLoader(gateway_url, api_key, archive_bucket).load(plan)
 
 
 @flow(log_prints=True)
 def vehicle_position_archiver(
     gateway_url: str = "https://gateway.giomartins.dev",
     api_key: str = "",
+    keep_per_vehicle: int = 10,
+    archive_bucket: str = "vehicle-position-archive",
 ) -> None:
-    """Dispatches ArchiveVehiclePositionHistory hourly — prunes
-    VehiclePositionHistory down to the 10 most recent rows per vehicle,
-    archiving the rest to Parquet on MinIO (see
-    api/domain/app/domain/vehicle_position/archive_events.py).
-    Independent of how often positions are actually recorded
-    (bus_gps_poller, brt_gps_poller both write to the same table) —
-    this just keeps it bounded regardless of their cadence."""
-    load(gateway_url, api_key)
+    """Keeps VehiclePositionHistory down to the `keep_per_vehicle` most
+    recent rows per vehicle — anything older gets written to one Parquet
+    file on MinIO, then deleted from Postgres. Independent of how often
+    positions themselves get recorded (bus_gps_poller, brt_gps_poller
+    both write to the same table) — this just keeps it bounded
+    regardless of their cadence."""
+    rows = extract(gateway_url, api_key)
+    plan = transform(rows, keep_per_vehicle)
+    load(plan, gateway_url, api_key, archive_bucket)
 
 
 if __name__ == "__main__":

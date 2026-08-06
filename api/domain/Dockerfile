@@ -7,14 +7,6 @@ FROM python:3.14-slim
 WORKDIR /app
 
 COPY domain/requirements.txt .
-# pyarrow alone is ~120MB uncompressed (native Arrow C++ libraries) —
-# installed in its own layer so its blob doesn't get bundled with every
-# other dependency into one oversized layer. Confirmed live: a single
-# combined `pip install -r requirements.txt` layer tripped Cloudflare's
-# per-request size cap (413 Payload Too Large) pushing through the CI
-# registry proxy. This is a no-op on the second install (already
-# satisfied) — it's here purely to split the layer boundary.
-RUN pip install --no-cache-dir pyarrow
 RUN pip install --no-cache-dir -r requirements.txt \
     && opentelemetry-bootstrap -a install
 

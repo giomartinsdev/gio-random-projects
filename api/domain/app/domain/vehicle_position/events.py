@@ -56,9 +56,10 @@ class RecordVehiclePositions(DomainEvent[VehiclePosition]):
     insert per poll, since only the current picture is ever needed.
     Bounds both tables to fleet size regardless of poll frequency. Also
     appends one row per vehicle to VehiclePositionHistory (unbounded by
-    this event alone — ArchiveVehiclePositionHistory is what keeps that
-    table down to the 10 most recent rows per vehicle, archiving the
-    rest to Parquet on MinIO)."""
+    this event alone — flows/vehicle_position_archiver is what keeps
+    that table down to the 10 most recent rows per vehicle, archiving
+    the rest to Parquet on MinIO; see history_events.py for the
+    policy-free primitives that flow calls to do it)."""
 
     positions: list[VehiclePositionInput]
 

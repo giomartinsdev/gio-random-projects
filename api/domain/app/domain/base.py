@@ -86,6 +86,12 @@ class DomainEvent[TEntity: Entity](BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     __entity__: ClassVar[type[Entity]]
+    # router_factory.py reads this to pick the route's actual HTTP verb —
+    # POST is the right default for anything that isn't a plain
+    # read/delete (a create, an upsert, a one-off command like
+    # CreateBucket). The verb bases below override it for the cases that
+    # have a more specific, semantically correct verb.
+    __http_method__: ClassVar[str] = "POST"
 
     def __init_subclass__(cls, **kwargs: Any) -> None:  # noqa: ANN401 — matches object.__init_subclass__'s own signature
         super().__init_subclass__(**kwargs)
@@ -109,6 +115,8 @@ class DomainEvent[TEntity: Entity](BaseModel):
 class GetById[TEntity: Entity](DomainEvent[TEntity]):
     """Fetch a single entity by primary key. Returns None if not found."""
 
+    __http_method__: ClassVar[str] = "GET"
+
     id: int
 
     def handle(self, session: Session) -> TEntity | None:
@@ -121,6 +129,8 @@ class GetById[TEntity: Entity](DomainEvent[TEntity]):
 
 class ListAll[TEntity: Entity](DomainEvent[TEntity]):
     """Fetch every row of the bound entity."""
+
+    __http_method__: ClassVar[str] = "GET"
 
     def handle(self, session: Session) -> list[TEntity]:
         return cast("list[TEntity]", list(session.exec(select(self.__entity__)).all()))
@@ -145,6 +155,8 @@ class Update[TEntity: Entity](DomainEvent[TEntity]):
     with a None default on the leaf event so callers can omit what they're
     not changing. Returns None if the id doesn't exist."""
 
+    __http_method__: ClassVar[str] = "PATCH"
+
     id: int
 
     def handle(self, session: Session) -> TEntity | None:
@@ -161,6 +173,8 @@ class Update[TEntity: Entity](DomainEvent[TEntity]):
 
 class Delete[TEntity: Entity](DomainEvent[TEntity]):
     """Delete a row by id. Returns whether a row was actually deleted."""
+
+    __http_method__: ClassVar[str] = "DELETE"
 
     id: int
 

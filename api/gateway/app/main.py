@@ -3,8 +3,8 @@
 # name — invisible to reportUnusedFunction's static analysis.
 #
 # slowapi ships no type stubs pyright can find, same category of gap as
-# pyarrow elsewhere in this repo (see api/domain's archive_events.py) —
-# reportUnknownMemberType/reportUntypedFunctionDecorator on
+# pyarrow elsewhere in this repo (see flows/vehicle_position_archiver's
+# etl/transform.py) — reportUnknownMemberType/reportUntypedFunctionDecorator on
 # @limiter.limit(...) below are both intrinsic to that, not a real typing
 # gap on our side.
 # pyright: reportUnusedFunction=false, reportUnknownMemberType=false, reportUntypedFunctionDecorator=false

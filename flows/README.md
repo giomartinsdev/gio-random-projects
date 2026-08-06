@@ -127,19 +127,34 @@ job). The same job also prunes any deployment whose entry gets removed
 from `prefect.yaml` later (`.github/scripts/prune_prefect_deployments.py`)
 — `prefect deploy --all` alone only ever creates/updates, never deletes.
 
-### A Load-only flow: `vehicle_position_archiver/`
+### Business rules live in the flow, not the domain: `vehicle_position_archiver/`
 
-Not every flow has all three stages — `vehicle_position_archiver/` only
-has `etl/load.py`'s `GatewayArchiveLoader(Loader[None])`, no
-`extract.py`/`transform.py`. It's a scheduled trigger, not a data
-pipeline: the whole job is "dispatch `ArchiveVehiclePositionHistory`
-through the gateway," and all the actual work (prune-to-10-per-vehicle,
-write Parquet, upload to MinIO) happens in the domain API's own
-`handle()` — there's nothing here to fetch or reshape, so forcing in an
-Extractor/Transformer would just be dead abstraction. Same spirit
-elsewhere still applies: a Prefect-agnostic, `Loggable`-mixed-in class
-under `etl/`, `flow.py` wraps it in a `@task`, tests inside the flow's
-own folder.
+The domain API (`api/domain`) is deliberately kept to CRUD/storage
+mechanics only — no embedded policy about *when* or *what* to prune,
+archive, or otherwise decide. `vehicle_position_archiver/` is the
+clearest example: it owns the actual rule ("keep only the 10 most
+recent VehiclePositionHistory rows per vehicle") end to end —
+
+- `etl/extract.py` — `GatewayHistoryExtractor` pulls every history row
+  via the domain's `ListVehiclePositionHistory` event (a plain, opinion-free
+  `GET`).
+- `etl/transform.py` — `ArchivePlanner` does the actual ranking (group by
+  vehicle, keep the newest N, everything else is "to archive") and
+  builds the Parquet bytes in memory — logic that used to be a
+  `ROW_NUMBER() OVER (...)` query inside the domain itself.
+- `etl/load.py` — `GatewayArchiveLoader` uploads that Parquet file via
+  the domain's generic `object_storage` events (`CreateBucket`,
+  `PutObject`), then deletes the archived rows via
+  `DeleteVehiclePositionHistoryBatch` — again, generic "delete these
+  ids" with no policy baked in.
+
+The domain only ever sees "list everything" and "delete these specific
+ids" — it has no idea *why*. See
+`api/domain/app/domain/vehicle_position/history_events.py`'s module
+docstring for the reasoning, and apply the same split for any future
+domain: if an event's `handle()` is making a decision rather than just
+persisting or fetching what it's told to, that decision belongs in a
+flow instead.
 
 ## Tracing
 

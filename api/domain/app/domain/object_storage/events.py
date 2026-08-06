@@ -6,15 +6,17 @@ MinIO's S3 API directly.
 
 MinIO's own S3 API (minio-api.giomartins.dev, see
 infra/cloudflared/config.yml) is deliberately NOT behind Cloudflare
-Access, but that's for SigV4-signing server callers like
-ArchiveVehiclePositionHistory (app/domain/vehicle_position/archive_events.py)
-that hold real MinIO credentials — it can't do Access's browser-redirect
+Access, but that's for SigV4-signing server callers that hold real
+MinIO credentials (this module's own get_s3_client() calls, made by
+this domain process itself) — it can't do Access's browser-redirect
 dance any more than a plain HTTP caller can. The console
 (minio.giomartins.dev) IS behind Access, which blocks exactly that kind
 of caller. The events below are the answer for "I need to manage MinIO
 from something that only has a gateway API key, not MinIO credentials
 or a browser session" — same shape as every other domain event, proxied
-through gateway.giomartins.dev.
+through gateway.giomartins.dev. flows/vehicle_position_archiver is
+exactly such a caller: it uses CreateBucket/PutObject here instead of
+talking to MinIO directly.
 
 Binary payloads travel base64-encoded, since the transport here is a
 JSON request/response body like every other event.
@@ -26,7 +28,7 @@ import base64
 from datetime import (
     datetime,  # noqa: TC003 — pydantic resolves field annotations at class-creation time, not just for static typing
 )
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from botocore.exceptions import ClientError
 from pydantic import BaseModel
@@ -68,6 +70,8 @@ class PutObject(DomainEvent[StorageObject]):
     """Uploads one object. `data_base64` is the object body, base64-encoded
     for JSON transport."""
 
+    __http_method__: ClassVar[str] = "PUT"
+
     bucket: str
     key: str
     data_base64: str
@@ -94,6 +98,8 @@ class GetObject(DomainEvent[StorageObject]):
     """Fetches one object's body + content type. Returns None if the key
     doesn't exist — same "absence is a value, not an error" convention as
     GetById in app/domain/base.py."""
+
+    __http_method__: ClassVar[str] = "GET"
 
     bucket: str
     key: str
@@ -124,6 +130,8 @@ class ListObjects(DomainEvent[StorageObject]):
     ListObjectsV2 (max_keys); pagination past that isn't needed yet by
     any caller."""
 
+    __http_method__: ClassVar[str] = "GET"
+
     bucket: str
     prefix: str = ""
     max_keys: int = 1000
@@ -151,6 +159,8 @@ class DeleteObject(DomainEvent[StorageObject]):
     """Deletes one object. Always returns True — S3's (and MinIO's)
     DeleteObject succeeds whether or not the key existed, so there's no
     meaningful False case to report."""
+
+    __http_method__: ClassVar[str] = "DELETE"
 
     bucket: str
     key: str

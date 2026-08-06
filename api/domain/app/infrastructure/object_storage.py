@@ -1,10 +1,12 @@
-"""S3-compatible client for MinIO. Used by
-app/domain/vehicle_position/archive_events.py's
-ArchiveVehiclePositionHistory to archive pruned position history as
-Parquet, and by app/domain/object_storage/events.py for general
-bucket/object management. A thin wrapper (not a class) for the same
-reason infrastructure/db.py's engine is a module-level singleton: one
-client, created once, reused across requests.
+"""S3-compatible client for MinIO. Used by app/domain/object_storage's
+events (CreateBucket/PutObject/GetObject/ListObjects/DeleteObject) — the
+domain's only object-storage-facing code, now that archiving policy
+(which bucket, which key naming, when to prune) has moved to
+flows/vehicle_position_archiver, which calls those same generic events
+through the gateway instead of touching MinIO directly. A thin wrapper
+(not a class) for the same reason infrastructure/db.py's engine is a
+module-level singleton: one client, created once, reused across
+requests.
 """
 
 from __future__ import annotations
@@ -16,8 +18,6 @@ import boto3
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
-
-ARCHIVE_BUCKET = os.environ.get("MINIO_ARCHIVE_BUCKET", "vehicle-position-archive")
 
 
 def get_s3_client() -> S3Client:

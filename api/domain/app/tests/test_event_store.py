@@ -92,9 +92,9 @@ def test_each_dispatched_event_gets_its_own_record(
 ) -> None:
     client, engine = client_and_engine
 
-    # Given a position recorded, then an archive pass run over it
+    # Given a position recorded, then its history listed
     client.post("/events/record-vehicle-positions", json={"positions": [_position("B1")]})
-    client.post("/events/archive-vehicle-position-history", json={})
+    client.get("/events/list-vehicle-position-history")
 
     # When reading the event store
     with Session(engine) as session:
@@ -102,4 +102,4 @@ def test_each_dispatched_event_gets_its_own_record(
 
     # Then both dispatches were recorded, in order
     event_types = [r.event_type for r in records]
-    assert event_types == ["RecordVehiclePositions", "ArchiveVehiclePositionHistory"]
+    assert event_types == ["RecordVehiclePositions", "ListVehiclePositionHistory"]
