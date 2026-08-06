@@ -75,3 +75,15 @@ jobs:
             {"CF-Access-Client-Id": "${{ secrets.CF_ACCESS_CLIENT_ID }}",
             "CF-Access-Client-Secret": "${{ secrets.CF_ACCESS_CLIENT_SECRET }}"}
         run: prefect deploy --all
+
+      - name: Prune deployments removed from prefect.yaml
+        # `prefect deploy --all` above only creates/updates deployments —
+        # it never deletes one whose flow (or prefect.yaml entry) was
+        # removed from the repo. See prune_prefect_deployments.py's own
+        # docstring for why that matters.
+        env:
+          PREFECT_API_URL: https://prefect.giomartins.dev/api
+          PREFECT_CLIENT_CUSTOM_HEADERS: >-
+            {"CF-Access-Client-Id": "${{ secrets.CF_ACCESS_CLIENT_ID }}",
+            "CF-Access-Client-Secret": "${{ secrets.CF_ACCESS_CLIENT_SECRET }}"}
+        run: python .github/scripts/prune_prefect_deployments.py prefect.yaml

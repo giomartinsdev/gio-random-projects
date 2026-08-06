@@ -9,18 +9,18 @@ flows/
     extractor.py                 # class Extractor(Loggable, ABC, Generic[TOut])
     transformer.py                # class Transformer(Loggable, ABC, Generic[TIn, TOut])
     loader.py                     # class Loader(Loggable, ABC, Generic[TIn])
-  greeting/                   # one folder per flow, named after the flow (no "etl" suffix)
+  bus_gps_poller/             # one folder per flow, named after the flow (no "etl" suffix)
     schemas.py                  # Pydantic models — every stage's input & output
     etl/
-      extract.py                  # class NameExtractor(Extractor[RawName])
-      transform.py                  # class GreetingTransformer(Transformer[RawName, GreetingResult])
-      load.py                        # class GreetingLoader(Loader[GreetingResult])
+      extract.py                  # class SppoExtractor(Extractor[list[dict[str, Any]]])
+      transform.py                  # class BusPositionTransformer(Transformer[list[dict], list[BusPositionCapture]])
+      load.py                        # class GatewayBusPositionLoader(Loader[list[BusPositionCapture]])
     flow.py                     # @flow + thin @task wrappers orchestrating E → T → L
     tests/                      # this flow's tests — Gherkin + GWT unit tests
       features/
-        greeting.feature
+        bus_gps_poller.feature
       steps/
-        test_greeting_steps.py
+        test_bus_gps_poller_steps.py
       unit/
         test_extract.py
         test_transform.py
@@ -28,7 +28,7 @@ flows/
   requirements.txt
 ```
 
-`greeting/` is the reference implementation — copy its shape for a new flow.
+`bus_gps_poller/` is the reference implementation — copy its shape for a new flow.
 
 ## Pattern
 
@@ -53,7 +53,7 @@ flows/
    `Loggable` mixin gives every `Extractor`/`Transformer`/`Loader` instance
    a `self.logger` with the same format, no per-flow setup needed.
 
-5. **Tests live inside the flow's own folder** (`greeting/tests/`), not a
+5. **Tests live inside the flow's own folder** (`bus_gps_poller/tests/`), not a
    top-level `tests/` dir — they're that flow's tests, nothing else's.
    - `tests/features/*.feature` — Gherkin scenarios (Given/When/Then),
      one feature file describing the flow's behavior end to end.
@@ -122,22 +122,24 @@ def my_flow(payload: MyInput) -> MyResult: ...
 
 Then add it to `prefect.yaml`'s `deployments:` list, with
 `work_pool.job_variables.networks: ["prefect-net"]`. Push to `main` — CI
-deploys it automatically (`.github/workflows/prefect-deploy.yml`).
+deploys it automatically (`.github/workflows/flows-ci.yml`'s `deploy`
+job). The same job also prunes any deployment whose entry gets removed
+from `prefect.yaml` later (`.github/scripts/prune_prefect_deployments.py`)
+— `prefect deploy --all` alone only ever creates/updates, never deletes.
 
-### When a flow isn't ETL: `user_crud_test/`
+### A Load-only flow: `vehicle_position_archiver/`
 
-`user_crud_test/` deliberately doesn't have an `etl/` folder — it's a
-smoke test exercising `api/gateway`'s User CRUD events end to end, not
-a data pipeline, so Extract/Transform/Load doesn't fit. Same spirit
-elsewhere still applies: a Prefect-agnostic class (`client.py`'s
-`GatewayClient` — no `@task`, no `prefect` import, unit-testable alone),
-`flow.py` wraps each CRUD step in its own `@task`, typed schemas, tests
-inside the flow's own folder. Secrets (the gateway API key) are supplied
-via the deployment's own `parameters:` in `prefect.yaml` templating
-`{{ prefect.blocks.secret.gateway-api-key }}` — not `Secret.load()`
-inside the flow — matching how `job_variables.env` already does this
-for the OTel headers, and keeping the flow callable/testable without a
-Prefect server or blocks available.
+Not every flow has all three stages — `vehicle_position_archiver/` only
+has `etl/load.py`'s `GatewayArchiveLoader(Loader[None])`, no
+`extract.py`/`transform.py`. It's a scheduled trigger, not a data
+pipeline: the whole job is "dispatch `ArchiveVehiclePositionHistory`
+through the gateway," and all the actual work (prune-to-10-per-vehicle,
+write Parquet, upload to MinIO) happens in the domain API's own
+`handle()` — there's nothing here to fetch or reshape, so forcing in an
+Extractor/Transformer would just be dead abstraction. Same spirit
+elsewhere still applies: a Prefect-agnostic, `Loggable`-mixed-in class
+under `etl/`, `flow.py` wraps it in a `@task`, tests inside the flow's
+own folder.
 
 ## Tracing
 

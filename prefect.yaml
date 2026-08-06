@@ -5,8 +5,9 @@
 # clones this repo fresh from git on every run (see the `pull` step),
 # so a new deployment is just a git push + `prefect deploy`.
 #
-# CI runs `prefect deploy --all` on every push to flows/** or this file
-# — see .github/workflows/prefect-deploy.yml.
+# CI runs `prefect deploy --all` (and prunes any deployment whose entry
+# was removed from here — see .github/scripts/prune_prefect_deployments.py)
+# on every push to flows/** or this file — see .github/workflows/flows-ci.yml.
 
 name: gio-random-projects
 prefect-version: "3"
@@ -30,67 +31,6 @@ pull:
       script: opentelemetry-bootstrap -a install
 
 deployments:
-  - name: greeting
-    entrypoint: flows/greeting/flow.py:greeting
-    work_pool:
-      name: docker-pool
-      job_variables:
-        networks: ["prefect-net"]
-        # Auto-traces every task/flow run with zero code changes — Prefect
-        # generates the spans itself (see flows/README.md "Tracing"),
-        # `opentelemetry-instrument` just has to be in front of the
-        # process for them to actually export anywhere.
-        command: "opentelemetry-instrument prefect flow-run execute"
-        env:
-          OTEL_SERVICE_NAME: greeting
-          OTEL_TRACES_EXPORTER: otlp
-          # Ships this flow run's logging output (stdlib `logging`, which is
-          # what Prefect's own get_run_logger()/log_prints uses) to Loki as
-          # OTLP logs — same collector, same pipeline as traces. Without
-          # this the Loki datasource has nothing from Prefect to show.
-          OTEL_LOGS_EXPORTER: otlp
-          # Stamps trace_id/span_id onto every log record emitted while a
-          # span is active, so a log line in Loki can be jumped to from the
-          # matching span in Tempo (and vice versa) instead of correlating
-          # by eye on timestamps.
-          OTEL_PYTHON_LOG_CORRELATION: "true"
-          OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-          OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
-          OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id={{ prefect.blocks.secret.cf-acess-client-id }},CF-Access-Client-Secret={{ prefect.blocks.secret.cf-acess-client-secret }}"
-          # BatchSpanProcessor's default 5s flush interval loses spans on a
-          # short-lived flow run (the container exits before it fires) —
-          # confirmed by testing: without this, traces were silently
-          # dropped about half the time.
-          OTEL_BSP_SCHEDULE_DELAY: "100"
-          OTEL_BLRP_SCHEDULE_DELAY: "100"
-    schedule: null
-
-  - name: user-crud-test
-    entrypoint: flows/user_crud_test/flow.py:user_crud_test
-    parameters:
-      gateway_url: https://gateway.giomartins.dev
-      # Not Secret.load() inside the flow (see flows/README.md) — supplied
-      # here instead, same templating as the OTel headers below. Create
-      # this Secret block in the Prefect UI (Blocks tab) with one of the
-      # gateway's own GATEWAY_API_KEYS values.
-      api_key: "{{ prefect.blocks.secret.gateway-api-key }}"
-    work_pool:
-      name: docker-pool
-      job_variables:
-        networks: ["prefect-net"]
-        command: "opentelemetry-instrument prefect flow-run execute"
-        env:
-          OTEL_SERVICE_NAME: user-crud-test
-          OTEL_TRACES_EXPORTER: otlp
-          OTEL_LOGS_EXPORTER: otlp
-          OTEL_PYTHON_LOG_CORRELATION: "true"
-          OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-          OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
-          OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id={{ prefect.blocks.secret.cf-acess-client-id }},CF-Access-Client-Secret={{ prefect.blocks.secret.cf-acess-client-secret }}"
-          OTEL_BSP_SCHEDULE_DELAY: "100"
-          OTEL_BLRP_SCHEDULE_DELAY: "100"
-    schedule: null
-
   - name: bus-gps-poller
     entrypoint: flows/bus_gps_poller/flow.py:bus_gps_poller
     parameters:

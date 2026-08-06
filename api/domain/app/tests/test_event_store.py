@@ -53,15 +53,26 @@ def client_and_engine() -> Generator[tuple[TestClient, Engine]]:
         yield test_client, engine
 
 
+def _position(vehicle_id: str) -> dict[str, object]:
+    return {
+        "mode": "sppo",
+        "line_code": "606",
+        "vehicle_id": vehicle_id,
+        "latitude": -22.9,
+        "longitude": -43.2,
+        "speed_kmh": 20.0,
+        "captured_at": "2026-08-06T00:00:00Z",
+        "color_hex": None,
+    }
+
+
 def test_dispatching_an_event_records_it_in_the_event_store(
     client_and_engine: tuple[TestClient, Engine],
 ) -> None:
     client, engine = client_and_engine
 
-    # Given a CreateUser event dispatched through the API
-    created = client.post(
-        "/events/create-user", json={"name": "gio", "email": "gio@example.com"}
-    ).json()
+    # Given a RecordVehiclePositions event dispatched through the API
+    client.post("/events/record-vehicle-positions", json={"positions": [_position("B1")]})
 
     # When reading the event store directly
     with Session(engine) as session:
@@ -70,11 +81,10 @@ def test_dispatching_an_event_records_it_in_the_event_store(
     # Then exactly one record exists, capturing the event, its entity, and its result
     assert len(records) == 1
     record = records[0]
-    assert record.event_type == "CreateUser"
-    assert record.entity_type == "User"
-    assert '"name":"gio"' in record.payload.replace(" ", "")
-    assert record.result is not None
-    assert f'"id":{created["id"]}' in record.result.replace(" ", "")
+    assert record.event_type == "RecordVehiclePositions"
+    assert record.entity_type == "VehiclePosition"
+    assert '"vehicle_id":"B1"' in record.payload.replace(" ", "")
+    assert record.result == "1"
 
 
 def test_each_dispatched_event_gets_its_own_record(
@@ -82,17 +92,14 @@ def test_each_dispatched_event_gets_its_own_record(
 ) -> None:
     client, engine = client_and_engine
 
-    # Given a user created, then fetched, then updated
-    created = client.post(
-        "/events/create-user", json={"name": "gio", "email": "gio@example.com"}
-    ).json()
-    client.post("/events/get-user", json={"id": created["id"]})
-    client.post("/events/update-user", json={"id": created["id"], "name": "gio martins"})
+    # Given a position recorded, then an archive pass run over it
+    client.post("/events/record-vehicle-positions", json={"positions": [_position("B1")]})
+    client.post("/events/archive-vehicle-position-history", json={})
 
     # When reading the event store
     with Session(engine) as session:
         records = session.exec(select(DomainEventRecord)).all()
 
-    # Then all three dispatches were recorded, in order
+    # Then both dispatches were recorded, in order
     event_types = [r.event_type for r in records]
-    assert event_types == ["CreateUser", "GetUser", "UpdateUser"]
+    assert event_types == ["RecordVehiclePositions", "ArchiveVehiclePositionHistory"]
