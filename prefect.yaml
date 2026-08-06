@@ -118,3 +118,31 @@ deployments:
     schedule:
       cron: "*/5 8-18 * * 1-5"
       timezone: "America/Sao_Paulo"
+
+  - name: brt-gps-poller
+    entrypoint: flows/brt_gps_poller/flow.py:brt_gps_poller
+    parameters:
+      gateway_url: https://gateway.giomartins.dev
+      api_key: "{{ prefect.blocks.secret.gateway-api-key }}"
+    work_pool:
+      name: docker-pool
+      job_variables:
+        networks: ["prefect-net"]
+        command: "opentelemetry-instrument prefect flow-run execute"
+        env:
+          OTEL_SERVICE_NAME: brt-gps-poller
+          OTEL_TRACES_EXPORTER: otlp
+          OTEL_LOGS_EXPORTER: otlp
+          OTEL_PYTHON_LOG_CORRELATION: "true"
+          OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+          OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
+          OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id={{ prefect.blocks.secret.cf-acess-client-id }},CF-Access-Client-Secret={{ prefect.blocks.secret.cf-acess-client-secret }}"
+          OTEL_BSP_SCHEDULE_DELAY: "100"
+          OTEL_BLRP_SCHEDULE_DELAY: "100"
+    # Same cadence as bus-gps-poller — BRT has no window to align to
+    # (it's always a live snapshot), so this is just "keep it
+    # reasonably fresh during business hours" rather than "cover a
+    # window with no gap".
+    schedule:
+      cron: "*/5 8-18 * * 1-5"
+      timezone: "America/Sao_Paulo"

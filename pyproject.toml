@@ -58,6 +58,10 @@ reportUnusedFunction = false
 root = "flows/bus_gps_poller/tests/steps"
 reportUnusedFunction = false
 
+[[tool.pyright.executionEnvironments]]
+root = "flows/brt_gps_poller/tests/steps"
+reportUnusedFunction = false
+
 [tool.pytest.ini_options]
 # Tests live inside each flow's own tests/ folder (flows/<flow>/tests/),
 # not a top-level tests/ dir — they're that flow's tests, not the repo's.
