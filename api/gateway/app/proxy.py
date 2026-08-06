@@ -6,7 +6,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from fastapi import HTTPException
 from fastapi.responses import Response
+
+from app.config import settings
 
 if TYPE_CHECKING:
     import httpx
@@ -36,13 +39,33 @@ _STRIPPED_RESPONSE_HEADERS = {
 }
 
 
+async def _read_body_within_limit(request: Request, max_bytes: int) -> bytes:
+    # A trusted Content-Length lets us reject oversized requests before
+    # reading anything, but it's not load-bearing for the cap itself —
+    # it can be absent (chunked transfer) or simply wrong, so the actual
+    # enforcement below counts bytes as they're streamed off the wire
+    # rather than trusting the header.
+    content_length = request.headers.get("content-length")
+    if content_length is not None and content_length.isdigit() and int(content_length) > max_bytes:
+        raise HTTPException(status_code=413, detail="Request body too large")
+
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(status_code=413, detail="Request body too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 async def forward(
     request: Request, client: httpx.AsyncClient, upstream_url: str, path: str
 ) -> Response:
     headers = {
         k: v for k, v in request.headers.items() if k.lower() not in _STRIPPED_REQUEST_HEADERS
     }
-    body = await request.body()
+    body = await _read_body_within_limit(request, settings.max_body_bytes)
 
     upstream_response = await client.request(
         method=request.method,

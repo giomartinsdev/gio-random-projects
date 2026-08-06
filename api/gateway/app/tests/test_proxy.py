@@ -122,3 +122,62 @@ def test_health_endpoint_does_not_require_auth(gateway_client: TestClient) -> No
 
     # Then it's reachable without credentials (used for container healthchecks)
     assert response.status_code == 200
+
+
+def test_oversized_body_is_rejected_before_reaching_upstream(
+    gateway_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given a cap far smaller than the body about to be sent
+    monkeypatch.setattr(settings, "max_body_bytes", 10)
+
+    # When posting a body over that cap
+    response = gateway_client.post(
+        "/events/create-user",
+        json={"name": "x" * 100, "email": "gio@example.com"},
+        headers={"X-API-Key": VALID_KEY},
+    )
+
+    # Then the gateway rejects it itself — a leaked key or buggy client
+    # can't force it (or the upstream it forwards to) to buffer an
+    # unbounded body in memory
+    assert response.status_code == 413
+
+
+def test_body_within_the_cap_is_still_forwarded(
+    gateway_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given a cap comfortably above the body about to be sent
+    monkeypatch.setattr(settings, "max_body_bytes", 10_000)
+
+    # When posting a small body
+    response = gateway_client.post(
+        "/events/create-user",
+        json={"name": "gio", "email": "gio@example.com"},
+        headers={"X-API-Key": VALID_KEY},
+    )
+
+    # Then it's forwarded normally
+    assert response.status_code == 200
+    assert response.json() == {"created": "gio"}
+
+
+def test_requests_over_the_rate_limit_are_rejected(
+    gateway_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given a low limit and a key unique to this test (the limiter's
+    # counters are keyed per API key and shared process-wide across
+    # tests, so reusing VALID_KEY here would double-count against
+    # whatever other tests already sent with it)
+    monkeypatch.setattr(settings, "rate_limit", "2/minute")
+    rate_limited_key = "rate-limit-test-key"
+    settings.api_keys = f"{VALID_KEY}:{CLIENT_NAME},{rate_limited_key}:{CLIENT_NAME}"
+    headers = {"X-API-Key": rate_limited_key}
+
+    # When sending more requests than the limit allows within the window
+    responses = [
+        gateway_client.get("/events/get-user", params={"id": "1"}, headers=headers)
+        for _ in range(3)
+    ]
+
+    # Then the requests within the limit succeed and the rest are throttled
+    assert [r.status_code for r in responses] == [200, 200, 429]

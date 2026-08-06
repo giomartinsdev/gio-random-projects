@@ -1,8 +1,10 @@
-"""S3-compatible client for MinIO — used to archive pruned position
-history as Parquet, see app/domain/vehicle_position/events.py's
-ArchiveVehiclePositionHistory. A thin wrapper (not a class) for the
-same reason infrastructure/db.py's engine is a module-level singleton:
-one client, created once, reused across requests.
+"""S3-compatible client for MinIO. Used by
+app/domain/vehicle_position/archive_events.py's
+ArchiveVehiclePositionHistory to archive pruned position history as
+Parquet, and by app/domain/object_storage/events.py for general
+bucket/object management. A thin wrapper (not a class) for the same
+reason infrastructure/db.py's engine is a module-level singleton: one
+client, created once, reused across requests.
 """
 
 from __future__ import annotations

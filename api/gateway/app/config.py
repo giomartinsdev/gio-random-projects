@@ -28,6 +28,18 @@ class Settings(BaseSettings):
     # event) — confirmed live: a 35k-row SPPO poll timed out end to end
     # at the old default.
     request_timeout_seconds: float = 60.0
+    # 50MB — headroom over the largest known legitimate body (a 35k-row
+    # SPPO poll is a few MB of JSON) while still bounding per-request
+    # memory use. proxy.py enforces this against the actual bytes
+    # streamed off the wire, not just a trusted Content-Length header —
+    # a leaked key or a buggy client sending an unbounded/chunked body
+    # otherwise has no cap on how much the gateway (and, since it
+    # forwards the same body, the domain) buffers in memory per request.
+    max_body_bytes: int = 50_000_000
+    # Per calling API key (see _rate_limit_key in app/main.py) — a
+    # single leaked key or misbehaving client is bounded without
+    # throttling every other client sharing the gateway.
+    rate_limit: str = "120/minute"
 
     @property
     def parsed_api_keys(self) -> dict[str, str]:

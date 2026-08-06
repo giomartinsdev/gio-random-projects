@@ -163,6 +163,26 @@ Parquet file, uploads it to MinIO (`app/infrastructure/object_storage.py`
 `MINIO_ARCHIVE_BUCKET` set), then deletes those rows from Postgres.
 Gives "how has this vehicle moved recently" without an unbounded table.
 
+### MinIO/object-storage management
+
+`app/domain/object_storage/events.py` exposes bucket/object management
+itself as events — `CreateBucket`, `PutObject`, `GetObject`,
+`ListObjects`, `DeleteObject` — the same pattern as everything else
+here, proxied through `gateway.giomartins.dev` and audited in
+`domain_event_store` like any other dispatch. Binary bodies travel
+base64-encoded (`data_base64`), since the transport is JSON like every
+other event.
+
+This is for a caller that only has a gateway API key — MinIO's own S3
+API (`minio-api.giomartins.dev`, see `infra/cloudflared/config.yml`) is
+deliberately NOT behind Cloudflare Access, but that's for SigV4-signing
+server callers like `ArchiveVehiclePositionHistory` above, which can't
+do Access's browser-redirect dance any more than a plain HTTP caller
+can. The MinIO console (`minio.giomartins.dev`) IS behind Access, which
+blocks that same kind of caller from the opposite direction. These
+events are the answer either way: manage MinIO through the domain,
+authenticated the same way every other event is.
+
 ## Known limitation: schema evolution
 
 `create_all()` only ever *creates missing tables* — it never alters an
