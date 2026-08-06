@@ -48,11 +48,14 @@ ingress:
     service: http://localhost:8978
 
   # MinIO's S3 API, not its console (that's minio.giomartins.dev above,
-  # port 9001 — this is port 9000). Deliberately NOT behind Access, same
-  # reasoning as registry/gateway above: boto3 (api/domain's
-  # object_storage events, see api/domain/compose.yaml) signs requests
-  # with its own SigV4 credentials and can't do Access's header/redirect
-  # dance any more than the Docker CLI or a plain HTTP caller could.
+  # port 9001 — this is port 9000). This tunnel ingress rule doesn't
+  # gate it, but in practice a Zero Trust Access Application still
+  # covers this hostname (that's a separate Cloudflare dashboard
+  # resource, not configured here) — boto3 (api/domain's object_storage
+  # events) can't do Access's browser-redirect dance any more than the
+  # Docker CLI or a plain HTTP caller could, so it authenticates with
+  # the same CF-Access-Client-Id/Secret Service Token headers as this
+  # domain's own OTel export instead (see api/domain/compose.yaml).
   - hostname: minio-api.giomartins.dev
     service: http://localhost:9000
 

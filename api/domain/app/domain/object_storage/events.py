@@ -4,19 +4,21 @@ management goes through the same pattern every other domain follows here
 domain_event_store (see service/dispatcher.py) — instead of talking to
 MinIO's S3 API directly.
 
-MinIO's own S3 API (minio-api.giomartins.dev, see
-infra/cloudflared/config.yml) is deliberately NOT behind Cloudflare
-Access, but that's for SigV4-signing server callers that hold real
-MinIO credentials (this module's own get_s3_client() calls, made by
-this domain process itself) — it can't do Access's browser-redirect
-dance any more than a plain HTTP caller can. The console
-(minio.giomartins.dev) IS behind Access, which blocks exactly that kind
-of caller. The events below are the answer for "I need to manage MinIO
-from something that only has a gateway API key, not MinIO credentials
-or a browser session" — same shape as every other domain event, proxied
-through gateway.giomartins.dev. flows/vehicle_position_archiver is
-exactly such a caller: it uses CreateBucket/PutObject here instead of
-talking to MinIO directly.
+MinIO's own S3 API (minio-api.giomartins.dev) sits behind a Cloudflare
+Zero Trust Access Application in practice, even though a SigV4-signing
+caller can't do Access's browser-redirect dance any more than a plain
+HTTP caller could — see app/infrastructure/object_storage.py's
+get_s3_client(), which sends the same CF-Access-Client-Id/Secret
+Service Token headers this domain's own OTel export already uses,
+rather than relying on that hostname being excluded from Access. The
+console (minio.giomartins.dev) is also behind Access, blocking that
+same kind of caller from the opposite direction with no Service Token
+workaround available. The events below are the answer either way: "I
+need to manage MinIO from something that only has a gateway API key,
+not MinIO credentials or a browser session" — same shape as every
+other domain event, proxied through gateway.giomartins.dev.
+flows/vehicle_position_archiver is exactly such a caller: it uses
+CreateBucket/PutObject here instead of talking to MinIO directly.
 
 Binary payloads travel base64-encoded, since the transport here is a
 JSON request/response body like every other event.
@@ -35,7 +37,7 @@ from pydantic import BaseModel
 
 from app.domain.base import DomainEvent
 from app.domain.object_storage.entity import StorageObject
-from app.infrastructure.object_storage import get_s3_client
+from app.infrastructure.object_storage import MINIO_REGION, get_s3_client
 
 if TYPE_CHECKING:
     from sqlmodel import Session
@@ -58,7 +60,26 @@ class CreateBucket(DomainEvent[StorageObject]):
 
     def handle(self, session: Session) -> bool:  # noqa: ARG002 — no DB row involved; session only exists to satisfy DomainEvent's contract
         try:
-            get_s3_client().create_bucket(Bucket=self.bucket)
+            # botocore special-cases LocationConstraint="us-east-1" by
+            # omitting the CreateBucketConfiguration body entirely
+            # (mirroring real AWS, where that's the implicit default
+            # region needing no constraint) — MinIO doesn't extend it
+            # the same courtesy and rejects the resulting empty body
+            # with MalformedXML. Confirmed live: any other
+            # LocationConstraint value (MinIO doesn't validate it
+            # beyond "is a body present") works fine; MINIO_REGION is
+            # never "us-east-1", so this always sends one.
+            get_s3_client().create_bucket(
+                Bucket=self.bucket,
+                # boto3-stubs types LocationConstraint as a Literal of
+                # real AWS region codes — MinIO doesn't have AWS
+                # regions and doesn't validate this value at all, so a
+                # made-up one is genuinely fine at runtime, just not
+                # expressible in that Literal type.
+                CreateBucketConfiguration={
+                    "LocationConstraint": MINIO_REGION  # pyright: ignore[reportArgumentType]
+                },
+            )
         except ClientError as exc:
             if _error_code(exc) not in _ALREADY_OWNED_CODES:
                 raise

@@ -38,13 +38,20 @@ services:
       # Target for app/domain/object_storage/events.py's CreateBucket/
       # PutObject/etc. — MinIO is a separate Arcane project (the
       # observability stack), so this reaches it via its own public S3
-      # API hostname (not behind Cloudflare Access — boto3 can't do that
-      # header dance any more than the Docker CLI could, see
-      # infra/cloudflared/config.yml's registry.giomartins.dev comment)
-      # rather than joining that project's docker network directly.
+      # API hostname rather than joining that project's docker network
+      # directly.
       MINIO_ENDPOINT_URL: ${MINIO_ENDPOINT_URL:-https://minio-api.giomartins.dev}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      # minio-api.giomartins.dev sits behind a Cloudflare Zero Trust
+      # Access Application in practice — confirmed live: without these,
+      # every S3 call got an HTML Access login redirect back instead of
+      # a real S3 response, which crashed botocore's own retry logic.
+      # get_s3_client() (app/infrastructure/object_storage.py) attaches
+      # these as CF-Access-Client-Id/Secret headers on every request,
+      # the same Service Token already used for OTLP export above.
+      CF_ACCESS_CLIENT_ID: ${CF_ACCESS_CLIENT_ID:-}
+      CF_ACCESS_CLIENT_SECRET: ${CF_ACCESS_CLIENT_SECRET:-}
 
   postgres:
     image: postgres:${POSTGRES_VERSION:-17-alpine}

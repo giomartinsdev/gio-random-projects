@@ -32,7 +32,12 @@ class _FakeS3Client:
         self.buckets: set[str] = set()
         self.objects: dict[tuple[str, str], dict[str, Any]] = {}
 
-    def create_bucket(self, *, Bucket: str) -> None:  # noqa: N803 — matches boto3's own param casing
+    def create_bucket(
+        self,
+        *,
+        Bucket: str,  # noqa: N803 — matches boto3's own param casing
+        CreateBucketConfiguration: dict[str, str] | None = None,  # noqa: N803, ARG002 — real boto3 signature; this fake doesn't need its contents
+    ) -> None:
         if Bucket in self.buckets:
             raise ClientError(
                 {"Error": {"Code": "BucketAlreadyOwnedByYou", "Message": "exists"}},
