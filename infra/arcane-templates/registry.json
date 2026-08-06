@@ -4,7 +4,7 @@
   "description": "Custom Arcane templates for gio-server infra — apps not in the official community registry.",
   "author": "giomartinsdev",
   "url": "https://github.com/giomartinsdev/gio-random-projects",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "templates": [
     {
       "id": "9router",
@@ -35,6 +35,22 @@
       "tags": [
         "monitoring",
         "automation",
+        "self-hosted"
+      ]
+    },
+    {
+      "id": "cloudbeaver",
+      "name": "CloudBeaver",
+      "description": "Web-based database admin UI (DBeaver's web edition) — browse, query, and edit Postgres/MySQL/SQLite/etc. from the browser.",
+      "version": "1.0.0",
+      "author": "giomartinsdev",
+      "compose_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/cloudbeaver/compose.yaml",
+      "env_url": "https://raw.githubusercontent.com/giomartinsdev/gio-random-projects/main/infra/arcane-templates/templates/cloudbeaver/.env.example",
+      "documentation_url": "https://github.com/dbeaver/cloudbeaver",
+      "content_hash": "93842e8b3ef2f86eec1d93fc819df69773d62d3c0b38b799feba47229178c559",
+      "tags": [
+        "database",
+        "admin",
         "self-hosted"
       ]
     },

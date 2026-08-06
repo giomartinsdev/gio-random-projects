@@ -1,0 +1,28 @@
+x-arcane:
+  urls:
+    - https://dbeaver.com/cloudbeaver
+
+services:
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:${CLOUDBEAVER_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8978}:8978"
+    volumes:
+      - cloudbeaver-data:/opt/cloudbeaver/workspace
+
+# Joins the target Postgres's own compose network directly instead of
+# publishing its port to the host — a compose project's default network
+# is named "<project-dir>_default" unless overridden, so pointing this
+# at api/domain's project name gives CloudBeaver a route to
+# `postgres:5432` by that same DNS name, with the DB never exposed
+# outside its own project's network. Unlike NocoDB, CloudBeaver has no
+# SSRF guard blocking internal hosts — connections are configured
+# entirely from its own UI after first login, nothing to set here.
+networks:
+  default:
+    name: ${DB_NETWORK:-domain_default}
+    external: true
+
+volumes:
+  cloudbeaver-data:

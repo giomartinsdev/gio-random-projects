@@ -1,0 +1,7 @@
+{
+  "name": "CloudBeaver",
+  "description": "Web-based database admin UI (DBeaver's web edition) — browse, query, and edit Postgres/MySQL/SQLite/etc. from the browser.",
+  "version": "1.0.0",
+  "author": "giomartinsdev",
+  "tags": ["database", "admin", "self-hosted"]
+}
