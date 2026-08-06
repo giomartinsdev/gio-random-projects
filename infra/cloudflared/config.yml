@@ -44,8 +44,8 @@ ingress:
   # (a human clicking through a browser, which Access's redirect/header
   # dance works fine for), so it gets the same defense-in-depth: an
   # Access Application must be configured for this hostname too.
-  - hostname: nocodb.giomartins.dev
-    service: http://localhost:8089
+  - hostname: cloudbeaver.giomartins.dev
+    service: http://localhost:8978
 
   # Add new services below, one hostname per block, most specific first.
   # - hostname: example.giomartins.dev
