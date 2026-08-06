@@ -8,9 +8,11 @@ the router.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.domain.base import DomainEvent
 from app.domain.vehicle.entity import Vehicle
@@ -18,6 +20,15 @@ from app.domain.vehicle_position.entity import VehiclePosition
 
 if TYPE_CHECKING:
     from sqlmodel import Session
+
+# Postgres caps a single query at 65535 bind parameters — Vehicle's 4
+# columns/row means >16383 rows would blow that limit outright, and a
+# real SPPO poll can be 35k+ rows city-wide. Chunking keeps every
+# statement comfortably under that ceiling regardless of column count,
+# while still doing O(chunks) round-trips instead of O(rows) the way a
+# session.merge()-per-row loop did (confirmed too slow by testing: that
+# version timed out end to end on a real ~35k-row poll).
+_CHUNK_SIZE = 5000
 
 
 class VehiclePositionInput(BaseModel):
@@ -34,6 +45,10 @@ class VehiclePositionInput(BaseModel):
     color_hex: str | None = None
 
 
+def _chunks[T](items: list[T], size: int) -> list[list[T]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
 class RecordVehiclePositions(DomainEvent[VehiclePosition]):
     """Upserts each vehicle's registry row (Vehicle) and latest position
     (VehiclePosition) by vehicle_id — overwrite semantics, not an
@@ -43,33 +58,58 @@ class RecordVehiclePositions(DomainEvent[VehiclePosition]):
     positions: list[VehiclePositionInput]
 
     def handle(self, session: Session) -> int:
-        now = datetime.now(UTC)
-        for position in self.positions:
-            vehicle = session.get(Vehicle, position.vehicle_id)
-            if vehicle is None:
-                session.add(
-                    Vehicle(
-                        id=position.vehicle_id,
-                        mode=position.mode,
-                        first_seen_at=now,
-                        last_seen_at=now,
-                    )
-                )
-            else:
-                vehicle.last_seen_at = now
+        if not self.positions:
+            return 0
 
-            # merge(), not add() — upserts by primary key: updates the
-            # existing row's `data`/`captured_at` in place if a
-            # VehiclePosition for this vehicle_id already exists,
-            # inserts a new row otherwise. Exactly the "overwrite, don't
-            # append" behavior this event exists for.
-            session.merge(
-                VehiclePosition(
-                    id=position.vehicle_id,
-                    data=position.model_dump(mode="json"),
-                    captured_at=position.captured_at,
-                )
+        now = datetime.now(UTC)
+        # SQLAlchemy's ON CONFLICT support is dialect-specific — Postgres
+        # in production, sqlite in tests/local dev (see infrastructure/db.py).
+        # session.bind is only None for a session never bound to an
+        # engine/connection, which get_session() (infrastructure/db.py)
+        # never produces.
+        bind = session.get_bind()
+        insert = pg_insert if bind.dialect.name == "postgresql" else sqlite_insert
+
+        # A single bulk statement can't target the same conflicting row
+        # twice (Postgres: "ON CONFLICT DO UPDATE command cannot affect
+        # row a second time") — the same vehicle_id could plausibly
+        # appear more than once within one poll window, so keep only
+        # each vehicle's last-seen row in this batch.
+        by_vehicle_id = {position.vehicle_id: position for position in self.positions}
+        positions = list(by_vehicle_id.values())
+
+        for batch in _chunks(positions, _CHUNK_SIZE):
+            vehicle_rows: list[dict[str, Any]] = [
+                {"id": p.vehicle_id, "mode": p.mode, "first_seen_at": now, "last_seen_at": now}
+                for p in batch
+            ]
+            vehicle_stmt = insert(Vehicle).values(vehicle_rows)
+            # Only last_seen_at is touched on conflict — first_seen_at
+            # from the VALUES list only ever applies to an actual
+            # insert, so an existing vehicle's original first_seen_at
+            # is left alone.
+            vehicle_stmt = vehicle_stmt.on_conflict_do_update(
+                index_elements=["id"], set_={"last_seen_at": vehicle_stmt.excluded.last_seen_at}
             )
+            session.exec(vehicle_stmt)
+
+            position_rows: list[dict[str, Any]] = [
+                {
+                    "id": p.vehicle_id,
+                    "data": p.model_dump(mode="json"),
+                    "captured_at": p.captured_at,
+                }
+                for p in batch
+            ]
+            position_stmt = insert(VehiclePosition).values(position_rows)
+            position_stmt = position_stmt.on_conflict_do_update(
+                index_elements=["id"],
+                set_={
+                    "data": position_stmt.excluded.data,
+                    "captured_at": position_stmt.excluded.captured_at,
+                },
+            )
+            session.exec(position_stmt)
 
         session.commit()
-        return len(self.positions)
+        return len(positions)
