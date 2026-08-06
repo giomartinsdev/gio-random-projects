@@ -32,7 +32,7 @@ from datetime import (
 from typing import Any, ClassVar, cast
 
 from pydantic import BaseModel
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Session, SQLModel, select
 
@@ -56,9 +56,24 @@ class Document(Entity):
     production, plain JSON on SQLite (what tests/local dev use by
     default, see infrastructure/db.py) since SQLite has no JSONB type of
     its own.
+
+    `sa_type=`, not `sa_column=Column(...)` — the latter instantiates
+    one concrete `Column` object when this class body runs, which every
+    subclass then shares (SQLAlchemy needs its own `Column` instance
+    per table); confirmed by testing, a second `Document` subclass
+    fails to map at all with "Column object 'data' already assigned to
+    Table '<the first subclass's table>'". `sa_type=` only fixes the
+    *type*, so SQLModel still constructs a fresh `Column` per subclass
+    the normal way.
     """
 
-    data: dict[str, Any] = Field(sa_column=Column(JSON().with_variant(JSONB, "postgresql")))
+    # SQLModel's own stub types sa_type as `type[Any]`, but a
+    # TypeEngine *instance* (not a class) is exactly what
+    # with_variant() returns and exactly what SQLAlchemy itself expects
+    # here — confirmed working at runtime.
+    data: dict[str, Any] = Field(
+        sa_type=JSON().with_variant(JSONB, "postgresql")  # pyright: ignore[reportArgumentType]
+    )
     captured_at: datetime
 
 

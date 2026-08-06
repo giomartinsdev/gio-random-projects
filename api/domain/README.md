@@ -141,6 +141,27 @@ class RecordVehiclePositions(DomainEvent[VehiclePosition]):
 `POST /events/record-vehicle-positions` then accepts `{"positions":
 [...]}`, upserts by `vehicle_id`, and returns the count processed — the
 table stays bounded by fleet size no matter how often it's polled.
+(The real implementation, `app/domain/vehicle_position/events.py`, does
+a chunked bulk `INSERT ... ON CONFLICT DO UPDATE` instead of a
+`session.merge()` per row — confirmed by testing that merge() timed
+out end to end on a real ~35k-row poll; the shape above is simplified
+for illustration.)
+
+### Bounded history alongside a "latest state" table
+
+`RecordVehiclePositions` also appends one row per vehicle to
+`VehiclePositionHistory` (a `Document` keyed by autoincrement `id`, not
+`vehicle_id`, since there are many rows per vehicle) — genuinely
+append-only, so it needs its own bound. `ArchiveVehiclePositionHistory`
+(`app/domain/vehicle_position/archive_events.py`) prunes it back to the
+10 most recent rows per vehicle on a schedule (hourly, via
+`flows/vehicle_position_archiver`): a `ROW_NUMBER() OVER (PARTITION BY
+vehicle_id ORDER BY captured_at DESC)` window-function query finds
+everything past the 10 most recent per vehicle, writes it to one
+Parquet file, uploads it to MinIO (`app/infrastructure/object_storage.py`
+— needs `MINIO_ENDPOINT_URL`/`MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`/
+`MINIO_ARCHIVE_BUCKET` set), then deletes those rows from Postgres.
+Gives "how has this vehicle moved recently" without an unbounded table.
 
 ## Known limitation: schema evolution
 

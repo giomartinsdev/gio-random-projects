@@ -17,6 +17,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from app.domain.base import DomainEvent
 from app.domain.vehicle.entity import Vehicle
 from app.domain.vehicle_position.entity import VehiclePosition
+from app.domain.vehicle_position.history_entity import VehiclePositionHistory
 
 if TYPE_CHECKING:
     from sqlmodel import Session
@@ -53,7 +54,11 @@ class RecordVehiclePositions(DomainEvent[VehiclePosition]):
     """Upserts each vehicle's registry row (Vehicle) and latest position
     (VehiclePosition) by vehicle_id — overwrite semantics, not an
     insert per poll, since only the current picture is ever needed.
-    Bounds both tables to fleet size regardless of poll frequency."""
+    Bounds both tables to fleet size regardless of poll frequency. Also
+    appends one row per vehicle to VehiclePositionHistory (unbounded by
+    this event alone — ArchiveVehiclePositionHistory is what keeps that
+    table down to the 10 most recent rows per vehicle, archiving the
+    rest to Parquet on MinIO)."""
 
     positions: list[VehiclePositionInput]
 
@@ -110,6 +115,19 @@ class RecordVehiclePositions(DomainEvent[VehiclePosition]):
                 },
             )
             session.exec(position_stmt)
+
+            history_rows: list[dict[str, Any]] = [
+                {
+                    "vehicle_id": p.vehicle_id,
+                    "data": p.model_dump(mode="json"),
+                    "captured_at": p.captured_at,
+                }
+                for p in batch
+            ]
+            # Plain bulk insert, no ON CONFLICT — id is autoincrement,
+            # every row here is genuinely new (this is the append-only
+            # side of the model, unlike vehicle/vehicleposition above).
+            session.exec(insert(VehiclePositionHistory).values(history_rows))
 
         session.commit()
         return len(positions)

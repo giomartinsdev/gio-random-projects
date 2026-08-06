@@ -47,6 +47,16 @@ ingress:
   - hostname: cloudbeaver.giomartins.dev
     service: http://localhost:8978
 
+  # MinIO's S3 API, not its console (that's minio.giomartins.dev above,
+  # port 9001 — this is port 9000). Deliberately NOT behind Access, same
+  # reasoning as registry/gateway above: boto3 (api/domain's
+  # ArchiveVehiclePositionHistory, see api/domain/compose.yaml) signs
+  # requests with its own SigV4 credentials and can't do Access's
+  # header/redirect dance any more than the Docker CLI or a plain HTTP
+  # caller could.
+  - hostname: minio-api.giomartins.dev
+    service: http://localhost:9000
+
   # Add new services below, one hostname per block, most specific first.
   # - hostname: example.giomartins.dev
   #   service: http://localhost:PORT

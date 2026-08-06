@@ -17,6 +17,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.domain.vehicle.entity import Vehicle
 from app.domain.vehicle_position.entity import VehiclePosition
+from app.domain.vehicle_position.history_entity import VehiclePositionHistory
 from app.infrastructure.db import get_session
 from app.infrastructure.discovery import discover_domain
 from app.presentation.app import create_app
@@ -139,3 +140,25 @@ def test_polling_the_same_vehicle_again_keeps_its_original_first_seen_at(
     assert vehicle is not None
     assert vehicle.first_seen_at == first_seen
     assert vehicle.last_seen_at > first_seen
+
+
+def test_polling_the_same_vehicle_repeatedly_appends_to_history_instead_of_overwriting(
+    client_and_engine: tuple[TestClient, Engine],
+) -> None:
+    client, engine = client_and_engine
+
+    # Given the same vehicle polled three times at different positions
+    for i in range(3):
+        client.post(
+            "/events/record-vehicle-positions",
+            json={"positions": [_position("B1", f"2026-08-05T13:0{i}:00Z", latitude=-22.0 - i)]},
+        )
+
+    # Then history has one row per poll (unlike vehicleposition, which stays at one row)
+    with Session(engine) as session:
+        history = session.exec(select(VehiclePositionHistory)).all()
+        positions = session.exec(select(VehiclePosition)).all()
+    assert len(history) == 3
+    assert len(positions) == 1
+    assert {row.vehicle_id for row in history} == {"B1"}
+    assert sorted(row.data["latitude"] for row in history) == [-24.0, -23.0, -22.0]
