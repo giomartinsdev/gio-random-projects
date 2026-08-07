@@ -40,6 +40,10 @@ deployments:
       name: docker-pool
       job_variables:
         networks: ["prefect-net"]
+        # Without this, DockerWorker leaves every finished run's
+        # container behind (confirmed live: hundreds had piled up,
+        # exited but never removed) — same effect as `docker run --rm`.
+        auto_remove: true
         command: "opentelemetry-instrument prefect flow-run execute"
         env:
           OTEL_SERVICE_NAME: bus-gps-poller
@@ -68,6 +72,10 @@ deployments:
       name: docker-pool
       job_variables:
         networks: ["prefect-net"]
+        # Without this, DockerWorker leaves every finished run's
+        # container behind (confirmed live: hundreds had piled up,
+        # exited but never removed) — same effect as `docker run --rm`.
+        auto_remove: true
         command: "opentelemetry-instrument prefect flow-run execute"
         env:
           OTEL_SERVICE_NAME: brt-gps-poller
@@ -96,6 +104,10 @@ deployments:
       name: docker-pool
       job_variables:
         networks: ["prefect-net"]
+        # Without this, DockerWorker leaves every finished run's
+        # container behind (confirmed live: hundreds had piled up,
+        # exited but never removed) — same effect as `docker run --rm`.
+        auto_remove: true
         command: "opentelemetry-instrument prefect flow-run execute"
         env:
           OTEL_SERVICE_NAME: vehicle-position-archiver
