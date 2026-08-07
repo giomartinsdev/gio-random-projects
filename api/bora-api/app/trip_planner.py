@@ -7,16 +7,23 @@ not bolted onto the domain (which stays pure CRUD) or the gateway
 writes, ever.
 
 v1 simplifications, made explicit rather than hidden:
-- Direct lines only — no transfers. A destination with no direct line
-  comes back as an empty list, not an error.
+- Direct lines are tried first; if none exist, a single transfer is
+  attempted (ride one line, get off at a stop a second line also
+  serves, ride that to the destination) — never two transfers. A
+  destination reachable only via 2+ transfers still comes back as an
+  empty list, not an error.
 - ETA is straight-line distance from the closest same-line vehicle to
   the stop, divided by that vehicle's own current speed (floored) — not
   real map-matching against the line's actual shape. A vehicle driving
   away from the stop can misleadingly look "close." Good enough for "is
-  a bus coming soon," not a promise of an exact arrival time.
-- Trip duration is straight-line origin-to-destination distance divided
-  by an assumed average city-bus speed, not the route's actual shape or
-  GTFS scheduled times.
+  a bus coming soon," not a promise of an exact arrival time. For a
+  transfer option this ETA is for the FIRST leg only — the rider has no
+  bus to watch for the second leg until they're standing at the
+  transfer stop.
+- Trip duration is straight-line distance divided by an assumed average
+  city-bus speed, not the route's actual shape or GTFS scheduled times.
+  A transfer option sums both legs' straight-line distances plus a
+  fixed buffer for stepping off one bus and waiting for the next.
 """
 
 from __future__ import annotations
@@ -56,12 +63,48 @@ class TripOption:
     trip_seconds: float
     vehicle_id: str | None
     eta_seconds: float | None
+    # Populated only for a transfer option — None on every direct match,
+    # which is what DetailView (and this module's own callers) use to
+    # tell the two apart rather than a separate boolean flag.
+    transfer_stop_id: str | None = None
+    transfer_stop_name: str | None = None
+    transfer_latitude: float | None = None
+    transfer_longitude: float | None = None
+    transfer_line_id: str | None = None
+    transfer_line_code: str | None = None
+    transfer_line_name: str | None = None
+    # First-leg-only travel time, so a caller can place "arrive at the
+    # transfer stop" between "board" and "arrive at destination" — the
+    # remainder of trip_seconds (minus the transfer buffer) is the
+    # second leg.
+    transfer_seconds: float | None = None
 
 
 @dataclass
 class _DirectMatch:
     line_id: str
     origin: NearbyStop
+    destination: NearbyStop
+
+
+@dataclass
+class _DestReachable:
+    """One line that rides straight through to `destination` if boarded
+    at whatever stop this ends up keyed under in the dict
+    _match_transfer_lines builds — the boarding stop itself is the dict
+    key, not a field here, since that's how the forward search from the
+    origin looks these up."""
+
+    line_id: str
+    destination: NearbyStop
+
+
+@dataclass
+class _TransferMatch:
+    first_line_id: str
+    origin: NearbyStop
+    transfer_stop: StopRecord
+    second_line_id: str
     destination: NearbyStop
 
 
@@ -82,12 +125,14 @@ class TripPlanner:
         walking_speed_mps: float,
         min_bus_speed_kmh: float,
         average_bus_speed_kmh: float,
+        transfer_buffer_seconds: float,
     ) -> None:
         self._domain_client = domain_client
         self._cache = cache
         self._walking_speed_mps = walking_speed_mps
         self._min_bus_speed_mps = min_bus_speed_kmh / 3.6
         self._average_bus_speed_mps = average_bus_speed_kmh / 3.6
+        self._transfer_buffer_seconds = transfer_buffer_seconds
 
     def nearby_stops(
         self, latitude: float, longitude: float, radius_m: float, limit: int
@@ -121,30 +166,23 @@ class TripPlanner:
         if not origin_stops or not dest_stops:
             return []
 
-        matches = self._best_match_per_line(self._match_direct_lines(origin_stops, dest_stops))
-        if not matches:
+        direct_matches = self._best_match_per_line(
+            self._match_direct_lines(origin_stops, dest_stops)
+        )
+        if direct_matches:
+            return self._build_direct_options(direct_matches)
+
+        # Only searched when no direct line exists — a transfer search
+        # costs more (it walks every candidate line's full stop
+        # sequence, not just the origin/destination stops themselves),
+        # and the common case in a dense area already has a direct
+        # match, so paying that cost there would be pure waste.
+        transfer_matches = self._best_transfer_per_line_pair(
+            self._match_transfer_lines(origin_stops, dest_stops)
+        )
+        if not transfer_matches:
             return []
-
-        lines = {match.line_id: self._cache.line(match.line_id) for match in matches}
-        line_codes = sorted({line.code for line in lines.values() if line is not None})
-        positions_by_code = self._positions_by_line_code(line_codes)
-
-        options: list[TripOption] = []
-        for match in matches:
-            line = lines[match.line_id]
-            # A line matched via RouteStop but missing from the cache's
-            # own Line lookup would mean a reference-data inconsistency
-            # (a route-stop pointing at a line that no longer exists) —
-            # skip rather than crash; not expected in practice since
-            # ReplaceRouteStops/UpsertLines land together every import.
-            if line is not None:
-                options.append(self._build_option(match, line, positions_by_code))
-        # Buses with a live ETA first (soonest first); lines with no
-        # vehicle currently reporting sort last rather than being
-        # dropped — a rider may still want to know "line 178 goes
-        # there," just without a live countdown.
-        options.sort(key=lambda option: (option.eta_seconds is None, option.eta_seconds or 0.0))
-        return options
+        return self._build_transfer_options(transfer_matches)
 
     def line_vehicles(self, line_code: str) -> list[LineVehicle]:
         """Every vehicle currently reporting on this line, for a rider
@@ -190,6 +228,164 @@ class TripPlanner:
             if current is None or match.origin.distance_m < current.origin.distance_m:
                 best[match.line_id] = match
         return list(best.values())
+
+    def _build_direct_options(self, matches: list[_DirectMatch]) -> list[TripOption]:
+        lines = {match.line_id: self._cache.line(match.line_id) for match in matches}
+        line_codes = sorted({line.code for line in lines.values() if line is not None})
+        positions_by_code = self._positions_by_line_code(line_codes)
+
+        options: list[TripOption] = []
+        for match in matches:
+            line = lines[match.line_id]
+            # A line matched via RouteStop but missing from the cache's
+            # own Line lookup would mean a reference-data inconsistency
+            # (a route-stop pointing at a line that no longer exists) —
+            # skip rather than crash; not expected in practice since
+            # ReplaceRouteStops/UpsertLines land together every import.
+            if line is not None:
+                options.append(self._build_option(match, line, positions_by_code))
+        self._sort_by_eta(options)
+        return options
+
+    def _match_transfer_lines(
+        self, origin_stops: list[NearbyStop], dest_stops: list[NearbyStop]
+    ) -> list[_TransferMatch]:
+        # Expand backward from the destination first: for every line
+        # that reaches a destination-adjacent stop, every earlier stop
+        # on that same line/direction is somewhere a rider could board
+        # to get there directly. Keyed by stop_id so the forward
+        # expansion below is an O(1) lookup per candidate transfer stop
+        # instead of re-scanning dest_stops for every one of them.
+        dest_reachable: dict[str, list[_DestReachable]] = defaultdict(list)
+        for dest in dest_stops:
+            for arrival in self._cache.route_stops_at_stop(dest.stop.id):
+                for boarding in self._cache.stops_on_route(arrival.line_id, arrival.direction_id):
+                    if boarding.sequence < arrival.sequence:
+                        dest_reachable[boarding.stop_id].append(
+                            _DestReachable(line_id=arrival.line_id, destination=dest)
+                        )
+
+        matches: list[_TransferMatch] = []
+        for origin in origin_stops:
+            for departure in self._cache.route_stops_at_stop(origin.stop.id):
+                route = self._cache.stops_on_route(departure.line_id, departure.direction_id)
+                for candidate in route:
+                    if candidate.sequence <= departure.sequence:
+                        continue
+                    reachable_from_here = dest_reachable.get(candidate.stop_id)
+                    if not reachable_from_here:
+                        continue
+                    transfer_stop = self._cache.stop(candidate.stop_id)
+                    if transfer_stop is None:
+                        continue
+                    matches.extend(
+                        _TransferMatch(
+                            first_line_id=departure.line_id,
+                            origin=origin,
+                            transfer_stop=transfer_stop,
+                            second_line_id=reachable.line_id,
+                            destination=reachable.destination,
+                        )
+                        for reachable in reachable_from_here
+                        # Same line on both legs isn't a transfer — it's
+                        # already covered (or not) by the direct search.
+                        if reachable.line_id != departure.line_id
+                    )
+        return matches
+
+    @staticmethod
+    def _best_transfer_per_line_pair(matches: list[_TransferMatch]) -> list[_TransferMatch]:
+        # One option per (first line, second line) pair, same reasoning
+        # as _best_match_per_line: a rider needs the closest boarding
+        # point for each viable line combination, not every transfer
+        # stop where that combination happens to work.
+        best: dict[tuple[str, str], _TransferMatch] = {}
+        for match in matches:
+            key = (match.first_line_id, match.second_line_id)
+            current = best.get(key)
+            if current is None or match.origin.distance_m < current.origin.distance_m:
+                best[key] = match
+        return list(best.values())
+
+    def _build_transfer_options(self, matches: list[_TransferMatch]) -> list[TripOption]:
+        first_lines = {
+            match.first_line_id: self._cache.line(match.first_line_id) for match in matches
+        }
+        second_lines = {
+            match.second_line_id: self._cache.line(match.second_line_id) for match in matches
+        }
+        first_codes = sorted({line.code for line in first_lines.values() if line is not None})
+        # Only the first leg's live positions matter — see this module's
+        # own docstring on why a transfer option's ETA only ever covers
+        # the bus the rider boards first.
+        positions_by_code = self._positions_by_line_code(first_codes)
+
+        options: list[TripOption] = []
+        for match in matches:
+            first_line = first_lines[match.first_line_id]
+            second_line = second_lines[match.second_line_id]
+            if first_line is None or second_line is None:
+                continue
+            vehicle_id, eta_seconds = self._closest_vehicle_eta(
+                positions_by_code.get(first_line.code, []), match.origin.stop
+            )
+            first_leg_seconds = (
+                haversine_m(
+                    match.origin.stop.latitude,
+                    match.origin.stop.longitude,
+                    match.transfer_stop.latitude,
+                    match.transfer_stop.longitude,
+                )
+                / self._average_bus_speed_mps
+            )
+            second_leg_seconds = (
+                haversine_m(
+                    match.transfer_stop.latitude,
+                    match.transfer_stop.longitude,
+                    match.destination.stop.latitude,
+                    match.destination.stop.longitude,
+                )
+                / self._average_bus_speed_mps
+            )
+            options.append(
+                TripOption(
+                    line_id=first_line.id,
+                    line_code=first_line.code,
+                    line_name=first_line.name,
+                    origin_stop_id=match.origin.stop.id,
+                    origin_stop_name=match.origin.stop.name,
+                    origin_latitude=match.origin.stop.latitude,
+                    origin_longitude=match.origin.stop.longitude,
+                    destination_stop_id=match.destination.stop.id,
+                    destination_stop_name=match.destination.stop.name,
+                    destination_latitude=match.destination.stop.latitude,
+                    destination_longitude=match.destination.stop.longitude,
+                    walk_seconds=match.origin.walk_seconds,
+                    trip_seconds=first_leg_seconds
+                    + self._transfer_buffer_seconds
+                    + second_leg_seconds,
+                    vehicle_id=vehicle_id,
+                    eta_seconds=eta_seconds,
+                    transfer_stop_id=match.transfer_stop.id,
+                    transfer_stop_name=match.transfer_stop.name,
+                    transfer_latitude=match.transfer_stop.latitude,
+                    transfer_longitude=match.transfer_stop.longitude,
+                    transfer_line_id=second_line.id,
+                    transfer_line_code=second_line.code,
+                    transfer_line_name=second_line.name,
+                    transfer_seconds=first_leg_seconds,
+                )
+            )
+        self._sort_by_eta(options)
+        return options
+
+    @staticmethod
+    def _sort_by_eta(options: list[TripOption]) -> None:
+        # Buses with a live ETA first (soonest first); lines with no
+        # vehicle currently reporting sort last rather than being
+        # dropped — a rider may still want to know "line 178 goes
+        # there," just without a live countdown.
+        options.sort(key=lambda option: (option.eta_seconds is None, option.eta_seconds or 0.0))
 
     def _positions_by_line_code(
         self, line_codes: list[str]

@@ -35,6 +35,7 @@ export function ResultsView({ destinationName, options, liveEtaSeconds, onSelect
               <div className="info">
                 <div className="line-name">
                   {option.line_code} · {option.line_name}
+                  {option.transfer_line_code && ` → ${option.transfer_line_code}`}
                 </div>
                 <div className={`line-sub${tight ? " warn" : ""}`}>
                   {tight ? (

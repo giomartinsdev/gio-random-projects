@@ -35,11 +35,23 @@ class _FakeCache:
     def stops(self) -> list[StopRecord]:
         return list(self.stops_by_id.values())
 
+    def stop(self, stop_id: str) -> StopRecord | None:
+        return self.stops_by_id.get(stop_id)
+
     def line(self, line_id: str) -> LineRecord | None:
         return self.lines_by_id.get(line_id)
 
     def route_stops_at_stop(self, stop_id: str) -> list[RouteStopRecord]:
         return self.route_stops_by_stop.get(stop_id, [])
+
+    def stops_on_route(self, line_id: str, direction_id: int) -> list[RouteStopRecord]:
+        matching = (
+            route_stop
+            for route_stops in self.route_stops_by_stop.values()
+            for route_stop in route_stops
+            if route_stop.line_id == line_id and route_stop.direction_id == direction_id
+        )
+        return sorted(matching, key=lambda route_stop: route_stop.sequence)
 
 
 class _FakeDomainClient:
@@ -70,6 +82,7 @@ def planner(fake_domain_client: _FakeDomainClient, fake_cache: _FakeCache) -> Tr
         walking_speed_mps=1.3,
         min_bus_speed_kmh=5.0,
         average_bus_speed_kmh=18.0,
+        transfer_buffer_seconds=180.0,
     )
 
 
@@ -120,6 +133,31 @@ def _given_origin_and_destination_stops(
 @given(parsers.parse('stop "{stop_id}" is {distance:d}m from the origin'))
 def _given_one_origin_stop(fake_cache: _FakeCache, stop_id: str, distance: int) -> None:
     _add_stop(fake_cache, stop_id, _north(_ORIGIN, distance))
+
+
+@given(
+    # parsers.re, not parsers.parse: {name}'s greedy matching would
+    # otherwise also match the combined "stop A is Xm from the origin
+    # and stop B is Ym from the destination" step above (its own suffix
+    # ends in the same words), silently stealing that step's text and
+    # leaving both stops unregistered. Anchoring end-to-end rules that
+    # out — confirmed live: without it, "the destination" scenarios
+    # failed with the ORIGIN stop missing from the cache, not the
+    # destination one.
+    parsers.re(r'^stop "(?P<stop_id>[^"]+)" is (?P<distance>\d+)m from the destination$'),
+    converters={"distance": int},
+)
+def _given_one_destination_stop(fake_cache: _FakeCache, stop_id: str, distance: int) -> None:
+    _add_stop(fake_cache, stop_id, _north(_DESTINATION, distance))
+
+
+@given(parsers.parse('stop "{stop_id}" exists'))
+def _given_stop_exists(fake_cache: _FakeCache, stop_id: str) -> None:
+    # Location is irrelevant to the transfer-matching logic itself
+    # (only line/direction/sequence decide a match) — placed roughly
+    # between origin and destination purely so the resulting
+    # TripOption's transfer coordinates aren't nonsensical.
+    _add_stop(fake_cache, stop_id, (5.0, 5.0))
 
 
 @given("no stops are near the destination")
@@ -281,3 +319,15 @@ def _then_origin_only(trip_result: list[TripOption], origin_id: str) -> None:
 @then(parsers.parse("{count:d} line vehicles come back"))
 def _then_line_vehicle_count(vehicle_result: list[LineVehicle], count: int) -> None:
     assert len(vehicle_result) == count
+
+
+@then(parsers.parse('its transfer is to line "{line_id}" at "{stop_id}"'))
+def _then_transfer_to(trip_result: list[TripOption], line_id: str, stop_id: str) -> None:
+    option = trip_result[0]
+    assert option.transfer_line_id == line_id
+    assert option.transfer_stop_id == stop_id
+
+
+@then("no trip option has a transfer")
+def _then_no_transfer(trip_result: list[TripOption]) -> None:
+    assert all(option.transfer_stop_id is None for option in trip_result)

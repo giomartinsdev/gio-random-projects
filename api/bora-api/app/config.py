@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # TripPlanner's own docstring for why this is a rough estimate, not
     # a scheduled-time lookup.
     average_bus_speed_kmh: float = 18.0
+    # Flat estimate of time lost stepping off the first bus, walking to
+    # the second one's stop, and waiting for it — see TripPlanner's own
+    # docstring for why this isn't per-stop dwell/headway data.
+    transfer_buffer_seconds: float = 180.0
 
 
 settings = Settings()

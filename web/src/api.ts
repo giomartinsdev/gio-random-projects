@@ -33,6 +33,17 @@ export interface TripOption {
   trip_seconds: number;
   vehicle_id: string | null;
   eta_seconds: number | null;
+  // Populated only when this option requires a transfer — null on a
+  // direct match (see bora-api's TripPlanner for why: direct lines are
+  // always tried first).
+  transfer_stop_id: string | null;
+  transfer_stop_name: string | null;
+  transfer_latitude: number | null;
+  transfer_longitude: number | null;
+  transfer_line_id: string | null;
+  transfer_line_code: string | null;
+  transfer_line_name: string | null;
+  transfer_seconds: number | null;
 }
 
 export interface GeocodeResult {

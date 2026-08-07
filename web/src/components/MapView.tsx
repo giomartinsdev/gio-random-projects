@@ -18,6 +18,7 @@ function dotIcon(color: string, size: number): L.DivIcon {
 
 const ORIGIN_ICON = dotIcon("var(--text)", 14);
 const DESTINATION_ICON = dotIcon("var(--danger)", 14);
+const TRANSFER_ICON = dotIcon("#e2a83e", 14);
 const VEHICLE_ICON = dotIcon("var(--accent)", 18);
 
 interface MapViewProps {
@@ -25,6 +26,8 @@ interface MapViewProps {
   originLongitude: number;
   destinationLatitude: number;
   destinationLongitude: number;
+  transferLatitude: number | null;
+  transferLongitude: number | null;
   vehicles: LineVehicle[];
 }
 
@@ -33,6 +36,8 @@ export function MapView({
   originLongitude,
   destinationLatitude,
   destinationLongitude,
+  transferLatitude,
+  transferLongitude,
   vehicles,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -54,13 +59,15 @@ export function MapView({
     }).addTo(map);
     L.marker([originLatitude, originLongitude], { icon: ORIGIN_ICON }).addTo(map);
     L.marker([destinationLatitude, destinationLongitude], { icon: DESTINATION_ICON }).addTo(map);
-    map.fitBounds(
-      L.latLngBounds([
-        [originLatitude, originLongitude],
-        [destinationLatitude, destinationLongitude],
-      ]),
-      { padding: [24, 24] },
-    );
+    const bounds: L.LatLngTuple[] = [
+      [originLatitude, originLongitude],
+      [destinationLatitude, destinationLongitude],
+    ];
+    if (transferLatitude !== null && transferLongitude !== null) {
+      L.marker([transferLatitude, transferLongitude], { icon: TRANSFER_ICON }).addTo(map);
+      bounds.push([transferLatitude, transferLongitude]);
+    }
+    map.fitBounds(L.latLngBounds(bounds), { padding: [24, 24] });
     mapRef.current = map;
     const vehicleMarkers = vehicleMarkersRef.current;
     return () => {

@@ -45,10 +45,13 @@ export function DetailView({ option, liveEtaSeconds, onClose }: DetailViewProps)
   }
 
   const hasEta = liveEtaSeconds !== null;
+  const hasTransfer = option.transfer_stop_id !== null && option.transfer_seconds !== null;
   const walkMinutes = Math.ceil(option.walk_seconds / 60);
   const etaMinutes = hasEta ? Math.ceil(liveEtaSeconds / 60) : null;
   const tight = etaMinutes !== null && etaMinutes < walkMinutes;
   const boardMinute = Math.max(etaMinutes ?? 0, walkMinutes);
+  const transferArriveMinute =
+    option.transfer_seconds !== null ? boardMinute + Math.round(option.transfer_seconds / 60) : null;
   const arriveMinute = boardMinute + Math.round(option.trip_seconds / 60);
 
   return (
@@ -60,8 +63,14 @@ export function DetailView({ option, liveEtaSeconds, onClose }: DetailViewProps)
           </svg>
         </button>
         <div>
-          <div className="d-title">Linha {option.line_code}</div>
-          <div className="d-sub">{option.line_name}</div>
+          <div className="d-title">
+            Linha {option.line_code}
+            {hasTransfer && ` + ${option.transfer_line_code}`}
+          </div>
+          <div className="d-sub">
+            {option.line_name}
+            {hasTransfer && ` → ${option.transfer_line_name}`}
+          </div>
         </div>
       </div>
 
@@ -79,7 +88,11 @@ export function DetailView({ option, liveEtaSeconds, onClose }: DetailViewProps)
           <div className={`d-big${hasEta ? "" : " none"}`}>
             {hasEta ? formatDuration(liveEtaSeconds) : "Nenhum ônibus reportando agora"}
           </div>
-          {hasEta && <div className="d-caption">até o ônibus chegar no ponto</div>}
+          {hasEta && (
+            <div className="d-caption">
+              até o {hasTransfer ? "primeiro " : ""}ônibus chegar no ponto
+            </div>
+          )}
         </div>
 
         <MapView
@@ -87,6 +100,8 @@ export function DetailView({ option, liveEtaSeconds, onClose }: DetailViewProps)
           originLongitude={option.origin_longitude}
           destinationLatitude={option.destination_latitude}
           destinationLongitude={option.destination_longitude}
+          transferLatitude={option.transfer_latitude}
+          transferLongitude={option.transfer_longitude}
           vehicles={vehicles}
         />
 
@@ -113,6 +128,15 @@ export function DetailView({ option, liveEtaSeconds, onClose }: DetailViewProps)
             warn={tight}
             isLast={false}
           />
+          {hasTransfer && (
+            <Stage
+              icon="icon-bus"
+              name={`Baldeação: linha ${option.transfer_line_code} em ${option.transfer_stop_name}`}
+              meta="desça e embarque na próxima"
+              time={`+${transferArriveMinute} min`}
+              isLast={false}
+            />
+          )}
           <Stage
             icon="icon-flag"
             name={option.destination_stop_name}

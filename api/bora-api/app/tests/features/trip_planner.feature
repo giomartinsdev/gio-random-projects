@@ -48,6 +48,43 @@ Feature: Trip planner
     When trip options are searched from the origin to the destination
     Then the line "178" option has no eta
 
+  Scenario: A route reachable via one transfer is found when no direct line exists
+    Given stop "S1" is 50m from the origin
+    And stop "T1" exists
+    And stop "S2" is 50m from the destination
+    And line "170" serves "S1" then "T1" in that order
+    And line "270" serves "T1" then "S2" in that order
+    When trip options are searched from the origin to the destination
+    Then a trip option for line "170" comes back
+    And its transfer is to line "270" at "T1"
+
+  Scenario: A direct line is preferred over a transfer when both exist
+    Given stop "S1" is 50m from the origin and stop "S2" is 50m from the destination
+    And line "178" serves "S1" then "S2" in that order
+    And stop "T1" exists
+    And line "170" serves "S1" then "T1" in that order
+    And line "270" serves "T1" then "S2" in that order
+    When trip options are searched from the origin to the destination
+    Then exactly 1 trip option for line "178" comes back
+    And no trip option has a transfer
+
+  Scenario: A destination unreachable even via one transfer comes back empty
+    Given stop "S1" is 50m from the origin
+    And stop "T1" exists
+    And stop "S2" is 50m from the destination
+    And line "170" serves "S1" then "T1" in that order
+    When trip options are searched from the origin to the destination
+    Then no trip options come back
+
+  Scenario: Riding the wrong direction on the second leg is not a valid transfer
+    Given stop "S1" is 50m from the origin
+    And stop "T1" exists
+    And stop "S2" is 50m from the destination
+    And line "170" serves "S1" then "T1" in that order
+    And line "270" serves "S2" then "T1" in that order
+    When trip options are searched from the origin to the destination
+    Then no trip options come back
+
   Scenario: The same line reachable from two origin stops is reported only once
     Given stop "S1" is 50m from the origin and stop "S2" is 50m from the destination
     And stop "S3" is 20m from the origin

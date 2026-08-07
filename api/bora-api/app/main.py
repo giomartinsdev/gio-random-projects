@@ -30,6 +30,7 @@ _planner = TripPlanner(
     walking_speed_mps=settings.walking_speed_mps,
     min_bus_speed_kmh=settings.min_bus_speed_kmh,
     average_bus_speed_kmh=settings.average_bus_speed_kmh,
+    transfer_buffer_seconds=settings.transfer_buffer_seconds,
 )
 _geocoder = NominatimGeocoder()
 
@@ -67,6 +68,14 @@ class TripOptionResponse(BaseModel):
     trip_seconds: float
     vehicle_id: str | None
     eta_seconds: float | None
+    transfer_stop_id: str | None = None
+    transfer_stop_name: str | None = None
+    transfer_latitude: float | None = None
+    transfer_longitude: float | None = None
+    transfer_line_id: str | None = None
+    transfer_line_code: str | None = None
+    transfer_line_name: str | None = None
+    transfer_seconds: float | None = None
 
 
 class GeocodeResponse(BaseModel):
@@ -139,6 +148,14 @@ def create_app() -> FastAPI:
                 trip_seconds=option.trip_seconds,
                 vehicle_id=option.vehicle_id,
                 eta_seconds=option.eta_seconds,
+                transfer_stop_id=option.transfer_stop_id,
+                transfer_stop_name=option.transfer_stop_name,
+                transfer_latitude=option.transfer_latitude,
+                transfer_longitude=option.transfer_longitude,
+                transfer_line_id=option.transfer_line_id,
+                transfer_line_code=option.transfer_line_code,
+                transfer_line_name=option.transfer_line_name,
+                transfer_seconds=option.transfer_seconds,
             )
             for option in options
         ]
