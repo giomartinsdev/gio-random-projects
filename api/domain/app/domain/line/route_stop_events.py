@@ -29,6 +29,19 @@ from app.domain.line.route_stop_entity import RouteStop
 if TYPE_CHECKING:
     from sqlmodel import Session
 
+# Postgres caps a single query at 65535 bind parameters — RouteStop's 4
+# columns/row means >16383 rows would blow that limit outright, and a
+# real city-wide GTFS import is 40k+ rows (confirmed live: an unchunked
+# insert here crashed gtfs_importer's very first production run with
+# "the number of query arguments" past that cap). Same chunking already
+# applied to UpsertStops/UpsertLines/RecordVehiclePositions — just
+# missing here until now.
+_CHUNK_SIZE = 5000
+
+
+def _chunks[T](items: list[T], size: int) -> list[list[T]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
 
 class RouteStopInput(BaseModel):
     """One stop-sequence row — shape produced by
@@ -59,8 +72,9 @@ class ReplaceRouteStops(DomainEvent[RouteStop]):
             session.commit()
             return 0
 
-        rows: list[dict[str, Any]] = [s.model_dump() for s in self.stops]
-        session.exec(insert(RouteStop).values(rows))
+        for batch in _chunks(self.stops, _CHUNK_SIZE):
+            rows: list[dict[str, Any]] = [s.model_dump() for s in batch]
+            session.exec(insert(RouteStop).values(rows))
         session.commit()
         return len(self.stops)
 

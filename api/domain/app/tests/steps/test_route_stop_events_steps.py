@@ -85,6 +85,20 @@ def _when_every_route_stop_listed(client: TestClient) -> Any:
     return client.get("/events/list-route-stops")
 
 
+@when(
+    parsers.parse('line "{line_id}"\'s stops are replaced with {count:d} generated stops'),
+    target_fixture="response",
+)
+def _when_stops_replaced_bulk(client: TestClient, line_id: str, count: int) -> Any:
+    # Cycles through the 3 stops the background already created rather
+    # than needing `count` real Stop rows — RouteStop has no uniqueness
+    # constraint beyond its own surrogate id, so repeating stop_ids
+    # across a large, distinct-by-sequence batch is a legitimate way to
+    # exercise chunking without an equally large fixture.
+    stop_ids = [("S1", "S2", "S3")[i % 3] for i in range(count)]
+    return _replace(client, line_id, stop_ids)
+
+
 @then(parsers.parse("the response reports {count:d} route-stops replaced"))
 def _then_response_reports_count(response: Any, count: int) -> None:
     assert response.status_code == 200

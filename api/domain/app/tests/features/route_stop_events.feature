@@ -34,3 +34,7 @@ Feature: RouteStop events
     And line "179"'s stops were already replaced with "S3" then "S1"
     When every route-stop is listed
     Then 4 route-stop rows come back
+
+  Scenario: Replacing more stops than fit in a single bulk insert still works
+    When line "178"'s stops are replaced with 20000 generated stops
+    Then the response reports 20000 route-stops replaced
