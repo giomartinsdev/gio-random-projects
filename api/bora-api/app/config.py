@@ -26,7 +26,12 @@ class Settings(BaseSettings):
     # refreshes.
     reference_data_ttl_seconds: float = 600.0
     default_radius_m: float = 800.0
-    default_stop_limit: int = 5
+    # 5 was tuned against sparse test fixtures; a real city-wide GTFS
+    # feed clusters many stops (different operators/routes) within the
+    # same 800m radius, so 5 nearest stops on each side missed direct
+    # lines that a slightly wider window finds (confirmed live: Centro
+    # -> Copacabana had 0 matches at limit=5 but 69 at limit=20).
+    default_stop_limit: int = 20
     # ~4.7 km/h — a commonly used average adult walking pace.
     walking_speed_mps: float = 1.3
     # Floor applied to a bus's own reported speed before dividing
