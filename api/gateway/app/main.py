@@ -104,6 +104,13 @@ async def proxy_geocode(request: Request) -> Response:
     )
 
 
+@limiter.limit(lambda: settings.rate_limit)
+async def proxy_line_vehicles(request: Request) -> Response:
+    return await forward(
+        request, request.app.state.http_client, settings.bora_api_upstream_url, "line-vehicles"
+    )
+
+
 def _make_lifespan(
     transport: httpx.AsyncBaseTransport | None,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
@@ -155,6 +162,7 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     app.add_api_route("/nearby-stops", proxy_nearby_stops, methods=["GET"])
     app.add_api_route("/trip-options", proxy_trip_options, methods=["GET"])
     app.add_api_route("/geocode", proxy_geocode, methods=["GET"])
+    app.add_api_route("/line-vehicles", proxy_line_vehicles, methods=["GET"])
 
     app.add_api_route(
         "/{path:path}",

@@ -57,8 +57,12 @@ class TripOptionResponse(BaseModel):
     line_name: str
     origin_stop_id: str
     origin_stop_name: str
+    origin_latitude: float
+    origin_longitude: float
     destination_stop_id: str
     destination_stop_name: str
+    destination_latitude: float
+    destination_longitude: float
     walk_seconds: float
     trip_seconds: float
     vehicle_id: str | None
@@ -69,6 +73,13 @@ class GeocodeResponse(BaseModel):
     name: str
     latitude: float
     longitude: float
+
+
+class LineVehicleResponse(BaseModel):
+    vehicle_id: str
+    latitude: float
+    longitude: float
+    speed_kmh: float
 
 
 def create_app() -> FastAPI:
@@ -118,14 +129,33 @@ def create_app() -> FastAPI:
                 line_name=option.line_name,
                 origin_stop_id=option.origin_stop_id,
                 origin_stop_name=option.origin_stop_name,
+                origin_latitude=option.origin_latitude,
+                origin_longitude=option.origin_longitude,
                 destination_stop_id=option.destination_stop_id,
                 destination_stop_name=option.destination_stop_name,
+                destination_latitude=option.destination_latitude,
+                destination_longitude=option.destination_longitude,
                 walk_seconds=option.walk_seconds,
                 trip_seconds=option.trip_seconds,
                 vehicle_id=option.vehicle_id,
                 eta_seconds=option.eta_seconds,
             )
             for option in options
+        ]
+
+    @app.get("/line-vehicles")
+    def line_vehicles(
+        planner: Annotated[TripPlanner, Depends(get_trip_planner)],
+        line_code: str = Query(..., min_length=1),
+    ) -> list[LineVehicleResponse]:
+        return [
+            LineVehicleResponse(
+                vehicle_id=vehicle.vehicle_id,
+                latitude=vehicle.latitude,
+                longitude=vehicle.longitude,
+                speed_kmh=vehicle.speed_kmh,
+            )
+            for vehicle in planner.line_vehicles(line_code)
         ]
 
     @app.get("/geocode")

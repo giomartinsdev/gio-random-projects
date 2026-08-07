@@ -23,8 +23,12 @@ export interface TripOption {
   line_name: string;
   origin_stop_id: string;
   origin_stop_name: string;
+  origin_latitude: number;
+  origin_longitude: number;
   destination_stop_id: string;
   destination_stop_name: string;
+  destination_latitude: number;
+  destination_longitude: number;
   walk_seconds: number;
   trip_seconds: number;
   vehicle_id: string | null;
@@ -35,6 +39,13 @@ export interface GeocodeResult {
   name: string;
   latitude: number;
   longitude: number;
+}
+
+export interface LineVehicle {
+  vehicle_id: string;
+  latitude: number;
+  longitude: number;
+  speed_kmh: number;
 }
 
 class ApiError extends Error {
@@ -89,6 +100,13 @@ export function fetchTripOptions(
 
 export function searchDestination(query: string, signal?: AbortSignal): Promise<GeocodeResult[]> {
   return getJson<GeocodeResult[]>("/geocode", { q: query, limit: 5 }, signal);
+}
+
+export function fetchLineVehicles(
+  lineCode: string,
+  signal?: AbortSignal,
+): Promise<LineVehicle[]> {
+  return getJson<LineVehicle[]>("/line-vehicles", { line_code: lineCode }, signal);
 }
 
 export { ApiError };

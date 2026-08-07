@@ -46,8 +46,12 @@ class TripOption:
     line_name: str
     origin_stop_id: str
     origin_stop_name: str
+    origin_latitude: float
+    origin_longitude: float
     destination_stop_id: str
     destination_stop_name: str
+    destination_latitude: float
+    destination_longitude: float
     walk_seconds: float
     trip_seconds: float
     vehicle_id: str | None
@@ -59,6 +63,14 @@ class _DirectMatch:
     line_id: str
     origin: NearbyStop
     destination: NearbyStop
+
+
+@dataclass
+class LineVehicle:
+    vehicle_id: str
+    latitude: float
+    longitude: float
+    speed_kmh: float
 
 
 class TripPlanner:
@@ -134,6 +146,21 @@ class TripPlanner:
         options.sort(key=lambda option: (option.eta_seconds is None, option.eta_seconds or 0.0))
         return options
 
+    def line_vehicles(self, line_code: str) -> list[LineVehicle]:
+        """Every vehicle currently reporting on this line, for a rider
+        who picked a TripOption and wants to see it moving on a map —
+        the same live positions _closest_vehicle_eta already draws its
+        ETA from, just returned whole instead of collapsed to one number."""
+        return [
+            LineVehicle(
+                vehicle_id=position.id,
+                latitude=position.data["latitude"],
+                longitude=position.data["longitude"],
+                speed_kmh=position.data.get("speed_kmh", 0.0),
+            )
+            for position in self._domain_client.list_vehicle_positions_by_lines([line_code])
+        ]
+
     def _match_direct_lines(
         self, origin_stops: list[NearbyStop], dest_stops: list[NearbyStop]
     ) -> list[_DirectMatch]:
@@ -195,8 +222,12 @@ class TripPlanner:
             line_name=line.name,
             origin_stop_id=match.origin.stop.id,
             origin_stop_name=match.origin.stop.name,
+            origin_latitude=match.origin.stop.latitude,
+            origin_longitude=match.origin.stop.longitude,
             destination_stop_id=match.destination.stop.id,
             destination_stop_name=match.destination.stop.name,
+            destination_latitude=match.destination.stop.latitude,
+            destination_longitude=match.destination.stop.longitude,
             walk_seconds=match.origin.walk_seconds,
             trip_seconds=trip_distance / self._average_bus_speed_mps,
             vehicle_id=vehicle_id,

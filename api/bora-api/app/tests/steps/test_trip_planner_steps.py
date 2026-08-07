@@ -7,7 +7,7 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from app.domain_client import LineRecord, RouteStopRecord, StopRecord, VehiclePositionRecord
-from app.trip_planner import TripOption, TripPlanner
+from app.trip_planner import LineVehicle, TripOption, TripPlanner
 
 scenarios("../features/trip_planner.feature")
 
@@ -171,6 +171,38 @@ def _given_vehicle_near_stop(
     fake_domain_client.positions_by_code.setdefault(line_id, []).append(position)
 
 
+@given(
+    parsers.parse(
+        'another vehicle on line "{line_id}" is {distance:d}m from "{stop_id}" traveling at {speed:d} km/h'
+    )
+)
+def _given_another_vehicle_near_stop(
+    fake_cache: _FakeCache,
+    fake_domain_client: _FakeDomainClient,
+    line_id: str,
+    distance: int,
+    stop_id: str,
+    speed: int,
+) -> None:
+    stop = fake_cache.stops_by_id[stop_id]
+    lat, lon = _north((stop.latitude, stop.longitude), distance)
+    position = VehiclePositionRecord(
+        id="B2",
+        data={
+            "mode": "sppo",
+            "line_code": line_id,
+            "vehicle_id": "B2",
+            "latitude": lat,
+            "longitude": lon,
+            "speed_kmh": speed,
+            "captured_at": "2026-08-06T13:00:00Z",
+            "color_hex": None,
+        },
+        captured_at="2026-08-06T13:00:00Z",  # pyright: ignore[reportArgumentType] — Pydantic parses the ISO string into a datetime at validation time
+    )
+    fake_domain_client.positions_by_code.setdefault(line_id, []).append(position)
+
+
 @when(
     parsers.parse("nearby stops are searched with radius {radius:d}m and limit {limit:d}"),
     target_fixture="nearby_result",
@@ -182,6 +214,14 @@ def _when_nearby_stops_searched(planner: TripPlanner, radius: int, limit: int) -
 @when("trip options are searched from the origin to the destination", target_fixture="trip_result")
 def _when_trip_options_searched(planner: TripPlanner) -> list[TripOption]:
     return planner.trip_options(*_ORIGIN, *_DESTINATION, radius_m=5000.0, stop_limit=10)
+
+
+@when(
+    parsers.parse('line vehicles are searched for line "{line_id}"'),
+    target_fixture="vehicle_result",
+)
+def _when_line_vehicles_searched(planner: TripPlanner, line_id: str) -> list[LineVehicle]:
+    return planner.line_vehicles(line_id)
 
 
 @then(parsers.parse('the nearby stops are "{s1}" then "{s2}"'))
@@ -236,3 +276,8 @@ def _then_exactly_n_options(trip_result: list[TripOption], count: int, line_id: 
 def _then_origin_only(trip_result: list[TripOption], origin_id: str) -> None:
     option = trip_result[0]
     assert option.origin_stop_id == origin_id
+
+
+@then(parsers.parse("{count:d} line vehicles come back"))
+def _then_line_vehicle_count(vehicle_result: list[LineVehicle], count: int) -> None:
+    assert len(vehicle_result) == count

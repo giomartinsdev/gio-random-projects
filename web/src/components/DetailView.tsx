@@ -1,5 +1,8 @@
-import type { TripOption } from "../api";
+import { useEffect, useState } from "react";
+import { fetchLineVehicles, type LineVehicle, type TripOption } from "../api";
+import { REFRESH_INTERVAL_MS } from "../App";
 import { formatDuration } from "../format";
+import { MapView } from "./MapView";
 
 interface DetailViewProps {
   option: TripOption | null;
@@ -8,6 +11,35 @@ interface DetailViewProps {
 }
 
 export function DetailView({ option, liveEtaSeconds, onClose }: DetailViewProps) {
+  const [vehicles, setVehicles] = useState<LineVehicle[]>([]);
+
+  // Keyed on line_code, not on `option` as a whole — a rider re-selecting
+  // the same line (closing and reopening the detail view) shouldn't reset
+  // the poll, but switching to a different line must, since stale
+  // vehicles from the old line would otherwise flash on the new map
+  // until the first fetch for the new line lands.
+  useEffect(() => {
+    const lineCode = option?.line_code;
+    if (!lineCode) {
+      setVehicles([]);
+      return;
+    }
+    const controller = new AbortController();
+    function load(code: string) {
+      fetchLineVehicles(code, controller.signal)
+        .then(setVehicles)
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+        });
+    }
+    load(lineCode);
+    const interval = setInterval(() => load(lineCode), REFRESH_INTERVAL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+    };
+  }, [option?.line_code]);
+
   if (!option) {
     return <div className="detail" aria-hidden="true" />;
   }
@@ -49,6 +81,14 @@ export function DetailView({ option, liveEtaSeconds, onClose }: DetailViewProps)
           </div>
           {hasEta && <div className="d-caption">até o ônibus chegar no ponto</div>}
         </div>
+
+        <MapView
+          originLatitude={option.origin_latitude}
+          originLongitude={option.origin_longitude}
+          destinationLatitude={option.destination_latitude}
+          destinationLongitude={option.destination_longitude}
+          vehicles={vehicles}
+        />
 
         <div className="timeline">
           <Stage icon="icon-crosshair" name="Você" meta="agora" time="" isLast={false} />

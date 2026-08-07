@@ -43,7 +43,7 @@ class Handler(BaseHTTPRequestHandler):
         # "domain" and "bora-api" upstream roles, since all the gateway
         # needs proven here is that it forwards to the right place
         # without requiring an API key.
-        if parsed.path in ("/nearby-stops", "/trip-options", "/geocode"):
+        if parsed.path in ("/nearby-stops", "/trip-options", "/geocode", "/line-vehicles"):
             self._send_json(
                 200, {"path": parsed.path, "saw_api_key_header": self.headers.get("x-api-key")}
             )

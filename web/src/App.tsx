@@ -13,8 +13,10 @@ import { fetchTripOptions, searchDestination, type GeocodeResult, type TripOptio
 // Live vehicle positions are only as fresh as the last GPS poll (every 5
 // minutes on the flows side, see flows/bus_gps_poller) — this interval
 // isn't trying to beat that, just to notice a new poll landed and correct
-// the client-side countdown's drift before it gets too far off.
-const REFRESH_INTERVAL_MS = 20_000;
+// the client-side countdown's drift before it gets too far off. Exported
+// since DetailView's own vehicle-position polling (for the live map)
+// wants the same cadence for the same reason.
+export const REFRESH_INTERVAL_MS = 20_000;
 
 function App() {
   const { status: originStatus, coordinates: origin, locate } = useGeolocation();

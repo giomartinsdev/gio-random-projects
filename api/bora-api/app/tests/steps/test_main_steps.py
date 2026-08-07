@@ -16,7 +16,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from app.domain_client import StopRecord
 from app.geocoding import GeocodeResult
 from app.main import create_app, get_geocoder, get_trip_planner
-from app.trip_planner import NearbyStop, TripOption
+from app.trip_planner import LineVehicle, NearbyStop, TripOption
 
 scenarios("../features/main.feature")
 
@@ -61,8 +61,12 @@ def _given_planner_returns_trip_options(fake_planner: MagicMock, count: int) -> 
             line_name="Linha 178",
             origin_stop_id="S1",
             origin_stop_name="Stop 1",
+            origin_latitude=-22.9,
+            origin_longitude=-43.2,
             destination_stop_id="S2",
             destination_stop_name="Stop 2",
+            destination_latitude=-22.8,
+            destination_longitude=-43.1,
             walk_seconds=80.0,
             trip_seconds=600.0,
             vehicle_id="B1",
@@ -76,6 +80,14 @@ def _given_planner_returns_trip_options(fake_planner: MagicMock, count: int) -> 
 def _given_geocoder_returns(fake_geocoder: MagicMock) -> None:
     fake_geocoder.search.return_value = [
         GeocodeResult(name="Copacabana, Rio de Janeiro", latitude=-22.9, longitude=-43.2)
+    ]
+
+
+@given(parsers.parse("the fake planner returns {count:d} line vehicle"))
+def _given_planner_returns_line_vehicles(fake_planner: MagicMock, count: int) -> None:
+    fake_planner.line_vehicles.return_value = [
+        LineVehicle(vehicle_id="B1", latitude=-22.9, longitude=-43.2, speed_kmh=20.0)
+        for _ in range(count)
     ]
 
 
@@ -117,6 +129,14 @@ def _when_geocode_requested(client: TestClient, query: str) -> Any:
     return client.get("/geocode", params={"q": query})
 
 
+@when(
+    parsers.parse('GET /line-vehicles is requested with line_code "{line_code}"'),
+    target_fixture="response",
+)
+def _when_line_vehicles_requested(client: TestClient, line_code: str) -> Any:
+    return client.get("/line-vehicles", params={"line_code": line_code})
+
+
 @then(parsers.parse("the response status is {status:d}"))
 def _then_response_status(response: Any, status: int) -> None:
     assert response.status_code == status
@@ -139,4 +159,9 @@ def _then_response_trip_option_count(response: Any, count: int) -> None:
 
 @then(parsers.parse("the response has {count:d} geocode result"))
 def _then_response_geocode_count(response: Any, count: int) -> None:
+    assert len(response.json()) == count
+
+
+@then(parsers.parse("the response has {count:d} line vehicle"))
+def _then_response_line_vehicle_count(response: Any, count: int) -> None:
     assert len(response.json()) == count

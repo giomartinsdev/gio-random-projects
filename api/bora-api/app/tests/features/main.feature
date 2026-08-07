@@ -29,6 +29,12 @@ Feature: bora-api HTTP wiring
     Then the response status is 200
     And the response has 1 geocode result
 
+  Scenario: Line vehicles are returned as JSON
+    Given the fake planner returns 1 line vehicle
+    When GET /line-vehicles is requested with line_code "178"
+    Then the response status is 200
+    And the response has 1 line vehicle
+
   Scenario: A query missing a required parameter is rejected
     When GET /nearby-stops is requested with no parameters
     Then the response status is 422

@@ -682,6 +682,15 @@ button:focus-visible,
   margin-top: 2px;
 }
 
+.line-map {
+  width: 100%;
+  height: 220px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  margin-top: 22px;
+  overflow: hidden;
+}
+
 .timeline {
   padding-top: 22px;
 }

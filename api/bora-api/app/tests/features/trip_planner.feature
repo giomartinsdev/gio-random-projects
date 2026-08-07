@@ -56,3 +56,14 @@ Feature: Trip planner
     When trip options are searched from the origin to the destination
     Then exactly 1 trip option for line "178" comes back
     And its origin stop is "S3"
+
+  Scenario: Every vehicle reporting on a line comes back
+    Given stop "S1" is 0m from the origin
+    And a vehicle on line "178" is 1000m from "S1" traveling at 36 km/h
+    And another vehicle on line "178" is 500m from "S1" traveling at 20 km/h
+    When line vehicles are searched for line "178"
+    Then 2 line vehicles come back
+
+  Scenario: A line with no vehicle reporting has none to show
+    When line vehicles are searched for line "178"
+    Then 0 line vehicles come back

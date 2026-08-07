@@ -1,6 +1,6 @@
 Feature: Gateway public routes
   As the bora. frontend
-  I want /nearby-stops, /trip-options, and /geocode proxied to bora-api without an API key
+  I want /nearby-stops, /trip-options, /geocode, and /line-vehicles proxied to bora-api without an API key
   So that an anonymous browser can reach bora-api through the one public entry point
 
   Background:
@@ -21,6 +21,11 @@ Feature: Gateway public routes
     When "/geocode" is requested without an API key
     Then the response status is 200
     And upstream received the request at "/geocode"
+
+  Scenario: Line-vehicles is forwarded to bora-api without requiring an API key
+    When "/line-vehicles" is requested without an API key
+    Then the response status is 200
+    And upstream received the request at "/line-vehicles"
 
   Scenario: A request from an allowed frontend origin gets CORS headers back
     When "/nearby-stops" is requested from origin "http://localhost:5173"
