@@ -55,12 +55,17 @@ deployments:
           OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id={{ prefect.blocks.secret.cf-acess-client-id }},CF-Access-Client-Secret={{ prefect.blocks.secret.cf-acess-client-secret }}"
           OTEL_BSP_SCHEDULE_DELAY: "100"
           OTEL_BLRP_SCHEDULE_DELAY: "100"
-    # Every 5 minutes, business hours only (08h-18h, Mon-Fri,
-    # America/Sao_Paulo) — matches the window this flow actually polls
-    # (last 5 minutes of SPPO GPS pings), so consecutive runs cover the
-    # feed with no gap and no overlap.
+    # Every minute, business hours only (08h-18h, Mon-Fri,
+    # America/Sao_Paulo) — bumped from every 5 minutes after riders
+    # watching the live map noticed stale bus positions. window_seconds
+    # (still 300, i.e. last 5 minutes of SPPO pings) is now wider than
+    # the poll interval on purpose: RecordVehiclePositions upserts by
+    # vehicle_id, so the heavier overlap between consecutive runs is
+    # redundant work, not a correctness issue, and keeping the window
+    # wide means one slow/late upstream response still gets fully
+    # covered by the very next run.
     schedule:
-      cron: "*/5 8-18 * * 1-5"
+      cron: "*/1 8-18 * * 1-5"
       timezone: "America/Sao_Paulo"
 
   - name: brt-gps-poller
@@ -92,7 +97,7 @@ deployments:
     # reasonably fresh during business hours" rather than "cover a
     # window with no gap".
     schedule:
-      cron: "*/5 8-18 * * 1-5"
+      cron: "*/1 8-18 * * 1-5"
       timezone: "America/Sao_Paulo"
 
   - name: vehicle-position-archiver
