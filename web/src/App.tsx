@@ -43,7 +43,17 @@ function App() {
     const controller = new AbortController();
     searchDestination(debouncedQuery, controller.signal)
       .then(setSuggestions)
-      .catch(() => setSuggestions([]));
+      .catch((error: unknown) => {
+        // A superseded request (query changed again before this one
+        // resolved) gets aborted by the cleanup below — that rejection
+        // must NOT clear suggestions a newer, still-in-flight request is
+        // about to fill in. Confirmed live: typing with a brief pause
+        // mid-word could abort an earlier request whose rejection then
+        // resolved AFTER the real answer's .then(), wiping out a
+        // perfectly good result with an empty list.
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setSuggestions([]);
+      });
     return () => controller.abort();
   }, [debouncedQuery, destination]);
 
