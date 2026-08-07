@@ -18,6 +18,11 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "app/tests/**" = ["S101", "PLR2004", "ANN"]
+# Real container hostnames/ports come back from testcontainers at
+# runtime, never hardcoded — the S104/S108-style "possible hardcoded
+# credential" checks that fire on the fixed test creds passed to
+# PostgresContainer/MinIO below are noise, not a real secret.
+"app/tests/steps/**" = ["S101", "PLR2004", "ANN", "S105", "S106"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
@@ -41,9 +46,28 @@ extraPaths = [".."]
 # (@app.get, @field_validator, ...) are fully typed — no blanket
 # decorator exemption needed like flows/ has for Prefect.
 
+[[tool.pyright.executionEnvironments]]
+# pytest-bdd step functions are only ever called by the @given/@when/@then
+# decorator + scenarios() machinery, never referenced by name directly —
+# reportUnusedFunction can't see that and flags every single one.
+# extraPaths repeated here — a nested executionEnvironments block does
+# NOT inherit the top-level one (see api/gateway/pyproject.toml's
+# identical note, confirmed the same way here).
+root = "app/tests/steps"
+reportUnusedFunction = false
+# "." (not just "..") repeated here too — the nested root above changes
+# where imports resolve from, and app.* itself stopped resolving
+# without the project root explicitly back on the path.
+extraPaths = [".", ".."]
+
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]
 # api/shared/ lives one level up (it's shared with sibling services, see
 # api/README.md) — Docker COPYs it in at build time, but locally it's a
 # sibling dir pytest/pyright won't find on their own without this.
 pythonpath = [".."]
+addopts = "--cov=app --cov-report=term-missing --cov-fail-under=90"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/tests/*"]

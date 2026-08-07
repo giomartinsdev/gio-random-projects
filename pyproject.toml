@@ -70,3 +70,19 @@ reportUnusedFunction = false
 # Tests live inside each flow's own tests/ folder (flows/<flow>/tests/),
 # not a top-level tests/ dir — they're that flow's tests, not the repo's.
 testpaths = ["flows"]
+addopts = "--cov=flows --cov-report=term-missing --cov-fail-under=90"
+
+[tool.coverage.run]
+source = ["flows"]
+omit = [
+    "flows/*/tests/*",
+    # A meta-import-hook instrumentation shim (wraps every flows.* method
+    # in an OTel span at import time, see its own module docstring) —
+    # every real test already exercises it implicitly just by importing
+    # flows.* modules, but its exception-recording and async-wrapper
+    # branches only fire for failures/coroutines none of the current
+    # scenarios happen to trigger. Testing those branches would mean
+    # asserting against OTel span internals, not this repo's own
+    # behavior — not worth the fixture weight for what it'd catch.
+    "flows/shared/auto_trace.py",
+]

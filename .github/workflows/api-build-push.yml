@@ -54,7 +54,15 @@ jobs:
         working-directory: api/${{ matrix.service }}
         run: pyright .
 
-      - name: Test (pytest)
+      # Every scenario here is a .feature (Gherkin/GWT) integration test
+      # backed by real testcontainers (Postgres, MinIO, or a real
+      # upstream server in its own container — see each service's
+      # tests/conftest.py) — no mocked ORMs or fake S3 clients standing
+      # in for the real thing. ubuntu-latest ships Docker already
+      # running, which is all testcontainers needs; no extra setup step.
+      # --cov-fail-under=90 is set in each service's pyproject.toml, so
+      # this step fails the job on its own if coverage drops below 90%.
+      - name: Integration tests (pytest-bdd + testcontainers, 90% coverage gate)
         working-directory: api/${{ matrix.service }}
         run: pytest -v
 

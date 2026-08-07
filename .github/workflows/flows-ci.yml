@@ -39,6 +39,13 @@ jobs:
       - run: pyright flows
 
   test:
+    # Every scenario here is a .feature (Gherkin/GWT) integration test
+    # backed by real testcontainers where a flow has real infrastructure
+    # to test against (see api/domain's and api/gateway's own CI job for
+    # the heavier testcontainers use — Postgres, MinIO, a real upstream
+    # server); ubuntu-latest ships Docker already running, no extra setup
+    # needed. --cov-fail-under=90 is set in the root pyproject.toml, so
+    # this step fails the job on its own if coverage drops below 90%.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +53,8 @@ jobs:
         with:
           python-version: "3.14"
       - run: pip install -r requirements-dev.txt
-      - run: pytest flows -v
+      - name: Integration tests (pytest-bdd, 90% coverage gate)
+        run: pytest flows -v
 
   deploy:
     # Only on an actual push to main, never for a pull_request build —
