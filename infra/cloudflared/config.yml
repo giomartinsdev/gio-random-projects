@@ -59,6 +59,17 @@ ingress:
   - hostname: minio-api.giomartins.dev
     service: http://localhost:9000
 
+  # The "bora." frontend — deliberately NOT behind Cloudflare Access,
+  # unlike cloudbeaver/arcane/prefect above: those are admin tools for
+  # one person (me), this is a public rider-facing app anyone in Rio
+  # should be able to open with no login at all. Talks to
+  # gateway.giomartins.dev directly from the browser (see
+  # web/README.md) — GATEWAY_CORS_ORIGINS in the gateway's own Arcane
+  # project must include this exact origin
+  # (https://bora.giomartins.dev) or the browser calls get blocked by CORS.
+  - hostname: bora.giomartins.dev
+    service: http://localhost:4173
+
   # Add new services below, one hostname per block, most specific first.
   # - hostname: example.giomartins.dev
   #   service: http://localhost:PORT

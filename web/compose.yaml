@@ -1,0 +1,18 @@
+# Pulls the image .github/workflows/web-build-push.yml already builds
+# and pushes on every change to web/** — not a local build. See
+# api/gateway/compose.yaml's identical, more heavily commented version
+# for why localhost:5000/pull_policy are set up this way (same registry,
+# same host).
+#
+# Unlike every api/<service>/, this has no VITE_GATEWAY_URL env var at
+# runtime — Vite bakes import.meta.env.* into the static bundle at BUILD
+# time (see Dockerfile's own note), so the gateway's public URL is fixed
+# at image-build time in CI, not configurable per deployment the way
+# every other env var here is.
+services:
+  web:
+    image: ${REGISTRY_HOST:-localhost:5000}/web:${WEB_VERSION:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-4173}:4173"

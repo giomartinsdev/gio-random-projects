@@ -1,18 +1,20 @@
-"""Every event for the VehiclePosition domain. Only a bulk upsert
-exists — positions are never fetched/updated/deleted individually
-through this API (that's a future read-side/dashboard query's job), so
-there's no GetById/ListAll/Update/Delete here to keep unused routes off
-the router.
+"""Every event for the VehiclePosition domain. Positions are never
+fetched/updated/deleted individually through this API — no GetById/
+Update/Delete here to keep unused routes off the router — but
+ListVehiclePositionsByLines exists for the one read shape a caller
+genuinely needs: a handful of lines' current positions, not a single
+vehicle and not the whole city (see its own docstring).
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlmodel import select
 
 from app.domain.base import DomainEvent
 from app.domain.vehicle.entity import Vehicle
@@ -132,3 +134,38 @@ class RecordVehiclePositions(DomainEvent[VehiclePosition]):
 
         session.commit()
         return len(positions)
+
+
+class ListVehiclePositionsByLines(DomainEvent[VehiclePosition]):
+    """Every current VehiclePosition row for the given line_codes — a
+    mechanical filter over the same JSON payload every poller already
+    writes (see VehiclePositionInput.line_code above), not a business
+    rule. Lets a caller (e.g. bora-api's trip-planning logic) pull live
+    positions for the handful of lines it cares about instead of every
+    vehicle city-wide."""
+
+    __http_method__: ClassVar[str] = "GET"
+
+    # Defaults to empty (not required) — same reasoning as
+    # DeleteVehiclePositionHistoryBatch's `ids` in history_events.py:
+    # a GET with no line_codes at all is a valid, explicit "nothing
+    # requested" rather than a 422, and an empty list can't otherwise be
+    # expressed as a query string (no key present looks identical to an
+    # empty list to FastAPI's query-param binding either way).
+    line_codes: list[str] = []  # noqa: RUF012 — Pydantic deep-copies mutable defaults per instance, unlike a dataclass
+
+    def handle(self, session: Session) -> list[VehiclePosition]:
+        if not self.line_codes:
+            return []
+        # .op("->>") — dialect-agnostic JSON text-extraction operator,
+        # not a dialect-specific comparator (e.g. JSONB's own .astext) —
+        # works the same whether `data`'s runtime column type is
+        # Postgres's JSONB (production) or plain JSON (sqlite, if ever
+        # used locally) per Document's own with_variant() split.
+        return list(
+            session.exec(
+                select(VehiclePosition).where(
+                    VehiclePosition.data.op("->>")("line_code").in_(self.line_codes)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownVariableType, reportUnknownArgumentType] — data is dict[str, Any] to pyright, but a real SQLAlchemy Column at runtime
+                )
+            ).all()
+        )

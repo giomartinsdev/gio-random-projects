@@ -66,6 +66,10 @@ reportUnusedFunction = false
 root = "flows/vehicle_position_archiver/tests/steps"
 reportUnusedFunction = false
 
+[[tool.pyright.executionEnvironments]]
+root = "flows/gtfs_importer/tests/steps"
+reportUnusedFunction = false
+
 [tool.pytest.ini_options]
 # Tests live inside each flow's own tests/ folder (flows/<flow>/tests/),
 # not a top-level tests/ dir — they're that flow's tests, not the repo's.

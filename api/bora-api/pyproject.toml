@@ -1,0 +1,57 @@
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+fix = true
+show-fixes = true
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "I", "UP", "B", "C4", "T20", "SIM", "N", "Q", "RUF",
+    "ASYNC", "S", "PTH", "ERA", "PL", "PERF", "ANN", "ARG", "RET", "TCH",
+]
+ignore = [
+    "E501",  # line length — formatter handles this
+    "S603",  # subprocess without shell=True
+    "S607",  # starting a process with a partial path
+    "B008",  # FastAPI's own DI idiom is Depends(...)/Query(...) as a default arg
+    "PLR0913",  # FastAPI route handlers legitimately take one Query(...) param per query param
+    "PLR0917",  # same reasoning as PLR0913 above
+]
+
+[tool.ruff.lint.per-file-ignores]
+"app/tests/**" = ["S101", "PLR2004", "ANN"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pyright]
+include = ["app"]
+pythonVersion = "3.14"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+# api/shared/ lives one level up (Docker COPYs it in at build time, see
+# api/README.md) — needs the parent dir on the search path same as
+# pytest's pythonpath below.
+extraPaths = [".."]
+
+[[tool.pyright.executionEnvironments]]
+# pytest-bdd step functions are only ever called by the @given/@when/@then
+# decorator + scenarios() machinery, never referenced by name directly —
+# reportUnusedFunction can't see that and flags every single one.
+root = "app/tests/steps"
+reportUnusedFunction = false
+extraPaths = [".", ".."]
+
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]
+pythonpath = [".."]
+addopts = "--cov=app --cov-report=term-missing --cov-fail-under=90"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/tests/*"]

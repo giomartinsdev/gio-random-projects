@@ -38,8 +38,18 @@ services:
       - "${GATEWAY_PORT:-8000}:8000"
     environment:
       GATEWAY_UPSTREAM_URL: ${GATEWAY_UPSTREAM_URL:-http://host.docker.internal:8001}
+      # bora-api is a separate Arcane project too — same
+      # separate-compose-network reasoning as GATEWAY_UPSTREAM_URL above,
+      # just pointed at bora-api's own published port instead of domain's.
+      GATEWAY_BORA_API_UPSTREAM_URL: ${GATEWAY_BORA_API_UPSTREAM_URL:-http://host.docker.internal:8002}
       GATEWAY_API_KEYS: ${GATEWAY_API_KEYS:-dev-key:local}
       GATEWAY_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_REQUEST_TIMEOUT_SECONDS:-60.0}
+      # No safe default here on purpose (unlike every other var above) —
+      # this MUST be set to the real frontend origin(s) in this
+      # project's .env before deploying, or the public /nearby-stops,
+      # /trip-options, /geocode routes will silently reject the browser
+      # with a CORS error. See gateway/README.md.
+      GATEWAY_CORS_ORIGINS: ${GATEWAY_CORS_ORIGINS:?Set this to the frontend's real origin(s), e.g. https://bora.giomartins.dev}
       OTEL_SERVICE_NAME: gateway
       OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
       # Logs were never being exported at all before this line existed —

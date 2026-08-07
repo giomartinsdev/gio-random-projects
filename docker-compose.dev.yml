@@ -1,0 +1,109 @@
+# Local dev stack — builds every service FROM SOURCE and wires them
+# together: postgres -> domain -> gateway -> bora-api, with web calling
+# only the gateway (browser -> gateway -> bora-api -> domain; see
+# api/gateway/app/main.py's proxy_nearby_stops/proxy_trip_options/
+# proxy_geocode for the public, unauthenticated surface that makes this
+# possible). This is deliberately separate from:
+#   - each service's own api/<name>/compose.yaml, which instead PULLS
+#     the pre-built image CI already pushed to the registry — that's
+#     the real deployment shape (gio-server via Openship), not local dev.
+#   - docker-compose.all.yml, which is infra-only (cloudflared, etc.).
+#
+# Usage: docker compose -f docker-compose.dev.yml up --build
+#
+# No GTFS data ships with this. Stop/Line/RouteStop stay empty — and
+# /trip-options always returns [] — until flows/gtfs_importer is run
+# once against this stack (point its gateway_url/api_key parameters at
+# http://localhost:8000 / dev-key). That's expected, not a bug: this
+# compose file proves the wiring works end to end, it doesn't seed
+# reference data.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: domain
+      POSTGRES_PASSWORD: dev-password
+      POSTGRES_DB: domain
+    volumes:
+      - dev-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U domain"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  domain:
+    build:
+      context: ./api
+      dockerfile: domain/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://domain:dev-password@postgres:5432/domain
+      OTEL_TRACES_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+
+  bora-api:
+    build:
+      context: ./api
+      dockerfile: bora-api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - domain
+    # No auth/rate-limit/CORS of its own — it's an internal service,
+    # reached only through the gateway (see api/bora-api/app/config.py's
+    # own docstring). Port published here purely for local debugging
+    # convenience, same as domain's 8001 below; nothing calls it directly.
+    ports:
+      - "8002:8000"
+    environment:
+      # bora-api still reaches domain through the gateway, exactly like
+      # any other internal caller (flows included) — it has no more
+      # direct access to domain than the frontend does.
+      BORA_API_GATEWAY_URL: http://gateway:8000
+      BORA_API_GATEWAY_API_KEY: dev-key
+      OTEL_TRACES_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+
+  gateway:
+    build:
+      context: ./api
+      dockerfile: gateway/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - domain
+      - bora-api
+    ports:
+      - "8000:8000"
+    environment:
+      GATEWAY_UPSTREAM_URL: http://domain:8000
+      GATEWAY_BORA_API_UPSTREAM_URL: http://bora-api:8000
+      # Throwaway credential, this compose file only — must match
+      # bora-api's own BORA_API_GATEWAY_API_KEY above.
+      GATEWAY_API_KEYS: "dev-key:local"
+      GATEWAY_CORS_ORIGINS: "http://localhost:5173,http://localhost:4173"
+      OTEL_TRACES_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+
+  web:
+    build:
+      context: ./web
+      args:
+        # Baked in at build time (see web/Dockerfile's own note) — the
+        # gateway's own localhost port, since the browser calls it
+        # directly and never reaches bora-api or domain any other way.
+        VITE_GATEWAY_URL: http://localhost:8000
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    ports:
+      - "4173:4173"
+
+volumes:
+  dev-postgres-data:

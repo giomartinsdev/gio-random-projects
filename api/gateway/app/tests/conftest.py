@@ -76,9 +76,14 @@ def gateway_client(
     host = upstream_container.get_container_host_ip()
     port = upstream_container.get_exposed_port(8000)
     monkeypatch.setattr(settings, "upstream_url", f"http://{host}:{port}")
+    # Same fake server plays both roles here (see
+    # fixtures/upstream_server.py's own comment) — a real deployment
+    # points these at two different services.
+    monkeypatch.setattr(settings, "bora_api_upstream_url", f"http://{host}:{port}")
     monkeypatch.setattr(settings, "api_keys", f"{VALID_KEY}:{CLIENT_NAME}")
     monkeypatch.setattr(settings, "max_body_bytes", 50_000_000)
     monkeypatch.setattr(settings, "rate_limit", "120/minute")
+    monkeypatch.setattr(settings, "cors_origins", "http://localhost:5173")
 
     # No `transport=` override — real network I/O across the container
     # boundary, unlike the old unit tests' ASGITransport-backed fake.

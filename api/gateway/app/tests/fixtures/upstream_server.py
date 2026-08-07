@@ -37,6 +37,17 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
             return
+        # Stands in for bora-api's own /nearby-stops, /trip-options,
+        # /geocode in gateway's public-route tests (see
+        # public_routes.feature) — this same fake server plays both
+        # "domain" and "bora-api" upstream roles, since all the gateway
+        # needs proven here is that it forwards to the right place
+        # without requiring an API key.
+        if parsed.path in ("/nearby-stops", "/trip-options", "/geocode"):
+            self._send_json(
+                200, {"path": parsed.path, "saw_api_key_header": self.headers.get("x-api-key")}
+            )
+            return
         self._send_json(404, {"detail": "not found"})
 
     def do_POST(self) -> None:

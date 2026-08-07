@@ -7,6 +7,11 @@ Openship (each project points at its own subfolder).
 
 To bring everything up at once locally: `docker compose -f docker-compose.all.yml up -d`
 
+To run the "bora." app (domain + gateway + bora-api + web) locally, built from
+source rather than pulled from the registry: `docker compose -f
+docker-compose.dev.yml up --build` — see that file's own header comment
+for what it does and doesn't set up (no GTFS data, no telemetry).
+
 ## Host-level requirements (not tracked by any compose file)
 
 The Docker Engine on gio-server itself needs `/etc/docker/daemon.json`:

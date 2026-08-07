@@ -16,12 +16,13 @@ from typing import TYPE_CHECKING
 
 import httpx
 from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     Response,  # noqa: TC002 — FastAPI resolves route return-type annotations at runtime (get_type_hints), so this can't be TYPE_CHECKING-only
 )
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
+from slowapi.util import get_ipaddr
 
 from app.auth import require_api_key
 from app.config import settings
@@ -32,13 +33,17 @@ if TYPE_CHECKING:
 
 
 def _rate_limit_key(request: Request) -> str:
-    # Keyed by the caller's own API key, not IP — every real caller sits
-    # behind Cloudflare's edge IPs, so IP-based limiting would either
-    # throttle every client together or none of them. Missing/invalid
-    # keys (rejected by require_api_key before the handler body runs,
-    # but the limiter's key_func still needs to produce something) fall
-    # back to remote address so unauthenticated hammering is still bounded.
-    return request.headers.get("x-api-key") or get_remote_address(request)
+    # Keyed by the caller's own API key when there is one (the
+    # authenticated, catch-all surface) — every such caller sits behind
+    # Cloudflare's edge IPs, so IP-based limiting there would either
+    # throttle every client together or none of them. The public
+    # bora-api-facing routes below carry no API key at all (anonymous
+    # browsers), so that surface falls back to get_ipaddr — which,
+    # unlike slowapi's own get_remote_address, reads X-Forwarded-For
+    # (set by Cloudflare in production; absent in local dev, where
+    # request.client.host is already correct) instead of always seeing
+    # this gateway's own upstream hop as the "client".
+    return request.headers.get("x-api-key") or get_ipaddr(request)
 
 
 # headers_enabled — a rate-limited response includes Retry-After (and
@@ -71,6 +76,34 @@ async def proxy_all(request: Request, path: str) -> Response:
     return await forward(request, request.app.state.http_client, settings.upstream_url, path)
 
 
+# Three explicit routes, not a second catch-all — a wildcard proxy to
+# bora-api would be just as unauthenticated as the paths it's meant to
+# expose, silently turning into an open unauthenticated proxy to
+# whatever bora-api happens to expose next. Each one forwards to the
+# identical path on bora-api (see bora-api/app/main.py) — this gateway
+# is doing pure routing here, no path translation. Module-level for the
+# same re-registration reason as proxy_all above.
+@limiter.limit(lambda: settings.rate_limit)
+async def proxy_nearby_stops(request: Request) -> Response:
+    return await forward(
+        request, request.app.state.http_client, settings.bora_api_upstream_url, "nearby-stops"
+    )
+
+
+@limiter.limit(lambda: settings.rate_limit)
+async def proxy_trip_options(request: Request) -> Response:
+    return await forward(
+        request, request.app.state.http_client, settings.bora_api_upstream_url, "trip-options"
+    )
+
+
+@limiter.limit(lambda: settings.rate_limit)
+async def proxy_geocode(request: Request) -> Response:
+    return await forward(
+        request, request.app.state.http_client, settings.bora_api_upstream_url, "geocode"
+    )
+
+
 def _make_lifespan(
     transport: httpx.AsyncBaseTransport | None,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
@@ -91,6 +124,16 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     proxy behavior can be tested without a real second server running."""
     app = FastAPI(title="Gateway", lifespan=_make_lifespan(transport))
     app.state.limiter = limiter
+    # Only relevant to the public bora-api-facing routes below — a browser
+    # calling the authenticated catch-all would need an X-API-Key header
+    # on the request anyway, which no real frontend should ever hold, so
+    # a permissive CORS policy here doesn't loosen anything on that side.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.parsed_cors_origins,
+        allow_methods=["GET"],
+        allow_headers=["*"],
+    )
     # slowapi's own handler is typed against its RateLimitExceeded, not
     # FastAPI's generic ExceptionHandler signature — this is the
     # documented way to wire it in (slowapi has no FastAPI-flavored
@@ -104,6 +147,14 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    # Registered before the catch-all on purpose — Starlette matches
+    # routes in registration order, not by specificity, so these literal
+    # paths have to come first or proxy_all's `/{path:path}` would
+    # swallow them (and demand an API key no browser caller has).
+    app.add_api_route("/nearby-stops", proxy_nearby_stops, methods=["GET"])
+    app.add_api_route("/trip-options", proxy_trip_options, methods=["GET"])
+    app.add_api_route("/geocode", proxy_geocode, methods=["GET"])
 
     app.add_api_route(
         "/{path:path}",

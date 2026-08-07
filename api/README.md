@@ -97,5 +97,17 @@ one trace id.
   internal convention works (define an entity + events, everything else
   is automatic) — that's a separate, inner convention from this folder's
   "one Dockerfile = one deployable service" one.
-- **`gateway/`** — auth + reverse proxy in front of `domain`, brought up
-  alone via `gateway/compose.yaml`. See `gateway/README.md`.
+- **`gateway/`** — auth + reverse proxy in front of `domain` AND
+  `bora-api` (two upstreams now, not one — see `gateway/README.md`'s own
+  diagram). Its catch-all route still requires `X-API-Key` and proxies
+  to `domain`; three specific routes (`/nearby-stops`, `/trip-options`,
+  `/geocode`) require no key and proxy to `bora-api` instead, since
+  those are meant for anonymous browsers. Brought up alone via
+  `gateway/compose.yaml`.
+- **`bora-api/`** — the trip-planning logic behind the frontend:
+  nearby-stop search, direct-line matching, live ETA, and destination
+  geocoding, read-only against `domain` (via `gateway`) plus
+  OpenStreetMap's Nominatim. No auth, rate-limit, or CORS of its own —
+  like `domain`, it trusts the gateway completely and is never exposed
+  on its own. Brought up alone via `bora-api/compose.yaml`. See
+  `bora-api/README.md`.

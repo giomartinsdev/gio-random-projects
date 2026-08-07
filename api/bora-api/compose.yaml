@@ -1,0 +1,27 @@
+# Pulls the image .github/workflows/api-build-push.yml already builds
+# and pushes on every change to api/bora-api/** — not a local build. See
+# api/gateway/compose.yaml's identical, more heavily commented version
+# for why localhost:5000/pull_policy/host.docker.internal are set up
+# this way.
+services:
+  bora-api:
+    image: ${REGISTRY_HOST:-localhost:5000}/bora-api:${BORA_API_VERSION:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${BORA_API_PORT:-8002}:8000"
+    environment:
+      BORA_API_GATEWAY_URL: ${BORA_API_GATEWAY_URL:-http://host.docker.internal:8000}
+      BORA_API_GATEWAY_API_KEY: ${BORA_API_GATEWAY_API_KEY:-}
+      OTEL_SERVICE_NAME: bora-api
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      OTEL_LOGS_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+      OTEL_PYTHON_LOG_CORRELATION: "true"
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-https://otel.giomartins.dev}
+      # Set CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET in .env — NOT
+      # OTEL_EXPORTER_OTLP_HEADERS directly, see gateway/compose.yaml's
+      # identical note on why that gets silently overwritten otherwise.
+      OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id=${CF_ACCESS_CLIENT_ID:-},CF-Access-Client-Secret=${CF_ACCESS_CLIENT_SECRET:-}"
