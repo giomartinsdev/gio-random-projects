@@ -50,53 +50,68 @@ export function Header({
         <div className="city-pill">Rio de Janeiro</div>
       </div>
 
-      <div className="route-bar">
-        <div className="route-row">
-          <span className="route-dot origin">
-            <svg className="icon">
-              <use href="#icon-crosshair" />
-            </svg>
-          </span>
-          <input
-            type="text"
-            readOnly
-            value={originStatusLabel(originStatus)}
-            placeholder="Sua localização"
-          />
-          <button
-            className={`gps${originStatus === "locating" ? " busy" : ""}`}
-            type="button"
-            onClick={onLocate}
-            aria-label="Usar minha localização"
-          >
-            <svg className="icon">
-              <use href="#icon-crosshair" />
-            </svg>
-          </button>
-        </div>
-        <div className="route-row">
-          <span className="route-dot dest">
-            <svg className="icon">
-              <use href="#icon-pin" />
-            </svg>
-          </span>
-          <input
-            ref={destinationInputRef}
-            type="text"
-            value={destinationQuery}
-            onChange={(event) => onDestinationQueryChange(event.target.value)}
-            onFocus={() => setInputFocused(true)}
-            onBlur={() => setTimeout(() => setInputFocused(false), 120)}
-            placeholder="Para onde você vai?"
-            autoComplete="off"
-          />
-          {hasDestination && (
-            <button className="clear-dest" type="button" onClick={onClearDestination} aria-label="Limpar destino">
+      {/* .route-bar itself needs overflow:hidden to round its own
+          corners around the two route-rows — but that same property
+          would clip the suggestions dropdown, which has to render
+          BELOW the box, not inside it. Confirmed live: the dropdown was
+          in the DOM with the right content and a real bounding box, just
+          invisible, clipped by its own parent's overflow. This wrapper
+          is what .suggestions positions against instead, so it escapes
+          that clip. */}
+      <div className="route-bar-wrap">
+        <div className="route-bar">
+          <div className="route-row">
+            <span className="route-dot origin">
               <svg className="icon">
-                <use href="#icon-x" />
+                <use href="#icon-crosshair" />
+              </svg>
+            </span>
+            <input
+              type="text"
+              readOnly
+              value={originStatusLabel(originStatus)}
+              placeholder="Sua localização"
+            />
+            <button
+              className={`gps${originStatus === "locating" ? " busy" : ""}`}
+              type="button"
+              onClick={onLocate}
+              aria-label="Usar minha localização"
+            >
+              <svg className="icon">
+                <use href="#icon-crosshair" />
               </svg>
             </button>
-          )}
+          </div>
+          <div className="route-row">
+            <span className="route-dot dest">
+              <svg className="icon">
+                <use href="#icon-pin" />
+              </svg>
+            </span>
+            <input
+              ref={destinationInputRef}
+              type="text"
+              value={destinationQuery}
+              onChange={(event) => onDestinationQueryChange(event.target.value)}
+              onFocus={() => setInputFocused(true)}
+              onBlur={() => setTimeout(() => setInputFocused(false), 120)}
+              placeholder="Para onde você vai?"
+              autoComplete="off"
+            />
+            {hasDestination && (
+              <button
+                className="clear-dest"
+                type="button"
+                onClick={onClearDestination}
+                aria-label="Limpar destino"
+              >
+                <svg className="icon">
+                  <use href="#icon-x" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
 
         {showSuggestions && (

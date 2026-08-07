@@ -140,12 +140,14 @@ body {
   border-radius: 100px;
 }
 
+.route-bar-wrap {
+  position: relative;
+}
 .route-bar {
   background: var(--surface);
   border-radius: 16px;
   overflow: hidden;
   box-shadow: var(--shadow);
-  position: relative;
 }
 .route-row {
   display: flex;
