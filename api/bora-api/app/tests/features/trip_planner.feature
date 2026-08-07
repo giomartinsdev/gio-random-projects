@@ -104,3 +104,16 @@ Feature: Trip planner
   Scenario: A line with no vehicle reporting has none to show
     When line vehicles are searched for line "178"
     Then 0 line vehicles come back
+
+  Scenario: A vehicle that stopped reporting a while ago doesn't count as live
+    Given stop "S1" is 50m from the origin and stop "S2" is 50m from the destination
+    And line "178" serves "S1" then "S2" in that order
+    And a vehicle on line "178" is 1000m from "S1" but last reported 20 minutes ago
+    When trip options are searched from the origin to the destination
+    Then the line "178" option has no eta
+
+  Scenario: A stale vehicle is excluded from the live map too
+    Given stop "S1" is 0m from the origin
+    And a vehicle on line "178" is 1000m from "S1" but last reported 20 minutes ago
+    When line vehicles are searched for line "178"
+    Then 0 line vehicles come back

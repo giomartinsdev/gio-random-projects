@@ -31,6 +31,7 @@ _planner = TripPlanner(
     min_bus_speed_kmh=settings.min_bus_speed_kmh,
     average_bus_speed_kmh=settings.average_bus_speed_kmh,
     transfer_buffer_seconds=settings.transfer_buffer_seconds,
+    max_position_age_seconds=settings.max_position_age_seconds,
 )
 _geocoder = NominatimGeocoder()
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -83,6 +84,7 @@ def planner(fake_domain_client: _FakeDomainClient, fake_cache: _FakeCache) -> Tr
         min_bus_speed_kmh=5.0,
         average_bus_speed_kmh=18.0,
         transfer_buffer_seconds=180.0,
+        max_position_age_seconds=600.0,
     )
 
 
@@ -90,6 +92,31 @@ def _add_stop(fake_cache: _FakeCache, stop_id: str, point: tuple[float, float]) 
     lat, lon = point
     fake_cache.stops_by_id[stop_id] = StopRecord(
         id=stop_id, name=stop_id, latitude=lat, longitude=lon
+    )
+
+
+def _make_vehicle_position(
+    vehicle_id: str, line_id: str, lat: float, lon: float, speed: int, age_seconds: float = 0.0
+) -> VehiclePositionRecord:
+    # Relative to real wall-clock time, not a fixed historical
+    # timestamp — TripPlanner's own staleness filter compares a
+    # position's captured_at against datetime.now(UTC), so a fixed
+    # string would silently start failing every ETA test the moment
+    # that date fell far enough into the past.
+    captured_at = datetime.now(UTC) - timedelta(seconds=age_seconds)
+    return VehiclePositionRecord(
+        id=vehicle_id,
+        data={
+            "mode": "sppo",
+            "line_code": line_id,
+            "vehicle_id": vehicle_id,
+            "latitude": lat,
+            "longitude": lon,
+            "speed_kmh": speed,
+            "captured_at": captured_at.isoformat(),
+            "color_hex": None,
+        },
+        captured_at=captured_at,
     )
 
 
@@ -192,20 +219,7 @@ def _given_vehicle_near_stop(
 ) -> None:
     stop = fake_cache.stops_by_id[stop_id]
     lat, lon = _north((stop.latitude, stop.longitude), distance)
-    position = VehiclePositionRecord(
-        id="B1",
-        data={
-            "mode": "sppo",
-            "line_code": line_id,
-            "vehicle_id": "B1",
-            "latitude": lat,
-            "longitude": lon,
-            "speed_kmh": speed,
-            "captured_at": "2026-08-06T13:00:00Z",
-            "color_hex": None,
-        },
-        captured_at="2026-08-06T13:00:00Z",  # pyright: ignore[reportArgumentType] — Pydantic parses the ISO string into a datetime at validation time
-    )
+    position = _make_vehicle_position("B1", line_id, lat, lon, speed)
     fake_domain_client.positions_by_code.setdefault(line_id, []).append(position)
 
 
@@ -224,20 +238,27 @@ def _given_another_vehicle_near_stop(
 ) -> None:
     stop = fake_cache.stops_by_id[stop_id]
     lat, lon = _north((stop.latitude, stop.longitude), distance)
-    position = VehiclePositionRecord(
-        id="B2",
-        data={
-            "mode": "sppo",
-            "line_code": line_id,
-            "vehicle_id": "B2",
-            "latitude": lat,
-            "longitude": lon,
-            "speed_kmh": speed,
-            "captured_at": "2026-08-06T13:00:00Z",
-            "color_hex": None,
-        },
-        captured_at="2026-08-06T13:00:00Z",  # pyright: ignore[reportArgumentType] — Pydantic parses the ISO string into a datetime at validation time
+    position = _make_vehicle_position("B2", line_id, lat, lon, speed)
+    fake_domain_client.positions_by_code.setdefault(line_id, []).append(position)
+
+
+@given(
+    parsers.parse(
+        'a vehicle on line "{line_id}" is {distance:d}m from "{stop_id}" '
+        "but last reported {age_minutes:d} minutes ago"
     )
+)
+def _given_stale_vehicle_near_stop(
+    fake_cache: _FakeCache,
+    fake_domain_client: _FakeDomainClient,
+    line_id: str,
+    distance: int,
+    stop_id: str,
+    age_minutes: int,
+) -> None:
+    stop = fake_cache.stops_by_id[stop_id]
+    lat, lon = _north((stop.latitude, stop.longitude), distance)
+    position = _make_vehicle_position("B1", line_id, lat, lon, 20, age_seconds=age_minutes * 60)
     fake_domain_client.positions_by_code.setdefault(line_id, []).append(position)
 
 

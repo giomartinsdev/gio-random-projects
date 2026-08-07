@@ -24,12 +24,19 @@ v1 simplifications, made explicit rather than hidden:
   city-bus speed, not the route's actual shape or GTFS scheduled times.
   A transfer option sums both legs' straight-line distances plus a
   fixed buffer for stepping off one bus and waiting for the next.
+- A vehicle's last known position is ignored once it's older than
+  `max_position_age_seconds` — otherwise a bus whose route finished
+  hours ago (confirmed live: line 2309 only runs mornings/late
+  evenings, but its last position from that morning kept surfacing an
+  ETA all afternoon) looks like it's still "5 minutes away" forever,
+  since nothing else ever tells this system a line stopped running.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from app.geo import haversine_m
@@ -126,6 +133,7 @@ class TripPlanner:
         min_bus_speed_kmh: float,
         average_bus_speed_kmh: float,
         transfer_buffer_seconds: float,
+        max_position_age_seconds: float,
     ) -> None:
         self._domain_client = domain_client
         self._cache = cache
@@ -133,6 +141,7 @@ class TripPlanner:
         self._min_bus_speed_mps = min_bus_speed_kmh / 3.6
         self._average_bus_speed_mps = average_bus_speed_kmh / 3.6
         self._transfer_buffer_seconds = transfer_buffer_seconds
+        self._max_position_age_seconds = max_position_age_seconds
 
     def nearby_stops(
         self, latitude: float, longitude: float, radius_m: float, limit: int
@@ -197,7 +206,12 @@ class TripPlanner:
                 speed_kmh=position.data.get("speed_kmh", 0.0),
             )
             for position in self._domain_client.list_vehicle_positions_by_lines([line_code])
+            if self._is_fresh(position)
         ]
+
+    def _is_fresh(self, position: VehiclePositionRecord) -> bool:
+        age = (datetime.now(UTC) - position.captured_at).total_seconds()
+        return age <= self._max_position_age_seconds
 
     def _match_direct_lines(
         self, origin_stops: list[NearbyStop], dest_stops: list[NearbyStop]
@@ -393,7 +407,7 @@ class TripPlanner:
         by_code: dict[str, list[VehiclePositionRecord]] = defaultdict(list)
         for position in self._domain_client.list_vehicle_positions_by_lines(line_codes):
             code = position.data.get("line_code")
-            if code:
+            if code and self._is_fresh(position):
                 by_code[code].append(position)
         return dict(by_code)
 

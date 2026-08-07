@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     # the second one's stop, and waiting for it — see TripPlanner's own
     # docstring for why this isn't per-stop dwell/headway data.
     transfer_buffer_seconds: float = 180.0
+    # A vehicle whose last reported position is older than this is
+    # treated as not currently running (see TripPlanner's own docstring
+    # for the live incident this fixes: a line that only runs mornings
+    # showing a "5 min away" ETA all afternoon off its last real ping).
+    # Generous relative to the 1-minute poll interval so a single
+    # missed/delayed poll doesn't spuriously hide a bus that's actually
+    # still out there.
+    max_position_age_seconds: float = 600.0
 
 
 settings = Settings()
