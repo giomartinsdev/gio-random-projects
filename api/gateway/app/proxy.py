@@ -70,7 +70,21 @@ async def forward(
     upstream_response = await client.request(
         method=request.method,
         url=f"{upstream_url}/{path}",
-        params=request.query_params,
+        # .multi_items(), not the bare QueryParams object — httpx treats
+        # anything Mapping-like by calling .items() on it, and
+        # Starlette's QueryParams.items() yields only the LAST value per
+        # repeated key (confirmed live: a real ?ids=1&ids=2&ids=3 request
+        # arrived at the domain as just ids=3, silently deleting only
+        # one row per batch instead of hundreds — every other key with a
+        # single value was unaffected, which is why this went unnoticed
+        # until a caller with a genuinely multi-valued query param, like
+        # DeleteVehiclePositionHistoryBatch's `ids`, hit it). multi_items()
+        # is the sequence-of-tuples form httpx preserves as-is. httpx's
+        # own stubs type this param as an invariant `List[Tuple[str,
+        # PrimitiveData]]`, which a `list[tuple[str, str]]` can never
+        # satisfy under strict variance rules even though every element
+        # genuinely fits `Tuple[str, PrimitiveData]` at runtime.
+        params=request.query_params.multi_items(),  # pyright: ignore[reportArgumentType]
         headers=headers,
         content=body,
     )

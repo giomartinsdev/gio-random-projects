@@ -46,6 +46,10 @@ def _build_fake_upstream() -> FastAPI:
     async def create_user(payload: dict[str, str]) -> dict[str, str]:
         return {"created": payload["name"]}
 
+    @upstream.delete("/events/delete-batch")
+    async def delete_batch(request: Request) -> dict[str, list[str]]:
+        return {"seen_ids": request.query_params.getlist("ids")}
+
     return upstream
 
 
@@ -88,6 +92,25 @@ def test_valid_request_is_forwarded_with_query_params_intact(gateway_client: Tes
     # Then upstream received the query param and the response passed through
     assert response.status_code == 200
     assert response.json()["seen_query_id"] == "42"
+
+
+def test_repeated_query_param_values_all_reach_upstream(gateway_client: TestClient) -> None:
+    # Given a request with the same query key repeated multiple times —
+    # the shape api/domain's DeleteVehiclePositionHistoryBatch (and any
+    # other event with a list-typed field) is bound from
+    # When the request is proxied
+    response = gateway_client.request(
+        "DELETE",
+        "/events/delete-batch",
+        params=[("ids", "1"), ("ids", "2"), ("ids", "3")],
+        headers={"X-API-Key": VALID_KEY},
+    )
+
+    # Then upstream saw every value, not just the last one — confirmed
+    # live that passing Starlette's raw QueryParams object straight
+    # through to httpx silently drops all but the last value per key
+    assert response.status_code == 200
+    assert response.json()["seen_ids"] == ["1", "2", "3"]
 
 
 def test_api_key_header_is_not_forwarded_upstream(gateway_client: TestClient) -> None:
