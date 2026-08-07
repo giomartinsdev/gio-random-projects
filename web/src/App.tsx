@@ -10,8 +10,8 @@ import { useGeolocation } from "./hooks/useGeolocation";
 import { useDebouncedValue } from "./hooks/useDebouncedValue";
 import { fetchTripOptions, searchDestination, type GeocodeResult, type TripOption } from "./api";
 
-// Live vehicle positions are only as fresh as the last GPS poll (every 5
-// minutes on the flows side, see flows/bus_gps_poller) — this interval
+// Live vehicle positions are only as fresh as the last GPS poll (every
+// minute on the flows side, see flows/bus_gps_poller) — this interval
 // isn't trying to beat that, just to notice a new poll landed and correct
 // the client-side countdown's drift before it gets too far off. Exported
 // since DetailView's own vehicle-position polling (for the live map)

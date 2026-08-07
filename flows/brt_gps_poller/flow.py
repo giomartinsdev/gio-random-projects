@@ -46,8 +46,10 @@ def brt_gps_poller(
     of growing forever. Same tables as flows/bus_gps_poller (SPPO) — a
     separate flow/deployment since it's a separate feed with a
     different shape and no shared code between the two, but both write
-    the same "latest known position" model. Scheduled every 5 minutes,
-    business hours only — see prefect.yaml."""
+    the same "latest known position" model. Scheduled every minute,
+    business hours only — same cadence bump as flows/bus_gps_poller,
+    for the same reason (riders watching the live map noticed stale
+    positions)."""
     raw = extract()
     positions = transform(raw)
     load(positions, gateway_url, api_key)

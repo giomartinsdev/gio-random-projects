@@ -40,12 +40,16 @@ def bus_gps_poller(
 ) -> None:
     """Polls dados.mobilidade.rio/gps/sppo for the last `window_seconds`
     (default: last 5 minutes, matching the reference frontend's own
-    query window) and upserts every parseable position as each
+    query window — deliberately wider than the poll interval itself, so
+    a single slow/late upstream response still gets fully covered by
+    the next run) and upserts every parseable position as each
     vehicle's latest known position via one RecordVehiclePositions
     event — overwritten each poll, not appended, so the domain's
     vehicle/vehicle_position tables stay bounded by fleet size instead
-    of growing forever. Scheduled every 5 minutes, business hours
-    only — see prefect.yaml."""
+    of growing forever. Scheduled every minute, business hours only —
+    riders watching the live map noticed 5-minute-stale positions, and
+    RecordVehiclePositions' upsert-by-vehicle_id semantics make the
+    5-minute window's now-heavier overlap harmless, just redundant."""
     raw = extract(window_seconds)
     positions = transform(raw)
     load(positions, gateway_url, api_key)
