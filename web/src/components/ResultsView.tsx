@@ -7,6 +7,7 @@ interface ResultsViewProps {
   liveEtaSeconds: Map<string, number | null>;
   trainTrip: TrainTrip | null;
   onSelect: (option: TripOption) => void;
+  onSelectTrain: () => void;
 }
 
 export function ResultsView({
@@ -15,6 +16,7 @@ export function ResultsView({
   liveEtaSeconds,
   trainTrip,
   onSelect,
+  onSelectTrain,
 }: ResultsViewProps) {
   const best = options[0];
   const bestEta = best ? liveEtaSeconds.get(best.line_id) : null;
@@ -30,7 +32,7 @@ export function ResultsView({
       </div>
 
       {trainTrip && nextTrain && (
-        <div className="row train-card">
+        <button className="row train-card" type="button" onClick={onSelectTrain}>
           <div className="glyph">
             <svg className="icon" style={{ width: 20, height: 20 }}>
               <use href="#icon-train" />
@@ -56,7 +58,10 @@ export function ResultsView({
             </div>
             <div className="arrival">chega {nextTrain.arrival_time}</div>
           </div>
-        </div>
+          <svg className="icon chevron">
+            <use href="#icon-arrow" />
+          </svg>
+        </button>
       )}
 
       <div className="list">

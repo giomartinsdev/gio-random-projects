@@ -6,6 +6,7 @@ import { LoadingState } from "./components/LoadingState";
 import { ResultsView } from "./components/ResultsView";
 import { EmptyState } from "./components/EmptyState";
 import { DetailView } from "./components/DetailView";
+import { TrainDetailView } from "./components/TrainDetailView";
 import { useGeolocation } from "./hooks/useGeolocation";
 import { useDebouncedValue } from "./hooks/useDebouncedValue";
 import {
@@ -42,6 +43,7 @@ function App() {
   const [tripOptionsError, setTripOptionsError] = useState(false);
   const [trainTrip, setTrainTrip] = useState<TrainTrip | null>(null);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [trainDetailOpen, setTrainDetailOpen] = useState(false);
   const [liveEtaSeconds, setLiveEtaSeconds] = useState<Map<string, number | null>>(new Map());
   const hasLoadedOnce = useRef(false);
 
@@ -162,6 +164,7 @@ function App() {
     setSelectedLineId(null);
     setTripOptionsError(false);
     setTrainTrip(null);
+    setTrainDetailOpen(false);
   }
 
   const hasTrainOptions = trainTrip !== null && trainTrip.options.length > 0;
@@ -248,6 +251,7 @@ function App() {
             liveEtaSeconds={liveEtaSeconds}
             trainTrip={trainTrip}
             onSelect={(option) => setSelectedLineId(option.line_id)}
+            onSelectTrain={() => setTrainDetailOpen(true)}
           />
         )}
 
@@ -264,6 +268,11 @@ function App() {
         option={selectedOption}
         liveEtaSeconds={selectedOption ? (liveEtaSeconds.get(selectedOption.line_id) ?? null) : null}
         onClose={() => setSelectedLineId(null)}
+      />
+
+      <TrainDetailView
+        trainTrip={trainDetailOpen ? trainTrip : null}
+        onClose={() => setTrainDetailOpen(false)}
       />
     </>
   );
