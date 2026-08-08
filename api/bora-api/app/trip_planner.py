@@ -364,24 +364,18 @@ class TripPlanner:
             vehicle_id, eta_seconds = self._closest_vehicle_eta(
                 positions_by_code.get(first_line.code, []), match.origin.stop
             )
-            first_leg_seconds = (
-                haversine_m(
-                    match.origin.stop.latitude,
-                    match.origin.stop.longitude,
-                    match.transfer_stop.latitude,
-                    match.transfer_stop.longitude,
-                )
-                / self._average_speed_mps(first_line.mode)
-            )
-            second_leg_seconds = (
-                haversine_m(
-                    match.transfer_stop.latitude,
-                    match.transfer_stop.longitude,
-                    match.destination.stop.latitude,
-                    match.destination.stop.longitude,
-                )
-                / self._average_speed_mps(second_line.mode)
-            )
+            first_leg_seconds = haversine_m(
+                match.origin.stop.latitude,
+                match.origin.stop.longitude,
+                match.transfer_stop.latitude,
+                match.transfer_stop.longitude,
+            ) / self._average_speed_mps(first_line.mode)
+            second_leg_seconds = haversine_m(
+                match.transfer_stop.latitude,
+                match.transfer_stop.longitude,
+                match.destination.stop.latitude,
+                match.destination.stop.longitude,
+            ) / self._average_speed_mps(second_line.mode)
             options.append(
                 TripOption(
                     line_id=first_line.id,
