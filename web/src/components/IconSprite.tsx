@@ -75,6 +75,21 @@ export function IconSprite() {
           <path d="M6 4h11l-2.5 3.5L17 11H6" />
         </symbol>
         <symbol
+          id="icon-train"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect x="5" y="3.5" width="14" height="13" rx="4" />
+          <path d="M5 11.5h14" />
+          <path d="M9 16.5l-2 3.5M15 16.5l2 3.5" />
+          <circle cx="9" cy="14" r="0.9" fill="currentColor" stroke="none" />
+          <circle cx="15" cy="14" r="0.9" fill="currentColor" stroke="none" />
+        </symbol>
+        <symbol
           id="icon-x"
           viewBox="0 0 24 24"
           fill="none"

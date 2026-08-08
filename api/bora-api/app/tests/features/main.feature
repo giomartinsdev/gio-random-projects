@@ -35,6 +35,18 @@ Feature: bora-api HTTP wiring
     Then the response status is 200
     And the response has 1 line vehicle
 
+  Scenario: Train options are returned as JSON when a trip is found
+    Given the fake train planner finds a trip
+    When GET /train-options is requested from -22.9,-43.2 to -22.8,-43.1
+    Then the response status is 200
+    And the response has 1 train option
+
+  Scenario: Train options are null when no trip is found
+    Given the fake train planner finds no trip
+    When GET /train-options is requested from -22.9,-43.2 to -22.8,-43.1
+    Then the response status is 200
+    And the response body is null
+
   Scenario: A query missing a required parameter is rejected
     When GET /nearby-stops is requested with no parameters
     Then the response status is 422

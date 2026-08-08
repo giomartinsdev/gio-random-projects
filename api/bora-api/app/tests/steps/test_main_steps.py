@@ -15,7 +15,10 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from app.domain_client import StopRecord
 from app.geocoding import GeocodeResult
-from app.main import create_app, get_geocoder, get_trip_planner
+from app.main import create_app, get_geocoder, get_train_planner, get_trip_planner
+from app.train_planner import NearbyTrainStation, TrainTrip
+from app.train_stations import TrainStation
+from app.trensrj_client import TrainPlanLeg, TrainPlanOption
 from app.trip_planner import LineVehicle, NearbyStop, TripOption
 
 scenarios("../features/main.feature")
@@ -32,10 +35,18 @@ def fake_geocoder() -> MagicMock:
 
 
 @pytest.fixture()
-def client(fake_planner: MagicMock, fake_geocoder: MagicMock) -> TestClient:
+def fake_train_planner() -> MagicMock:
+    return MagicMock()
+
+
+@pytest.fixture()
+def client(
+    fake_planner: MagicMock, fake_geocoder: MagicMock, fake_train_planner: MagicMock
+) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_trip_planner] = lambda: fake_planner
     app.dependency_overrides[get_geocoder] = lambda: fake_geocoder
+    app.dependency_overrides[get_train_planner] = lambda: fake_train_planner
     return TestClient(app)
 
 
@@ -91,6 +102,52 @@ def _given_planner_returns_line_vehicles(fake_planner: MagicMock, count: int) ->
     ]
 
 
+@given("the fake train planner finds a trip")
+def _given_train_planner_finds_trip(fake_train_planner: MagicMock) -> None:
+    origin_station = TrainStation(
+        id="central",
+        name="Central do Brasil",
+        slug="central-do-brasil",
+        latitude=-22.9,
+        longitude=-43.2,
+    )
+    destination_station = TrainStation(
+        id="belford-roxo", name="Belford Roxo", slug="belford-roxo", latitude=-22.7, longitude=-43.4
+    )
+    fake_train_planner.trip_options.return_value = TrainTrip(
+        origin=NearbyTrainStation(station=origin_station, distance_m=300.0, walk_seconds=230.0),
+        destination=NearbyTrainStation(
+            station=destination_station, distance_m=400.0, walk_seconds=310.0
+        ),
+        options=[
+            TrainPlanOption(
+                legs=[
+                    TrainPlanLeg(
+                        line_name="Ramal Belford Roxo",
+                        line_short_name="Belford Roxo",
+                        line_color="6B3FA0",
+                        from_station_name="Central do Brasil",
+                        to_station_name="Belford Roxo",
+                        departure_time="08:54",
+                        arrival_time="09:54",
+                        stops_count=17,
+                    )
+                ],
+                departure_time="08:54",
+                arrival_time="09:54",
+                total_duration_min=60,
+                is_last_trip_of_day=False,
+                warnings=[],
+            )
+        ],
+    )
+
+
+@given("the fake train planner finds no trip")
+def _given_train_planner_finds_no_trip(fake_train_planner: MagicMock) -> None:
+    fake_train_planner.trip_options.return_value = None
+
+
 @when("GET /health is requested", target_fixture="response")
 def _when_health_requested(client: TestClient) -> Any:
     return client.get("/health")
@@ -137,6 +194,21 @@ def _when_line_vehicles_requested(client: TestClient, line_code: str) -> Any:
     return client.get("/line-vehicles", params={"line_code": line_code})
 
 
+@when(
+    parsers.parse(
+        "GET /train-options is requested from {from_lat:g},{from_lon:g} to {to_lat:g},{to_lon:g}"
+    ),
+    target_fixture="response",
+)
+def _when_train_options_requested(
+    client: TestClient, from_lat: float, from_lon: float, to_lat: float, to_lon: float
+) -> Any:
+    return client.get(
+        "/train-options",
+        params={"from_lat": from_lat, "from_lon": from_lon, "to_lat": to_lat, "to_lon": to_lon},
+    )
+
+
 @then(parsers.parse("the response status is {status:d}"))
 def _then_response_status(response: Any, status: int) -> None:
     assert response.status_code == status
@@ -145,6 +217,11 @@ def _then_response_status(response: Any, status: int) -> None:
 @then('the response body is {"status": "ok"}')
 def _then_response_body_ok(response: Any) -> None:
     assert response.json() == {"status": "ok"}
+
+
+@then("the response body is null")
+def _then_response_body_null(response: Any) -> None:
+    assert response.json() is None
 
 
 @then(parsers.parse("the response has {count:d} nearby stop"))
@@ -165,3 +242,8 @@ def _then_response_geocode_count(response: Any, count: int) -> None:
 @then(parsers.parse("the response has {count:d} line vehicle"))
 def _then_response_line_vehicle_count(response: Any, count: int) -> None:
     assert len(response.json()) == count
+
+
+@then(parsers.parse("the response has {count:d} train option"))
+def _then_response_train_option_count(response: Any, count: int) -> None:
+    assert len(response.json()["options"]) == count

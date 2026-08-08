@@ -481,6 +481,19 @@ body {
   flex-shrink: 0;
 }
 
+/* Not a <button> like every other .row — trains have no detail view
+   yet, this is a summary card, not a tappable option (see
+   ResultsView's own comment on why this is v1-scoped that way). */
+.train-card {
+  cursor: default;
+  margin: 10px 16px 0;
+  width: calc(100% - 32px);
+  border-style: dashed;
+}
+.train-card .eta {
+  color: var(--text);
+}
+
 /* ---- Empty state ---- */
 .empty-body {
   flex: 1;

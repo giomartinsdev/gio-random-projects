@@ -15,6 +15,9 @@ from app.cache import ReferenceDataCache
 from app.config import settings
 from app.domain_client import DomainClient
 from app.geocoding import NominatimGeocoder
+from app.train_planner import TrainPlanner
+from app.train_stations import load_train_stations
+from app.trensrj_client import TrensRjClient
 from app.trip_planner import TripPlanner
 
 # Module-level singletons — a fresh TripPlanner per request would mean a
@@ -34,6 +37,13 @@ _planner = TripPlanner(
     max_position_age_seconds=settings.max_position_age_seconds,
 )
 _geocoder = NominatimGeocoder()
+_trensrj_client = TrensRjClient()
+_train_planner = TrainPlanner(
+    _trensrj_client,
+    load_train_stations(),
+    walking_speed_mps=settings.walking_speed_mps,
+    max_station_distance_m=settings.max_train_station_distance_m,
+)
 
 
 def get_trip_planner() -> TripPlanner:
@@ -42,6 +52,10 @@ def get_trip_planner() -> TripPlanner:
 
 def get_geocoder() -> NominatimGeocoder:
     return _geocoder
+
+
+def get_train_planner() -> TrainPlanner:
+    return _train_planner
 
 
 class NearbyStopResponse(BaseModel):
@@ -90,6 +104,34 @@ class LineVehicleResponse(BaseModel):
     latitude: float
     longitude: float
     speed_kmh: float
+
+
+class TrainLegResponse(BaseModel):
+    line_name: str
+    line_short_name: str
+    line_color: str
+    from_station_name: str
+    to_station_name: str
+    departure_time: str
+    arrival_time: str
+    stops_count: int
+
+
+class TrainOptionResponse(BaseModel):
+    legs: list[TrainLegResponse]
+    departure_time: str
+    arrival_time: str
+    total_duration_min: int
+    is_last_trip_of_day: bool
+    warnings: list[str]
+
+
+class TrainTripResponse(BaseModel):
+    origin_station_name: str
+    origin_walk_seconds: float
+    destination_station_name: str
+    destination_walk_seconds: float
+    options: list[TrainOptionResponse]
 
 
 def create_app() -> FastAPI:
@@ -175,6 +217,47 @@ def create_app() -> FastAPI:
             )
             for vehicle in planner.line_vehicles(line_code)
         ]
+
+    @app.get("/train-options")
+    def train_options(
+        planner: Annotated[TrainPlanner, Depends(get_train_planner)],
+        from_lat: float = Query(...),
+        from_lon: float = Query(...),
+        to_lat: float = Query(...),
+        to_lon: float = Query(...),
+    ) -> TrainTripResponse | None:
+        trip = planner.trip_options(from_lat, from_lon, to_lat, to_lon)
+        if trip is None:
+            return None
+        return TrainTripResponse(
+            origin_station_name=trip.origin.station.name,
+            origin_walk_seconds=trip.origin.walk_seconds,
+            destination_station_name=trip.destination.station.name,
+            destination_walk_seconds=trip.destination.walk_seconds,
+            options=[
+                TrainOptionResponse(
+                    legs=[
+                        TrainLegResponse(
+                            line_name=leg.line_name,
+                            line_short_name=leg.line_short_name,
+                            line_color=leg.line_color,
+                            from_station_name=leg.from_station_name,
+                            to_station_name=leg.to_station_name,
+                            departure_time=leg.departure_time,
+                            arrival_time=leg.arrival_time,
+                            stops_count=leg.stops_count,
+                        )
+                        for leg in option.legs
+                    ],
+                    departure_time=option.departure_time,
+                    arrival_time=option.arrival_time,
+                    total_duration_min=option.total_duration_min,
+                    is_last_trip_of_day=option.is_last_trip_of_day,
+                    warnings=option.warnings,
+                )
+                for option in trip.options
+            ],
+        )
 
     @app.get("/geocode")
     def geocode(
