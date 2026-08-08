@@ -8,6 +8,16 @@
 # CI runs `prefect deploy --all` (and prunes any deployment whose entry
 # was removed from here — see .github/scripts/prune_prefect_deployments.py)
 # on every push to flows/** or this file — see .github/workflows/flows-ci.yml.
+#
+# Every deployment's OTEL_*_EXPORTER below is "none" — the otel-collector
+# they used to point at was removed from the host after it crash-looped
+# and took the whole host down with it. Confirmed live: leaving these on
+# "otlp" here (even after the app services' own containers were already
+# fixed) meant every flow run's log line blocked on a doomed export
+# retry against a collector that no longer exists, which was slow
+# enough to starve bus-gps-poller/brt-gps-poller runs — they never
+# actually failed, they just never finished before the next one queued
+# behind them.
 
 name: gio-random-projects
 prefect-version: "3"
@@ -47,8 +57,9 @@ deployments:
         command: "opentelemetry-instrument prefect flow-run execute"
         env:
           OTEL_SERVICE_NAME: bus-gps-poller
-          OTEL_TRACES_EXPORTER: otlp
-          OTEL_LOGS_EXPORTER: otlp
+          OTEL_TRACES_EXPORTER: none
+          OTEL_LOGS_EXPORTER: none
+          OTEL_METRICS_EXPORTER: none
           OTEL_PYTHON_LOG_CORRELATION: "true"
           OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
           OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
@@ -88,8 +99,9 @@ deployments:
         command: "opentelemetry-instrument prefect flow-run execute"
         env:
           OTEL_SERVICE_NAME: brt-gps-poller
-          OTEL_TRACES_EXPORTER: otlp
-          OTEL_LOGS_EXPORTER: otlp
+          OTEL_TRACES_EXPORTER: none
+          OTEL_LOGS_EXPORTER: none
+          OTEL_METRICS_EXPORTER: none
           OTEL_PYTHON_LOG_CORRELATION: "true"
           OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
           OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
@@ -121,8 +133,9 @@ deployments:
         command: "opentelemetry-instrument prefect flow-run execute"
         env:
           OTEL_SERVICE_NAME: vehicle-position-archiver
-          OTEL_TRACES_EXPORTER: otlp
-          OTEL_LOGS_EXPORTER: otlp
+          OTEL_TRACES_EXPORTER: none
+          OTEL_LOGS_EXPORTER: none
+          OTEL_METRICS_EXPORTER: none
           OTEL_PYTHON_LOG_CORRELATION: "true"
           OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
           OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
@@ -152,8 +165,9 @@ deployments:
         command: "opentelemetry-instrument prefect flow-run execute"
         env:
           OTEL_SERVICE_NAME: gtfs-importer
-          OTEL_TRACES_EXPORTER: otlp
-          OTEL_LOGS_EXPORTER: otlp
+          OTEL_TRACES_EXPORTER: none
+          OTEL_LOGS_EXPORTER: none
+          OTEL_METRICS_EXPORTER: none
           OTEL_PYTHON_LOG_CORRELATION: "true"
           OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
           OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
