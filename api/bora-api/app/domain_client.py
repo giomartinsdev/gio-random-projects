@@ -21,6 +21,7 @@ class StopRecord(BaseModel):
     name: str
     latitude: float
     longitude: float
+    mode: str = "bus"
 
 
 class LineRecord(BaseModel):

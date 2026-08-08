@@ -83,6 +83,7 @@ def planner(fake_domain_client: _FakeDomainClient, fake_cache: _FakeCache) -> Tr
         walking_speed_mps=1.3,
         min_bus_speed_kmh=5.0,
         average_bus_speed_kmh=18.0,
+        average_train_speed_kmh=45.0,
         transfer_buffer_seconds=180.0,
         max_position_age_seconds=600.0,
     )

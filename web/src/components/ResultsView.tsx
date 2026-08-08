@@ -72,7 +72,7 @@ export function ResultsView({
             <button key={option.line_id} className="row" type="button" onClick={() => onSelect(option)}>
               <div className="glyph">
                 <svg className="icon" style={{ width: 20, height: 20 }}>
-                  <use href="#icon-bus" />
+                  <use href={option.mode === "rail" ? "#icon-train" : "#icon-bus"} />
                 </svg>
               </div>
               <div className="info">
@@ -99,6 +99,8 @@ export function ResultsView({
                     <span className="live-dot" />
                     <span>{formatDuration(eta)}</span>
                   </div>
+                ) : option.mode === "rail" ? (
+                  <div className="eta none">horário fixo</div>
                 ) : (
                   <div className="eta none">sem previsão</div>
                 )}

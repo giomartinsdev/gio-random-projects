@@ -33,6 +33,10 @@ export interface TripOption {
   trip_seconds: number;
   vehicle_id: string | null;
   eta_seconds: number | null;
+  // "bus" | "rail" — a rail leg has no live GPS feed, so eta_seconds is
+  // always null for it; UI shows a train icon and skips "sem previsão"
+  // messaging accordingly.
+  mode: "bus" | "rail";
   // Populated only when this option requires a transfer — null on a
   // direct match (see bora-api's TripPlanner for why: direct lines are
   // always tried first).
@@ -43,6 +47,7 @@ export interface TripOption {
   transfer_line_id: string | null;
   transfer_line_code: string | null;
   transfer_line_name: string | null;
+  transfer_mode: "bus" | "rail" | null;
   transfer_seconds: number | null;
 }
 

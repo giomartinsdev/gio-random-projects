@@ -16,3 +16,8 @@ class Stop(Entity, table=True):
     name: str
     latitude: float
     longitude: float
+    # "bus" | "rail" — defaults to "bus" so every pre-existing row (and
+    # every GTFS reimport, which never sends this field) keeps working
+    # unchanged. See app/domain/line/entity.py's own mode field for the
+    # same pattern on the Line side.
+    mode: str = Field(default="bus")

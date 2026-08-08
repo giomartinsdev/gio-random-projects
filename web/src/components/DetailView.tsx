@@ -115,14 +115,16 @@ export function DetailView({ option, liveEtaSeconds, onClose }: DetailViewProps)
             isLast={false}
           />
           <Stage
-            icon="icon-bus"
+            icon={option.mode === "rail" ? "icon-train" : "icon-bus"}
             name={`Linha ${option.line_code} no ponto`}
             meta={
-              hasEta
-                ? tight
-                  ? "chega antes de você — corra"
-                  : "chega com folga"
-                : "sem previsão ao vivo agora"
+              option.mode === "rail"
+                ? "trem — horário fixo, sem GPS ao vivo"
+                : hasEta
+                  ? tight
+                    ? "chega antes de você — corra"
+                    : "chega com folga"
+                  : "sem previsão ao vivo agora"
             }
             time={etaMinutes !== null ? `+${etaMinutes} min` : "—"}
             warn={tight}
@@ -130,7 +132,7 @@ export function DetailView({ option, liveEtaSeconds, onClose }: DetailViewProps)
           />
           {hasTransfer && (
             <Stage
-              icon="icon-bus"
+              icon={option.transfer_mode === "rail" ? "icon-train" : "icon-bus"}
               name={`Baldeação: linha ${option.transfer_line_code} em ${option.transfer_stop_name}`}
               meta="desça e embarque na próxima"
               time={`+${transferArriveMinute} min`}

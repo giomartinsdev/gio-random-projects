@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # TripPlanner's own docstring for why this is a rough estimate, not
     # a scheduled-time lookup.
     average_bus_speed_kmh: float = 18.0
+    # Assumed average SuperVia commuter-rail speed including station
+    # dwell time — used the same way as average_bus_speed_kmh, for a
+    # rough trip-duration estimate on a rail RouteStop hop, since this
+    # system holds no real SuperVia timetable to compute an exact one.
+    average_train_speed_kmh: float = 45.0
     # Flat estimate of time lost stepping off the first bus, walking to
     # the second one's stop, and waiting for it — see TripPlanner's own
     # docstring for why this isn't per-stop dwell/headway data.

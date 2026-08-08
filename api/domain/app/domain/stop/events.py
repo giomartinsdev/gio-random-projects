@@ -33,6 +33,7 @@ class StopInput(BaseModel):
     name: str
     latitude: float
     longitude: float
+    mode: str = "bus"
 
 
 def _chunks[T](items: list[T], size: int) -> list[list[T]]:
@@ -73,6 +74,7 @@ class UpsertStops(DomainEvent[Stop]):
                     "name": stmt.excluded.name,
                     "latitude": stmt.excluded.latitude,
                     "longitude": stmt.excluded.longitude,
+                    "mode": stmt.excluded.mode,
                 },
             )
             session.exec(stmt)

@@ -70,6 +70,10 @@ class TripOption:
     trip_seconds: float
     vehicle_id: str | None
     eta_seconds: float | None
+    # "bus" | "rail" — lets a caller (DetailView, ResultsView) show a
+    # train icon and skip "live ETA" messaging for a rail leg, which has
+    # no GPS feed and therefore always has eta_seconds=None.
+    mode: str = "bus"
     # Populated only for a transfer option — None on every direct match,
     # which is what DetailView (and this module's own callers) use to
     # tell the two apart rather than a separate boolean flag.
@@ -80,6 +84,7 @@ class TripOption:
     transfer_line_id: str | None = None
     transfer_line_code: str | None = None
     transfer_line_name: str | None = None
+    transfer_mode: str | None = None
     # First-leg-only travel time, so a caller can place "arrive at the
     # transfer stop" between "board" and "arrive at destination" — the
     # remainder of trip_seconds (minus the transfer buffer) is the
@@ -132,6 +137,7 @@ class TripPlanner:
         walking_speed_mps: float,
         min_bus_speed_kmh: float,
         average_bus_speed_kmh: float,
+        average_train_speed_kmh: float,
         transfer_buffer_seconds: float,
         max_position_age_seconds: float,
     ) -> None:
@@ -140,8 +146,12 @@ class TripPlanner:
         self._walking_speed_mps = walking_speed_mps
         self._min_bus_speed_mps = min_bus_speed_kmh / 3.6
         self._average_bus_speed_mps = average_bus_speed_kmh / 3.6
+        self._average_train_speed_mps = average_train_speed_kmh / 3.6
         self._transfer_buffer_seconds = transfer_buffer_seconds
         self._max_position_age_seconds = max_position_age_seconds
+
+    def _average_speed_mps(self, mode: str) -> float:
+        return self._average_train_speed_mps if mode == "rail" else self._average_bus_speed_mps
 
     def nearby_stops(
         self, latitude: float, longitude: float, radius_m: float, limit: int
@@ -361,7 +371,7 @@ class TripPlanner:
                     match.transfer_stop.latitude,
                     match.transfer_stop.longitude,
                 )
-                / self._average_bus_speed_mps
+                / self._average_speed_mps(first_line.mode)
             )
             second_leg_seconds = (
                 haversine_m(
@@ -370,7 +380,7 @@ class TripPlanner:
                     match.destination.stop.latitude,
                     match.destination.stop.longitude,
                 )
-                / self._average_bus_speed_mps
+                / self._average_speed_mps(second_line.mode)
             )
             options.append(
                 TripOption(
@@ -391,6 +401,7 @@ class TripPlanner:
                     + second_leg_seconds,
                     vehicle_id=vehicle_id,
                     eta_seconds=eta_seconds,
+                    mode=first_line.mode,
                     transfer_stop_id=match.transfer_stop.id,
                     transfer_stop_name=match.transfer_stop.name,
                     transfer_latitude=match.transfer_stop.latitude,
@@ -398,6 +409,7 @@ class TripPlanner:
                     transfer_line_id=second_line.id,
                     transfer_line_code=second_line.code,
                     transfer_line_name=second_line.name,
+                    transfer_mode=second_line.mode,
                     transfer_seconds=first_leg_seconds,
                 )
             )
@@ -450,9 +462,10 @@ class TripPlanner:
             destination_latitude=match.destination.stop.latitude,
             destination_longitude=match.destination.stop.longitude,
             walk_seconds=match.origin.walk_seconds,
-            trip_seconds=trip_distance / self._average_bus_speed_mps,
+            trip_seconds=trip_distance / self._average_speed_mps(line.mode),
             vehicle_id=vehicle_id,
             eta_seconds=eta_seconds,
+            mode=line.mode,
         )
 
     def _closest_vehicle_eta(
