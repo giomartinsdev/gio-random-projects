@@ -103,7 +103,14 @@ def _make_vehicle_position(
     # position's captured_at against datetime.now(UTC), so a fixed
     # string would silently start failing every ETA test the moment
     # that date fell far enough into the past.
-    captured_at = datetime.now(UTC) - timedelta(seconds=age_seconds)
+    #
+    # Naive, not tz-aware — mirrors what the domain actually sends over
+    # the wire (confirmed live: a tz-AWARE fixture here masked a real
+    # bug where TripPlanner's staleness check crashed with "can't
+    # subtract offset-naive and offset-aware datetimes" the moment a
+    # genuine domain response reached it, since this fixture's aware
+    # datetime never exercised that code path).
+    captured_at = (datetime.now(UTC) - timedelta(seconds=age_seconds)).replace(tzinfo=None)
     return VehiclePositionRecord(
         id=vehicle_id,
         data={

@@ -210,7 +210,18 @@ class TripPlanner:
         ]
 
     def _is_fresh(self, position: VehiclePositionRecord) -> bool:
-        age = (datetime.now(UTC) - position.captured_at).total_seconds()
+        # The domain serializes captured_at as a naive datetime (no
+        # offset in the wire format) that's UTC by convention — Pydantic
+        # parses it straight through as naive, so comparing it against
+        # datetime.now(UTC) directly raises TypeError (can't subtract
+        # offset-naive and offset-aware datetimes). Confirmed live: this
+        # crashed both /trip-options and /line-vehicles with a 500 the
+        # moment a real (non-test-fixture) VehiclePositionRecord reached
+        # this method.
+        captured_at = position.captured_at
+        if captured_at.tzinfo is None:
+            captured_at = captured_at.replace(tzinfo=UTC)
+        age = (datetime.now(UTC) - captured_at).total_seconds()
         return age <= self._max_position_age_seconds
 
     def _match_direct_lines(
