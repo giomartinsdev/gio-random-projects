@@ -46,6 +46,26 @@ def _given_row_without_velocidade(rows: list[dict[str, Any]], vehicle_id: str, l
     )
 
 
+@given(
+    parsers.parse(
+        'a row with datetime "{datetime_value}" for vehicle "{vehicle_id}" on line "{line}"'
+    )
+)
+def _given_row_with_datetime(
+    rows: list[dict[str, Any]], datetime_value: str, vehicle_id: str, line: str
+) -> None:
+    rows.append(
+        {
+            "id_veiculo": vehicle_id,
+            "servico": line,
+            "latitude": -22.9,
+            "longitude": -43.2,
+            "velocidade": 0.0,
+            "datetime": datetime_value,
+        }
+    )
+
+
 @given(parsers.parse('a malformed SPPO row missing "{field}"'))
 def _given_malformed_row(rows: list[dict[str, Any]], field: str) -> None:
     row = {
@@ -94,3 +114,8 @@ def _then_capture_latitude(captures: list[Any], index: int, latitude: float) -> 
 @then(parsers.parse("capture {index:d}'s speed_kmh is {speed:g}"))
 def _then_capture_speed(captures: list[Any], index: int, speed: float) -> None:
     assert captures[index].speed_kmh == speed
+
+
+@then(parsers.parse('capture {index:d}\'s captured_at is "{expected}"'))
+def _then_capture_captured_at(captures: list[Any], index: int, expected: str) -> None:
+    assert captures[index].captured_at.isoformat() == expected

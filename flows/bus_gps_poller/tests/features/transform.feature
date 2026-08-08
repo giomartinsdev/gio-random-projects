@@ -21,3 +21,8 @@ Feature: SPPO position transformer
     Given a well-formed SPPO row for vehicle "B1" on line "606" with no velocidade
     When the rows are transformed
     Then capture 0's speed_kmh is 0.0
+
+  Scenario: The feed's misleading "Z" is corrected to a real UTC instant
+    Given a row with datetime "2026-08-08T15:33:59Z" for vehicle "B1" on line "606"
+    When the rows are transformed
+    Then capture 0's captured_at is "2026-08-08T18:33:59+00:00"

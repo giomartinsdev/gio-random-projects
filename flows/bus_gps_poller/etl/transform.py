@@ -1,10 +1,22 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from flows.bus_gps_poller.schemas import BusPositionCapture
 from flows.shared.transformer import Transformer
+
+# Confirmed live: the feed's own `datetime` field carries a "Z" suffix
+# (implying UTC) but the wall-clock value underneath is actually
+# America/Sao_Paulo local time — e.g. a row fetched at 18:34 real UTC
+# (15:34 in Rio) carries "...T15:33:59Z", not "...T18:33:59Z". Taking
+# that "Z" at face value made every captured_at exactly 3 hours further
+# in the past than reality, which silently pushed every single
+# position outside bora-api's own freshness window (10 minutes) —
+# confirmed live: real-time-correct data was landing, right down to
+# the vehicle_id, but never showed up as "live" anywhere downstream.
+_SPPO_TZ = ZoneInfo("America/Sao_Paulo")
 
 
 class BusPositionTransformer(Transformer[list[dict[str, Any]], list[BusPositionCapture]]):
@@ -41,7 +53,15 @@ class BusPositionTransformer(Transformer[list[dict[str, Any]], list[BusPositionC
         latitude = float(str(row["latitude"]).replace(",", "."))
         longitude = float(str(row["longitude"]).replace(",", "."))
         speed_kmh = float(str(row.get("velocidade", "0")).replace(",", "."))
-        captured_at = datetime.fromisoformat(row["datetime"])
+        # .replace(tzinfo=...) twice, not once: the first strips the
+        # feed's misleading "Z" (fromisoformat already attached UTC
+        # because of it) without touching the wall-clock numbers, the
+        # second re-labels those same numbers as the Sao Paulo time
+        # they actually are — only then does .astimezone(UTC) do a real
+        # conversion instead of a relabeling.
+        captured_at = (
+            datetime.fromisoformat(row["datetime"]).replace(tzinfo=_SPPO_TZ).astimezone(UTC)
+        )
         return BusPositionCapture(
             mode="sppo",
             line_code=str(row["servico"]),
