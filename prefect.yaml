@@ -9,15 +9,17 @@
 # was removed from here — see .github/scripts/prune_prefect_deployments.py)
 # on every push to flows/** or this file — see .github/workflows/flows-ci.yml.
 #
-# Every deployment's OTEL_*_EXPORTER below is "none" — the otel-collector
-# they used to point at was removed from the host after it crash-looped
-# and took the whole host down with it. Confirmed live: leaving these on
-# "otlp" here (even after the app services' own containers were already
-# fixed) meant every flow run's log line blocked on a doomed export
-# retry against a collector that no longer exists, which was slow
-# enough to starve bus-gps-poller/brt-gps-poller runs — they never
-# actually failed, they just never finished before the next one queued
-# behind them.
+# No OTel here anymore, on any flow — the otel-collector they used to
+# export to was removed from the host after it crash-looped and took
+# the whole host down with it. Turning exporters off wasn't enough on
+# its own: the old `opentelemetry-bootstrap -a install` pull step ran a
+# live pip install on every single flow-run container (no cache between
+# runs), which took long enough that at bus-gps-poller/brt-gps-poller's
+# 1-minute cadence, a new run started before the previous one finished
+# bootstrapping — confirmed live as three dozen stuck containers piled
+# up on the host, none ever completing. With nothing left to
+# instrument, that whole step (and `opentelemetry-instrument` wrapping
+# the run command) is just gone rather than fixed in place.
 
 name: gio-random-projects
 prefect-version: "3"
@@ -33,12 +35,6 @@ pull:
   - prefect.deployments.steps.pip_install_requirements:
       directory: "{{ pull_code.directory }}/flows"
       requirements_file: requirements.txt
-  # Auto-detects + installs the right OTel instrumentation packages for
-  # whatever libraries this flow actually imports (requests, httpx,
-  # sqlalchemy, ...) — this is what makes tracing agnostic per flow: no
-  # flow has to know or declare which instrumentors it needs.
-  - prefect.deployments.steps.run_shell_script:
-      script: opentelemetry-bootstrap -a install
 
 deployments:
   - name: bus-gps-poller
@@ -54,18 +50,6 @@ deployments:
         # container behind (confirmed live: hundreds had piled up,
         # exited but never removed) — same effect as `docker run --rm`.
         auto_remove: true
-        command: "opentelemetry-instrument prefect flow-run execute"
-        env:
-          OTEL_SERVICE_NAME: bus-gps-poller
-          OTEL_TRACES_EXPORTER: none
-          OTEL_LOGS_EXPORTER: none
-          OTEL_METRICS_EXPORTER: none
-          OTEL_PYTHON_LOG_CORRELATION: "true"
-          OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-          OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
-          OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id={{ prefect.blocks.secret.cf-acess-client-id }},CF-Access-Client-Secret={{ prefect.blocks.secret.cf-acess-client-secret }}"
-          OTEL_BSP_SCHEDULE_DELAY: "100"
-          OTEL_BLRP_SCHEDULE_DELAY: "100"
     # Every minute, business hours only (08h-18h, every day) — bumped
     # from every 5 minutes after riders watching the live map noticed
     # stale bus positions. window_seconds (still 300, i.e. last 5
@@ -96,18 +80,6 @@ deployments:
         # container behind (confirmed live: hundreds had piled up,
         # exited but never removed) — same effect as `docker run --rm`.
         auto_remove: true
-        command: "opentelemetry-instrument prefect flow-run execute"
-        env:
-          OTEL_SERVICE_NAME: brt-gps-poller
-          OTEL_TRACES_EXPORTER: none
-          OTEL_LOGS_EXPORTER: none
-          OTEL_METRICS_EXPORTER: none
-          OTEL_PYTHON_LOG_CORRELATION: "true"
-          OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-          OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
-          OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id={{ prefect.blocks.secret.cf-acess-client-id }},CF-Access-Client-Secret={{ prefect.blocks.secret.cf-acess-client-secret }}"
-          OTEL_BSP_SCHEDULE_DELAY: "100"
-          OTEL_BLRP_SCHEDULE_DELAY: "100"
     # Same cadence as bus-gps-poller — BRT has no window to align to
     # (it's always a live snapshot), so this is just "keep it
     # reasonably fresh during business hours" rather than "cover a
@@ -130,18 +102,6 @@ deployments:
         # container behind (confirmed live: hundreds had piled up,
         # exited but never removed) — same effect as `docker run --rm`.
         auto_remove: true
-        command: "opentelemetry-instrument prefect flow-run execute"
-        env:
-          OTEL_SERVICE_NAME: vehicle-position-archiver
-          OTEL_TRACES_EXPORTER: none
-          OTEL_LOGS_EXPORTER: none
-          OTEL_METRICS_EXPORTER: none
-          OTEL_PYTHON_LOG_CORRELATION: "true"
-          OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-          OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
-          OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id={{ prefect.blocks.secret.cf-acess-client-id }},CF-Access-Client-Secret={{ prefect.blocks.secret.cf-acess-client-secret }}"
-          OTEL_BSP_SCHEDULE_DELAY: "100"
-          OTEL_BLRP_SCHEDULE_DELAY: "100"
     # Hourly — independent of the 5-minute poll cadence, this just
     # needs to run often enough that VehiclePositionHistory never
     # grows unbounded between archives.
@@ -162,18 +122,6 @@ deployments:
         # container behind (confirmed live: hundreds had piled up,
         # exited but never removed) — same effect as `docker run --rm`.
         auto_remove: true
-        command: "opentelemetry-instrument prefect flow-run execute"
-        env:
-          OTEL_SERVICE_NAME: gtfs-importer
-          OTEL_TRACES_EXPORTER: none
-          OTEL_LOGS_EXPORTER: none
-          OTEL_METRICS_EXPORTER: none
-          OTEL_PYTHON_LOG_CORRELATION: "true"
-          OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-          OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
-          OTEL_EXPORTER_OTLP_HEADERS: "CF-Access-Client-Id={{ prefect.blocks.secret.cf-acess-client-id }},CF-Access-Client-Secret={{ prefect.blocks.secret.cf-acess-client-secret }}"
-          OTEL_BSP_SCHEDULE_DELAY: "100"
-          OTEL_BLRP_SCHEDULE_DELAY: "100"
     # Monthly, matching the SMTR feed's own update cadence (see
     # flows/gtfs_importer/etl/extract.py) — a tighter schedule would
     # just re-import identical data.
