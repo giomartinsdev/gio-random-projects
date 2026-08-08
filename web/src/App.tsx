@@ -6,17 +6,9 @@ import { LoadingState } from "./components/LoadingState";
 import { ResultsView } from "./components/ResultsView";
 import { EmptyState } from "./components/EmptyState";
 import { DetailView } from "./components/DetailView";
-import { TrainDetailView } from "./components/TrainDetailView";
 import { useGeolocation } from "./hooks/useGeolocation";
 import { useDebouncedValue } from "./hooks/useDebouncedValue";
-import {
-  fetchTrainOptions,
-  fetchTripOptions,
-  searchDestination,
-  type GeocodeResult,
-  type TrainTrip,
-  type TripOption,
-} from "./api";
+import { fetchTripOptions, searchDestination, type GeocodeResult, type TripOption } from "./api";
 
 // Live vehicle positions are only as fresh as the last GPS poll (every
 // minute on the flows side, see flows/bus_gps_poller) — this interval
@@ -41,9 +33,7 @@ function App() {
   const [tripOptions, setTripOptions] = useState<TripOption[]>([]);
   const [tripOptionsLoading, setTripOptionsLoading] = useState(false);
   const [tripOptionsError, setTripOptionsError] = useState(false);
-  const [trainTrip, setTrainTrip] = useState<TrainTrip | null>(null);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
-  const [trainDetailOpen, setTrainDetailOpen] = useState(false);
   const [liveEtaSeconds, setLiveEtaSeconds] = useState<Map<string, number | null>>(new Map());
   const hasLoadedOnce = useRef(false);
 
@@ -110,32 +100,6 @@ function App() {
     };
   }, [origin, destination]);
 
-  // A separate, independent fetch from the bus trip-options above — a
-  // rider with no train station nearby (the common case, most of the
-  // city) or a slow/failed trensrj lookup shouldn't block or blank out
-  // bus results, which is why a failure here just clears the train
-  // section instead of setting any shared error state.
-  useEffect(() => {
-    if (!origin || !destination) {
-      setTrainTrip(null);
-      return;
-    }
-    const controller = new AbortController();
-    fetchTrainOptions(
-      origin.latitude,
-      origin.longitude,
-      destination.latitude,
-      destination.longitude,
-      controller.signal,
-    )
-      .then(setTrainTrip)
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setTrainTrip(null);
-      });
-    return () => controller.abort();
-  }, [origin, destination]);
-
   useEffect(() => {
     if (!destination) return;
     const tick = setInterval(() => {
@@ -163,11 +127,7 @@ function App() {
     setTripOptions([]);
     setSelectedLineId(null);
     setTripOptionsError(false);
-    setTrainTrip(null);
-    setTrainDetailOpen(false);
   }
-
-  const hasTrainOptions = trainTrip !== null && trainTrip.options.length > 0;
 
   const selectedOption = useMemo(
     () => tripOptions.find((option) => option.line_id === selectedLineId) ?? null,
@@ -244,14 +204,12 @@ function App() {
         origin &&
         !tripOptionsLoading &&
         !tripOptionsError &&
-        (tripOptions.length > 0 || hasTrainOptions) && (
+        tripOptions.length > 0 && (
           <ResultsView
             destinationName={destination.name}
             options={tripOptions}
             liveEtaSeconds={liveEtaSeconds}
-            trainTrip={trainTrip}
             onSelect={(option) => setSelectedLineId(option.line_id)}
-            onSelectTrain={() => setTrainDetailOpen(true)}
           />
         )}
 
@@ -259,8 +217,7 @@ function App() {
         origin &&
         !tripOptionsLoading &&
         !tripOptionsError &&
-        tripOptions.length === 0 &&
-        !hasTrainOptions && (
+        tripOptions.length === 0 && (
           <EmptyState destinationName={destination.name} onRetry={handleClearDestination} />
         )}
 
@@ -268,11 +225,6 @@ function App() {
         option={selectedOption}
         liveEtaSeconds={selectedOption ? (liveEtaSeconds.get(selectedOption.line_id) ?? null) : null}
         onClose={() => setSelectedLineId(null)}
-      />
-
-      <TrainDetailView
-        trainTrip={trainDetailOpen ? trainTrip : null}
-        onClose={() => setTrainDetailOpen(false)}
       />
     </>
   );

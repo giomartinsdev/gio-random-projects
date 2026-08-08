@@ -64,34 +64,6 @@ export interface LineVehicle {
   speed_kmh: number;
 }
 
-export interface TrainLeg {
-  line_name: string;
-  line_short_name: string;
-  line_color: string;
-  from_station_name: string;
-  to_station_name: string;
-  departure_time: string;
-  arrival_time: string;
-  stops_count: number;
-}
-
-export interface TrainOption {
-  legs: TrainLeg[];
-  departure_time: string;
-  arrival_time: string;
-  total_duration_min: number;
-  is_last_trip_of_day: boolean;
-  warnings: string[];
-}
-
-export interface TrainTrip {
-  origin_station_name: string;
-  origin_walk_seconds: number;
-  destination_station_name: string;
-  destination_walk_seconds: number;
-  options: TrainOption[];
-}
-
 class ApiError extends Error {
   readonly path: string;
   readonly status: number;
@@ -151,25 +123,6 @@ export function fetchLineVehicles(
   signal?: AbortSignal,
 ): Promise<LineVehicle[]> {
   return getJson<LineVehicle[]>("/line-vehicles", { line_code: lineCode }, signal);
-}
-
-export function fetchTrainOptions(
-  fromLatitude: number,
-  fromLongitude: number,
-  toLatitude: number,
-  toLongitude: number,
-  signal?: AbortSignal,
-): Promise<TrainTrip | null> {
-  return getJson<TrainTrip | null>(
-    "/train-options",
-    {
-      from_lat: fromLatitude,
-      from_lon: fromLongitude,
-      to_lat: toLatitude,
-      to_lon: toLongitude,
-    },
-    signal,
-  );
 }
 
 export { ApiError };

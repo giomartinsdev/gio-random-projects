@@ -48,7 +48,6 @@ class Handler(BaseHTTPRequestHandler):
             "/trip-options",
             "/geocode",
             "/line-vehicles",
-            "/train-options",
         ):
             self._send_json(
                 200, {"path": parsed.path, "saw_api_key_header": self.headers.get("x-api-key")}

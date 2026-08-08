@@ -481,15 +481,6 @@ body {
   flex-shrink: 0;
 }
 
-.train-card {
-  margin: 10px 16px 0;
-  width: calc(100% - 32px);
-  border-style: dashed;
-}
-.train-card .eta {
-  color: var(--text);
-}
-
 /* ---- Empty state ---- */
 .empty-body {
   flex: 1;

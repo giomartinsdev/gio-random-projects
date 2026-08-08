@@ -1,26 +1,21 @@
-import type { TrainTrip, TripOption } from "../api";
+import type { TripOption } from "../api";
 import { formatDuration } from "../format";
 
 interface ResultsViewProps {
   destinationName: string;
   options: TripOption[];
   liveEtaSeconds: Map<string, number | null>;
-  trainTrip: TrainTrip | null;
   onSelect: (option: TripOption) => void;
-  onSelectTrain: () => void;
 }
 
 export function ResultsView({
   destinationName,
   options,
   liveEtaSeconds,
-  trainTrip,
   onSelect,
-  onSelectTrain,
 }: ResultsViewProps) {
   const best = options[0];
   const bestEta = best ? liveEtaSeconds.get(best.line_id) : null;
-  const nextTrain = trainTrip?.options[0] ?? null;
 
   return (
     <div className="view">
@@ -30,39 +25,6 @@ export function ResultsView({
         </svg>
         Indo para <b>{destinationName}</b>
       </div>
-
-      {trainTrip && nextTrain && (
-        <button className="row train-card" type="button" onClick={onSelectTrain}>
-          <div className="glyph">
-            <svg className="icon" style={{ width: 20, height: 20 }}>
-              <use href="#icon-train" />
-            </svg>
-          </div>
-          <div className="info">
-            <div className="line-name">
-              {nextTrain.legs.map((leg) => leg.line_short_name).join(" → ")}
-            </div>
-            <div className="line-sub">
-              <svg className="icon">
-                <use href="#icon-walk" />
-              </svg>
-              {formatDuration(trainTrip.origin_walk_seconds)} até {trainTrip.origin_station_name}
-            </div>
-            {nextTrain.warnings.length > 0 && (
-              <div className="line-sub warn">{nextTrain.warnings[0]}</div>
-            )}
-          </div>
-          <div className="right">
-            <div className="eta">
-              <span>{nextTrain.departure_time}</span>
-            </div>
-            <div className="arrival">chega {nextTrain.arrival_time}</div>
-          </div>
-          <svg className="icon chevron">
-            <use href="#icon-arrow" />
-          </svg>
-        </button>
-      )}
 
       <div className="list">
         {options.map((option) => {

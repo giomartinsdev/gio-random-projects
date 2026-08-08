@@ -62,10 +62,6 @@ class Settings(BaseSettings):
     # missed/delayed poll doesn't spuriously hide a bus that's actually
     # still out there.
     max_position_age_seconds: float = 600.0
-    # Train stations sit much farther apart than bus stops, so a rider
-    # is assumed willing to walk further to reach one — wider than
-    # default_radius_m on purpose, not a mistake.
-    max_train_station_distance_m: float = 2000.0
 
 
 settings = Settings()
