@@ -33,12 +33,12 @@ def _given_fake_extractor(monkeypatch: pytest.MonkeyPatch, count: int) -> None:
     fake_extractor = MagicMock()
     fake_extractor.extract.return_value = [
         {
-            "ordem": str(i),
-            "linha": "606",
-            "latitude": "-22,9",
-            "longitude": "-43,2",
-            "velocidade": "10",
-            "datahora": "1785121192000",
+            "id_veiculo": str(i),
+            "servico": "606",
+            "latitude": -22.9,
+            "longitude": -43.2,
+            "velocidade": 10.0,
+            "datetime": "2026-08-08T15:06:09Z",
         }
         for i in range(count)
     ]

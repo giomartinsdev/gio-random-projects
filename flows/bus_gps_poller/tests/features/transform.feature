@@ -1,9 +1,9 @@
 Feature: SPPO position transformer
   As the bus_gps_poller flow
-  I want BusPositionTransformer to parse raw comma-decimal rows into typed captures
+  I want BusPositionTransformer to parse raw SPPO rows into typed captures
   So that one malformed row never drops every other vehicle's position
 
-  Scenario: A well-formed row parses with dot decimals and a real datetime
+  Scenario: A well-formed row parses into a capture
     Given a well-formed SPPO row for vehicle "B25611" on line "606"
     When the rows are transformed
     Then 1 capture comes back
@@ -12,7 +12,7 @@ Feature: SPPO position transformer
 
   Scenario: A malformed row is skipped without failing the batch
     Given a well-formed SPPO row for vehicle "B1" on line "606"
-    And a malformed SPPO row missing "ordem"
+    And a malformed SPPO row missing "id_veiculo"
     When the rows are transformed
     Then 1 capture comes back
     And capture 0 has vehicle "B1"

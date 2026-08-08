@@ -16,17 +16,17 @@ if TYPE_CHECKING:
 
 scenarios("../features/bus_gps_poller.feature")
 
-_MALFORMED_ROW = {"linha": "606", "latitude": "-22,9", "longitude": "-43,2", "datahora": "x"}
+_MALFORMED_ROW = {"servico": "606", "latitude": -22.9, "longitude": -43.2, "datetime": "not-a-date"}
 
 
 def _well_formed_row(vehicle_id: str) -> dict[str, Any]:
     return {
-        "ordem": vehicle_id,
-        "linha": "606",
-        "latitude": "-22,9",
-        "longitude": "-43,2",
-        "velocidade": "10",
-        "datahora": "1785121192000",
+        "id_veiculo": vehicle_id,
+        "servico": "606",
+        "latitude": -22.9,
+        "longitude": -43.2,
+        "velocidade": 10.0,
+        "datetime": "2026-08-08T15:06:09Z",
     }
 
 

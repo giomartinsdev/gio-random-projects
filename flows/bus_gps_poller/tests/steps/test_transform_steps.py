@@ -19,12 +19,12 @@ def rows() -> list[dict[str, Any]]:
 def _given_well_formed_row(rows: list[dict[str, Any]], vehicle_id: str, line: str) -> None:
     rows.append(
         {
-            "ordem": vehicle_id,
-            "linha": line,
-            "latitude": "-22,90434",
-            "longitude": "-43,2863",
-            "velocidade": "0",
-            "datahora": "1785121192000",
+            "id_veiculo": vehicle_id,
+            "servico": line,
+            "latitude": -22.90434,
+            "longitude": -43.2863,
+            "velocidade": 0.0,
+            "datetime": "2026-08-08T15:06:09Z",
         }
     )
 
@@ -37,11 +37,11 @@ def _given_well_formed_row(rows: list[dict[str, Any]], vehicle_id: str, line: st
 def _given_row_without_velocidade(rows: list[dict[str, Any]], vehicle_id: str, line: str) -> None:
     rows.append(
         {
-            "ordem": vehicle_id,
-            "linha": line,
-            "latitude": "-22,9",
-            "longitude": "-43,2",
-            "datahora": "1785121192000",
+            "id_veiculo": vehicle_id,
+            "servico": line,
+            "latitude": -22.9,
+            "longitude": -43.2,
+            "datetime": "2026-08-08T15:06:09Z",
         }
     )
 
@@ -49,12 +49,12 @@ def _given_row_without_velocidade(rows: list[dict[str, Any]], vehicle_id: str, l
 @given(parsers.parse('a malformed SPPO row missing "{field}"'))
 def _given_malformed_row(rows: list[dict[str, Any]], field: str) -> None:
     row = {
-        "ordem": "999",
-        "linha": "606",
-        "latitude": "-22,9",
-        "longitude": "-43,2",
-        "velocidade": "10",
-        "datahora": "1785121192000",
+        "id_veiculo": "999",
+        "servico": "606",
+        "latitude": -22.9,
+        "longitude": -43.2,
+        "velocidade": 10.0,
+        "datetime": "2026-08-08T15:06:09Z",
     }
     del row[field]
     rows.append(row)
