@@ -10,9 +10,10 @@ one only implicitly, by pulling images `apps-deploy.yml` pushes here.
   (`must_run = false`, `attach = true`) that bcrypts the password into
   a file on the `registry_auth` volume before `registry` starts.
   `registry_data` holds the actual pushed image blobs; both volumes
-  reuse the exact names the pre-Terraform compose stack used so this
-  module's first apply adopts the existing data instead of starting
-  empty.
+  reuse the exact names the pre-Terraform compose stack used, and the
+  root module's `imports.tf` adopts them by name on first apply
+  instead of starting empty (import blocks are root-module-only, so
+  they can't live here alongside the resources they target).
 - **`watchtower`** — polls `registry` and redeploys any container
   labeled `com.centurylinklabs.watchtower.enable=true`. Needs the
   host's own `/var/run/docker.sock` and `/root/.docker/config.json`
