@@ -82,6 +82,12 @@ variable "domain_api_keys" {
 
 # --- compute/registry ---
 
+variable "registry_host" {
+  description = "Hostname docker_container/docker_image resources pull images from, and the docker provider's registry_auth is scoped to (versions.tf)."
+  type        = string
+  default     = "registry.giomartins.dev"
+}
+
 variable "registry_user" {
   description = "Basic-auth username for docker push/pull against registry.giomartins.dev."
   type        = string

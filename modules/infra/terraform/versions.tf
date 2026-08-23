@@ -66,5 +66,17 @@ provider "docker" {
   # proxy forwards to https://docker.giomartins.dev with those headers
   # injected; this only ever talks to localhost. See README.md and
   # .github/workflows/tf-deploy.yml's sidecar step.
+  #
+  # A pull triggered over the Docker API (as this provider does, unlike
+  # the docker CLI) carries its own auth per-request — dockerd does NOT
+  # fall back to the host's `docker login`-populated config.json for
+  # API-originated pulls. Without this, every docker_container/
+  # docker_image resource pulling from registry.giomartins.dev (now
+  # htpasswd-gated) fails with "no basic auth credentials".
+  registry_auth {
+    address  = var.registry_host
+    username = var.registry_user
+    password = var.registry_password
+  }
   host = var.docker_host
 }
