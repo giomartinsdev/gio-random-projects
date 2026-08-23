@@ -11,3 +11,15 @@ output "docker_api_proxy_image_id" {
   description = "The built docker-api-proxy image's ID — changes whenever proxy.py or its Dockerfile do, per the triggers on docker_image.docker_api_proxy."
   value       = docker_image.docker_api_proxy.image_id
 }
+
+output "bootstrap_api_token" {
+  description = <<-EOT
+    The token value — copy this into CLOUDFLARE_API_TOKEN for every
+    run after the first (see README.md's "Bootstrapping the API
+    token"). Never printed by plan/apply's own log output regardless
+    of this sensitive marking — only `terraform output
+    bootstrap_api_token` reveals it.
+  EOT
+  value       = cloudflare_api_token.bootstrap.value
+  sensitive   = true
+}

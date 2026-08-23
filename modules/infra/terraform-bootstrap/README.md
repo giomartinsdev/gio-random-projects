@@ -30,6 +30,12 @@ place:
   `/etc/systemd/system/docker.service.d/override.conf`) so this proxy
   could take over `2375` — the port `modules/infra/terraform`'s
   ingress rule for `docker.giomartins.dev` actually points at.
+- **`cloudflare_api_token.bootstrap`** — the token this config's own
+  `cloudflare` provider authenticates with on every run after the
+  first. Scoped to exactly `cloudflare_r2_bucket.tfstate`'s own need
+  (Account / R2 / Edit), nothing broader — see "Bootstrapping the API
+  token" below for why a token that authenticates the provider that
+  creates it needs a one-time workaround.
 
 `modules/infra/terraform`'s own `docker` provider only reaches dockerd
 by going *through* `cloudflared` and `docker-api-proxy`:
@@ -66,10 +72,11 @@ ssh -N -L 2376:127.0.0.1:2376 gioserver@<gio-server-ip>
 
 ```bash
 # In another terminal, from this directory
-export CLOUDFLARE_API_TOKEN=<a token with Account / R2 / Edit>
+export CLOUDFLARE_API_TOKEN=<output of: terraform output -raw bootstrap_api_token>
 
 cat > terraform.tfvars <<EOF
 cloudflare_account_id = "<Cloudflare dashboard → Account Home → right sidebar>"
+cloudflare_user_id    = "<GET https://api.cloudflare.com/client/v4/user, .result.id>"
 EOF
 
 terraform init
@@ -80,6 +87,45 @@ terraform apply
 `docker_host` defaults to `tcp://localhost:2376`, matching the
 port-forward above — override only if you forwarded a different local
 port.
+
+## Bootstrapping the API token
+
+`cloudflare_api_token.bootstrap` is the token the command above
+expects — but a token can't authenticate the request that creates
+itself, so the **very first** apply (and only that one) needs a
+different credential:
+
+```bash
+# Global API Key — dashboard → My Profile → API Tokens → API Keys →
+# Global API Key → View. Broader than anything this config needs;
+# only for this one bootstrap apply, never stored or reused after.
+export CLOUDFLARE_EMAIL=<your Cloudflare account email>
+export CLOUDFLARE_API_KEY=<Global API Key>
+unset CLOUDFLARE_API_TOKEN  # the provider prefers this if both are set
+
+terraform init
+terraform apply   # creates the bucket AND the token in the same run
+terraform output -raw bootstrap_api_token   # save this somewhere durable
+```
+
+`token.tf`'s permission group ID (`"Workers R2 Storage Write"`) is
+hardcoded rather than looked up via a data source on every run — the
+scoped token this resource creates deliberately has no "API Tokens
+Read" permission to re-look it up itself, and Cloudflare's permission
+group IDs are account-independent and stable. If that literal ever
+needs re-deriving (Cloudflare renames or replaces the group), do it
+once under the Global API Key:
+
+```bash
+curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  "https://api.cloudflare.com/client/v4/user/tokens/permission_groups?name=Workers+R2+Storage+Write" \
+  | jq -r '.result[0].id'
+```
+
+Every apply after that uses `CLOUDFLARE_API_TOKEN` from the saved
+output, per "Running it" above — the Global API Key is never needed
+again unless `cloudflare_api_token.bootstrap` itself is ever lost from
+state and needs recreating.
 
 ## One-time setup for the tunnel credentials
 
@@ -109,12 +155,12 @@ config when both are available.
 
 ## Recovering from a lost bootstrap state
 
-`terraform.tfstate` is gitignored. It holds no secrets (bucket
-metadata, and the two containers' non-sensitive attributes), but
-losing it means a plain `terraform apply` will fail with "already
-exists" for every resource here instead of adopting them. Recover with
-`terraform import` per resource rather than deleting and recreating
-anything:
+`terraform.tfstate` is gitignored and, unlike most of this project's
+other state files, **does** hold a live secret — `cloudflare_api_token.bootstrap`'s
+value. Losing it means a plain `terraform apply` will fail with
+"already exists" for every resource here instead of adopting them.
+Recover with `terraform import` per resource rather than deleting and
+recreating anything:
 
 ```bash
 terraform import cloudflare_r2_bucket.tfstate <account_id>/gio-homelab-tfstate
@@ -124,3 +170,9 @@ terraform import docker_container.docker_api_proxy docker-api-proxy
 # apply just rebuilds it from ./docker-api-proxy and picks up the
 # existing container's image reference via the container import above.
 ```
+
+`cloudflare_api_token.bootstrap` itself can't be imported (the API
+never returns a token's value after creation, only its metadata) — if
+state is lost, revoke the old token in the dashboard (Manage Account →
+API Tokens) and go through "Bootstrapping the API token" again with
+the Global API Key to mint a replacement.
