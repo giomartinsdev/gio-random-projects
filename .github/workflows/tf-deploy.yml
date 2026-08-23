@@ -90,16 +90,33 @@ jobs:
       # every mTLS CA cert except the one still actually in use
       # (docker.giomartins.dev's association references it), so the
       # next terraform apply can create its replacement cleanly.
-      - name: DIAGNOSTIC ONLY - inspect mTLS certs and the current association
+      # ONE-TIME cleanup, remove after this runs successfully once.
+      # Diagnosis (previous run of this same job, DIAGNOSTIC-ONLY):
+      # b21e62e2-... (ECDSA, an orphan from a failed create_before_destroy
+      # retry) is the cert actually associated with
+      # registry.giomartins.dev right now — NOT the original ED25519
+      # one (fdeb1afa-...) as assumed when this cleanup was first
+      # written. Its matching private key only ever existed in that
+      # failed run's local memory, never persisted to state, so it's
+      # useless even though it's technically the right algorithm.
+      # Clears its association (freeing it to delete), deletes it and
+      # the original ED25519 cert, and leaves the association empty —
+      # terraform apply right after this creates the new cert fresh
+      # (no more content collision) and sets the real association
+      # itself, same as any normal first apply would.
+      - name: One-time cleanup of orphaned/stale mTLS CA certs
         run: |
-          echo "=== all account mTLS CA certs ==="
-          curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/mtls_certificates" \
-            | jq '.result[] | {id, ca, signature, uploaded_on}'
-          echo "=== current hostname association ==="
-          curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/certificate_authorities/hostname_associations?hostname=registry.giomartins.dev" \
-            | jq '.'
+          echo "Clearing b21e62e2's hostname association"
+          curl -s -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/certificate_authorities/hostname_associations" \
+            -d '{"mtls_certificate_id":"b21e62e2-7071-4bda-bf50-511bb5004903","hostnames":[]}'
+          echo
+          for id in b21e62e2-7071-4bda-bf50-511bb5004903 fdeb1afa-7e5d-4d32-b425-7c94baaee4cd; do
+            echo "Deleting $id"
+            curl -s -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/mtls_certificates/$id"
+            echo
+          done
 
       - uses: hashicorp/setup-terraform@v3
         with:
