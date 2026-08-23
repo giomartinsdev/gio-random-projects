@@ -71,12 +71,12 @@ moved {
 
 moved {
   from = docker_container.api
-  to   = module.compute_app.docker_container.domain_api
+  to   = module.compute_app.docker_container.api
 }
 
 moved {
   from = docker_container.worker
-  to   = module.compute_app.docker_container.domain_worker
+  to   = module.compute_app.docker_container.worker
 }
 
 # Renamed api -> domain_api and worker -> domain_worker (the resource
