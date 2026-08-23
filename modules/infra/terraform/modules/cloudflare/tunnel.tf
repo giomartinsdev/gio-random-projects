@@ -28,7 +28,28 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "homelab" {
 
   config = {
     ingress = concat(
-      [for r in var.ingress_rules : { hostname = r.hostname, service = r.service }],
+      [for r in var.ingress_rules : {
+        hostname = r.hostname
+        service  = r.service
+        origin_request = {
+          # The actual, upstream-documented fix for the HTTP/2->1.1
+          # translation quirk this repo worked around twice already
+          # (modules/infra/terraform-bootstrap/docker-api-proxy,
+          # modules/infra/terraform-bootstrap/beszel-proxy): cloudflared
+          # itself was adding Transfer-Encoding: chunked to requests
+          # that reached it without one, which dockerd rejects outright
+          # on lifecycle calls and which PocketBase (Beszel's own base)
+          # was misreading as a malformed request on
+          # POST /api/collections/users/auth-refresh — see
+          # https://github.com/henrygd/beszel/issues/878 and the
+          # linked https://github.com/pocketbase/pocketbase/discussions/6663.
+          # Confirmed live: this alone fixes Beszel's login without
+          # beszel-proxy in the path at all. Applies to every hostname,
+          # not just beszel.giomartins.dev — the same root cause
+          # affects any of them proxying to a local origin.
+          disable_chunked_encoding = true
+        }
+      }],
       [{ service = "http_status:404" }], # catch-all — must be last
     )
   }
