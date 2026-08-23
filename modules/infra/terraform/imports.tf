@@ -16,3 +16,28 @@ import {
   to = module.compute_registry.docker_volume.registry_auth
   id = "registry_registry-auth"
 }
+
+# Every zone already has one (empty, Cloudflare-created) entry-point
+# ruleset per phase — cloudflare_ruleset can't just "create" one for
+# http_request_firewall_custom, since a zone can only have one and
+# this zone already does (confirmed live: apply errored "exceeded
+# maximum number of zone rulesets for phase
+# http_request_firewall_custom"). Looked up by phase here (root-only,
+# same reason as the volume imports above) rather than hardcoding an
+# ID, since it's account data this config didn't create and has no
+# other record of.
+data "cloudflare_rulesets" "zone" {
+  zone_id = var.cloudflare_zone_id
+}
+
+locals {
+  existing_custom_waf_ruleset_id = one([
+    for r in data.cloudflare_rulesets.zone.rulesets : r.id
+    if r.phase == "http_request_firewall_custom"
+  ])
+}
+
+import {
+  to = module.cloudflare.cloudflare_ruleset.registry_mtls_enforce
+  id = "${var.cloudflare_zone_id}/${local.existing_custom_waf_ruleset_id}"
+}
