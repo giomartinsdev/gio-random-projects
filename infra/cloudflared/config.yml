@@ -27,6 +27,16 @@ ingress:
   - hostname: domain.giomartins.dev
     service: http://localhost:8000
 
+  # Self-hosted S3-compatible storage (infra/minio) — currently only
+  # used as the Terraform state backend for infra/terraform. Gates
+  # itself via AWS SigV4 request signing (the S3 protocol's own auth),
+  # same reasoning as registry.giomartins.dev above — deliberately NOT
+  # behind Cloudflare Access, which would break the Terraform S3
+  # backend's non-browser requests. Only the S3 API (9000) is exposed;
+  # the admin console (9001) isn't published anywhere.
+  - hostname: minio-api.giomartins.dev
+    service: http://localhost:9000
+
   # Add new services below, one hostname per block, most specific first.
   # - hostname: example.giomartins.dev
   #   service: http://localhost:PORT

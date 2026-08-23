@@ -1,0 +1,45 @@
+# Self-hosted S3-compatible storage — currently only used as the
+# Terraform state backend for infra/terraform (see that directory's
+# README.md). Console (9001) is intentionally not published anywhere,
+# not even through cloudflared — nothing needs a human clicking through
+# a bucket browser yet; only the S3 API (9000) is exposed.
+#
+# Requires MINIO_ROOT_PASSWORD — no default, same "refuse to boot
+# without it" pattern as the rest of this repo's infra.
+services:
+  minio:
+    image: quay.io/minio/minio:${MINIO_VERSION:-latest}
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: creates the tfstate bucket, then exits. The api service
+  # doesn't depend on this finishing (buckets can be created lazily),
+  # but Terraform's first init does need it to already exist.
+  bucket-init:
+    image: minio/mc:${MC_VERSION:-latest}
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing local/tfstate
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    depends_on:
+      minio:
+        condition: service_healthy
+
+volumes:
+  minio-data:

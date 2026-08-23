@@ -31,8 +31,9 @@ variable "excluded_hostnames" {
   EOT
   type    = list(string)
   default = [
-    "registry.giomartins.dev", # docker login/push — own htpasswd auth
-    "domain.giomartins.dev",   # REST API clients — own X-API-Key auth
+    "registry.giomartins.dev",  # docker login/push — own htpasswd auth
+    "domain.giomartins.dev",    # REST API clients — own X-API-Key auth
+    "minio-api.giomartins.dev", # this project's own Terraform S3 backend — own SigV4 auth
   ]
 }
 
