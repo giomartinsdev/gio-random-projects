@@ -1,7 +1,0 @@
-{
-  "name": "Shlink",
-  "description": "Self-hosted URL shortener with a REST API and usage analytics.",
-  "version": "1.0.0",
-  "author": "giomartinsdev",
-  "tags": ["url-shortener", "self-hosted"]
-}

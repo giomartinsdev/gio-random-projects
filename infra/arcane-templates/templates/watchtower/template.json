@@ -1,7 +1,0 @@
-{
-  "name": "Watchtower",
-  "description": "Automatically updates running containers to the latest image and cleans up the old ones.",
-  "version": "1.0.0",
-  "author": "giomartinsdev",
-  "tags": ["automation", "docker", "self-hosted"]
-}

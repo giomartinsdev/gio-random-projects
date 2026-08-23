@@ -1,7 +1,0 @@
-{
-  "name": "9Router",
-  "description": "Self-hosted AI API proxy/router — OpenAI-compatible endpoint with multi-provider LLM failover routing.",
-  "version": "1.0.0",
-  "author": "giomartinsdev",
-  "tags": ["ai", "proxy", "llm"]
-}

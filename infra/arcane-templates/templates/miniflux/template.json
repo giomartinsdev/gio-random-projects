@@ -1,7 +1,0 @@
-{
-  "name": "Miniflux",
-  "description": "Minimalist, fast self-hosted RSS/Atom feed reader.",
-  "version": "1.0.0",
-  "author": "giomartinsdev",
-  "tags": ["rss", "reader", "self-hosted"]
-}

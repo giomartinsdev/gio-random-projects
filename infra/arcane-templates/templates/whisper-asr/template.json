@@ -1,7 +1,0 @@
-{
-  "name": "Whisper ASR Webservice",
-  "description": "Self-hosted speech-to-text API powered by OpenAI Whisper.",
-  "version": "1.0.0",
-  "author": "giomartinsdev",
-  "tags": ["ai", "speech-to-text", "transcription"]
-}

@@ -1,7 +1,0 @@
-{
-  "name": "changedetection.io",
-  "description": "Monitor websites for content changes and get notified — price drops, restock alerts, page diffs.",
-  "version": "1.0.0",
-  "author": "giomartinsdev",
-  "tags": ["monitoring", "automation", "self-hosted"]
-}
