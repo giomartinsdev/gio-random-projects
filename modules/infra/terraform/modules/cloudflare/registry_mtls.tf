@@ -19,7 +19,13 @@
 # can push and pull; treat them like the registry password they sit
 # alongside.
 resource "tls_private_key" "registry_ca" {
-  algorithm = "ED25519"
+  # NOT ED25519: Cloudflare's BYO-CA mTLS only accepts RSA or ECDSA
+  # signatures (confirmed against their docs after an ED25519 CA here
+  # got silently accepted by `cloudflare_mtls_certificate` but every
+  # request's cf.tls_client_auth.cert_verified evaluated false anyway,
+  # even presenting a cert this same CA had signed).
+  algorithm   = "ECDSA"
+  ecdsa_curve = "P256"
 }
 
 resource "tls_self_signed_cert" "registry_ca" {
@@ -57,7 +63,8 @@ resource "cloudflare_certificate_authorities_hostname_associations" "registry" {
 # tokens distinguish between callers, so there's no isolation benefit
 # to issuing more than one.
 resource "tls_private_key" "registry_client" {
-  algorithm = "ED25519"
+  algorithm   = "ECDSA"
+  ecdsa_curve = "P256"
 }
 
 resource "tls_cert_request" "registry_client" {
