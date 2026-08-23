@@ -90,16 +90,16 @@ jobs:
       # every mTLS CA cert except the one still actually in use
       # (docker.giomartins.dev's association references it), so the
       # next terraform apply can create its replacement cleanly.
-      - name: One-time cleanup of orphaned mTLS CA certs
+      - name: DIAGNOSTIC ONLY - inspect mTLS certs and the current association
         run: |
-          for id in $(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+          echo "=== all account mTLS CA certs ==="
+          curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
             "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/mtls_certificates" \
-            | jq -r '.result[] | select(.ca==true and .id != "fdeb1afa-7e5d-4d32-b425-7c94baaee4cd") | .id'); do
-            echo "Deleting orphaned CA cert $id"
-            curl -s -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-              "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/mtls_certificates/$id"
-            echo
-          done
+            | jq '.result[] | {id, ca, signature, uploaded_on}'
+          echo "=== current hostname association ==="
+          curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/certificate_authorities/hostname_associations?hostname=registry.giomartins.dev" \
+            | jq '.'
 
       - uses: hashicorp/setup-terraform@v3
         with:
