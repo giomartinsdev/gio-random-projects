@@ -7,9 +7,8 @@ Prometheus+Grafana+cAdvisor stacks this host's 8GB RAM would rather
 not spend on observability.
 
 - **`docker_container.beszel_hub`** — the dashboard + SQLite storage.
-  Published only on `127.0.0.1:8090`, reached through the Cloudflare
-  Tunnel at `beszel.giomartins.dev` (see the root module's
-  `locals.tf`), never directly LAN- or internet-reachable.
+  No published port — only reachable over the docker network, by
+  `beszel_proxy` below.
 - **`docker_container.beszel_agent`** — collects stats and waits for
   the hub to connect; never initiates anything itself. Needs
   `/var/run/docker.sock` bind-mounted to see other containers' stats,
@@ -17,10 +16,26 @@ not spend on observability.
   to even start without a real `KEY`, so this resource has
   `count = var.agent_key != "" ? 1 : 0` — absent entirely rather than
   crash-looping until you have one (see below).
+- **`docker_image.beszel_proxy`** / **`docker_container.beszel_proxy`**
+  — builds `./beszel-proxy` and runs it in front of `beszel_hub`,
+  published on `127.0.0.1:8090`, reached through the Cloudflare Tunnel
+  at `beszel.giomartins.dev` (see the root module's `locals.tf`).
+  Exists for one specific request: the Cloudflare Tunnel's HTTP/2→1.1
+  translation leaves a stray/malformed `Content-Type` header on
+  `POST /api/collections/users/auth-refresh` (bodyless — just an
+  `Authorization` header), which PocketBase (Beszel's own base) then
+  rejects with `400 Unsupported Content-Type` — confirmed live: the
+  exact same request against `beszel-hub` directly, bypassing the
+  tunnel, succeeds. Without this, the web UI logs itself right back
+  out after every successful login, since its SDK auto-clears the auth
+  store on that 401 response's follow-through. Same root cause as
+  `modules/infra/terraform-bootstrap/docker-api-proxy`, different
+  symptom, so a separate small proxy rather than reusing that one.
 
-Both join `compute/data`'s network (passed in as `network_name`, not
-created here) purely so the hub can reach the agent by container name
-— neither needs postgres or redis.
+All three join `compute/data`'s network (passed in as `network_name`,
+not created here) — the hub needs to reach the agent by container
+name, and the proxy needs to reach the hub the same way. None of them
+need postgres or redis.
 
 ## Connecting the hub to the agent
 

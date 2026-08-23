@@ -17,20 +17,53 @@ resource "docker_container" "beszel_hub" {
     name = var.network_name
   }
 
-  # 127.0.0.1 only — reached through the Cloudflare Tunnel (see
-  # locals.tf's ingress_rules), never meant to be LAN- or
-  # internet-reachable directly.
-  ports {
-    internal = 8090
-    external = 8090
-    ip       = "127.0.0.1"
-  }
-
+  # No published port — only reachable over the docker network, by
+  # beszel_proxy below (which the tunnel actually points at). Publishing
+  # this directly used to work for most calls, but not for
+  # POST /api/collections/users/auth-refresh — see beszel_proxy's own
+  # comment.
   mounts {
     type   = "volume"
     source = docker_volume.beszel_data.name
     target = "/beszel_data"
   }
+}
+
+# Sits between beszel.giomartins.dev (cloudflared) and beszel-hub — see
+# beszel-proxy/proxy.py's own module docstring for the exact Cloudflare
+# Tunnel quirk this works around (the same root cause as
+# modules/infra/terraform-bootstrap/docker-api-proxy, different
+# symptom).
+resource "docker_image" "beszel_proxy" {
+  name = "beszel-proxy:latest"
+  build {
+    context = "${path.module}/beszel-proxy"
+  }
+  triggers = {
+    dockerfile_sha1 = filesha1("${path.module}/beszel-proxy/Dockerfile")
+    proxy_py_sha1   = filesha1("${path.module}/beszel-proxy/proxy.py")
+  }
+}
+
+resource "docker_container" "beszel_proxy" {
+  name    = "beszel-proxy"
+  image   = docker_image.beszel_proxy.image_id
+  restart = "unless-stopped"
+
+  networks_advanced {
+    name = var.network_name
+  }
+
+  # 127.0.0.1 only — reached through the Cloudflare Tunnel (see
+  # locals.tf's ingress_rules), never meant to be LAN- or
+  # internet-reachable directly.
+  ports {
+    internal = 8091
+    external = 8090
+    ip       = "127.0.0.1"
+  }
+
+  depends_on = [docker_container.beszel_hub]
 }
 
 resource "docker_container" "beszel_agent" {
