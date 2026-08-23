@@ -79,3 +79,26 @@ resource "tls_locally_signed_cert" "registry_client" {
     "client_auth",
   ]
 }
+
+# Associating a CA with a hostname (above) only makes Cloudflare
+# validate a client certificate IF one is presented — it does NOT by
+# itself reject requests that present none. Confirmed live: a plain
+# `curl` with no client cert reached the registry's own htpasswd
+# check and got a normal 401 from that, not blocked at the edge at
+# all. This WAF custom rule is the actual enforcement Cloudflare's own
+# docs point to ("Enforce mTLS with a WAF custom rule") — mTLS is
+# genuinely optional without it.
+resource "cloudflare_ruleset" "registry_mtls_enforce" {
+  zone_id     = var.zone_id
+  name        = "registry.giomartins.dev mTLS enforcement"
+  description = "Blocks any request to registry.giomartins.dev that didn't present a client certificate signed by cloudflare_mtls_certificate.registry_ca."
+  kind        = "zone"
+  phase       = "http_request_firewall_custom"
+
+  rules = [{
+    action      = "block"
+    expression  = "(http.host eq \"registry.giomartins.dev\" and not cf.tls_client_auth.cert_verified)"
+    description = "Require registry mTLS client cert"
+    enabled     = true
+  }]
+}
