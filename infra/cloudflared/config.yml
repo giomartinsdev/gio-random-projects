@@ -70,6 +70,12 @@ ingress:
   - hostname: bora.giomartins.dev
     service: http://localhost:4173
 
+  # Homelable — visual homelab mapper/monitor (docker compose in
+  # ~/apps/homelable on the server). Frontend container publishes 80 on
+  # host port 3000.
+  - hostname: homelable.giomartins.dev
+    service: http://localhost:3000
+
   # Add new services below, one hostname per block, most specific first.
   # - hostname: example.giomartins.dev
   #   service: http://localhost:PORT
