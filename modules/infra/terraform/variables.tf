@@ -79,3 +79,24 @@ variable "domain_api_keys" {
   type        = string
   sensitive   = true
 }
+
+# --- compute/registry ---
+
+variable "registry_user" {
+  description = "Basic-auth username for docker push/pull against registry.giomartins.dev."
+  type        = string
+  default     = "admin"
+}
+
+variable "registry_password" {
+  description = <<-EOT
+    Basic-auth password for the registry. Generate: openssl rand -base64 24.
+    Must match the REGISTRY_PASSWORD used for `docker login
+    registry.giomartins.dev` on the host (watchtower's pulls depend on
+    that login, not on this variable directly) and the REGISTRY_PASSWORD
+    secret apps-deploy.yml's push step uses — see
+    modules/compute/registry's README.
+  EOT
+  type        = string
+  sensitive   = true
+}

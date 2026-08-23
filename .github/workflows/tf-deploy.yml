@@ -32,6 +32,7 @@ env:
   TF_VAR_google_idp_identity_provider_id: ${{ secrets.CLOUDFLARE_GOOGLE_IDP_ID }}
   TF_VAR_postgres_password: ${{ secrets.TF_POSTGRES_PASSWORD }}
   TF_VAR_domain_api_keys: ${{ secrets.TF_DOMAIN_API_KEYS }}
+  TF_VAR_registry_password: ${{ secrets.TF_REGISTRY_PASSWORD }}
   TF_VAR_docker_host: "tcp://localhost:2475"
   AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}

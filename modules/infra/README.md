@@ -2,9 +2,9 @@
 
 - **`terraform/`** — source of truth for Cloudflare (DNS, Zero Trust
   Access, tunnel routing) **and** gio-server's core containers
-  (postgres, redis, api, worker via the `docker` provider). Deployed
-  by `.github/workflows/tf-deploy.yml`. See its own README for the
-  full picture.
+  (postgres, redis, api, worker, registry, watchtower — all via the
+  `docker` provider). Deployed by `.github/workflows/tf-deploy.yml`.
+  See its own README for the full picture.
 - **`terraform-bootstrap/`** — creates the R2 bucket `terraform/`'s
   state lives in. One-time, by hand, local state — see its own README.
 - **`cloudflared/`** — the tunnel container itself. Remote-managed (no
@@ -16,16 +16,14 @@
   requests) that would otherwise break every `docker_container` apply.
   Deployed once by hand alongside a daemon port change — see its own
   README.
-- **`watchtower/`** — polls `registry.giomartins.dev` and redeploys any
-  container labeled for it. The pull-based half of
-  `.github/workflows/apps-deploy.yml`'s CD — gio-server has no inbound
-  access a push-based deploy could use.
-- **`registry/`** — this repo's own Docker registry, htpasswd-gated.
-  `apps-deploy.yml` pushes here; `watchtower/` pulls from here.
-  Requires `REGISTRY_PASSWORD` in its `.env` — no default.
+
+`watchtower/` and `registry/` (the pre-Terraform compose stacks for
+both) are gone — see `terraform/modules/compute/registry`, which
+replaced them.
 
 ## Currently deployed on gio-server
 
-`cloudflared`, `docker-api-proxy`, `watchtower`, `registry`, and
-`postgres`/`redis`/`api`/`worker` (created by `terraform/modules/compute`,
-kept updated by `watchtower`).
+`cloudflared`, `docker-api-proxy`, and everything `terraform/`
+manages: `postgres`/`redis` (`modules/compute/data`), `api`/`worker`
+(`modules/compute/app`), `registry`/`watchtower`
+(`modules/compute/registry`).

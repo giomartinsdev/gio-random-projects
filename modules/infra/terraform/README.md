@@ -17,12 +17,15 @@ hostname/service gets declared — everything else derives from it:
   and their volumes.
 - **[`modules/compute/app`](modules/compute/app/README.md)** — the
   stateless layer: api and worker containers, wired to
-  `compute/data`'s outputs. `modules/infra/watchtower` still handles
-  automatic redeploys when CI pushes a new image `:latest`; this is
-  what defines the containers exist with the right
-  image/env/network/volumes in the first place and repairs drift.
+  `compute/data`'s outputs. Labeled for `compute/registry`'s
+  watchtower to redeploy on a new `:latest` push.
+- **[`modules/compute/registry`](modules/compute/registry/README.md)**
+  — the deploy pipeline: CI's own image registry plus the watchtower
+  that polls it. Depends on neither of the other two compute modules;
+  they depend on it implicitly, by pulling images `apps-deploy.yml`
+  pushes here.
 
-  Both compute modules **depend on `modules/infra/docker-api-proxy`**
+  All three compute modules **depend on `modules/infra/docker-api-proxy`**
   being deployed on gio-server — a workaround for a Cloudflare Tunnel
   quirk (HTTP/2→1.1 translation adding chunked encoding to bodyless
   requests) that would otherwise break every `docker_container` apply
@@ -97,6 +100,7 @@ by-hand) bootstrap run.
 | `TF_STATE_R2_SECRET_ACCESS_KEY` | from step 2 |
 | `TF_POSTGRES_PASSWORD` | postgres/api/worker password — generate: `openssl rand -base64 24` |
 | `TF_DOMAIN_API_KEYS` | api container's `DOMAIN_API_KEYS` — `key:label` pairs |
+| `TF_REGISTRY_PASSWORD` | registry basic-auth password — must match `REGISTRY_PASSWORD` (used by `apps-deploy.yml`'s push step) and the host's `docker login registry.giomartins.dev` watchtower relies on — see `modules/compute/registry`'s README |
 
 Once these are set, `.github/workflows/tf-deploy.yml` plans on every PR
 touching this directory, and applies on push to `main` — including a

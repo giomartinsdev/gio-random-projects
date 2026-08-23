@@ -36,3 +36,13 @@ module "compute_app" {
   redis_host        = module.compute_data.redis_host
   domain_api_keys   = var.domain_api_keys
 }
+
+module "compute_registry" {
+  source = "./modules/compute/registry"
+  providers = {
+    docker = docker
+  }
+
+  registry_user     = var.registry_user
+  registry_password = var.registry_password
+}
