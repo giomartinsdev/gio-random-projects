@@ -1,75 +1,17 @@
 # Cloudflare Tunnel ingress config.
 # Credentials referenced here are generated locally by `cloudflared tunnel create`
 # and must NEVER be committed (see .gitignore in this folder).
+#
+# This file is the source of truth for what's actually exposed on the
+# homelab server — kept in sync with reality. Add a hostname back here
+# when its service is redeployed; a hostname with nothing behind it
+# doesn't belong in this file (dns-prune.yml cleans up the matching DNS
+# record once removed here too).
 
 tunnel: 36f8270d-52a2-4635-b9f2-f5174307e76e
 credentials-file: /etc/cloudflared/creds.json
 
 ingress:
-  - hostname: arcane.giomartins.dev
-    service: http://localhost:3552
-
-  - hostname: minio.giomartins.dev
-    service: http://localhost:9001
-
-  - hostname: prefect.giomartins.dev
-    service: http://localhost:4200
-
-  - hostname: observability.giomartins.dev
-    service: http://localhost:3000
-
-  - hostname: otel.giomartins.dev
-    service: http://localhost:4318
-
-  # Deliberately NOT behind Cloudflare Access, unlike prefect/otel above —
-  # the Docker CLI can't do Access's browser-redirect or custom-header
-  # login dance, but it already sends plain HTTP Basic Auth on
-  # `docker login`, which is exactly what this registry's own htpasswd
-  # auth (see infra/arcane-templates/templates/registry) expects. The
-  # registry gates itself; the tunnel here is just TLS + DNS.
-  - hostname: registry.giomartins.dev
-    service: http://localhost:5000
-
-  # Also deliberately NOT behind Cloudflare Access — the gateway's whole
-  # purpose is being an authenticated API endpoint for plain HTTP callers
-  # (X-API-Key header, see api/gateway/app/auth.py), the same category of
-  # client that can't do Access's browser-redirect/custom-header dance.
-  # Stacking Access in front would just block real callers before they
-  # ever reach the gateway's own auth, for no defense-in-depth gain.
-  - hostname: gateway.giomartins.dev
-    service: http://localhost:8000
-
-  # Browser UI with its own login, but sitting directly on top of the
-  # domain DB — same category as arcane/prefect/observability above
-  # (a human clicking through a browser, which Access's redirect/header
-  # dance works fine for), so it gets the same defense-in-depth: an
-  # Access Application must be configured for this hostname too.
-  - hostname: cloudbeaver.giomartins.dev
-    service: http://localhost:8978
-
-  # MinIO's S3 API, not its console (that's minio.giomartins.dev above,
-  # port 9001 — this is port 9000). This tunnel ingress rule doesn't
-  # gate it, but in practice a Zero Trust Access Application still
-  # covers this hostname (that's a separate Cloudflare dashboard
-  # resource, not configured here) — boto3 (api/domain's object_storage
-  # events) can't do Access's browser-redirect dance any more than the
-  # Docker CLI or a plain HTTP caller could, so it authenticates with
-  # the same CF-Access-Client-Id/Secret Service Token headers as this
-  # domain's own OTel export instead (see api/domain/compose.yaml).
-  - hostname: minio-api.giomartins.dev
-    service: http://localhost:9000
-
-  # The "bora." frontend — deliberately NOT behind Cloudflare Access,
-  # unlike cloudbeaver/arcane/prefect above: those are admin tools for
-  # one person (me), this is a public rider-facing app anyone in Rio
-  # should be able to open with no login at all. Talks to
-  # gateway.giomartins.dev directly from the browser (see
-  # web/README.md) — GATEWAY_CORS_ORIGINS in the gateway's own Arcane
-  # project must include this exact origin
-  # (https://bora.giomartins.dev) or the browser calls get blocked by CORS.
-  - hostname: bora.giomartins.dev
-    service: http://localhost:4173
-
   # Add new services below, one hostname per block, most specific first.
   # - hostname: example.giomartins.dev
   #   service: http://localhost:PORT
