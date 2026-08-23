@@ -1,7 +1,10 @@
 # Cloudflare Tunnel — gio-server
 
-Locally-managed tunnel: ingress rules live in `config.yml` (versioned), credentials
-are generated per-machine and never committed.
+Remote-managed: ingress rules live in Cloudflare's control plane, pushed by
+`infra/terraform` (`tunnel.tf`'s `cloudflare_zero_trust_tunnel_cloudflared_config`,
+driven by `locals.tf`'s `ingress_rules`) — not a local file. `docker-compose.yml`
+runs `cloudflared` with `--credentials-file`, no `--config`, so it always fetches
+whatever Terraform last pushed. Only the credentials (`creds.json`) live here.
 
 ## One-time setup (on the server)
 
@@ -19,27 +22,22 @@ cloudflared tunnel create gio-server
 # 4. Copy the generated credentials file into this folder as creds.json
 cp ~/.cloudflared/<UUID>.json infra/cloudflared/creds.json
 
-# 5. Point the hostname(s) in config.yml at the tunnel (creates the DNS CNAME)
-cloudflared tunnel route dns gio-server openship.giomartins.dev
-
-# 6. Bring the tunnel up
+# 5. Bring the tunnel up
 cd infra/cloudflared
 docker compose up -d
 ```
 
-## Adding a new service later
-
-1. Add a block to `config.yml` above the `http_status:404` catch-all:
-   ```yaml
-   - hostname: newservice.giomartins.dev
-     service: http://localhost:PORT
-   ```
-2. Route the DNS record: `cloudflared tunnel route dns gio-server newservice.giomartins.dev`
-3. Restart: `docker compose restart cloudflared`
+DNS and ingress routing are handled entirely by `infra/terraform` after
+this — see that directory's README, not this one, for adding a new
+service.
 
 ## Notes
 
-- `network_mode: host` is required so `localhost:PORT` in `config.yml` reaches
-  services published on the host by other docker-compose stacks.
+- `network_mode: host` is required so `localhost:PORT` in the ingress config
+  (see `infra/terraform/locals.tf`) reaches services published on the host by
+  other docker-compose stacks.
 - `creds.json` and `cert.pem` are gitignored — treat them as secrets, back them
   up outside of git (password manager / secrets vault).
+- If `infra/terraform` is ever unreachable and the tunnel needs an emergency
+  local config, `cloudflared tunnel --config <file> run` still works — a
+  `--config` flag always wins over remote config when both are available.

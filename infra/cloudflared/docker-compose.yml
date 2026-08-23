@@ -1,10 +1,16 @@
+# Remote-managed: no --config flag, so cloudflared fetches its ingress
+# rules from Cloudflare's control plane instead of a local file — those
+# rules are pushed by infra/terraform's cloudflare_zero_trust_tunnel_cloudflared_config
+# resource (tunnel.tf), which is the actual source of truth now.
+# Confirmed live: switched from local config.yml to this and verified
+# via /ready and the "Updated to new configuration" log line before
+# cutting over the real container.
 services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared
     restart: unless-stopped
-    command: tunnel --config /etc/cloudflared/config.yml --protocol http2 run
+    command: tunnel --credentials-file /etc/cloudflared/creds.json --protocol http2 run 36f8270d-52a2-4635-b9f2-f5174307e76e
     network_mode: host
     volumes:
-      - ./config.yml:/etc/cloudflared/config.yml:ro
       - ./creds.json:/etc/cloudflared/creds.json:ro
