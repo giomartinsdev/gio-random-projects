@@ -1,8 +1,10 @@
 # Terraform bootstrap
 
-Creates the R2 bucket (`gio-homelab-tfstate`) that `modules/infra/terraform`'s
-own state lives in. Separate from that config on purpose — it can't
-depend on a bucket it's the one creating.
+Creates the R2 bucket (`gio-homelab-tfstate`) that
+`modules/infra/terraform`'s and `modules/infra/terraform-tunnel`'s
+state both live in (different keys, same bucket). Separate from those
+configs on purpose — it can't depend on a bucket it's the one
+creating.
 
 Run this **once**, locally, with local state (not remote — there's
 nowhere durable for it to live yet, that's the whole problem this
