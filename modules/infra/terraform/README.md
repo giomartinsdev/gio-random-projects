@@ -93,6 +93,13 @@ by-hand) bootstrap run.
    `docker_container` resource here will fail against the Cloudflare
    Tunnel quirk that proxy works around.
 
+8. **`/etc/docker/certs.d/registry.giomartins.dev/` must already exist
+   on gio-server** — `mkdir -p /etc/docker/certs.d/registry.giomartins.dev`,
+   by hand, once. Docker bind mounts don't create their host-side
+   source path themselves; without this,
+   `compute/registry`'s `registry_client_cert_install` resource fails
+   outright instead of writing the mTLS client cert there.
+
 ## GitHub repo secrets
 
 | Secret | Value |
