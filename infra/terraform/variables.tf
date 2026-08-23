@@ -3,6 +3,22 @@ variable "cloudflare_account_id" {
   type        = string
 }
 
+variable "cloudflare_zone_id" {
+  description = "Zone ID for giomartins.dev (dashboard → the domain → right sidebar under API)."
+  type        = string
+}
+
+variable "cloudflare_tunnel_id" {
+  description = <<-EOT
+    ID of the cloudflared tunnel every DNS record points at (also
+    hardcoded in infra/cloudflared/config.yml's `tunnel:` field — that
+    file still owns the tunnel's ingress routing, this only needs the
+    ID to build each CNAME's target).
+  EOT
+  type    = string
+  default = "36f8270d-52a2-4635-b9f2-f5174307e76e"
+}
+
 variable "google_idp_identity_provider_id" {
   description = <<-EOT
     ID of the existing Google identity provider in Zero Trust → Settings

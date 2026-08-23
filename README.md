@@ -12,10 +12,17 @@ Each subsystem lives in its own folder under `infra/` with its own
 
 The tunnel that exposes services publicly. `config.yml`'s `ingress` list is
 the source of truth for what's reachable from the internet — add a hostname
-back here when a service is redeployed behind it. Pushing a change to this
-file triggers `.github/workflows/dns-sync.yml`, which upserts a CNAME for
-every hostname listed. `.github/workflows/dns-prune.yml` (manual dispatch)
-deletes CNAMEs that no longer match anything in this file.
+back here when a service is redeployed behind it (this file still owns the
+tunnel's own routing: which local port each hostname proxies to).
+
+## `infra/terraform`
+
+Everything else Cloudflare — DNS and Zero Trust Access — driven off the
+same hostname list in `infra/cloudflared/config.yml`. A hostname added
+there gets a DNS record and Access protection automatically on the next
+apply (`.github/workflows/cloudflare-terraform.yml`, plans on PRs, applies
+on push to main). See that directory's README for the one-time account
+setup and `infra/terraform-bootstrap` for how its own state bucket exists.
 
 ## `infra/arcane-templates`
 

@@ -1,13 +1,29 @@
-# Cloudflare Access (Terraform)
+# Cloudflare (Terraform)
 
-Every hostname in `infra/cloudflared/config.yml` gets a Cloudflare
-Access application requiring Google SSO login, **except** the ones
-listed in `excluded_hostnames` in `variables.tf` — those authenticate
-themselves (registry's htpasswd, domain-api's `X-API-Key`) and Access's
-browser-redirect login flow would break any non-browser client hitting
-them. Add a new hostname to `config.yml` and it's protected by default
-the next time this applies; add it to `excluded_hostnames` instead if
-it needs to stay open to non-browser clients.
+Source of truth for everything Cloudflare in this repo. Both resource
+sets read the same hostname list out of
+`infra/cloudflared/config.yml` (`locals.tf`) — that file still owns the
+tunnel's own ingress routing (which local port each hostname proxies
+to), but this is what makes the hostname exist and decides how it's
+gated:
+
+- **`dns.tf`** — a CNAME to the tunnel for every hostname in
+  `config.yml`, no exceptions. Replaces the old
+  `sync_cloudflare_dns.py` + `dns-sync.yml`/`dns-prune.yml` pair —
+  those only ever upserted, needing a separate manual prune workflow
+  for stale records. A plain `for_each` doesn't have that gap: remove
+  a hostname from `config.yml` and Terraform destroys the orphaned
+  record on the next apply.
+- **`access.tf`** — a Cloudflare Access application + Google-SSO-only
+  policy for every hostname, **except** the ones listed in
+  `excluded_hostnames` in `variables.tf` — those authenticate
+  themselves (registry's htpasswd, domain-api's `X-API-Key`) and
+  Access's browser-redirect login flow would break any non-browser
+  client hitting them.
+
+Add a hostname to `config.yml` and it gets DNS + Access protection by
+default the next time this applies; add it to `excluded_hostnames`
+too if it needs to stay open to non-browser clients.
 
 State lives in Cloudflare R2. The bucket itself is defined as code too
 — `infra/terraform-bootstrap` — not duplicated here, because this
@@ -32,43 +48,51 @@ by-hand) bootstrap run.
 3. **Cloudflare Account ID** — dashboard → any domain → right sidebar
    under "API" — or Account Home → right sidebar.
 
-4. **Google identity provider ID** — Zero Trust dashboard → Settings →
+4. **Zone ID** — dashboard → giomartins.dev → right sidebar under
+   "API".
+
+5. **Google identity provider ID** — Zero Trust dashboard → Settings →
    Authentication → click the existing Google provider → the ID is in
    the URL (`.../identity-providers/<this-part>`). Terraform can't
    create this provider itself (needs the Google OAuth client
    ID/secret exchange done once in the dashboard) — it only references
    an ID that must already exist.
 
-5. **Access-scoped API token** — My Profile → API Tokens → Create
-   Token → permission **Account / Access: Apps and Policies / Edit**,
-   scoped to this account. This is a *different* token from the one
-   `dns-sync.yml` uses (that one is Zone/DNS/Edit only — insufficient
-   here) and from the R2 token in step 2.
+6. **API token scoped for both DNS and Access** — My Profile → API
+   Tokens → Create Token → Custom Token with:
+   - Zone / DNS / Edit (scoped to giomartins.dev)
+   - Account / Access: Apps and Policies / Edit
+   - Account / Access: Organizations, Identity Providers, and Groups / Read
+
+   This is broader than (and replaces) the old DNS-only token
+   `dns-sync.yml` used, and is separate from the R2 token in step 2.
 
 ## GitHub repo secrets
 
 | Secret | Value |
 |---|---|
-| `CLOUDFLARE_ACCESS_API_TOKEN` | token from step 5 |
+| `CLOUDFLARE_ACCESS_API_TOKEN` | token from step 6 |
 | `CLOUDFLARE_ACCOUNT_ID` | from step 3 |
-| `CLOUDFLARE_GOOGLE_IDP_ID` | from step 4 |
+| `CLOUDFLARE_ZONE_ID` | from step 4 |
+| `CLOUDFLARE_GOOGLE_IDP_ID` | from step 5 |
 | `TF_STATE_R2_ENDPOINT` | endpoint URL from step 2 |
 | `TF_STATE_R2_ACCESS_KEY_ID` | from step 2 |
 | `TF_STATE_R2_SECRET_ACCESS_KEY` | from step 2 |
 
-Once these are set, `.github/workflows/access-terraform.yml` plans on
-every PR touching this directory or `config.yml`, and applies on push
-to `main`.
+Once these are set, `.github/workflows/cloudflare-terraform.yml` plans
+on every PR touching this directory or `config.yml`, and applies on
+push to `main`.
 
 ## Running locally
 
 ```bash
 cat > terraform.tfvars <<EOF
 cloudflare_account_id           = "<from step 3>"
-google_idp_identity_provider_id = "<from step 4>"
+cloudflare_zone_id              = "<from step 4>"
+google_idp_identity_provider_id = "<from step 5>"
 EOF
 
-export CLOUDFLARE_API_TOKEN=<token from step 5>
+export CLOUDFLARE_API_TOKEN=<token from step 6>
 export AWS_ACCESS_KEY_ID=<from step 2>
 export AWS_SECRET_ACCESS_KEY=<from step 2>
 
