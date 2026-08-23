@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/application/audit"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
 )
 
 // AuditRepository implements application/audit.Repository against

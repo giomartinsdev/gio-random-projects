@@ -17,13 +17,13 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/application"
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/application/audit"
-	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/application/user"
-	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/domain/user"
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/infrastructure/config"
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/infrastructure/postgres"
-	inredis "github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/infrastructure/redis"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
+	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/user"
+	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/config"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/postgres"
+	inredis "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/redis"
 )
 
 func main() {

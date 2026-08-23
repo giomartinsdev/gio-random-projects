@@ -1,4 +1,4 @@
-module github.com/giomartinsdev/gio-random-projects/modules/apps/api
+module github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api
 
 go 1.25.0
 

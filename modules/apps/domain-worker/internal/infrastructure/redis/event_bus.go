@@ -8,7 +8,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/domain/user"
+	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
 )
 
 // envelope is the wire format every domain event is wrapped in —

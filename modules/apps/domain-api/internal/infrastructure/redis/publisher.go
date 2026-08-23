@@ -14,7 +14,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/api/internal/application"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/application"
 )
 
 const commandChannel = "domain.commands"

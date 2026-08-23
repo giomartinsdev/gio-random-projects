@@ -1,4 +1,4 @@
-module github.com/giomartinsdev/gio-random-projects/modules/apps/worker
+module github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker
 
 go 1.25
 

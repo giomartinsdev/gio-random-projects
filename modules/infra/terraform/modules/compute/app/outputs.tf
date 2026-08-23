@@ -1,7 +1,7 @@
-output "api_container_name" {
-  value = docker_container.api.name
+output "domain_api_container_name" {
+  value = docker_container.domain_api.name
 }
 
-output "worker_container_name" {
-  value = docker_container.worker.name
+output "domain_worker_container_name" {
+  value = docker_container.domain_worker.name
 }

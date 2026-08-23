@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/domain/user"
+	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
 )
 
 // UserRepository implements domain/user.Repository against Postgres —

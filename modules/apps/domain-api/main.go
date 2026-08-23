@@ -14,10 +14,10 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/api/internal/infrastructure/config"
-	httpapi "github.com/giomartinsdev/gio-random-projects/modules/apps/api/internal/infrastructure/http"
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/api/internal/infrastructure/postgres"
-	inredis "github.com/giomartinsdev/gio-random-projects/modules/apps/api/internal/infrastructure/redis"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/config"
+	httpapi "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/http"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/postgres"
+	inredis "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/redis"
 )
 
 const shutdownTimeout = 10 * time.Second

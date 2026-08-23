@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/domain/user"
+	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
 )
 
 // Service is the use case: it's the only thing in this codebase that

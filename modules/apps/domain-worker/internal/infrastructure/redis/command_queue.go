@@ -7,7 +7,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/application"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
 )
 
 // CommandQueue implements application.CommandConsumer by blocking-popping

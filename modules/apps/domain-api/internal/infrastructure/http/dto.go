@@ -3,7 +3,7 @@ package httpapi
 import (
 	"time"
 
-	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/api/internal/domain/user"
+	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/domain/user"
 )
 
 // UserResponse is the wire shape for a User — kept separate from

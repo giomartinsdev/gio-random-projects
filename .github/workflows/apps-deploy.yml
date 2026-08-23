@@ -1,9 +1,10 @@
 name: Deploy apps
 
 # Generic CI/CD for anything under modules/apps/*/ that has a
-# Dockerfile — touch only modules/apps/api/** and only the api image
-# rebuilds, gets pushed, and redeploys; same for worker or (once it
-# exists) front. Nothing here names a specific app.
+# Dockerfile — touch only modules/apps/domain-api/** and only the
+# domain-api image rebuilds, gets pushed, and redeploys; same for
+# domain-worker or (once it exists) front. Nothing here names a
+# specific app.
 #
 # CD is pull-based, not push-based: this workflow's job ends at
 # pushing registry.giomartins.dev/<app>:latest — gio-server has no

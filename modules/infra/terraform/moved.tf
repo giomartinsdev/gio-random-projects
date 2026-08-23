@@ -71,10 +71,28 @@ moved {
 
 moved {
   from = docker_container.api
-  to   = module.compute_app.docker_container.api
+  to   = module.compute_app.docker_container.domain_api
 }
 
 moved {
   from = docker_container.worker
-  to   = module.compute_app.docker_container.worker
+  to   = module.compute_app.docker_container.domain_worker
+}
+
+# Renamed api -> domain_api and worker -> domain_worker (the resource
+# label, the container name, and the image tag all together, since
+# there's now more than one <bounded-context>-api/-worker pair
+# expected under modules/apps) — chained onto the moves above so
+# terraform tracks the same object across both renames. The name/image
+# change still forces a replacement regardless; this only keeps the
+# state address itself tidy rather than showing as a duplicate
+# destroy+create.
+moved {
+  from = module.compute_app.docker_container.api
+  to   = module.compute_app.docker_container.domain_api
+}
+
+moved {
+  from = module.compute_app.docker_container.worker
+  to   = module.compute_app.docker_container.domain_worker
 }

@@ -1,12 +1,12 @@
-# Local dev only — builds api/ and worker/ from source. Production
-# pulls prebuilt images from the registry instead; see
+# Local dev only — builds domain-api/ and domain-worker/ from source.
+# Production pulls prebuilt images from the registry instead; see
 # modules/infra/README.md and .github/workflows/apps-deploy.yml.
 #
 # Requires POSTGRES_PASSWORD and DOMAIN_API_KEYS — no defaults, same
 # "refuse to boot without it" pattern as the rest of this repo's infra.
 services:
-  api:
-    build: ./api
+  domain-api:
+    build: ./domain-api
     restart: unless-stopped
     depends_on:
       postgres:
@@ -23,8 +23,8 @@ services:
       RATE_LIMIT_RPS: ${RATE_LIMIT_RPS:-1}
       RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-5}
 
-  worker:
-    build: ./worker
+  domain-worker:
+    build: ./domain-worker
     restart: unless-stopped
     depends_on:
       postgres:

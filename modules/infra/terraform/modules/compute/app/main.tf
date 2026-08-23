@@ -10,9 +10,9 @@ locals {
   }] : []
 }
 
-resource "docker_container" "api" {
-  name    = "api"
-  image   = "${var.registry_host}/api:latest"
+resource "docker_container" "domain_api" {
+  name    = "domain-api"
+  image   = "${var.registry_host}/domain-api:latest"
   restart = "unless-stopped"
 
   env = [
@@ -42,9 +42,9 @@ resource "docker_container" "api" {
   }
 }
 
-resource "docker_container" "worker" {
-  name    = "worker"
-  image   = "${var.registry_host}/worker:latest"
+resource "docker_container" "domain_worker" {
+  name    = "domain-worker"
+  image   = "${var.registry_host}/domain-worker:latest"
   restart = "unless-stopped"
 
   env = [

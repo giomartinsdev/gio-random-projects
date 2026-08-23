@@ -3,7 +3,7 @@ package application
 import (
 	"context"
 
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/domain/user"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
 )
 
 // CommandConsumer pulls commands off the durable side of the bus (the

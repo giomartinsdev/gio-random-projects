@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/api/internal/domain/user"
+	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/domain/user"
 )
 
 // UserRepository implements domain/user.Repository — read-only,

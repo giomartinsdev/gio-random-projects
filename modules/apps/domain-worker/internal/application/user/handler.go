@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/application"
-	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/worker/internal/domain/user"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
+	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
 	"github.com/google/uuid"
 )
 

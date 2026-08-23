@@ -16,9 +16,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/api/internal/application"
-	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/api/internal/application/user"
-	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/api/internal/domain/user"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/application"
+	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/application/user"
+	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/domain/user"
 )
 
 type Handlers struct {
