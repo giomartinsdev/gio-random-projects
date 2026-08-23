@@ -1,9 +1,10 @@
-# State lives in this homelab's own MinIO (infra/minio, S3-compatible)
-# rather than any third-party cloud storage — one more service on
-# gio-server instead of an external account dependency. Most backend
-# fields are deliberately absent here (endpoint, access keys) —
-# supplied via `-backend-config` at init time. See README.md's one-time
-# setup.
+# State lives in Cloudflare R2 (S3-compatible) — the bucket itself is
+# managed as code too (infra/terraform-bootstrap, run once — see that
+# directory's README for why it can't be this same config: it creates
+# the bucket this state lives in, so it can't depend on that bucket
+# already existing). Most backend fields are deliberately absent here
+# (endpoint, access keys) — supplied via `-backend-config` at init
+# time. See README.md's one-time setup.
 terraform {
   required_version = ">= 1.9"
 
@@ -15,20 +16,18 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "tfstate"
+    bucket = "gio-homelab-tfstate"
     key    = "cloudflare-access/terraform.tfstate"
-    region = "us-east-1"
+    region = "auto"
 
-    # MinIO isn't AWS: it needs path-style bucket addressing, and
-    # asking the AWS provider logic to skip these AWS-only checks is
-    # required for the S3 backend to work against any non-AWS
-    # S3-compatible target at all.
-    use_path_style               = true
-    skip_credentials_validation  = true
-    skip_region_validation       = true
-    skip_requesting_account_id   = true
-    skip_s3_checksum             = true
-    skip_metadata_api_check      = true
+    # R2 has no concept of these S3 features; asking the AWS provider
+    # logic to skip them is required for the S3 backend to work against
+    # R2 at all (documented in Cloudflare's own R2-as-Terraform-backend
+    # guide).
+    skip_credentials_validation = true
+    skip_region_validation      = true
+    skip_requesting_account_id  = true
+    skip_s3_checksum            = true
   }
 }
 
