@@ -6,11 +6,22 @@ output "excluded_hostnames" {
   value = module.cloudflare.excluded_hostnames
 }
 
-output "docker_service_token_client_id" {
-  value = module.cloudflare.docker_service_token_client_id
+output "service_token_client_ids" {
+  description = "Keyed by short name (\"docker\", \"domain\") — see modules/cloudflare/service_token_access.tf."
+  value       = module.cloudflare.service_token_client_ids
 }
 
-output "docker_service_token_client_secret" {
-  value     = module.cloudflare.docker_service_token_client_secret
+output "service_token_client_secrets" {
+  value     = module.cloudflare.service_token_client_secrets
+  sensitive = true
+}
+
+output "registry_client_cert_pem" {
+  description = "mTLS client certificate for registry.giomartins.dev — see modules/cloudflare/registry_mtls.tf."
+  value       = module.cloudflare.registry_client_cert_pem
+}
+
+output "registry_client_key_pem" {
+  value     = module.cloudflare.registry_client_key_pem
   sensitive = true
 }

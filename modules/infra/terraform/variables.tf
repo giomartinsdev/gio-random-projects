@@ -40,9 +40,9 @@ variable "excluded_hostnames" {
   EOT
   type        = list(string)
   default = [
-    "registry.giomartins.dev", # docker login/push — own htpasswd auth
-    "domain.giomartins.dev",   # REST API clients — own X-API-Key auth
-    "docker.giomartins.dev",   # this config's own docker provider — own Access service-token policy
+    "registry.giomartins.dev", # docker login/push — own htpasswd auth + mTLS (modules/cloudflare/registry_mtls.tf); Docker tooling can't do a browser SSO redirect or send custom Access headers
+    "domain.giomartins.dev",   # REST API clients — own X-API-Key auth + a service-token Access application (modules/cloudflare/service_token_access.tf)
+    "docker.giomartins.dev",   # this config's own docker provider — a service-token Access application (modules/cloudflare/service_token_access.tf)
   ]
 }
 

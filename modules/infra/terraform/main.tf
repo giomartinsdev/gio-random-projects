@@ -2,6 +2,7 @@ module "cloudflare" {
   source = "./modules/cloudflare"
   providers = {
     cloudflare = cloudflare
+    tls        = tls
   }
 
   account_id                      = var.cloudflare_account_id
@@ -44,8 +45,10 @@ module "compute_registry" {
     docker = docker
   }
 
-  registry_user     = var.registry_user
-  registry_password = var.registry_password
+  registry_user            = var.registry_user
+  registry_password        = var.registry_password
+  registry_client_cert_pem = module.cloudflare.registry_client_cert_pem
+  registry_client_key_pem  = module.cloudflare.registry_client_key_pem
 }
 
 module "compute_monitoring" {

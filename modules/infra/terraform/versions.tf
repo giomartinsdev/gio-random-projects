@@ -25,6 +25,10 @@ terraform {
       source  = "kreuzwerker/docker"
       version = "~> 3.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 
   backend "s3" {
@@ -79,4 +83,11 @@ provider "docker" {
     password = var.registry_password
   }
   host = var.docker_host
+}
+
+provider "tls" {
+  # Stateless — no credentials, generates registry.giomartins.dev's
+  # mTLS CA and client certificate locally (module.cloudflare's
+  # registry_mtls.tf). See that file for why mTLS instead of an Access
+  # application for this one hostname.
 }

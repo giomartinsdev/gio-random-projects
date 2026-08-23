@@ -21,7 +21,19 @@ one only implicitly, by pulling images `apps-deploy.yml` pushes here.
   registry credentials via a `docker login registry.giomartins.dev`
   run by hand on the host with the same `registry_user`/
   `registry_password` this module sets, or watchtower's pulls will
-  fail auth even though the registry itself is reachable.
+  fail auth even though the registry itself is reachable. Also depends
+  on `registry_client_cert_install` below — registry.giomartins.dev
+  requires mTLS now (see `modules/cloudflare/registry_mtls.tf`), and
+  htpasswd alone isn't enough to get past the edge anymore.
+- **`registry_client_cert_install`** — one-shot (`must_run = false`,
+  `attach = true`), writes `registry_client_cert_pem`/
+  `registry_client_key_pem` (module.cloudflare's generated mTLS client
+  identity) to `/etc/docker/certs.d/registry.giomartins.dev/` on
+  gio-server — the exact path dockerd checks automatically for any
+  connection it makes to that host, covering `watchtower`'s pulls and
+  this module's own `registry` resource with no separate manual step.
+  CI's own pushes (`apps-deploy.yml`, a different machine entirely)
+  need the same cert installed separately — see that workflow.
 
 Changing `registry_password` only recreates `htpasswd_init` (and
 therefore rewrites the auth file) — it does not by itself restart

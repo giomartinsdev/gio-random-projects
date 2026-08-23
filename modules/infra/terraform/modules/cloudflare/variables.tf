@@ -47,11 +47,17 @@ variable "ingress_rules" {
 
 variable "excluded_hostnames" {
   description = <<-EOT
-    Hostnames from var.ingress_rules that must NOT get a Cloudflare
-    Access application — because they authenticate themselves
-    (registry's htpasswd, domain-api's X-API-Key, docker.giomartins.dev's
-    own service-token policy) and Access's browser-redirect login flow
-    would break any non-browser client hitting them. Every hostname in
+    Hostnames from var.ingress_rules that must NOT get the Google-SSO
+    Cloudflare Access application applications.tf sets up — because
+    Access's browser-redirect login flow would break any non-browser
+    client hitting them. Every one still gets a second auth layer, just
+    not that one: domain-api and docker.giomartins.dev each get their
+    own non-interactive service-token Access application instead (see
+    service_token_access.tf — no redirect, just two static headers any
+    HTTP client can send), and registry.giomartins.dev gets mTLS
+    instead of an Access application at all (see registry_mtls.tf —
+    Docker's push/pull tooling can't send custom headers either, so
+    even a service token wouldn't work there). Every hostname in
     var.ingress_rules is protected by default; list the exceptions
     here, not the other way around.
   EOT

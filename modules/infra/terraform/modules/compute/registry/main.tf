@@ -133,4 +133,34 @@ resource "docker_container" "watchtower" {
     target    = "/config.json"
     read_only = true
   }
+
+  depends_on = [docker_container.registry_client_cert_install]
+}
+
+# One-shot: writes the mTLS client cert/key (module.cloudflare's
+# registry_mtls.tf) into dockerd's own per-registry cert directory on
+# gio-server — the exact path dockerd checks automatically for ANY
+# connection it makes to registry.giomartins.dev, covering watchtower's
+# pulls above and this module's own docker_container.registry
+# resource if it's ever recreated, with no separate manual step.
+resource "docker_container" "registry_client_cert_install" {
+  name       = "registry-client-cert-install"
+  image      = "alpine:3"
+  entrypoint = ["sh", "-c"]
+  command = [
+    "mkdir -p /certs && printf '%s' \"$CLIENT_CERT\" > /certs/client.cert && printf '%s' \"$CLIENT_KEY\" > /certs/client.key"
+  ]
+  must_run = false
+  attach   = true
+
+  env = [
+    "CLIENT_CERT=${var.registry_client_cert_pem}",
+    "CLIENT_KEY=${var.registry_client_key_pem}",
+  ]
+
+  mounts {
+    type   = "bind"
+    source = "/etc/docker/certs.d/registry.giomartins.dev"
+    target = "/certs"
+  }
 }

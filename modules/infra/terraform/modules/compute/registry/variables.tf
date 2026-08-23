@@ -33,3 +33,14 @@ variable "watchtower_docker_api_version" {
   type        = string
   default     = "1.44"
 }
+
+variable "registry_client_cert_pem" {
+  description = "mTLS client certificate for registry.giomartins.dev (module.cloudflare's registry_mtls.tf) — installed onto gio-server's own dockerd cert store so watchtower's pulls (and any docker_container resource here pulling from the registry) keep working once mTLS is enforced. See README.md."
+  type        = string
+}
+
+variable "registry_client_key_pem" {
+  description = "Matching private key for registry_client_cert_pem."
+  type        = string
+  sensitive   = true
+}

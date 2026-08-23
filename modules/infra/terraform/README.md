@@ -77,11 +77,14 @@ by-hand) bootstrap run.
    ID/secret exchange done once in the dashboard) — it only references
    an ID that must already exist.
 
-6. **API token scoped for DNS, Access, and Access service tokens** — My
-   Profile → API Tokens → Create Token → Custom Token with:
+6. **API token scoped for DNS, Access, and mTLS** — My Profile → API
+   Tokens → Create Token → Custom Token with:
    - Zone / DNS / Edit (scoped to giomartins.dev)
    - Account / Access: Apps and Policies / Edit
    - Account / Access: Organizations, Identity Providers, and Groups / Read
+   - Account / Access: Mutual TLS Certificates / Edit
+   - Zone / SSL and Certificates / Edit (scoped to giomartins.dev — for
+     `registry_mtls.tf`'s `cloudflare_certificate_authorities_hostname_associations`)
 
 7. **`modules/infra/terraform-bootstrap`'s `cloudflared`/`docker-api-proxy`
    and the daemon port move** — applied once by hand, not by this
