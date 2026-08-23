@@ -22,5 +22,13 @@ locals {
       hostname = "docker.giomartins.dev"
       service  = "http://localhost:2375"
     },
+    {
+      # Beszel's hub dashboard — host/container stats and metrics. Not
+      # in excluded_hostnames, so it gets the same Google-SSO Access
+      # protection as everything else browser-facing; the hub has its
+      # own login too, Access is just the outer layer.
+      hostname = "beszel.giomartins.dev"
+      service  = "http://localhost:8090"
+    },
   ]
 }

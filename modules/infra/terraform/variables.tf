@@ -106,3 +106,12 @@ variable "registry_password" {
   type        = string
   sensitive   = true
 }
+
+# --- compute/monitoring ---
+
+variable "beszel_agent_key" {
+  description = "The Beszel hub's SSH public key — see modules/compute/monitoring's own variable of the same name for why this can't have a real default and how to obtain it."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

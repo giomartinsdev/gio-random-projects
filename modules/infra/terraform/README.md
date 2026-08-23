@@ -1,12 +1,13 @@
 # Terraform
 
 Source of truth for Cloudflare (DNS, Access, tunnel routing) **and**
-for gio-server's core containers (postgres, redis, api, worker). This
-root module wires up provider configuration (`versions.tf`, the only
-place `provider` blocks live — see its own comment on why) and three
-child modules; it declares no resources of its own beyond that.
-`locals.tf`'s `ingress_rules` list is the one place a new
-hostname/service gets declared — everything else derives from it:
+for gio-server's core containers (postgres, redis, domain-api,
+domain-worker, and more as new bounded contexts show up). This root
+module wires up provider configuration (`versions.tf`, the only place
+`provider` blocks live — see its own comment on why) and its child
+modules; it declares no resources of its own beyond that. `locals.tf`'s
+`ingress_rules` list is the one place a new hostname/service gets
+declared — everything else derives from it:
 
 - **[`modules/cloudflare`](modules/cloudflare/README.md)** — DNS, Access
   applications/policies, and the tunnel's remote-managed config, for
@@ -16,16 +17,19 @@ hostname/service gets declared — everything else derives from it:
   stateful layer: postgres, redis, the shared `apps` docker network,
   and their volumes.
 - **[`modules/compute/app`](modules/compute/app/README.md)** — the
-  stateless layer: api and worker containers, wired to
-  `compute/data`'s outputs. Labeled for `compute/registry`'s
-  watchtower to redeploy on a new `:latest` push.
+  stateless layer: `<bounded-context>-api`/`<bounded-context>-worker`
+  container pairs, wired to `compute/data`'s outputs. Labeled for
+  `compute/registry`'s watchtower to redeploy on a new `:latest` push.
 - **[`modules/compute/registry`](modules/compute/registry/README.md)**
   — the deploy pipeline: CI's own image registry plus the watchtower
-  that polls it. Depends on neither of the other two compute modules;
-  they depend on it implicitly, by pulling images `apps-deploy.yml`
-  pushes here.
+  that polls it. Depends on neither of the other compute modules; they
+  depend on it implicitly, by pulling images `apps-deploy.yml` pushes
+  here.
+- **[`modules/compute/monitoring`](modules/compute/monitoring/README.md)**
+  — Beszel: host/container CPU/memory/disk stats, at
+  `beszel.giomartins.dev`. Depends only on `compute/data`'s network.
 
-  All three compute modules **depend on `modules/infra/terraform-bootstrap`'s**
+  Every compute module **depends on `modules/infra/terraform-bootstrap`'s**
   `docker-api-proxy` being deployed on gio-server — a workaround for a
   Cloudflare Tunnel quirk (HTTP/2→1.1 translation adding chunked
   encoding to bodyless requests) that would otherwise break every
@@ -99,9 +103,10 @@ by-hand) bootstrap run.
 | `TF_STATE_R2_ENDPOINT` | endpoint URL from step 2 |
 | `TF_STATE_R2_ACCESS_KEY_ID` | from step 2 |
 | `TF_STATE_R2_SECRET_ACCESS_KEY` | from step 2 |
-| `TF_POSTGRES_PASSWORD` | postgres/api/worker password — generate: `openssl rand -base64 24` |
-| `TF_DOMAIN_API_KEYS` | api container's `DOMAIN_API_KEYS` — `key:label` pairs |
+| `TF_POSTGRES_PASSWORD` | postgres/domain-api/domain-worker password — generate: `openssl rand -base64 24` |
+| `TF_DOMAIN_API_KEYS` | domain-api container's `DOMAIN_API_KEYS` — `key:label` pairs |
 | `TF_REGISTRY_PASSWORD` | registry basic-auth password — must match `REGISTRY_PASSWORD` (used by `apps-deploy.yml`'s push step) and the host's `docker login registry.giomartins.dev` watchtower relies on — see `modules/compute/registry`'s README |
+| `TF_BESZEL_AGENT_KEY` | the Beszel hub's SSH public key — blank is fine until the hub's first boot; see `modules/compute/monitoring`'s README for how to get it |
 
 Once these are set, `.github/workflows/tf-deploy.yml` plans on every PR
 touching this directory, and applies on push to `main` — including a

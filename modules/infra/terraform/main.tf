@@ -47,3 +47,13 @@ module "compute_registry" {
   registry_user     = var.registry_user
   registry_password = var.registry_password
 }
+
+module "compute_monitoring" {
+  source = "./modules/compute/monitoring"
+  providers = {
+    docker = docker
+  }
+
+  network_name = module.compute_data.network_name
+  agent_key    = var.beszel_agent_key
+}
