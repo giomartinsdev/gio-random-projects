@@ -41,3 +41,32 @@ import {
   to = module.cloudflare.cloudflare_ruleset.registry_mtls_enforce
   id = "zones/${var.cloudflare_zone_id}/${local.existing_custom_waf_ruleset_id}"
 }
+
+# The ED25519->ECDSA switch's create_before_destroy left an orphan:
+# the new (ECDSA) cert was created successfully mid-apply, but the
+# apply as a whole failed on a later step (deleting the old cert,
+# which Cloudflare briefly still considered "in use"), so Terraform
+# never recorded the new cert's ID in state. The next apply then tried
+# to create ANOTHER one and got "this certificate already exists for
+# this account" — Cloudflare dedupes by content, so a plain retry
+# can't just create past this. Finds the real orphan by excluding the
+# original ED25519 cert's known ID and importing whatever CA cert
+# remains, rather than hardcoding the orphan's ID (which only existed
+# because of this specific failure, not something to bake in
+# permanently — delete this whole block once the import has been
+# applied once).
+data "cloudflare_mtls_certificates" "account" {
+  account_id = var.cloudflare_account_id
+}
+
+locals {
+  registry_ca_orphaned_id = one([
+    for c in data.cloudflare_mtls_certificates.account.result : c.id
+    if c.ca && c.id != "fdeb1afa-7e5d-4d32-b425-7c94baaee4cd"
+  ])
+}
+
+import {
+  to = module.cloudflare.cloudflare_mtls_certificate.registry_ca
+  id = local.registry_ca_orphaned_id
+}
