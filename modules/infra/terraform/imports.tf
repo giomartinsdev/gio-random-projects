@@ -39,5 +39,5 @@ locals {
 
 import {
   to = module.cloudflare.cloudflare_ruleset.registry_mtls_enforce
-  id = "${var.cloudflare_zone_id}/${local.existing_custom_waf_ruleset_id}"
+  id = "zones/${var.cloudflare_zone_id}/${local.existing_custom_waf_ruleset_id}"
 }
