@@ -1,40 +1,37 @@
 # Terraform
 
 Source of truth for Cloudflare (DNS, Access, tunnel routing) **and**
-for gio-server's core containers (postgres, redis, api, worker).
+for gio-server's core containers (postgres, redis, api, worker). This
+root module wires up provider configuration (`versions.tf`, the only
+place `provider` blocks live — see its own comment on why) and three
+child modules; it declares no resources of its own beyond that.
 `locals.tf`'s `ingress_rules` list is the one place a new
 hostname/service gets declared — everything else derives from it:
 
-- **`dns.tf`** — a CNAME to the tunnel for every hostname in
-  `ingress_rules`, no exceptions. A plain `for_each`: remove a
-  hostname and Terraform destroys the orphaned record on the next
-  apply.
-- **`access.tf`** — a Cloudflare Access application + Google-SSO-only
-  policy for every hostname, **except** the ones listed in
-  `excluded_hostnames` (`variables.tf`) — those authenticate
-  themselves (registry's htpasswd, domain-api's `X-API-Key`,
-  docker.giomartins.dev's own service-token policy below) and Access's
-  browser-redirect login flow would break any non-browser client
-  hitting them.
-- **`tunnel.tf`** — pushes `ingress_rules` to Cloudflare's control
-  plane as the tunnel's remote-managed config. `modules/infra/cloudflared`'s
-  `cloudflared` process picks this up automatically (no local
-  `--config` file — see that directory's README).
-- **`docker.tf`** — a Cloudflare Access **service token** (not
-  human/Google-SSO) + a dedicated Access application for
-  `docker.giomartins.dev`, gating the connection `compute.tf`'s
-  `docker` provider uses. Whoever holds this token's secret has
-  root-equivalent control of gio-server — see that file's own warning.
-- **`compute.tf`** — `docker_container`/`docker_network`/`docker_volume`
-  resources for postgres, redis, api, and worker. `modules/infra/watchtower`
-  still handles automatic redeploys when CI pushes a new image
-  `:latest`; this is what defines the containers exist with the right
+- **[`modules/cloudflare`](modules/cloudflare/README.md)** — DNS, Access
+  applications/policies, and the tunnel's remote-managed config, for
+  every hostname in `ingress_rules` (minus `excluded_hostnames`). Also
+  owns the Access service token gating `docker.giomartins.dev`.
+- **[`modules/compute/data`](modules/compute/data/README.md)** — the
+  stateful layer: postgres, redis, the shared `apps` docker network,
+  and their volumes.
+- **[`modules/compute/app`](modules/compute/app/README.md)** — the
+  stateless layer: api and worker containers, wired to
+  `compute/data`'s outputs. `modules/infra/watchtower` still handles
+  automatic redeploys when CI pushes a new image `:latest`; this is
+  what defines the containers exist with the right
   image/env/network/volumes in the first place and repairs drift.
 
-  **Depends on `modules/infra/docker-api-proxy`** being deployed on
-  gio-server — a workaround for a still-open
-  `kreuzwerker/terraform-provider-docker` bug (see that directory's
-  README) that would otherwise break every `docker_container` apply.
+  Both compute modules **depend on `modules/infra/docker-api-proxy`**
+  being deployed on gio-server — a workaround for a Cloudflare Tunnel
+  quirk (HTTP/2→1.1 translation adding chunked encoding to bodyless
+  requests) that would otherwise break every `docker_container` apply
+  — see that directory's README.
+
+`moved.tf` records this module's flat-to-nested-module history so
+`terraform apply` updates resource addresses in state instead of
+destroying and recreating live infrastructure; safe to delete once
+everyone's state has picked it up.
 
 Add a hostname to `ingress_rules` and it gets DNS + Access protection
 by default the next time this applies; add it to `excluded_hostnames`
@@ -93,13 +90,13 @@ by-hand) bootstrap run.
 | `CLOUDFLARE_ACCOUNT_ID` | from step 3 |
 | `CLOUDFLARE_ZONE_ID` | from step 4 |
 | `CLOUDFLARE_GOOGLE_IDP_ID` | from step 5 |
-| `CLOUDFLARE_DOCKER_CLIENT_ID` | `docker.tf`'s service token output — set once after the first apply |
+| `CLOUDFLARE_DOCKER_CLIENT_ID` | `modules/cloudflare`'s service token output — set once after the first apply |
 | `CLOUDFLARE_DOCKER_CLIENT_SECRET` | same, the `client_secret` output (sensitive) |
 | `TF_STATE_R2_ENDPOINT` | endpoint URL from step 2 |
 | `TF_STATE_R2_ACCESS_KEY_ID` | from step 2 |
 | `TF_STATE_R2_SECRET_ACCESS_KEY` | from step 2 |
-| `TF_POSTGRES_PASSWORD` | `compute.tf`'s postgres/api/worker password — generate: `openssl rand -base64 24` |
-| `TF_DOMAIN_API_KEYS` | `compute.tf`'s api container `DOMAIN_API_KEYS` — `key:label` pairs |
+| `TF_POSTGRES_PASSWORD` | postgres/api/worker password — generate: `openssl rand -base64 24` |
+| `TF_DOMAIN_API_KEYS` | api container's `DOMAIN_API_KEYS` — `key:label` pairs |
 
 Once these are set, `.github/workflows/tf-deploy.yml` plans on every PR
 touching this directory, and applies on push to `main` — including a

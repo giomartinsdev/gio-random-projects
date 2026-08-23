@@ -8,13 +8,14 @@
 - **`terraform-bootstrap/`** — creates the R2 bucket `terraform/`'s
   state lives in. One-time, by hand, local state — see its own README.
 - **`cloudflared/`** — the tunnel container itself. Remote-managed (no
-  local ingress config — `terraform/tunnel.tf` pushes that); this
-  folder is just `docker-compose.yml` plus the gitignored credentials.
-- **`docker-api-proxy/`** — workaround for a still-open
-  `kreuzwerker/terraform-provider-docker` bug that would otherwise
-  break every `docker_container` apply against this host's Docker
-  Engine version. Deployed once by hand alongside a daemon port change
-  — see its own README.
+  local ingress config — `terraform/modules/cloudflare` pushes that);
+  this folder is just `docker-compose.yml` plus the gitignored
+  credentials.
+- **`docker-api-proxy/`** — workaround for a Cloudflare Tunnel quirk
+  (HTTP/2→1.1 translation adding chunked encoding to bodyless
+  requests) that would otherwise break every `docker_container` apply.
+  Deployed once by hand alongside a daemon port change — see its own
+  README.
 - **`watchtower/`** — polls `registry.giomartins.dev` and redeploys any
   container labeled for it. The pull-based half of
   `.github/workflows/apps-deploy.yml`'s CD — gio-server has no inbound
@@ -26,5 +27,5 @@
 ## Currently deployed on gio-server
 
 `cloudflared`, `docker-api-proxy`, `watchtower`, `registry`, and
-`postgres`/`redis`/`api`/`worker` (created by `terraform/compute.tf`,
+`postgres`/`redis`/`api`/`worker` (created by `terraform/modules/compute`,
 kept updated by `watchtower`).

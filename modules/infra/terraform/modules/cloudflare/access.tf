@@ -4,7 +4,7 @@
 resource "cloudflare_zero_trust_access_policy" "google_sso" {
   for_each = local.protected_hostnames
 
-  account_id = var.cloudflare_account_id
+  account_id = var.account_id
   name       = "google-sso-${each.key}"
   decision   = "allow"
 
@@ -24,7 +24,7 @@ resource "cloudflare_zero_trust_access_policy" "google_sso" {
 resource "cloudflare_zero_trust_access_application" "protected" {
   for_each = local.protected_hostnames
 
-  account_id       = var.cloudflare_account_id
+  account_id       = var.account_id
   name             = each.value
   domain           = each.value
   type             = "self_hosted"
