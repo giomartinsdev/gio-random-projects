@@ -25,11 +25,11 @@ hostname/service gets declared — everything else derives from it:
   they depend on it implicitly, by pulling images `apps-deploy.yml`
   pushes here.
 
-  All three compute modules **depend on `modules/infra/docker-api-proxy`**
-  being deployed on gio-server — a workaround for a Cloudflare Tunnel
-  quirk (HTTP/2→1.1 translation adding chunked encoding to bodyless
-  requests) that would otherwise break every `docker_container` apply
-  — see that directory's README.
+  All three compute modules **depend on `modules/infra/terraform-bootstrap`'s**
+  `docker-api-proxy` being deployed on gio-server — a workaround for a
+  Cloudflare Tunnel quirk (HTTP/2→1.1 translation adding chunked
+  encoding to bodyless requests) that would otherwise break every
+  `docker_container` apply — see that directory's README.
 
 `moved.tf` records this module's flat-to-nested-module history so
 `terraform apply` updates resource addresses in state instead of
@@ -79,11 +79,12 @@ by-hand) bootstrap run.
    - Account / Access: Apps and Policies / Edit
    - Account / Access: Organizations, Identity Providers, and Groups / Read
 
-7. **`modules/infra/docker-api-proxy` and the daemon port move** — deployed
-   once by hand on gio-server, not by this Terraform config (see that
-   directory's README for why). Do this before the first `compute.tf`
-   apply, or every `docker_container` resource will fail with the
-   upstream bug that proxy works around.
+7. **`modules/infra/terraform-bootstrap`'s `cloudflared`/`docker-api-proxy`
+   and the daemon port move** — applied once by hand, not by this
+   Terraform config (see that directory's README for why). Do this
+   before the first `compute_*` module apply, or every
+   `docker_container` resource here will fail against the Cloudflare
+   Tunnel quirk that proxy works around.
 
 ## GitHub repo secrets
 

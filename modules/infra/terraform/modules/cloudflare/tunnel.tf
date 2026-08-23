@@ -1,5 +1,5 @@
 # The tunnel itself was created once by hand (`cloudflared tunnel
-# create`, see modules/infra/cloudflared's own README) and is imported
+# create`, see modules/infra/terraform-bootstrap's own README) and is imported
 # here, not created — a fresh cloudflare_zero_trust_tunnel_cloudflared
 # would mint a new tunnel ID, which would orphan every DNS record above
 # (they point at THIS tunnel's ID via its .cfargotunnel.com hostname)
@@ -20,8 +20,8 @@ resource "cloudflare_zero_trust_tunnel_cloudflared" "homelab" {
 # Pushes ingress rules to Cloudflare's control plane. The cloudflared
 # process on gio-server picks this up automatically as long as it's
 # NOT started with a --config flag (see
-# modules/infra/cloudflared/README.md) — local config always wins over
-# remote when both exist, cloudflared never merges them.
+# modules/infra/terraform-bootstrap/README.md) — local config always
+# wins over remote when both exist, cloudflared never merges them.
 resource "cloudflare_zero_trust_tunnel_cloudflared_config" "homelab" {
   account_id = var.account_id
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.homelab.id

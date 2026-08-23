@@ -1,3 +1,7 @@
+output "bucket_name" {
+  value = cloudflare_r2_bucket.tfstate.name
+}
+
 output "cloudflared_container_id" {
   description = "For manual verification after an apply — e.g. `docker logs <id>` over the same SSH tunnel."
   value       = docker_container.cloudflared.id

@@ -17,10 +17,10 @@ variable "tunnel_name" {
 variable "tunnel_id" {
   description = <<-EOT
     ID of the existing cloudflared tunnel every DNS record points at.
-    Also hardcoded in modules/infra/cloudflared/docker-compose.yml's
-    `run` command — that's what makes the actual cloudflared process
-    on gio-server present itself as this tunnel; this variable only
-    needs the ID to build each CNAME's target and to import the
+    Also the default for modules/infra/terraform-bootstrap's own
+    tunnel_id variable — that's what makes the actual cloudflared
+    process on gio-server present itself as this tunnel; this variable
+    only needs the ID to build each CNAME's target and to import the
     resource into state.
   EOT
   type        = string

@@ -17,7 +17,7 @@ locals {
       # dockerd listening on loopback only (never on the LAN interface,
       # never with its own TLS) — this hostname plus Cloudflare
       # Access's service-token policy (modules/cloudflare/docker_access.tf)
-      # is the entire auth boundary. See modules/infra/docker-api-proxy's
+      # is the entire auth boundary. See modules/infra/terraform-bootstrap's
       # README for the daemon-side setup this depends on.
       hostname = "docker.giomartins.dev"
       service  = "http://localhost:2375"

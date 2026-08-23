@@ -5,9 +5,9 @@
 # presented by Terraform/CI would never reach dockerd anyway; raw TCP
 # tunneling to preserve that would be a meaningfully bigger CI-side
 # setup for an equivalent security outcome. dockerd itself only listens
-# on 127.0.0.1 (see modules/infra/docker-api-proxy and
-# modules/infra/cloudflared), never with its own TLS — the entire auth
-# boundary is this service-token policy.
+# on 127.0.0.1 (see modules/infra/terraform-bootstrap, which manages
+# both the cloudflared and docker-api-proxy containers), never with
+# its own TLS — the entire auth boundary is this service-token policy.
 #
 # WARNING: whoever holds this service token's secret has root-equivalent
 # control of gio-server (the Docker API can mount the host filesystem

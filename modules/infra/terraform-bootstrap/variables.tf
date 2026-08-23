@@ -1,3 +1,8 @@
+variable "cloudflare_account_id" {
+  description = "Cloudflare account ID (dashboard → Account Home → right sidebar)."
+  type        = string
+}
+
 variable "docker_host" {
   description = <<-EOT
     Where the docker provider connects. Must be an SSH port-forward to
@@ -25,5 +30,5 @@ variable "cloudflared_image_tag" {
 variable "creds_file_path" {
   description = "Path to the tunnel's credentials JSON, on gio-server's own filesystem (not the machine running terraform) — dockerd resolves bind-mount sources against its own host."
   type        = string
-  default     = "/home/gioserver/gio-random-projects/modules/infra/cloudflared/creds.json"
+  default     = "/home/gioserver/gio-random-projects/modules/infra/terraform-bootstrap/creds.json"
 }

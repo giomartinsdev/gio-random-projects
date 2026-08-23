@@ -3,3 +3,5 @@
 *.tfstate.*
 *.tfplan
 terraform.tfvars
+creds.json
+cert.pem
