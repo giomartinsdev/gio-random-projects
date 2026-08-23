@@ -1,0 +1,190 @@
+openapi: 3.0.3
+info:
+  title: domain-api
+  description: >
+    Event-driven CRUD API. Reads are synchronous (straight from
+    Postgres). Writes (POST/PUT/DELETE) are accepted asynchronously —
+    they publish a command onto the event bus and return 202; the
+    change is applied by domain-worker and won't be visible on a GET
+    until it's processed.
+  version: "1.0.0"
+servers:
+  - url: /
+security:
+  - apiKeyAuth: []
+paths:
+  /healthz:
+    get:
+      summary: Liveness check
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /users:
+    get:
+      summary: List users
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      summary: Create a user (async — returns 202, not the created row)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a user by id
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    put:
+      summary: Update a user (async — returns 202)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      summary: Delete a user (async — returns 202)
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+components:
+  securitySchemes:
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: >
+        Required on every /users route. A valid key also exempts the
+        request from the per-IP rate limit that otherwise applies to
+        unauthenticated (401) attempts.
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    UserInput:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+  responses:
+    Accepted:
+      description: Command accepted — applied asynchronously
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              command_id:
+                type: string
+                format: uuid
+              status:
+                type: string
+                example: accepted
+    BadRequest:
+      description: Invalid request body
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: User not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Too many unauthenticated requests from this IP
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

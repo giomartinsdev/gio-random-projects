@@ -1,0 +1,61 @@
+name: Build and push domain images
+
+# Standard GitHub-hosted runner. Pushes straight to
+# registry.giomartins.dev (no CF Access header-injecting proxy needed,
+# unlike some of this repo's other services — see
+# infra/cloudflared/config.yml's comment on that hostname: this
+# registry is deliberately NOT behind Access, since `docker login`
+# already sends plain HTTP Basic Auth, which is exactly what the
+# registry's own htpasswd auth expects).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/domain/**"
+      - ".github/workflows/domain-build-push.yml"
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: api/domain/go.sum
+
+      - working-directory: api/domain
+        run: go build ./... && go vet ./...
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [api, worker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry.giomartins.dev
+        uses: docker/login-action@v3
+        with:
+          registry: registry.giomartins.dev
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build and push domain-${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: api/domain
+          file: api/domain/Dockerfile.${{ matrix.service }}
+          push: true
+          tags: |
+            registry.giomartins.dev/domain-${{ matrix.service }}:latest
+            registry.giomartins.dev/domain-${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=gha,scope=domain-${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=domain-${{ matrix.service }}

@@ -1,0 +1,22 @@
+# Production overlay: pulls the images .github/workflows/domain-build-push.yml
+# already builds and pushes to the homelab's own registry — not a local
+# build. Deploy with:
+#   docker compose -f compose.yaml -f compose.prod.yaml up -d
+#
+# Defaults to localhost:5000 (the registry's own port), not
+# registry.giomartins.dev — this runs on the same Docker host as the
+# registry, so there's no reason to detour through Cloudflare. Needs
+# `docker login localhost:5000` once on the host (same registry
+# credentials CI uses), and localhost:5000 in the daemon's
+# insecure-registries (it has no TLS of its own; see this repo's
+# README).
+services:
+  api:
+    image: ${REGISTRY_HOST:-localhost:5000}/domain-api:latest
+    pull_policy: always
+    build: !reset null
+
+  worker:
+    image: ${REGISTRY_HOST:-localhost:5000}/domain-worker:latest
+    pull_policy: always
+    build: !reset null
