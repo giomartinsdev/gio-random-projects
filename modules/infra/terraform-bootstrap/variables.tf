@@ -37,3 +37,9 @@ variable "creds_file_path" {
   type        = string
   default     = "/home/gioserver/gio-random-projects/modules/infra/terraform-bootstrap/creds.json"
 }
+
+variable "beszel_network_name" {
+  description = "The docker network beszel-proxy joins to reach beszel-hub by name — must match modules/infra/terraform's compute/data module's network_name (default \"apps\"), a different config's resource this one only references by string since the two don't share state."
+  type        = string
+  default     = "apps"
+}

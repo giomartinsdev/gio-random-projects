@@ -70,3 +70,48 @@ resource "docker_container" "docker_api_proxy" {
   # this file's cloudflared resource uses.
   network_mode = "host"
 }
+
+# Sits between beszel.giomartins.dev (cloudflared) and beszel-hub
+# (modules/infra/terraform/modules/compute/monitoring, a different
+# config entirely) — see beszel-proxy/proxy.py's own module docstring
+# for the exact Cloudflare Tunnel quirk this works around. Lives here,
+# not alongside beszel-hub itself, because building its image needs a
+# docker_image + build{} resource, and that only works applied through
+# this config's direct SSH-tunneled connection — see this directory's
+# README for the full reasoning (the same one that keeps
+# docker_api_proxy above here instead of in the main config).
+resource "docker_image" "beszel_proxy" {
+  name = "beszel-proxy:latest"
+  build {
+    context = "${path.module}/beszel-proxy"
+  }
+  triggers = {
+    dockerfile_sha1 = filesha1("${path.module}/beszel-proxy/Dockerfile")
+    proxy_py_sha1   = filesha1("${path.module}/beszel-proxy/proxy.py")
+  }
+}
+
+resource "docker_container" "beszel_proxy" {
+  name    = "beszel-proxy"
+  image   = docker_image.beszel_proxy.image_id
+  restart = "unless-stopped"
+
+  # Joins the compute/data module's "apps" network (by name, not a
+  # cross-state reference — this config and the main one manage
+  # separate state but the same real dockerd) so it can reach
+  # beszel-hub by container name. NOT host networking, unlike
+  # cloudflared/docker_api_proxy above: this one only needs to reach
+  # one specific container, not the host's own loopback services.
+  networks_advanced {
+    name = var.beszel_network_name
+  }
+
+  # 127.0.0.1 only — reached through the Cloudflare Tunnel (see the
+  # main config's locals.tf ingress_rules), never meant to be LAN- or
+  # internet-reachable directly.
+  ports {
+    internal = 8091
+    external = 8090
+    ip       = "127.0.0.1"
+  }
+}

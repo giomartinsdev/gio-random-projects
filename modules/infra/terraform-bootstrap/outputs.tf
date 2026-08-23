@@ -12,6 +12,11 @@ output "docker_api_proxy_image_id" {
   value       = docker_image.docker_api_proxy.image_id
 }
 
+output "beszel_proxy_image_id" {
+  description = "The built beszel-proxy image's ID — changes whenever its proxy.py or Dockerfile do."
+  value       = docker_image.beszel_proxy.image_id
+}
+
 output "bootstrap_api_token" {
   description = <<-EOT
     The token value — copy this into CLOUDFLARE_API_TOKEN for every

@@ -36,6 +36,19 @@ place:
   (Account / R2 / Edit), nothing broader — see "Bootstrapping the API
   token" below for why a token that authenticates the provider that
   creates it needs a one-time workaround.
+- **`docker_image.beszel_proxy`** / **`docker_container.beszel_proxy`**
+  — builds `./beszel-proxy` and runs it in front of `beszel-hub`
+  (`modules/infra/terraform/modules/compute/monitoring`, a different
+  config's resource — this one only joins the same docker network by
+  name, `var.beszel_network_name`, to reach it). Same underlying
+  Cloudflare Tunnel quirk as `docker-api-proxy` above, different
+  symptom: it strips a stray/malformed `Content-Type` header the
+  tunnel leaves on `POST /api/collections/users/auth-refresh`
+  (bodyless — just an `Authorization` header), which PocketBase
+  (Beszel's own base) otherwise rejects with `400 Unsupported
+  Content-Type`, logging the web UI right back out after every login.
+  Lives here rather than alongside `beszel-hub` for the same reason
+  `docker_api_proxy` does — see the paragraph below.
 
 `modules/infra/terraform`'s own `docker` provider only reaches dockerd
 by going *through* `cloudflared` and `docker-api-proxy`:
@@ -50,10 +63,26 @@ apply needing to replace one (new image tag, a changed mount, anything
 ForceNew) would destroy the exact channel that apply is using to talk
 to Docker — mid-apply. This config sidesteps the problem entirely
 instead of just moving it: its `docker` provider connects **directly**
-to dockerd over an SSH port-forward, never through the tunnel. Neither
-container holds data, so recreating either one here is always safe —
-a few seconds of tunnel downtime, same as restarting it by hand would
-cause, never a stuck apply.
+to dockerd over an SSH port-forward, never through the tunnel. None of
+these containers hold data, so recreating any of them here is always
+safe — a few seconds of tunnel downtime, same as restarting one by
+hand would cause, never a stuck apply.
+
+`beszel_proxy` ends up here for a related but different reason: it's
+not on gio-server's own critical path the way `cloudflared`/
+`docker_api_proxy` are, but building its image (a `docker_image`
+resource with a `build {}` block) consistently failed
+("no active session ... context deadline exceeded") when applied
+through the main config's own CI proxy chain — confirmed live: the
+identical resource, applied through this config's direct connection
+instead, builds fine every time. BuildKit's build protocol needs a
+real bidirectional session; the intermediary proxies in that chain
+(an nginx sidecar, `docker_api_proxy` itself) were built for plain
+request/response traffic and were never designed to relay it. Every
+other `docker_container`/`docker_image` resource in this repo that
+*isn't* a `build {}` (a plain image pull) works fine through that
+chain — this is specifically about building, not about talking to
+Docker in general.
 
 Run **by hand only**, with **local state** — never wired into CI, for
 both reasons above: there's nowhere durable for the bucket bootstrap's
@@ -166,9 +195,11 @@ recreating anything:
 terraform import cloudflare_r2_bucket.tfstate <account_id>/gio-homelab-tfstate
 terraform import docker_container.cloudflared cloudflared
 terraform import docker_container.docker_api_proxy docker-api-proxy
-# docker_image.docker_api_proxy doesn't need importing — the next
-# apply just rebuilds it from ./docker-api-proxy and picks up the
-# existing container's image reference via the container import above.
+terraform import docker_container.beszel_proxy beszel-proxy
+# docker_image.docker_api_proxy / docker_image.beszel_proxy don't need
+# importing — the next apply just rebuilds each from its own directory
+# and picks up the existing container's image reference via the
+# container imports above.
 ```
 
 `cloudflare_api_token.bootstrap` itself can't be imported (the API

@@ -18,52 +18,25 @@ resource "docker_container" "beszel_hub" {
   }
 
   # No published port — only reachable over the docker network, by
-  # beszel_proxy below (which the tunnel actually points at). Publishing
-  # this directly used to work for most calls, but not for
-  # POST /api/collections/users/auth-refresh — see beszel_proxy's own
-  # comment.
+  # beszel-proxy (modules/infra/terraform-bootstrap, not here — see
+  # that module's README for why: building beszel-proxy's image needs
+  # a docker_image + build{} resource, and that consistently fails
+  # ("no active session ... context deadline exceeded") when applied
+  # through this config's own CI proxy chain. Confirmed live: the
+  # exact same resource, applied through terraform-bootstrap's direct
+  # SSH-tunneled connection instead, builds fine — BuildKit's build
+  # protocol needs a real bidirectional session the intermediary
+  # proxies (nginx sidecar, docker-api-proxy) were never designed to
+  # relay, unlike the plain request/response traffic every other
+  # docker_container/docker_image (no build{}) resource in this repo
+  # sends). Publishing this directly used to work for most calls, but
+  # not for POST /api/collections/users/auth-refresh — see that
+  # proxy's own comment.
   mounts {
     type   = "volume"
     source = docker_volume.beszel_data.name
     target = "/beszel_data"
   }
-}
-
-# Sits between beszel.giomartins.dev (cloudflared) and beszel-hub — see
-# beszel-proxy/proxy.py's own module docstring for the exact Cloudflare
-# Tunnel quirk this works around (the same root cause as
-# modules/infra/terraform-bootstrap/docker-api-proxy, different
-# symptom).
-resource "docker_image" "beszel_proxy" {
-  name = "beszel-proxy:latest"
-  build {
-    context = "${path.module}/beszel-proxy"
-  }
-  triggers = {
-    dockerfile_sha1 = filesha1("${path.module}/beszel-proxy/Dockerfile")
-    proxy_py_sha1   = filesha1("${path.module}/beszel-proxy/proxy.py")
-  }
-}
-
-resource "docker_container" "beszel_proxy" {
-  name    = "beszel-proxy"
-  image   = docker_image.beszel_proxy.image_id
-  restart = "unless-stopped"
-
-  networks_advanced {
-    name = var.network_name
-  }
-
-  # 127.0.0.1 only — reached through the Cloudflare Tunnel (see
-  # locals.tf's ingress_rules), never meant to be LAN- or
-  # internet-reachable directly.
-  ports {
-    internal = 8091
-    external = 8090
-    ip       = "127.0.0.1"
-  }
-
-  depends_on = [docker_container.beszel_hub]
 }
 
 resource "docker_container" "beszel_agent" {
