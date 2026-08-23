@@ -27,12 +27,9 @@ docker compose up --build
 
 ## Deploying
 
-CI builds and pushes both images on every push touching their own
-folder. On the server:
-
-```
-docker compose -f compose.yaml -f compose.prod.yaml up -d
-```
-
-pulls from the registry instead of building, and labels both
-containers for `modules/infra/watchtower` to keep updated automatically.
+`compose.yaml` here is local-dev only. Production containers (postgres,
+redis, api, worker) are defined in `modules/infra/terraform/compute.tf`
+as real `docker_container` resources, not docker-compose — CI builds
+and pushes an image on every push touching an app's own folder;
+`modules/infra/watchtower` polls the registry and redeploys the
+container Terraform already created. See `modules/infra/terraform/README.md`.

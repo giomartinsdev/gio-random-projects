@@ -12,6 +12,15 @@ locals {
       hostname = "domain.giomartins.dev"
       service  = "http://localhost:8000"
     },
+    {
+      # dockerd listening on loopback only (never on the LAN interface,
+      # never with its own TLS) — this hostname plus Cloudflare Access's
+      # service-token policy (docker.tf) is the entire auth boundary.
+      # See docker.tf's own comments for the full reasoning and the
+      # daemon-side setup this depends on.
+      hostname = "docker.giomartins.dev"
+      service  = "http://localhost:2375"
+    },
   ]
 
   all_hostnames = [for r in local.ingress_rules : r.hostname]

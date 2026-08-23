@@ -1,15 +1,16 @@
 name: Terraform deploy
 
 # modules/infra/terraform is the source of truth for everything
-# Cloudflare in this repo: DNS records, Zero Trust Access, and the
-# tunnel's own ingress routing — all driven from that config's
-# locals.tf. Plans on PRs touching it; applies on push to main. State
+# Cloudflare AND for postgres/redis/api/worker container definitions
+# in this repo — all driven from that config's locals.tf and
+# compute.tf. Plans on PRs touching it; applies on push to main. State
 # lives in Cloudflare R2 (bucket created once via
 # modules/infra/terraform-bootstrap) — see
 # modules/infra/terraform/README.md for the one-time setup this still
 # depends on (account ID, zone ID, Google identity provider ID, an R2
-# API token, and a CLOUDFLARE_API_TOKEN scoped for both DNS and
-# Access).
+# API token, a CLOUDFLARE_API_TOKEN scoped for both DNS and Access, and
+# the docker.giomartins.dev Access service token compute.tf's provider
+# "docker" connects through).
 
 on:
   push:
@@ -29,6 +30,9 @@ env:
   TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
   TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
   TF_VAR_google_idp_identity_provider_id: ${{ secrets.CLOUDFLARE_GOOGLE_IDP_ID }}
+  TF_VAR_postgres_password: ${{ secrets.TF_POSTGRES_PASSWORD }}
+  TF_VAR_domain_api_keys: ${{ secrets.TF_DOMAIN_API_KEYS }}
+  TF_VAR_docker_host: "tcp://localhost:2475"
   AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
 
@@ -37,6 +41,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # The docker provider (compute.tf) can't attach the
+      # CF-Access-Client-Id/Secret headers docker.giomartins.dev's
+      # Access service-token policy requires — same limitation the
+      # registry push workaround this repo used to have ran into. This
+      # sidecar terminates plain HTTP on localhost, injects those two
+      # headers on every request, forwards to the real (HTTPS,
+      # Access-protected) daemon. Terraform only ever talks to
+      # localhost:2475.
+      - name: Start Cloudflare Access header-injecting proxy for dockerd
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_SECRET }}
+        run: |
+          cat > /tmp/default.conf.template <<'EOF'
+          server {
+              listen 2475;
+              client_max_body_size 0;
+              location / {
+                  proxy_pass https://docker.giomartins.dev;
+                  proxy_set_header Host docker.giomartins.dev;
+                  proxy_set_header CF-Access-Client-Id "${CF_ACCESS_CLIENT_ID}";
+                  proxy_set_header CF-Access-Client-Secret "${CF_ACCESS_CLIENT_SECRET}";
+                  proxy_ssl_server_name on;
+                  proxy_http_version 1.1;
+              }
+          }
+          EOF
+          docker run -d --name access-proxy --network host \
+            -e CF_ACCESS_CLIENT_ID \
+            -e CF_ACCESS_CLIENT_SECRET \
+            -v /tmp/default.conf.template:/etc/nginx/templates/default.conf.template:ro \
+            nginx:alpine
+          sleep 2
+          docker logs access-proxy
 
       - uses: hashicorp/setup-terraform@v3
         with:

@@ -1,5 +1,5 @@
 # State lives in Cloudflare R2 (S3-compatible) — the bucket itself is
-# managed as code too (modules/modules/infra/terraform-bootstrap, run once — see that
+# managed as code too (modules/infra/terraform-bootstrap, run once — see that
 # directory's README for why it can't be this same config: it creates
 # the bucket this state lives in, so it can't depend on that bucket
 # already existing). Most backend fields are deliberately absent here
@@ -12,6 +12,10 @@ terraform {
     cloudflare = {
       source  = "cloudflare/cloudflare"
       version = "~> 5.0"
+    }
+    docker = {
+      source  = "kreuzwerker/docker"
+      version = "~> 3.0"
     }
   }
 
@@ -44,4 +48,15 @@ provider "cloudflare" {
   # Reads CLOUDFLARE_API_TOKEN from the environment — never set inline
   # here. Needs Account / Access: Apps and Policies / Edit (broader
   # than dns-sync's Zone / DNS / Edit token — see README.md).
+}
+
+provider "docker" {
+  # Points at a local header-injecting proxy (nginx), NOT directly at
+  # docker.giomartins.dev — this provider has no way to attach the
+  # CF-Access-Client-Id/Secret headers Access requires itself, same
+  # limitation .github/workflows/tf-deploy.yml's own comment on the
+  # registry push workaround describes. The proxy forwards to
+  # https://docker.giomartins.dev with those headers injected; this
+  # only ever talks to localhost. See README.md.
+  host = var.docker_host
 }

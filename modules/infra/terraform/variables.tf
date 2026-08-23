@@ -49,6 +49,7 @@ variable "excluded_hostnames" {
   default = [
     "registry.giomartins.dev", # docker login/push — own htpasswd auth
     "domain.giomartins.dev",   # REST API clients — own X-API-Key auth
+    "docker.giomartins.dev",   # Terraform's own docker provider — own Access service-token policy, see docker.tf
   ]
 }
 
@@ -56,4 +57,29 @@ variable "session_duration" {
   description = "How long an Access session stays valid before re-authenticating."
   type        = string
   default     = "24h"
+}
+
+variable "docker_host" {
+  description = <<-EOT
+    Where the docker provider connects — a local header-injecting proxy
+    (see versions.tf's provider "docker" comment), not
+    docker.giomartins.dev directly. Defaults to the address
+    .github/workflows/tf-deploy.yml's sidecar listens on; override for
+    local runs (compute.tf's README documents the equivalent local
+    sidecar setup).
+  EOT
+  type    = string
+  default = "tcp://localhost:2475"
+}
+
+variable "postgres_password" {
+  description = "Password for the domain Postgres user. Generate: openssl rand -base64 24"
+  type        = string
+  sensitive   = true
+}
+
+variable "domain_api_keys" {
+  description = "DOMAIN_API_KEYS value for the api container — comma-separated key:label pairs."
+  type        = string
+  sensitive   = true
 }
