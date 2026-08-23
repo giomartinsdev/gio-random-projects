@@ -1,51 +1,29 @@
 # gio-random-projects
 
 Infra-as-code for gio-server: tunnels, reverse proxy config, and anything else
-that keeps the server running. Each subsystem lives in its own folder under
-`infra/` with its own `docker-compose.yml`, and deploys independently in
-Openship (each project points at its own subfolder).
+that keeps the server running. This repo is meant to always mirror what's
+actually deployed — nothing declared here should be dangling with no service
+behind it.
 
-To bring everything up at once locally: `docker compose -f docker-compose.all.yml up -d`
+Each subsystem lives in its own folder under `infra/` with its own
+`docker-compose.yml` (or `compose.yaml`), deployed independently.
 
-To run the "bora." app (domain + gateway + bora-api + web) locally, built from
-source rather than pulled from the registry: `docker compose -f
-docker-compose.dev.yml up --build` — see that file's own header comment
-for what it does and doesn't set up (no GTFS data, no telemetry).
+## `infra/cloudflared`
 
-## Host-level requirements (not tracked by any compose file)
+The tunnel that exposes services publicly. `config.yml`'s `ingress` list is
+the source of truth for what's reachable from the internet — add a hostname
+back here when a service is redeployed behind it. Pushing a change to this
+file triggers `.github/workflows/dns-sync.yml`, which upserts a CNAME for
+every hostname listed. `.github/workflows/dns-prune.yml` (manual dispatch)
+deletes CNAMEs that no longer match anything in this file.
 
-The Docker Engine on gio-server itself needs `/etc/docker/daemon.json`:
+## `infra/arcane-templates`
 
-```json
-{
-  "insecure-registries": ["localhost:5000", "127.0.0.1:5000"]
-}
-```
+Reusable Arcane compose templates for self-hosted apps (registry, MinIO,
+Prefect, observability stack, etc.) — not deployed by default, pick one when
+you actually need it.
 
-So Arcane (and anything else running on the same host as the `registry`
-app — see `infra/arcane-templates/templates/registry`) can pull images
-via `localhost:5000` instead of the public `registry.giomartins.dev`
-hostname. That's deliberate, not a convenience shortcut: pulling through
-the public hostname goes through Cloudflare Access, which a plain
-`docker login`/pull can't satisfy (no way to send the
-CF-Access-Client-Id/Secret headers — same limitation
-`.github/workflows/api-build-push.yml`'s header-injecting nginx sidecar
-works around for CI). Without this, same-host pulls fail with a
-confusing `mediatype=text/html` / blob size-validation error — Access
-intercepts and returns its own HTML login-redirect page in place of the
-manifest/blob Docker asked for, and Docker chokes trying to parse HTML
-as binary image content. Restart the daemon (`systemctl restart docker`)
-after editing — this setting isn't hot-reloadable. See `api/compose.yaml`
-for the docker login step this also requires.
+## Currently deployed on gio-server
 
-**Arcane itself isn't tracked here** — it was installed via its own
-official installer (not a compose file in this repo, chicken-and-egg
-problem: it's the tool that manages everything else's compose files),
-so nothing here persists its container config across a reinstall.
-Concretely: its restart policy defaulted to `no`, not `unless-stopped`
-like every app template in `infra/arcane-templates/` — a Docker daemon
-restart (e.g. after the `insecure-registries` change above) killed it
-and it didn't come back on its own. Fixed live with
-`docker update --restart=unless-stopped arcane` (no downtime, doesn't
-recreate the container) — but redo this (or pass the equivalent flag)
-if Arcane is ever reinstalled from scratch.
+Nothing beyond the cloudflared tunnel itself right now. Apps get added back
+here as they're rebuilt.
