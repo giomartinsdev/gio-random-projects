@@ -6,10 +6,23 @@ resource "docker_volume" "registry_data" {
   # Same name the pre-Terraform compose stack used — keeps the actual
   # pushed image blobs across the cutover instead of starting empty.
   name = "registry_registry-data"
+
+  # The imported volume carries com.docker.compose.* labels from its
+  # compose-managed past. labels is an immutable (ForceNew) attribute,
+  # so without this, the mere absence of those labels from this
+  # resource's config would destroy and recreate the volume on first
+  # apply — losing exactly the data importing it was meant to keep.
+  lifecycle {
+    ignore_changes = [labels]
+  }
 }
 
 resource "docker_volume" "registry_auth" {
   name = "registry_registry-auth"
+
+  lifecycle {
+    ignore_changes = [labels]
+  }
 }
 
 # One-shot: bcrypts registry_password into the htpasswd file the
