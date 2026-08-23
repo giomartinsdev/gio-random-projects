@@ -26,6 +26,10 @@ resource "tls_private_key" "registry_ca" {
   # even presenting a cert this same CA had signed).
   algorithm   = "ECDSA"
   ecdsa_curve = "P256"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "tls_self_signed_cert" "registry_ca" {
@@ -42,13 +46,24 @@ resource "tls_self_signed_cert" "registry_ca" {
     "cert_signing",
     "crl_signing",
   ]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "cloudflare_mtls_certificate" "registry_ca" {
-  account_id   = var.account_id
-  name         = "gio-homelab-registry-ca"
-  ca           = true
+  account_id = var.account_id
+  ca         = true
+  # No `name` — it's account-unique, and create_before_destroy would
+  # collide with the about-to-be-replaced cert's name for the brief
+  # window both exist. The certificate's own content is identifying
+  # enough for this single-CA use case.
   certificates = tls_self_signed_cert.registry_ca.cert_pem
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "cloudflare_certificate_authorities_hostname_associations" "registry" {
