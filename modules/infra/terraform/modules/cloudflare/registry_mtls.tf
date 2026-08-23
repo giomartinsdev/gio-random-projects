@@ -24,12 +24,18 @@ resource "tls_private_key" "registry_ca" {
   # got silently accepted by `cloudflare_mtls_certificate` but every
   # request's cf.tls_client_auth.cert_verified evaluated false anyway,
   # even presenting a cert this same CA had signed).
+  #
+  # Deliberately NOT create_before_destroy: Cloudflare refuses to
+  # delete a CA cert still referenced by a hostname association
+  # ("Certificate cannot be deleted while in use"), and CBD's
+  # create-new-first ordering runs straight into that — the old cert
+  # is still in use by definition until the new one takes over.
+  # Destroy-then-create means a real gap (registry.giomartins.dev
+  # rejects everyone, including watchtower and CI, until the new cert
+  # + association land later in the same apply) — acceptable since
+  # nothing needs zero-downtime here and it's over in one apply.
   algorithm   = "ECDSA"
   ecdsa_curve = "P256"
-
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 resource "tls_self_signed_cert" "registry_ca" {
@@ -46,24 +52,12 @@ resource "tls_self_signed_cert" "registry_ca" {
     "cert_signing",
     "crl_signing",
   ]
-
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 resource "cloudflare_mtls_certificate" "registry_ca" {
-  account_id = var.account_id
-  ca         = true
-  # No `name` — it's account-unique, and create_before_destroy would
-  # collide with the about-to-be-replaced cert's name for the brief
-  # window both exist. The certificate's own content is identifying
-  # enough for this single-CA use case.
+  account_id   = var.account_id
+  ca           = true
   certificates = tls_self_signed_cert.registry_ca.cert_pem
-
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 resource "cloudflare_certificate_authorities_hostname_associations" "registry" {

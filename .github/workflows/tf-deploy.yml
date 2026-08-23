@@ -79,44 +79,25 @@ jobs:
           sleep 2
           docker logs access-proxy
 
-      # ONE-TIME cleanup, remove after this runs successfully once: the
-      # ED25519->ECDSA CA switch left several orphaned mTLS certs on
-      # Cloudflare's side (each failed retry created one successfully
-      # before failing on a later step, but Terraform's own state
-      # never retained any of them) — Cloudflare's content-based dedup
-      # then rejects every further create attempt with "this
-      # certificate already exists for this account", regardless of
-      # which of them the import in imports.tf tries to adopt. Clears
-      # every mTLS CA cert except the one still actually in use
-      # (docker.giomartins.dev's association references it), so the
-      # next terraform apply can create its replacement cleanly.
       # ONE-TIME cleanup, remove after this runs successfully once.
-      # Diagnosis (previous run of this same job, DIAGNOSTIC-ONLY):
-      # b21e62e2-... (ECDSA, an orphan from a failed create_before_destroy
-      # retry) is the cert actually associated with
-      # registry.giomartins.dev right now — NOT the original ED25519
-      # one (fdeb1afa-...) as assumed when this cleanup was first
-      # written. Its matching private key only ever existed in that
-      # failed run's local memory, never persisted to state, so it's
-      # useless even though it's technically the right algorithm.
-      # Clears its association (freeing it to delete), deletes it and
-      # the original ED25519 cert, and leaves the association empty —
-      # terraform apply right after this creates the new cert fresh
-      # (no more content collision) and sets the real association
-      # itself, same as any normal first apply would.
-      - name: One-time cleanup of orphaned/stale mTLS CA certs
+      # b21e62e2-... (an orphan from a failed create_before_destroy
+      # retry, now removed from the .tf entirely) turned out to be
+      # unused and deleted cleanly. fdeb1afa-... (the original ED25519
+      # cert) is the one actually still associated with
+      # registry.giomartins.dev — clears that association and deletes
+      # it, so the next apply can create the real ECDSA replacement
+      # from a clean slate instead of hitting "in use".
+      - name: One-time cleanup of the stale ED25519 mTLS CA cert
         run: |
-          echo "Clearing b21e62e2's hostname association"
+          echo "Clearing fdeb1afa's hostname association"
           curl -s -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
             "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/certificate_authorities/hostname_associations" \
-            -d '{"mtls_certificate_id":"b21e62e2-7071-4bda-bf50-511bb5004903","hostnames":[]}'
+            -d '{"mtls_certificate_id":"fdeb1afa-7e5d-4d32-b425-7c94baaee4cd","hostnames":[]}'
           echo
-          for id in b21e62e2-7071-4bda-bf50-511bb5004903 fdeb1afa-7e5d-4d32-b425-7c94baaee4cd; do
-            echo "Deleting $id"
-            curl -s -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-              "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/mtls_certificates/$id"
-            echo
-          done
+          echo "Deleting fdeb1afa"
+          curl -s -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/mtls_certificates/fdeb1afa-7e5d-4d32-b425-7c94baaee4cd"
+          echo
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -124,6 +105,18 @@ jobs:
 
       - name: Init
         run: terraform init -backend-config="endpoints={s3=\"${{ secrets.TF_STATE_R2_ENDPOINT }}\"}"
+
+      # ONE-TIME cleanup, remove after this runs successfully once:
+      # module.cloudflare.cloudflare_mtls_certificate.registry_ca's
+      # state still points at b21e62e2 (deleted via the API in an
+      # earlier cleanup attempt, before this file's history settled),
+      # so a plain refresh 400s ("Certificate not found") and blocks
+      # even `terraform plan`. Untracking it here lets the next apply
+      # create a fresh one against the already-stable local CA
+      # (tls_private_key/tls_self_signed_cert.registry_ca, untouched —
+      # only the Cloudflare-side upload was ever the problem).
+      - name: One-time untrack the broken cloudflare_mtls_certificate state entry
+        run: terraform state rm 'module.cloudflare.cloudflare_mtls_certificate.registry_ca' || true
 
       - name: Validate
         run: terraform validate
