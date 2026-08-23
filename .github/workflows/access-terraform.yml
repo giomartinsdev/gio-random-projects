@@ -1,0 +1,54 @@
+name: Cloudflare Access (Terraform)
+
+# Plans on PRs that touch infra/terraform/** or infra/cloudflared/config.yml
+# (a new hostname there changes what this plans to protect), applies on
+# push to main. State lives in Cloudflare R2 — see infra/terraform/README.md
+# for the one-time setup this depends on (R2 bucket + token, account ID,
+# Google identity provider ID, and a CLOUDFLARE_API_TOKEN scoped for
+# Access, not just DNS).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/terraform/**"
+      - "infra/cloudflared/config.yml"
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - "infra/cloudflared/config.yml"
+
+defaults:
+  run:
+    working-directory: infra/terraform
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}
+  TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  TF_VAR_google_idp_identity_provider_id: ${{ secrets.CLOUDFLARE_GOOGLE_IDP_ID }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_R2_BUCKET }}" \
+            -backend-config="endpoints={s3=\"${{ secrets.TF_STATE_R2_ENDPOINT }}\"}"
+
+      - name: Validate
+        run: terraform validate
+
+      - name: Plan
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform apply -input=false -auto-approve tfplan
