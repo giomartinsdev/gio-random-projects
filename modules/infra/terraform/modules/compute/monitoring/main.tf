@@ -34,6 +34,14 @@ resource "docker_container" "beszel_hub" {
 }
 
 resource "docker_container" "beszel_agent" {
+  # The agent refuses to even start without a real KEY (crash-loops
+  # immediately otherwise) — and that key doesn't exist until the hub
+  # above has booted once and you've added this system through its UI
+  # (see README.md). count keeps this resource absent entirely rather
+  # than crash-looping until then; set agent_key and re-apply once you
+  # have it.
+  count = var.agent_key != "" ? 1 : 0
+
   name    = "beszel-agent"
   image   = "henrygd/beszel-agent:${var.agent_image_tag}"
   restart = "unless-stopped"
