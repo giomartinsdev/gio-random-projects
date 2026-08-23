@@ -79,6 +79,28 @@ jobs:
           sleep 2
           docker logs access-proxy
 
+      # ONE-TIME cleanup, remove after this runs successfully once: the
+      # ED25519->ECDSA CA switch left several orphaned mTLS certs on
+      # Cloudflare's side (each failed retry created one successfully
+      # before failing on a later step, but Terraform's own state
+      # never retained any of them) — Cloudflare's content-based dedup
+      # then rejects every further create attempt with "this
+      # certificate already exists for this account", regardless of
+      # which of them the import in imports.tf tries to adopt. Clears
+      # every mTLS CA cert except the one still actually in use
+      # (docker.giomartins.dev's association references it), so the
+      # next terraform apply can create its replacement cleanly.
+      - name: One-time cleanup of orphaned mTLS CA certs
+        run: |
+          for id in $(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/mtls_certificates" \
+            | jq -r '.result[] | select(.ca==true and .id != "fdeb1afa-7e5d-4d32-b425-7c94baaee4cd") | .id'); do
+            echo "Deleting orphaned CA cert $id"
+            curl -s -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/mtls_certificates/$id"
+            echo
+          done
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~> 1.10"

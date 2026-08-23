@@ -34,8 +34,3 @@ output "registry_client_key_pem" {
   value       = tls_private_key.registry_client.private_key_pem
   sensitive   = true
 }
-
-output "registry_ca_cert_pem" {
-  description = "The CA cert cloudflare_mtls_certificate.registry_ca should hold — used by the root module's imports.tf to find the matching orphan by content, not by index. See that file's comment."
-  value       = tls_self_signed_cert.registry_ca.cert_pem
-}
