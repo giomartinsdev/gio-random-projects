@@ -96,22 +96,17 @@ jobs:
           echo "${{ secrets.REGISTRY_CLIENT_CERT }}" | sudo tee /etc/docker/certs.d/registry.giomartins.dev/client.cert > /dev/null
           echo "${{ secrets.REGISTRY_CLIENT_KEY }}" | sudo tee /etc/docker/certs.d/registry.giomartins.dev/client.key > /dev/null
 
-      # Pushes go dockerd -> Cloudflare edge -> tunnel ->
+      # Pushes here go dockerd -> Cloudflare edge -> tunnel ->
       # registry.giomartins.dev, and the tunnel's disable_chunked_encoding
       # (modules/infra/terraform/modules/cloudflare/tunnel.tf) buffers
       # each request body to compute a real Content-Length for the
       # origin. Confirmed live: a single sequential blob upload (curl,
-      # matching buildkit's own chunked-PATCH pattern exactly) always
-      # succeeds; letting build-push-action push directly always failed
-      # right as several of its concurrent layer uploads finished
-      # around the same moment (digest mismatch, or a 502) — consistent
-      # with that buffering not being isolated per-stream under
-      # concurrent load. Capping dockerd to one upload at a time avoids
-      # triggering it, but only actually applies to a real `docker
-      # push` -- buildx's own registry exporter (even on the "docker"
-      # driver) doesn't route through it, hence building with --load
-      # (local only) and pushing separately below instead of doing it
-      # all in one build-push-action step.
+      # matching this exact chunked-PATCH pattern) always succeeds; the
+      # real push always failed at the same point with "digest invalid"
+      # right as dockerd's default 5 concurrent layer uploads all
+      # finished around the same time — consistent with that buffering
+      # not being isolated per-stream under concurrent load. Capping
+      # dockerd to one upload at a time avoids triggering it.
       - name: Limit dockerd to one concurrent upload (works around a tunnel bug under concurrent pushes)
         run: |
           echo '{"max-concurrent-uploads": 1}' | sudo tee /etc/docker/daemon.json > /dev/null
@@ -130,16 +125,11 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Build ${{ matrix.app }}
+      - name: Build and push ${{ matrix.app }}
         uses: docker/build-push-action@v6
         with:
           context: modules/apps/${{ matrix.app }}
-          load: true
+          push: true
           tags: |
             registry.giomartins.dev/${{ matrix.app }}:latest
             registry.giomartins.dev/${{ matrix.app }}:${{ github.sha }}
-
-      - name: Push ${{ matrix.app }} (classic docker push, honors max-concurrent-uploads)
-        run: |
-          docker push registry.giomartins.dev/${{ matrix.app }}:latest
-          docker push registry.giomartins.dev/${{ matrix.app }}:${{ github.sha }}
