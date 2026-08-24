@@ -11,8 +11,18 @@ locals {
 }
 
 resource "docker_container" "domain_api" {
-  name    = "domain-api"
-  image   = "${var.registry_host}/domain-api:${var.domain_api_image_tag}"
+  name  = "domain-api"
+  # Deliberately a stable literal, not a variable — a version that
+  # changed per-deploy (the first attempt at this) meant any apply
+  # that DIDN'T pass that override (every routine tf-deploy.yml run)
+  # silently reverted it back to a default, flip-flopping against
+  # whatever apps-deploy.yml had just pinned. Since this string never
+  # changes, tf-deploy.yml's applies never touch it. apps-deploy.yml
+  # instead forces the actual redeploy with `terraform apply
+  # -replace=module.compute_app.docker_container.domain_api`, which
+  # re-pulls and recreates unconditionally, picking up whatever
+  # currently sits at :latest.
+  image   = "${var.registry_host}/domain-api:latest"
   restart = "unless-stopped"
 
   env = [
@@ -43,8 +53,9 @@ resource "docker_container" "domain_api" {
 }
 
 resource "docker_container" "domain_worker" {
-  name    = "domain-worker"
-  image   = "${var.registry_host}/domain-worker:${var.domain_worker_image_tag}"
+  name = "domain-worker"
+  # See domain_api's own comment above — same reasoning.
+  image   = "${var.registry_host}/domain-worker:latest"
   restart = "unless-stopped"
 
   env = [

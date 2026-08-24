@@ -48,19 +48,7 @@ variable "rate_limit_burst" {
 }
 
 variable "watchtower_enabled" {
-  description = "Whether to label api/worker for modules/infra/watchtower to auto-redeploy on a new registry image. False by default: watchtower recreating these containers outside Terraform (new container ID each time) fights this module's own docker_container resources for ownership of the same name every time apps-deploy.yml pushes -- see domain_api_image_tag/domain_worker_image_tag below for the actual redeploy mechanism instead."
+  description = "Whether to label api/worker for modules/infra/watchtower to auto-redeploy on a new registry image. False by default: watchtower recreating these containers outside Terraform (new container ID each time) fights this module's own docker_container resources for ownership of the same name every time apps-deploy.yml pushes -- apps-deploy.yml's own `terraform apply -replace=...` is the actual redeploy mechanism now instead."
   type        = bool
   default     = false
-}
-
-variable "domain_api_image_tag" {
-  description = "Tag of the domain-api image to run — apps-deploy.yml overrides this to the exact git SHA it just pushed, so a fresh apply pins and deploys that build instead of floating on a mutable :latest a second, unrelated tool could recreate the container out from under Terraform's own state."
-  type        = string
-  default     = "latest"
-}
-
-variable "domain_worker_image_tag" {
-  description = "Same as domain_api_image_tag, for domain-worker."
-  type        = string
-  default     = "latest"
 }

@@ -183,11 +183,18 @@ jobs:
 
       - name: Deploy the image(s) just pushed
         run: |
-          VARS=()
+          # -replace forces Terraform to destroy+recreate that specific
+          # resource unconditionally, re-pulling whatever now sits at
+          # :latest -- not a -var override on the image tag itself,
+          # which would've meant any OTHER apply without that same
+          # override (every routine tf-deploy.yml run) reverting the
+          # tag straight back to a default and redeploying again on its
+          # own. See modules/compute/app/main.tf's own comment.
+          REPLACE_ARGS=()
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
             case "$app" in
-              domain-api) VARS+=("-var" "domain_api_image_tag=${{ github.sha }}") ;;
-              domain-worker) VARS+=("-var" "domain_worker_image_tag=${{ github.sha }}") ;;
+              domain-api) REPLACE_ARGS+=("-replace=module.compute_app.docker_container.domain_api") ;;
+              domain-worker) REPLACE_ARGS+=("-replace=module.compute_app.docker_container.domain_worker") ;;
             esac
           done
-          terraform apply -input=false -auto-approve "${VARS[@]}"
+          terraform apply -input=false -auto-approve "${REPLACE_ARGS[@]}"

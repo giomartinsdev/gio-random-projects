@@ -30,15 +30,13 @@ module "compute_app" {
     docker = docker
   }
 
-  network_name            = module.compute_data.network_name
-  postgres_host           = module.compute_data.postgres_host
-  postgres_user           = module.compute_data.postgres_user
-  postgres_password       = var.postgres_password
-  redis_host              = module.compute_data.redis_host
-  registry_host           = var.registry_host
-  domain_api_keys         = var.domain_api_keys
-  domain_api_image_tag    = var.domain_api_image_tag
-  domain_worker_image_tag = var.domain_worker_image_tag
+  network_name      = module.compute_data.network_name
+  postgres_host     = module.compute_data.postgres_host
+  postgres_user     = module.compute_data.postgres_user
+  postgres_password = var.postgres_password
+  redis_host        = module.compute_data.redis_host
+  registry_host     = var.registry_host
+  domain_api_keys   = var.domain_api_keys
 }
 
 module "compute_registry" {
