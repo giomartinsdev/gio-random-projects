@@ -1,0 +1,83 @@
+name: One-time emit vault Access service token secret
+
+# The vault service token's client_secret only exists in Terraform
+# state (R2). This writes it to a build artifact instead of stdout, so
+# it never appears in CI logs -- an artifact is downloaded as a raw
+# file, not rendered anywhere. Delete this workflow and its artifact
+# once CLOUDFLARE_VAULT_CLIENT_SECRET is set as a repo secret.
+
+on:
+  workflow_dispatch: {}
+
+defaults:
+  run:
+    working-directory: modules/infra/terraform
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}
+  TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+  TF_VAR_google_idp_identity_provider_id: ${{ secrets.CLOUDFLARE_GOOGLE_IDP_ID }}
+  TF_VAR_postgres_password: ${{ secrets.TF_POSTGRES_PASSWORD }}
+  TF_VAR_domain_api_keys: ${{ secrets.TF_DOMAIN_API_KEYS }}
+  TF_VAR_registry_password: ${{ secrets.TF_REGISTRY_PASSWORD }}
+  TF_VAR_beszel_agent_key: ${{ secrets.TF_BESZEL_AGENT_KEY }}
+  TF_VAR_vaultwarden_admin_token: ${{ secrets.TF_VAULTWARDEN_ADMIN_TOKEN }}
+  TF_VAR_vaultwarden_account_email: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_EMAIL }}
+  TF_VAR_vaultwarden_account_master_password: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
+  TF_VAR_vaultwarden_api_client_id: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
+  TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
+  TF_VAR_vaultwarden_bridge_api_key: ${{ secrets.TF_VAULTWARDEN_BRIDGE_API_KEY }}
+  TF_VAR_docker_host: "tcp://localhost:2475"
+  AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
+
+jobs:
+  emit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Cloudflare Access header-injecting proxy for dockerd
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_SECRET }}
+        run: |
+          cat > /tmp/default.conf.template <<'EOF'
+          server {
+              listen 2475;
+              client_max_body_size 0;
+              location / {
+                  proxy_pass https://docker.giomartins.dev;
+                  proxy_set_header Host docker.giomartins.dev;
+                  proxy_set_header CF-Access-Client-Id "${CF_ACCESS_CLIENT_ID}";
+                  proxy_set_header CF-Access-Client-Secret "${CF_ACCESS_CLIENT_SECRET}";
+                  proxy_ssl_server_name on;
+                  proxy_http_version 1.1;
+              }
+          }
+          EOF
+          docker run -d --name access-proxy --network host \
+            -e CF_ACCESS_CLIENT_ID \
+            -e CF_ACCESS_CLIENT_SECRET \
+            -v /tmp/default.conf.template:/etc/nginx/templates/default.conf.template:ro \
+            nginx:alpine
+          sleep 2
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.10"
+
+      - name: Init
+        run: terraform init -backend-config="endpoints={s3=\"${{ secrets.TF_STATE_R2_ENDPOINT }}\"}"
+
+      - name: Write vault client_secret to a file (never to stdout)
+        run: |
+          terraform output -json service_token_client_secrets \
+            | jq -r '.vault' > /tmp/vault_client_secret.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vault-client-secret
+          path: /tmp/vault_client_secret.txt
+          retention-days: 1
