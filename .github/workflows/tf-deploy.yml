@@ -70,6 +70,13 @@ jobs:
                   proxy_set_header CF-Access-Client-Secret "${CF_ACCESS_CLIENT_SECRET}";
                   proxy_ssl_server_name on;
                   proxy_http_version 1.1;
+                  # docker exec/attach hijacks the connection into a raw
+                  # TCP stream (an HTTP Upgrade) -- without these, nginx
+                  # won't forward the upgrade and `docker exec` fails
+                  # with "unable to upgrade to tcp, received 200".
+                  # Plain docker_container CRUD never needed this.
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
               }
           }
           EOF
