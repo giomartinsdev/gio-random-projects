@@ -96,24 +96,6 @@ jobs:
           echo "${{ secrets.REGISTRY_CLIENT_CERT }}" | sudo tee /etc/docker/certs.d/registry.giomartins.dev/client.cert > /dev/null
           echo "${{ secrets.REGISTRY_CLIENT_KEY }}" | sudo tee /etc/docker/certs.d/registry.giomartins.dev/client.key > /dev/null
 
-      # Pushes here go dockerd -> Cloudflare edge -> tunnel ->
-      # registry.giomartins.dev, and the tunnel's disable_chunked_encoding
-      # (modules/infra/terraform/modules/cloudflare/tunnel.tf) buffers
-      # each request body to compute a real Content-Length for the
-      # origin. Confirmed live: a single sequential blob upload (curl,
-      # matching this exact chunked-PATCH pattern) always succeeds; the
-      # real push always failed at the same point with "digest invalid"
-      # right as dockerd's default 5 concurrent layer uploads all
-      # finished around the same time — consistent with that buffering
-      # not being isolated per-stream under concurrent load. Capping
-      # dockerd to one upload at a time avoids triggering it.
-      - name: Limit dockerd to one concurrent upload (works around a tunnel bug under concurrent pushes)
-        run: |
-          echo '{"max-concurrent-uploads": 1}' | sudo tee /etc/docker/daemon.json > /dev/null
-          sudo systemctl restart docker
-          sleep 2
-          docker info --format '{{.ID}}' > /dev/null
-
       - uses: docker/setup-buildx-action@v3
         with:
           driver: docker
