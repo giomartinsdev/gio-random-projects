@@ -20,6 +20,7 @@ on:
   pull_request:
     paths:
       - "modules/infra/terraform/**"
+  workflow_dispatch: {}
 
 defaults:
   run:
@@ -117,10 +118,12 @@ jobs:
       # credentials (TF_VAULTWARDEN_*) -- storing the vault's key
       # inside the vault it unlocks is circular -- and
       # TF_REGISTRY_PASSWORD, already covered by secrets.tf's
-      # vault_seed as REGISTRY_PASSWORD. Reruns on every apply
-      # (idempotent upsert, ~10s) rather than tracking a trigger.
+      # vault_seed as REGISTRY_PASSWORD. These basically never change,
+      # so this only runs when manually dispatched (Actions tab → Run
+      # workflow) -- not worth ~1-2min of every single apply just to
+      # re-upsert values that are already correct.
       - name: Back up bootstrap secrets to Vaultwarden
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch'
         env:
           DOCKER_HOST: tcp://localhost:2475
           NETWORK_NAME: apps
