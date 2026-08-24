@@ -48,6 +48,15 @@ locals {
       service  = "http://localhost:8002"
     },
     {
+      # bookclub-api's own Better Auth session validation is the auth
+      # layer here, same reasoning as post-api.giomartins.dev --
+      # Cloudflare Access's browser-redirect login would break the
+      # front's own fetch/WebSocket calls. Port must match
+      # module.compute_bookclub_api's external_port.
+      hostname = "bookclub-api.giomartins.dev"
+      service  = "http://localhost:8004"
+    },
+    {
       # The blog itself -- meant to be publicly readable by anyone,
       # not just the Google-SSO-allowed emails. In excluded_hostnames
       # for that reason (Access would otherwise gate the whole site

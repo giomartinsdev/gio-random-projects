@@ -67,6 +67,22 @@ module "compute_post_api" {
   depends_on = [null_resource.postgres_password_sync, module.compute_app]
 }
 
+module "compute_bookclub_api" {
+  source = "./modules/compute/bookclub_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name       = module.compute_data.network_name
+  postgres_host      = module.compute_data.postgres_host
+  postgres_user      = module.compute_data.postgres_user
+  postgres_password  = random_password.postgres.result
+  registry_host      = var.registry_host
+  better_auth_secret = random_password.post_api_better_auth_secret.result
+
+  depends_on = [null_resource.postgres_password_sync]
+}
+
 module "compute_front" {
   source = "./modules/compute/front"
   providers = {

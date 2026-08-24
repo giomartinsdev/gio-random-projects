@@ -40,11 +40,12 @@ variable "excluded_hostnames" {
   EOT
   type        = list(string)
   default = [
-    "registry.giomartins.dev", # docker login/push — own htpasswd auth + mTLS (modules/cloudflare/registry_mtls.tf); Docker tooling can't do a browser SSO redirect or send custom Access headers
-    "domain.giomartins.dev",   # REST API clients — own X-API-Key auth + a service-token Access application (modules/cloudflare/service_token_access.tf)
-    "docker.giomartins.dev",   # this config's own docker provider — a service-token Access application (modules/cloudflare/service_token_access.tf)
-    "post-api.giomartins.dev", # own Better Auth — a browser SSO redirect would break API/bot clients, same reasoning as domain.giomartins.dev
-    "blog.giomartins.dev",     # meant to be publicly readable by anyone, not gated behind Google SSO
+    "registry.giomartins.dev",     # docker login/push — own htpasswd auth + mTLS (modules/cloudflare/registry_mtls.tf); Docker tooling can't do a browser SSO redirect or send custom Access headers
+    "domain.giomartins.dev",       # REST API clients — own X-API-Key auth + a service-token Access application (modules/cloudflare/service_token_access.tf)
+    "docker.giomartins.dev",       # this config's own docker provider — a service-token Access application (modules/cloudflare/service_token_access.tf)
+    "post-api.giomartins.dev",     # own Better Auth — a browser SSO redirect would break API/bot clients, same reasoning as domain.giomartins.dev
+    "bookclub-api.giomartins.dev", # own Better Auth session check — same reasoning, plus a redirect would break the front's WebSocket upgrade
+    "blog.giomartins.dev",         # meant to be publicly readable by anyone, not gated behind Google SSO
   ]
 }
 

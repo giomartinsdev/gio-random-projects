@@ -18,7 +18,8 @@ only ever fit one.
 - **`domain-worker/`** — the only writer, consumes commands off the
   event bus, applies them, records an audit trail.
 - **`post-api/`** — headless content API for Buteco dos Devs (articles/courses, Better Auth). Independent Node/TypeScript stack, not Go like the rest of this folder — see its own README for why. A future `buteco-bot` (Discord integration) would be just another consumer of this same API, not a new bounded context.
-- **`front/`** — the blog's React frontend, talking to `post-api` directly from the browser. Same Node/TypeScript stack as `post-api`.
+- **`front/`** — the blog's React frontend, talking to `post-api` and `bookclub-api` directly from the browser. Same Node/TypeScript stack as `post-api`.
+- **`bookclub-api/`** — realtime PDF room service ("Clube do Livro"): upload a PDF, open a room, others join over a WebSocket for live page-turning, host annotations, and chat. Unlike `post-api`, it owns its rooms/documents/messages tables directly (no domain-api CQRS hop) and reuses post-api's own Better Auth session instead of its own login — see its README for why both.
 
 `domain-api` and `domain-worker` are deliberately independent Go
 modules (each with its own `go.mod`) even though they agree on the

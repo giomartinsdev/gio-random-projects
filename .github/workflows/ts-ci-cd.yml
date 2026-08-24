@@ -216,6 +216,7 @@ jobs:
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
             case "$app" in
               post-api) REPLACE_ARGS+=("-replace=module.compute_post_api.docker_container.post_api") ;;
+              bookclub-api) REPLACE_ARGS+=("-replace=module.compute_bookclub_api.docker_container.bookclub_api") ;;
               front) REPLACE_ARGS+=("-replace=module.compute_front.docker_container.front") ;;
             esac
           done
