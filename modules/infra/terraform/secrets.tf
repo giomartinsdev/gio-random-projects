@@ -249,6 +249,13 @@ locals {
         ACCESS_SVC_TOKEN_MINIO_CLIENT_SECRET = module.cloudflare.protected_hosts_service_token_client_secrets["minio.giomartins.dev"]
       }
     }
+    minio = {
+      trigger = random_password.minio_root_password.result
+      items = {
+        MINIO_ROOT_USER     = module.compute_minio.root_user
+        MINIO_ROOT_PASSWORD = random_password.minio_root_password.result
+      }
+    }
     ninerouter = {
       trigger = "${random_password.ninerouter_jwt_secret.result}|${random_password.ninerouter_initial_password.result}"
       items = {
