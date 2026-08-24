@@ -80,6 +80,18 @@ variable "domain_api_keys" {
   sensitive   = true
 }
 
+variable "domain_api_image_tag" {
+  description = "Tag of the domain-api image to deploy. apps-deploy.yml passes -var with the exact git SHA it just pushed; a plain apply with no override stays on whatever tag was last deployed this way (default \"latest\" only matters on a from-scratch bring-up)."
+  type        = string
+  default     = "latest"
+}
+
+variable "domain_worker_image_tag" {
+  description = "Same as domain_api_image_tag, for domain-worker."
+  type        = string
+  default     = "latest"
+}
+
 # --- compute/registry ---
 
 variable "registry_host" {

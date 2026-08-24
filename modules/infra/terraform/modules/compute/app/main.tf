@@ -12,7 +12,7 @@ locals {
 
 resource "docker_container" "domain_api" {
   name    = "domain-api"
-  image   = "${var.registry_host}/domain-api:latest"
+  image   = "${var.registry_host}/domain-api:${var.domain_api_image_tag}"
   restart = "unless-stopped"
 
   env = [
@@ -44,7 +44,7 @@ resource "docker_container" "domain_api" {
 
 resource "docker_container" "domain_worker" {
   name    = "domain-worker"
-  image   = "${var.registry_host}/domain-worker:latest"
+  image   = "${var.registry_host}/domain-worker:${var.domain_worker_image_tag}"
   restart = "unless-stopped"
 
   env = [
