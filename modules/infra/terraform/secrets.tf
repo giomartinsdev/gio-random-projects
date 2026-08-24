@@ -115,16 +115,18 @@ resource "null_resource" "vault_seed" {
 
   provisioner "local-exec" {
     environment = {
-      DOCKER_HOST                         = var.docker_host
-      NETWORK_NAME                        = module.compute_data.network_name
-      VAULTWARDEN_CLIENT_ID               = var.vaultwarden_api_client_id
-      VAULTWARDEN_CLIENT_SECRET           = var.vaultwarden_api_client_secret
-      VAULTWARDEN_MASTER_PASSWORD         = var.vaultwarden_account_master_password
-      DATABASE_URL_VALUE                  = "postgresql://${module.compute_data.postgres_user}:${random_password.postgres.result}@${module.compute_data.postgres_host}:5432/${module.compute_data.postgres_user}"
-      DOMAIN_API_KEYS_VALUE               = local.domain_api_keys
-      TF_VAULTWARDEN_ADMIN_TOKEN_VALUE    = random_password.vaultwarden_admin_token.result
-      TF_VAULTWARDEN_BRIDGE_API_KEY_VALUE = random_password.vaultwarden_bridge_api_key.result
-      REGISTRY_PASSWORD_VALUE             = var.registry_password
+      DOCKER_HOST                 = var.docker_host
+      NETWORK_NAME                = module.compute_data.network_name
+      VAULTWARDEN_CLIENT_ID       = var.vaultwarden_api_client_id
+      VAULTWARDEN_CLIENT_SECRET   = var.vaultwarden_api_client_secret
+      VAULTWARDEN_MASTER_PASSWORD = var.vaultwarden_account_master_password
+      ITEMS_B64 = base64encode(join("\n", [
+        "DATABASE_URL\tpostgresql://${module.compute_data.postgres_user}:${random_password.postgres.result}@${module.compute_data.postgres_host}:5432/${module.compute_data.postgres_user}",
+        "DOMAIN_API_KEYS\t${local.domain_api_keys}",
+        "TF_VAULTWARDEN_ADMIN_TOKEN\t${random_password.vaultwarden_admin_token.result}",
+        "TF_VAULTWARDEN_BRIDGE_API_KEY\t${random_password.vaultwarden_bridge_api_key.result}",
+        "REGISTRY_PASSWORD\t${var.registry_password}",
+      ]))
     }
     command = "${path.module}/scripts/seed_vault.sh"
   }

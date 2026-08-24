@@ -1,15 +1,19 @@
 #!/usr/bin/env sh
-# Writes app secrets into Vaultwarden so modules/compute/vaultwarden_bridge
-# can re-serve them to domain-api/domain-worker at runtime. Runs entirely
-# over the internal docker network (the same "vaultwarden" hostname the
-# bridge itself uses) -- never touches vault.giomartins.dev or Cloudflare
-# Access. The one wrinkle: the bw CLI refuses non-HTTPS server URLs even
-# for purely-internal traffic, so this still needs a tiny local
-# self-signed-HTTPS proxy in front of the plain-HTTP internal listener.
+# Upserts NAME=VALUE pairs into Vaultwarden over the internal docker
+# network -- used both by Terraform (root secrets.tf's
+# null_resource.vault_seed, for the app-level secrets it generates) and
+# directly from tf-deploy.yml (to back up the handful of "secret zero"
+# credentials Terraform itself needs to authenticate, which by
+# definition it can't fetch from the vault to configure itself). Never
+# touches vault.giomartins.dev or Cloudflare Access -- this runs over
+# the same "vaultwarden" hostname the bridge itself uses. The one
+# wrinkle: the bw CLI refuses non-HTTPS server URLs even for purely-
+# internal traffic, so this still needs a tiny local self-signed-HTTPS
+# proxy in front of the plain-HTTP internal listener.
 #
-# Invoked by null_resource.vault_seed's local-exec (see ../secrets.tf),
-# which supplies NETWORK_NAME plus every *_VALUE / VAULTWARDEN_* env var
-# this script and the container it launches consume.
+# Required env: NETWORK_NAME, VAULTWARDEN_CLIENT_ID,
+# VAULTWARDEN_CLIENT_SECRET, VAULTWARDEN_MASTER_PASSWORD, and
+# ITEMS_B64 -- base64 of newline-separated "NAME<TAB>VALUE" pairs.
 set -eu
 
 SCRIPT=$(cat <<'INNER'
@@ -69,11 +73,10 @@ upsert_item() {
   fi
 }
 
-upsert_item "DATABASE_URL" "$DATABASE_URL_VALUE"
-upsert_item "DOMAIN_API_KEYS" "$DOMAIN_API_KEYS_VALUE"
-upsert_item "TF_VAULTWARDEN_ADMIN_TOKEN" "$TF_VAULTWARDEN_ADMIN_TOKEN_VALUE"
-upsert_item "TF_VAULTWARDEN_BRIDGE_API_KEY" "$TF_VAULTWARDEN_BRIDGE_API_KEY_VALUE"
-upsert_item "REGISTRY_PASSWORD" "$REGISTRY_PASSWORD_VALUE"
+echo "$ITEMS_B64" | base64 -d | while IFS="$(printf '\t')" read -r name value; do
+  [ -n "$name" ] || continue
+  upsert_item "$name" "$value"
+done
 INNER
 )
 
@@ -85,9 +88,7 @@ INNER
 # container create/start calls that already work through this proxy.
 CID=$(docker run -d --network "$NETWORK_NAME" \
   -e VAULTWARDEN_CLIENT_ID -e VAULTWARDEN_CLIENT_SECRET -e VAULTWARDEN_MASTER_PASSWORD \
-  -e DATABASE_URL_VALUE -e DOMAIN_API_KEYS_VALUE \
-  -e TF_VAULTWARDEN_ADMIN_TOKEN_VALUE -e TF_VAULTWARDEN_BRIDGE_API_KEY_VALUE \
-  -e REGISTRY_PASSWORD_VALUE \
+  -e ITEMS_B64 \
   node:20-alpine sh -c "$SCRIPT")
 
 EXIT_CODE=$(docker wait "$CID")

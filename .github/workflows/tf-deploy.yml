@@ -109,3 +109,46 @@ jobs:
       - name: Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: terraform apply -input=false -auto-approve tfplan
+
+      # Backs up the "secret zero" credentials Terraform itself needs
+      # to authenticate -- by definition it can't fetch these FROM the
+      # vault to configure itself, so this is a plain backup copy, not
+      # part of any runtime read path. Excludes the vault's own unlock
+      # credentials (TF_VAULTWARDEN_*) -- storing the vault's key
+      # inside the vault it unlocks is circular -- and
+      # TF_REGISTRY_PASSWORD, already covered by secrets.tf's
+      # vault_seed as REGISTRY_PASSWORD. Reruns on every apply
+      # (idempotent upsert, ~10s) rather than tracking a trigger.
+      - name: Back up bootstrap secrets to Vaultwarden
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          DOCKER_HOST: tcp://localhost:2475
+          NETWORK_NAME: apps
+          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
+          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
+          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
+          CLOUDFLARE_ACCESS_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_GOOGLE_IDP_ID: ${{ secrets.CLOUDFLARE_GOOGLE_IDP_ID }}
+          CLOUDFLARE_DOCKER_CLIENT_ID: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_ID }}
+          CLOUDFLARE_DOCKER_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_SECRET }}
+          TF_STATE_R2_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
+          TF_STATE_R2_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
+          TF_STATE_R2_ENDPOINT: ${{ secrets.TF_STATE_R2_ENDPOINT }}
+          TF_BESZEL_AGENT_KEY: ${{ secrets.TF_BESZEL_AGENT_KEY }}
+        run: |
+          ITEMS_B64=$(printf '%s\t%s\n' \
+            "CLOUDFLARE_ACCESS_API_TOKEN" "$CLOUDFLARE_ACCESS_API_TOKEN" \
+            "CLOUDFLARE_ACCOUNT_ID" "$CLOUDFLARE_ACCOUNT_ID" \
+            "CLOUDFLARE_ZONE_ID" "$CLOUDFLARE_ZONE_ID" \
+            "CLOUDFLARE_GOOGLE_IDP_ID" "$CLOUDFLARE_GOOGLE_IDP_ID" \
+            "CLOUDFLARE_DOCKER_CLIENT_ID" "$CLOUDFLARE_DOCKER_CLIENT_ID" \
+            "CLOUDFLARE_DOCKER_CLIENT_SECRET" "$CLOUDFLARE_DOCKER_CLIENT_SECRET" \
+            "TF_STATE_R2_ACCESS_KEY_ID" "$TF_STATE_R2_ACCESS_KEY_ID" \
+            "TF_STATE_R2_SECRET_ACCESS_KEY" "$TF_STATE_R2_SECRET_ACCESS_KEY" \
+            "TF_STATE_R2_ENDPOINT" "$TF_STATE_R2_ENDPOINT" \
+            "TF_BESZEL_AGENT_KEY" "$TF_BESZEL_AGENT_KEY" \
+            | base64 -w0)
+          export ITEMS_B64
+          ./scripts/seed_vault.sh
