@@ -20,7 +20,11 @@ on:
   pull_request:
     paths:
       - "modules/infra/terraform/**"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      replace_target:
+        description: "Optional: -replace=<resource address> to force one resource to rerun (e.g. a vault_seed group after a lost concurrent write -- see incident notes in secrets.tf's vault_item_groups comment)"
+        required: false
 
 defaults:
   run:
@@ -105,7 +109,12 @@ jobs:
         run: terraform validate
 
       - name: Plan
-        run: terraform plan -input=false -lock-timeout=300s -out=tfplan
+        run: |
+          REPLACE_ARGS=()
+          if [ -n "${{ github.event.inputs.replace_target }}" ]; then
+            REPLACE_ARGS+=("-replace=${{ github.event.inputs.replace_target }}")
+          fi
+          terraform plan -input=false -lock-timeout=300s -out=tfplan "${REPLACE_ARGS[@]}"
 
       - name: Apply
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'

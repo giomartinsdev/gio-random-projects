@@ -127,6 +127,21 @@ resource "null_resource" "registry_restart" {
 # resource and resent all ~15 items through seed_vault.sh, even the
 # ~14 that hadn't changed. Now only the group whose value actually
 # changed reruns.
+#
+# KNOWN GAP, hit for real once: when TWO OR MORE groups change in the
+# same apply, Terraform runs their null_resources (and thus two
+# concurrent seed_vault.sh containers) in parallel by default. Both
+# log into the SAME Vaultwarden account and snapshot `bw list items`
+# independently -- if they race on editing the SAME existing item
+# (not just creating different new ones), one process's edit can be
+# silently lost even though its own container exits 0. Happened when
+# domain_api_keys (edit) and bookclub_api_domain_key (new item) landed
+# in one apply together: domain_api_keys' write never actually stuck.
+# No proper fix yet (would need real mutual exclusion in
+# seed_vault.sh, or forcing -parallelism=1 on every apply); the
+# workaround is `gh workflow run` this file with `replace_target` set
+# to the lost group (e.g. `null_resource.vault_seed["domain_api_keys"]`)
+# on its own, once nothing else is changing concurrently.
 locals {
   vault_item_groups = {
     database_url = {
