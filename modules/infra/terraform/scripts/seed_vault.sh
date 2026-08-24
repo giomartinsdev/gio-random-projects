@@ -80,18 +80,37 @@ done
 INNER
 )
 
-# -d (detach) + wait + logs, not a plain foreground `docker run --rm`:
-# an attached run hijacks the connection into a raw stream to relay
-# stdio, and that hijack doesn't survive the CI Access proxy/tunnel hop
-# (fails with "unable to upgrade to tcp, received 200"). `wait` and
-# non-follow `logs` are plain request/response calls, same as the
-# container create/start calls that already work through this proxy.
+# -d (detach), not a plain foreground `docker run --rm`: an attached
+# run hijacks the connection into a raw stream to relay stdio, and
+# that hijack doesn't survive the CI Access proxy/tunnel hop (fails
+# with "unable to upgrade to tcp, received 200").
 CID=$(docker run -d --network "$NETWORK_NAME" \
   -e VAULTWARDEN_CLIENT_ID -e VAULTWARDEN_CLIENT_SECRET -e VAULTWARDEN_MASTER_PASSWORD \
   -e ITEMS_B64 \
   node:20-alpine sh -c "$SCRIPT")
 
-EXIT_CODE=$(docker wait "$CID")
+# Poll instead of `docker wait`: that blocks on a single long-held
+# connection until the container exits (npm install alone can take
+# over a minute), and Cloudflare Tunnel's own edge timeout (~100s,
+# independent of anything nginx is configured with) kills it with a
+# 524 before the real response ever arrives. Each inspect call here
+# completes immediately, so no single request is ever held open long
+# enough to hit that.
+STATUS="running"
+for i in $(seq 1 60); do
+  STATUS=$(docker inspect -f '{{.State.Status}}' "$CID")
+  [ "$STATUS" = "running" ] || break
+  sleep 5
+done
+
+if [ "$STATUS" = "running" ]; then
+  echo "vault seed container still running after 5 minutes" >&2
+  docker logs "$CID" || true
+  docker rm -f "$CID" >/dev/null || true
+  exit 1
+fi
+
+EXIT_CODE=$(docker inspect -f '{{.State.ExitCode}}' "$CID")
 docker logs "$CID"
 docker rm "$CID" >/dev/null
 
