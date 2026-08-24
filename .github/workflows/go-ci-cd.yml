@@ -198,11 +198,33 @@ jobs:
       # an earlier deploy. Confirmed live: a -replace-only apply
       # silently redeployed a stale, previously-cached build instead
       # of what build-and-push had just pushed. An explicit pull
-      # against the remote daemon first, using its own already-
-      # configured registry credentials (mTLS cert +
-      # `docker login`-populated config.json — see
-      # modules/compute/registry's README), is what actually
-      # guarantees this.
+      # against the remote daemon first is what actually guarantees
+      # this -- but that pull still needs registry credentials.
+      #
+      # Docker resolves those credentials CLIENT-side regardless of
+      # DOCKER_HOST: the `docker` CLI here (on the runner) reads its
+      # OWN ~/.docker/config.json and sends the result as an
+      # X-Registry-Auth header, which the remote daemon then uses to
+      # actually fetch from the registry. gio-server's own config.json
+      # (docker_config_install) is what lets ITS processes -- like
+      # watchtower -- pull; it's irrelevant to a pull commanded from
+      # here. A `docker login` on THIS runner is what's actually
+      # needed, hence the mTLS cert install + login below (same as
+      # build-and-push's, since `docker login` itself talks to
+      # registry.giomartins.dev directly, not through DOCKER_HOST).
+      - name: Install registry.giomartins.dev's mTLS client certificate
+        run: |
+          sudo mkdir -p /etc/docker/certs.d/registry.giomartins.dev
+          echo "${{ secrets.REGISTRY_CLIENT_CERT }}" | sudo tee /etc/docker/certs.d/registry.giomartins.dev/client.cert > /dev/null
+          echo "${{ secrets.REGISTRY_CLIENT_KEY }}" | sudo tee /etc/docker/certs.d/registry.giomartins.dev/client.key > /dev/null
+
+      - name: Log in to registry.giomartins.dev
+        uses: docker/login-action@v3
+        with:
+          registry: registry.giomartins.dev
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
       - name: Pull the image(s) just pushed onto gio-server's own dockerd
         env:
           DOCKER_HOST: tcp://localhost:2475
