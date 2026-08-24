@@ -37,7 +37,7 @@ module "compute_app" {
   redis_host             = module.compute_data.redis_host
   registry_host          = var.registry_host
   domain_api_keys        = var.domain_api_keys
-  secrets_bridge_url     = coalesce(one(module.compute_vaultwarden_bridge[*].internal_url), "")
+  secrets_bridge_url     = length(module.compute_vaultwarden_bridge) > 0 ? module.compute_vaultwarden_bridge[0].internal_url : ""
   secrets_bridge_api_key = var.vaultwarden_bridge_api_key
 }
 
