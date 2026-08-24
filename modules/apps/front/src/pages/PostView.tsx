@@ -37,7 +37,7 @@ export default function PostView() {
   const isAuthor = session?.user.id === post.authorId;
 
   return (
-    <article className="max-w-2xl mx-auto">
+    <article className="max-w-2xl mx-auto animate-fade-in-up">
       {post.coverImageUrl && (
         <div className="glass-card overflow-hidden mb-8 -mx-6 sm:mx-0">
           <img src={post.coverImageUrl} alt="" className="w-full max-h-96 object-cover" />

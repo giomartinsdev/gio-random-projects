@@ -20,17 +20,23 @@ export default function Home() {
 
   return (
     <div>
-      <h1 className="font-heading font-bold text-4xl mb-1">
+      <h1 className="font-heading font-bold text-4xl mb-1 animate-fade-in-up">
         Posts <span className="text-gradient">recentes</span>
       </h1>
-      <p className="text-buteco-cream/60 mb-10">Artigos e cursos publicados pela comunidade</p>
+      <p className="text-buteco-cream/60 mb-10 animate-fade-in-up" style={{ animationDelay: "80ms" }}>
+        Artigos e cursos publicados pela comunidade
+      </p>
 
       {error && <p className="text-red-400">{error}</p>}
       {posts === null && !error && <p className="text-buteco-cream/60">Carregando…</p>}
       {posts?.length === 0 && <p className="text-buteco-cream/60">Ainda não tem nada publicado — seja o primeiro.</p>}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        {posts?.map((p) => <PostCard key={p.id} post={p} />)}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-start">
+        {posts?.map((p, i) => (
+          <div key={p.id} className="animate-fade-in-up" style={{ animationDelay: `${120 + i * 60}ms` }}>
+            <PostCard post={p} />
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -31,7 +31,7 @@ export default function Login() {
 
   return (
     <div className="max-w-sm mx-auto mt-6">
-      <div className="glass-card glow-amber p-8">
+      <div className="glass-card glow-amber p-8 animate-fade-in-up">
         <div className="text-center mb-8">
           <span className="text-4xl" aria-hidden="true">
             🍺

@@ -24,7 +24,7 @@ export default function Profile() {
 
   return (
     <div>
-      <div className="glass-card p-8 flex items-center justify-between mb-10 flex-wrap gap-4">
+      <div className="glass-card glow-amber p-8 flex items-center justify-between mb-10 flex-wrap gap-4 animate-fade-in-up">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-full bg-buteco-amber/15 text-buteco-amber flex items-center justify-center font-heading font-bold text-2xl shrink-0">
             {session.user.name.charAt(0).toUpperCase()}
@@ -47,8 +47,12 @@ export default function Profile() {
       {posts === null && <p className="text-buteco-cream/60">Carregando…</p>}
       {posts?.length === 0 && <p className="text-buteco-cream/60">Você ainda não publicou nada.</p>}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        {posts?.map((p) => <PostCard key={p.id} post={p} />)}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-start">
+        {posts?.map((p, i) => (
+          <div key={p.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 60}ms` }}>
+            <PostCard post={p} />
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -15,7 +15,7 @@ export default function NavBar() {
 
   return (
     <header
-      className={`sticky top-0 z-20 transition-all duration-300 ${
+      className={`sticky top-0 z-20 animate-fade-in-down transition-all duration-300 ${
         scrolled
           ? "bg-buteco-brown-dark/90 backdrop-blur-lg shadow-lg shadow-black/20 border-b border-buteco-amber/10"
           : "bg-buteco-brown-dark/60 backdrop-blur border-b border-transparent"
