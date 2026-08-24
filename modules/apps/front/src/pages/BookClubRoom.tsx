@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link } from "react-router";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -166,6 +166,16 @@ export default function BookClubRoom() {
     setChatDraft("");
   }
 
+  // react-pdf compares `file` by reference to decide whether to
+  // reload -- a fresh {data: pdfData} object literal on every render
+  // (e.g. triggered by onRenderSuccess -> setPageWidth) looks like "a
+  // new file" to it, so it tries to reload from the SAME ArrayBuffer.
+  // pdfjs transfers that buffer to its worker on the first load,
+  // detaching it -- the second "reload" then throws "Cannot perform
+  // Construct on a detached ArrayBuffer". Memoizing on pdfData's own
+  // identity keeps `file` stable across re-renders.
+  const pdfFile = useMemo(() => (pdfData ? { data: pdfData } : null), [pdfData]);
+
   if (room === undefined) return <p className="text-buteco-cream/60">Carregando…</p>;
   if (room === null) {
     return (
@@ -219,8 +229,8 @@ export default function BookClubRoom() {
         )}
 
         <div ref={containerRef} className="relative glass-card overflow-hidden mx-auto" style={{ maxWidth: 800 }}>
-          {pdfData ? (
-            <Document file={{ data: pdfData }} onLoadSuccess={({ numPages }) => setNumPages(numPages)} loading={<PdfPlaceholder />}>
+          {pdfFile ? (
+            <Document file={pdfFile} onLoadSuccess={({ numPages }) => setNumPages(numPages)} loading={<PdfPlaceholder />}>
               <Page pageNumber={page} width={pageWidth} onRenderSuccess={syncCanvasSize} loading={<PdfPlaceholder />} />
             </Document>
           ) : (
