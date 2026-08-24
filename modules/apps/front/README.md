@@ -1,8 +1,9 @@
 # front
 
 React SPA for the Sala de aula do Buteco blog — login, home feed of recent
-posts, a profile page, and reading/writing individual posts. Talks
-directly to `post-api` from the browser (no server-side rendering, no
+posts, a profile page, reading/writing individual posts, and the Clube
+do Livro realtime PDF rooms. Talks directly to `post-api` and
+`bookclub-api` from the browser (no server-side rendering, no
 backend-for-frontend of its own).
 
 Visual language borrowed from [Funnie-Tech/website-butecodosdev](https://github.com/Funnie-Tech/website-butecodosdev)
@@ -14,6 +15,7 @@ same design tokens, reproduced here.
 - **Auth**: Better Auth's React client (`better-auth/react`), cookie-based session (`credentials: "include"` on every fetch). post-api's `bearer` plugin exists for non-browser clients (a future Discord bot); this app doesn't need to manage tokens itself.
 - **Routing**: `react-router` v7. `/` (home), `/login`, `/posts/:slug` (read), `/posts/novo` (create, protected), `/posts/:id/editar` (edit, protected), `/perfil` (profile, protected).
 - **Markdown**: `react-markdown` renders `bodyMarkdown` on the post page; the create/edit form is a plain markdown textarea (no WYSIWYG).
+- **Clube do Livro** (`/clube-do-livro`, `/clube-do-livro/:id`, both protected): upload a PDF and open a room (`react-pdf`/`pdfjs` renders pages), then a raw `WebSocket` (`lib/useRoomSocket.ts`) drives everyone's live page position, the host's pointer/pen strokes on a `<canvas>` overlay, and chat -- see `bookclub-api`'s own README for the realtime protocol.
 
 ## Known gap
 
@@ -34,6 +36,7 @@ npm run dev
 ## Deploying
 
 Static build (`vite build`) served by nginx — see `Dockerfile`.
-`VITE_POST_API_URL` is baked in at **build** time (Vite convention),
-not read at container runtime — see `ts-ci-cd.yml`'s `build-args` for
-where that's set for production builds.
+`VITE_POST_API_URL`/`VITE_BOOKCLUB_API_URL` are baked in at **build**
+time (Vite convention), not read at container runtime — see
+`ts-ci-cd.yml`'s `build-args` for where those are set for production
+builds.

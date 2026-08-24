@@ -126,7 +126,12 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
                 color: typeof msg.color === "string" ? msg.color : "#F5A623",
               };
               roomHub.addStroke(roomId, stroke);
-              roomHub.broadcast(roomId, { type: "draw:stroke", ...stroke }, ws);
+              // No `exclude: ws` here (unlike cursor:move) -- the
+              // host's own client never appends a stroke to its local
+              // state on send, only on receiving this broadcast back.
+              // Excluding the sender would make their own just-drawn
+              // stroke vanish the instant they lift the pen.
+              roomHub.broadcast(roomId, { type: "draw:stroke", ...stroke });
               break;
             }
 
