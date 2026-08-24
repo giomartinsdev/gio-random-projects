@@ -13,7 +13,9 @@
 #
 # Required env: NETWORK_NAME, VAULTWARDEN_CLIENT_ID,
 # VAULTWARDEN_CLIENT_SECRET, VAULTWARDEN_MASTER_PASSWORD, and
-# ITEMS_B64 -- base64 of newline-separated "NAME<TAB>VALUE" pairs.
+# ITEMS_B64 -- base64 of newline-separated "NAME<TAB>BASE64(VALUE)"
+# pairs (the value itself is base64-encoded too, so multi-line values
+# like a PEM cert survive the newline-per-pair framing intact).
 set -eu
 
 SCRIPT=$(cat <<'INNER'
@@ -73,8 +75,9 @@ upsert_item() {
   fi
 }
 
-echo "$ITEMS_B64" | base64 -d | while IFS="$(printf '\t')" read -r name value; do
+echo "$ITEMS_B64" | base64 -d | while IFS="$(printf '\t')" read -r name value_b64; do
   [ -n "$name" ] || continue
+  value=$(echo "$value_b64" | base64 -d)
   upsert_item "$name" "$value"
 done
 INNER

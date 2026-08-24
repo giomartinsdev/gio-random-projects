@@ -106,11 +106,16 @@ resource "null_resource" "registry_restart" {
 # writes actually changes.
 resource "null_resource" "vault_seed" {
   triggers = {
-    postgres_password = random_password.postgres.result
-    domain_api_keys    = local.domain_api_keys
-    admin_token        = random_password.vaultwarden_admin_token.result
-    bridge_api_key     = random_password.vaultwarden_bridge_api_key.result
-    registry_password  = var.registry_password
+    postgres_password    = random_password.postgres.result
+    domain_api_keys      = local.domain_api_keys
+    admin_token          = random_password.vaultwarden_admin_token.result
+    bridge_api_key       = random_password.vaultwarden_bridge_api_key.result
+    registry_password    = var.registry_password
+    registry_client_cert = module.cloudflare.registry_client_cert_pem
+    docker_svc_token     = module.cloudflare.service_token_client_ids["docker"]
+    domain_svc_token     = module.cloudflare.service_token_client_ids["domain"]
+    vault_svc_token      = module.cloudflare.protected_hosts_service_token_client_ids["vault.giomartins.dev"]
+    beszel_svc_token     = module.cloudflare.protected_hosts_service_token_client_ids["beszel.giomartins.dev"]
   }
 
   provisioner "local-exec" {
@@ -121,11 +126,24 @@ resource "null_resource" "vault_seed" {
       VAULTWARDEN_CLIENT_SECRET   = var.vaultwarden_api_client_secret
       VAULTWARDEN_MASTER_PASSWORD = var.vaultwarden_account_master_password
       ITEMS_B64 = base64encode(join("\n", [
-        "DATABASE_URL\tpostgresql://${module.compute_data.postgres_user}:${random_password.postgres.result}@${module.compute_data.postgres_host}:5432/${module.compute_data.postgres_user}",
-        "DOMAIN_API_KEYS\t${local.domain_api_keys}",
-        "TF_VAULTWARDEN_ADMIN_TOKEN\t${random_password.vaultwarden_admin_token.result}",
-        "TF_VAULTWARDEN_BRIDGE_API_KEY\t${random_password.vaultwarden_bridge_api_key.result}",
-        "REGISTRY_PASSWORD\t${var.registry_password}",
+        for pair in [
+          ["DATABASE_URL", "postgresql://${module.compute_data.postgres_user}:${random_password.postgres.result}@${module.compute_data.postgres_host}:5432/${module.compute_data.postgres_user}"],
+          ["DOMAIN_API_KEYS", local.domain_api_keys],
+          ["TF_VAULTWARDEN_ADMIN_TOKEN", random_password.vaultwarden_admin_token.result],
+          ["TF_VAULTWARDEN_BRIDGE_API_KEY", random_password.vaultwarden_bridge_api_key.result],
+          ["REGISTRY_PASSWORD", var.registry_password],
+          ["REGISTRY_USERNAME", var.registry_user],
+          ["REGISTRY_CLIENT_CERT", module.cloudflare.registry_client_cert_pem],
+          ["REGISTRY_CLIENT_KEY", module.cloudflare.registry_client_key_pem],
+          ["ACCESS_SVC_TOKEN_DOCKER_CLIENT_ID", module.cloudflare.service_token_client_ids["docker"]],
+          ["ACCESS_SVC_TOKEN_DOCKER_CLIENT_SECRET", module.cloudflare.service_token_client_secrets["docker"]],
+          ["ACCESS_SVC_TOKEN_DOMAIN_CLIENT_ID", module.cloudflare.service_token_client_ids["domain"]],
+          ["ACCESS_SVC_TOKEN_DOMAIN_CLIENT_SECRET", module.cloudflare.service_token_client_secrets["domain"]],
+          ["ACCESS_SVC_TOKEN_VAULT_CLIENT_ID", module.cloudflare.protected_hosts_service_token_client_ids["vault.giomartins.dev"]],
+          ["ACCESS_SVC_TOKEN_VAULT_CLIENT_SECRET", module.cloudflare.protected_hosts_service_token_client_secrets["vault.giomartins.dev"]],
+          ["ACCESS_SVC_TOKEN_BESZEL_CLIENT_ID", module.cloudflare.protected_hosts_service_token_client_ids["beszel.giomartins.dev"]],
+          ["ACCESS_SVC_TOKEN_BESZEL_CLIENT_SECRET", module.cloudflare.protected_hosts_service_token_client_secrets["beszel.giomartins.dev"]],
+        ] : "${pair[0]}\t${base64encode(pair[1])}"
       ]))
     }
     command = "${path.module}/scripts/seed_vault.sh"

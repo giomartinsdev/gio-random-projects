@@ -16,6 +16,16 @@ output "service_token_client_secrets" {
   sensitive = true
 }
 
+output "protected_hosts_service_token_client_ids" {
+  description = "Keyed by full hostname (\"vault.giomartins.dev\", \"beszel.giomartins.dev\") — see modules/cloudflare/access.tf."
+  value       = module.cloudflare.protected_hosts_service_token_client_ids
+}
+
+output "protected_hosts_service_token_client_secrets" {
+  value     = module.cloudflare.protected_hosts_service_token_client_secrets
+  sensitive = true
+}
+
 output "registry_client_cert_pem" {
   description = "mTLS client certificate for registry.giomartins.dev — see modules/cloudflare/registry_mtls.tf."
   value       = module.cloudflare.registry_client_cert_pem

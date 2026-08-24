@@ -38,6 +38,24 @@ resource "cloudflare_zero_trust_access_policy" "service_token_gate" {
   ]
 }
 
+# OR'd alternative to the service token above -- lets a human log in
+# via Google SSO too (e.g. to poke the Docker API through a browser
+# tool), without touching the service token itself. Purely additive.
+resource "cloudflare_zero_trust_access_policy" "service_token_hosts_google_sso" {
+  for_each   = local.service_token_hostnames
+  account_id = var.account_id
+  name       = "google-sso-${each.key}"
+  decision   = "allow"
+
+  include = [
+    for email in var.allowed_emails : { email = { email = email } }
+  ]
+
+  require = [
+    { login_method = { id = var.google_idp_identity_provider_id } }
+  ]
+}
+
 resource "cloudflare_zero_trust_access_application" "service_token_gated" {
   for_each   = local.service_token_hostnames
   account_id = var.account_id
@@ -45,10 +63,16 @@ resource "cloudflare_zero_trust_access_application" "service_token_gated" {
   domain     = each.value
   type       = "self_hosted"
 
-  policies = [{
-    id         = cloudflare_zero_trust_access_policy.service_token_gate[each.key].id
-    precedence = 1
-  }]
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.service_token_gate[each.key].id
+      precedence = 1
+    },
+    {
+      id         = cloudflare_zero_trust_access_policy.service_token_hosts_google_sso[each.key].id
+      precedence = 2
+    },
+  ]
 }
 
 # Chains onto the root module's own flat->module moved.tf history for

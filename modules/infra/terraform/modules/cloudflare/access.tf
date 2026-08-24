@@ -21,6 +21,29 @@ resource "cloudflare_zero_trust_access_policy" "google_sso" {
   ]
 }
 
+# Every protected hostname also gets a dedicated service token as an
+# OR'd alternative to Google SSO -- a CI job or script can hit it with
+# CF-Access-Client-Id/Secret headers instead of a browser login. Purely
+# additive: the google_sso policy/its own resource above is untouched,
+# this only adds a second policy option to the application below.
+resource "cloudflare_zero_trust_access_service_token" "protected_hosts" {
+  for_each   = local.protected_hostnames
+  account_id = var.account_id
+  name       = "ci-${each.key}"
+  duration   = "8760h" # 1 year — rotate manually via client_secret_version
+}
+
+resource "cloudflare_zero_trust_access_policy" "protected_hosts_service_token" {
+  for_each   = local.protected_hostnames
+  account_id = var.account_id
+  name       = "service-token-${each.key}"
+  decision   = "non_identity" # service-to-service auth — no human login flow at all
+
+  include = [
+    { service_token = { token_id = cloudflare_zero_trust_access_service_token.protected_hosts[each.key].id } }
+  ]
+}
+
 resource "cloudflare_zero_trust_access_application" "protected" {
   for_each = local.protected_hostnames
 
@@ -30,8 +53,14 @@ resource "cloudflare_zero_trust_access_application" "protected" {
   type             = "self_hosted"
   session_duration = var.session_duration
 
-  policies = [{
-    id         = cloudflare_zero_trust_access_policy.google_sso[each.key].id
-    precedence = 1
-  }]
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.google_sso[each.key].id
+      precedence = 1
+    },
+    {
+      id         = cloudflare_zero_trust_access_policy.protected_hosts_service_token[each.key].id
+      precedence = 2
+    },
+  ]
 }
