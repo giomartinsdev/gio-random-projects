@@ -114,7 +114,8 @@ jobs:
         run: |
           REPLACE_ARGS=()
           if [ -n "$REPLACE_GROUP" ]; then
-            REPLACE_ARGS+=("-replace=null_resource.vault_seed[\"$REPLACE_GROUP\"]")
+            REPLACE_ADDR="null_resource.vault_seed[\"${REPLACE_GROUP}\"]"
+            REPLACE_ARGS+=("-replace=${REPLACE_ADDR}")
           fi
           terraform plan -input=false -lock-timeout=300s -out=tfplan "${REPLACE_ARGS[@]}"
 
