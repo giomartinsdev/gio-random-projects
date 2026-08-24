@@ -17,8 +17,13 @@
 }
 
 @layer components {
+  /* No backdrop-blur here on purpose: this card renders over the
+     constantly-animating BinaryRain background, and Chrome's
+     backdrop-filter compositing shows visible seam/tear artifacts on
+     blurred layers stacked above continuously-changing content. A
+     plain translucent fill avoids that entirely. */
   .glass-card {
-    @apply bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl;
+    @apply bg-buteco-cream/[0.06] border border-white/10 rounded-2xl;
   }
 
   .glow-amber {

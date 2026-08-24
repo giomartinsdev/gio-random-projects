@@ -16,9 +16,13 @@ export default function NavBar() {
   return (
     <header
       className={`sticky top-0 z-20 animate-fade-in-down transition-all duration-300 ${
+        // No backdrop-blur: it sits above the animated BinaryRain
+        // background and Chrome shows seam/tear artifacts on blurred
+        // layers stacked over continuously-changing content. A
+        // near-opaque fill gives the same "always readable" nav bar.
         scrolled
-          ? "bg-buteco-brown-dark/90 backdrop-blur-lg shadow-lg shadow-black/20 border-b border-buteco-amber/10"
-          : "bg-buteco-brown-dark/60 backdrop-blur border-b border-transparent"
+          ? "bg-buteco-brown-dark/95 shadow-lg shadow-black/20 border-b border-buteco-amber/10"
+          : "bg-buteco-brown-dark/80 border-b border-transparent"
       }`}
     >
       <nav className="max-w-4xl mx-auto flex items-center justify-between px-6 py-4">

@@ -32,11 +32,7 @@ export default function Home() {
       {posts?.length === 0 && <p className="text-buteco-cream/60">Ainda não tem nada publicado — seja o primeiro.</p>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 items-start">
-        {posts?.map((p, i) => (
-          <div key={p.id} className="animate-fade-in-up" style={{ animationDelay: `${120 + i * 60}ms` }}>
-            <PostCard post={p} />
-          </div>
-        ))}
+        {posts?.map((p, i) => <PostCard key={p.id} post={p} animationDelay={`${120 + i * 60}ms`} />)}
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { Link } from "react-router";
 import type { Post } from "../lib/api.js";
 
@@ -6,11 +7,18 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-export default function PostCard({ post }: { post: Post }) {
+// animationDelay is applied to this same rounded/clipped element rather
+// than an outer wrapper div -- nesting two independently-transformed
+// (entrance animation + hover translate) rounded/overflow-hidden layers
+// causes a visible hairline seam artifact in Chrome above/below the card.
+export default function PostCard({ post, animationDelay }: { post: Post; animationDelay?: string }) {
+  const style: CSSProperties | undefined = animationDelay ? { animationDelay } : undefined;
+
   return (
     <Link
       to={`/posts/${post.slug}`}
-      className="group glass-card overflow-hidden hover:bg-white/10 hover:border-buteco-amber/30 hover:-translate-y-0.5 transition-all"
+      style={style}
+      className="group glass-card overflow-hidden animate-fade-in-up hover:bg-white/10 hover:border-buteco-amber/30 hover:-translate-y-0.5 transition-all"
     >
       {post.coverImageUrl && (
         <div className="h-40 overflow-hidden">
