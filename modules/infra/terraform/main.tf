@@ -60,3 +60,12 @@ module "compute_monitoring" {
   network_name = module.compute_data.network_name
   agent_key    = var.beszel_agent_key
 }
+
+module "compute_vaultwarden" {
+  source = "./modules/compute/vaultwarden"
+  providers = {
+    docker = docker
+  }
+
+  admin_token = var.vaultwarden_admin_token
+}

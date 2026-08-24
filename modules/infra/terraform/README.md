@@ -117,6 +117,7 @@ by-hand) bootstrap run.
 | `TF_DOMAIN_API_KEYS` | domain-api container's `DOMAIN_API_KEYS` — `key:label` pairs |
 | `TF_REGISTRY_PASSWORD` | registry basic-auth password — must match `REGISTRY_PASSWORD` (used by `apps-deploy.yml`'s push step) and the host's `docker login registry.giomartins.dev` watchtower relies on — see `modules/compute/registry`'s README |
 | `TF_BESZEL_AGENT_KEY` | the Beszel hub's SSH public key — blank is fine until the hub's first boot; see `modules/compute/monitoring`'s README for how to get it |
+| `TF_VAULTWARDEN_ADMIN_TOKEN` | token gating `vault.giomartins.dev/admin` — generate: `openssl rand -base64 48`; see `modules/compute/vaultwarden`'s README |
 
 Once these are set, `.github/workflows/tf-deploy.yml` plans on every PR
 touching this directory, and applies on push to `main` — including a

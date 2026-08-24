@@ -115,3 +115,11 @@ variable "beszel_agent_key" {
   default     = ""
   sensitive   = true
 }
+
+# --- compute/vaultwarden ---
+
+variable "vaultwarden_admin_token" {
+  description = "Token gating vault.giomartins.dev/admin. Generate: openssl rand -base64 48."
+  type        = string
+  sensitive   = true
+}

@@ -30,5 +30,13 @@ locals {
       hostname = "beszel.giomartins.dev"
       service  = "http://localhost:8090"
     },
+    {
+      # Vaultwarden's own web vault GUI — same Google-SSO Access outer
+      # layer as beszel above (not in excluded_hostnames), Vaultwarden's
+      # own master-password login is the inner one. Port must match
+      # module.compute_vaultwarden's published_port.
+      hostname = "vault.giomartins.dev"
+      service  = "http://localhost:8222"
+    },
   ]
 }
