@@ -1,6 +1,6 @@
 # front
 
-React SPA for the Buteco dos Devs blog — login, home feed of recent
+React SPA for the Sala de aula do Buteco blog — login, home feed of recent
 posts, a profile page, and reading/writing individual posts. Talks
 directly to `post-api` from the browser (no server-side rendering, no
 backend-for-frontend of its own).

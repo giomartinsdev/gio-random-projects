@@ -23,7 +23,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
       <footer className="border-t border-white/5 mt-10">
         <div className="max-w-4xl mx-auto px-6 py-8 text-center text-buteco-cream/40 text-sm font-mono">
-          feito com <span className="text-buteco-amber">♥</span> pela comunidade Buteco dos Devs
+          feito com <span className="text-buteco-amber">♥</span> pela Sala de aula do Buteco
         </div>
       </footer>
     </div>

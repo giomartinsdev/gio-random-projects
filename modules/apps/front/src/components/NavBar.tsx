@@ -28,7 +28,7 @@ export default function NavBar() {
       <nav className="max-w-4xl mx-auto flex items-center justify-between px-6 py-4">
         <Link to="/" className="flex items-center gap-2 font-heading font-bold text-xl text-buteco-amber">
           <span aria-hidden="true">🍺</span>
-          Buteco dos Devs
+          Sala de aula do Buteco
         </Link>
         <div className="flex items-center gap-5 font-heading text-sm font-medium">
           <Link to="/" className="text-buteco-cream/70 hover:text-buteco-amber transition-colors">

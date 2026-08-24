@@ -39,7 +39,7 @@ export default function Login() {
           <h1 className="font-heading font-bold text-3xl mt-3 mb-1 text-gradient">
             {mode === "signin" ? "Bem-vindo de volta" : "Criar conta"}
           </h1>
-          <p className="text-buteco-cream/60 text-sm">Buteco dos Devs — blog da comunidade</p>
+          <p className="text-buteco-cream/60 text-sm">Sala de aula do Buteco — blog da comunidade</p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
