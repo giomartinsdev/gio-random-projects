@@ -76,8 +76,23 @@ upsert_item "TF_VAULTWARDEN_BRIDGE_API_KEY" "$TF_VAULTWARDEN_BRIDGE_API_KEY_VALU
 INNER
 )
 
-docker run --rm --network "$NETWORK_NAME" \
+# -d (detach) + wait + logs, not a plain foreground `docker run --rm`:
+# an attached run hijacks the connection into a raw stream to relay
+# stdio, and that hijack doesn't survive the CI Access proxy/tunnel hop
+# (fails with "unable to upgrade to tcp, received 200"). `wait` and
+# non-follow `logs` are plain request/response calls, same as the
+# container create/start calls that already work through this proxy.
+CID=$(docker run -d --network "$NETWORK_NAME" \
   -e VAULTWARDEN_CLIENT_ID -e VAULTWARDEN_CLIENT_SECRET -e VAULTWARDEN_MASTER_PASSWORD \
   -e DATABASE_URL_VALUE -e DOMAIN_API_KEYS_VALUE \
   -e TF_VAULTWARDEN_ADMIN_TOKEN_VALUE -e TF_VAULTWARDEN_BRIDGE_API_KEY_VALUE \
-  node:20-alpine sh -c "$SCRIPT"
+  node:20-alpine sh -c "$SCRIPT")
+
+EXIT_CODE=$(docker wait "$CID")
+docker logs "$CID"
+docker rm "$CID" >/dev/null
+
+if [ "$EXIT_CODE" != "0" ]; then
+  echo "vault seed container exited $EXIT_CODE" >&2
+  exit 1
+fi

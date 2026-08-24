@@ -55,9 +55,19 @@ resource "null_resource" "postgres_password_sync" {
       PG_USER         = module.compute_data.postgres_user
       PG_NEW_PASSWORD = random_password.postgres.result
     }
+    # -d (detach): a non-detached `docker exec` always hijacks the
+    # connection into a raw stream to relay stdio, even without -it --
+    # and that hijack doesn't survive the CI Access proxy/tunnel hop
+    # (fails with "unable to upgrade to tcp, received 200"). Detached
+    # exec skips that entirely: plain request/response, same as the
+    # container create/start calls that already work through this
+    # proxy. Trade-off: no exit status back, hence the fixed sleep
+    # margin before anything depends on this having finished --
+    # ALTER USER is a fast in-memory catalog update.
     command = <<-EOT
-      docker exec postgres psql -U "$PG_USER" -d "$PG_USER" \
+      docker exec -d postgres psql -U "$PG_USER" -d "$PG_USER" \
         -c "ALTER USER \"$PG_USER\" WITH PASSWORD '$PG_NEW_PASSWORD';"
+      sleep 3
     EOT
   }
 
