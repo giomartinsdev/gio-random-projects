@@ -77,6 +77,11 @@ jobs:
                   # Plain docker_container CRUD never needed this.
                   proxy_set_header Upgrade $http_upgrade;
                   proxy_set_header Connection "upgrade";
+                  # nginx's 60s default read timeout kills long-polling
+                  # calls like `docker wait` before a slow container
+                  # (e.g. one doing npm install) finishes, with a 504.
+                  proxy_read_timeout 300s;
+                  proxy_send_timeout 300s;
               }
           }
           EOF

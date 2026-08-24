@@ -14,7 +14,7 @@ set -eu
 
 SCRIPT=$(cat <<'INNER'
 set -eu
-apk add --no-cache openssl >/dev/null
+apk add --no-cache openssl jq >/dev/null
 npm install -g @bitwarden/cli >/dev/null 2>&1
 
 cat > /tmp/proxy.js <<'JS'
