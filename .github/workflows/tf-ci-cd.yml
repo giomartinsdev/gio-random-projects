@@ -22,8 +22,8 @@ on:
       - "modules/infra/terraform/**"
   workflow_dispatch:
     inputs:
-      replace_target:
-        description: "Optional: -replace=<resource address> to force one resource to rerun (e.g. a vault_seed group after a lost concurrent write -- see incident notes in secrets.tf's vault_item_groups comment)"
+      replace_vault_seed_group:
+        description: "Optional: secrets.tf vault_item_groups key to force-rerun (e.g. domain_api_keys, after a lost concurrent write -- see incident notes on that local). The quoted null_resource.vault_seed[\"...\"] address is built from this, not typed directly -- GitHub's dispatch-input plumbing strips embedded quotes before Terraform ever sees them."
         required: false
 
 defaults:
@@ -109,10 +109,12 @@ jobs:
         run: terraform validate
 
       - name: Plan
+        env:
+          REPLACE_GROUP: ${{ github.event.inputs.replace_vault_seed_group }}
         run: |
           REPLACE_ARGS=()
-          if [ -n "${{ github.event.inputs.replace_target }}" ]; then
-            REPLACE_ARGS+=("-replace=${{ github.event.inputs.replace_target }}")
+          if [ -n "$REPLACE_GROUP" ]; then
+            REPLACE_ARGS+=("-replace=null_resource.vault_seed[\"$REPLACE_GROUP\"]")
           fi
           terraform plan -input=false -lock-timeout=300s -out=tfplan "${REPLACE_ARGS[@]}"
 
