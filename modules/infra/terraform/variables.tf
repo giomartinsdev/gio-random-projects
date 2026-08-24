@@ -67,19 +67,8 @@ variable "docker_host" {
 }
 
 # --- compute/data + compute/app ---
-
-variable "postgres_password" {
-  description = "Password for the domain Postgres user, shared by compute/data and compute/app. Generate: openssl rand -base64 24"
-  type        = string
-  sensitive   = true
-}
-
-variable "domain_api_keys" {
-  description = "DOMAIN_API_KEYS value for the api container — comma-separated key:label pairs."
-  type        = string
-  sensitive   = true
-}
-
+# postgres_password and domain_api_keys are Terraform-generated now —
+# see secrets.tf — not inputs anymore.
 
 # --- compute/registry ---
 
@@ -118,16 +107,15 @@ variable "beszel_agent_key" {
 }
 
 # --- compute/vaultwarden ---
-
-variable "vaultwarden_admin_token" {
-  description = "Token gating vault.giomartins.dev/admin. Generate: openssl rand -base64 48."
-  type        = string
-  sensitive   = true
-}
+# vaultwarden_admin_token is Terraform-generated now — see secrets.tf.
 
 # --- compute/vaultwarden_bridge ---
 # See that module's own README for the required setup order (real
-# Vaultwarden account first, then an API key, then these).
+# Vaultwarden account first, then an API key, then these). Only the
+# four "secret zero" credentials below stay as real inputs —
+# vaultwarden_bridge_api_key is Terraform-generated now (secrets.tf);
+# module.compute_vaultwarden_bridge's create/skip guard switched from
+# checking that to checking vaultwarden_account_email instead.
 
 variable "vaultwarden_account_email" {
   description = "Email of the real Vaultwarden account modules/compute/vaultwarden_bridge logs in as."
@@ -157,9 +145,3 @@ variable "vaultwarden_api_client_secret" {
   sensitive   = true
 }
 
-variable "vaultwarden_bridge_api_key" {
-  description = "Bearer token domain-api/domain-worker use to call the bridge. Empty (default) means the bridge module doesn't get created at all -- see modules/compute/vaultwarden_bridge's README. Generate: openssl rand -base64 32."
-  type        = string
-  default     = ""
-  sensitive   = true
-}

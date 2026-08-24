@@ -33,23 +33,21 @@ else.
 2. In the vault, go to Account Settings → Security → Keys, view/rotate
    your API key to get a `client_id` and `client_secret`.
 3. Set `TF_VAULTWARDEN_ACCOUNT_EMAIL`, `TF_VAULTWARDEN_ACCOUNT_PASSWORD`,
-   `TF_VAULTWARDEN_API_CLIENT_ID`, `TF_VAULTWARDEN_API_CLIENT_SECRET`,
-   and `TF_VAULTWARDEN_BRIDGE_API_KEY` (generate: `openssl rand -base64
-   32`) as GH repo secrets — see the root README's secrets table.
-4. In the vault, create one item per secret `domain-api`/
-   `domain-worker` need, named exactly what the app looks up (e.g. an
-   item named `DATABASE_URL` with that connection string in its
-   password field, one named `DOMAIN_API_KEYS` the same way). The
-   bridge matches by item name, case-insensitive.
-5. `terraform apply`.
+   `TF_VAULTWARDEN_API_CLIENT_ID`, and `TF_VAULTWARDEN_API_CLIENT_SECRET`
+   as GH repo secrets — see the root README's secrets table. (The
+   bridge's own `bridge_api_key`, and the `DATABASE_URL`/
+   `DOMAIN_API_KEYS` items themselves, are Terraform-generated and
+   -seeded now — see `../../secrets.tf` and `scripts/seed_vault.sh` —
+   nothing left to create by hand.)
+4. `terraform apply`.
 
-## A real caveat: two copies of the Postgres password
+## Keeping the Postgres password and the vault's copy in sync
 
-Terraform still sets Postgres's actual password directly
-(`var.postgres_password`, via `module.compute_data`) — it has to,
-since Terraform is what creates that user. The vault's own
-`DATABASE_URL` item is a second, independent copy of that same
-password, and nothing keeps them in sync automatically. Rotating
-`postgres_password` means updating the vault item to match by hand, or
-`domain-api`/`domain-worker` will fail to connect with a stale
-password until you do.
+`../../secrets.tf` generates `postgres_password` with Terraform itself
+now (`random_password.postgres`) instead of taking it as an input, and
+two `null_resource`s keep everything in sync on every apply that
+changes it: one runs `ALTER USER` directly against the live Postgres
+(the env var alone only takes effect on a fresh, empty data volume),
+the other (`scripts/seed_vault.sh`) pushes the matching `DATABASE_URL`
+item into this vault over the internal docker network. Both only fire
+when the generated password actually changes.

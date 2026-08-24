@@ -21,7 +21,7 @@ module "compute_data" {
     docker = docker
   }
 
-  postgres_password = var.postgres_password
+  postgres_password = random_password.postgres.result
 }
 
 module "compute_app" {
@@ -33,12 +33,18 @@ module "compute_app" {
   network_name           = module.compute_data.network_name
   postgres_host          = module.compute_data.postgres_host
   postgres_user          = module.compute_data.postgres_user
-  postgres_password      = var.postgres_password
+  postgres_password      = random_password.postgres.result
   redis_host             = module.compute_data.redis_host
   registry_host          = var.registry_host
-  domain_api_keys        = var.domain_api_keys
+  domain_api_keys        = local.domain_api_keys
   secrets_bridge_url     = length(module.compute_vaultwarden_bridge) > 0 ? module.compute_vaultwarden_bridge[0].internal_url : ""
-  secrets_bridge_api_key = var.vaultwarden_bridge_api_key
+  secrets_bridge_api_key = random_password.vaultwarden_bridge_api_key.result
+
+  # Without this, nothing guarantees ALTER USER (null_resource.
+  # postgres_password_sync, secrets.tf) finishes before these
+  # containers restart with the new DATABASE_URL — they could come up
+  # with a password the live DB doesn't have yet.
+  depends_on = [null_resource.postgres_password_sync]
 }
 
 module "compute_registry" {
@@ -69,7 +75,7 @@ module "compute_vaultwarden" {
     docker = docker
   }
 
-  admin_token  = var.vaultwarden_admin_token
+  admin_token  = random_password.vaultwarden_admin_token.result
   network_name = module.compute_data.network_name
 }
 
@@ -80,7 +86,7 @@ module "compute_vaultwarden" {
 # vault.giomartins.dev's signup form. See
 # modules/compute/vaultwarden_bridge's README for the full sequence.
 module "compute_vaultwarden_bridge" {
-  count  = var.vaultwarden_bridge_api_key == "" ? 0 : 1
+  count  = var.vaultwarden_account_email == "" ? 0 : 1
   source = "./modules/compute/vaultwarden_bridge"
   providers = {
     docker = docker
@@ -91,7 +97,7 @@ module "compute_vaultwarden_bridge" {
   vaultwarden_account_master_password = var.vaultwarden_account_master_password
   vaultwarden_api_client_id           = var.vaultwarden_api_client_id
   vaultwarden_api_client_secret       = var.vaultwarden_api_client_secret
-  bridge_api_key                      = var.vaultwarden_bridge_api_key
+  bridge_api_key                      = random_password.vaultwarden_bridge_api_key.result
 
   depends_on = [module.compute_vaultwarden]
 }
