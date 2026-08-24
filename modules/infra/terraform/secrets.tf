@@ -112,24 +112,93 @@ resource "null_resource" "registry_restart" {
   depends_on = [module.compute_registry]
 }
 
-# Pushes DATABASE_URL/DOMAIN_API_KEYS/the two Vaultwarden tokens into
-# the vault over the internal docker network -- see scripts/seed_vault.sh
-# for why that still needs a local HTTPS-terminating proxy despite
-# being purely internal traffic. Only reruns when one of the values it
-# writes actually changes.
+# One group per logically-independent value (or tightly-coupled pair,
+# like a service token's id+secret) -- each becomes its OWN
+# null_resource below via for_each, with its OWN narrow trigger.
+# Previously this was a single null_resource with every value in one
+# combined trigger map: any ONE secret changing replaced the whole
+# resource and resent all ~15 items through seed_vault.sh, even the
+# ~14 that hadn't changed. Now only the group whose value actually
+# changed reruns.
+locals {
+  vault_item_groups = {
+    database_url = {
+      trigger = random_password.postgres.result
+      items = {
+        DATABASE_URL = "postgresql://${module.compute_data.postgres_user}:${random_password.postgres.result}@${module.compute_data.postgres_host}:5432/${module.compute_data.postgres_user}"
+      }
+    }
+    domain_api_keys = {
+      trigger = local.domain_api_keys
+      items   = { DOMAIN_API_KEYS = local.domain_api_keys }
+    }
+    post_api_domain_key = {
+      trigger = random_id.post_api_domain_key.hex
+      items   = { POST_API_DOMAIN_KEY = random_id.post_api_domain_key.hex }
+    }
+    post_api_better_auth_secret = {
+      trigger = random_password.post_api_better_auth_secret.result
+      items   = { POST_API_BETTER_AUTH_SECRET = random_password.post_api_better_auth_secret.result }
+    }
+    vaultwarden_admin_token = {
+      trigger = random_password.vaultwarden_admin_token.result
+      items   = { TF_VAULTWARDEN_ADMIN_TOKEN = random_password.vaultwarden_admin_token.result }
+    }
+    vaultwarden_bridge_api_key = {
+      trigger = random_password.vaultwarden_bridge_api_key.result
+      items   = { TF_VAULTWARDEN_BRIDGE_API_KEY = random_password.vaultwarden_bridge_api_key.result }
+    }
+    # Grouped (not 4 separate resources): these four all describe the
+    # same "how do I authenticate to the registry" concern and, in
+    # practice, rotate together.
+    registry = {
+      trigger = "${var.registry_password}|${module.cloudflare.registry_client_cert_pem}"
+      items = {
+        REGISTRY_PASSWORD    = var.registry_password
+        REGISTRY_USERNAME    = var.registry_user
+        REGISTRY_CLIENT_CERT = module.cloudflare.registry_client_cert_pem
+        REGISTRY_CLIENT_KEY  = module.cloudflare.registry_client_key_pem
+      }
+    }
+    # Each service token's id+secret are two attributes of the same
+    # underlying resource -- they only ever change together, so one
+    # group per hostname, not one per attribute.
+    access_svc_token_docker = {
+      trigger = module.cloudflare.service_token_client_ids["docker"]
+      items = {
+        ACCESS_SVC_TOKEN_DOCKER_CLIENT_ID     = module.cloudflare.service_token_client_ids["docker"]
+        ACCESS_SVC_TOKEN_DOCKER_CLIENT_SECRET = module.cloudflare.service_token_client_secrets["docker"]
+      }
+    }
+    access_svc_token_domain = {
+      trigger = module.cloudflare.service_token_client_ids["domain"]
+      items = {
+        ACCESS_SVC_TOKEN_DOMAIN_CLIENT_ID     = module.cloudflare.service_token_client_ids["domain"]
+        ACCESS_SVC_TOKEN_DOMAIN_CLIENT_SECRET = module.cloudflare.service_token_client_secrets["domain"]
+      }
+    }
+    access_svc_token_vault = {
+      trigger = module.cloudflare.protected_hosts_service_token_client_ids["vault.giomartins.dev"]
+      items = {
+        ACCESS_SVC_TOKEN_VAULT_CLIENT_ID     = module.cloudflare.protected_hosts_service_token_client_ids["vault.giomartins.dev"]
+        ACCESS_SVC_TOKEN_VAULT_CLIENT_SECRET = module.cloudflare.protected_hosts_service_token_client_secrets["vault.giomartins.dev"]
+      }
+    }
+    access_svc_token_beszel = {
+      trigger = module.cloudflare.protected_hosts_service_token_client_ids["beszel.giomartins.dev"]
+      items = {
+        ACCESS_SVC_TOKEN_BESZEL_CLIENT_ID     = module.cloudflare.protected_hosts_service_token_client_ids["beszel.giomartins.dev"]
+        ACCESS_SVC_TOKEN_BESZEL_CLIENT_SECRET = module.cloudflare.protected_hosts_service_token_client_secrets["beszel.giomartins.dev"]
+      }
+    }
+  }
+}
+
 resource "null_resource" "vault_seed" {
+  for_each = local.vault_item_groups
+
   triggers = {
-    postgres_password    = random_password.postgres.result
-    domain_api_keys      = local.domain_api_keys
-    admin_token          = random_password.vaultwarden_admin_token.result
-    bridge_api_key       = random_password.vaultwarden_bridge_api_key.result
-    registry_password    = var.registry_password
-    registry_client_cert = module.cloudflare.registry_client_cert_pem
-    docker_svc_token     = module.cloudflare.service_token_client_ids["docker"]
-    domain_svc_token     = module.cloudflare.service_token_client_ids["domain"]
-    vault_svc_token      = module.cloudflare.protected_hosts_service_token_client_ids["vault.giomartins.dev"]
-    beszel_svc_token     = module.cloudflare.protected_hosts_service_token_client_ids["beszel.giomartins.dev"]
-    post_api_auth_secret = random_password.post_api_better_auth_secret.result
+    value = each.value.trigger
   }
 
   provisioner "local-exec" {
@@ -140,26 +209,7 @@ resource "null_resource" "vault_seed" {
       VAULTWARDEN_CLIENT_SECRET   = var.vaultwarden_api_client_secret
       VAULTWARDEN_MASTER_PASSWORD = var.vaultwarden_account_master_password
       ITEMS_B64 = base64encode(join("\n", [
-        for pair in [
-          ["DATABASE_URL", "postgresql://${module.compute_data.postgres_user}:${random_password.postgres.result}@${module.compute_data.postgres_host}:5432/${module.compute_data.postgres_user}"],
-          ["DOMAIN_API_KEYS", local.domain_api_keys],
-          ["POST_API_DOMAIN_KEY", random_id.post_api_domain_key.hex],
-          ["POST_API_BETTER_AUTH_SECRET", random_password.post_api_better_auth_secret.result],
-          ["TF_VAULTWARDEN_ADMIN_TOKEN", random_password.vaultwarden_admin_token.result],
-          ["TF_VAULTWARDEN_BRIDGE_API_KEY", random_password.vaultwarden_bridge_api_key.result],
-          ["REGISTRY_PASSWORD", var.registry_password],
-          ["REGISTRY_USERNAME", var.registry_user],
-          ["REGISTRY_CLIENT_CERT", module.cloudflare.registry_client_cert_pem],
-          ["REGISTRY_CLIENT_KEY", module.cloudflare.registry_client_key_pem],
-          ["ACCESS_SVC_TOKEN_DOCKER_CLIENT_ID", module.cloudflare.service_token_client_ids["docker"]],
-          ["ACCESS_SVC_TOKEN_DOCKER_CLIENT_SECRET", module.cloudflare.service_token_client_secrets["docker"]],
-          ["ACCESS_SVC_TOKEN_DOMAIN_CLIENT_ID", module.cloudflare.service_token_client_ids["domain"]],
-          ["ACCESS_SVC_TOKEN_DOMAIN_CLIENT_SECRET", module.cloudflare.service_token_client_secrets["domain"]],
-          ["ACCESS_SVC_TOKEN_VAULT_CLIENT_ID", module.cloudflare.protected_hosts_service_token_client_ids["vault.giomartins.dev"]],
-          ["ACCESS_SVC_TOKEN_VAULT_CLIENT_SECRET", module.cloudflare.protected_hosts_service_token_client_secrets["vault.giomartins.dev"]],
-          ["ACCESS_SVC_TOKEN_BESZEL_CLIENT_ID", module.cloudflare.protected_hosts_service_token_client_ids["beszel.giomartins.dev"]],
-          ["ACCESS_SVC_TOKEN_BESZEL_CLIENT_SECRET", module.cloudflare.protected_hosts_service_token_client_secrets["beszel.giomartins.dev"]],
-        ] : "${pair[0]}\t${base64encode(pair[1])}"
+        for name, value in each.value.items : "${name}\t${base64encode(value)}"
       ]))
     }
     command = "${path.module}/scripts/seed_vault.sh"
