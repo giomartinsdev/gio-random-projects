@@ -44,6 +44,7 @@ variable "excluded_hostnames" {
     "domain.giomartins.dev",   # REST API clients — own X-API-Key auth + a service-token Access application (modules/cloudflare/service_token_access.tf)
     "docker.giomartins.dev",   # this config's own docker provider — a service-token Access application (modules/cloudflare/service_token_access.tf)
     "post-api.giomartins.dev", # own Better Auth — a browser SSO redirect would break API/bot clients, same reasoning as domain.giomartins.dev
+    "blog.giomartins.dev",     # meant to be publicly readable by anyone, not gated behind Google SSO
   ]
 }
 

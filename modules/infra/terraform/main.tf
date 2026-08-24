@@ -67,6 +67,16 @@ module "compute_post_api" {
   depends_on = [null_resource.postgres_password_sync, module.compute_app]
 }
 
+module "compute_front" {
+  source = "./modules/compute/front"
+  providers = {
+    docker = docker
+  }
+
+  network_name  = module.compute_data.network_name
+  registry_host = var.registry_host
+}
+
 module "compute_registry" {
   source = "./modules/compute/registry"
   providers = {

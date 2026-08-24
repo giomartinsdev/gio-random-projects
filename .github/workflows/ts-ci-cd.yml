@@ -115,6 +115,12 @@ jobs:
           tags: |
             registry.giomartins.dev/${{ matrix.app }}:latest
             registry.giomartins.dev/${{ matrix.app }}:${{ github.sha }}
+          # Vite bakes VITE_* env vars into the static bundle at build
+          # time, not read at runtime -- only front needs this;
+          # unrecognized build-args are harmless no-ops for any other
+          # app's Dockerfile.
+          build-args: |
+            VITE_POST_API_URL=https://post-api.giomartins.dev
 
   deploy:
     needs: [discover, build-and-push]
@@ -210,6 +216,7 @@ jobs:
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
             case "$app" in
               post-api) REPLACE_ARGS+=("-replace=module.compute_post_api.docker_container.post_api") ;;
+              front) REPLACE_ARGS+=("-replace=module.compute_front.docker_container.front") ;;
             esac
           done
           terraform apply -input=false -lock-timeout=300s -auto-approve "${REPLACE_ARGS[@]}"

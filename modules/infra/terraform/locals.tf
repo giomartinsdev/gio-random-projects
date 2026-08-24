@@ -47,5 +47,14 @@ locals {
       hostname = "post-api.giomartins.dev"
       service  = "http://localhost:8002"
     },
+    {
+      # The blog itself -- meant to be publicly readable by anyone,
+      # not just the Google-SSO-allowed emails. In excluded_hostnames
+      # for that reason (Access would otherwise gate the whole site
+      # behind a login only giomartinsdev's own account can pass).
+      # Port must match module.compute_front's external_port.
+      hostname = "blog.giomartins.dev"
+      service  = "http://localhost:8003"
+    },
   ]
 }
