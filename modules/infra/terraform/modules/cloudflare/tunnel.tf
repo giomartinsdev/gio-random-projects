@@ -44,10 +44,27 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "homelab" {
           # https://github.com/henrygd/beszel/issues/878 and the
           # linked https://github.com/pocketbase/pocketbase/discussions/6663.
           # Confirmed live: this alone fixes Beszel's login without
-          # beszel-proxy in the path at all. Applies to every hostname,
-          # not just beszel.giomartins.dev — the same root cause
-          # affects any of them proxying to a local origin.
-          disable_chunked_encoding = true
+          # beszel-proxy in the path at all. Applies to every hostname
+          # except registry.giomartins.dev (excluded below) — the same
+          # root cause affects any of them proxying to a local origin.
+          #
+          # registry.giomartins.dev is the one exception: docker push
+          # sends its blob-commit PUT with a genuine
+          # Transfer-Encoding: chunked body (unlike the bodyless calls
+          # this setting was built for), and disable_chunked_encoding
+          # works by having cloudflared buffer that body to compute a
+          # real Content-Length before forwarding. Confirmed live: the
+          # registry's own logs showed every single blob PUT failing
+          # digest validation — "content does not match digest" — for
+          # every layer, every retry, each a brand-new upload session
+          # (never a resumed/corrupted one), while the identical
+          # request replayed by hand with curl (which always sends a
+          # real Content-Length, never chunked) succeeded every time —
+          # isolating the corruption to cloudflared's chunked-body
+          # buffering itself, not the mTLS cert, the registry, or
+          # anything else in the path. Leaving chunked encoding alone
+          # for this one hostname avoids that buffering entirely.
+          disable_chunked_encoding = r.hostname == "registry.giomartins.dev" ? false : true
         }
       }],
       [{ service = "http_status:404" }], # catch-all — must be last
