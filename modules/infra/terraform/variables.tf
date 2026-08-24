@@ -87,11 +87,15 @@ variable "registry_user" {
 variable "registry_password" {
   description = <<-EOT
     Basic-auth password for the registry. Generate: openssl rand -base64 24.
-    Must match the REGISTRY_PASSWORD used for `docker login
-    registry.giomartins.dev` on the host (watchtower's pulls depend on
-    that login, not on this variable directly) and the REGISTRY_PASSWORD
-    secret apps-deploy.yml's push step uses — see
-    modules/compute/registry's README.
+    Stays a real input (not Terraform-generated like the other secrets
+    in secrets.tf) because the root docker provider (versions.tf) also
+    needs it for registry_auth, and provider config can't depend on a
+    resource value computed in the same apply. Everything else about
+    it IS automated now — see modules/compute/registry's README and
+    this config's secrets.tf (docker_config_install/registry_restart/
+    vault_seed). apps-deploy.yml's own REGISTRY_PASSWORD GH secret (for
+    its push step) is the one thing still synced by hand after a
+    rotation.
   EOT
   type        = string
   sensitive   = true

@@ -7,12 +7,15 @@
 # needs its own copy (the bridge re-serves these to domain-api/worker
 # at runtime instead of the container's own baked-in env vars).
 #
-# registry_password and beszel_agent_key are deliberately NOT included
-# here: registry_password also has to match the REGISTRY_PASSWORD GH
-# secret apps-deploy.yml's push step uses, so generating it here would
-# silently break that workflow until someone updates the GH secret to
-# match; beszel_agent_key comes from Beszel's own dashboard, not
-# something Terraform can generate.
+# registry_password and beszel_agent_key are NOT generated here.
+# beszel_agent_key comes from Beszel's own dashboard. registry_password
+# stays a real input (var.registry_password) because the root docker
+# provider block (versions.tf) also needs it for registry_auth, and a
+# provider configuration can't depend on a resource's value computed in
+# the same apply (would be unknown on the very first transition apply).
+# It still gets the same automation as everything else here though --
+# see modules/compute/registry's docker_config_install and this file's
+# registry_restart/vault_seed below -- generation is just still manual.
 
 resource "random_password" "postgres" {
   length  = 32
@@ -74,6 +77,28 @@ resource "null_resource" "postgres_password_sync" {
   depends_on = [module.compute_data]
 }
 
+# Changing registry_password recreates htpasswd_init and
+# docker_config_install (both reference it directly), but neither
+# `registry` nor `watchtower` reference the password themselves, so
+# nothing forces them to pick up the rewritten htpasswd/config.json
+# files on their own -- see modules/compute/registry's README. A plain
+# `docker restart` (not exec/attach) is enough; both just re-read their
+# mounted files on startup.
+resource "null_resource" "registry_restart" {
+  triggers = {
+    password = var.registry_password
+  }
+
+  provisioner "local-exec" {
+    environment = {
+      DOCKER_HOST = var.docker_host
+    }
+    command = "docker restart registry watchtower"
+  }
+
+  depends_on = [module.compute_registry]
+}
+
 # Pushes DATABASE_URL/DOMAIN_API_KEYS/the two Vaultwarden tokens into
 # the vault over the internal docker network -- see scripts/seed_vault.sh
 # for why that still needs a local HTTPS-terminating proxy despite
@@ -85,6 +110,7 @@ resource "null_resource" "vault_seed" {
     domain_api_keys    = local.domain_api_keys
     admin_token        = random_password.vaultwarden_admin_token.result
     bridge_api_key     = random_password.vaultwarden_bridge_api_key.result
+    registry_password  = var.registry_password
   }
 
   provisioner "local-exec" {
@@ -98,9 +124,10 @@ resource "null_resource" "vault_seed" {
       DOMAIN_API_KEYS_VALUE               = local.domain_api_keys
       TF_VAULTWARDEN_ADMIN_TOKEN_VALUE    = random_password.vaultwarden_admin_token.result
       TF_VAULTWARDEN_BRIDGE_API_KEY_VALUE = random_password.vaultwarden_bridge_api_key.result
+      REGISTRY_PASSWORD_VALUE             = var.registry_password
     }
     command = "${path.module}/scripts/seed_vault.sh"
   }
 
-  depends_on = [module.compute_vaultwarden, module.compute_data, null_resource.postgres_password_sync]
+  depends_on = [module.compute_vaultwarden, module.compute_data, null_resource.postgres_password_sync, null_resource.registry_restart]
 }

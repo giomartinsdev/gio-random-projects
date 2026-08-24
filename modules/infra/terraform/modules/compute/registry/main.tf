@@ -53,6 +53,36 @@ resource "docker_container" "htpasswd_init" {
   }
 }
 
+# Writes gio-server's own `docker login registry.giomartins.dev`
+# credentials file -- watchtower's pulls (and any docker_container
+# resource here, if ever recreated) need this, and it used to be a
+# manual `docker login` run by hand on the host. Same bind-mount
+# one-shot pattern as registry_client_cert_install below. Whole-file
+# overwrite is safe here: this host has never logged into any registry
+# other than this one.
+resource "docker_container" "docker_config_install" {
+  name       = "registry-docker-config-install"
+  image      = "alpine:3"
+  entrypoint = ["sh", "-c"]
+  command = [
+    "mkdir -p /dockerconfig && printf '{\"auths\":{\"registry.giomartins.dev\":{\"auth\":\"%s\"}}}' \"$REGISTRY_AUTH_B64\" > /dockerconfig/config.json"
+  ]
+  must_run = false
+  attach   = true
+
+  env = [
+    "REGISTRY_AUTH_B64=${base64encode("${var.registry_user}:${var.registry_password}")}",
+  ]
+
+  mounts {
+    type   = "bind"
+    source = "/root/.docker"
+    target = "/dockerconfig"
+  }
+
+  depends_on = [docker_container.htpasswd_init]
+}
+
 resource "docker_container" "registry" {
   name    = "registry"
   image   = "registry:${var.registry_version}"
