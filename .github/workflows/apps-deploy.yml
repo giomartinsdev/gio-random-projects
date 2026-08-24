@@ -186,15 +186,29 @@ jobs:
       - name: Init
         run: terraform init -backend-config="endpoints={s3=\"${{ secrets.TF_STATE_R2_ENDPOINT }}\"}"
 
+      # -replace below forces Terraform to destroy+recreate the
+      # container, but that alone does NOT guarantee a fresh image:
+      # dockerd only pulls on create if the tag is missing from its
+      # local cache, and gio-server almost always already has SOME
+      # image cached under registry.giomartins.dev/<app>:latest from
+      # an earlier deploy. Confirmed live: a -replace-only apply
+      # silently redeployed a stale, previously-cached build instead
+      # of what build-and-push had just pushed. An explicit pull
+      # against the remote daemon first, using its own already-
+      # configured registry credentials (mTLS cert +
+      # `docker login`-populated config.json — see
+      # modules/compute/registry's README), is what actually
+      # guarantees this.
+      - name: Pull the image(s) just pushed onto gio-server's own dockerd
+        env:
+          DOCKER_HOST: tcp://localhost:2475
+        run: |
+          for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
+            docker pull "registry.giomartins.dev/${app}:latest"
+          done
+
       - name: Deploy the image(s) just pushed
         run: |
-          # -replace forces Terraform to destroy+recreate that specific
-          # resource unconditionally, re-pulling whatever now sits at
-          # :latest -- not a -var override on the image tag itself,
-          # which would've meant any OTHER apply without that same
-          # override (every routine tf-deploy.yml run) reverting the
-          # tag straight back to a default and redeploying again on its
-          # own. See modules/compute/app/main.tf's own comment.
           REPLACE_ARGS=()
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
             case "$app" in
