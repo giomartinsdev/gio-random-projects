@@ -4,13 +4,18 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { bookclubApi, type Room } from "../lib/bookclubApi.js";
-import { useRoomSocket, type Stroke } from "../lib/useRoomSocket.js";
+import { useRoomSocket, type Stroke, type TextAnnotation } from "../lib/useRoomSocket.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
 const CURSOR_THROTTLE_MS = 60;
 const PEN_COLOR = "#F5A623";
 const MAX_PAGE_WIDTH = 800;
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 2.5;
+const ZOOM_STEP = 0.25;
+
+type Tool = "select" | "laser" | "pen" | "text";
 
 export default function BookClubRoom() {
   const { id } = useParams<{ id: string }>();
@@ -18,17 +23,25 @@ export default function BookClubRoom() {
   const [pdfData, setPdfData] = useState<ArrayBuffer | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [chatDraft, setChatDraft] = useState("");
-  const [pageWidth, setPageWidth] = useState(MAX_PAGE_WIDTH);
+  const [baseWidth, setBaseWidth] = useState(MAX_PAGE_WIDTH);
+  const [zoom, setZoom] = useState(1);
+  const [tool, setTool] = useState<Tool>("select");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pendingTextAt, setPendingTextAt] = useState<[number, number] | null>(null);
+  const [textDraft, setTextDraft] = useState("");
+  const [pageRequestDraft, setPageRequestDraft] = useState("");
 
-  const containerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const pageBoxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const drawingRef = useRef(false);
   const currentStrokeRef = useRef<[number, number][]>([]);
   const lastCursorSentRef = useRef(0);
 
   const socket = useRoomSocket(id ?? "");
-  const isHost = socket.you && socket.you.userId === socket.hostId;
+  const isHost = Boolean(socket.you && socket.you.userId === socket.hostId);
 
   useEffect(() => {
     if (!id) return;
@@ -46,33 +59,41 @@ export default function BookClubRoom() {
       .catch(() => setPdfData(null));
   }, [id]);
 
-  // The container's own CSS width (flex layout, capped at
-  // MAX_PAGE_WIDTH) drives how wide react-pdf renders the page --
-  // without this, a hardcoded render width would overflow a phone
-  // screen instead of shrinking to fit. Depends on `room`, not `[]`:
-  // the container div doesn't exist yet on the very first render
-  // (room is still `undefined`, so the early-return "Carregando…"
-  // branch renders instead) -- this needs to re-run once the real
-  // container actually mounts.
+  // The viewport's own CSS width (flex layout, capped at
+  // MAX_PAGE_WIDTH) drives the BASE render width -- zoom multiplies on
+  // top of it. Depends on `room`, not `[]`: the viewport div doesn't
+  // exist yet on the very first render (room is still `undefined`, so
+  // the early-return "Carregando…" branch renders instead).
   useEffect(() => {
-    const el = containerRef.current;
+    const el = viewportRef.current;
     if (!el) return;
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
-      if (width) setPageWidth(Math.min(Math.round(width), MAX_PAGE_WIDTH));
+      if (width) setBaseWidth(Math.min(Math.round(width), MAX_PAGE_WIDTH));
     });
     observer.observe(el);
     return () => observer.disconnect();
   }, [room]);
 
   useEffect(() => {
+    const onFsChange = () => setIsFullscreen(document.fullscreenElement === viewportRef.current);
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [socket.chatHistory.length]);
 
+  useEffect(() => {
+    if (pendingTextAt) textInputRef.current?.focus();
+  }, [pendingTextAt]);
+
   const page = socket.page || room?.currentPage || 1;
+  const renderWidth = Math.round(baseWidth * zoom);
 
   const redraw = useCallback(
-    (strokes: Stroke[], cursors: typeof socket.cursors, live: [number, number][] | null) => {
+    (strokes: Stroke[], texts: TextAnnotation[], cursors: typeof socket.cursors, live: [number, number][] | null) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
@@ -95,68 +116,109 @@ export default function BookClubRoom() {
       for (const s of strokes) strokePath(s.points, s.color);
       if (live) strokePath(live, PEN_COLOR);
 
+      for (const t of texts) {
+        const x = t.x * width;
+        const y = t.y * height;
+        ctx.font = "600 16px 'Space Grotesk', sans-serif";
+        const metrics = ctx.measureText(t.text);
+        ctx.fillStyle = "rgba(42, 23, 15, 0.85)";
+        ctx.fillRect(x - 4, y - 18, metrics.width + 8, 24);
+        ctx.fillStyle = t.color;
+        ctx.fillText(t.text, x, y);
+      }
+
       for (const c of Object.values(cursors)) {
         if (c.userId === socket.you?.userId) continue;
         const x = c.x * width;
         const y = c.y * height;
+        const radius = c.style === "laser" ? 11 : 5;
+
+        if (c.style === "laser") {
+          ctx.fillStyle = "rgba(245, 166, 35, 0.25)";
+          ctx.beginPath();
+          ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.fillStyle = "#F5A623";
         ctx.beginPath();
-        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fill();
         ctx.font = "12px 'JetBrains Mono', monospace";
         ctx.fillStyle = "#F5F0E8";
-        ctx.fillText(c.userName, x + 8, y - 8);
+        ctx.fillText(c.userName, x + radius + 4, y - radius - 2);
       }
     },
     [socket.you?.userId],
   );
 
   useEffect(() => {
-    redraw(socket.strokes, socket.cursors, null);
-  }, [socket.strokes, socket.cursors, redraw]);
+    redraw(socket.strokes, socket.texts, socket.cursors, null);
+  }, [socket.strokes, socket.texts, socket.cursors, redraw]);
 
   function syncCanvasSize() {
     const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
-    canvas.width = container.clientWidth;
-    canvas.height = container.clientHeight;
-    redraw(socket.strokes, socket.cursors, null);
+    const box = pageBoxRef.current;
+    if (!canvas || !box) return;
+    canvas.width = box.clientWidth;
+    canvas.height = box.clientHeight;
+    redraw(socket.strokes, socket.texts, socket.cursors, null);
   }
 
-  function pointFromEvent(e: React.PointerEvent<HTMLCanvasElement>): [number, number] {
+  function pointFromEvent(e: React.PointerEvent | React.MouseEvent): [number, number] {
     const rect = canvasRef.current!.getBoundingClientRect();
     return [(e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height];
   }
 
-  function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!canvasRef.current) return;
     const [x, y] = pointFromEvent(e);
+    if (x < 0 || x > 1 || y < 0 || y > 1) return;
 
     const now = Date.now();
     if (now - lastCursorSentRef.current > CURSOR_THROTTLE_MS) {
       lastCursorSentRef.current = now;
-      socket.sendCursor(x, y);
+      socket.sendCursor(x, y, isHost && tool === "laser" ? "laser" : "normal");
     }
 
     if (drawingRef.current) {
       currentStrokeRef.current.push([x, y]);
-      redraw(socket.strokes, socket.cursors, currentStrokeRef.current);
+      redraw(socket.strokes, socket.texts, socket.cursors, currentStrokeRef.current);
     }
   }
 
   function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (!isHost) return;
+    if (!isHost || tool !== "pen") return;
     drawingRef.current = true;
     currentStrokeRef.current = [pointFromEvent(e)];
   }
 
   function handlePointerUp() {
-    if (!isHost || !drawingRef.current) return;
-    drawingRef.current = false;
-    if (currentStrokeRef.current.length > 1) {
-      socket.sendStroke(currentStrokeRef.current, PEN_COLOR);
+    if (isHost && drawingRef.current) {
+      drawingRef.current = false;
+      if (currentStrokeRef.current.length > 1) socket.sendStroke(currentStrokeRef.current, PEN_COLOR);
+      currentStrokeRef.current = [];
     }
-    currentStrokeRef.current = [];
+  }
+
+  function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!isHost || tool !== "text") return;
+    setPendingTextAt(pointFromEvent(e));
+  }
+
+  function commitText() {
+    if (pendingTextAt && textDraft.trim()) {
+      socket.sendText(pendingTextAt[0], pendingTextAt[1], textDraft.trim(), PEN_COLOR);
+    }
+    setPendingTextAt(null);
+    setTextDraft("");
+  }
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      viewportRef.current?.requestFullscreen();
+    }
   }
 
   function submitChat(e: React.FormEvent) {
@@ -166,9 +228,21 @@ export default function BookClubRoom() {
     setChatDraft("");
   }
 
+  function quoteCurrentPage() {
+    setChatDraft((d) => `${d}${d ? " " : ""}(pág. ${page}) `);
+  }
+
+  function submitPageRequest(e: React.FormEvent) {
+    e.preventDefault();
+    const n = Number(pageRequestDraft);
+    if (!Number.isInteger(n) || n < 1) return;
+    socket.sendChat(`Podemos ir para a página ${n}?`, n);
+    setPageRequestDraft("");
+  }
+
   // react-pdf compares `file` by reference to decide whether to
   // reload -- a fresh {data: pdfData} object literal on every render
-  // (e.g. triggered by onRenderSuccess -> setPageWidth) looks like "a
+  // (e.g. triggered by onRenderSuccess -> setBaseWidth) looks like "a
   // new file" to it, so it tries to reload from the SAME ArrayBuffer.
   // pdfjs transfers that buffer to its worker on the first load,
   // detaching it -- the second "reload" then throws "Cannot perform
@@ -188,6 +262,13 @@ export default function BookClubRoom() {
     );
   }
 
+  // Selecionar: canvas lets pointer events fall through to the PDF's
+  // own text layer underneath, so native browser text selection/copy
+  // works. Every other tool needs the canvas to catch the pointer
+  // itself (drawing, placing text, or just knowing where to send
+  // cursor updates from).
+  const canvasInteractive = tool !== "select";
+
   return (
     <div className="flex flex-col lg:flex-row gap-6 animate-fade-in-up">
       <div className="flex-1 min-w-0">
@@ -205,6 +286,7 @@ export default function BookClubRoom() {
               disabled={!isHost || page <= 1}
               onClick={() => socket.setPage(page - 1)}
               className="text-buteco-cream/80 hover:text-buteco-amber disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              title={isHost ? undefined : "só o mestre da sala vira a página"}
             >
               ← anterior
             </button>
@@ -216,45 +298,143 @@ export default function BookClubRoom() {
               disabled={!isHost || (numPages > 0 && page >= numPages)}
               onClick={() => socket.setPage(page + 1)}
               className="text-buteco-cream/80 hover:text-buteco-amber disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              title={isHost ? undefined : "só o mestre da sala vira a página"}
             >
               próxima →
             </button>
           </div>
         </div>
 
+        {/* Toolbar: zoom + fullscreen for everyone, presenter tools
+            (select/laser/pen/text) host-only -- only the host can
+            leave a mark or point with a highlighted cursor, matching
+            the same "só o mestre mexe na página" rule as page turns. */}
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <div className="flex items-center gap-1 glass-card p-1.5">
+            <button
+              onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}
+              className="w-8 h-8 rounded-lg text-buteco-cream/80 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer"
+              title="Diminuir zoom"
+            >
+              −
+            </button>
+            <button
+              onClick={() => setZoom(1)}
+              className="px-2 h-8 rounded-lg font-mono text-xs text-buteco-cream/70 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer"
+              title="Redefinir zoom"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}
+              className="w-8 h-8 rounded-lg text-buteco-cream/80 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer"
+              title="Aumentar zoom"
+            >
+              +
+            </button>
+            <span className="w-px h-5 bg-white/10 mx-1" />
+            <button
+              onClick={toggleFullscreen}
+              className="w-8 h-8 rounded-lg text-buteco-cream/80 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer"
+              title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
+            >
+              {isFullscreen ? "⤦" : "⛶"}
+            </button>
+          </div>
+
+          {isHost && (
+            <div className="flex items-center gap-1 glass-card p-1.5">
+              {(
+                [
+                  ["select", "🖱️", "Selecionar / ler texto"],
+                  ["laser", "🔦", "Apontador (some sozinho)"],
+                  ["pen", "✏️", "Caneta"],
+                  ["text", "🔤", "Escrever texto"],
+                ] as [Tool, string, string][]
+              ).map(([t, icon, label]) => (
+                <button
+                  key={t}
+                  onClick={() => setTool(t)}
+                  title={label}
+                  className={`w-9 h-9 rounded-lg text-sm transition-colors cursor-pointer ${
+                    tool === t ? "bg-buteco-amber text-buteco-navy" : "text-buteco-cream/80 hover:bg-white/10"
+                  }`}
+                >
+                  {icon}
+                </button>
+              ))}
+              <span className="w-px h-5 bg-white/10 mx-1" />
+              <button
+                onClick={() => socket.clearDrawing()}
+                title="Limpar anotações desta página"
+                className="w-9 h-9 rounded-lg text-sm text-buteco-cream/80 hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                🗑️
+              </button>
+            </div>
+          )}
+        </div>
+
         {!isHost && (
           <p className="text-buteco-cream/40 text-xs mb-3 font-mono">
-            só quem abriu a sala vira página e desenha -- você pode apontar (passe o mouse) e conversar no chat
+            só quem abriu a sala vira página e desenha -- peça troca de página pelo chat, ao lado →
           </p>
         )}
 
-        <div ref={containerRef} className="relative glass-card overflow-hidden mx-auto" style={{ maxWidth: 800 }}>
-          {pdfFile ? (
-            <Document file={pdfFile} onLoadSuccess={({ numPages }) => setNumPages(numPages)} loading={<PdfPlaceholder />}>
-              <Page pageNumber={page} width={pageWidth} onRenderSuccess={syncCanvasSize} loading={<PdfPlaceholder />} />
-            </Document>
-          ) : (
-            <PdfPlaceholder />
-          )}
-          <canvas
-            ref={canvasRef}
-            className="absolute inset-0 w-full h-full touch-none"
-            style={{ cursor: isHost ? "crosshair" : "default" }}
+        <div
+          ref={viewportRef}
+          className="relative glass-card overflow-auto flex justify-center"
+          style={{ maxHeight: "70vh" }}
+        >
+          <div
+            ref={pageBoxRef}
+            className="relative shrink-0"
             onPointerMove={handlePointerMove}
-            onPointerDown={handlePointerDown}
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerUp}
-          />
-        </div>
-
-        {isHost && (
-          <button
-            onClick={() => socket.clearDrawing()}
-            className="mt-3 text-xs font-mono text-buteco-cream/50 hover:text-buteco-amber transition-colors cursor-pointer"
           >
-            limpar anotações desta página
-          </button>
-        )}
+            {pdfFile ? (
+              <Document file={pdfFile} onLoadSuccess={({ numPages }) => setNumPages(numPages)} loading={<PdfPlaceholder />}>
+                <Page pageNumber={page} width={renderWidth} onRenderSuccess={syncCanvasSize} loading={<PdfPlaceholder />} />
+              </Document>
+            ) : (
+              <PdfPlaceholder />
+            )}
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 w-full h-full"
+              style={{
+                pointerEvents: canvasInteractive ? "auto" : "none",
+                touchAction: canvasInteractive ? "none" : "auto",
+                cursor: tool === "pen" || tool === "text" ? "crosshair" : tool === "laser" ? "pointer" : "default",
+              }}
+              onPointerDown={handlePointerDown}
+              onClick={handleCanvasClick}
+            />
+            {pendingTextAt && (
+              <input
+                ref={textInputRef}
+                value={textDraft}
+                onChange={(e) => setTextDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitText();
+                  if (e.key === "Escape") {
+                    setPendingTextAt(null);
+                    setTextDraft("");
+                  }
+                }}
+                onBlur={commitText}
+                placeholder="Escreva e pressione Enter…"
+                className="absolute z-10 bg-buteco-brown-dark border border-buteco-amber rounded px-2 py-1 text-sm text-buteco-cream font-heading outline-none"
+                style={{
+                  left: `${pendingTextAt[0] * 100}%`,
+                  top: `${pendingTextAt[1] * 100}%`,
+                  transform: "translateY(-100%)",
+                }}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       <aside className="w-full lg:w-80 shrink-0 flex flex-col glass-card overflow-hidden" style={{ maxHeight: 700 }}>
@@ -264,16 +444,60 @@ export default function BookClubRoom() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
-          {socket.chatHistory.map((m) => (
-            <div key={m.id}>
-              <span className="font-heading text-sm text-buteco-amber">{m.userName}</span>
-              <p className="text-buteco-cream/90 text-sm break-words">{m.body}</p>
-            </div>
-          ))}
+          {socket.chatHistory.map((m) =>
+            m.requestedPage ? (
+              <div key={m.id} className="rounded-lg border border-buteco-amber/30 bg-buteco-amber/10 p-2">
+                <p className="text-xs text-buteco-cream/90">
+                  <span className="font-heading text-buteco-amber">{m.userName}</span> {m.body}
+                </p>
+                {isHost && (
+                  <button
+                    onClick={() => socket.setPage(m.requestedPage!)}
+                    className="mt-1 text-xs font-heading font-semibold text-buteco-navy bg-buteco-amber rounded px-2 py-0.5 cursor-pointer hover:bg-buteco-amber-light transition-colors"
+                  >
+                    Ir para a página {m.requestedPage} →
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div key={m.id}>
+                <span className="font-heading text-sm text-buteco-amber">{m.userName}</span>
+                <p className="text-buteco-cream/90 text-sm break-words">{m.body}</p>
+              </div>
+            ),
+          )}
           <div ref={chatEndRef} />
         </div>
 
+        {!isHost && (
+          <form onSubmit={submitPageRequest} className="px-3 pt-3 border-t border-white/10 flex gap-2 items-center">
+            <span className="text-xs text-buteco-cream/50 shrink-0">📖 pedir página</span>
+            <input
+              type="number"
+              min={1}
+              value={pageRequestDraft}
+              onChange={(e) => setPageRequestDraft(e.target.value)}
+              placeholder={String(page)}
+              className="field flex-1 py-1.5 text-sm"
+            />
+            <button
+              type="submit"
+              className="px-2 py-1.5 rounded-lg bg-buteco-brown-light text-buteco-cream text-xs font-heading font-semibold border border-buteco-amber/40 hover:border-buteco-amber transition-colors cursor-pointer"
+            >
+              Pedir
+            </button>
+          </form>
+        )}
+
         <form onSubmit={submitChat} className="p-3 border-t border-white/10 flex gap-2">
+          <button
+            type="button"
+            onClick={quoteCurrentPage}
+            title="Citar a página atual"
+            className="px-2 rounded-lg text-buteco-cream/60 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+          >
+            📍
+          </button>
           <input
             type="text"
             value={chatDraft}

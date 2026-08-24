@@ -1,0 +1,1 @@
+ALTER TABLE "bookclub_message" ADD COLUMN "requested_page" integer;

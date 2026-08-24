@@ -1,9 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { bookclubApi } from "./bookclubApi.js";
 
-export type ChatMessage = { id: string; userId: string; userName: string; body: string; createdAt: string };
-export type Cursor = { userId: string; userName: string; x: number; y: number };
+export type ChatMessage = {
+  id: string;
+  userId: string;
+  userName: string;
+  body: string;
+  requestedPage: number | null;
+  createdAt: string;
+};
+export type CursorStyle = "normal" | "laser";
+export type Cursor = { userId: string; userName: string; x: number; y: number; style: CursorStyle };
 export type Stroke = { points: [number, number][]; color: string };
+export type TextAnnotation = { id: string; x: number; y: number; text: string; color: string };
 export type Participant = { userId: string; userName: string };
 
 type RoomSocketState = {
@@ -14,6 +23,7 @@ type RoomSocketState = {
   participants: Participant[];
   chatHistory: ChatMessage[];
   strokes: Stroke[];
+  texts: TextAnnotation[];
   cursors: Record<string, Cursor>;
 };
 
@@ -25,11 +35,12 @@ const initialState: RoomSocketState = {
   participants: [],
   chatHistory: [],
   strokes: [],
+  texts: [],
   cursors: {},
 };
 
-// Cursor/stroke coordinates travel as fractions (0..1) of the PDF
-// page's own rendered size, not raw pixels -- every participant's
+// Cursor/stroke/text coordinates travel as fractions (0..1) of the
+// PDF page's own rendered size, not raw pixels -- every participant's
 // viewport can be a different width, and a fraction is the one
 // coordinate space every client can consistently scale back up on
 // its own <canvas> overlay (see pages/BookClubRoom.tsx).
@@ -58,6 +69,7 @@ export function useRoomSocket(roomId: string) {
             participants: msg.participants as Participant[],
             chatHistory: msg.chatHistory as ChatMessage[],
             strokes: msg.drawing as Stroke[],
+            texts: (msg.texts as TextAnnotation[] | undefined) ?? [],
           }));
           break;
 
@@ -80,11 +92,17 @@ export function useRoomSocket(roomId: string) {
           break;
 
         case "page:changed":
-          setState((s) => ({ ...s, page: msg.page as number, strokes: [] }));
+          setState((s) => ({ ...s, page: msg.page as number, strokes: [], texts: [] }));
           break;
 
         case "cursor:update": {
-          const c = { userId: msg.userId as string, userName: msg.userName as string, x: msg.x as number, y: msg.y as number };
+          const c = {
+            userId: msg.userId as string,
+            userName: msg.userName as string,
+            x: msg.x as number,
+            y: msg.y as number,
+            style: (msg.style as CursorStyle) ?? "normal",
+          };
           setState((s) => ({ ...s, cursors: { ...s.cursors, [c.userId]: c } }));
           break;
         }
@@ -96,8 +114,12 @@ export function useRoomSocket(roomId: string) {
           }));
           break;
 
+        case "text:add":
+          setState((s) => ({ ...s, texts: [...s.texts, msg as unknown as TextAnnotation] }));
+          break;
+
         case "draw:clear":
-          setState((s) => ({ ...s, strokes: [] }));
+          setState((s) => ({ ...s, strokes: [], texts: [] }));
           break;
       }
     };
@@ -111,10 +133,11 @@ export function useRoomSocket(roomId: string) {
 
   return {
     ...state,
-    sendChat: (body: string) => send({ type: "chat:send", body }),
+    sendChat: (body: string, requestedPage?: number) => send({ type: "chat:send", body, requestedPage }),
     setPage: (page: number) => send({ type: "page:set", page }),
-    sendCursor: (x: number, y: number) => send({ type: "cursor:move", x, y }),
+    sendCursor: (x: number, y: number, style: CursorStyle = "normal") => send({ type: "cursor:move", x, y, style }),
     sendStroke: (points: [number, number][], color: string) => send({ type: "draw:stroke", points, color }),
+    sendText: (x: number, y: number, text: string, color: string) => send({ type: "text:add", x, y, text, color }),
     clearDrawing: () => send({ type: "draw:clear" }),
   };
 }

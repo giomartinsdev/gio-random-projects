@@ -10,7 +10,14 @@ import { createRoomsRouter } from "./routes/rooms.js";
 import * as roomHub from "./ws/roomHub.js";
 
 function serializeMessage(m: typeof bookclubMessage.$inferSelect) {
-  return { id: m.id, userId: m.userId, userName: m.userName, body: m.body, createdAt: m.createdAt };
+  return {
+    id: m.id,
+    userId: m.userId,
+    userName: m.userName,
+    body: m.body,
+    requestedPage: m.requestedPage,
+    createdAt: m.createdAt,
+  };
 }
 
 export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
@@ -30,14 +37,16 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
 
   app.get("/health", (c) => c.json({ status: "ok" }));
 
-  // Realtime channel for one room: page turns, live cursors, host pen
-  // strokes, chat -- see ws/roomHub.ts for the in-memory broadcast
-  // side and this repo's other -api services for why persistence
-  // (rooms/documents/messages) stays direct Postgres here rather than
-  // going through domain-api's async command pipeline: that pipeline
-  // is built for simple entity CRUD with eventual consistency, not a
-  // live socket that needs to read "who's the host" and "what page are
-  // we on" synchronously on every single message.
+  // Realtime channel for one room: page turns, live cursors/laser
+  // pointer, host pen strokes and text annotations, chat (including
+  // "can we go to page N?" requests) -- see ws/roomHub.ts for the
+  // in-memory broadcast side and this repo's other -api services for
+  // why persistence (rooms/documents/messages) stays direct Postgres
+  // here rather than going through domain-api's async command
+  // pipeline: that pipeline is built for simple entity CRUD with
+  // eventual consistency, not a live socket that needs to read "who's
+  // the host" and "what page are we on" synchronously on every single
+  // message.
   app.get(
     "/rooms/:id/ws",
     upgradeWebSocket(async (c) => {
@@ -77,6 +86,7 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
               participants: roomHub.participantsOf(roomId),
               chatHistory: history.map(serializeMessage),
               drawing: roomHub.drawingOf(roomId),
+              texts: roomHub.textsOf(roomId),
             }),
           );
           roomHub.broadcast(roomId, { type: "participant:join", userId, userName }, ws);
@@ -93,8 +103,10 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
           switch (msg.type) {
             case "chat:send": {
               const body = typeof msg.body === "string" ? msg.body.trim().slice(0, 2000) : "";
+              const requestedPageRaw = Number(msg.requestedPage);
+              const requestedPage = Number.isInteger(requestedPageRaw) && requestedPageRaw > 0 ? requestedPageRaw : null;
               if (!body) return;
-              const row = { id: randomUUID(), roomId, userId, userName, body, createdAt: new Date() };
+              const row = { id: randomUUID(), roomId, userId, userName, body, requestedPage, createdAt: new Date() };
               await db.insert(bookclubMessage).values(row);
               roomHub.broadcast(roomId, { type: "chat:message", ...serializeMessage(row) });
               break;
@@ -105,7 +117,7 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
               const page = Number(msg.page);
               if (!Number.isFinite(page) || page < 1) return;
               await db.update(bookclubRoom).set({ currentPage: page, updatedAt: new Date() }).where(eq(bookclubRoom.id, roomId));
-              roomHub.clearDrawing(roomId);
+              roomHub.clearAnnotations(roomId);
               roomHub.broadcast(roomId, { type: "page:changed", page });
               break;
             }
@@ -114,7 +126,8 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
               const x = Number(msg.x);
               const y = Number(msg.y);
               if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-              roomHub.broadcast(roomId, { type: "cursor:update", userId, userName, x, y }, ws);
+              const style = msg.style === "laser" ? "laser" : "normal";
+              roomHub.broadcast(roomId, { type: "cursor:update", userId, userName, x, y, style }, ws);
               break;
             }
 
@@ -135,9 +148,27 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
               break;
             }
 
+            case "text:add": {
+              if (userId !== hostId) return;
+              const x = Number(msg.x);
+              const y = Number(msg.y);
+              const text = typeof msg.text === "string" ? msg.text.trim().slice(0, 280) : "";
+              if (!Number.isFinite(x) || !Number.isFinite(y) || !text) return;
+              const annotation = {
+                id: randomUUID(),
+                x,
+                y,
+                text,
+                color: typeof msg.color === "string" ? msg.color : "#F5A623",
+              };
+              roomHub.addText(roomId, annotation);
+              roomHub.broadcast(roomId, { type: "text:add", ...annotation });
+              break;
+            }
+
             case "draw:clear": {
               if (userId !== hostId) return;
-              roomHub.clearDrawing(roomId);
+              roomHub.clearAnnotations(roomId);
               roomHub.broadcast(roomId, { type: "draw:clear" });
               break;
             }

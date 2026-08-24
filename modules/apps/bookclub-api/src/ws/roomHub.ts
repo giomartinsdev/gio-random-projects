@@ -12,15 +12,17 @@ type Participant = {
   userName: string;
 };
 
-type Stroke = { points: [number, number][]; color: string };
+export type Stroke = { points: [number, number][]; color: string };
+export type TextAnnotation = { id: string; x: number; y: number; text: string; color: string };
 
 type RoomState = {
   participants: Map<WSContext, Participant>;
-  // Current PAGE's pen strokes only -- cleared on every page turn (see
-  // app.ts's "page:set" handler). Not persisted to Postgres: this is
-  // meant as "point at something on this page right now", not a
-  // permanent annotation record.
+  // Current PAGE's annotations only -- both cleared on every page turn
+  // (see app.ts's "page:set" handler) or an explicit "clear" from the
+  // host. Not persisted to Postgres: this is meant as "point at
+  // something on this page right now", not a permanent record.
   drawing: Stroke[];
+  texts: TextAnnotation[];
 };
 
 const rooms = new Map<string, RoomState>();
@@ -28,7 +30,7 @@ const rooms = new Map<string, RoomState>();
 function getOrCreateRoom(roomId: string): RoomState {
   let room = rooms.get(roomId);
   if (!room) {
-    room = { participants: new Map(), drawing: [] };
+    room = { participants: new Map(), drawing: [], texts: [] };
     rooms.set(roomId, room);
   }
   return room;
@@ -70,11 +72,24 @@ export function addStroke(roomId: string, stroke: Stroke) {
   if (room.drawing.length > 500) room.drawing.shift();
 }
 
-export function clearDrawing(roomId: string) {
+export function addText(roomId: string, text: TextAnnotation) {
+  const room = getOrCreateRoom(roomId);
+  room.texts.push(text);
+  if (room.texts.length > 200) room.texts.shift();
+}
+
+export function clearAnnotations(roomId: string) {
   const room = rooms.get(roomId);
-  if (room) room.drawing = [];
+  if (room) {
+    room.drawing = [];
+    room.texts = [];
+  }
 }
 
 export function drawingOf(roomId: string): Stroke[] {
   return rooms.get(roomId)?.drawing ?? [];
+}
+
+export function textsOf(roomId: string): TextAnnotation[] {
+  return rooms.get(roomId)?.texts ?? [];
 }

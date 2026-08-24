@@ -52,5 +52,10 @@ export const bookclubMessage = pgTable("bookclub_message", {
   userId: text("user_id").notNull(),
   userName: text("user_name").notNull(),
   body: text("body").notNull(),
+  // Set when this message is a "can we go to page N?" request (any
+  // participant can send one) rather than a plain chat line -- the
+  // front renders those with a "levar para lá" action, shown only to
+  // the host, instead of parsing chat text for a command syntax.
+  requestedPage: integer("requested_page"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
