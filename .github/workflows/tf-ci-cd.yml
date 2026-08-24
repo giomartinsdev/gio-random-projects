@@ -108,7 +108,7 @@ jobs:
         run: terraform plan -input=false -lock-timeout=300s -out=tfplan
 
       - name: Apply
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
         run: terraform apply -input=false -lock-timeout=300s -auto-approve tfplan
 
       # Backs up the "secret zero" credentials Terraform itself needs
