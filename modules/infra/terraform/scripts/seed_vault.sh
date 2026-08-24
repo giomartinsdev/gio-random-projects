@@ -60,11 +60,19 @@ bw login --apikey
 SESSION=$(bw unlock --passwordenv BW_PASSWORD --raw)
 export BW_SESSION="$SESSION"
 
+# Every bw CLI invocation is its own process that re-syncs/decrypts
+# the vault -- there's no persistent session daemon for this to reuse,
+# so each command costs real seconds. Fetching the full item list ONCE
+# and looking names up locally (instead of one `bw list --search` per
+# item) cuts that network round-trip in half across N items.
+ALL_ITEMS=$(bw list items)
+TEMPLATE=$(bw get template item)
+
 upsert_item() {
   name="$1"
   value="$2"
-  existing_id=$(bw list items --search "$name" | jq -r --arg n "$name" '[.[] | select(.name == $n)][0].id // empty')
-  payload=$(bw get template item 2>/dev/null | jq --arg n "$name" --arg v "$value" \
+  existing_id=$(echo "$ALL_ITEMS" | jq -r --arg n "$name" '[.[] | select(.name == $n)][0].id // empty')
+  payload=$(echo "$TEMPLATE" | jq --arg n "$name" --arg v "$value" \
     '.type=1 | .name=$n | .login={"username":null,"password":$v}')
   if [ -n "$existing_id" ]; then
     echo "$payload" | jq --arg id "$existing_id" '.id=$id' | bw encode | bw edit item "$existing_id" >/dev/null
