@@ -26,13 +26,13 @@ function serialize(p: DomainPost) {
   };
 }
 
-// Every write here returns 202 Accepted, not 200/201/204: buteco-api
+// Every write here returns 202 Accepted, not 200/201/204: post-api
 // never touches Postgres for posts, it hands the request to domain-api
 // which publishes a command applied asynchronously by domain-worker
 // (see domain-api/domain-worker's own package docs for why). A GET
 // immediately after a write may not reflect it yet -- that's the
 // trade-off of reusing this repo's existing CQRS pipeline instead of
-// buteco-api owning its own synchronous storage.
+// post-api owning its own synchronous storage.
 export function createPostsRouter(auth: Auth, domainApi: DomainApiClient) {
   const router = new Hono();
 

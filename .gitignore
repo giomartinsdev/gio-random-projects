@@ -217,7 +217,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Node / npm (modules/apps/buteco-api)
+# Node / npm (modules/apps/post-api)
 node_modules/
 npm-debug.log*
 .npm

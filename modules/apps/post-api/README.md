@@ -1,4 +1,4 @@
-# buteco-api
+# post-api
 
 Headless content API for Buteco dos Devs — devs write articles/courses
 natively (markdown) or (phase 2) import a link and it gets pulled in

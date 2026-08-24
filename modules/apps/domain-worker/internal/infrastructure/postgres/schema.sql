@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log (entity_type, entity_id);
 
 -- author_id is an opaque identifier from whatever identity system the
--- calling client uses (buteco-api's Better Auth user id today) — not
+-- calling client uses (post-api's Better Auth user id today) — not
 -- a foreign key to the `users` table above, a different aggregate
 -- entirely with no relation to this one.
 CREATE TABLE IF NOT EXISTS posts (

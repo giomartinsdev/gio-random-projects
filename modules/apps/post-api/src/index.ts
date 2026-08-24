@@ -21,5 +21,5 @@ const domainApi = createDomainApiClient(domainApiUrl, domainApiKey);
 const app = createApp(auth, domainApi);
 
 serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`buteco-api listening on :${info.port}`);
+  console.log(`post-api listening on :${info.port}`);
 });

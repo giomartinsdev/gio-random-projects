@@ -48,11 +48,11 @@ func (h *PostHandlers) GetPostBySlug(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetPostByID is not exposed for public browsing (no status filter --
-// returns drafts too) -- it exists so a trusted caller (buteco-api,
+// returns drafts too) -- it exists so a trusted caller (post-api,
 // itself already API-key-authenticated to reach this route at all)
 // can look up a post's current author_id before deciding whether to
 // forward an edit/delete command, since domain-api/worker have no
-// concept of buteco-api's own users to check that themselves.
+// concept of post-api's own users to check that themselves.
 func (h *PostHandlers) GetPostByID(w http.ResponseWriter, r *http.Request) {
 	p, err := h.posts.FindByID(r.Context(), chi.URLParam(r, "id"))
 	h.respondPost(w, p, err)

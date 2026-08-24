@@ -26,8 +26,16 @@ resource "random_id" "domain_api_key" {
   byte_length = 24
 }
 
+# post-api's own key, separate from the "ci" one above (apps-deploy.yml's
+# terraform apply, unrelated to any HTTP client of domain-api) -- lets
+# either be rotated independently, and makes the audit log's caller
+# label (see domain-api's apikey.go) actually distinguish the two.
+resource "random_id" "post_api_domain_key" {
+  byte_length = 24
+}
+
 locals {
-  domain_api_keys = "${random_id.domain_api_key.hex}:ci"
+  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api"
 }
 
 resource "random_password" "vaultwarden_admin_token" {
@@ -129,6 +137,7 @@ resource "null_resource" "vault_seed" {
         for pair in [
           ["DATABASE_URL", "postgresql://${module.compute_data.postgres_user}:${random_password.postgres.result}@${module.compute_data.postgres_host}:5432/${module.compute_data.postgres_user}"],
           ["DOMAIN_API_KEYS", local.domain_api_keys],
+          ["POST_API_DOMAIN_KEY", random_id.post_api_domain_key.hex],
           ["TF_VAULTWARDEN_ADMIN_TOKEN", random_password.vaultwarden_admin_token.result],
           ["TF_VAULTWARDEN_BRIDGE_API_KEY", random_password.vaultwarden_bridge_api_key.result],
           ["REGISTRY_PASSWORD", var.registry_password],

@@ -6,9 +6,9 @@ import type { DomainPost } from "../src/lib/domainApiClient.js";
 // PUT/DELETE /posts, X-API-Key auth) -- not the actual Go binary
 // (would need its own Postgres/Redis/domain-worker triple to exercise
 // for real), but a genuine network hop, not an in-process mock of
-// buteco-api's client functions. Applies writes synchronously (the
+// post-api's client functions. Applies writes synchronously (the
 // real domain-worker is async) since what's under test here is
-// buteco-api's own auth/ownership logic, not eventual consistency.
+// post-api's own auth/ownership logic, not eventual consistency.
 export function startFakeDomainApi(apiKey: string) {
   const posts = new Map<string, DomainPost>();
   let slugCounter = 0;

@@ -17,7 +17,7 @@ only ever fit one.
 - **`domain-worker/`** — the only writer, consumes commands off the
   event bus, applies them, records an audit trail.
 - **`front/`** — reserved, nothing here yet.
-- **`buteco-api/`** — headless content API for Buteco dos Devs (articles/courses, Better Auth). Independent Node/TypeScript stack, not Go like the rest of this folder — see its own README for why. A future `buteco-bot` (Discord integration) would be just another consumer of this same API, not a new bounded context.
+- **`post-api/`** — headless content API for Buteco dos Devs (articles/courses, Better Auth). Independent Node/TypeScript stack, not Go like the rest of this folder — see its own README for why. A future `buteco-bot` (Discord integration) would be just another consumer of this same API, not a new bounded context.
 
 `domain-api` and `domain-worker` are deliberately independent Go
 modules (each with its own `go.mod`) even though they agree on the

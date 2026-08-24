@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- Kept identical to domain-worker's copy of this table -- domain-api
 -- only ever reads it, domain-worker is the only writer. author_id is
 -- an opaque identifier from whatever identity system the calling
--- client uses (buteco-api's Better Auth user id today), not a
+-- client uses (post-api's Better Auth user id today), not a
 -- foreign key to the `users` table above.
 CREATE TABLE IF NOT EXISTS posts (
     id UUID PRIMARY KEY,
