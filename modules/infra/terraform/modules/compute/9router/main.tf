@@ -60,6 +60,16 @@ resource "docker_container" "ninerouter" {
     target = "/app/data"
   }
 
+  # Published so the Cloudflare tunnel (cloudflared, running on the
+  # host) can reach the dashboard/API via localhost:20128. Without
+  # this binding, the tunnel's ingress rule resolves to nothing and
+  # returns 502 — same reason vaultwarden publishes 8222 and minio
+  # publishes 9001.
+  ports {
+    internal = 20128
+    external = 20128
+  }
+
   # Reachable by container name ("9router") on the shared apps
   # network — future modules can reach /v1 without going through the
   # public tunnel (lower latency, no Cloudflare hop).
