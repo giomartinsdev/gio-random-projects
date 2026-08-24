@@ -38,6 +38,7 @@ export function startFakeDomainApi(apiKey: string) {
       title: body.title,
       document_id: body.document_id,
       current_page: 1,
+      status: "open",
       created_at: now,
       updated_at: now,
     };
@@ -59,6 +60,7 @@ export function startFakeDomainApi(apiKey: string) {
     Object.assign(room, {
       title: body.title || room.title,
       current_page: body.current_page ?? room.current_page,
+      status: body.status || room.status,
       updated_at: new Date().toISOString(),
     });
     return c.json({ command_id: crypto.randomUUID(), status: "accepted" }, 202);

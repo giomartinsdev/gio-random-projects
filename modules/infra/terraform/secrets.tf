@@ -22,6 +22,11 @@ resource "random_password" "postgres" {
   special = false
 }
 
+resource "random_password" "minio_root_password" {
+  length  = 32
+  special = false
+}
+
 resource "random_id" "domain_api_key" {
   byte_length = 24
 }

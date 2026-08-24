@@ -14,6 +14,7 @@ type UpdateInput struct {
 	HostID      string `json:"host_id"`
 	Title       string `json:"title,omitempty"`
 	CurrentPage *int   `json:"current_page,omitempty"`
+	Status      string `json:"status,omitempty"`
 }
 
 type DeleteInput struct {

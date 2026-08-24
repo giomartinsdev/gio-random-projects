@@ -61,6 +61,21 @@ variable "domain_api_key" {
   sensitive   = true
 }
 
+variable "minio_endpoint" {
+  description = "Internal host:port of module.compute_minio -- where PDF bytes actually live now (see db/schema.ts's own comment on why the bytea column went away)."
+  type        = string
+}
+
+variable "minio_access_key" {
+  description = "MinIO root username -- same not-really-a-secret reasoning as registry_user."
+  type        = string
+}
+
+variable "minio_secret_key" {
+  type      = string
+  sensitive = true
+}
+
 variable "watchtower_enabled" {
   description = "Same reasoning as modules/compute/app's own variable of the same name: false by default, since ts-ci-cd.yml's own terraform apply -replace=... is the actual redeploy mechanism."
   type        = bool

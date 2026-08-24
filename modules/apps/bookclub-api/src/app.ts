@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { createNodeWebSocket } from "@hono/node-ws";
 import type { Auth } from "./lib/auth.js";
 import type { Db } from "./db/index.js";
+import type { MinioClient } from "./lib/minioClient.js";
 import { NotFoundError, type DomainApiClient, type DomainMessage } from "./lib/domainApiClient.js";
 import { createRoomsRouter } from "./routes/rooms.js";
 import * as roomHub from "./ws/roomHub.js";
@@ -18,7 +19,7 @@ function serializeMessage(m: DomainMessage) {
   };
 }
 
-export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, frontendOrigins: string[]) {
+export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, minio: MinioClient, frontendOrigins: string[]) {
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
@@ -31,7 +32,7 @@ export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, fronte
     }),
   );
 
-  app.route("/rooms", createRoomsRouter(auth, db, domainApi));
+  app.route("/rooms", createRoomsRouter(auth, db, domainApi, minio));
 
   app.get("/health", (c) => c.json({ status: "ok" }));
 
@@ -65,15 +66,23 @@ export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, fronte
           const payload = JSON.parse(data) as Record<string, unknown>;
           switch (eventName) {
             case "room.updated":
-              // The only room.updated this app ever produces is a page
-              // turn (see routes' updateRoom call in the "page:set" WS
-              // handler below) -- clearing annotations here, driven by
-              // the SAME event that moves everyone's page forward,
-              // keeps both in lockstep for every connected client
-              // instead of racing an immediate local clear against
-              // this async echo.
+              // room.updated fires for a page turn OR a pause/resume
+              // (see routes' updateRoom calls in the "page:set" and
+              // "room:close"/"room:reopen" WS handlers below) -- the
+              // event carries full current state either way, so one
+              // broadcast covers both. Clearing annotations here,
+              // driven by the SAME event, keeps every connected
+              // client in lockstep instead of racing an immediate
+              // local clear against this async echo; on a pure
+              // pause/resume (page unchanged) this just means
+              // annotations reset too, which is fine -- pausing is a
+              // coarse, infrequent action, not a live drawing session.
               roomHub.clearAnnotations(roomId);
-              roomHub.broadcast(roomId, { type: "page:changed", page: payload.current_page as number });
+              roomHub.broadcast(roomId, {
+                type: "page:changed",
+                page: payload.current_page as number,
+                status: payload.status as string,
+              });
               break;
 
             case "message.created":
@@ -143,6 +152,7 @@ export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, fronte
             JSON.stringify({
               type: "init",
               page: room.current_page,
+              status: room.status,
               hostId,
               you: { userId, userName },
               participants: roomHub.participantsOf(roomId),
@@ -177,6 +187,23 @@ export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, fronte
               const page = Number(msg.page);
               if (!Number.isFinite(page) || page < 1) return;
               await domainApi.updateRoom(roomId, { host_id: hostId, current_page: page });
+              break;
+            }
+
+            // Pausing doesn't disconnect anyone or delete anything --
+            // it's a status flag participants' own UI reacts to (see
+            // pages/BookClubRoom.tsx's paused overlay). Reopening just
+            // flips the flag back; current_page was never touched, so
+            // "resuming where it left off" needs no extra logic here.
+            case "room:close": {
+              if (userId !== hostId) return;
+              await domainApi.updateRoom(roomId, { host_id: hostId, status: "paused" });
+              break;
+            }
+
+            case "room:reopen": {
+              if (userId !== hostId) return;
+              await domainApi.updateRoom(roomId, { host_id: hostId, status: "open" });
               break;
             }
 

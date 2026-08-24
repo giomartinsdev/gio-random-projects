@@ -22,13 +22,14 @@ func (Created) EventName() string { return "room.created" }
 
 // Updated carries the full current state (not just what changed) so a
 // subscriber never needs a follow-up GET to render it -- CurrentPage
-// in particular is the one field a live viewer needs the instant it
-// changes.
+// and Status are the two fields a live viewer needs the instant they
+// change (page turns and pause/resume, respectively).
 type Updated struct {
 	RoomID      string    `json:"room_id"`
 	HostID      string    `json:"host_id"`
 	Title       string    `json:"title"`
 	CurrentPage int       `json:"current_page"`
+	Status      string    `json:"status"`
 	OccurredAt  time.Time `json:"occurred_at"`
 }
 

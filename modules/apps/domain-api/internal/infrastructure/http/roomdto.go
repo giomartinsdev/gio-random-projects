@@ -12,6 +12,7 @@ type RoomResponse struct {
 	Title       string    `json:"title"`
 	DocumentID  string    `json:"document_id"`
 	CurrentPage int       `json:"current_page"`
+	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -19,7 +20,7 @@ type RoomResponse struct {
 func toRoomResponse(r domainroom.Room) RoomResponse {
 	return RoomResponse{
 		ID: r.ID, HostID: r.HostID, Title: r.Title, DocumentID: r.DocumentID,
-		CurrentPage: r.CurrentPage, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		CurrentPage: r.CurrentPage, Status: r.Status, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 }
 

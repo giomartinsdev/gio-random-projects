@@ -39,9 +39,14 @@ CREATE TABLE IF NOT EXISTS rooms (
     title TEXT NOT NULL,
     document_id TEXT NOT NULL,
     current_page INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'open',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- CREATE TABLE IF NOT EXISTS above is a no-op against an
+-- already-existing table -- see domain-worker's identical comment.
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open';
 
 CREATE INDEX IF NOT EXISTS idx_rooms_host_id ON rooms (host_id);
 

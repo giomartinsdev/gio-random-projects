@@ -67,6 +67,16 @@ module "compute_post_api" {
   depends_on = [null_resource.postgres_password_sync, module.compute_app]
 }
 
+module "compute_minio" {
+  source = "./modules/compute/minio"
+  providers = {
+    docker = docker
+  }
+
+  network_name  = module.compute_data.network_name
+  root_password = random_password.minio_root_password.result
+}
+
 module "compute_bookclub_api" {
   source = "./modules/compute/bookclub_api"
   providers = {
@@ -80,11 +90,14 @@ module "compute_bookclub_api" {
   registry_host      = var.registry_host
   better_auth_secret = random_password.post_api_better_auth_secret.result
   domain_api_key     = random_id.bookclub_api_domain_key.hex
+  minio_endpoint     = module.compute_minio.endpoint
+  minio_access_key   = module.compute_minio.root_user
+  minio_secret_key   = random_password.minio_root_password.result
 
-  # Runtime dependency (reaches domain-api by container name over the
-  # shared network), not a Terraform attribute reference -- same
+  # Runtime dependency (reaches domain-api/minio by container name over
+  # the shared network), not a Terraform attribute reference -- same
   # reasoning as module.compute_post_api's own depends_on.
-  depends_on = [null_resource.postgres_password_sync, module.compute_app]
+  depends_on = [null_resource.postgres_password_sync, module.compute_app, module.compute_minio]
 }
 
 module "compute_front" {

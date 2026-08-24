@@ -35,13 +35,15 @@ func (s *Service) Update(ctx context.Context, in UpdateInput) (domainroom.Room, 
 	if err != nil {
 		return domainroom.Room{}, nil, err
 	}
-	if err := r.Edit(in.HostID, in.Title, in.CurrentPage); err != nil {
+	if err := r.Edit(in.HostID, in.Title, in.CurrentPage, in.Status); err != nil {
 		return domainroom.Room{}, nil, err
 	}
 	if err := s.repo.Update(ctx, r); err != nil {
 		return domainroom.Room{}, nil, err
 	}
-	return r, domainroom.Updated{RoomID: r.ID, HostID: r.HostID, Title: r.Title, CurrentPage: r.CurrentPage, OccurredAt: r.UpdatedAt}, nil
+	return r, domainroom.Updated{
+		RoomID: r.ID, HostID: r.HostID, Title: r.Title, CurrentPage: r.CurrentPage, Status: r.Status, OccurredAt: r.UpdatedAt,
+	}, nil
 }
 
 func (s *Service) Delete(ctx context.Context, in DeleteInput) (domainroom.Event, error) {

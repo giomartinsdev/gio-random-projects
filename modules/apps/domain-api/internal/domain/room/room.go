@@ -11,6 +11,7 @@ type Room struct {
 	Title       string
 	DocumentID  string
 	CurrentPage int
+	Status      string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }

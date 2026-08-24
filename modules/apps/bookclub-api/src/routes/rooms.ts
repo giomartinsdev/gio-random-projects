@@ -3,12 +3,11 @@ import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import type { Auth } from "../lib/auth.js";
 import type { Db } from "../db/index.js";
+import type { MinioClient } from "../lib/minioClient.js";
 import { bookclubDocument } from "../db/schema.js";
 import { DomainApiError, NotFoundError, type DomainApiClient, type DomainRoom } from "../lib/domainApiClient.js";
 
-// Generous for a book chapter or a short book, small enough to keep
-// comfortably in a Postgres bytea column (see schema.ts's own comment
-// on why there's no object store here).
+// Generous for a book chapter or a short book.
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
 async function requireUser(auth: Auth, c: { req: { raw: Request } }) {
@@ -23,11 +22,12 @@ function serializeRoom(r: DomainRoom) {
     hostId: r.host_id,
     documentId: r.document_id,
     currentPage: r.current_page,
+    status: r.status,
     createdAt: r.created_at,
   };
 }
 
-export function createRoomsRouter(auth: Auth, db: Db, domainApi: DomainApiClient) {
+export function createRoomsRouter(auth: Auth, db: Db, domainApi: DomainApiClient, minio: MinioClient) {
   const router = new Hono();
 
   router.get("/", async (c) => {
@@ -52,13 +52,15 @@ export function createRoomsRouter(auth: Auth, db: Db, domainApi: DomainApiClient
 
     const bytes = Buffer.from(await pdf.arrayBuffer());
     const documentId = randomUUID();
+    const objectKey = `${documentId}.pdf`;
 
+    await minio.upload(objectKey, bytes, "application/pdf");
     await db.insert(bookclubDocument).values({
       id: documentId,
       uploadedBy: user.id,
       filename: pdf.name || "documento.pdf",
       sizeBytes: bytes.byteLength,
-      data: bytes,
+      objectKey,
     });
 
     // 202: the room itself is created asynchronously by domain-worker,
@@ -84,7 +86,9 @@ export function createRoomsRouter(auth: Auth, db: Db, domainApi: DomainApiClient
   // front's <Document file={...}> (react-pdf) gets the bytes, via an
   // authenticated fetch + ArrayBuffer rather than a plain <iframe src>
   // that couldn't carry the session cookie's SameSite=None constraints
-  // consistently across every browser.
+  // consistently across every browser. Bytes are proxied straight
+  // through from MinIO, not handed out as a presigned URL -- keeps the
+  // same auth check in front of them either way.
   router.get("/:id/pdf", async (c) => {
     const user = await requireUser(auth, c);
     if (!user) return c.json({ error: "unauthorized" }, 401);
@@ -100,7 +104,8 @@ export function createRoomsRouter(auth: Auth, db: Db, domainApi: DomainApiClient
     const [doc] = await db.select().from(bookclubDocument).where(eq(bookclubDocument.id, room.document_id));
     if (!doc) return c.json({ error: "not found" }, 404);
 
-    return new Response(new Uint8Array(doc.data), {
+    const bytes = await minio.getBytes(doc.objectKey);
+    return new Response(new Uint8Array(bytes), {
       headers: {
         "content-type": "application/pdf",
         "content-length": String(doc.sizeBytes),
@@ -124,7 +129,11 @@ export function createRoomsRouter(auth: Auth, db: Db, domainApi: DomainApiClient
 
     try {
       const accepted = await domainApi.deleteRoom(room.id, user.id);
-      await db.delete(bookclubDocument).where(eq(bookclubDocument.id, room.document_id));
+      const [doc] = await db.select().from(bookclubDocument).where(eq(bookclubDocument.id, room.document_id));
+      if (doc) {
+        await minio.remove(doc.objectKey).catch(() => {});
+        await db.delete(bookclubDocument).where(eq(bookclubDocument.id, room.document_id));
+      }
       return c.json(accepted, 202);
     } catch (err) {
       if (err instanceof DomainApiError && err.status === 400) return c.json({ error: err.message }, 400);

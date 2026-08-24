@@ -18,9 +18,11 @@
     "better-auth": "^1.2.7",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.6.14",
+    "minio": "^8.0.7",
     "pg": "^8.13.1"
   },
   "devDependencies": {
+    "@testcontainers/minio": "^10.28.0",
     "@testcontainers/postgresql": "^10.16.0",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",

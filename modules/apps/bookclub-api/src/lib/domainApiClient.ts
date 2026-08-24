@@ -10,12 +10,15 @@
 // native EventSource can't send. See app.ts's WebSocket handler for
 // how those events get translated into this service's own realtime
 // wire protocol.
+export type RoomStatus = "open" | "paused";
+
 export type DomainRoom = {
   id: string;
   host_id: string;
   title: string;
   document_id: string;
   current_page: number;
+  status: RoomStatus;
   created_at: string;
   updated_at: string;
 };
@@ -66,7 +69,7 @@ export function createDomainApiClient(baseUrl: string, apiKey: string) {
     getRoom: (id: string) => request<DomainRoom>(`/rooms/${encodeURIComponent(id)}`),
     createRoom: (input: { host_id: string; title: string; document_id: string }) =>
       request<Accepted>("/rooms", { method: "POST", body: JSON.stringify(input) }),
-    updateRoom: (id: string, input: { host_id: string; title?: string; current_page?: number }) =>
+    updateRoom: (id: string, input: { host_id: string; title?: string; current_page?: number; status?: RoomStatus }) =>
       request<Accepted>(`/rooms/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) }),
     deleteRoom: (id: string, hostId: string) =>
       request<Accepted>(`/rooms/${encodeURIComponent(id)}`, {

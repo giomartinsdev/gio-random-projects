@@ -4,26 +4,32 @@ import { createDomainApiClient } from "../../src/lib/domainApiClient.js";
 import { fakeAuth, authHeaders } from "../fakeAuth.js";
 import { startFakeDomainApi } from "../fakeDomainApi.js";
 import { startTestDb } from "../testDb.js";
+import { startTestMinio } from "../testMinio.js";
 
 describe("rooms", () => {
   let app: ReturnType<typeof createApp>["app"];
   let stopDb: () => Promise<void>;
   let stopDomainApi: () => Promise<void>;
+  let stopMinio: () => Promise<void>;
 
   beforeAll(async () => {
     const testDb = await startTestDb();
     stopDb = testDb.stop;
 
+    const testMinio = await startTestMinio();
+    stopMinio = testMinio.stop;
+
     const fakeDomainApi = startFakeDomainApi("test-key");
     stopDomainApi = fakeDomainApi.stop;
     const domainApi = createDomainApiClient(fakeDomainApi.url, "test-key");
 
-    ({ app } = createApp(fakeAuth(), testDb.db, domainApi, ["http://localhost:5173"]));
+    ({ app } = createApp(fakeAuth(), testDb.db, domainApi, testMinio.minio, ["http://localhost:5173"]));
   });
 
   afterAll(async () => {
     await stopDb();
     await stopDomainApi();
+    await stopMinio();
   });
 
   function pdfFormData(title: string, bytes = "%PDF-1.4 fake") {

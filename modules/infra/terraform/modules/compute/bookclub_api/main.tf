@@ -50,6 +50,10 @@ resource "docker_container" "bookclub_api" {
     "BETTER_AUTH_URL=https://${var.hostname}",
     "DOMAIN_API_URL=${var.domain_api_url}",
     "DOMAIN_API_KEY=${var.domain_api_key}",
+    "MINIO_ENDPOINT=${var.minio_endpoint}",
+    "MINIO_ACCESS_KEY=${var.minio_access_key}",
+    "MINIO_SECRET_KEY=${var.minio_secret_key}",
+    "MINIO_BUCKET=bookclub-pdfs",
     "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
     "PORT=8000",
   ]
