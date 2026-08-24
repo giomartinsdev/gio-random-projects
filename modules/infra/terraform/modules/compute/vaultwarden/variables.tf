@@ -21,3 +21,8 @@ variable "admin_token" {
   type        = string
   sensitive   = true
 }
+
+variable "network_name" {
+  description = "Docker network (from module.compute_data) to join — lets modules/compute/vaultwarden_bridge reach this container by name (\"vaultwarden\") instead of only through the published port/tunnel."
+  type        = string
+}

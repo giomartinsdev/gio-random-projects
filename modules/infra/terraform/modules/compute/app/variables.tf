@@ -47,6 +47,19 @@ variable "rate_limit_burst" {
   default = 5
 }
 
+variable "secrets_bridge_url" {
+  description = "modules/compute/vaultwarden_bridge's internal_url output, or \"\" if that module doesn't exist yet — see its own README. Empty disables the bridge entirely; the app falls back to DATABASE_URL/DOMAIN_API_KEYS above."
+  type        = string
+  default     = ""
+}
+
+variable "secrets_bridge_api_key" {
+  description = "Bearer token for secrets_bridge_url — same value as modules/compute/vaultwarden_bridge's bridge_api_key."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "watchtower_enabled" {
   description = "Whether to label api/worker for modules/infra/watchtower to auto-redeploy on a new registry image. False by default: watchtower recreating these containers outside Terraform (new container ID each time) fights this module's own docker_container resources for ownership of the same name every time apps-deploy.yml pushes -- apps-deploy.yml's own `terraform apply -replace=...` is the actual redeploy mechanism now instead."
   type        = bool

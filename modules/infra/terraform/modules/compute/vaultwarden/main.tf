@@ -37,6 +37,13 @@ resource "docker_container" "vaultwarden" {
     external = var.published_port
   }
 
+  # Also reachable by container name ("vaultwarden") on the internal
+  # apps network — modules/compute/vaultwarden_bridge's own container
+  # talks to it this way, not through the published port/tunnel.
+  networks_advanced {
+    name = var.network_name
+  }
+
   mounts {
     type   = "volume"
     source = docker_volume.vaultwarden_data.name

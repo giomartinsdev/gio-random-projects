@@ -8,6 +8,17 @@ locals {
     label = "com.centurylinklabs.watchtower.enable"
     value = "true"
   }] : []
+
+  # Only set when the bridge actually exists (var.secrets_bridge_url
+  # empty until modules/compute/vaultwarden_bridge is — see its own
+  # README for why that can't have a real default). DATABASE_URL/
+  # DOMAIN_API_KEYS above stay set regardless, as a fallback the app's
+  # own config.Load() only uses when these two are absent — see
+  # modules/apps/domain-api's internal/infrastructure/config.
+  secrets_bridge_env = var.secrets_bridge_url == "" ? [] : [
+    "SECRETS_BRIDGE_URL=${var.secrets_bridge_url}",
+    "SECRETS_BRIDGE_API_KEY=${var.secrets_bridge_api_key}",
+  ]
 }
 
 resource "docker_container" "domain_api" {
@@ -25,14 +36,14 @@ resource "docker_container" "domain_api" {
   image   = "${var.registry_host}/domain-api:latest"
   restart = "unless-stopped"
 
-  env = [
+  env = concat([
     "DATABASE_URL=${local.database_url}",
     "REDIS_ADDR=${var.redis_host}:6379",
     "HTTP_ADDR=:8000",
     "DOMAIN_API_KEYS=${var.domain_api_keys}",
     "RATE_LIMIT_RPS=${var.rate_limit_rps}",
     "RATE_LIMIT_BURST=${var.rate_limit_burst}",
-  ]
+  ], local.secrets_bridge_env)
 
   ports {
     internal = 8000
@@ -58,10 +69,10 @@ resource "docker_container" "domain_worker" {
   image   = "${var.registry_host}/domain-worker:latest"
   restart = "unless-stopped"
 
-  env = [
+  env = concat([
     "DATABASE_URL=${local.database_url}",
     "REDIS_ADDR=${var.redis_host}:6379",
-  ]
+  ], local.secrets_bridge_env)
 
   networks_advanced {
     name = var.network_name

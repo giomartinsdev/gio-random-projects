@@ -124,3 +124,42 @@ variable "vaultwarden_admin_token" {
   type        = string
   sensitive   = true
 }
+
+# --- compute/vaultwarden_bridge ---
+# See that module's own README for the required setup order (real
+# Vaultwarden account first, then an API key, then these).
+
+variable "vaultwarden_account_email" {
+  description = "Email of the real Vaultwarden account modules/compute/vaultwarden_bridge logs in as."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "vaultwarden_account_master_password" {
+  description = "That account's master password."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "vaultwarden_api_client_id" {
+  description = "API key client_id from vault.giomartins.dev → Account Settings → Security → Keys."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "vaultwarden_api_client_secret" {
+  description = "Matching client_secret for vaultwarden_api_client_id."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "vaultwarden_bridge_api_key" {
+  description = "Bearer token domain-api/domain-worker use to call the bridge. Empty (default) means the bridge module doesn't get created at all -- see modules/compute/vaultwarden_bridge's README. Generate: openssl rand -base64 32."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

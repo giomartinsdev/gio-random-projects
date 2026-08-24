@@ -118,6 +118,11 @@ by-hand) bootstrap run.
 | `TF_REGISTRY_PASSWORD` | registry basic-auth password — must match `REGISTRY_PASSWORD` (used by `apps-deploy.yml`'s push step) and the host's `docker login registry.giomartins.dev` watchtower relies on — see `modules/compute/registry`'s README |
 | `TF_BESZEL_AGENT_KEY` | the Beszel hub's SSH public key — blank is fine until the hub's first boot; see `modules/compute/monitoring`'s README for how to get it |
 | `TF_VAULTWARDEN_ADMIN_TOKEN` | token gating `vault.giomartins.dev/admin` — generate: `openssl rand -base64 48`; see `modules/compute/vaultwarden`'s README |
+| `TF_VAULTWARDEN_ACCOUNT_EMAIL` | email of your real Vaultwarden account (create it first, through the UI) — blank is fine until then; see `modules/compute/vaultwarden_bridge`'s README |
+| `TF_VAULTWARDEN_ACCOUNT_PASSWORD` | that account's master password |
+| `TF_VAULTWARDEN_API_CLIENT_ID` | API key `client_id` from vault.giomartins.dev → Account Settings → Security → Keys |
+| `TF_VAULTWARDEN_API_CLIENT_SECRET` | matching `client_secret` |
+| `TF_VAULTWARDEN_BRIDGE_API_KEY` | bearer token domain-api/domain-worker use to call the bridge — generate: `openssl rand -base64 32`; blank disables the bridge module entirely |
 
 Once these are set, `.github/workflows/tf-deploy.yml` plans on every PR
 touching this directory, and applies on push to `main` — including a

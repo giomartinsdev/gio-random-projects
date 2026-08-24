@@ -38,6 +38,12 @@ second time, independently, by `var.admin_token`.
 4. `https://vault.giomartins.dev/admin`, token from step 1, for
    anything beyond a single user's own vault.
 
+Having `domain-api`/`domain-worker` read their config from this vault
+instead of Terraform variables directly is a separate module —
+`modules/compute/vaultwarden_bridge` — that only exists once the
+account above does. See that module's own README for the rest of the
+setup.
+
 ## Backups
 
 `vaultwarden_data` is the entire vault — back up the volume

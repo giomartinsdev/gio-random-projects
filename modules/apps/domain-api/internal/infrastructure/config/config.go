@@ -1,12 +1,21 @@
 // Package config reads process configuration from the environment. No
 // defaults for secrets — refuse to boot misconfigured rather than
 // silently pointing at localhost.
+//
+// DATABASE_URL and DOMAIN_API_KEYS are preferred from the secrets
+// bridge (modules/infra/terraform/modules/compute/vaultwarden_bridge)
+// when SECRETS_BRIDGE_URL/SECRETS_BRIDGE_API_KEY are set — actual
+// values live as items in the Vaultwarden vault, not in Terraform
+// state or GH secrets. Falls back to reading the same names straight
+// from the environment when the bridge isn't configured, so this
+// still boots on a from-scratch bring-up before the vault exists.
 package config
 
 import (
-	"fmt"
 	"os"
 	"strconv"
+
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/secretsbridge"
 )
 
 type Config struct {
@@ -20,17 +29,20 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	resolve := secretsbridge.NewResolver()
+
+	databaseURL, err := resolve("DATABASE_URL")
+	if err != nil {
+		return Config{}, err
 	}
+	apiKeys, err := resolve("DOMAIN_API_KEYS")
+	if err != nil {
+		return Config{}, err
+	}
+
 	redisAddr := os.Getenv("REDIS_ADDR")
 	if redisAddr == "" {
-		return Config{}, fmt.Errorf("REDIS_ADDR is required")
-	}
-	apiKeys := os.Getenv("DOMAIN_API_KEYS")
-	if apiKeys == "" {
-		return Config{}, fmt.Errorf("DOMAIN_API_KEYS is required (this service is internet-facing)")
+		return Config{}, secretsbridge.ErrRequired("REDIS_ADDR")
 	}
 	httpAddr := os.Getenv("HTTP_ADDR")
 	if httpAddr == "" {
@@ -41,7 +53,7 @@ func Load() (Config, error) {
 	if v := os.Getenv("RATE_LIMIT_RPS"); v != "" {
 		parsed, err := strconv.ParseFloat(v, 64)
 		if err != nil {
-			return Config{}, fmt.Errorf("RATE_LIMIT_RPS: %w", err)
+			return Config{}, secretsbridge.ErrParse("RATE_LIMIT_RPS", err)
 		}
 		rps = parsed
 	}
@@ -49,7 +61,7 @@ func Load() (Config, error) {
 	if v := os.Getenv("RATE_LIMIT_BURST"); v != "" {
 		parsed, err := strconv.Atoi(v)
 		if err != nil {
-			return Config{}, fmt.Errorf("RATE_LIMIT_BURST: %w", err)
+			return Config{}, secretsbridge.ErrParse("RATE_LIMIT_BURST", err)
 		}
 		burst = parsed
 	}
