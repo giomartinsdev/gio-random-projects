@@ -20,14 +20,18 @@ export default function Home() {
 
   return (
     <div>
-      <h1 className="font-heading font-bold text-3xl text-buteco-amber mb-1">Posts recentes</h1>
-      <p className="text-buteco-cream/60 mb-8">Artigos e cursos publicados pela comunidade</p>
+      <h1 className="font-heading font-bold text-4xl mb-1">
+        Posts <span className="text-gradient">recentes</span>
+      </h1>
+      <p className="text-buteco-cream/60 mb-10">Artigos e cursos publicados pela comunidade</p>
 
       {error && <p className="text-red-400">{error}</p>}
       {posts === null && !error && <p className="text-buteco-cream/60">Carregando…</p>}
       {posts?.length === 0 && <p className="text-buteco-cream/60">Ainda não tem nada publicado — seja o primeiro.</p>}
 
-      <div className="flex flex-col gap-4">{posts?.map((p) => <PostCard key={p.id} post={p} />)}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {posts?.map((p) => <PostCard key={p.id} post={p} />)}
+      </div>
     </div>
   );
 }

@@ -2,6 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-buteco-navy text-buteco-cream font-body;
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-buteco-brown text-buteco-cream font-body antialiased;
+  }
+
+  ::selection {
+    @apply bg-buteco-amber text-buteco-navy;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl;
+  }
+
+  .glow-amber {
+    box-shadow:
+      0 0 40px rgba(245, 166, 35, 0.15),
+      0 0 80px rgba(245, 166, 35, 0.05);
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-buteco-amber to-buteco-amber-light;
+  }
+
+  .field {
+    @apply bg-buteco-brown-light/50 border border-buteco-amber/20 rounded-lg px-4 py-3 text-buteco-cream placeholder:text-buteco-cream/40 focus:outline-none focus:border-buteco-amber transition-colors;
+  }
 }

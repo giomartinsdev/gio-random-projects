@@ -30,54 +30,61 @@ export default function Login() {
   }
 
   return (
-    <div className="max-w-sm mx-auto mt-10">
-      <h1 className="font-heading font-bold text-3xl text-center mb-2 text-buteco-amber">
-        {mode === "signin" ? "Entrar" : "Criar conta"}
-      </h1>
-      <p className="text-buteco-cream/60 text-center mb-8">Buteco dos Devs — blog da comunidade</p>
+    <div className="max-w-sm mx-auto mt-6">
+      <div className="glass-card glow-amber p-8">
+        <div className="text-center mb-8">
+          <span className="text-4xl" aria-hidden="true">
+            🍺
+          </span>
+          <h1 className="font-heading font-bold text-3xl mt-3 mb-1 text-gradient">
+            {mode === "signin" ? "Bem-vindo de volta" : "Criar conta"}
+          </h1>
+          <p className="text-buteco-cream/60 text-sm">Buteco dos Devs — blog da comunidade</p>
+        </div>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        {mode === "signup" && (
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {mode === "signup" && (
+            <input
+              type="text"
+              placeholder="Seu nome"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="field"
+            />
+          )}
           <input
-            type="text"
-            placeholder="Seu nome"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
-            className="bg-buteco-brown-light/50 border border-buteco-amber/20 rounded-lg px-4 py-3 text-buteco-cream placeholder:text-buteco-cream/40 focus:outline-none focus:border-buteco-amber"
+            className="field"
           />
-        )}
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="bg-buteco-brown-light/50 border border-buteco-amber/20 rounded-lg px-4 py-3 text-buteco-cream placeholder:text-buteco-cream/40 focus:outline-none focus:border-buteco-amber"
-        />
-        <input
-          type="password"
-          placeholder="Senha"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          minLength={8}
-          className="bg-buteco-brown-light/50 border border-buteco-amber/20 rounded-lg px-4 py-3 text-buteco-cream placeholder:text-buteco-cream/40 focus:outline-none focus:border-buteco-amber"
-        />
+          <input
+            type="password"
+            placeholder="Senha"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+            className="field"
+          />
 
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && <p className="text-red-400 text-sm">{error}</p>}
 
-        <Button type="submit" disabled={loading} className="mt-2">
-          {loading ? "Aguarde…" : mode === "signin" ? "Entrar" : "Criar conta"}
-        </Button>
-      </form>
+          <Button type="submit" disabled={loading} className="mt-2 w-full">
+            {loading ? "Aguarde…" : mode === "signin" ? "Entrar" : "Criar conta"}
+          </Button>
+        </form>
 
-      <button
-        onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-        className="block mx-auto mt-6 text-sm text-buteco-cream/60 hover:text-buteco-amber transition-colors cursor-pointer"
-      >
-        {mode === "signin" ? "Não tem conta? Criar uma" : "Já tem conta? Entrar"}
-      </button>
+        <button
+          onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+          className="block mx-auto mt-6 text-sm text-buteco-cream/60 hover:text-buteco-amber transition-colors cursor-pointer"
+        >
+          {mode === "signin" ? "Não tem conta? Criar uma" : "Já tem conta? Entrar"}
+        </button>
+      </div>
     </div>
   );
 }

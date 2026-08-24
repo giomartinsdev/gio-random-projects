@@ -24,25 +24,32 @@ export default function Profile() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="font-heading font-bold text-3xl text-buteco-amber">{session.user.name}</h1>
-          <p className="text-buteco-cream/60">{session.user.email}</p>
+      <div className="glass-card p-8 flex items-center justify-between mb-10 flex-wrap gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-full bg-buteco-amber/15 text-buteco-amber flex items-center justify-center font-heading font-bold text-2xl shrink-0">
+            {session.user.name.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <h1 className="font-heading font-bold text-2xl text-buteco-cream">{session.user.name}</h1>
+            <p className="text-buteco-cream/50 text-sm">{session.user.email}</p>
+          </div>
         </div>
         <Link to="/posts/novo">
-          <Button>Novo post</Button>
+          <Button>+ Novo post</Button>
         </Link>
       </div>
 
-      <h2 className="font-heading font-semibold text-xl text-buteco-cream mb-4">Seus posts publicados</h2>
-      <p className="text-buteco-cream/50 text-sm mb-4">
+      <h2 className="font-heading font-semibold text-xl text-buteco-cream mb-1">Seus posts publicados</h2>
+      <p className="text-buteco-cream/50 text-sm mb-6">
         Rascunhos não aparecem aqui ainda — só o que já foi publicado.
       </p>
 
       {posts === null && <p className="text-buteco-cream/60">Carregando…</p>}
       {posts?.length === 0 && <p className="text-buteco-cream/60">Você ainda não publicou nada.</p>}
 
-      <div className="flex flex-col gap-4">{posts?.map((p) => <PostCard key={p.id} post={p} />)}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {posts?.map((p) => <PostCard key={p.id} post={p} />)}
+      </div>
     </div>
   );
 }

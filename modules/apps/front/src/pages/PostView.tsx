@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router";
-import ReactMarkdown from "react-markdown";
 import { api, type Post } from "../lib/api.js";
 import { useSession } from "../lib/authClient.js";
+import MarkdownContent from "../components/MarkdownContent.js";
+
+function formatDate(iso: string | null) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+}
 
 export default function PostView() {
   const { slug } = useParams<{ slug: string }>();
@@ -32,24 +37,31 @@ export default function PostView() {
   const isAuthor = session?.user.id === post.authorId;
 
   return (
-    <article>
-      <div className="mb-6">
-        <span className="font-mono text-xs uppercase tracking-wide text-buteco-amber/70">
-          {post.type === "course" ? "Curso" : "Artigo"}
-        </span>
-        <h1 className="font-heading font-bold text-4xl text-buteco-cream mt-2 mb-3">{post.title}</h1>
+    <article className="max-w-2xl mx-auto">
+      {post.coverImageUrl && (
+        <div className="glass-card overflow-hidden mb-8 -mx-6 sm:mx-0">
+          <img src={post.coverImageUrl} alt="" className="w-full max-h-96 object-cover" />
+        </div>
+      )}
+
+      <div className="mb-8">
+        <div className="flex items-center gap-2 font-mono text-xs text-buteco-amber/70">
+          <span className="uppercase tracking-wide">{post.type === "course" ? "Curso" : "Artigo"}</span>
+          <span>·</span>
+          <span>{formatDate(post.publishedAt ?? post.createdAt)}</span>
+        </div>
+        <h1 className="font-heading font-bold text-4xl text-buteco-cream mt-3 mb-3 leading-tight">{post.title}</h1>
         {isAuthor && (
           <Link
             to={`/posts/${post.id}/editar`}
-            className="inline-block text-sm text-buteco-amber hover:underline"
+            className="inline-flex items-center gap-1 text-sm text-buteco-amber hover:text-buteco-amber-light hover:underline transition-colors"
           >
-            Editar este post
+            ✏️ Editar este post
           </Link>
         )}
       </div>
-      <div className="prose prose-invert prose-amber max-w-none font-body text-buteco-cream/90">
-        <ReactMarkdown>{post.bodyMarkdown}</ReactMarkdown>
-      </div>
+
+      <MarkdownContent content={post.bodyMarkdown} />
     </article>
   );
 }

@@ -10,18 +10,31 @@ export default function PostCard({ post }: { post: Post }) {
   return (
     <Link
       to={`/posts/${post.slug}`}
-      className="block bg-buteco-brown-light/40 border border-buteco-amber/10 rounded-xl p-6 hover:border-buteco-amber/40 transition-colors"
+      className="group glass-card overflow-hidden hover:bg-white/10 hover:border-buteco-amber/30 hover:-translate-y-0.5 transition-all"
     >
-      <div className="flex items-center gap-2 mb-2 font-mono text-xs text-buteco-amber/70">
-        <span className="uppercase tracking-wide">{post.type === "course" ? "Curso" : "Artigo"}</span>
-        {post.status === "draft" && (
-          <span className="px-2 py-0.5 rounded bg-buteco-amber/20 text-buteco-amber">rascunho</span>
-        )}
-        <span>·</span>
-        <span>{formatDate(post.publishedAt ?? post.createdAt)}</span>
+      {post.coverImageUrl && (
+        <div className="h-40 overflow-hidden">
+          <img
+            src={post.coverImageUrl}
+            alt=""
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          />
+        </div>
+      )}
+      <div className="p-6">
+        <div className="flex items-center gap-2 mb-2 font-mono text-xs text-buteco-amber/70">
+          <span className="uppercase tracking-wide">{post.type === "course" ? "Curso" : "Artigo"}</span>
+          {post.status === "draft" && (
+            <span className="px-2 py-0.5 rounded bg-buteco-amber/20 text-buteco-amber">rascunho</span>
+          )}
+          <span>·</span>
+          <span>{formatDate(post.publishedAt ?? post.createdAt)}</span>
+        </div>
+        <h3 className="font-heading font-semibold text-xl text-buteco-cream mb-2 group-hover:text-buteco-amber transition-colors">
+          {post.title}
+        </h3>
+        {post.excerpt && <p className="text-buteco-cream/60 text-sm line-clamp-2">{post.excerpt}</p>}
       </div>
-      <h3 className="font-heading font-semibold text-xl text-buteco-cream mb-2">{post.title}</h3>
-      {post.excerpt && <p className="text-buteco-cream/70 text-sm line-clamp-2">{post.excerpt}</p>}
     </Link>
   );
 }
