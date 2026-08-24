@@ -63,7 +63,12 @@ resource "cloudflare_mtls_certificate" "registry_ca" {
   # diff that forces replacement on every single plan, forever.
   # Confirmed live: this is what caused a supposedly-clean apply right
   # after a successful one to try to destroy/recreate this cert again.
-  name         = "gio-homelab-registry-mtls-ca"
+  # Can't fix by giving it a real name either — a replace re-uploads
+  # the SAME cert_pem content unchanged, and Cloudflare's account-wide
+  # content dedup rejects that as "already exists" before the old one
+  # is even gone. Matching the API's own default ("") is the only
+  # value that doesn't drift.
+  name         = ""
   certificates = tls_self_signed_cert.registry_ca.cert_pem
 
   # Re-added after all: destroy-then-create hits Cloudflare's "cannot
