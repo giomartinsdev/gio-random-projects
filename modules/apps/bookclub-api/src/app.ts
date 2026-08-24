@@ -1,26 +1,24 @@
-import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { asc, eq } from "drizzle-orm";
 import type { Auth } from "./lib/auth.js";
 import type { Db } from "./db/index.js";
-import { bookclubMessage, bookclubRoom } from "./db/schema.js";
+import { NotFoundError, type DomainApiClient, type DomainMessage } from "./lib/domainApiClient.js";
 import { createRoomsRouter } from "./routes/rooms.js";
 import * as roomHub from "./ws/roomHub.js";
 
-function serializeMessage(m: typeof bookclubMessage.$inferSelect) {
+function serializeMessage(m: DomainMessage) {
   return {
     id: m.id,
-    userId: m.userId,
-    userName: m.userName,
+    userId: m.user_id,
+    userName: m.user_name,
     body: m.body,
-    requestedPage: m.requestedPage,
-    createdAt: m.createdAt,
+    requestedPage: m.requested_page,
+    createdAt: m.created_at,
   };
 }
 
-export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
+export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, frontendOrigins: string[]) {
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
@@ -33,20 +31,81 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
     }),
   );
 
-  app.route("/rooms", createRoomsRouter(auth, db));
+  app.route("/rooms", createRoomsRouter(auth, db, domainApi));
 
   app.get("/health", (c) => c.json({ status: "ok" }));
 
+  // One SSE connection to domain-api PER ROOM (not per participant),
+  // kept open for as long as at least one WebSocket client is in that
+  // room -- relays domain-worker's room.updated/message.created events
+  // (room/chat state, applied asynchronously through the CQRS
+  // pipeline) into this service's own existing WS broadcast protocol.
+  // Reconnects with a short backoff on drop; stops entirely once the
+  // room empties out. See domain-api's internal/infrastructure/http/sse.go
+  // for the other half.
+  const roomSubscriptions = new Map<string, AbortController>();
+
+  function ensureRoomSubscription(roomId: string) {
+    if (roomSubscriptions.has(roomId)) return;
+    const controller = new AbortController();
+    roomSubscriptions.set(roomId, controller);
+    runRoomSubscription(roomId, controller.signal);
+  }
+
+  function stopRoomSubscriptionIfEmpty(roomId: string) {
+    if (roomHub.participantsOf(roomId).length > 0) return;
+    roomSubscriptions.get(roomId)?.abort();
+    roomSubscriptions.delete(roomId);
+  }
+
+  async function runRoomSubscription(roomId: string, signal: AbortSignal) {
+    while (!signal.aborted) {
+      try {
+        await domainApi.streamRoomEvents(roomId, signal, (eventName, data) => {
+          const payload = JSON.parse(data) as Record<string, unknown>;
+          switch (eventName) {
+            case "room.updated":
+              // The only room.updated this app ever produces is a page
+              // turn (see routes' updateRoom call in the "page:set" WS
+              // handler below) -- clearing annotations here, driven by
+              // the SAME event that moves everyone's page forward,
+              // keeps both in lockstep for every connected client
+              // instead of racing an immediate local clear against
+              // this async echo.
+              roomHub.clearAnnotations(roomId);
+              roomHub.broadcast(roomId, { type: "page:changed", page: payload.current_page as number });
+              break;
+
+            case "message.created":
+              roomHub.broadcast(roomId, {
+                type: "chat:message",
+                id: payload.message_id,
+                userId: payload.user_id,
+                userName: payload.user_name,
+                body: payload.body,
+                requestedPage: payload.requested_page ?? null,
+                createdAt: payload.occurred_at,
+              });
+              break;
+          }
+        });
+      } catch {
+        // network hiccup or domain-api restart -- fall through to the
+        // backoff below and try again, unless we were aborted (room emptied).
+      }
+      if (signal.aborted) return;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
   // Realtime channel for one room: page turns, live cursors/laser
   // pointer, host pen strokes and text annotations, chat (including
-  // "can we go to page N?" requests) -- see ws/roomHub.ts for the
-  // in-memory broadcast side and this repo's other -api services for
-  // why persistence (rooms/documents/messages) stays direct Postgres
-  // here rather than going through domain-api's async command
-  // pipeline: that pipeline is built for simple entity CRUD with
-  // eventual consistency, not a live socket that needs to read "who's
-  // the host" and "what page are we on" synchronously on every single
-  // message.
+  // "can we go to page N?" requests). Cursors/strokes/texts are
+  // ephemeral and stay entirely local to this process (never touch
+  // domain-api -- see ws/roomHub.ts). Page turns and chat go through
+  // domain-api's Room/Message aggregates and come back over the SSE
+  // relay above, not as an immediate local broadcast -- see that
+  // function's own comment for why.
   app.get(
     "/rooms/:id/ws",
     upgradeWebSocket(async (c) => {
@@ -56,7 +115,14 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
       }
 
       const session = await auth.api.getSession({ headers: c.req.raw.headers });
-      const [room] = session ? await db.select().from(bookclubRoom).where(eq(bookclubRoom.id, roomId)) : [];
+      let room;
+      if (session) {
+        try {
+          room = await domainApi.getRoom(roomId);
+        } catch (err) {
+          if (!(err instanceof NotFoundError)) throw err;
+        }
+      }
 
       if (!session || !room) {
         return { onOpen: (_evt, ws) => ws.close(1008, session ? "room not found" : "unauthorized") };
@@ -64,27 +130,23 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
 
       const userId = session.user.id;
       const userName = session.user.name;
-      const hostId = room.hostId;
+      const hostId = room.host_id;
 
       return {
         onOpen: async (_evt, ws) => {
           roomHub.join(roomId, ws, userId, userName);
+          ensureRoomSubscription(roomId);
 
-          const history = await db
-            .select()
-            .from(bookclubMessage)
-            .where(eq(bookclubMessage.roomId, roomId))
-            .orderBy(asc(bookclubMessage.createdAt))
-            .limit(200);
+          const { messages } = await domainApi.listMessages(roomId);
 
           ws.send(
             JSON.stringify({
               type: "init",
-              page: room.currentPage,
+              page: room.current_page,
               hostId,
               you: { userId, userName },
               participants: roomHub.participantsOf(roomId),
-              chatHistory: history.map(serializeMessage),
+              chatHistory: messages.map(serializeMessage),
               drawing: roomHub.drawingOf(roomId),
               texts: roomHub.textsOf(roomId),
             }),
@@ -104,11 +166,9 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
             case "chat:send": {
               const body = typeof msg.body === "string" ? msg.body.trim().slice(0, 2000) : "";
               const requestedPageRaw = Number(msg.requestedPage);
-              const requestedPage = Number.isInteger(requestedPageRaw) && requestedPageRaw > 0 ? requestedPageRaw : null;
+              const requestedPage = Number.isInteger(requestedPageRaw) && requestedPageRaw > 0 ? requestedPageRaw : undefined;
               if (!body) return;
-              const row = { id: randomUUID(), roomId, userId, userName, body, requestedPage, createdAt: new Date() };
-              await db.insert(bookclubMessage).values(row);
-              roomHub.broadcast(roomId, { type: "chat:message", ...serializeMessage(row) });
+              await domainApi.createMessage({ room_id: roomId, user_id: userId, user_name: userName, body, requested_page: requestedPage });
               break;
             }
 
@@ -116,9 +176,7 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
               if (userId !== hostId) return;
               const page = Number(msg.page);
               if (!Number.isFinite(page) || page < 1) return;
-              await db.update(bookclubRoom).set({ currentPage: page, updatedAt: new Date() }).where(eq(bookclubRoom.id, roomId));
-              roomHub.clearAnnotations(roomId);
-              roomHub.broadcast(roomId, { type: "page:changed", page });
+              await domainApi.updateRoom(roomId, { host_id: hostId, current_page: page });
               break;
             }
 
@@ -142,8 +200,6 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
               // No `exclude: ws` here (unlike cursor:move) -- the
               // host's own client never appends a stroke to its local
               // state on send, only on receiving this broadcast back.
-              // Excluding the sender would make their own just-drawn
-              // stroke vanish the instant they lift the pen.
               roomHub.broadcast(roomId, { type: "draw:stroke", ...stroke });
               break;
             }
@@ -155,7 +211,7 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
               const text = typeof msg.text === "string" ? msg.text.trim().slice(0, 280) : "";
               if (!Number.isFinite(x) || !Number.isFinite(y) || !text) return;
               const annotation = {
-                id: randomUUID(),
+                id: crypto.randomUUID(),
                 x,
                 y,
                 text,
@@ -178,6 +234,7 @@ export function createApp(auth: Auth, db: Db, frontendOrigins: string[]) {
         onClose: (_evt, ws) => {
           roomHub.leave(roomId, ws);
           roomHub.broadcast(roomId, { type: "participant:leave", userId });
+          stopRoomSubscriptionIfEmpty(roomId);
         },
       };
     }),

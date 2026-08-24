@@ -15,6 +15,13 @@
       "when": 1787608749683,
       "tag": "0001_real_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787611328875,
+      "tag": "0002_silky_gauntlet",
+      "breakpoints": true
     }
   ]
 }

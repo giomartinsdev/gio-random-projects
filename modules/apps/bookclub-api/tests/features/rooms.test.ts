@@ -1,19 +1,30 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
+import { createDomainApiClient } from "../../src/lib/domainApiClient.js";
 import { fakeAuth, authHeaders } from "../fakeAuth.js";
+import { startFakeDomainApi } from "../fakeDomainApi.js";
 import { startTestDb } from "../testDb.js";
 
 describe("rooms", () => {
   let app: ReturnType<typeof createApp>["app"];
-  let stop: () => Promise<void>;
+  let stopDb: () => Promise<void>;
+  let stopDomainApi: () => Promise<void>;
 
   beforeAll(async () => {
     const testDb = await startTestDb();
-    stop = testDb.stop;
-    ({ app } = createApp(fakeAuth(), testDb.db, ["http://localhost:5173"]));
+    stopDb = testDb.stop;
+
+    const fakeDomainApi = startFakeDomainApi("test-key");
+    stopDomainApi = fakeDomainApi.stop;
+    const domainApi = createDomainApiClient(fakeDomainApi.url, "test-key");
+
+    ({ app } = createApp(fakeAuth(), testDb.db, domainApi, ["http://localhost:5173"]));
   });
 
-  afterAll(() => stop());
+  afterAll(async () => {
+    await stopDb();
+    await stopDomainApi();
+  });
 
   function pdfFormData(title: string, bytes = "%PDF-1.4 fake") {
     const form = new FormData();
@@ -46,15 +57,18 @@ describe("rooms", () => {
       body: pdfFormData("Clube do Livro: Duna"),
       headers: authHeaders("user-1", "Gio"),
     });
-    expect(createRes.status).toBe(201);
-    const created = await createRes.json();
+    expect(createRes.status).toBe(202);
+
+    // Room creation is async (domain-worker applies it) -- the fake
+    // domain-api in these tests applies synchronously, so it's already
+    // there by the time listRooms is called next.
+    const listRes = await app.request("/rooms");
+    const { rooms } = await listRes.json();
+    expect(rooms).toHaveLength(1);
+    const created = rooms[0];
     expect(created.title).toBe("Clube do Livro: Duna");
     expect(created.hostId).toBe("user-1");
     expect(created.currentPage).toBe(1);
-
-    const listRes = await app.request("/rooms");
-    const { rooms } = await listRes.json();
-    expect(rooms.some((r: { id: string }) => r.id === created.id)).toBe(true);
 
     const getRes = await app.request(`/rooms/${created.id}`);
     expect(getRes.status).toBe(200);
@@ -75,7 +89,7 @@ describe("rooms", () => {
       method: "DELETE",
       headers: authHeaders("user-1", "Gio"),
     });
-    expect(okDelete.status).toBe(204);
+    expect(okDelete.status).toBe(202);
 
     const afterDelete = await app.request(`/rooms/${created.id}`);
     expect(afterDelete.status).toBe(404);

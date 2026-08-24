@@ -58,7 +58,21 @@ func main() {
 	posts := postgres.NewPostRepository(pool)
 	postHandlers := httpapi.NewPostHandlers(posts, commands, log)
 
-	router := httpapi.NewRouter(handlers, postHandlers, apiKeys, rateLimiter, log)
+	rooms := postgres.NewRoomRepository(pool)
+	roomHandlers := httpapi.NewRoomHandlers(rooms, commands, log)
+
+	messages := postgres.NewMessageRepository(pool)
+	messageHandlers := httpapi.NewMessageHandlers(messages, commands, log)
+
+	// A dedicated client for SSE's Redis SUBSCRIBE -- go-redis dedicates
+	// a connection per subscription for the life of that subscription,
+	// so this stays separate from rdb (which CommandPublisher uses for
+	// plain PUBLISH calls) rather than contending with it.
+	sseRDB := goredis.NewClient(&goredis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPass})
+	defer sseRDB.Close()
+	sseHandlers := httpapi.NewSSEHandlers(sseRDB, log)
+
+	router := httpapi.NewRouter(handlers, postHandlers, roomHandlers, messageHandlers, sseHandlers, apiKeys, rateLimiter, log)
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: router}
 

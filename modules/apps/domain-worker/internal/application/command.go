@@ -17,6 +17,12 @@ const (
 	ActionCreatePost Action = "post.create"
 	ActionUpdatePost Action = "post.update"
 	ActionDeletePost Action = "post.delete"
+
+	ActionCreateRoom Action = "room.create"
+	ActionUpdateRoom Action = "room.update"
+	ActionDeleteRoom Action = "room.delete"
+
+	ActionCreateMessage Action = "message.create"
 )
 
 type Command struct {

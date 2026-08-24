@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Auth } from "../lib/auth.js";
 import type { Db } from "../db/index.js";
-import { bookclubDocument, bookclubRoom } from "../db/schema.js";
+import { bookclubDocument } from "../db/schema.js";
+import { DomainApiError, NotFoundError, type DomainApiClient, type DomainRoom } from "../lib/domainApiClient.js";
 
 // Generous for a book chapter or a short book, small enough to keep
 // comfortably in a Postgres bytea column (see schema.ts's own comment
@@ -15,22 +16,22 @@ async function requireUser(auth: Auth, c: { req: { raw: Request } }) {
   return session?.user ?? null;
 }
 
-function serializeRoom(r: typeof bookclubRoom.$inferSelect) {
+function serializeRoom(r: DomainRoom) {
   return {
     id: r.id,
     title: r.title,
-    hostId: r.hostId,
-    documentId: r.documentId,
-    currentPage: r.currentPage,
-    createdAt: r.createdAt,
+    hostId: r.host_id,
+    documentId: r.document_id,
+    currentPage: r.current_page,
+    createdAt: r.created_at,
   };
 }
 
-export function createRoomsRouter(auth: Auth, db: Db) {
+export function createRoomsRouter(auth: Auth, db: Db, domainApi: DomainApiClient) {
   const router = new Hono();
 
   router.get("/", async (c) => {
-    const rooms = await db.select().from(bookclubRoom).orderBy(desc(bookclubRoom.createdAt));
+    const { rooms } = await domainApi.listRooms();
     return c.json({ rooms: rooms.map(serializeRoom) });
   });
 
@@ -51,8 +52,6 @@ export function createRoomsRouter(auth: Auth, db: Db) {
 
     const bytes = Buffer.from(await pdf.arrayBuffer());
     const documentId = randomUUID();
-    const roomId = randomUUID();
-    const now = new Date();
 
     await db.insert(bookclubDocument).values({
       id: documentId,
@@ -60,29 +59,25 @@ export function createRoomsRouter(auth: Auth, db: Db) {
       filename: pdf.name || "documento.pdf",
       sizeBytes: bytes.byteLength,
       data: bytes,
-      createdAt: now,
     });
 
-    await db.insert(bookclubRoom).values({
-      id: roomId,
-      hostId: user.id,
-      title,
-      documentId,
-      currentPage: 1,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    return c.json(
-      { id: roomId, title, hostId: user.id, documentId, currentPage: 1, createdAt: now.toISOString() },
-      201,
-    );
+    // 202: the room itself is created asynchronously by domain-worker,
+    // same as every other write through domain-api -- unlike post-api,
+    // there's no synchronous "here's the created row" response to give
+    // back yet. The front navigates to the room page on success
+    // regardless, which re-fetches once it's actually there.
+    const accepted = await domainApi.createRoom({ host_id: user.id, title, document_id: documentId });
+    return c.json(accepted, 202);
   });
 
   router.get("/:id", async (c) => {
-    const [room] = await db.select().from(bookclubRoom).where(eq(bookclubRoom.id, c.req.param("id")));
-    if (!room) return c.json({ error: "not found" }, 404);
-    return c.json(serializeRoom(room));
+    try {
+      const room = await domainApi.getRoom(c.req.param("id"));
+      return c.json(serializeRoom(room));
+    } catch (err) {
+      if (err instanceof NotFoundError) return c.json({ error: "not found" }, 404);
+      throw err;
+    }
   });
 
   // Auth-gated (not a public static asset) -- this is the only way the
@@ -94,10 +89,15 @@ export function createRoomsRouter(auth: Auth, db: Db) {
     const user = await requireUser(auth, c);
     if (!user) return c.json({ error: "unauthorized" }, 401);
 
-    const [room] = await db.select().from(bookclubRoom).where(eq(bookclubRoom.id, c.req.param("id")));
-    if (!room) return c.json({ error: "not found" }, 404);
+    let room: DomainRoom;
+    try {
+      room = await domainApi.getRoom(c.req.param("id"));
+    } catch (err) {
+      if (err instanceof NotFoundError) return c.json({ error: "not found" }, 404);
+      throw err;
+    }
 
-    const [doc] = await db.select().from(bookclubDocument).where(eq(bookclubDocument.id, room.documentId));
+    const [doc] = await db.select().from(bookclubDocument).where(eq(bookclubDocument.id, room.document_id));
     if (!doc) return c.json({ error: "not found" }, 404);
 
     return new Response(new Uint8Array(doc.data), {
@@ -113,13 +113,23 @@ export function createRoomsRouter(auth: Auth, db: Db) {
     const user = await requireUser(auth, c);
     if (!user) return c.json({ error: "unauthorized" }, 401);
 
-    const [room] = await db.select().from(bookclubRoom).where(eq(bookclubRoom.id, c.req.param("id")));
-    if (!room) return c.json({ error: "not found" }, 404);
-    if (room.hostId !== user.id) return c.json({ error: "forbidden" }, 403);
+    let room: DomainRoom;
+    try {
+      room = await domainApi.getRoom(c.req.param("id"));
+    } catch (err) {
+      if (err instanceof NotFoundError) return c.json({ error: "not found" }, 404);
+      throw err;
+    }
+    if (room.host_id !== user.id) return c.json({ error: "forbidden" }, 403);
 
-    await db.delete(bookclubRoom).where(eq(bookclubRoom.id, room.id));
-    await db.delete(bookclubDocument).where(eq(bookclubDocument.id, room.documentId));
-    return c.body(null, 204);
+    try {
+      const accepted = await domainApi.deleteRoom(room.id, user.id);
+      await db.delete(bookclubDocument).where(eq(bookclubDocument.id, room.document_id));
+      return c.json(accepted, 202);
+    } catch (err) {
+      if (err instanceof DomainApiError && err.status === 400) return c.json({ error: err.message }, 400);
+      throw err;
+    }
   });
 
   return router;

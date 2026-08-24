@@ -213,11 +213,25 @@ jobs:
 
       - name: Deploy the image(s) just pushed
         run: |
+          # Migrate containers are one-shot (must_run=false) with no
+          # argument that changes when the image's CONTENT changes
+          # (image is always pinned to the ":latest" tag string) --
+          # without -replace-ing them too, Terraform sees no diff and
+          # never reruns them, so a schema migration added in this
+          # same push would silently never apply. Bit us for real:
+          # bookclub_message.requested_page shipped in code but
+          # missing in the DB until this was added.
           REPLACE_ARGS=()
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
             case "$app" in
-              post-api) REPLACE_ARGS+=("-replace=module.compute_post_api.docker_container.post_api") ;;
-              bookclub-api) REPLACE_ARGS+=("-replace=module.compute_bookclub_api.docker_container.bookclub_api") ;;
+              post-api)
+                REPLACE_ARGS+=("-replace=module.compute_post_api.docker_container.post_api_migrate")
+                REPLACE_ARGS+=("-replace=module.compute_post_api.docker_container.post_api")
+                ;;
+              bookclub-api)
+                REPLACE_ARGS+=("-replace=module.compute_bookclub_api.docker_container.bookclub_api_migrate")
+                REPLACE_ARGS+=("-replace=module.compute_bookclub_api.docker_container.bookclub_api")
+                ;;
               front) REPLACE_ARGS+=("-replace=module.compute_front.docker_container.front") ;;
             esac
           done

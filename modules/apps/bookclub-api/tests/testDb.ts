@@ -3,9 +3,11 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb } from "../src/db/index.js";
 
 // Real Postgres via testcontainers, migrating only this service's own
-// tables (room/document/message) -- NOT Better Auth's, which live in a
-// migration this package doesn't own (post-api's). That's why these
-// tests exercise room/document/message CRUD through a fake Auth stub
+// table -- bookclub_document, the PDF blob (rooms/messages moved to
+// domain-api's own Postgres, see tests/fakeDomainApi.ts for how the
+// REST layer's tests fake that instead) -- NOT Better Auth's tables,
+// which live in a migration this package doesn't own (post-api's).
+// That's why these tests exercise room CRUD through a fake Auth stub
 // (tests/fakeAuth.ts) rather than a real Better Auth instance: there's
 // no "user" table here to satisfy it. Session validation itself is a
 // post-api concern, already covered by post-api's own test suite.

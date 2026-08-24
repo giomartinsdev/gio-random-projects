@@ -15,9 +15,11 @@ locals {
 }
 
 # One-shot: applies this service's OWN drizzle migrations
-# (room/document/message tables -- NOT Better Auth's, already created
-# by post-api's own migrate container against this same database).
-# Same must_run=false + attach=true pattern as post_api_migrate.
+# (bookclub_document, the PDF blob table -- room/message live in
+# domain-api/domain-worker's own migration now, not here; NOT Better
+# Auth's tables either, already created by post-api's own migrate
+# container against this same database). Same must_run=false +
+# attach=true pattern as post_api_migrate.
 resource "docker_container" "bookclub_api_migrate" {
   name       = "bookclub-api-migrate"
   image      = "${var.registry_host}/bookclub-api:latest"
@@ -46,6 +48,8 @@ resource "docker_container" "bookclub_api" {
     "DATABASE_URL=${local.database_url}",
     "BETTER_AUTH_SECRET=${var.better_auth_secret}",
     "BETTER_AUTH_URL=https://${var.hostname}",
+    "DOMAIN_API_URL=${var.domain_api_url}",
+    "DOMAIN_API_KEY=${var.domain_api_key}",
     "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
     "PORT=8000",
   ]

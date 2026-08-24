@@ -1,61 +1,29 @@
 import { customType, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
-// user/host/uploader ids are plain text columns, not a Postgres FK to
-// authSchema's "user" table -- that table lives in a migration this
-// package doesn't own (post-api's), so a hard cross-migration FK
-// isn't safe to declare here. Same soft-reference approach as every
-// other author_id/host_id in this repo's other services.
+// The uploaded PDF's bytes live directly in Postgres (bytea), not an
+// object store -- this repo has no MinIO/S3 yet, and homelab-scale
+// PDFs (a chapter, a short book) comfortably fit a bytea column. If
+// that stops being true, this table is the one place that'd need to
+// change to a real object store.
+//
+// This is the ONLY table left in this service's own database. Rooms
+// and chat messages moved to domain-api/domain-worker's Room/Message
+// aggregates (see lib/domainApiClient.ts) -- a binary blob doesn't fit
+// a JSON command envelope, so the PDF itself is the one thing that
+// stays here, referenced from a Room only by its opaque document_id
+// string (domain-api has no idea what that id points to, or that a
+// PDF exists at all).
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType() {
     return "bytea";
   },
 });
 
-// The uploaded PDF's bytes live directly in Postgres (bytea), not an
-// object store -- this repo has no MinIO/S3 yet, and homelab-scale
-// PDFs (a chapter, a short book) comfortably fit a bytea column. If
-// that stops being true, this table is the one place that'd need to
-// change to a real object store.
 export const bookclubDocument = pgTable("bookclub_document", {
   id: text("id").primaryKey(),
   uploadedBy: text("uploaded_by").notNull(),
   filename: text("filename").notNull(),
   sizeBytes: integer("size_bytes").notNull(),
   data: bytea("data").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-export const bookclubRoom = pgTable("bookclub_room", {
-  id: text("id").primaryKey(),
-  hostId: text("host_id").notNull(),
-  title: text("title").notNull(),
-  documentId: text("document_id")
-    .notNull()
-    .references(() => bookclubDocument.id, { onDelete: "cascade" }),
-  currentPage: integer("current_page").notNull().default(1),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-// Chat history is the one piece of realtime room state worth
-// persisting -- so a participant who joins late (or reconnects) still
-// sees prior messages. Live cursors and pen strokes are NOT persisted
-// here on purpose: they're broadcast-only, held in the ws room hub's
-// in-memory state (src/ws/roomHub.ts), and reset whenever the host
-// turns the page -- annotations are meant to be "for this page, right
-// now", not a permanent record.
-export const bookclubMessage = pgTable("bookclub_message", {
-  id: text("id").primaryKey(),
-  roomId: text("room_id")
-    .notNull()
-    .references(() => bookclubRoom.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull(),
-  userName: text("user_name").notNull(),
-  body: text("body").notNull(),
-  // Set when this message is a "can we go to page N?" request (any
-  // participant can send one) rather than a plain chat line -- the
-  // front renders those with a "levar para lá" action, shown only to
-  // the host, instead of parsing chat text for a command syntax.
-  requestedPage: integer("requested_page"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

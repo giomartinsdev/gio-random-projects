@@ -34,8 +34,15 @@ resource "random_id" "post_api_domain_key" {
   byte_length = 24
 }
 
+# bookclub-api's own key, same reasoning as post_api_domain_key --
+# Room/Message go through domain-api's CQRS pipeline same as Post, so
+# this needs a caller identity there too.
+resource "random_id" "bookclub_api_domain_key" {
+  byte_length = 24
+}
+
 locals {
-  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api"
+  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api"
 }
 
 resource "random_password" "vaultwarden_admin_token" {
@@ -135,6 +142,10 @@ locals {
     post_api_domain_key = {
       trigger = random_id.post_api_domain_key.hex
       items   = { POST_API_DOMAIN_KEY = random_id.post_api_domain_key.hex }
+    }
+    bookclub_api_domain_key = {
+      trigger = random_id.bookclub_api_domain_key.hex
+      items   = { BOOKCLUB_API_DOMAIN_KEY = random_id.bookclub_api_domain_key.hex }
     }
     post_api_better_auth_secret = {
       trigger = random_password.post_api_better_auth_secret.result

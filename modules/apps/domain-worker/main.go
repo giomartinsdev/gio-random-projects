@@ -21,9 +21,13 @@ import (
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
+	appmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/message"
 	apppost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/post"
+	approom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/room"
 	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/user"
+	domainmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/message"
 	domainpost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/post"
+	domainroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/room"
 	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/config"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/postgres"
@@ -70,6 +74,14 @@ func main() {
 	postService := apppost.NewService(postRepo)
 	postHandler := apppost.NewCommandHandler(postService)
 
+	roomRepo := postgres.NewRoomRepository(pool)
+	roomService := approom.NewService(roomRepo)
+	roomHandler := approom.NewCommandHandler(roomService)
+
+	messageRepo := postgres.NewMessageRepository(pool)
+	messageService := appmessage.NewService(messageRepo)
+	messageHandler := appmessage.NewCommandHandler(messageService)
+
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info("relay started")
@@ -89,7 +101,7 @@ func main() {
 				log.Error("fetch command error", "error", err)
 				continue
 			}
-			process(ctx, log, userHandler, postHandler, auditRepo, eventBus, cmd)
+			process(ctx, log, userHandler, postHandler, roomHandler, messageHandler, auditRepo, eventBus, cmd)
 		}
 	}()
 
@@ -108,7 +120,7 @@ func main() {
 // resulting domain event. One shared command queue serves every
 // aggregate; this is the one place that knows how to fan a Command
 // back out to its owning handler.
-func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
+func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
 	var (
 		evt        interface{ EventName() string }
 		err        error
@@ -132,6 +144,22 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 		if pevt != nil {
 			evt = pevt
 			id = postEntityID(pevt)
+		}
+	case strings.HasPrefix(string(cmd.Action), "room."):
+		entityType = "room"
+		var revt domainroom.Event
+		revt, err = roomHandler.Handle(ctx, cmd)
+		if revt != nil {
+			evt = revt
+			id = roomEntityID(revt)
+		}
+	case strings.HasPrefix(string(cmd.Action), "message."):
+		entityType = "message"
+		var mevt domainmessage.Event
+		mevt, err = messageHandler.Handle(ctx, cmd)
+		if mevt != nil {
+			evt = mevt
+			id = messageEntityID(mevt)
 		}
 	default:
 		err = fmt.Errorf("unknown action: %q", cmd.Action)
@@ -183,6 +211,28 @@ func postEntityID(evt domainpost.Event) string {
 		return e.PostID
 	case domainpost.Deleted:
 		return e.PostID
+	default:
+		return ""
+	}
+}
+
+func roomEntityID(evt domainroom.Event) string {
+	switch e := evt.(type) {
+	case domainroom.Created:
+		return e.RoomID
+	case domainroom.Updated:
+		return e.RoomID
+	case domainroom.Deleted:
+		return e.RoomID
+	default:
+		return ""
+	}
+}
+
+func messageEntityID(evt domainmessage.Event) string {
+	switch e := evt.(type) {
+	case domainmessage.Created:
+		return e.MessageID
 	default:
 		return ""
 	}

@@ -79,8 +79,12 @@ module "compute_bookclub_api" {
   postgres_password  = random_password.postgres.result
   registry_host      = var.registry_host
   better_auth_secret = random_password.post_api_better_auth_secret.result
+  domain_api_key     = random_id.bookclub_api_domain_key.hex
 
-  depends_on = [null_resource.postgres_password_sync]
+  # Runtime dependency (reaches domain-api by container name over the
+  # shared network), not a Terraform attribute reference -- same
+  # reasoning as module.compute_post_api's own depends_on.
+  depends_on = [null_resource.postgres_password_sync, module.compute_app]
 }
 
 module "compute_front" {

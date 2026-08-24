@@ -49,6 +49,18 @@ variable "better_auth_secret" {
   sensitive   = true
 }
 
+variable "domain_api_url" {
+  description = "Internal URL bookclub-api's domain-api client (Room/Message CQRS + the SSE relay) talks to -- container-to-container on network_name, never the public domain.giomartins.dev."
+  type        = string
+  default     = "http://domain-api:8000"
+}
+
+variable "domain_api_key" {
+  description = "bookclub-api's own entry in domain-api's DOMAIN_API_KEYS (the \"bookclub-api\" label, not post-api's or ci's)."
+  type        = string
+  sensitive   = true
+}
+
 variable "watchtower_enabled" {
   description = "Same reasoning as modules/compute/app's own variable of the same name: false by default, since ts-ci-cd.yml's own terraform apply -replace=... is the actual redeploy mechanism."
   type        = bool

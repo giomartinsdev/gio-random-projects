@@ -45,3 +45,30 @@ CREATE TABLE IF NOT EXISTS posts (
 
 CREATE INDEX IF NOT EXISTS idx_posts_status_published_at ON posts (status, published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts (author_id);
+
+-- host_id and document_id are opaque identifiers, same reasoning as
+-- posts.author_id -- document_id points at a PDF blob bookclub-api
+-- owns (this aggregate has no idea what a PDF is).
+CREATE TABLE IF NOT EXISTS rooms (
+    id UUID PRIMARY KEY,
+    host_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    current_page INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rooms_host_id ON rooms (host_id);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id UUID PRIMARY KEY,
+    room_id UUID NOT NULL REFERENCES rooms (id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    user_name TEXT NOT NULL,
+    body TEXT NOT NULL,
+    requested_page INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_room_id_created_at ON messages (room_id, created_at);

@@ -1,0 +1,127 @@
+// bookclub-api owns no room/message storage of its own (only the PDF
+// blob in bookclubDocument stays local -- see db/schema.ts's own
+// comment on why binary data can't go through this pipeline). Reads
+// hit domain-api directly; writes publish a command and come back 202
+// Accepted, applied asynchronously by domain-worker -- same contract
+// post-api's own client gets. streamRoomEvents is the one thing this
+// client has that post-api's doesn't: a hand-rolled SSE reader (no
+// `eventsource` package -- Node's global fetch + ReadableStream is
+// enough), because this needs a custom X-API-Key header a browser's
+// native EventSource can't send. See app.ts's WebSocket handler for
+// how those events get translated into this service's own realtime
+// wire protocol.
+export type DomainRoom = {
+  id: string;
+  host_id: string;
+  title: string;
+  document_id: string;
+  current_page: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DomainMessage = {
+  id: string;
+  room_id: string;
+  user_id: string;
+  user_name: string;
+  body: string;
+  requested_page: number | null;
+  created_at: string;
+};
+
+export type Accepted = { command_id: string; status: "accepted" };
+
+export class DomainApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export class NotFoundError extends DomainApiError {
+  constructor() {
+    super(404, "not found");
+  }
+}
+
+export function createDomainApiClient(baseUrl: string, apiKey: string) {
+  async function request<T>(path: string, init?: RequestInit): Promise<T> {
+    const res = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: { ...init?.headers, "content-type": "application/json", "x-api-key": apiKey },
+    });
+    if (res.status === 404) throw new NotFoundError();
+    if (!res.ok) {
+      const body = await res.text();
+      throw new DomainApiError(res.status, `domain-api ${res.status}: ${body}`);
+    }
+    return res.json() as Promise<T>;
+  }
+
+  return {
+    listRooms: () => request<{ rooms: DomainRoom[] }>("/rooms"),
+    getRoom: (id: string) => request<DomainRoom>(`/rooms/${encodeURIComponent(id)}`),
+    createRoom: (input: { host_id: string; title: string; document_id: string }) =>
+      request<Accepted>("/rooms", { method: "POST", body: JSON.stringify(input) }),
+    updateRoom: (id: string, input: { host_id: string; title?: string; current_page?: number }) =>
+      request<Accepted>(`/rooms/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) }),
+    deleteRoom: (id: string, hostId: string) =>
+      request<Accepted>(`/rooms/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        body: JSON.stringify({ host_id: hostId }),
+      }),
+
+    listMessages: (roomId: string) =>
+      request<{ messages: DomainMessage[] }>(`/messages?room_id=${encodeURIComponent(roomId)}`),
+    createMessage: (input: { room_id: string; user_id: string; user_name: string; body: string; requested_page?: number }) =>
+      request<Accepted>("/messages", { method: "POST", body: JSON.stringify(input) }),
+
+    // Reads the room's SSE stream until `signal` aborts. onEvent fires
+    // once per "event: <name>\ndata: <json>\n\n" frame. Reconnection on
+    // an unexpected drop is the caller's job (app.ts retries with a
+    // short backoff) -- this function itself just runs one connection
+    // to completion or abort.
+    async streamRoomEvents(roomId: string, signal: AbortSignal, onEvent: (eventName: string, data: string) => void) {
+      const res = await fetch(`${baseUrl}/rooms/${encodeURIComponent(roomId)}/events`, {
+        headers: { "x-api-key": apiKey },
+        signal,
+      });
+      if (!res.ok || !res.body) {
+        throw new DomainApiError(res.status, `domain-api sse ${res.status}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) return;
+          buffer += decoder.decode(value, { stream: true });
+
+          let sepIndex: number;
+          while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+            const frame = buffer.slice(0, sepIndex);
+            buffer = buffer.slice(sepIndex + 2);
+
+            let eventName = "message";
+            let data = "";
+            for (const line of frame.split("\n")) {
+              if (line.startsWith("event: ")) eventName = line.slice(7);
+              else if (line.startsWith("data: ")) data = line.slice(6);
+            }
+            if (data) onEvent(eventName, data);
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  };
+}
+
+export type DomainApiClient = ReturnType<typeof createDomainApiClient>;
