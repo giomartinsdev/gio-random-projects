@@ -55,8 +55,15 @@ resource "tls_self_signed_cert" "registry_ca" {
 }
 
 resource "cloudflare_mtls_certificate" "registry_ca" {
-  account_id   = var.account_id
-  ca           = true
+  account_id = var.account_id
+  ca         = true
+  # Cloudflare always echoes back a `name` (empty string "" if none was
+  # given at upload) — `name` is ForceNew, so leaving it unset (null in
+  # our config) against a refreshed "" from the API is a permanent
+  # diff that forces replacement on every single plan, forever.
+  # Confirmed live: this is what caused a supposedly-clean apply right
+  # after a successful one to try to destroy/recreate this cert again.
+  name         = "gio-homelab-registry-mtls-ca"
   certificates = tls_self_signed_cert.registry_ca.cert_pem
 }
 
