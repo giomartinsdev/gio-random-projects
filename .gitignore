@@ -14,8 +14,13 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# lib/ and lib64/ deliberately NOT ignored here (removed from this
+# otherwise-generic Python template) -- this repo has no Python
+# package needing them ignored, and the bare pattern was silently
+# swallowing modules/apps/post-api/src/lib/*, a real TypeScript
+# source directory, never committed despite `git add` appearing to
+# succeed. Any /.../lib/ path anyone actually wants ignored later
+# should use an explicit path, not this repo-wide catch-all.
 parts/
 sdist/
 var/

@@ -243,4 +243,4 @@ jobs:
               domain-worker) REPLACE_ARGS+=("-replace=module.compute_app.docker_container.domain_worker") ;;
             esac
           done
-          terraform apply -input=false -auto-approve "${REPLACE_ARGS[@]}"
+          terraform apply -input=false -lock-timeout=300s -auto-approve "${REPLACE_ARGS[@]}"

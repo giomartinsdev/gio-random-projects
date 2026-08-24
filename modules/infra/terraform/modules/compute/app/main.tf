@@ -22,7 +22,7 @@ locals {
 }
 
 resource "docker_container" "domain_api" {
-  name  = "domain-api"
+  name = "domain-api"
   # Deliberately a stable literal, not a variable — a version that
   # changed per-deploy (the first attempt at this) meant any apply
   # that DIDN'T pass that override (every routine tf-deploy.yml run)

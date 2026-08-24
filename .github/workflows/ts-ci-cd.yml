@@ -212,4 +212,4 @@ jobs:
               post-api) REPLACE_ARGS+=("-replace=module.compute_post_api.docker_container.post_api") ;;
             esac
           done
-          terraform apply -input=false -auto-approve "${REPLACE_ARGS[@]}"
+          terraform apply -input=false -lock-timeout=300s -auto-approve "${REPLACE_ARGS[@]}"

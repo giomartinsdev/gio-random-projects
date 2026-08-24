@@ -105,11 +105,11 @@ jobs:
         run: terraform validate
 
       - name: Plan
-        run: terraform plan -input=false -out=tfplan
+        run: terraform plan -input=false -lock-timeout=300s -out=tfplan
 
       - name: Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: terraform apply -input=false -auto-approve tfplan
+        run: terraform apply -input=false -lock-timeout=300s -auto-approve tfplan
 
       # Backs up the "secret zero" credentials Terraform itself needs
       # to authenticate -- by definition it can't fetch these FROM the
