@@ -65,6 +65,21 @@ resource "cloudflare_mtls_certificate" "registry_ca" {
   # after a successful one to try to destroy/recreate this cert again.
   name         = "gio-homelab-registry-mtls-ca"
   certificates = tls_self_signed_cert.registry_ca.cert_pem
+
+  # Re-added after all: destroy-then-create hits Cloudflare's "cannot
+  # delete while in use" guard every time, because the hostname
+  # association (below) still points at the old cert's id right up
+  # until the moment Terraform destroys it — there's no ordering that
+  # avoids that with a plain replace. create_before_destroy fixes this
+  # correctly *when the graph edge is honored*: Terraform creates the
+  # new cert first, repoints the association at its new id (the
+  # association's only dependency on this resource), and only then
+  # destroys the now-unreferenced old cert. The name-collision issue
+  # that previously made CBD attempts fail is gone now that `name` is
+  # fixed instead of colliding on account-wide uniqueness.
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "cloudflare_certificate_authorities_hostname_associations" "registry" {
