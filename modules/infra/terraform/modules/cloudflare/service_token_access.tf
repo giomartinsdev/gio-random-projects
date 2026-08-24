@@ -17,6 +17,7 @@ locals {
   service_token_hostnames = {
     docker = "docker.giomartins.dev"
     domain = "domain.giomartins.dev"
+    vault  = "vault.giomartins.dev"
   }
 }
 
