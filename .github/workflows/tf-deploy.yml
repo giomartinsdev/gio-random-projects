@@ -86,6 +86,19 @@ jobs:
       - name: Init
         run: terraform init -backend-config="endpoints={s3=\"${{ secrets.TF_STATE_R2_ENDPOINT }}\"}"
 
+      - name: One-time diagnostic - dump mtls cert reality vs state
+        run: |
+          echo "--- account mtls_certificates ---"
+          curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/${TF_VAR_cloudflare_account_id}/mtls_certificates" \
+            | jq '.result[] | {id, name, ca, uploaded_on}'
+          echo "--- hostname associations for registry.giomartins.dev ---"
+          curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/zones/${TF_VAR_cloudflare_zone_id}/certificate_authorities/hostname_associations?hostname=registry.giomartins.dev" \
+            | jq .
+          echo "--- terraform state for the cert resource ---"
+          terraform state show 'module.cloudflare.cloudflare_mtls_certificate.registry_ca' || true
+
       - name: Validate
         run: terraform validate
 
