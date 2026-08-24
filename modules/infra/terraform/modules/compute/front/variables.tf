@@ -12,7 +12,7 @@ variable "registry_host" {
 variable "hostname" {
   description = "Public hostname front is reached at."
   type        = string
-  default     = "blog.giomartins.dev"
+  default     = "classroom-bdd.giomartins.dev"
 }
 
 variable "external_port" {

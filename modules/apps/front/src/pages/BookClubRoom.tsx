@@ -39,6 +39,7 @@ export default function BookClubRoom() {
   const drawingRef = useRef(false);
   const currentStrokeRef = useRef<[number, number][]>([]);
   const lastCursorSentRef = useRef(0);
+  const textActionTakenRef = useRef(false);
 
   const socket = useRoomSocket(id ?? "");
   const isHost = Boolean(socket.you && socket.you.userId === socket.hostId);
@@ -202,13 +203,30 @@ export default function BookClubRoom() {
 
   function handleCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
     if (!isHost || tool !== "text") return;
+    textActionTakenRef.current = false;
     setPendingTextAt(pointFromEvent(e));
   }
 
+  // Enter commits, Escape cancels, and blurring the input (clicking
+  // away) commits too -- but React removing the input from the DOM
+  // (on Escape's setPendingTextAt(null)) also fires a native blur on
+  // it, whose handler closure still holds the PRE-Escape state.
+  // textActionTakenRef makes whichever of the two fires first win,
+  // instead of Escape's cancel being silently overridden by a
+  // stale-closure commit right after.
   function commitText() {
+    if (textActionTakenRef.current) return;
+    textActionTakenRef.current = true;
     if (pendingTextAt && textDraft.trim()) {
       socket.sendText(pendingTextAt[0], pendingTextAt[1], textDraft.trim(), PEN_COLOR);
     }
+    setPendingTextAt(null);
+    setTextDraft("");
+  }
+
+  function cancelText() {
+    if (textActionTakenRef.current) return;
+    textActionTakenRef.current = true;
     setPendingTextAt(null);
     setTextDraft("");
   }
@@ -418,10 +436,7 @@ export default function BookClubRoom() {
                 onChange={(e) => setTextDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") commitText();
-                  if (e.key === "Escape") {
-                    setPendingTextAt(null);
-                    setTextDraft("");
-                  }
+                  if (e.key === "Escape") cancelText();
                 }}
                 onBlur={commitText}
                 placeholder="Escreva e pressione Enter…"

@@ -62,7 +62,7 @@ locals {
       # for that reason (Access would otherwise gate the whole site
       # behind a login only giomartinsdev's own account can pass).
       # Port must match module.compute_front's external_port.
-      hostname = "blog.giomartins.dev"
+      hostname = "classroom-bdd.giomartins.dev"
       service  = "http://localhost:8003"
     },
   ]
