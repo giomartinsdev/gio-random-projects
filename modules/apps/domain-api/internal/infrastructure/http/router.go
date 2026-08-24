@@ -8,9 +8,11 @@ import (
 )
 
 // NewRouter wires every route. /healthz and the API docs stay public
-// (no key, no rate limit) — everything under /users requires the
-// apiKey security scheme (see openapi.yaml and Secure in middleware.go).
-func NewRouter(h *Handlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
+// (no key, no rate limit) — everything under /users and /posts
+// requires the apiKey security scheme (see openapi.yaml and Secure in
+// middleware.go). /posts/id/{id} is not for public browsing -- see
+// PostHandlers.GetPostByID's own doc comment.
+func NewRouter(h *Handlers, p *PostHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Get("/healthz", h.Healthz)
@@ -26,6 +28,13 @@ func NewRouter(h *Handlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logg
 		r.Get("/users/{id}", h.GetUser)
 		r.Put("/users/{id}", h.UpdateUser)
 		r.Delete("/users/{id}", h.DeleteUser)
+
+		r.Get("/posts", p.ListPosts)
+		r.Post("/posts", p.CreatePost)
+		r.Get("/posts/slug/{slug}", p.GetPostBySlug)
+		r.Get("/posts/id/{id}", p.GetPostByID)
+		r.Put("/posts/{id}", p.UpdatePost)
+		r.Delete("/posts/{id}", p.DeletePost)
 	})
 
 	return r

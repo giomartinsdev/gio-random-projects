@@ -1,4 +1,4 @@
-import { boolean, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 // Better Auth's own tables -- field names/shape must match exactly
 // what its Drizzle adapter expects (see better-auth's schema docs).
@@ -55,50 +55,3 @@ export const verification = pgTable("verification", {
   createdAt: timestamp("createdAt"),
   updatedAt: timestamp("updatedAt"),
 });
-
-// --- App content model ---
-// Every post is "native" once stored, regardless of how it got here
-// -- source/sourceUrl just record provenance for imported ones
-// (phase 2: URL → readability extraction → markdown). type
-// distinguishes article vs. course listing; both share one table
-// since they share every other field.
-export const posts = pgTable("posts", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  authorId: text("author_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  title: text("title").notNull(),
-  slug: text("slug").notNull().unique(),
-  bodyMarkdown: text("body_markdown").notNull(),
-  excerpt: text("excerpt"),
-  coverImageUrl: text("cover_image_url"),
-  type: text("type", { enum: ["article", "course"] }).notNull().default("article"),
-  status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
-  source: text("source", { enum: ["native", "imported"] }).notNull().default("native"),
-  sourceUrl: text("source_url"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  publishedAt: timestamp("published_at"),
-});
-
-export const tags = pgTable("tags", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  name: text("name").notNull().unique(),
-});
-
-export const postsToTags = pgTable(
-  "posts_to_tags",
-  {
-    postId: text("post_id")
-      .notNull()
-      .references(() => posts.id, { onDelete: "cascade" }),
-    tagId: text("tag_id")
-      .notNull()
-      .references(() => tags.id, { onDelete: "cascade" }),
-  },
-  (t) => [primaryKey({ columns: [t.postId, t.tagId] })],
-);

@@ -1,85 +1,44 @@
-import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import type { Db } from "../db/index.js";
-import { posts, postsToTags, tags } from "../db/schema.js";
-import { slugify } from "../lib/slug.js";
 import type { Auth } from "../lib/auth.js";
-
-type Variables = {
-  userId: string;
-};
+import { DomainApiError, NotFoundError, type DomainApiClient, type DomainPost } from "../lib/domainApiClient.js";
 
 async function requireAuth(auth: Auth, c: { req: { raw: Request } }) {
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
   return session?.user.id ?? null;
 }
 
-async function uniqueSlug(db: Db, base: string): Promise<string> {
-  let candidate = base;
-  let suffix = 1;
-  // Small, bounded loop -- collisions on a single title are rare, and
-  // each iteration is one indexed lookup.
-  while (true) {
-    const existing = await db.query.posts.findFirst({ where: eq(posts.slug, candidate) });
-    if (!existing) return candidate;
-    suffix += 1;
-    candidate = `${base}-${suffix}`;
-  }
-}
-
-async function attachTags(db: Db, postId: string, tagNames: string[]) {
-  if (tagNames.length === 0) return;
-  const tagIds: string[] = [];
-  for (const name of tagNames) {
-    const existing = await db.query.tags.findFirst({ where: eq(tags.name, name) });
-    if (existing) {
-      tagIds.push(existing.id);
-    } else {
-      const [created] = await db.insert(tags).values({ name }).returning({ id: tags.id });
-      tagIds.push(created.id);
-    }
-  }
-  await db.insert(postsToTags).values(tagIds.map((tagId) => ({ postId, tagId })));
-}
-
-async function tagsForPost(db: Db, postId: string): Promise<string[]> {
-  const rows = await db
-    .select({ name: tags.name })
-    .from(postsToTags)
-    .innerJoin(tags, eq(postsToTags.tagId, tags.id))
-    .where(eq(postsToTags.postId, postId));
-  return rows.map((r) => r.name);
-}
-
-function serializePost(post: typeof posts.$inferSelect, tagNames: string[]) {
+function serialize(p: DomainPost) {
   return {
-    id: post.id,
-    authorId: post.authorId,
-    title: post.title,
-    slug: post.slug,
-    bodyMarkdown: post.bodyMarkdown,
-    excerpt: post.excerpt,
-    coverImageUrl: post.coverImageUrl,
-    type: post.type,
-    status: post.status,
-    source: post.source,
-    sourceUrl: post.sourceUrl,
-    tags: tagNames,
-    createdAt: post.createdAt,
-    updatedAt: post.updatedAt,
-    publishedAt: post.publishedAt,
+    id: p.id,
+    authorId: p.author_id,
+    title: p.title,
+    slug: p.slug,
+    bodyMarkdown: p.body_markdown,
+    excerpt: p.excerpt,
+    coverImageUrl: p.cover_image_url,
+    type: p.type,
+    status: p.status,
+    source: p.source,
+    sourceUrl: p.source_url,
+    createdAt: p.created_at,
+    updatedAt: p.updated_at,
+    publishedAt: p.published_at,
   };
 }
 
-export function createPostsRouter(db: Db, auth: Auth) {
-  const router = new Hono<{ Variables: Variables }>();
+// Every write here returns 202 Accepted, not 200/201/204: buteco-api
+// never touches Postgres for posts, it hands the request to domain-api
+// which publishes a command applied asynchronously by domain-worker
+// (see domain-api/domain-worker's own package docs for why). A GET
+// immediately after a write may not reflect it yet -- that's the
+// trade-off of reusing this repo's existing CQRS pipeline instead of
+// buteco-api owning its own synchronous storage.
+export function createPostsRouter(auth: Auth, domainApi: DomainApiClient) {
+  const router = new Hono();
 
   router.get("/", async (c) => {
-    const rows = await db.query.posts.findMany({ where: eq(posts.status, "published") });
-    const serialized = await Promise.all(
-      rows.map(async (p) => serializePost(p, await tagsForPost(db, p.id))),
-    );
-    return c.json({ posts: serialized });
+    const { posts } = await domainApi.listPublished();
+    return c.json({ posts: posts.map(serialize) });
   });
 
   router.post("/", async (c) => {
@@ -93,52 +52,48 @@ export function createPostsRouter(db: Db, auth: Auth) {
       coverImageUrl?: string;
       type?: "article" | "course";
       status?: "draft" | "published";
-      tags?: string[];
     }>();
 
     if (!body.title || !body.bodyMarkdown) {
       return c.json({ error: "title and bodyMarkdown are required" }, 400);
     }
 
-    const slug = await uniqueSlug(db, slugify(body.title));
-    const status = body.status ?? "draft";
-
-    const [created] = await db
-      .insert(posts)
-      .values({
-        authorId: userId,
+    try {
+      const accepted = await domainApi.create({
+        author_id: userId,
         title: body.title,
-        slug,
-        bodyMarkdown: body.bodyMarkdown,
+        body_markdown: body.bodyMarkdown,
         excerpt: body.excerpt,
-        coverImageUrl: body.coverImageUrl,
-        type: body.type ?? "article",
-        status,
-        publishedAt: status === "published" ? new Date() : null,
-      })
-      .returning();
-
-    const tagNames = body.tags ?? [];
-    await attachTags(db, created.id, tagNames);
-
-    return c.json(serializePost(created, tagNames), 201);
+        cover_image_url: body.coverImageUrl,
+        type: body.type,
+        status: body.status,
+      });
+      return c.json(accepted, 202);
+    } catch (err) {
+      if (err instanceof DomainApiError && err.status === 400) {
+        return c.json({ error: err.message }, 400);
+      }
+      throw err;
+    }
   });
 
   router.get("/:slug", async (c) => {
-    const post = await db.query.posts.findFirst({
-      where: and(eq(posts.slug, c.req.param("slug")), eq(posts.status, "published")),
-    });
-    if (!post) return c.json({ error: "not found" }, 404);
-    return c.json(serializePost(post, await tagsForPost(db, post.id)));
+    try {
+      const post = await domainApi.getBySlug(c.req.param("slug"));
+      return c.json(serialize(post));
+    } catch (err) {
+      if (err instanceof NotFoundError) return c.json({ error: "not found" }, 404);
+      throw err;
+    }
   });
 
   router.patch("/:id", async (c) => {
     const userId = await requireAuth(auth, c);
     if (!userId) return c.json({ error: "unauthorized" }, 401);
 
-    const existing = await db.query.posts.findFirst({ where: eq(posts.id, c.req.param("id")) });
-    if (!existing) return c.json({ error: "not found" }, 404);
-    if (existing.authorId !== userId) return c.json({ error: "forbidden" }, 403);
+    const existing = await lookupForOwnershipCheck(domainApi, c.req.param("id"));
+    if (existing === "not-found") return c.json({ error: "not found" }, 404);
+    if (existing.author_id !== userId) return c.json({ error: "forbidden" }, 403);
 
     const body = await c.req.json<{
       title?: string;
@@ -146,44 +101,39 @@ export function createPostsRouter(db: Db, auth: Auth) {
       excerpt?: string;
       coverImageUrl?: string;
       status?: "draft" | "published";
-      tags?: string[];
     }>();
 
-    const nextStatus = body.status ?? existing.status;
-    const [updated] = await db
-      .update(posts)
-      .set({
-        title: body.title ?? existing.title,
-        bodyMarkdown: body.bodyMarkdown ?? existing.bodyMarkdown,
-        excerpt: body.excerpt ?? existing.excerpt,
-        coverImageUrl: body.coverImageUrl ?? existing.coverImageUrl,
-        status: nextStatus,
-        publishedAt:
-          nextStatus === "published" ? (existing.publishedAt ?? new Date()) : existing.publishedAt,
-        updatedAt: new Date(),
-      })
-      .where(eq(posts.id, existing.id))
-      .returning();
-
-    if (body.tags) {
-      await db.delete(postsToTags).where(eq(postsToTags.postId, existing.id));
-      await attachTags(db, existing.id, body.tags);
-    }
-
-    return c.json(serializePost(updated, await tagsForPost(db, existing.id)));
+    const accepted = await domainApi.update(existing.id, {
+      author_id: userId,
+      title: body.title,
+      body_markdown: body.bodyMarkdown,
+      excerpt: body.excerpt,
+      cover_image_url: body.coverImageUrl,
+      status: body.status,
+    });
+    return c.json(accepted, 202);
   });
 
   router.delete("/:id", async (c) => {
     const userId = await requireAuth(auth, c);
     if (!userId) return c.json({ error: "unauthorized" }, 401);
 
-    const existing = await db.query.posts.findFirst({ where: eq(posts.id, c.req.param("id")) });
-    if (!existing) return c.json({ error: "not found" }, 404);
-    if (existing.authorId !== userId) return c.json({ error: "forbidden" }, 403);
+    const existing = await lookupForOwnershipCheck(domainApi, c.req.param("id"));
+    if (existing === "not-found") return c.json({ error: "not found" }, 404);
+    if (existing.author_id !== userId) return c.json({ error: "forbidden" }, 403);
 
-    await db.delete(posts).where(eq(posts.id, existing.id));
-    return c.body(null, 204);
+    const accepted = await domainApi.remove(existing.id, userId);
+    return c.json(accepted, 202);
   });
 
   return router;
+}
+
+async function lookupForOwnershipCheck(domainApi: DomainApiClient, id: string): Promise<DomainPost | "not-found"> {
+  try {
+    return await domainApi.getById(id);
+  } catch (err) {
+    if (err instanceof NotFoundError) return "not-found";
+    throw err;
+  }
 }

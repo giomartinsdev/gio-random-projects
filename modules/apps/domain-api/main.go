@@ -54,7 +54,11 @@ func main() {
 	users := postgres.NewUserRepository(pool)
 	commands := inredis.NewCommandPublisher(rdb)
 	handlers := httpapi.NewHandlers(users, commands, log)
-	router := httpapi.NewRouter(handlers, apiKeys, rateLimiter, log)
+
+	posts := postgres.NewPostRepository(pool)
+	postHandlers := httpapi.NewPostHandlers(posts, commands, log)
+
+	router := httpapi.NewRouter(handlers, postHandlers, apiKeys, rateLimiter, log)
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: router}
 

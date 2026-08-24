@@ -13,6 +13,10 @@ const (
 	ActionCreateUser Action = "user.create"
 	ActionUpdateUser Action = "user.update"
 	ActionDeleteUser Action = "user.delete"
+
+	ActionCreatePost Action = "post.create"
+	ActionUpdatePost Action = "post.update"
+	ActionDeletePost Action = "post.delete"
 )
 
 type Command struct {

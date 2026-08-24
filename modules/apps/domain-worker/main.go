@@ -10,16 +10,20 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
+	apppost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/post"
 	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/user"
+	domainpost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/post"
 	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/config"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/postgres"
@@ -62,6 +66,10 @@ func main() {
 	userService := appuser.NewService(userRepo)
 	userHandler := appuser.NewCommandHandler(userService)
 
+	postRepo := postgres.NewPostRepository(pool)
+	postService := apppost.NewService(postRepo)
+	postHandler := apppost.NewCommandHandler(postService)
+
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info("relay started")
@@ -81,7 +89,7 @@ func main() {
 				log.Error("fetch command error", "error", err)
 				continue
 			}
-			process(ctx, log, userHandler, auditRepo, eventBus, cmd)
+			process(ctx, log, userHandler, postHandler, auditRepo, eventBus, cmd)
 		}
 	}()
 
@@ -94,16 +102,45 @@ func main() {
 	}
 }
 
-// process runs one command through the aggregate's CommandHandler, then
-// always records an audit entry (success or failure) and, only on
-// success, publishes the resulting domain event.
-func process(ctx context.Context, log *slog.Logger, handler *appuser.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
-	evt, err := handler.Handle(ctx, cmd)
+// process routes cmd to the right aggregate's CommandHandler by its
+// Action prefix ("user." / "post."), then always records an audit
+// entry (success or failure) and, only on success, publishes the
+// resulting domain event. One shared command queue serves every
+// aggregate; this is the one place that knows how to fan a Command
+// back out to its owning handler.
+func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
+	var (
+		evt        interface{ EventName() string }
+		err        error
+		entityType string
+		id         string
+	)
+
+	switch {
+	case strings.HasPrefix(string(cmd.Action), "user."):
+		entityType = "user"
+		var uevt domainuser.Event
+		uevt, err = userHandler.Handle(ctx, cmd)
+		if uevt != nil {
+			evt = uevt
+			id = userEntityID(uevt)
+		}
+	case strings.HasPrefix(string(cmd.Action), "post."):
+		entityType = "post"
+		var pevt domainpost.Event
+		pevt, err = postHandler.Handle(ctx, cmd)
+		if pevt != nil {
+			evt = pevt
+			id = postEntityID(pevt)
+		}
+	default:
+		err = fmt.Errorf("unknown action: %q", cmd.Action)
+	}
 
 	entry := audit.Entry{
 		CommandID:  cmd.ID,
-		EntityType: "user",
-		EntityID:   entityID(evt),
+		EntityType: entityType,
+		EntityID:   id,
 		Action:     string(cmd.Action),
 		Payload:    cmd.Payload,
 		Success:    err == nil,
@@ -121,10 +158,11 @@ func process(ctx context.Context, log *slog.Logger, handler *appuser.CommandHand
 	}
 }
 
-// entityID pulls the affected user's ID out of the domain event for the
-// audit row — the only place that needs it, since Create doesn't know
-// its own generated ID until the event comes back from the handler.
-func entityID(evt domainuser.Event) string {
+// userEntityID/postEntityID pull the affected aggregate's ID out of
+// its domain event for the audit row — the only place that needs it,
+// since Create doesn't know its own generated ID until the event
+// comes back from the handler.
+func userEntityID(evt domainuser.Event) string {
 	switch e := evt.(type) {
 	case domainuser.Created:
 		return e.UserID
@@ -132,6 +170,19 @@ func entityID(evt domainuser.Event) string {
 		return e.UserID
 	case domainuser.Deleted:
 		return e.UserID
+	default:
+		return ""
+	}
+}
+
+func postEntityID(evt domainpost.Event) string {
+	switch e := evt.(type) {
+	case domainpost.Created:
+		return e.PostID
+	case domainpost.Updated:
+		return e.PostID
+	case domainpost.Deleted:
+		return e.PostID
 	default:
 		return ""
 	}

@@ -7,9 +7,16 @@ import (
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
-
-	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
 )
+
+// namedEvent is deliberately not domainuser.Event or domainpost.Event
+// specifically — every aggregate's Event interface has the same
+// EventName() string shape, so this bus stays aggregate-agnostic
+// rather than importing every domain package that ever publishes
+// through it.
+type namedEvent interface {
+	EventName() string
+}
 
 // envelope is the wire format every domain event is wrapped in —
 // EventName exists because Redis carries opaque bytes, so a subscriber
@@ -30,7 +37,7 @@ func NewEventBus(rdb *goredis.Client) *EventBus {
 	return &EventBus{rdb: rdb}
 }
 
-func (b *EventBus) Publish(ctx context.Context, evt domainuser.Event) error {
+func (b *EventBus) Publish(ctx context.Context, evt namedEvent) error {
 	payload, err := json.Marshal(evt)
 	if err != nil {
 		return fmt.Errorf("marshal event payload: %w", err)
