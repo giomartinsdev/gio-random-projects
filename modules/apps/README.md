@@ -1,10 +1,11 @@
 # modules/apps
 
 Each subfolder with a `Dockerfile` is an independently deployed app,
-auto-discovered by `.github/workflows/apps-deploy.yml` — touch only
-`domain-api/**` and only `domain-api` rebuilds, gets pushed to
-`registry.giomartins.dev`, and redeploys (via
-`modules/infra/watchtower`).
+auto-discovered by `.github/workflows/go-ci-cd.yml` (Go apps, matched
+by `go.mod`) or `ts-ci-cd.yml` (TypeScript apps, matched by
+`package.json`) — touch only `domain-api/**` and only `domain-api`
+rebuilds, gets pushed to `registry.giomartins.dev`, and redeploys via
+Terraform (see either workflow's own header for why not watchtower).
 
 Folders are named `<bounded-context>-api` / `<bounded-context>-worker`
 — `domain-api`/`domain-worker` today, more pairs alongside them as new

@@ -38,5 +38,14 @@ locals {
       hostname = "vault.giomartins.dev"
       service  = "http://localhost:8222"
     },
+    {
+      # post-api's own Better Auth is the auth layer here, same
+      # reasoning as domain.giomartins.dev — in excluded_hostnames,
+      # Cloudflare Access's browser-redirect login would break any
+      # non-browser client (a future frontend's API calls, a Discord
+      # bot). Port must match module.compute_post_api's external_port.
+      hostname = "post-api.giomartins.dev"
+      service  = "http://localhost:8002"
+    },
   ]
 }

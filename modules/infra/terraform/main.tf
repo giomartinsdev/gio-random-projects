@@ -47,6 +47,26 @@ module "compute_app" {
   depends_on = [null_resource.postgres_password_sync]
 }
 
+module "compute_post_api" {
+  source = "./modules/compute/post_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name       = module.compute_data.network_name
+  postgres_host      = module.compute_data.postgres_host
+  postgres_user      = module.compute_data.postgres_user
+  postgres_password  = random_password.postgres.result
+  registry_host      = var.registry_host
+  better_auth_secret = random_password.post_api_better_auth_secret.result
+  domain_api_key     = random_id.post_api_domain_key.hex
+
+  # Runtime dependency (reaches domain-api by container name over the
+  # shared network), not a Terraform attribute reference -- this
+  # depends_on is what still orders its creation after compute_app's.
+  depends_on = [null_resource.postgres_password_sync, module.compute_app]
+}
+
 module "compute_registry" {
   source = "./modules/compute/registry"
   providers = {

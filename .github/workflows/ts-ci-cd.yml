@@ -1,23 +1,15 @@
-name: Go deploy
+name: TypeScript deploy
 
-# CI/CD for the Go apps under modules/apps/*/ (has both a Dockerfile
-# and a go.mod) — touch only modules/apps/domain-api/** and only the
-# domain-api image rebuilds, gets pushed, and redeploys; same for
-# domain-worker. TypeScript apps (post-api) go through ts-ci-cd.yml
-# instead — see that workflow's own header for why this isn't one
-# generic pipeline for every language.
+# CI/CD for the TypeScript/Node apps under modules/apps/*/ (has both a
+# Dockerfile and a package.json) — today just post-api. Separate from
+# go-ci-cd.yml on purpose: different toolchain (npm vs go), different
+# test command, different failure modes worth keeping isolated rather
+# than one pipeline branching on language per step.
 #
-# Deploys go through Terraform, not watchtower: after pushing, the
-# deploy job runs `terraform apply` against modules/infra/terraform
-# with -var overriding the built app's image tag to this exact commit
-# SHA, over the same docker.giomartins.dev Access-gated Docker Engine
-# API tf-deploy.yml uses (no inbound access to gio-server needed —
-# that connection is outbound-initiated by cloudflared either way).
-# domain_api/domain_worker's watchtower label defaults to false now:
-# watchtower recreating those containers behind Terraform's back (a
-# new container ID every redeploy) fought Terraform for ownership of
-# the same name on every subsequent apply. See
-# modules/compute/app/variables.tf's watchtower_enabled.
+# Deploys go through Terraform, not watchtower — same reasoning as
+# go-ci-cd.yml's own header comment. post-api's own watchtower label
+# defaults to false for the same reason domain_api/domain_worker's
+# does; see modules/compute/post_api/variables.tf's watchtower_enabled.
 
 on:
   push:
@@ -27,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       app:
-        description: "Build only this app (blank = all apps under modules/apps/)"
+        description: "Build only this app (blank = all TypeScript apps under modules/apps/)"
         required: false
 
 jobs:
@@ -42,7 +34,7 @@ jobs:
 
       - id: list
         run: |
-          all_apps=$(find modules/apps -mindepth 2 -maxdepth 2 -name go.mod \
+          all_apps=$(find modules/apps -mindepth 2 -maxdepth 2 -name package.json \
             -exec dirname {} \; | xargs -n1 basename | sort)
 
           if [ -n "${{ inputs.app }}" ]; then
@@ -73,16 +65,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        if: hashFiles(format('modules/apps/{0}/go.mod', matrix.app)) != ''
+      - uses: actions/setup-node@v4
         with:
-          go-version: "1.25"
-          cache-dependency-path: modules/apps/${{ matrix.app }}/go.sum
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: modules/apps/${{ matrix.app }}/package-lock.json
 
-      - name: Test (Go apps only — skipped for anything without a go.mod)
-        if: hashFiles(format('modules/apps/{0}/go.mod', matrix.app)) != ''
+      - name: Install and test
         working-directory: modules/apps/${{ matrix.app }}
-        run: go build ./... && go vet ./...
+        run: |
+          npm ci
+          npx tsc -p tsconfig.json --noEmit
+          npm test
 
       # registry.giomartins.dev requires mTLS now (see
       # modules/infra/terraform/modules/cloudflare/registry_mtls.tf) —
@@ -129,10 +123,9 @@ jobs:
     defaults:
       run:
         working-directory: modules/infra/terraform
-    # Same secrets tf-deploy.yml uses — a real `terraform apply` needs
-    # the full variable set regardless of what's actually changing, and
-    # nothing here is new: see that workflow and
-    # modules/infra/terraform/README.md's secrets table.
+    # Same secrets go-ci-cd.yml/tf-ci-cd.yml use — a real
+    # `terraform apply` needs the full variable set regardless of
+    # what's actually changing, and nothing here is new.
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}
       TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -166,10 +159,6 @@ jobs:
                   proxy_set_header CF-Access-Client-Secret "${CF_ACCESS_CLIENT_SECRET}";
                   proxy_ssl_server_name on;
                   proxy_http_version 1.1;
-                  # docker exec/attach hijacks the connection into a raw
-                  # TCP stream (an HTTP Upgrade) -- without these, nginx
-                  # won't forward the upgrade and `docker exec` fails
-                  # with "unable to upgrade to tcp, received 200".
                   proxy_set_header Upgrade $http_upgrade;
                   proxy_set_header Connection "upgrade";
                   proxy_read_timeout 300s;
@@ -191,28 +180,9 @@ jobs:
       - name: Init
         run: terraform init -backend-config="endpoints={s3=\"${{ secrets.TF_STATE_R2_ENDPOINT }}\"}"
 
-      # -replace below forces Terraform to destroy+recreate the
-      # container, but that alone does NOT guarantee a fresh image:
-      # dockerd only pulls on create if the tag is missing from its
-      # local cache, and gio-server almost always already has SOME
-      # image cached under registry.giomartins.dev/<app>:latest from
-      # an earlier deploy. Confirmed live: a -replace-only apply
-      # silently redeployed a stale, previously-cached build instead
-      # of what build-and-push had just pushed. An explicit pull
-      # against the remote daemon first is what actually guarantees
-      # this -- but that pull still needs registry credentials.
-      #
-      # Docker resolves those credentials CLIENT-side regardless of
-      # DOCKER_HOST: the `docker` CLI here (on the runner) reads its
-      # OWN ~/.docker/config.json and sends the result as an
-      # X-Registry-Auth header, which the remote daemon then uses to
-      # actually fetch from the registry. gio-server's own config.json
-      # (docker_config_install) is what lets ITS processes -- like
-      # watchtower -- pull; it's irrelevant to a pull commanded from
-      # here. A `docker login` on THIS runner is what's actually
-      # needed, hence the mTLS cert install + login below (same as
-      # build-and-push's, since `docker login` itself talks to
-      # registry.giomartins.dev directly, not through DOCKER_HOST).
+      # See go-ci-cd.yml's own "Pull the image(s) just pushed" step for
+      # why this pull (with its own registry login) is what actually
+      # guarantees a fresh image, not just -replace.
       - name: Install registry.giomartins.dev's mTLS client certificate
         run: |
           sudo mkdir -p /etc/docker/certs.d/registry.giomartins.dev
@@ -239,8 +209,7 @@ jobs:
           REPLACE_ARGS=()
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
             case "$app" in
-              domain-api) REPLACE_ARGS+=("-replace=module.compute_app.docker_container.domain_api") ;;
-              domain-worker) REPLACE_ARGS+=("-replace=module.compute_app.docker_container.domain_worker") ;;
+              post-api) REPLACE_ARGS+=("-replace=module.compute_post_api.docker_container.post_api") ;;
             esac
           done
           terraform apply -input=false -auto-approve "${REPLACE_ARGS[@]}"

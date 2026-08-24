@@ -48,6 +48,11 @@ resource "random_password" "vaultwarden_bridge_api_key" {
   special = false
 }
 
+resource "random_password" "post_api_better_auth_secret" {
+  length  = 48
+  special = false
+}
+
 # Postgres only applies POSTGRES_PASSWORD on first init of an empty
 # data volume -- changing the env var alone does nothing once the
 # volume already has data, and would leave domain-api/domain-worker
@@ -124,6 +129,7 @@ resource "null_resource" "vault_seed" {
     domain_svc_token     = module.cloudflare.service_token_client_ids["domain"]
     vault_svc_token      = module.cloudflare.protected_hosts_service_token_client_ids["vault.giomartins.dev"]
     beszel_svc_token     = module.cloudflare.protected_hosts_service_token_client_ids["beszel.giomartins.dev"]
+    post_api_auth_secret = random_password.post_api_better_auth_secret.result
   }
 
   provisioner "local-exec" {
@@ -138,6 +144,7 @@ resource "null_resource" "vault_seed" {
           ["DATABASE_URL", "postgresql://${module.compute_data.postgres_user}:${random_password.postgres.result}@${module.compute_data.postgres_host}:5432/${module.compute_data.postgres_user}"],
           ["DOMAIN_API_KEYS", local.domain_api_keys],
           ["POST_API_DOMAIN_KEY", random_id.post_api_domain_key.hex],
+          ["POST_API_BETTER_AUTH_SECRET", random_password.post_api_better_auth_secret.result],
           ["TF_VAULTWARDEN_ADMIN_TOKEN", random_password.vaultwarden_admin_token.result],
           ["TF_VAULTWARDEN_BRIDGE_API_KEY", random_password.vaultwarden_bridge_api_key.result],
           ["REGISTRY_PASSWORD", var.registry_password],
