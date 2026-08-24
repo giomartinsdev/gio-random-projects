@@ -65,5 +65,14 @@ locals {
       hostname = "classroom-bdd.giomartins.dev"
       service  = "http://localhost:8003"
     },
+    {
+      # 9router: OpenAI-compatible AI proxy with auto-fallback across
+      # 40+ providers (Claude, GPT, Gemini, …). Dashboard at /dashboard,
+      # API at /v1. Protected by Google SSO Access (same as beszel/vault)
+      # as the outer auth layer; the dashboard has its own login inside.
+      # Port matches module.compute_ninerouter's container port (20128).
+      hostname = "ai.giomartins.dev"
+      service  = "http://localhost:20128"
+    },
   ]
 }

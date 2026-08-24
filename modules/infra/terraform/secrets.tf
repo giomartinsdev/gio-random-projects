@@ -65,6 +65,19 @@ resource "random_password" "post_api_better_auth_secret" {
   special = false
 }
 
+# 9router secrets — JWT signing key and dashboard initial password.
+# Both Terraform-generated; retrieve NINEROUTER_INITIAL_PASSWORD from
+# Vaultwarden after the first apply to log into the dashboard.
+resource "random_password" "ninerouter_jwt_secret" {
+  length  = 48
+  special = false
+}
+
+resource "random_password" "ninerouter_initial_password" {
+  length  = 24
+  special = false
+}
+
 # Postgres only applies POSTGRES_PASSWORD on first init of an empty
 # data volume -- changing the env var alone does nothing once the
 # volume already has data, and would leave domain-api/domain-worker
@@ -220,6 +233,20 @@ locals {
       items = {
         ACCESS_SVC_TOKEN_BESZEL_CLIENT_ID     = module.cloudflare.protected_hosts_service_token_client_ids["beszel.giomartins.dev"]
         ACCESS_SVC_TOKEN_BESZEL_CLIENT_SECRET = module.cloudflare.protected_hosts_service_token_client_secrets["beszel.giomartins.dev"]
+      }
+    }
+    access_svc_token_ninerouter = {
+      trigger = module.cloudflare.protected_hosts_service_token_client_ids["ai.giomartins.dev"]
+      items = {
+        ACCESS_SVC_TOKEN_NINEROUTER_CLIENT_ID     = module.cloudflare.protected_hosts_service_token_client_ids["ai.giomartins.dev"]
+        ACCESS_SVC_TOKEN_NINEROUTER_CLIENT_SECRET = module.cloudflare.protected_hosts_service_token_client_secrets["ai.giomartins.dev"]
+      }
+    }
+    ninerouter = {
+      trigger = "${random_password.ninerouter_jwt_secret.result}|${random_password.ninerouter_initial_password.result}"
+      items = {
+        NINEROUTER_JWT_SECRET       = random_password.ninerouter_jwt_secret.result
+        NINEROUTER_INITIAL_PASSWORD = random_password.ninerouter_initial_password.result
       }
     }
   }

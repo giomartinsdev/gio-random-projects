@@ -132,6 +132,18 @@ module "compute_monitoring" {
   agent_key    = var.beszel_agent_key
 }
 
+module "compute_ninerouter" {
+  source = "./modules/compute/9router"
+  providers = {
+    docker = docker
+  }
+
+  network_name     = module.compute_data.network_name
+  jwt_secret       = random_password.ninerouter_jwt_secret.result
+  initial_password = random_password.ninerouter_initial_password.result
+  hostname         = "ai.giomartins.dev"
+}
+
 module "compute_vaultwarden" {
   source = "./modules/compute/vaultwarden"
   providers = {
