@@ -74,5 +74,16 @@ locals {
       hostname = "ai.giomartins.dev"
       service  = "http://localhost:20128"
     },
+    {
+      # MinIO console UI — object storage dashboard for managing buckets,
+      # objects, and access policies. Protected by Google SSO Access as
+      # the outer layer; MinIO's own root-credential login is the inner
+      # one. The API port (9000) stays internal-only (no ingress rule) —
+      # only bookclub-api reaches it by container name over the shared
+      # docker network. Port must match the published_port in
+      # module.compute_minio (9001).
+      hostname = "minio.giomartins.dev"
+      service  = "http://localhost:9001"
+    },
   ]
 }

@@ -4,27 +4,44 @@
 # that's actually a good fit for an object store rather than a
 # relational table.
 #
-# Internal-only, same shape as modules/compute/vaultwarden_bridge: no
-# ports{} block, no tunnel ingress rule, no DNS record -- only
-# containers on network_name can reach it, by name ("minio", port
-# 9000). bookclub-api is the only caller; nothing here is meant to be
-# reachable from a browser directly (no presigned-URL flow, no public
-# bucket -- bookclub-api proxies the bytes through its own
-# already-authenticated /rooms/:id/pdf route, same as before).
+# API port (9000): internal-only, no tunnel -- only containers on
+# network_name reach it by name ("minio:9000"). bookclub-api proxies
+# bytes through its own authenticated route; no presigned-URL flow.
+#
+# Console port (9001): published to localhost and tunnelled via
+# minio.giomartins.dev. Gated by Cloudflare Access Google SSO
+# (same as beszel/vault) as the outer auth layer; MinIO's own
+# root-credentials login is the inner one.
 resource "docker_volume" "minio_data" {
   name = "apps_minio_data"
 }
 
 resource "docker_container" "minio" {
-  name    = "minio"
-  image   = "minio/minio:latest"
+  name  = "minio"
+  image = "minio/minio:latest"
+
   restart = "unless-stopped"
-  command = ["server", "/data"]
+
+  # --console-address pins the console to a fixed port so the
+  # Cloudflare tunnel ingress rule always points at the right place.
+  # Without it, MinIO picks a random ephemeral port on each restart.
+  command = ["server", "/data", "--console-address", ":9001"]
 
   env = [
     "MINIO_ROOT_USER=${var.root_user}",
     "MINIO_ROOT_PASSWORD=${var.root_password}",
+    # Explicit — MinIO defaults to on, but being explicit avoids
+    # surprises if a future image flips the default.
+    "MINIO_BROWSER=on",
   ]
+
+  # Console UI — published so the Cloudflare tunnel on the host can
+  # reach it. The API port (9000) stays unpublished: only containers
+  # on the shared network need it.
+  ports {
+    internal = 9001
+    external = 9001
+  }
 
   networks_advanced {
     name = var.network_name

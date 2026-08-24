@@ -242,6 +242,13 @@ locals {
         ACCESS_SVC_TOKEN_NINEROUTER_CLIENT_SECRET = module.cloudflare.protected_hosts_service_token_client_secrets["ai.giomartins.dev"]
       }
     }
+    access_svc_token_minio = {
+      trigger = module.cloudflare.protected_hosts_service_token_client_ids["minio.giomartins.dev"]
+      items = {
+        ACCESS_SVC_TOKEN_MINIO_CLIENT_ID     = module.cloudflare.protected_hosts_service_token_client_ids["minio.giomartins.dev"]
+        ACCESS_SVC_TOKEN_MINIO_CLIENT_SECRET = module.cloudflare.protected_hosts_service_token_client_secrets["minio.giomartins.dev"]
+      }
+    }
     ninerouter = {
       trigger = "${random_password.ninerouter_jwt_secret.result}|${random_password.ninerouter_initial_password.result}"
       items = {
