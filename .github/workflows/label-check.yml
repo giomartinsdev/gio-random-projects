@@ -33,12 +33,17 @@ jobs:
             nginx:alpine
           sleep 2
 
-      - name: Inspect domain-api's current labels and image
+      - name: Remove the watchtower-labeled domain-api/domain-worker containers
         env:
           DOCKER_HOST: tcp://localhost:2475
         run: |
-          docker inspect domain-api --format '{{json .Config.Labels}}' | jq .
-          echo "---"
-          docker inspect domain-api --format 'Image: {{.Config.Image}}  Created: {{.Created}}  ID: {{.Id}}'
-          echo "--- watchtower container logs, last 5 min ---"
-          docker logs --since 5m watchtower 2>&1 | tail -100
+          # Terraform's label-removal apply never actually took effect
+          # on these two (confirmed live: still carry
+          # com.centurylinklabs.watchtower.enable=true) -- the docker
+          # provider's labels diffing on an EXISTING tracked resource
+          # is unreliable. A fresh create never hits that bug since
+          # there's nothing to diff away, so remove them once here and
+          # let the next `terraform apply` create both from scratch
+          # with the current (labelless) config -- brief downtime for
+          # both until that apply lands, seconds afterward.
+          docker rm -f domain-api domain-worker
