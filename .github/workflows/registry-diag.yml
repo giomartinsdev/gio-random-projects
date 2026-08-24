@@ -31,16 +31,20 @@ jobs:
             -u "admin:${{ secrets.REGISTRY_PASSWORD }}" \
             -X POST "https://registry.giomartins.dev/v2/diag-test/blobs/uploads/" \
             | grep -i '^location:' | tr -d '\r' | awk '{print $2}')
-          echo "upload location: $LOC"
+          case "$LOC" in
+            http*) URL="$LOC" ;;
+            *) URL="https://registry.giomartins.dev${LOC}" ;;
+          esac
+          echo "upload url: $URL"
 
-          SEP="&"; case "$LOC" in *\?*) ;; *) SEP="?" ;; esac
+          SEP="&"; case "$URL" in *\?*) ;; *) SEP="?" ;; esac
 
           curl -s -o /tmp/small-resp.txt -w "HTTP %{http_code}\n" \
             --cert /tmp/client.cert --key /tmp/client.key \
             -u "admin:${{ secrets.REGISTRY_PASSWORD }}" \
             -X PUT -H "Content-Type: application/octet-stream" \
             --data-binary @/tmp/small.bin \
-            "${LOC}${SEP}digest=${DIGEST}"
+            "${URL}${SEP}digest=${DIGEST}"
           cat /tmp/small-resp.txt
 
       - name: Large blob (11MB, matching the failing layer's size) round-trip
@@ -53,16 +57,20 @@ jobs:
             -u "admin:${{ secrets.REGISTRY_PASSWORD }}" \
             -X POST "https://registry.giomartins.dev/v2/diag-test/blobs/uploads/" \
             | grep -i '^location:' | tr -d '\r' | awk '{print $2}')
-          echo "upload location: $LOC"
+          case "$LOC" in
+            http*) URL="$LOC" ;;
+            *) URL="https://registry.giomartins.dev${LOC}" ;;
+          esac
+          echo "upload url: $URL"
 
-          SEP="&"; case "$LOC" in *\?*) ;; *) SEP="?" ;; esac
+          SEP="&"; case "$URL" in *\?*) ;; *) SEP="?" ;; esac
 
           curl -s -o /tmp/large-resp.txt -w "HTTP %{http_code}\n" \
             --cert /tmp/client.cert --key /tmp/client.key \
             -u "admin:${{ secrets.REGISTRY_PASSWORD }}" \
             -X PUT -H "Content-Type: application/octet-stream" \
             --data-binary @/tmp/large.bin \
-            "${LOC}${SEP}digest=${DIGEST}"
+            "${URL}${SEP}digest=${DIGEST}"
           cat /tmp/large-resp.txt
 
       - name: Cleanup temp cert files
