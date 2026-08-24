@@ -1,11 +1,24 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import type { Auth } from "./lib/auth.js";
 import type { DomainApiClient } from "./lib/domainApiClient.js";
 import { docsHtml, openApiYaml } from "./lib/openapi.js";
 import { createPostsRouter } from "./routes/posts.js";
 
-export function createApp(auth: Auth, domainApi: DomainApiClient) {
+export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigins: string[]) {
   const app = new Hono();
+
+  // credentials: true because Better Auth's browser client also sets
+  // a session cookie alongside the bearer token -- without it, the
+  // browser silently drops that cookie on a cross-origin response.
+  app.use(
+    "*",
+    cors({
+      origin: frontendOrigins,
+      credentials: true,
+      allowHeaders: ["content-type", "authorization"],
+    }),
+  );
 
   app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 

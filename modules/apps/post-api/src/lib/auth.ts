@@ -10,10 +10,11 @@ import * as schema from "../db/schema.js";
 // headless API with non-browser consumers in mind (a future Discord
 // bot, scripts) -- Authorization: Bearer <token> instead of requiring
 // cookie jars everywhere a client talks to it.
-export function createAuth(db: Db, secret: string, baseURL?: string) {
+export function createAuth(db: Db, secret: string, baseURL?: string, trustedOrigins?: string[]) {
   return betterAuth({
     secret,
     baseURL,
+    trustedOrigins,
     database: drizzleAdapter(db, {
       provider: "pg",
       schema,

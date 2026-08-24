@@ -33,7 +33,7 @@ beforeAll(async () => {
   stopDomainApi = fakeDomainApi.stop;
   const domainApi = createDomainApiClient(fakeDomainApi.url, DOMAIN_API_KEY);
 
-  app = createApp(auth, domainApi);
+  app = createApp(auth, domainApi, ["http://localhost:5173"]);
 }, 60_000);
 
 afterAll(async () => {
@@ -110,7 +110,7 @@ describe("GET /posts", () => {
   it("returns an empty list when nothing is published yet (edge)", async () => {
     const fakeDomainApi = startFakeDomainApi("another-key");
     const domainApi = createDomainApiClient(fakeDomainApi.url, "another-key");
-    const freshApp = createApp(auth, domainApi);
+    const freshApp = createApp(auth, domainApi, ["http://localhost:5173"]);
 
     const res = await freshApp.request("/posts");
     expect(res.status).toBe(200);

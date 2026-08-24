@@ -31,6 +31,12 @@ variable "hostname" {
   default     = "post-api.giomartins.dev"
 }
 
+variable "frontend_origins" {
+  description = "Origins allowed to call post-api cross-origin (CORS) and trusted by Better Auth for its CSRF check."
+  type        = list(string)
+  default     = ["https://blog.giomartins.dev", "http://localhost:5173"]
+}
+
 variable "external_port" {
   description = "Host port the container's internal :8000 is published on -- 8000 is already taken by domain-api on the same host."
   type        = number

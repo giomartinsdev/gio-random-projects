@@ -46,6 +46,7 @@ resource "docker_container" "post_api" {
     "BETTER_AUTH_URL=https://${var.hostname}",
     "DOMAIN_API_URL=${var.domain_api_url}",
     "DOMAIN_API_KEY=${var.domain_api_key}",
+    "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
     "PORT=8000",
   ]
 
