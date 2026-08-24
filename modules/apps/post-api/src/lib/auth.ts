@@ -23,6 +23,20 @@ export function createAuth(db: Db, secret: string, baseURL?: string, trustedOrig
       enabled: true,
     },
     plugins: [bearer()],
+    // front (a different registrable domain than post-api, not just a
+    // subdomain -- e.g. localhost:5173 in dev) makes this a genuinely
+    // cross-site request from the browser's point of view. A default
+    // SameSite=Lax cookie never gets sent back on that fetch;
+    // SameSite=None requires Secure, which is fine since post-api is
+    // only ever served over HTTPS in every environment that matters
+    // here (including local dev, which points at the real HTTPS
+    // post-api rather than running its own local instance).
+    advanced: {
+      defaultCookieAttributes: {
+        sameSite: "none",
+        secure: true,
+      },
+    },
   });
 }
 
