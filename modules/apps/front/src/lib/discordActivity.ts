@@ -7,8 +7,21 @@ import { authClient } from "./authClient.js";
 // -- absent on every normal browser visit, which is how this whole
 // module gets skipped entirely outside Discord. See main.tsx for the
 // call site.
+//
+// Captured ONCE at module load, not re-derived from
+// window.location.search on every call: react-router's client-side
+// navigation (Link/navigate) replaces the URL with a plain path and
+// drops frame_id, since it was only ever present on the initial
+// landing URL. A function that re-read window.location.search here
+// would flip from true to false the moment the user clicked anywhere
+// -- which is exactly what broke cover images after the first
+// navigation away from "/": resolveImageUrl() would stop routing
+// through the relative /postapi/... path and fall back to the raw
+// absolute URL, which the Activity iframe's CSP silently blocks.
+const IS_DISCORD_ACTIVITY = new URLSearchParams(window.location.search).has("frame_id");
+
 export function isDiscordActivity(): boolean {
-  return new URLSearchParams(window.location.search).has("frame_id");
+  return IS_DISCORD_ACTIVITY;
 }
 
 // A post's coverImageUrl is whatever the author pasted -- some
