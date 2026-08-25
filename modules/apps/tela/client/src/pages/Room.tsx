@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { Check, Copy, Loader2, MonitorUp, Play, ScreenShareOff, Users, Video, X } from "lucide-react";
+import { Check, Copy, Link2, Loader2, MonitorUp, Play, ScreenShareOff, Users, Video, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareCamera, canShareScreen, useRoom } from "@/lib/useRoom";
 import { useWakeLock } from "@/lib/useWakeLock";
@@ -15,15 +15,29 @@ export default function Room() {
   const roomId = (id ?? "").toUpperCase();
   const location = useLocation();
 
-  // Passed through navigation state by the join form so the password
-  // never lands in the URL. Someone opening a shared link directly has
-  // no state and gets the prompt below instead.
-  const [password, setPassword] = useState<string | null>(
-    (location.state as { password?: string } | null)?.password ?? null,
-  );
+  // Password can arrive through:
+  // 1. Navigation state (joining / creating from home)
+  // 2. Query param ?pwd=... / ?password=... / ?p=... (direct link shared with password)
+  // 3. Hash #pwd=... / #password=... / #p=...
+  const [password, setPassword] = useState<string | null>(() => {
+    const statePassword = (location.state as { password?: string } | null)?.password;
+    if (statePassword) return statePassword;
+
+    const searchParams = new URLSearchParams(location.search);
+    const queryPwd = searchParams.get("pwd") || searchParams.get("password") || searchParams.get("p");
+    if (queryPwd) return queryPwd;
+
+    if (location.hash) {
+      const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+      const hashPwd = hashParams.get("pwd") || hashParams.get("password") || hashParams.get("p");
+      if (hashPwd) return hashPwd;
+    }
+
+    return null;
+  });
 
   if (!password) return <PasswordPrompt roomId={roomId} onUnlocked={setPassword} />;
-  return <LiveRoom roomId={roomId} password={password} />;
+  return <LiveRoom roomId={roomId} password={password} onResetPassword={() => setPassword(null)} />;
 }
 
 function PasswordPrompt({ roomId, onUnlocked }: { roomId: string; onUnlocked: (p: string) => void }) {
@@ -84,7 +98,15 @@ function PasswordPrompt({ roomId, onUnlocked }: { roomId: string; onUnlocked: (p
 
 type Tile = { peerId: string; name: string; stream: MediaStream | null; isYou: boolean };
 
-function LiveRoom({ roomId, password }: { roomId: string; password: string }) {
+function LiveRoom({
+  roomId,
+  password,
+  onResetPassword,
+}: {
+  roomId: string;
+  password: string;
+  onResetPassword?: () => void;
+}) {
   const room = useRoom(roomId, password);
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -135,6 +157,7 @@ function LiveRoom({ roomId, password }: { roomId: string; password: string }) {
           tela
         </Link>
         <CopyableCode code={roomId} />
+        <CopyLinkWithPassword roomId={roomId} password={password} />
         <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
           <Users className="size-4" />
           <span className="tabular-nums">{peopleCount}</span>
@@ -142,7 +165,7 @@ function LiveRoom({ roomId, password }: { roomId: string; password: string }) {
         </span>
         {room.status !== "connected" && (
           <span className="text-sm text-muted-foreground">
-            {room.status === "closed" ? "desconectado" : "conectando…"}
+            {room.status === "closed" ? "desconectado" : room.status === "error" ? "erro na conexão" : "conectando…"}
           </span>
         )}
 
@@ -178,10 +201,25 @@ function LiveRoom({ roomId, password }: { roomId: string; password: string }) {
       </header>
 
       <main className="relative flex flex-1 bg-black">
+        {room.status === "error" && (
+          <div className="absolute inset-x-4 top-4 z-10 mx-auto max-w-md">
+            <Alert variant="destructive">
+              <AlertDescription className="flex items-center justify-between gap-3 text-xs">
+                <span>Falha ao conectar na sala (senha incorreta ou sala fechada).</span>
+                {onResetPassword && (
+                  <Button size="sm" variant="outline" onClick={onResetPassword} className="h-7 shrink-0 text-xs">
+                    Digitar senha
+                  </Button>
+                )}
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
+
         {selectedTile ? (
           <FullscreenTile tile={selectedTile} onClose={() => setSelected(null)} />
         ) : tiles.length === 0 ? (
-          <Empty roomId={roomId} />
+          <Empty roomId={roomId} password={password} />
         ) : (
           <Grid tiles={tiles} onSelect={setSelected} />
         )}
@@ -315,7 +353,7 @@ function TileVideo({ tile, className = "" }: { tile: Tile; className?: string })
   );
 }
 
-function Empty({ roomId }: { roomId: string }) {
+function Empty({ roomId, password }: { roomId: string; password: string }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-muted-foreground">
       <p>Ninguém está compartilhando ainda.</p>
@@ -328,9 +366,51 @@ function Empty({ roomId }: { roomId: string }) {
         </p>
       )}
       <p className="mt-4 text-sm">
-        Passe o código <Code>{roomId}</Code> e a senha para quem for entrar.
+        Passe o código <Code>{roomId}</Code> e a senha para quem for entrar, ou envie o link direto:
       </p>
+      <div className="mt-3">
+        <CopyLinkWithPassword roomId={roomId} password={password} variant="outline" />
+      </div>
     </div>
+  );
+}
+
+function CopyLinkWithPassword({
+  roomId,
+  password,
+  variant = "secondary",
+}: {
+  roomId: string;
+  password: string;
+  variant?: "secondary" | "outline" | "default";
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    const link = `${window.location.origin}/r/${roomId}?pwd=${encodeURIComponent(password)}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      if (navigator.share) {
+        navigator.share({ title: `tela - Sala ${roomId}`, url: link }).catch(() => {});
+      }
+    }
+  }
+
+  return (
+    <Button
+      variant={variant}
+      size="sm"
+      onClick={copy}
+      title="Copiar link direto com senha"
+      className="gap-1.5"
+    >
+      {copied ? <Check className="size-4 text-green-500" /> : <Link2 className="size-4" />}
+      <span className="hidden sm:inline">{copied ? "Link com senha copiado!" : "Copiar link com senha"}</span>
+      <span className="sm:hidden">{copied ? "Copiado!" : "Link com senha"}</span>
+    </Button>
   );
 }
 
@@ -354,7 +434,7 @@ function CopyableCode({ code }: { code: string }) {
   }
 
   return (
-    <Button variant="secondary" size="sm" onClick={copy} className="font-mono tracking-widest">
+    <Button variant="secondary" size="sm" onClick={copy} className="font-mono tracking-widest" title="Copiar código / link da sala">
       {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
       {code}
     </Button>
