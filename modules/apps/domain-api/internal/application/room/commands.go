@@ -7,6 +7,7 @@ type CreateInput struct {
 	HostID     string `json:"host_id"`
 	Title      string `json:"title"`
 	DocumentID string `json:"document_id"`
+	Kind       string `json:"kind,omitempty"`
 }
 
 type UpdateInput struct {

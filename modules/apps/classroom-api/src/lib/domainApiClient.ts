@@ -15,6 +15,9 @@ export type DomainRoom = {
   host_id: string;
   title: string;
   document_id: string;
+  // "book" (bookclub-api) or "class" (this service) -- partitions the
+  // one shared Room aggregate. See listRooms/createRoom below.
+  kind: string;
   current_page: number;
   status: RoomStatus;
   created_at: string;
@@ -63,13 +66,25 @@ export function createDomainApiClient(baseUrl: string, apiKey: string) {
   }
 
   return {
-    listRooms: () => request<{ rooms: DomainRoom[] }>("/rooms"),
-    getRoom: (id: string) => request<DomainRoom>(`/rooms/${encodeURIComponent(id)}`),
+    // domain-api's /rooms has no server-side kind filter -- it's one
+    // shared aggregate, bookclub-api's rooms included in the same
+    // response. Filtered here so this service never lists (or, via
+    // getRoom below, operates on) a room that isn't actually one of
+    // its own classes.
+    listRooms: async () => {
+      const { rooms } = await request<{ rooms: DomainRoom[] }>("/rooms");
+      return { rooms: rooms.filter((r) => r.kind === "class") };
+    },
+    getRoom: async (id: string) => {
+      const room = await request<DomainRoom>(`/rooms/${encodeURIComponent(id)}`);
+      if (room.kind !== "class") throw new NotFoundError();
+      return room;
+    },
     // document_id always "" -- a live class has no document, only a
     // shared screen/camera and a notepad, neither of which domain-api
     // knows anything about (see ws/roomHub.ts).
     createRoom: (input: { host_id: string; title: string }) =>
-      request<Accepted>("/rooms", { method: "POST", body: JSON.stringify({ ...input, document_id: "" }) }),
+      request<Accepted>("/rooms", { method: "POST", body: JSON.stringify({ ...input, document_id: "", kind: "class" }) }),
     deleteRoom: (id: string, hostId: string) =>
       request<Accepted>(`/rooms/${encodeURIComponent(id)}`, {
         method: "DELETE",

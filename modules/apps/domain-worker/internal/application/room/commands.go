@@ -8,6 +8,9 @@ type CreateInput struct {
 	HostID     string `json:"host_id"`
 	Title      string `json:"title"`
 	DocumentID string `json:"document_id"`
+	// Empty defaults to domainroom.KindBook -- every caller predating
+	// this field (bookclub-api) never sent it and shouldn't have to.
+	Kind string `json:"kind,omitempty"`
 }
 
 type UpdateInput struct {

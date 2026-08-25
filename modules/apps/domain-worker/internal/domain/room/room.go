@@ -29,6 +29,14 @@ const (
 	StatusClosed = "closed"
 )
 
+const (
+	// KindBook is bookclub-api's own rooms (a PDF, page turns).
+	KindBook = "book"
+	// KindClass is classroom-api's own rooms (shared screen/camera,
+	// notepad, no document).
+	KindClass = "class"
+)
+
 var (
 	ErrHostRequired  = errors.New("host_id is required")
 	ErrTitleRequired = errors.New("title is required")
@@ -42,6 +50,14 @@ type Room struct {
 	HostID      string
 	Title       string
 	DocumentID  string
+	// Kind partitions the single shared `rooms` table between callers
+	// -- bookclub-api and classroom-api both list/create through the
+	// exact same generic aggregate, and without this every "Aulas" GET
+	// /rooms would return "Clube do Livro" rooms too (and vice versa).
+	// Opaque here, same as DocumentID: this package doesn't validate
+	// against KindBook/KindClass specifically, callers just need SOME
+	// stable value to filter their own listings by.
+	Kind        string
 	CurrentPage int
 	Status      string
 	CreatedAt   time.Time
@@ -54,13 +70,17 @@ func validStatus(s string) bool { return s == StatusOpen || s == StatusPaused }
 // one place they can't be bypassed — same shape as domain/post.New.
 // documentID is optional (classroom-api always passes ""); when a
 // caller does have one (bookclub-api's PDF id) it's just carried
-// along opaquely, never validated here.
-func New(id, hostID, title, documentID string) (Room, error) {
+// along opaquely, never validated here. kind defaults to KindBook when
+// empty, matching every room created before this field existed.
+func New(id, hostID, title, documentID, kind string) (Room, error) {
 	if hostID == "" {
 		return Room{}, ErrHostRequired
 	}
 	if title == "" {
 		return Room{}, ErrTitleRequired
+	}
+	if kind == "" {
+		kind = KindBook
 	}
 
 	now := time.Now().UTC()
@@ -69,6 +89,7 @@ func New(id, hostID, title, documentID string) (Room, error) {
 		HostID:      hostID,
 		Title:       title,
 		DocumentID:  documentID,
+		Kind:        kind,
 		CurrentPage: 1,
 		Status:      StatusOpen,
 		CreatedAt:   now,

@@ -17,6 +17,9 @@ export type DomainRoom = {
   host_id: string;
   title: string;
   document_id: string;
+  // "book" (this service) or "class" (classroom-api) -- partitions
+  // the one shared Room aggregate. See listRooms/createRoom below.
+  kind: string;
   current_page: number;
   status: RoomStatus;
   created_at: string;
@@ -65,10 +68,22 @@ export function createDomainApiClient(baseUrl: string, apiKey: string) {
   }
 
   return {
-    listRooms: () => request<{ rooms: DomainRoom[] }>("/rooms"),
-    getRoom: (id: string) => request<DomainRoom>(`/rooms/${encodeURIComponent(id)}`),
+    // domain-api's /rooms has no server-side kind filter -- it's one
+    // shared aggregate, classroom-api's rooms included in the same
+    // response. Filtered here so this service never lists (or, via
+    // getRoom below, operates on) a room that isn't actually one of
+    // its own book club rooms.
+    listRooms: async () => {
+      const { rooms } = await request<{ rooms: DomainRoom[] }>("/rooms");
+      return { rooms: rooms.filter((r) => r.kind === "book") };
+    },
+    getRoom: async (id: string) => {
+      const room = await request<DomainRoom>(`/rooms/${encodeURIComponent(id)}`);
+      if (room.kind !== "book") throw new NotFoundError();
+      return room;
+    },
     createRoom: (input: { host_id: string; title: string; document_id: string }) =>
-      request<Accepted>("/rooms", { method: "POST", body: JSON.stringify(input) }),
+      request<Accepted>("/rooms", { method: "POST", body: JSON.stringify({ ...input, kind: "book" }) }),
     updateRoom: (id: string, input: { host_id: string; title?: string; current_page?: number; status?: RoomStatus }) =>
       request<Accepted>(`/rooms/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) }),
     deleteRoom: (id: string, hostId: string) =>

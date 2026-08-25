@@ -104,6 +104,15 @@ CREATE TABLE IF NOT EXISTS rooms (
 -- joinable/playable, same soft-delete convention as posts.deleted_at.
 ALTER TABLE rooms ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open';
 
+-- Partitions this one shared table between callers -- bookclub-api
+-- ("book") and classroom-api ("class") both create/list rooms through
+-- the exact same generic aggregate, and without this column every
+-- room ever created (all bookclub-api's, before classroom-api
+-- existed) would show up in classroom-api's "Aulas" list too, and
+-- vice versa going forward. Default 'book' is exactly correct for
+-- every pre-existing row.
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'book';
+
 CREATE INDEX IF NOT EXISTS idx_rooms_host_id ON rooms (host_id);
 
 CREATE TABLE IF NOT EXISTS messages (

@@ -10,6 +10,11 @@ type Room struct {
 	HostID      string
 	Title       string
 	DocumentID  string
+	// "book" (bookclub-api) or "class" (classroom-api) -- partitions
+	// this one shared table between callers. See domain-worker's own
+	// domain/room/room.go for the authoritative KindBook/KindClass
+	// constants (this read-only copy doesn't redeclare them).
+	Kind        string
 	CurrentPage int
 	Status      string
 	CreatedAt   time.Time

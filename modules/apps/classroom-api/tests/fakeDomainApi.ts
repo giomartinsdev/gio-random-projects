@@ -39,6 +39,7 @@ export function startFakeDomainApi(apiKey: string) {
       host_id: body.host_id,
       title: body.title,
       document_id: body.document_id ?? "",
+      kind: body.kind || "book",
       current_page: 1,
       status: "open",
       created_at: now,

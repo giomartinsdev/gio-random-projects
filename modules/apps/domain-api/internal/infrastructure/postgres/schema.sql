@@ -79,6 +79,10 @@ CREATE TABLE IF NOT EXISTS rooms (
 -- deleting the row.
 ALTER TABLE rooms ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open';
 
+-- Kept identical to domain-worker's copy -- partitions the shared
+-- table between bookclub-api ("book") and classroom-api ("class").
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'book';
+
 CREATE INDEX IF NOT EXISTS idx_rooms_host_id ON rooms (host_id);
 
 CREATE TABLE IF NOT EXISTS messages (

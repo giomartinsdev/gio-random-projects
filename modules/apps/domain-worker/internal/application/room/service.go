@@ -20,7 +20,7 @@ func NewService(repo domainroom.Repository) *Service {
 }
 
 func (s *Service) Create(ctx context.Context, id string, in CreateInput) (domainroom.Room, domainroom.Event, error) {
-	r, err := domainroom.New(id, in.HostID, in.Title, in.DocumentID)
+	r, err := domainroom.New(id, in.HostID, in.Title, in.DocumentID, in.Kind)
 	if err != nil {
 		return domainroom.Room{}, nil, err
 	}

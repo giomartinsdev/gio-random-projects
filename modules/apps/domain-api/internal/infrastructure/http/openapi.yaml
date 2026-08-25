@@ -553,6 +553,15 @@ components:
           type: string
         document_id:
           type: string
+        kind:
+          type: string
+          enum: [book, class]
+          description: >
+            Partitions this one shared aggregate between callers --
+            "book" (bookclub-api's PDF rooms) or "class" (classroom-api's
+            live screen/camera + notepad rooms). Defaults to "book" when
+            omitted on create, matching every room created before this
+            field existed.
         current_page:
           type: integer
         status:
@@ -565,7 +574,7 @@ components:
           format: date-time
     RoomCreateInput:
       type: object
-      required: [host_id, title, document_id]
+      required: [host_id, title]
       properties:
         host_id:
           type: string
@@ -573,6 +582,11 @@ components:
           type: string
         document_id:
           type: string
+          description: Optional -- "" for classroom-api's rooms (no document).
+        kind:
+          type: string
+          enum: [book, class]
+          description: Optional, defaults to "book".
     RoomUpdateInput:
       type: object
       required: [host_id]

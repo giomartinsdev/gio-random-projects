@@ -21,11 +21,11 @@ func NewRoomRepository(pool *pgxpool.Pool) *RoomRepository {
 	return &RoomRepository{pool: pool}
 }
 
-const roomColumns = `id, host_id, title, document_id, current_page, status, created_at, updated_at`
+const roomColumns = `id, host_id, title, document_id, kind, current_page, status, created_at, updated_at`
 
 func scanRoom(row pgx.Row) (domainroom.Room, error) {
 	var r domainroom.Room
-	err := row.Scan(&r.ID, &r.HostID, &r.Title, &r.DocumentID, &r.CurrentPage, &r.Status, &r.CreatedAt, &r.UpdatedAt)
+	err := row.Scan(&r.ID, &r.HostID, &r.Title, &r.DocumentID, &r.Kind, &r.CurrentPage, &r.Status, &r.CreatedAt, &r.UpdatedAt)
 	return r, err
 }
 
@@ -61,9 +61,9 @@ func (r *RoomRepository) ListAll(ctx context.Context) ([]domainroom.Room, error)
 
 func (r *RoomRepository) Insert(ctx context.Context, room domainroom.Room) error {
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO rooms (id, host_id, title, document_id, current_page, status, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		room.ID, room.HostID, room.Title, room.DocumentID, room.CurrentPage, room.Status, room.CreatedAt, room.UpdatedAt,
+		`INSERT INTO rooms (id, host_id, title, document_id, kind, current_page, status, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		room.ID, room.HostID, room.Title, room.DocumentID, room.Kind, room.CurrentPage, room.Status, room.CreatedAt, room.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert room: %w", err)
