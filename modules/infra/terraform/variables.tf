@@ -45,6 +45,7 @@ variable "excluded_hostnames" {
     "docker.giomartins.dev",        # this config's own docker provider — a service-token Access application (modules/cloudflare/service_token_access.tf)
     "post-api.giomartins.dev",      # own Better Auth — a browser SSO redirect would break API/bot clients, same reasoning as domain.giomartins.dev
     "bookclub-api.giomartins.dev",  # own Better Auth session check — same reasoning, plus a redirect would break the front's WebSocket upgrade
+    "classroom-api.giomartins.dev", # own Better Auth session check — same reasoning as bookclub-api.giomartins.dev
     "classroom-bdd.giomartins.dev", # meant to be publicly readable by anyone, not gated behind Google SSO
     "ai.giomartins.dev",            # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
   ]

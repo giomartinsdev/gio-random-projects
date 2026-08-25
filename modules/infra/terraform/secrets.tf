@@ -46,8 +46,15 @@ resource "random_id" "bookclub_api_domain_key" {
   byte_length = 24
 }
 
+# classroom-api's own key, same reasoning as bookclub_api_domain_key --
+# Room/Message go through domain-api's CQRS pipeline same as Post, so
+# this needs a caller identity there too.
+resource "random_id" "classroom_api_domain_key" {
+  byte_length = 24
+}
+
 locals {
-  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api"
+  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api"
 }
 
 resource "random_password" "vaultwarden_admin_token" {
@@ -179,6 +186,10 @@ locals {
     bookclub_api_domain_key = {
       trigger = random_id.bookclub_api_domain_key.hex
       items   = { BOOKCLUB_API_DOMAIN_KEY = random_id.bookclub_api_domain_key.hex }
+    }
+    classroom_api_domain_key = {
+      trigger = random_id.classroom_api_domain_key.hex
+      items   = { CLASSROOM_API_DOMAIN_KEY = random_id.classroom_api_domain_key.hex }
     }
     post_api_better_auth_secret = {
       trigger = random_password.post_api_better_auth_secret.result

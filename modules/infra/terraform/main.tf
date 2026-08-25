@@ -111,6 +111,23 @@ module "compute_apps_bookclub_api" {
   depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api, module.storage_minio]
 }
 
+module "compute_apps_classroom_api" {
+  source = "./modules/compute/apps/classroom_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name       = module.network_docker_apps.network_name
+  postgres_host      = module.storage_postgres.postgres_host
+  postgres_user      = module.storage_postgres.postgres_user
+  postgres_password  = random_password.postgres.result
+  registry_host      = var.registry_host
+  better_auth_secret = random_password.post_api_better_auth_secret.result
+  domain_api_key     = random_id.classroom_api_domain_key.hex
+
+  depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api]
+}
+
 module "compute_apps_front" {
   source = "./modules/compute/apps/front"
   providers = {
