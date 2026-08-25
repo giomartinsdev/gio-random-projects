@@ -1,15 +1,13 @@
-// bookclub-api owns no room/message storage of its own (only the PDF
-// blob in bookclubDocument stays local -- see db/schema.ts's own
-// comment on why binary data can't go through this pipeline). Reads
-// hit domain-api directly; writes publish a command and come back 202
-// Accepted, applied asynchronously by domain-worker -- same contract
-// post-api's own client gets. streamRoomEvents is the one thing this
-// client has that post-api's doesn't: a hand-rolled SSE reader (no
-// `eventsource` package -- Node's global fetch + ReadableStream is
-// enough), because this needs a custom X-API-Key header a browser's
-// native EventSource can't send. See app.ts's WebSocket handler for
-// how those events get translated into this service's own realtime
-// wire protocol.
+// classroom-api owns no room/message storage of its own -- everything
+// (Room, Message) goes through domain-api's generic CQRS pipeline,
+// same contract bookclub-api's own client gets against the SAME
+// aggregates (Room doesn't know or care whether DocumentID is a real
+// PDF id or, as here, always ""). streamRoomEvents is a hand-rolled
+// SSE reader (no `eventsource` package -- Node's global fetch +
+// ReadableStream is enough), because this needs a custom X-API-Key
+// header a browser's native EventSource can't send. See app.ts's
+// WebSocket handler for how those events get translated into this
+// service's own realtime wire protocol.
 export type RoomStatus = "open" | "paused" | "closed";
 
 export type DomainRoom = {
@@ -67,10 +65,11 @@ export function createDomainApiClient(baseUrl: string, apiKey: string) {
   return {
     listRooms: () => request<{ rooms: DomainRoom[] }>("/rooms"),
     getRoom: (id: string) => request<DomainRoom>(`/rooms/${encodeURIComponent(id)}`),
-    createRoom: (input: { host_id: string; title: string; document_id: string }) =>
-      request<Accepted>("/rooms", { method: "POST", body: JSON.stringify(input) }),
-    updateRoom: (id: string, input: { host_id: string; title?: string; current_page?: number; status?: RoomStatus }) =>
-      request<Accepted>(`/rooms/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) }),
+    // document_id always "" -- a live class has no document, only a
+    // shared screen/camera and a notepad, neither of which domain-api
+    // knows anything about (see ws/roomHub.ts).
+    createRoom: (input: { host_id: string; title: string }) =>
+      request<Accepted>("/rooms", { method: "POST", body: JSON.stringify({ ...input, document_id: "" }) }),
     deleteRoom: (id: string, hostId: string) =>
       request<Accepted>(`/rooms/${encodeURIComponent(id)}`, {
         method: "DELETE",
@@ -79,7 +78,7 @@ export function createDomainApiClient(baseUrl: string, apiKey: string) {
 
     listMessages: (roomId: string) =>
       request<{ messages: DomainMessage[] }>(`/messages?room_id=${encodeURIComponent(roomId)}`),
-    createMessage: (input: { room_id: string; user_id: string; user_name: string; body: string; requested_page?: number }) =>
+    createMessage: (input: { room_id: string; user_id: string; user_name: string; body: string }) =>
       request<Accepted>("/messages", { method: "POST", body: JSON.stringify(input) }),
 
     // Reads the room's SSE stream until `signal` aborts. onEvent fires
