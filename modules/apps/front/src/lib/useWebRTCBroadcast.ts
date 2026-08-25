@@ -8,6 +8,35 @@ import type { Participant, SignalPayload } from "./useClassSocket.js";
 // common case (home networks, most consumer NATs).
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
+// Discord embeds Activities in an iframe it controls, and doesn't
+// delegate the `display-capture` Permissions-Policy feature to that
+// iframe -- calling getDisplayMedia directly from in here rejects
+// immediately with a synchronous "not granted", no native picker ever
+// shown (confirmed live: the exact same call from a plain top-level
+// tab correctly reaches the OS picker instead). getUserMedia isn't
+// rejected the same way, but routing both through the same popup
+// keeps this one code path and one gesture-triggered permission flow.
+//
+// The fix isn't a Discord-side bypass (there isn't one from Activity
+// JS) -- it's simply not running the capture call inside the
+// restricted iframe at all. window.open()'s popup is a genuine
+// top-level browsing context, subject to normal Permissions-Policy
+// defaults, not the parent iframe's. See pages/SharePopup.tsx for the
+// other half of this: it captures the stream there and hands the
+// live MediaStream object back across the (same-origin) window
+// boundary via `window.opener.__classroomReceiveStream(...)` --
+// same-origin windows can pass host objects like MediaStream by
+// reference through a direct call like this; postMessage isn't
+// involved and wouldn't work here anyway (MediaStream isn't
+// structured-clonable).
+function openSharePopup(kind: "screen" | "camera"): Window | null {
+  return window.open(
+    `${window.location.origin}/share-popup?kind=${kind}`,
+    "classroom-share-popup",
+    "width=480,height=360",
+  );
+}
+
 // The host is the ONE media source; each viewer opens its own
 // RTCPeerConnection directly to the host (a mesh centered on the
 // host) -- classroom-api never touches media, only relays these
@@ -31,6 +60,7 @@ export function useWebRTCBroadcast(opts: {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [sharing, setSharing] = useState<"screen" | "camera" | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
+  const popupRef = useRef<Window | null>(null);
 
   function closePeer(id: string) {
     peersRef.current.get(id)?.close();
@@ -80,34 +110,40 @@ export function useWebRTCBroadcast(opts: {
     }
   }, [isHost, participants]);
 
-  async function startSharing(kind: "screen" | "camera") {
+  // Called by the popup (see SharePopup.tsx) via
+  // `window.opener.__classroomReceiveStream(...)` once it has a real
+  // MediaStream -- exposed on `window` (not React state) because the
+  // popup is a wholly separate script realm that only has a
+  // same-origin `window.opener` reference to reach back through.
+  useEffect(() => {
+    window.__classroomReceiveStream = (stream: MediaStream, kind: "screen" | "camera") => {
+      // If the popup window itself gets closed (user clicks its X,
+      // browser/OS "Stop sharing" control, etc.) its tracks end --
+      // react the same as clicking our own Parar button.
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => stopSharing());
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      setSharing(kind);
+      setShareError(null);
+    };
+    window.__classroomShareError = (message: string) => {
+      setShareError(message);
+    };
+    return () => {
+      delete window.__classroomReceiveStream;
+      delete window.__classroomShareError;
+    };
+  }, []);
+
+  function startSharing(kind: "screen" | "camera") {
     stopSharing();
     setShareError(null);
-    let stream: MediaStream;
-    try {
-      stream =
-        kind === "screen"
-          ? await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
-          : await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    } catch (err) {
-      // Surfaced to the UI (see AulaRoom.tsx) instead of failing
-      // silently -- inside Discord's Activity iframe this rejects with
-      // a Permissions-Policy / NotAllowedError rather than showing any
-      // native picker, so without this the buttons look like they do
-      // nothing at all.
-      const name = err instanceof Error ? err.name : "Error";
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[classroom] ${kind} share failed:`, name, message);
-      setShareError(`${name}: ${message}`);
+    const popup = openSharePopup(kind);
+    if (!popup) {
+      setShareError("Não foi possível abrir a janela de compartilhamento -- permita pop-ups para este site e tente de novo.");
       return;
     }
-    // If the user stops sharing via the browser/OS's own "Stop
-    // sharing" control (screen share only), react the same as
-    // clicking our own stop button.
-    stream.getVideoTracks()[0]?.addEventListener("ended", () => stopSharing());
-    localStreamRef.current = stream;
-    setLocalStream(stream);
-    setSharing(kind);
+    popupRef.current = popup;
   }
 
   function stopSharing() {
@@ -116,6 +152,8 @@ export function useWebRTCBroadcast(opts: {
     setLocalStream(null);
     setSharing(null);
     closeAllPeers();
+    popupRef.current?.close();
+    popupRef.current = null;
   }
 
   // --- viewer side: exactly one connection, to the host ---
