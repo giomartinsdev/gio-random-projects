@@ -51,7 +51,13 @@ export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigin
   app.onError((err, c) => {
     if (err instanceof DomainApiError) {
       console.error("[classroom-api] domain-api call failed:", err.message);
-      return c.json({ error: "upstream domain-api call failed" }, 502);
+      // 502/504/52x are Cloudflare's own reserved "gateway" range --
+      // it silently REPLACES the origin's response body for those
+      // exact codes with its own generic text, discarding whatever
+      // JSON this returns (confirmed the hard way debugging post-api's
+      // /image-proxy earlier). 500 isn't in that special-cased set, so
+      // it's what actually reaches the caller with this message intact.
+      return c.json({ error: `upstream domain-api call failed: ${err.message}` }, 500);
     }
     console.error("[classroom-api] unhandled error:", err);
     return c.json({ error: "internal server error" }, 500);
