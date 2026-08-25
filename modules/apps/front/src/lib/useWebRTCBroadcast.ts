@@ -160,16 +160,28 @@ export function useWebRTCBroadcast(opts: {
       const url = `${origin}/share-popup?${params.toString()}`;
 
       const inActivity = isDiscordActivity();
-      const opened = inActivity
-        ? await openExternalLink(url)
-        : (() => {
-            const popup = window.open(url, "classroom-share-popup", "width=480,height=360");
-            popupRef.current = popup;
-            return popup !== null;
-          })();
+      // window.open FIRST, even inside the Activity: the iframe turns
+      // out to allow popups, and a popup this page opened itself is
+      // strictly better than the SDK route (we keep a Window handle,
+      // so stopSharing can close it). openExternalLink is the
+      // fallback -- it hands the URL to Discord's own client, but
+      // returns no handle and, observed live, can leave its RPC
+      // promise pending forever, so it's raced against a timeout
+      // rather than awaited indefinitely.
+      const popup = window.open(url, "classroom-share-popup", "width=480,height=360");
+      popupRef.current = popup;
+      let opened = popup !== null;
+      console.log(`[classroom] share window.open -> ${opened ? "ok" : "blocked"} (activity=${inActivity})`);
+
+      if (!opened && inActivity) {
+        opened = await Promise.race([
+          openExternalLink(url),
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
+        ]);
+      }
 
       if (!opened) {
-        console.error(`[classroom] failed to open share window (activity=${inActivity}) for ${origin}`);
+        console.error(`[classroom] could not open share window (activity=${inActivity}) for ${origin}`);
         setShareError(
           inActivity
             ? "O Discord não conseguiu abrir a janela de compartilhamento. Abra a aula pelo site para compartilhar a tela."
