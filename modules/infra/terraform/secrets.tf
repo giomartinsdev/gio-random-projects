@@ -93,7 +93,7 @@ resource "null_resource" "postgres_password_sync" {
   provisioner "local-exec" {
     environment = {
       DOCKER_HOST     = var.docker_host
-      PG_USER         = module.compute_data.postgres_user
+      PG_USER         = module.storage_postgres.postgres_user
       PG_NEW_PASSWORD = random_password.postgres.result
     }
     # -d (detach): a non-detached `docker exec` always hijacks the
@@ -112,7 +112,7 @@ resource "null_resource" "postgres_password_sync" {
     EOT
   }
 
-  depends_on = [module.compute_data]
+  depends_on = [module.storage_postgres]
 }
 
 # Changing registry_password recreates htpasswd_init and
@@ -134,7 +134,7 @@ resource "null_resource" "registry_restart" {
     command = "docker restart registry watchtower"
   }
 
-  depends_on = [module.compute_registry]
+  depends_on = [module.compute_services_registry]
 }
 
 # One group per logically-independent value (or tightly-coupled pair,
@@ -165,7 +165,7 @@ locals {
     database_url = {
       trigger = random_password.postgres.result
       items = {
-        DATABASE_URL = "postgresql://${module.compute_data.postgres_user}:${random_password.postgres.result}@${module.compute_data.postgres_host}:5432/${module.compute_data.postgres_user}"
+        DATABASE_URL = "postgresql://${module.storage_postgres.postgres_user}:${random_password.postgres.result}@${module.storage_postgres.postgres_host}:5432/${module.storage_postgres.postgres_user}"
       }
     }
     domain_api_keys = {
@@ -196,56 +196,56 @@ locals {
     # same "how do I authenticate to the registry" concern and, in
     # practice, rotate together.
     registry = {
-      trigger = "${var.registry_password}|${module.cloudflare.registry_client_cert_pem}"
+      trigger = "${var.registry_password}|${module.cloud_cloudflare.registry_client_cert_pem}"
       items = {
         REGISTRY_PASSWORD    = var.registry_password
         REGISTRY_USERNAME    = var.registry_user
-        REGISTRY_CLIENT_CERT = module.cloudflare.registry_client_cert_pem
-        REGISTRY_CLIENT_KEY  = module.cloudflare.registry_client_key_pem
+        REGISTRY_CLIENT_CERT = module.cloud_cloudflare.registry_client_cert_pem
+        REGISTRY_CLIENT_KEY  = module.cloud_cloudflare.registry_client_key_pem
       }
     }
     # Each service token's id+secret are two attributes of the same
     # underlying resource -- they only ever change together, so one
     # group per hostname, not one per attribute.
     access_svc_token_docker = {
-      trigger = module.cloudflare.service_token_client_ids["docker"]
+      trigger = module.cloud_cloudflare.service_token_client_ids["docker"]
       items = {
-        ACCESS_SVC_TOKEN_DOCKER_CLIENT_ID     = module.cloudflare.service_token_client_ids["docker"]
-        ACCESS_SVC_TOKEN_DOCKER_CLIENT_SECRET = module.cloudflare.service_token_client_secrets["docker"]
+        ACCESS_SVC_TOKEN_DOCKER_CLIENT_ID     = module.cloud_cloudflare.service_token_client_ids["docker"]
+        ACCESS_SVC_TOKEN_DOCKER_CLIENT_SECRET = module.cloud_cloudflare.service_token_client_secrets["docker"]
       }
     }
     access_svc_token_domain = {
-      trigger = module.cloudflare.service_token_client_ids["domain"]
+      trigger = module.cloud_cloudflare.service_token_client_ids["domain"]
       items = {
-        ACCESS_SVC_TOKEN_DOMAIN_CLIENT_ID     = module.cloudflare.service_token_client_ids["domain"]
-        ACCESS_SVC_TOKEN_DOMAIN_CLIENT_SECRET = module.cloudflare.service_token_client_secrets["domain"]
+        ACCESS_SVC_TOKEN_DOMAIN_CLIENT_ID     = module.cloud_cloudflare.service_token_client_ids["domain"]
+        ACCESS_SVC_TOKEN_DOMAIN_CLIENT_SECRET = module.cloud_cloudflare.service_token_client_secrets["domain"]
       }
     }
     access_svc_token_vault = {
-      trigger = module.cloudflare.protected_hosts_service_token_client_ids["vault.giomartins.dev"]
+      trigger = module.cloud_cloudflare.protected_hosts_service_token_client_ids["vault.giomartins.dev"]
       items = {
-        ACCESS_SVC_TOKEN_VAULT_CLIENT_ID     = module.cloudflare.protected_hosts_service_token_client_ids["vault.giomartins.dev"]
-        ACCESS_SVC_TOKEN_VAULT_CLIENT_SECRET = module.cloudflare.protected_hosts_service_token_client_secrets["vault.giomartins.dev"]
+        ACCESS_SVC_TOKEN_VAULT_CLIENT_ID     = module.cloud_cloudflare.protected_hosts_service_token_client_ids["vault.giomartins.dev"]
+        ACCESS_SVC_TOKEN_VAULT_CLIENT_SECRET = module.cloud_cloudflare.protected_hosts_service_token_client_secrets["vault.giomartins.dev"]
       }
     }
     access_svc_token_beszel = {
-      trigger = module.cloudflare.protected_hosts_service_token_client_ids["beszel.giomartins.dev"]
+      trigger = module.cloud_cloudflare.protected_hosts_service_token_client_ids["beszel.giomartins.dev"]
       items = {
-        ACCESS_SVC_TOKEN_BESZEL_CLIENT_ID     = module.cloudflare.protected_hosts_service_token_client_ids["beszel.giomartins.dev"]
-        ACCESS_SVC_TOKEN_BESZEL_CLIENT_SECRET = module.cloudflare.protected_hosts_service_token_client_secrets["beszel.giomartins.dev"]
+        ACCESS_SVC_TOKEN_BESZEL_CLIENT_ID     = module.cloud_cloudflare.protected_hosts_service_token_client_ids["beszel.giomartins.dev"]
+        ACCESS_SVC_TOKEN_BESZEL_CLIENT_SECRET = module.cloud_cloudflare.protected_hosts_service_token_client_secrets["beszel.giomartins.dev"]
       }
     }
     access_svc_token_minio = {
-      trigger = module.cloudflare.protected_hosts_service_token_client_ids["minio.giomartins.dev"]
+      trigger = module.cloud_cloudflare.protected_hosts_service_token_client_ids["minio.giomartins.dev"]
       items = {
-        ACCESS_SVC_TOKEN_MINIO_CLIENT_ID     = module.cloudflare.protected_hosts_service_token_client_ids["minio.giomartins.dev"]
-        ACCESS_SVC_TOKEN_MINIO_CLIENT_SECRET = module.cloudflare.protected_hosts_service_token_client_secrets["minio.giomartins.dev"]
+        ACCESS_SVC_TOKEN_MINIO_CLIENT_ID     = module.cloud_cloudflare.protected_hosts_service_token_client_ids["minio.giomartins.dev"]
+        ACCESS_SVC_TOKEN_MINIO_CLIENT_SECRET = module.cloud_cloudflare.protected_hosts_service_token_client_secrets["minio.giomartins.dev"]
       }
     }
     minio = {
       trigger = random_password.minio_root_password.result
       items = {
-        MINIO_ROOT_USER     = module.compute_minio.root_user
+        MINIO_ROOT_USER     = module.storage_minio.root_user
         MINIO_ROOT_PASSWORD = random_password.minio_root_password.result
       }
     }
@@ -269,7 +269,7 @@ resource "null_resource" "vault_seed" {
   provisioner "local-exec" {
     environment = {
       DOCKER_HOST                 = var.docker_host
-      NETWORK_NAME                = module.compute_data.network_name
+      NETWORK_NAME                = module.network_docker_apps.network_name
       VAULTWARDEN_CLIENT_ID       = var.vaultwarden_api_client_id
       VAULTWARDEN_CLIENT_SECRET   = var.vaultwarden_api_client_secret
       VAULTWARDEN_MASTER_PASSWORD = var.vaultwarden_account_master_password
@@ -280,5 +280,5 @@ resource "null_resource" "vault_seed" {
     command = "${path.module}/scripts/seed_vault.sh"
   }
 
-  depends_on = [module.compute_vaultwarden, module.compute_data, null_resource.postgres_password_sync, null_resource.registry_restart]
+  depends_on = [module.compute_services_vaultwarden, module.network_docker_apps, null_resource.postgres_password_sync, null_resource.registry_restart]
 }

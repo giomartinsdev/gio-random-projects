@@ -1,5 +1,5 @@
 variable "postgres_password" {
-  description = "Password for the domain Postgres user. Generate: openssl rand -base64 24"
+  description = "Password for the postgres user. Generate: openssl rand -base64 24"
   type        = string
   sensitive   = true
 }
@@ -16,14 +16,8 @@ variable "postgres_image" {
   default     = "postgres:17-alpine"
 }
 
-variable "redis_image" {
-  description = "Redis image tag."
-  type        = string
-  default     = "redis:7-alpine"
-}
-
 variable "network_name" {
-  description = "Name of the docker network app containers join to reach postgres/redis by hostname."
+  description = "Name of the docker network (from network/docker_apps)."
   type        = string
   default     = "apps"
 }

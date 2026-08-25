@@ -1,19 +1,19 @@
 # Import blocks are root-module-only, so these live here even though
-# the resources themselves belong to module.compute_registry. Adopts
+# the resources themselves belong to module.compute_services_registry. Adopts
 # the volumes the pre-Terraform compose stack created (see that
 # module's main.tf for the docker_volume names) instead of erroring on
 # "already exists" or, worse, silently creating empty ones that shadow
 # the real data. Containers aren't imported — registry_password
 # rotated as part of this cutover either way, so they're meant to be
-# recreated fresh on compute_registry's first apply; only the data in
+# recreated fresh on compute_services_registry's first apply; only the data in
 # these two volumes needs to survive.
 import {
-  to = module.compute_registry.docker_volume.registry_data
+  to = module.compute_services_registry.docker_volume.registry_data
   id = "registry_registry-data"
 }
 
 import {
-  to = module.compute_registry.docker_volume.registry_auth
+  to = module.compute_services_registry.docker_volume.registry_auth
   id = "registry_registry-auth"
 }
 
@@ -38,6 +38,6 @@ locals {
 }
 
 import {
-  to = module.cloudflare.cloudflare_ruleset.registry_mtls_enforce
+  to = module.cloud_cloudflare.cloudflare_ruleset.registry_mtls_enforce
   id = "zones/${var.cloudflare_zone_id}/${local.existing_custom_waf_ruleset_id}"
 }

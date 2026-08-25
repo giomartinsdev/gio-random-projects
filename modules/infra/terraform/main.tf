@@ -1,5 +1,5 @@
-module "cloudflare" {
-  source = "./modules/cloudflare"
+module "cloud_cloudflare" {
+  source = "./modules/cloud/cloudflare"
   providers = {
     cloudflare = cloudflare
     tls        = tls
@@ -15,164 +15,167 @@ module "cloudflare" {
   session_duration                = var.session_duration
 }
 
-module "compute_data" {
-  source = "./modules/compute/data"
+module "network_docker_apps" {
+  source = "./modules/network/docker_apps"
+  providers = {
+    docker = docker
+  }
+
+  network_name = "apps"
+}
+
+module "storage_postgres" {
+  source = "./modules/storage/postgres"
   providers = {
     docker = docker
   }
 
   postgres_password = random_password.postgres.result
+  network_name      = module.network_docker_apps.network_name
 }
 
-module "compute_app" {
-  source = "./modules/compute/app"
+module "storage_redis" {
+  source = "./modules/storage/redis"
   providers = {
     docker = docker
   }
 
-  network_name           = module.compute_data.network_name
-  postgres_host          = module.compute_data.postgres_host
-  postgres_user          = module.compute_data.postgres_user
+  network_name = module.network_docker_apps.network_name
+}
+
+module "storage_minio" {
+  source = "./modules/storage/minio"
+  providers = {
+    docker = docker
+  }
+
+  network_name  = module.network_docker_apps.network_name
+  root_password = random_password.minio_root_password.result
+}
+
+module "compute_apps_domain_api" {
+  source = "./modules/compute/apps/domain_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name           = module.network_docker_apps.network_name
+  postgres_host          = module.storage_postgres.postgres_host
+  postgres_user          = module.storage_postgres.postgres_user
   postgres_password      = random_password.postgres.result
-  redis_host             = module.compute_data.redis_host
+  redis_host             = module.storage_redis.redis_host
   registry_host          = var.registry_host
   domain_api_keys        = local.domain_api_keys
-  secrets_bridge_url     = length(module.compute_vaultwarden_bridge) > 0 ? module.compute_vaultwarden_bridge[0].internal_url : ""
+  secrets_bridge_url     = length(module.compute_services_vaultwarden_bridge) > 0 ? module.compute_services_vaultwarden_bridge[0].internal_url : ""
   secrets_bridge_api_key = random_password.vaultwarden_bridge_api_key.result
 
-  # Without this, nothing guarantees ALTER USER (null_resource.
-  # postgres_password_sync, secrets.tf) finishes before these
-  # containers restart with the new DATABASE_URL — they could come up
-  # with a password the live DB doesn't have yet.
   depends_on = [null_resource.postgres_password_sync]
 }
 
-module "compute_post_api" {
-  source = "./modules/compute/post_api"
+module "compute_apps_post_api" {
+  source = "./modules/compute/apps/post_api"
   providers = {
     docker = docker
   }
 
-  network_name       = module.compute_data.network_name
-  postgres_host      = module.compute_data.postgres_host
-  postgres_user      = module.compute_data.postgres_user
+  network_name       = module.network_docker_apps.network_name
+  postgres_host      = module.storage_postgres.postgres_host
+  postgres_user      = module.storage_postgres.postgres_user
   postgres_password  = random_password.postgres.result
   registry_host      = var.registry_host
   better_auth_secret = random_password.post_api_better_auth_secret.result
   domain_api_key     = random_id.post_api_domain_key.hex
 
-  # Runtime dependency (reaches domain-api by container name over the
-  # shared network), not a Terraform attribute reference -- this
-  # depends_on is what still orders its creation after compute_app's.
-  depends_on = [null_resource.postgres_password_sync, module.compute_app]
+  depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api]
 }
 
-module "compute_minio" {
-  source = "./modules/compute/minio"
+module "compute_apps_bookclub_api" {
+  source = "./modules/compute/apps/bookclub_api"
   providers = {
     docker = docker
   }
 
-  network_name  = module.compute_data.network_name
-  root_password = random_password.minio_root_password.result
-}
-
-module "compute_bookclub_api" {
-  source = "./modules/compute/bookclub_api"
-  providers = {
-    docker = docker
-  }
-
-  network_name       = module.compute_data.network_name
-  postgres_host      = module.compute_data.postgres_host
-  postgres_user      = module.compute_data.postgres_user
+  network_name       = module.network_docker_apps.network_name
+  postgres_host      = module.storage_postgres.postgres_host
+  postgres_user      = module.storage_postgres.postgres_user
   postgres_password  = random_password.postgres.result
   registry_host      = var.registry_host
   better_auth_secret = random_password.post_api_better_auth_secret.result
   domain_api_key     = random_id.bookclub_api_domain_key.hex
-  minio_endpoint     = module.compute_minio.endpoint
-  minio_access_key   = module.compute_minio.root_user
+  minio_endpoint     = module.storage_minio.endpoint
+  minio_access_key   = module.storage_minio.root_user
   minio_secret_key   = random_password.minio_root_password.result
 
-  # Runtime dependency (reaches domain-api/minio by container name over
-  # the shared network), not a Terraform attribute reference -- same
-  # reasoning as module.compute_post_api's own depends_on.
-  depends_on = [null_resource.postgres_password_sync, module.compute_app, module.compute_minio]
+  depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api, module.storage_minio]
 }
 
-module "compute_front" {
-  source = "./modules/compute/front"
+module "compute_apps_front" {
+  source = "./modules/compute/apps/front"
   providers = {
     docker = docker
   }
 
-  network_name  = module.compute_data.network_name
+  network_name  = module.network_docker_apps.network_name
   registry_host = var.registry_host
 }
 
-module "compute_registry" {
-  source = "./modules/compute/registry"
+module "compute_services_registry" {
+  source = "./modules/compute/services/registry"
   providers = {
     docker = docker
   }
 
   registry_user            = var.registry_user
   registry_password        = var.registry_password
-  registry_client_cert_pem = module.cloudflare.registry_client_cert_pem
-  registry_client_key_pem  = module.cloudflare.registry_client_key_pem
+  registry_client_cert_pem = module.cloud_cloudflare.registry_client_cert_pem
+  registry_client_key_pem  = module.cloud_cloudflare.registry_client_key_pem
 }
 
-module "compute_monitoring" {
-  source = "./modules/compute/monitoring"
+module "compute_services_monitoring" {
+  source = "./modules/compute/services/monitoring"
   providers = {
     docker = docker
   }
 
-  network_name = module.compute_data.network_name
+  network_name = module.network_docker_apps.network_name
   agent_key    = var.beszel_agent_key
 }
 
-module "compute_ninerouter" {
-  source = "./modules/compute/9router"
+module "compute_services_ai_proxy" {
+  source = "./modules/compute/services/ai_proxy"
   providers = {
     docker = docker
   }
 
-  network_name     = module.compute_data.network_name
+  network_name     = module.network_docker_apps.network_name
   jwt_secret       = random_password.ninerouter_jwt_secret.result
   initial_password = random_password.ninerouter_initial_password.result
   hostname         = "ai.giomartins.dev"
 }
 
-module "compute_vaultwarden" {
-  source = "./modules/compute/vaultwarden"
+module "compute_services_vaultwarden" {
+  source = "./modules/compute/services/vaultwarden"
   providers = {
     docker = docker
   }
 
   admin_token  = random_password.vaultwarden_admin_token.result
-  network_name = module.compute_data.network_name
+  network_name = module.network_docker_apps.network_name
 }
 
-# Absent entirely until a real Vaultwarden account exists to log in
-# as (var.vaultwarden_account_email has no default, same reasoning as
-# compute_monitoring's beszel_agent count guard) — nothing here can
-# work before you've created that account by hand through
-# vault.giomartins.dev's signup form. See
-# modules/compute/vaultwarden_bridge's README for the full sequence.
-module "compute_vaultwarden_bridge" {
+module "compute_services_vaultwarden_bridge" {
   count  = var.vaultwarden_account_email == "" ? 0 : 1
-  source = "./modules/compute/vaultwarden_bridge"
+  source = "./modules/compute/services/vaultwarden_bridge"
   providers = {
     docker = docker
   }
 
-  network_name                        = module.compute_data.network_name
+  network_name                        = module.network_docker_apps.network_name
   vaultwarden_account_email           = var.vaultwarden_account_email
   vaultwarden_account_master_password = var.vaultwarden_account_master_password
   vaultwarden_api_client_id           = var.vaultwarden_api_client_id
   vaultwarden_api_client_secret       = var.vaultwarden_api_client_secret
   bridge_api_key                      = random_password.vaultwarden_bridge_api_key.result
 
-  depends_on = [module.compute_vaultwarden]
+  depends_on = [module.compute_services_vaultwarden]
 }
