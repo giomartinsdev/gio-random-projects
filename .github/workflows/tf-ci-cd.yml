@@ -128,6 +128,28 @@ jobs:
           terraform plan -input=false -lock-timeout=300s -refresh=false \
             -target=module.cloud_cloudflare.cloudflare_zero_trust_tunnel_cloudflared.homelab \
             -target=module.cloud_cloudflare.cloudflare_zero_trust_tunnel_cloudflared_config.homelab \
+            -target='module.compute_app.docker_container.domain_api' \
+            -target='module.compute_app.docker_container.domain_worker' \
+            -target='module.compute_apps_bookclub_api.docker_container.bookclub_api_migrate' \
+            -target='module.compute_apps_domain_api.docker_container.domain_api' \
+            -target='module.compute_apps_domain_api.docker_container.domain_worker' \
+            -target='module.compute_apps_post_api.docker_container.post_api_migrate' \
+            -target='module.compute_bookclub_api.docker_container.bookclub_api_migrate' \
+            -target='module.compute_data.docker_container.postgres' \
+            -target='module.compute_data.docker_container.redis' \
+            -target='module.compute_data.docker_network.apps' \
+            -target='module.compute_data.docker_volume.postgres_data' \
+            -target='module.compute_post_api.docker_container.post_api_migrate' \
+            -target='module.compute_services_vaultwarden.docker_container.vaultwarden' \
+            -target='module.compute_services_vaultwarden.docker_volume.vaultwarden_data' \
+            -target='module.compute_services_vaultwarden_bridge[0].docker_container.vaultwarden_bridge' \
+            -target='module.compute_vaultwarden.docker_container.vaultwarden' \
+            -target='module.compute_vaultwarden.docker_volume.vaultwarden_data' \
+            -target='module.compute_vaultwarden_bridge[0].docker_container.vaultwarden_bridge' \
+            -target='module.network_docker_apps.docker_network.apps' \
+            -target='module.storage_postgres.docker_container.postgres' \
+            -target='module.storage_postgres.docker_volume.postgres_data' \
+            -target='module.storage_redis.docker_container.redis' \
             -out=tfplan "${REPLACE_ARGS[@]}"
 
       - name: Apply
