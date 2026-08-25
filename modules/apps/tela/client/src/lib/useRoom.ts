@@ -21,6 +21,41 @@ const LEAVE_GRACE_MS = 12_000;
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 8_000;
 
+// This is a mesh: whoever is sharing encodes a SEPARATE stream for each
+// person watching. Two viewers means two encodes, three means three --
+// so the cost of each one has to stay modest or the encoder falls
+// behind and the picture stutters. Unconstrained capture is the usual
+// culprit: without these, the browser captures at the monitor's native
+// resolution (often 1440p or 4K) at up to 60fps, and two of those at
+// once will out-run a laptop CPU.
+//
+// A shared screen is text far more often than it is video, so 1080p at
+// 15fps reads better than 4K at 5fps once things get tight.
+const SCREEN_CONSTRAINTS: MediaTrackConstraints = {
+  frameRate: { ideal: 15, max: 30 },
+  width: { max: 1920 },
+  height: { max: 1080 },
+};
+
+const CAMERA_CONSTRAINTS: MediaTrackConstraints = {
+  // Rear camera by default -- sharing a phone's camera is usually about
+  // showing something, not yourself. `ideal` rather than `exact` so a
+  // laptop with one webcam still works instead of throwing
+  // OverconstrainedError.
+  facingMode: { ideal: "environment" },
+  frameRate: { max: 30 },
+  width: { max: 1280 },
+  height: { max: 720 },
+};
+
+// Total upload to spend on video, split between everyone watching --
+// the bottleneck is one uplink shared by every outgoing connection, so
+// what matters is the sum, not the per-connection figure. Floored so a
+// big room degrades to something ugly-but-moving rather than nothing.
+const SCREEN_BITRATE_BUDGET = 2_500_000;
+const CAMERA_BITRATE_BUDGET = 1_200_000;
+const MIN_BITRATE = 250_000;
+
 export type Status = "connecting" | "connected" | "reconnecting" | "error" | "closed";
 export type Source = "screen" | "camera";
 
@@ -58,6 +93,8 @@ export function useRoom(roomId: string, password: string) {
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [source, setSource] = useState<Source | null>(null);
+  const sourceRef = useRef<Source | null>(null);
+  sourceRef.current = source;
   // Whether my own audio is going out. Kept across shares so the choice
   // sticks: someone who turned the mic off doesn't want it back on the
   // next time they share.
@@ -117,6 +154,27 @@ export function useRoom(roomId: string, password: string) {
 
   // --- publishing side ---
 
+  // Caps what one outgoing connection may spend, and tells the encoder
+  // what to sacrifice when it can't keep up. For a shared screen that's
+  // framerate (keep the text legible); for a camera it's resolution
+  // (keep the motion smooth).
+  const applyEncodingLimits = useCallback((pc: RTCPeerConnection, viewers: number) => {
+    const screen = sourceRef.current !== "camera";
+    const budget = screen ? SCREEN_BITRATE_BUDGET : CAMERA_BITRATE_BUDGET;
+    const perViewer = Math.max(MIN_BITRATE, Math.floor(budget / Math.max(1, viewers)));
+
+    for (const sender of pc.getSenders()) {
+      if (sender.track?.kind !== "video") continue;
+      const params = sender.getParameters();
+      if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+      params.encodings[0].maxBitrate = perViewer;
+      params.degradationPreference = screen ? "maintain-resolution" : "maintain-framerate";
+      // Best-effort: not every browser accepts every field, and a
+      // rejected tuning shouldn't break the connection itself.
+      sender.setParameters(params).catch(() => {});
+    }
+  }, []);
+
   const offerTo = useCallback(
     async (peerId: string) => {
       const stream = localStreamRef.current;
@@ -127,6 +185,7 @@ export function useRoom(roomId: string, password: string) {
       outgoingRef.current.set(peerId, pc);
 
       for (const track of stream.getTracks()) pc.addTrack(track, stream);
+      applyEncodingLimits(pc, Math.max(1, peersRef.current.length));
       pc.onicecandidate = (ev) => {
         if (ev.candidate) signal(peerId, "publisher", { kind: "ice", candidate: ev.candidate.toJSON() });
       };
@@ -166,15 +225,8 @@ export function useRoom(roomId: string, password: string) {
       try {
         stream =
           from === "screen"
-            ? await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
-            : // Rear camera by default -- sharing a phone's camera is
-              // usually about showing something, not yourself. `ideal`
-              // rather than `exact` so a laptop with one webcam still
-              // works instead of throwing OverconstrainedError.
-              await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: { ideal: "environment" } },
-                audio: true,
-              });
+            ? await navigator.mediaDevices.getDisplayMedia({ video: SCREEN_CONSTRAINTS, audio: true })
+            : await navigator.mediaDevices.getUserMedia({ video: CAMERA_CONSTRAINTS, audio: true });
       } catch (err) {
         const name = err instanceof Error ? err.name : "Error";
         // Dismissing the picker is a normal thing to do, not an error.
@@ -192,9 +244,16 @@ export function useRoom(roomId: string, password: string) {
         track.enabled = sendingAudioRef.current;
       }
 
+      // Tells the encoder what this footage actually is, so it knows
+      // what to protect: "detail" keeps text sharp on a shared screen at
+      // the cost of framerate, "motion" does the opposite for a camera.
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) videoTrack.contentHint = from === "screen" ? "detail" : "motion";
+
       localStreamRef.current = stream;
       setLocalStream(stream);
       setSource(from);
+      sourceRef.current = from;
       // The browser's own "Stop sharing" bar ends the track.
       stream.getVideoTracks()[0]?.addEventListener("ended", () => stopSharing());
 
@@ -205,6 +264,17 @@ export function useRoom(roomId: string, password: string) {
     },
     [offerTo, send, stopSharing],
   );
+
+  // The budget is split between everyone watching, so it has to be
+  // redivided when someone joins or leaves -- otherwise going from one
+  // viewer to two would try to send twice as much rather than the same
+  // amount split in half, which is exactly how a mesh saturates an
+  // uplink.
+  useEffect(() => {
+    if (!localStream) return;
+    const viewers = Math.max(1, peers.length);
+    for (const pc of outgoingRef.current.values()) applyEncodingLimits(pc, viewers);
+  }, [localStream, peers.length, applyEncodingLimits]);
 
   // --- receiving side ---
 
