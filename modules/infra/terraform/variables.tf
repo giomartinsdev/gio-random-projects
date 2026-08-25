@@ -47,6 +47,7 @@ variable "excluded_hostnames" {
     "bookclub-api.giomartins.dev",  # own Better Auth session check — same reasoning, plus a redirect would break the front's WebSocket upgrade
     "classroom-api.giomartins.dev", # own Better Auth session check — same reasoning as bookclub-api.giomartins.dev
     "classroom-bdd.giomartins.dev", # meant to be publicly readable by anyone, not gated behind Google SSO
+    "tela.giomartins.dev",          # rooms are shared with people who have no account here; the room password is the access control
     "ai.giomartins.dev",            # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
   ]
 }

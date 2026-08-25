@@ -128,6 +128,19 @@ module "compute_apps_classroom_api" {
   depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api]
 }
 
+# Standalone: no database, no shared auth, no domain-api -- so unlike
+# every other app module here it takes nothing but the network and the
+# registry. See modules/compute/apps/tela/main.tf.
+module "compute_apps_tela" {
+  source = "./modules/compute/apps/tela"
+  providers = {
+    docker = docker
+  }
+
+  network_name  = module.network_docker_apps.network_name
+  registry_host = var.registry_host
+}
+
 module "compute_apps_front" {
   source = "./modules/compute/apps/front"
   providers = {

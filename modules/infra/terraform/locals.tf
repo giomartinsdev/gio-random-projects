@@ -66,6 +66,16 @@ locals {
       service  = "http://localhost:8005"
     },
     {
+      # tela: screen sharing for anyone with a room code and its
+      # password. Excluded from Cloudflare Access because the whole
+      # point is sharing a link with people who have no account here --
+      # a Google SSO gate only giomartinsdev could pass would make it
+      # useless. The room password is the access control. Port must
+      # match module.compute_apps_tela's external_port.
+      hostname = "tela.giomartins.dev"
+      service  = "http://localhost:8006"
+    },
+    {
       # The blog itself -- meant to be publicly readable by anyone,
       # not just the Google-SSO-allowed emails. In excluded_hostnames
       # for that reason (Access would otherwise gate the whole site
