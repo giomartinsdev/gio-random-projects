@@ -1,4 +1,4 @@
-import { DiscordSDK, patchUrlMappings } from "@discord/embedded-app-sdk";
+import { DiscordSDK } from "@discord/embedded-app-sdk";
 import { setDiscordBearerToken } from "./discordAuthToken.js";
 import { authClient } from "./authClient.js";
 
@@ -21,20 +21,6 @@ export function isDiscordActivity(): boolean {
 export function resolveImageUrl(url: string): string {
   if (!url || !isDiscordActivity()) return url;
   return `${import.meta.env.VITE_POST_API_URL}/image-proxy?url=${encodeURIComponent(url)}`;
-}
-
-// Discord Activities load through a Discord-owned virtual origin
-// (https://<client_id>.discordsays.com/), not the real one -- every
-// cross-origin request this app makes (post-api, bookclub-api) has to
-// be rewritten to go through Discord's own proxy instead, or the
-// iframe's CSP blocks it outright. patchUrlMappings monkey-patches
-// window.fetch/XHR/WebSocket globally so api.ts/bookclubApi.ts's
-// existing absolute-URL calls keep working completely unmodified --
-// the prefixes below MUST match the "URL Mappings" configured for
-// this app in the Discord Developer Portal exactly, prefix for
-// prefix, or the rewrite has nowhere to route to.
-function targetHost(url: string): string {
-  return new URL(url).host;
 }
 
 // Discord's own console relay (RpcApplicationLogger) JSON-serializes
@@ -62,11 +48,9 @@ export async function initDiscordActivity(): Promise<void> {
     return;
   }
 
-  patchUrlMappings([
-    { prefix: "/postapi", target: targetHost(import.meta.env.VITE_POST_API_URL as string) },
-    { prefix: "/bookclubapi", target: targetHost(import.meta.env.VITE_BOOKCLUB_API_URL as string) },
-  ]);
-
+  // URL mapping patch already applied by discordUrlPatch.ts, imported
+  // first in main.tsx, before this module (and authClient.ts) ever
+  // loaded -- see that file for why the ordering matters.
   const discordSdk = new DiscordSDK(clientId);
   try {
     await discordSdk.ready();
