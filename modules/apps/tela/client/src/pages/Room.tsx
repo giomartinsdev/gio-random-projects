@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { Check, Copy, Link2, Loader2, MonitorUp, Play, ScreenShareOff, Users, Video, X } from "lucide-react";
+import { Check, Copy, Link2, Loader2, Mic, MicOff, MonitorUp, Play, ScreenShareOff, Users, Video, Volume2, VolumeX, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareCamera, canShareScreen, useRoom } from "@/lib/useRoom";
 import { useWakeLock } from "@/lib/useWakeLock";
@@ -98,6 +98,13 @@ function PasswordPrompt({ roomId, onUnlocked }: { roomId: string; onUnlocked: (p
 
 type Tile = { peerId: string; name: string; stream: MediaStream | null; isYou: boolean };
 
+// Whether a stream carries audio at all. A mute button on a silent
+// stream is just a control that does nothing, so tiles without audio
+// don't get one.
+function hasAudio(stream: MediaStream | null): boolean {
+  return (stream?.getAudioTracks().length ?? 0) > 0;
+}
+
 function LiveRoom({
   roomId,
   password,
@@ -109,6 +116,17 @@ function LiveRoom({
 }) {
   const room = useRoom(roomId, password);
   const [selected, setSelected] = useState<string | null>(null);
+  // Which people I've muted, decided per stream and only on my side --
+  // muting someone here doesn't stop them sending audio to anyone else.
+  const [mutedPeers, setMutedPeers] = useState<Set<string>>(new Set());
+
+  const toggleMuted = (peerId: string) =>
+    setMutedPeers((current) => {
+      const next = new Set(current);
+      if (next.has(peerId)) next.delete(peerId);
+      else next.add(peerId);
+      return next;
+    });
 
   // Everyone currently publishing, me included. A tile can exist before
   // its stream arrives (the peer announced publishing but WebRTC is
@@ -173,10 +191,31 @@ function LiveRoom({
             the right once everything fits on one line. */}
         <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">
           {room.isSharing ? (
-            <Button variant="destructive" onClick={room.stopSharing} className="flex-1 sm:flex-none">
-              <ScreenShareOff />
-              Parar
-            </Button>
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => room.setAudio(!room.sendingAudio)}
+                disabled={!room.hasAudioTrack}
+                className="flex-1 sm:flex-none"
+                title={
+                  room.hasAudioTrack
+                    ? room.sendingAudio
+                      ? "Parar de enviar áudio"
+                      : "Voltar a enviar áudio"
+                    : "Esta transmissão não tem áudio"
+                }
+              >
+                {room.sendingAudio && room.hasAudioTrack ? <Mic /> : <MicOff />}
+                <span className="sm:hidden">{room.sendingAudio && room.hasAudioTrack ? "Áudio" : "Sem áudio"}</span>
+                <span className="hidden sm:inline">
+                  {!room.hasAudioTrack ? "Sem áudio" : room.sendingAudio ? "Enviando áudio" : "Áudio desligado"}
+                </span>
+              </Button>
+              <Button variant="destructive" onClick={room.stopSharing} className="flex-1 sm:flex-none">
+                <ScreenShareOff />
+                Parar
+              </Button>
+            </>
           ) : (
             <>
               {canShareScreen && (
@@ -217,11 +256,16 @@ function LiveRoom({
         )}
 
         {selectedTile ? (
-          <FullscreenTile tile={selectedTile} onClose={() => setSelected(null)} />
+          <FullscreenTile
+            tile={selectedTile}
+            muted={mutedPeers.has(selectedTile.peerId)}
+            onToggleMuted={() => toggleMuted(selectedTile.peerId)}
+            onClose={() => setSelected(null)}
+          />
         ) : tiles.length === 0 ? (
           <Empty roomId={roomId} password={password} />
         ) : (
-          <Grid tiles={tiles} onSelect={setSelected} />
+          <Grid tiles={tiles} mutedPeers={mutedPeers} onToggleMuted={toggleMuted} onSelect={setSelected} />
         )}
 
         {room.errorMessage && (
@@ -236,7 +280,17 @@ function LiveRoom({
   );
 }
 
-function Grid({ tiles, onSelect }: { tiles: Tile[]; onSelect: (peerId: string) => void }) {
+function Grid({
+  tiles,
+  mutedPeers,
+  onToggleMuted,
+  onSelect,
+}: {
+  tiles: Tile[];
+  mutedPeers: Set<string>;
+  onToggleMuted: (peerId: string) => void;
+  onSelect: (peerId: string) => void;
+}) {
   return (
     <div
       className={
@@ -252,41 +306,57 @@ function Grid({ tiles, onSelect }: { tiles: Tile[]; onSelect: (peerId: string) =
           onClick={() => onSelect(tile.peerId)}
           className="group relative min-h-0 overflow-hidden rounded-lg border bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <TileVideo tile={tile} />
+          <TileVideo tile={tile} muted={mutedPeers.has(tile.peerId)} />
           <span className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 text-left text-sm">
             <span className="truncate font-medium">{tile.name}</span>
             <span className="shrink-0 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
               ver em tela cheia
             </span>
           </span>
+          {/* Own tile is always silent (hearing yourself back echoes),
+              so there's nothing to toggle on it. */}
+          {!tile.isYou && hasAudio(tile.stream) && (
+            <MuteButton
+              muted={mutedPeers.has(tile.peerId)}
+              onToggle={() => onToggleMuted(tile.peerId)}
+              className="absolute right-2 top-2"
+            />
+          )}
         </button>
       ))}
     </div>
   );
 }
 
-function FullscreenTile({ tile, onClose }: { tile: Tile; onClose: () => void }) {
+function FullscreenTile({
+  tile,
+  muted,
+  onToggleMuted,
+  onClose,
+}: {
+  tile: Tile;
+  muted: boolean;
+  onToggleMuted: () => void;
+  onClose: () => void;
+}) {
   return (
     <div className="absolute inset-0 flex flex-col bg-black">
-      <TileVideo tile={tile} className="flex-1" />
+      <TileVideo tile={tile} muted={muted} className="flex-1" />
       <div className="absolute left-3 top-3 rounded-md bg-black/70 px-3 py-1.5 text-sm font-medium">
         {tile.name}
       </div>
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={onClose}
-        className="absolute right-3 top-3"
-        aria-label="Voltar para o grid"
-      >
-        <X className="size-4" />
-        Voltar
-      </Button>
+      <div className="absolute right-3 top-3 flex gap-2">
+        {!tile.isYou && hasAudio(tile.stream) && <MuteButton muted={muted} onToggle={onToggleMuted} />}
+        <Button variant="secondary" size="sm" onClick={onClose} aria-label="Voltar para o grid">
+          <X className="size-4" />
+          Voltar
+        </Button>
+      </div>
     </div>
   );
 }
 
-function TileVideo({ tile, className = "" }: { tile: Tile; className?: string }) {
+function TileVideo({ tile, muted, className = "" }: { tile: Tile; muted: boolean; className?: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [needsTap, setNeedsTap] = useState(false);
 
@@ -323,7 +393,9 @@ function TileVideo({ tile, className = "" }: { tile: Tile; className?: string })
         ref={videoRef}
         autoPlay
         playsInline
-        muted={tile.isYou}
+        // My own tile is always silent -- playing my own microphone back
+        // at me would echo. Everyone else's follows this viewer's choice.
+        muted={tile.isYou || muted}
         className={`h-full w-full object-contain ${className}`}
       />
       {needsTap && (
@@ -350,6 +422,34 @@ function TileVideo({ tile, className = "" }: { tile: Tile; className?: string })
         </span>
       )}
     </>
+  );
+}
+
+function MuteButton({
+  muted,
+  onToggle,
+  className = "",
+}: {
+  muted: boolean;
+  onToggle: () => void;
+  className?: string;
+}) {
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      // Grid tiles are themselves buttons that open fullscreen, so this
+      // must not bubble up into that.
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      className={className}
+      aria-label={muted ? "Ativar som" : "Silenciar"}
+      title={muted ? "Ativar som" : "Silenciar"}
+    >
+      {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+    </Button>
   );
 }
 

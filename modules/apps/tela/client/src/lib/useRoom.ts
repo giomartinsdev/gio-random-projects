@@ -44,6 +44,12 @@ export function useRoom(roomId: string, password: string) {
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [source, setSource] = useState<Source | null>(null);
+  // Whether my own audio is going out. Kept across shares so the choice
+  // sticks: someone who turned the mic off doesn't want it back on the
+  // next time they share.
+  const [sendingAudio, setSendingAudio] = useState(true);
+  const sendingAudioRef = useRef(true);
+  sendingAudioRef.current = sendingAudio;
 
   const wsRef = useRef<WebSocket | null>(null);
   // Connections where I'm the one publishing, keyed by who's receiving.
@@ -108,6 +114,18 @@ export function useRoom(roomId: string, password: string) {
     [closeOutgoing, signal],
   );
 
+  // Muting by disabling the track rather than removing it: `enabled =
+  // false` makes the track send silence, which needs no renegotiation
+  // and no new offer to every peer. Dropping the track instead would
+  // mean tearing down and rebuilding every outgoing connection just to
+  // toggle a microphone.
+  const setAudio = useCallback((on: boolean) => {
+    setSendingAudio(on);
+    for (const track of localStreamRef.current?.getAudioTracks() ?? []) {
+      track.enabled = on;
+    }
+  }, []);
+
   const stopSharing = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
@@ -140,6 +158,14 @@ export function useRoom(roomId: string, password: string) {
           setErrorMessage(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
         }
         return;
+      }
+
+      // getDisplayMedia only yields an audio track if the person also
+      // ticked "share audio" in the picker, so there may be nothing here
+      // to disable -- the UI reads hasAudioTrack to say so rather than
+      // offering a control that does nothing.
+      for (const track of stream.getAudioTracks()) {
+        track.enabled = sendingAudioRef.current;
       }
 
       localStreamRef.current = stream;
@@ -285,6 +311,9 @@ export function useRoom(roomId: string, password: string) {
     localStream,
     source,
     isSharing: localStream !== null,
+    sendingAudio,
+    setAudio,
+    hasAudioTrack: (localStream?.getAudioTracks().length ?? 0) > 0,
     startSharing,
     stopSharing,
   };
