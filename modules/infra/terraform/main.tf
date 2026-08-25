@@ -78,13 +78,15 @@ module "compute_apps_post_api" {
     docker = docker
   }
 
-  network_name       = module.network_docker_apps.network_name
-  postgres_host      = module.storage_postgres.postgres_host
-  postgres_user      = module.storage_postgres.postgres_user
-  postgres_password  = random_password.postgres.result
-  registry_host      = var.registry_host
-  better_auth_secret = random_password.post_api_better_auth_secret.result
-  domain_api_key     = random_id.post_api_domain_key.hex
+  network_name          = module.network_docker_apps.network_name
+  postgres_host         = module.storage_postgres.postgres_host
+  postgres_user         = module.storage_postgres.postgres_user
+  postgres_password     = random_password.postgres.result
+  registry_host         = var.registry_host
+  better_auth_secret    = random_password.post_api_better_auth_secret.result
+  domain_api_key        = random_id.post_api_domain_key.hex
+  discord_client_id     = var.discord_client_id
+  discord_client_secret = var.discord_client_secret
 
   depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api]
 }

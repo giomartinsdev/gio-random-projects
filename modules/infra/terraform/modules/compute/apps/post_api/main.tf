@@ -47,6 +47,8 @@ resource "docker_container" "post_api" {
     "DOMAIN_API_URL=${var.domain_api_url}",
     "DOMAIN_API_KEY=${var.domain_api_key}",
     "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
+    "DISCORD_CLIENT_ID=${var.discord_client_id}",
+    "DISCORD_CLIENT_SECRET=${var.discord_client_secret}",
     "PORT=8000",
   ]
 

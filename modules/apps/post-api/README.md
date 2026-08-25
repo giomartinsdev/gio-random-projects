@@ -37,7 +37,26 @@ This service's own Postgres connection (`DATABASE_URL`) is used
 | GET | `/posts/:slug` | none | Published only; 404 for drafts/missing |
 | PATCH | `/posts/:id` | owner only | Looks up current author via domain-api first; 403 for non-owners, 404 if missing; 202 on forward |
 | DELETE | `/posts/:id` | owner only | Same ownership check; 202 on forward |
+| GET | `/feed.xml` | none | RSS 2.0, last 50 published posts |
+| POST | `/discord/token` | none | Discord Activity OAuth code → access_token exchange. Only mounted when `DISCORD_CLIENT_ID`/`DISCORD_CLIENT_SECRET` are set — see "Discord Activity" below |
 | * | `/api/auth/*` | — | Better Auth's own routes (sign-up, sign-in, etc.) |
+
+## Discord Activity
+
+`front` can run embedded inside Discord as an [Activity](https://discord.com/developers/docs/activities/overview) — the whole site, unmodified, launched from a voice channel. This service's half is `/discord/token`; the other half is `front/src/lib/discordActivity.ts`. Both stay inert (no route mounted, SDK never initialized) until configured.
+
+To turn it on:
+
+1. Register an application at [discord.com/developers/applications](https://discord.com/developers/applications), enable **Activities** for it.
+2. Under **Activities → URL Mappings**, set:
+   - Root mapping (`/`) → `classroom-bdd.giomartins.dev`
+   - `/postapi` → `post-api.giomartins.dev`
+   - `/bookclubapi` → `bookclub-api.giomartins.dev`
+
+   These prefixes are hardcoded in `front/src/lib/discordActivity.ts`'s `patchUrlMappings` call — if you change them there, change them here too.
+3. Under **OAuth2**, note the Client ID and Client Secret.
+4. Set `DISCORD_CLIENT_ID`/`DISCORD_CLIENT_SECRET` here (this service) and `VITE_DISCORD_CLIENT_ID` on `front` (build-time, same value as the client ID — Discord client IDs are public by design). In this repo's deploy, both come from the `DISCORD_CLIENT_ID`/`DISCORD_CLIENT_SECRET` GitHub Actions secrets via Terraform (`modules/infra/terraform/variables.tf`).
+5. Launch the Activity from Discord (Activities panel in a voice channel, or via the app's own invite/install flow) — `frame_id` in the URL is how the front app detects it's running inside Discord at all.
 
 ## Running locally
 

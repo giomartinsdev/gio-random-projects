@@ -45,6 +45,40 @@ paths:
             application/rss+xml:
               schema:
                 type: string
+  /discord/token:
+    post:
+      summary: >
+        Discord Activity OAuth handshake: exchanges a one-time
+        authorization code (from the embedded app's
+        discordSdk.commands.authorize()) for an access token, using
+        this server's DISCORD_CLIENT_SECRET. Only present at all when
+        DISCORD_CLIENT_ID/DISCORD_CLIENT_SECRET are configured -- a
+        404 here means the Discord Activity isn't set up yet, not a
+        broken deploy.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          description: Discord's own token endpoint rejected the exchange
   /posts:
     get:
       summary: List published posts

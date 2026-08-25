@@ -22,10 +22,14 @@ if (!authSecret) throw new Error("BETTER_AUTH_SECRET is required");
 if (!domainApiUrl) throw new Error("DOMAIN_API_URL is required");
 if (!domainApiKey) throw new Error("DOMAIN_API_KEY is required");
 
+const discordClientId = process.env.DISCORD_CLIENT_ID;
+const discordClientSecret = process.env.DISCORD_CLIENT_SECRET;
+const discord = discordClientId && discordClientSecret ? { clientId: discordClientId, clientSecret: discordClientSecret } : undefined;
+
 const { db } = createDb(databaseUrl);
 const auth = createAuth(db, authSecret, process.env.BETTER_AUTH_URL, frontendOrigins);
 const domainApi = createDomainApiClient(domainApiUrl, domainApiKey);
-const app = createApp(auth, domainApi, frontendOrigins);
+const app = createApp(auth, domainApi, frontendOrigins, discord);
 
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`post-api listening on :${info.port}`);

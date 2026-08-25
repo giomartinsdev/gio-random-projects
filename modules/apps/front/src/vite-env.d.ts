@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_POST_API_URL: string;
   readonly VITE_BOOKCLUB_API_URL: string;
+  readonly VITE_DISCORD_CLIENT_ID?: string;
 }
 
 interface ImportMeta {

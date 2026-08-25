@@ -153,3 +153,16 @@ variable "vaultwarden_api_client_secret" {
   sensitive   = true
 }
 
+variable "discord_client_id" {
+  description = "Discord Application client ID for the classroom-bdd Discord Activity -- blank (the default) leaves the whole feature disabled: post-api's /discord/token route doesn't mount, and front's Activity handshake logs an error and no-ops. Register the app at discord.com/developers/applications, enable Activities, then set this and discord_client_secret."
+  type        = string
+  default     = ""
+}
+
+variable "discord_client_secret" {
+  description = "Matching client secret -- see discord_client_id."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+

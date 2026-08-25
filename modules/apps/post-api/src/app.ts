@@ -6,9 +6,15 @@ import type { DomainApiClient } from "./lib/domainApiClient.js";
 import { docsHtml, openApiYaml } from "./lib/openapi.js";
 import { createPostsRouter } from "./routes/posts.js";
 import { createFeedRouter } from "./routes/feed.js";
+import { createDiscordRouter } from "./routes/discord.js";
 import { createRateLimiter } from "./lib/rateLimiter.js";
 
-export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigins: string[]) {
+export function createApp(
+  auth: Auth,
+  domainApi: DomainApiClient,
+  frontendOrigins: string[],
+  discord?: { clientId: string; clientSecret: string },
+) {
   const app = new Hono();
   // First configured origin is the canonical public site -- used to
   // build absolute <link>/<guid> URLs in the RSS feed below.
@@ -29,11 +35,20 @@ export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigin
   app.use("*", secureHeaders());
 
   app.use("/posts/*", createRateLimiter({ requestsPerMinute: 60, burst: 100 }));
+  app.use("/discord/*", createRateLimiter({ requestsPerMinute: 20, burst: 20 }));
 
   app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
   app.route("/posts", createPostsRouter(auth, domainApi));
   app.route("/", createFeedRouter(domainApi, siteUrl));
+
+  // Opt-in: absent until DISCORD_CLIENT_ID/SECRET are configured (see
+  // README), so this stays a total no-op for every environment that
+  // hasn't set up the Discord Activity yet -- including every
+  // existing test.
+  if (discord) {
+    app.route("/discord", createDiscordRouter(discord.clientId, discord.clientSecret));
+  }
 
   app.get("/health", (c) => c.json({ status: "ok" }));
 

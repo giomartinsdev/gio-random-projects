@@ -10,6 +10,7 @@
     "test": "echo \"no tests yet\" && exit 0"
   },
   "dependencies": {
+    "@discord/embedded-app-sdk": "^2.5.0",
     "better-auth": "^1.2.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

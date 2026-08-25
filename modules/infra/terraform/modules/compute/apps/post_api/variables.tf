@@ -61,6 +61,19 @@ variable "domain_api_key" {
   sensitive   = true
 }
 
+variable "discord_client_id" {
+  description = "Discord Application's client ID for the classroom-bdd Discord Activity -- blank until that app is registered in the Discord Developer Portal. Safe to be non-secret (it's public in the frontend bundle too), kept alongside the secret below purely so both halves of this feature toggle together."
+  type        = string
+  default     = ""
+}
+
+variable "discord_client_secret" {
+  description = "Matching client secret -- server-side only, exchanges the Activity's OAuth code for an access token (routes/discord.ts). Blank disables the /discord/token route entirely (see index.ts's discord ? ... : undefined)."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "watchtower_enabled" {
   description = "Same reasoning as modules/compute/app's own variable of the same name: false by default, since apps-deploy.yml's own terraform apply -replace=... is the actual redeploy mechanism."
   type        = bool
