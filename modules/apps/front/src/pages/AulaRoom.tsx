@@ -31,6 +31,7 @@ export default function AulaRoom() {
   const isClosed = socket.status === "closed";
 
   const rtc = useWebRTCBroadcast({
+    roomId: id ?? "",
     isHost,
     hostId: socket.hostId,
     you: socket.you,

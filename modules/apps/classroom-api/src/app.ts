@@ -232,7 +232,16 @@ export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigin
 
         onClose: (_evt, ws) => {
           roomHub.leave(roomId, ws);
-          roomHub.broadcast(roomId, { type: "participant:leave", userId });
+          // Only announce a leave once EVERY connection for this
+          // userId is gone -- the host is legitimately connected
+          // twice while sharing (this Activity tab, plus the
+          // screen/camera capture popup, see SharePopup.tsx), and a
+          // naive per-socket leave broadcast here would tell every
+          // viewer "the host left" the instant they stop sharing.
+          const stillPresent = roomHub.participantsOf(roomId).some((p) => p.userId === userId);
+          if (!stillPresent) {
+            roomHub.broadcast(roomId, { type: "participant:leave", userId });
+          }
           stopRoomSubscriptionIfEmpty(roomId);
         },
       };

@@ -54,19 +54,28 @@ export function broadcast(roomId: string, payload: unknown, exclude?: WSContext)
 // recipient up by userId rather than trusting a client-supplied
 // WSContext, same "only trust what the server itself tracked"
 // reasoning as text:move/resize below in bookclub-api's own hub.
+//
+// Delivers to EVERY connection open under that userId, not just the
+// first -- the same person can legitimately be connected twice at
+// once (the host's own Activity tab plus the screen/camera capture
+// popup useWebRTCBroadcast.ts opens for them, see SharePopup.tsx).
+// Both sides tag their payloads with a relayId + role so each ignores
+// the echo of its own messages that this fans out to it as well.
 export function sendTo(roomId: string, userId: string, payload: unknown): boolean {
   const room = rooms.get(roomId);
   if (!room) return false;
+  const data = JSON.stringify(payload);
+  let delivered = false;
   for (const [ws, p] of room.participants) {
     if (p.userId !== userId) continue;
     try {
-      ws.send(JSON.stringify(payload));
+      ws.send(data);
     } catch {
       // best-effort, same as broadcast
     }
-    return true;
+    delivered = true;
   }
-  return false;
+  return delivered;
 }
 
 export function join(roomId: string, ws: WSContext, userId: string, userName: string) {
@@ -80,9 +89,18 @@ export function leave(roomId: string, ws: WSContext) {
   if (room.participants.size === 0) rooms.delete(roomId);
 }
 
+// Deduped by userId, not connection count -- the same person can be
+// connected twice at once (see sendTo's comment above), and every
+// caller of this (the `init` payload, the room-empty check) cares
+// about distinct people, not distinct sockets.
 export function participantsOf(roomId: string) {
   const room = rooms.get(roomId);
-  return room ? [...room.participants.values()].map((p) => ({ userId: p.userId, userName: p.userName })) : [];
+  if (!room) return [];
+  const seen = new Map<string, { userId: string; userName: string }>();
+  for (const p of room.participants.values()) {
+    if (!seen.has(p.userId)) seen.set(p.userId, { userId: p.userId, userName: p.userName });
+  }
+  return [...seen.values()];
 }
 
 export function setNotepad(roomId: string, content: string) {

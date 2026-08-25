@@ -47,9 +47,17 @@ export const classroomApi = {
   // (routes/rooms.ts) for the server-side half of this. Omitted
   // entirely outside a Discord Activity (cookies already cover it
   // there).
-  wsUrl: (id: string) => {
-    const bearer = getDiscordBearerToken();
-    const suffix = bearer ? `?token=${encodeURIComponent(bearer)}` : "";
-    return `${WS_BASE_URL}/rooms/${encodeURIComponent(id)}/ws${suffix}`;
-  },
+  wsUrl: (id: string) => wsUrlWithToken(id, getDiscordBearerToken()),
 };
+
+// Split out from wsUrl() above because SharePopup.tsx needs to build
+// the exact same URL from an EXPLICIT token instead of
+// getDiscordBearerToken() -- that module-level store only holds a
+// value in whichever single page load ran the Discord auth handshake
+// (see discordAuthToken.ts), and the popup is a separate page load
+// that never does, so its token has to arrive via URL query param
+// (see useWebRTCBroadcast.ts's startSharing) instead.
+export function wsUrlWithToken(id: string, bearer: string | null): string {
+  const suffix = bearer ? `?token=${encodeURIComponent(bearer)}` : "";
+  return `${WS_BASE_URL}/rooms/${encodeURIComponent(id)}/ws${suffix}`;
+}

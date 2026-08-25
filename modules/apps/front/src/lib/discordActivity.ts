@@ -65,19 +65,55 @@ function describeError(err: unknown): string {
   return String(err);
 }
 
-export async function initDiscordActivity(): Promise<void> {
+// Shared across initDiscordActivity() and openExternalLink() below --
+// constructing a second DiscordSDK / calling .ready() twice isn't
+// known to be unsafe, but there's no reason to do it either time this
+// module needs the SDK after the first.
+let discordSdk: DiscordSDK | null = null;
+let sdkReady: Promise<void> | null = null;
+
+function getSdk(): DiscordSDK | null {
   const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID as string | undefined;
-  if (!clientId) {
+  if (!clientId) return null;
+  if (!discordSdk) {
+    // URL mapping patch already applied by discordUrlPatch.ts, imported
+    // first in main.tsx, before this module (and authClient.ts) ever
+    // loaded -- see that file for why the ordering matters.
+    discordSdk = new DiscordSDK(clientId);
+    sdkReady = discordSdk.ready();
+  }
+  return discordSdk;
+}
+
+// Opens `url` through Discord's own trusted top-level client instead
+// of a plain window.open() -- confirmed live that the Activity
+// iframe's sandbox has no allow-popups (window.open() from in there
+// just returns null, no error). openExternalLink is proxied through
+// Discord's RPC bridge to its top-level frame, which isn't subject to
+// that sandbox. Used by useWebRTCBroadcast.ts to escape the SAME
+// iframe's separate Permissions-Policy block on getDisplayMedia.
+export async function openExternalLink(url: string): Promise<boolean> {
+  const sdk = getSdk();
+  if (!sdk) return false;
+  try {
+    await sdkReady;
+    const { opened } = await sdk.commands.openExternalLink({ url });
+    return opened ?? false;
+  } catch (err) {
+    console.error("[discord-activity] openExternalLink failed:", describeError(err));
+    return false;
+  }
+}
+
+export async function initDiscordActivity(): Promise<void> {
+  const discordSdk = getSdk();
+  if (!discordSdk) {
     console.error("[discord-activity] VITE_DISCORD_CLIENT_ID is not set -- skipping Discord SDK init.");
     return;
   }
 
-  // URL mapping patch already applied by discordUrlPatch.ts, imported
-  // first in main.tsx, before this module (and authClient.ts) ever
-  // loaded -- see that file for why the ordering matters.
-  const discordSdk = new DiscordSDK(clientId);
   try {
-    await discordSdk.ready();
+    await sdkReady;
   } catch (err) {
     console.error("[discord-activity] sdk.ready() failed:", describeError(err));
     return;
@@ -96,7 +132,7 @@ export async function initDiscordActivity(): Promise<void> {
   let code: string;
   try {
     ({ code } = await discordSdk.commands.authorize({
-      client_id: clientId,
+      client_id: import.meta.env.VITE_DISCORD_CLIENT_ID as string,
       response_type: "code",
       state: "",
       prompt: "none",
