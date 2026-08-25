@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ import (
 // the transport would test nothing worth testing.
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(httpapi.New(rooms.NewRegistry(), t.TempDir()).Handler())
+	srv := httptest.NewServer(httpapi.New(rooms.NewRegistry(""), t.TempDir()).Handler())
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -309,5 +310,77 @@ func TestRelayDoesNotCrossRooms(t *testing.T) {
 	defer cancel()
 	if _, data, err := victim.Read(ctx); err == nil {
 		t.Fatalf("a peer in another room reached this one: %s", data)
+	}
+}
+
+// Reconnecting with the identity the server issued is what makes a
+// deploy invisible: same peer id means the other clients keep the peer
+// connections they already have.
+func TestResumeKeepsTheSamePeerIdentity(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	first := mustDial(t, srv, "room="+roomID+"&password=segredo123")
+	welcome := read(t, first)
+	peerID, _ := welcome["peerId"].(string)
+	name, _ := welcome["name"].(string)
+	token, _ := welcome["resume"].(string)
+	if token == "" {
+		t.Fatal("welcome carried no resume token")
+	}
+	_ = first.Close(websocket.StatusNormalClosure, "")
+
+	back := mustDial(t, srv, "room="+roomID+"&password=segredo123"+
+		"&peerId="+peerID+"&name="+url.QueryEscape(name)+"&resume="+url.QueryEscape(token))
+	resumed := read(t, back)
+	if resumed["peerId"] != peerID {
+		t.Fatalf("expected to resume as %v, got %v", peerID, resumed["peerId"])
+	}
+	if resumed["name"] != name {
+		t.Fatalf("expected to keep the name %v, got %v", name, resumed["name"])
+	}
+}
+
+// The id alone must not be enough, or any member of a room could come
+// back wearing another member's identity.
+func TestForgedResumeGetsAFreshIdentity(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	first := mustDial(t, srv, "room="+roomID+"&password=segredo123")
+	welcome := read(t, first)
+	victimID, _ := welcome["peerId"].(string)
+	victimName, _ := welcome["name"].(string)
+
+	impostor := mustDial(t, srv, "room="+roomID+"&password=segredo123"+
+		"&peerId="+victimID+"&name="+url.QueryEscape(victimName)+"&resume=nao-e-um-token-valido")
+	got := read(t, impostor)
+	if got["peerId"] == victimID {
+		t.Fatal("a forged token was accepted -- one member could impersonate another")
+	}
+}
+
+// A resumed connection replaces whatever socket was still registered
+// under that id; two live sockets sharing an id would each get half the
+// signalling.
+func TestResumeTakesOverAStaleConnection(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	stale := mustDial(t, srv, "room="+roomID+"&password=segredo123")
+	welcome := read(t, stale)
+	peerID, _ := welcome["peerId"].(string)
+	name, _ := welcome["name"].(string)
+	token, _ := welcome["resume"].(string)
+
+	// Resume WITHOUT closing the first socket.
+	back := mustDial(t, srv, "room="+roomID+"&password=segredo123"+
+		"&peerId="+peerID+"&name="+url.QueryEscape(name)+"&resume="+url.QueryEscape(token))
+	read(t, back)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if _, _, err := stale.Read(ctx); err == nil {
+		t.Fatal("expected the stale socket to be closed out")
 	}
 }

@@ -38,13 +38,67 @@ espectador fica em "conectando…".
 
 ## Estado
 
-Tudo em memória (`internal/rooms`). Uma sala é um código de 6 caracteres,
-o hash scrypt da senha e quem está conectado agora. Um restart derruba
-todas as salas — o que é o comportamento certo para algo cuja vida útil é
-"alguém está compartilhando a tela neste momento".
+Uma sala é um código de 6 caracteres, o hash scrypt da senha e uma chave
+que assina tokens de retomada. **Isso é persistido** (`STATE_FILE`, num
+volume) para que um deploy não acabe com sessões em andamento. Quem está
+conectado **não** é persistido: são WebSockets vivos que morrem com o
+processo de qualquer jeito, e cada cliente reconecta e se re-anuncia.
 
-Salas vazias são removidas depois de 10 minutos (para o host sobreviver a
-um reload ou uma queda de wifi), e qualquer sala morre com 12 horas.
+Salas vazias são removidas depois de 10 minutos (o suficiente para todo
+mundo reconectar), e qualquer sala morre com 12 horas. Sem `STATE_FILE`
+tudo fica só em memória — é o modo de desenvolvimento local.
+
+## Deploy sem interromper quem está usando
+
+O ponto de partida é que **o vídeo não passa por este servidor**. Uma vez
+que a conexão WebRTC existe, o stream vai direto entre navegadores: se o
+container morrer agora, quem está assistindo continua assistindo. O
+servidor só carrega sinalização. Então o problema não é zero downtime, e
+sim tornar a lacuna de alguns segundos invisível.
+
+Três peças fazem isso:
+
+1. **O cliente reconecta sozinho**, com backoff de 500ms a 8s e jitter
+   (para uma sala cheia não voltar toda no mesmo instante e atropelar o
+   servidor que acabou de subir).
+2. **A identidade sobrevive.** Na primeira entrada o servidor emite um
+   token de retomada (HMAC de uma chave por sala); o cliente guarda e
+   reapresenta ao reconectar. Voltar com o mesmo `peerId` é o que faz as
+   conexões WebRTC existentes continuarem valendo — sem isso cada
+   reconexão seria uma pessoa nova e tudo seria renegociado. O token é
+   exigido em vez de confiar no id porque, só com o id, um membro da sala
+   poderia se passar por outro.
+3. **Período de graça de 12s** antes de derrubar o vídeo de quem sumiu.
+   Cobre o caso de um cliente só piscando (wifi ruim, reload): se voltar
+   dentro da janela com a mesma identidade, o teardown é cancelado.
+
+O `welcome` já carrega o estado completo da sala, então a reconexão
+ressincroniza sozinha — quem estava publicando se re-anuncia e oferece
+apenas para quem ainda não tem conexão.
+
+### Fazendo o deploy
+
+Não precisa de janela de manutenção para o caso normal:
+
+```bash
+gh workflow run go-ci-cd.yml -f app=tela
+```
+
+O container é recriado, fica alguns segundos fora, e os clientes voltam
+sozinhos. Se quiser conferir antes se tem gente usando:
+
+```bash
+curl -s https://tela.giomartins.dev/healthz   # {"rooms":N,...}
+```
+
+### O que ainda interrompe
+
+- Quem estiver **no meio da negociação WebRTC** no exato instante do
+  restart perde e refaz. Fica invisível para streams já estabelecidos,
+  não para quem está entrando naquele segundo.
+- Se o volume for perdido, as salas somem e ninguém consegue voltar.
+- Um restart que passe de ~12s estoura o período de graça e o vídeo cai
+  (embora a sala e a senha continuem funcionando).
 
 ## Senha
 

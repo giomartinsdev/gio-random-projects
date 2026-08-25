@@ -57,6 +57,11 @@ type Room struct {
 
 	salt []byte
 	hash []byte
+	// Signs resume tokens for this room's peers. Persisted with the
+	// room so a token issued before a restart still verifies after one
+	// -- which is the whole point: it lets someone reclaim their peer
+	// identity across a deploy instead of coming back as a stranger.
+	resumeKey []byte
 
 	mu        sync.Mutex
 	peers     map[string]*Peer
@@ -69,10 +74,13 @@ type Registry struct {
 	mu    sync.Mutex
 	rooms map[string]*Room
 	now   func() time.Time
+	// Where rooms are persisted. Empty means memory only -- which is
+	// what the tests use, and what a deploy without a volume gets.
+	path string
 }
 
-func NewRegistry() *Registry {
-	return &Registry{rooms: make(map[string]*Room), now: time.Now}
+func NewRegistry(path string) *Registry {
+	return &Registry{rooms: make(map[string]*Room), now: time.Now, path: path}
 }
 
 // Create makes a room whose password is `password`. The password is
@@ -87,11 +95,17 @@ func (r *Registry) Create(password string) (*Room, error) {
 	if err != nil {
 		return nil, err
 	}
+	resumeKey := make([]byte, 32)
+	if _, err := rand.Read(resumeKey); err != nil {
+		return nil, err
+	}
 
+	// Not deferred: persist() takes this same mutex, so the lock has to
+	// be released before calling it rather than at function exit.
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if len(r.rooms) >= maxRooms {
+		r.mu.Unlock()
 		return nil, ErrTooManyRooms
 	}
 
@@ -99,6 +113,7 @@ func (r *Registry) Create(password string) (*Room, error) {
 	for {
 		candidate, err := randomCode(codeLength)
 		if err != nil {
+			r.mu.Unlock()
 			return nil, err
 		}
 		if _, taken := r.rooms[candidate]; !taken {
@@ -113,11 +128,15 @@ func (r *Registry) Create(password string) (*Room, error) {
 		CreatedAt: now,
 		salt:      salt,
 		hash:      hash,
+		resumeKey: resumeKey,
 		peers:     make(map[string]*Peer),
 		emptyAt:   now,
 		lastSeen:  now,
 	}
 	r.rooms[id] = room
+	r.mu.Unlock()
+
+	r.persist()
 	return room, nil
 }
 
@@ -136,8 +155,8 @@ func (r *Registry) Get(id string) (*Room, error) {
 // StartJanitor.
 func (r *Registry) Sweep() {
 	now := r.now()
+	removed := false
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	for id, room := range r.rooms {
 		room.mu.Lock()
 		empty := len(room.peers) == 0
@@ -146,7 +165,13 @@ func (r *Registry) Sweep() {
 		room.mu.Unlock()
 		if expired {
 			delete(r.rooms, id)
+			removed = true
 		}
+	}
+	r.mu.Unlock()
+
+	if removed {
+		r.persist()
 	}
 }
 

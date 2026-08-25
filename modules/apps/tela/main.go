@@ -25,8 +25,18 @@ import (
 func main() {
 	port := env("PORT", "8000")
 	webDir := env("WEB_DIR", "web")
+	// Rooms outlive a restart so a deploy doesn't end sessions that are
+	// in progress. Unset means memory only -- fine for local dev, but in
+	// production this should point at a volume.
+	statePath := env("STATE_FILE", "")
 
-	registry := rooms.NewRegistry()
+	registry := rooms.NewRegistry(statePath)
+	if err := registry.Load(); err != nil {
+		// Losing rooms is bad; refusing to boot is worse.
+		log.Printf("could not restore rooms from %q: %v", statePath, err)
+	} else if statePath != "" {
+		log.Printf("rooms restored from %q: %d", statePath, registry.Count())
+	}
 	stopJanitor := make(chan struct{})
 	registry.StartJanitor(stopJanitor)
 	defer close(stopJanitor)

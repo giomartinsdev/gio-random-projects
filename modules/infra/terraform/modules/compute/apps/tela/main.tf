@@ -14,6 +14,10 @@ locals {
   }] : []
 }
 
+resource "docker_volume" "tela_state" {
+  name = "tela-state"
+}
+
 resource "docker_container" "tela" {
   name    = "tela"
   image   = "${var.registry_host}/tela:latest"
@@ -21,7 +25,18 @@ resource "docker_container" "tela" {
 
   env = [
     "PORT=8000",
+    "STATE_FILE=/data/rooms.json",
   ]
+
+  # Rooms live in memory, but the room registry itself (code, password
+  # hash, resume key -- never the connected peers) is written here so a
+  # redeploy doesn't end sessions that are in progress. Without it, a
+  # deploy while people are sharing drops every room and they can't even
+  # rejoin. See modules/apps/tela/internal/rooms/store.go.
+  volumes {
+    volume_name    = docker_volume.tela_state.name
+    container_path = "/data"
+  }
 
   ports {
     internal = 8000

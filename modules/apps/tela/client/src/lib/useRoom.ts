@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { wsUrl } from "./api";
+import { readIdentity, rememberIdentity, wsUrl } from "./api";
 
 // Public STUN only -- no TURN relay is run for this. That covers home
 // networks and most consumer NATs; behind a symmetric NAT or a strict
@@ -7,7 +7,21 @@ import { wsUrl } from "./api";
 // stays stuck on "conectando…".
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
-export type Status = "connecting" | "connected" | "error" | "closed";
+// Someone dropping off is usually a blip -- a reload, a moment of bad
+// wifi, or this server being redeployed -- not someone leaving. Tearing
+// their video down the instant the WebSocket says they're gone turns a
+// two-second gap into a visible interruption, so it waits. If they come
+// back within the window under the same identity, the teardown is
+// cancelled and the stream was never disturbed.
+const LEAVE_GRACE_MS = 12_000;
+
+// Reconnect backoff. Starts fast because the common case is a deploy --
+// a couple of seconds -- and backs off so a genuinely dead server isn't
+// hammered.
+const RECONNECT_MIN_MS = 500;
+const RECONNECT_MAX_MS = 8_000;
+
+export type Status = "connecting" | "connected" | "reconnecting" | "error" | "closed";
 export type Source = "screen" | "camera";
 
 export type Peer = { peerId: string; name: string; publishing: boolean };
@@ -61,6 +75,8 @@ export function useRoom(roomId: string, password: string) {
   // close over a stale list.
   const peersRef = useRef<Peer[]>([]);
   peersRef.current = peers;
+  // Teardowns waiting out the grace period below, keyed by peer.
+  const pendingLeaveRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const send = useCallback((payload: unknown) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -78,6 +94,14 @@ export function useRoom(roomId: string, password: string) {
   const closeOutgoing = useCallback((peerId: string) => {
     outgoingRef.current.get(peerId)?.close();
     outgoingRef.current.delete(peerId);
+  }, []);
+
+  const cancelPendingLeave = useCallback((peerId: string) => {
+    const timer = pendingLeaveRef.current.get(peerId);
+    if (timer) {
+      clearTimeout(timer);
+      pendingLeaveRef.current.delete(peerId);
+    }
   }, []);
 
   const closeIncoming = useCallback((peerId: string) => {
@@ -209,13 +233,48 @@ export function useRoom(roomId: string, password: string) {
   );
 
   useEffect(() => {
-    const ws = new WebSocket(wsUrl({ room: roomId, password }));
-    wsRef.current = ws;
+    // `disposed` separates leaving the room (unmount) from losing the
+    // socket (retry). Only the former tears down peer connections --
+    // during a reconnect the video is still flowing over them.
+    let disposed = false;
+    let attempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
-    ws.onopen = () => setStatus("connected");
-    ws.onclose = () => setStatus((s) => (s === "connected" ? "closed" : s));
+    const connect = () => {
+      if (disposed) return;
+
+      // Reclaims the identity the server issued, so the others in the
+      // room keep the connections they already have instead of seeing a
+      // stranger arrive (see api.ts's Identity and the server's resume
+      // handshake).
+      const saved = readIdentity(roomId);
+      const ws = new WebSocket(
+        wsUrl({
+          room: roomId,
+          password,
+          ...(saved ? { peerId: saved.peerId, name: saved.name, resume: saved.resume } : {}),
+        }),
+      );
+      wsRef.current = ws;
+
+    ws.onopen = () => {
+      attempt = 0;
+      setStatus("connected");
+    };
+
+    ws.onclose = () => {
+      if (disposed) return;
+      setStatus("reconnecting");
+      // Jittered so a room full of people doesn't reconnect in lockstep
+      // and stampede a server that just came back up.
+      const backoff = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** attempt);
+      attempt++;
+      retryTimer = setTimeout(connect, backoff * (0.5 + Math.random()));
+    };
+
     // A rejected upgrade (401/404) reaches the browser without detail,
     // so the page checks the room over HTTP first; this is the fallback.
+    // onclose fires too, so the retry is already handled.
     ws.onerror = () => setStatus((s) => (s === "connecting" ? "error" : s));
 
     ws.onmessage = async (evt) => {
@@ -227,26 +286,74 @@ export function useRoom(roomId: string, password: string) {
       }
 
       switch (msg.type) {
-        case "welcome":
-          setYou({ peerId: msg.peerId as string, name: msg.name as string });
-          // Whoever is already publishing will offer to me on seeing my
-          // peer:join, so there's nothing to initiate from here.
-          setPeers((msg.peers as Peer[]) ?? []);
+        case "welcome": {
+          const myId = msg.peerId as string;
+          const myName = msg.name as string;
+          setYou({ peerId: myId, name: myName });
+          // Kept so a reconnect can reclaim this identity rather than
+          // coming back as a stranger.
+          rememberIdentity(roomId, { peerId: myId, name: myName, resume: (msg.resume as string) ?? "" });
+
+          const list = (msg.peers as Peer[]) ?? [];
+          setPeers(list);
+
+          // This may be a reconnect -- a reload, or this server being
+          // redeployed. Anyone still here kept their identity, so the
+          // connections already open to them are still valid and still
+          // carrying video: rebuilding them is exactly the interruption
+          // all of this exists to avoid. Only drop what's genuinely gone.
+          const present = new Set(list.map((p) => p.peerId));
+          for (const id of [...outgoingRef.current.keys()]) {
+            if (!present.has(id)) closeOutgoing(id);
+          }
+          for (const id of [...incomingRef.current.keys()]) {
+            if (!present.has(id)) closeIncoming(id);
+          }
+          for (const id of [...pendingLeaveRef.current.keys()]) {
+            if (present.has(id)) cancelPendingLeave(id);
+          }
+
+          // A restarted server has forgotten I was publishing, so say it
+          // again -- and offer only to people I'm not already connected to.
+          if (localStreamRef.current) {
+            send({ type: "publish:start" });
+            for (const peer of list) {
+              if (!outgoingRef.current.has(peer.peerId)) {
+                await offerTo(peer.peerId).catch(() => {});
+              }
+            }
+          }
           break;
+        }
 
         case "peer:join": {
           const peer: Peer = { peerId: msg.peerId as string, name: msg.name as string, publishing: false };
           setPeers((current) => [...current.filter((p) => p.peerId !== peer.peerId), peer]);
-          // If I'm mid-share, the newcomer needs my stream too.
-          await offerTo(peer.peerId).catch(() => {});
+
+          // Back inside the grace window: the connection to them never
+          // went away, so leave it be rather than renegotiating.
+          const returning = pendingLeaveRef.current.has(peer.peerId) && outgoingRef.current.has(peer.peerId);
+          cancelPendingLeave(peer.peerId);
+          if (!returning) {
+            // If I'm mid-share, the newcomer needs my stream too.
+            await offerTo(peer.peerId).catch(() => {});
+          }
           break;
         }
 
         case "peer:leave": {
           const peerId = msg.peerId as string;
           setPeers((current) => current.filter((p) => p.peerId !== peerId));
-          closeOutgoing(peerId);
-          closeIncoming(peerId);
+          // Deferred rather than immediate -- see LEAVE_GRACE_MS.
+          cancelPendingLeave(peerId);
+          pendingLeaveRef.current.set(
+            peerId,
+            setTimeout(() => {
+              pendingLeaveRef.current.delete(peerId);
+              closeOutgoing(peerId);
+              closeIncoming(peerId);
+            }, LEAVE_GRACE_MS),
+          );
           break;
         }
 
@@ -291,8 +398,18 @@ export function useRoom(roomId: string, password: string) {
       }
     };
 
+    };
+
+    connect();
+
+    // Leaving the room for real: everything goes, including the peer
+    // connections a reconnect deliberately preserves.
     return () => {
-      ws.close();
+      disposed = true;
+      clearTimeout(retryTimer);
+      for (const timer of pendingLeaveRef.current.values()) clearTimeout(timer);
+      pendingLeaveRef.current.clear();
+      wsRef.current?.close();
       for (const pc of outgoingRef.current.values()) pc.close();
       for (const pc of incomingRef.current.values()) pc.close();
       outgoingRef.current.clear();
@@ -300,7 +417,7 @@ export function useRoom(roomId: string, password: string) {
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     };
-  }, [roomId, password, offerTo, answerOffer, closeOutgoing, closeIncoming]);
+  }, [roomId, password, offerTo, answerOffer, closeOutgoing, closeIncoming, cancelPendingLeave, send]);
 
   return {
     status,

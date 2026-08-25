@@ -33,3 +33,30 @@ export function wsUrl(params: Record<string, string>): string {
   const qs = new URLSearchParams(params).toString();
   return `${proto}//${window.location.host}/ws?${qs}`;
 }
+
+// The identity the server issued for this room, kept so a reconnect can
+// reclaim it instead of coming back as a stranger (see useRoom). It
+// lives in sessionStorage: it must survive a reload and a server
+// restart, but it's meaningless in another tab and shouldn't outlive
+// the tab that owns it.
+export type Identity = { peerId: string; name: string; resume: string };
+
+const identityKey = (roomId: string) => `tela:id:${roomId}`;
+
+export function rememberIdentity(roomId: string, identity: Identity) {
+  try {
+    sessionStorage.setItem(identityKey(roomId), JSON.stringify(identity));
+  } catch {
+    // Storage disabled (private mode). Reconnects still work, they just
+    // come back with a fresh identity.
+  }
+}
+
+export function readIdentity(roomId: string): Identity | null {
+  try {
+    const raw = sessionStorage.getItem(identityKey(roomId));
+    return raw ? (JSON.parse(raw) as Identity) : null;
+  } catch {
+    return null;
+  }
+}

@@ -1,6 +1,9 @@
 package rooms
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"strconv"
 	"time"
@@ -75,6 +78,49 @@ func (p *Peer) Close() {
 }
 
 func (p *Peer) Done() <-chan struct{} { return p.closed }
+
+// ResumeToken proves that whoever holds it was handed this exact peer
+// identity by the server. It's an HMAC rather than stored state so it
+// survives a restart without persisting anything per peer, and it
+// covers the name as well as the id so a member can't come back
+// wearing someone else's label.
+//
+// This is what makes a deploy invisible: a client that reconnects with
+// its old identity slots back into the room, and nobody else sees it
+// leave and rejoin -- so their peer connections, and the video already
+// flowing over them, are left untouched.
+func (room *Room) ResumeToken(peerID, name string) string {
+	mac := hmac.New(sha256.New, room.resumeKey)
+	mac.Write([]byte(peerID))
+	mac.Write([]byte{0})
+	mac.Write([]byte(name))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func (room *Room) VerifyResume(peerID, name, token string) bool {
+	if peerID == "" || token == "" {
+		return false
+	}
+	expected := room.ResumeToken(peerID, name)
+	return hmac.Equal([]byte(expected), []byte(token))
+}
+
+// TakeOver drops any connection still registered under this peer id.
+// After a restart the old socket is already dead, but a flaky network
+// can leave a stale one that the server hasn't noticed yet -- and two
+// live sockets sharing an id would each receive half the signalling.
+func (room *Room) TakeOver(peerID string) {
+	room.mu.Lock()
+	old := room.peers[peerID]
+	if old != nil {
+		delete(room.peers, peerID)
+	}
+	room.mu.Unlock()
+
+	if old != nil {
+		old.Close()
+	}
+}
 
 // Join adds a peer and returns everyone already in the room, so the
 // newcomer immediately knows who is here and who is currently

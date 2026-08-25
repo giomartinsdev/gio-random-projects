@@ -68,12 +68,38 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	conn.SetReadLimit(maxMessageBytes)
 
-	peerID, err := rooms.RandomID(16)
-	if err != nil {
-		_ = conn.Close(websocket.StatusInternalError, "erro interno")
-		return
+	// Resuming: a client that was here before presents the identity the
+	// server gave it, plus the token proving the server gave it. Keeping
+	// the same id across a reconnect is what lets peer connections (and
+	// the video already flowing over them) survive, in two different
+	// ways:
+	//
+	//   - the whole server restarting: everyone reconnects and rebuilds
+	//     from `welcome`, and because the ids match what they already
+	//     have, nothing is torn down and nothing is re-offered;
+	//   - one client's network blipping: the others do see it leave and
+	//     rejoin, but under the same id, so the grace period on the
+	//     client side cancels the pending teardown instead of dropping
+	//     the stream.
+	//
+	// An id alone would be enough to impersonate another member of the
+	// room, which is why the token is required rather than trusted.
+	peerID := q.Get("peerId")
+	name := q.Get("name")
+	if !room.VerifyResume(peerID, name, q.Get("resume")) {
+		peerID, err = rooms.RandomID(16)
+		if err != nil {
+			_ = conn.Close(websocket.StatusInternalError, "erro interno")
+			return
+		}
+		name = room.NextName()
+	} else {
+		// A stale socket under this id would otherwise split the
+		// signalling between two connections.
+		room.TakeOver(peerID)
 	}
-	peer := rooms.NewPeer(peerID, room.NextName())
+
+	peer := rooms.NewPeer(peerID, name)
 	existing := room.Join(peer)
 
 	ctx, cancel := context.WithCancel(r.Context())
@@ -89,6 +115,8 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		"name":   peer.Name,
 		"roomId": room.ID,
 		"peers":  existing,
+		// Kept by the client and presented on reconnect (see above).
+		"resume": room.ResumeToken(peerID, peer.Name),
 	})
 
 	readLoop(ctx, conn, room, peer)

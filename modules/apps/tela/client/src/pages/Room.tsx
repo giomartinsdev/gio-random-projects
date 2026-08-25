@@ -183,7 +183,13 @@ function LiveRoom({
         </span>
         {room.status !== "connected" && (
           <span className="text-sm text-muted-foreground">
-            {room.status === "closed" ? "desconectado" : room.status === "error" ? "erro na conexão" : "conectando…"}
+            {room.status === "reconnecting"
+              ? "reconectando…"
+              : room.status === "closed"
+                ? "desconectado"
+                : room.status === "error"
+                  ? "erro na conexão"
+                  : "conectando…"}
           </span>
         )}
 
