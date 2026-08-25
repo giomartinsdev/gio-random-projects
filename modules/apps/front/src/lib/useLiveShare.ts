@@ -1,40 +1,39 @@
-import { useRef, useState } from "react";
 import { getDiscordBearerToken } from "./discordAuthToken.js";
-import { isDiscordActivity, openExternalLink } from "./discordActivity.js";
 
-// Starting/stopping the host's screen or camera share. The capture
-// itself does NOT happen here -- it happens in a separate top-level
-// window (pages/SharePopup.tsx), for two independent reasons, both
-// confirmed live inside a real Discord Activity:
+// Builds the URL of the capture window and nothing more -- the window
+// is opened by a real <a target="_blank"> the user clicks (see
+// AulaRoom.tsx), deliberately NOT by window.open().
 //
-//   1. getDisplayMedia rejects immediately with "not granted" --
-//      Discord doesn't delegate the display-capture
-//      Permissions-Policy feature to the Activity iframe.
+// The capture can't run in the Discord Activity's iframe at all. Two
+// independent blockers, both confirmed live:
+//
+//   1. getDisplayMedia rejects instantly with "not granted" -- Discord
+//      doesn't delegate the display-capture Permissions-Policy
+//      feature to the iframe.
 //   2. `new RTCPeerConnection()` throws "RTCPeerConnection is not a
-//      constructor" -- Discord removes WebRTC from the iframe
-//      entirely, so peer-to-peer video can't work in either
-//      direction, viewer side included.
+//      constructor" -- Discord removes WebRTC outright, so
+//      peer-to-peer video is impossible in either direction, viewer
+//      side included.
 //
-// So the popup captures, encodes to JPEG, and pushes frames over the
-// room's own WebSocket; this page only ever receives them (see
-// useClassSocket's `frame`/`sharing`). Everything the Activity itself
-// touches -- WebSocket, <img> -- is allowed there.
+// So capture happens in a separate top-level window
+// (pages/SharePopup.tsx) that pushes JPEG frames over the room's
+// WebSocket, and this page only receives them.
+//
+// Why an anchor and not window.open: Discord intercepts programmatic
+// window.open inside an Activity and routes it through its own
+// proxy-ticket flow, which was observed failing with a 403 -- leaving
+// a Window handle that never navigates anywhere and no error to react
+// to. A plain user-clicked link is the path Discord actually supports
+// for leaving an Activity, and it works identically on the plain site.
+// The cost is that we hold no Window handle, so stopping a share goes
+// over the WebSocket instead (the popup closes itself on share:stop).
 export function useLiveShare(opts: {
   roomId: string;
-  you: { userId: string; userName: string } | null;
   stopShare: () => void;
 }) {
-  const { roomId, you, stopShare } = opts;
-  const popupRef = useRef<Window | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { roomId, stopShare } = opts;
 
-  async function start(kind: "screen" | "camera") {
-    setError(null);
-    if (!you) {
-      setError("Aguarde a conexão terminar antes de compartilhar.");
-      return;
-    }
-
+  function shareUrl(kind: "screen" | "camera"): string {
     const params = new URLSearchParams({ kind, roomId });
     // The popup is a separate page load that never runs the Discord
     // auth handshake, so it can't read the module-level bearer token
@@ -47,36 +46,8 @@ export function useLiveShare(opts: {
     // only resolves within the Activity iframe -- useless as a URL for
     // a real browser window.
     const origin = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined) || window.location.origin;
-    const url = `${origin}/share-popup?${params.toString()}`;
-
-    const popup = window.open(url, "classroom-share-popup", "width=520,height=400");
-    popupRef.current = popup;
-    if (popup) return;
-
-    // Fallback for when the Activity iframe's sandbox blocks
-    // window.open: hand the URL to Discord's client instead. Raced
-    // against a timeout because this RPC has been observed never
-    // settling at all inside an Activity.
-    if (isDiscordActivity()) {
-      const opened = await Promise.race([
-        openExternalLink(url),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
-      ]);
-      if (opened) return;
-    }
-
-    console.error("[classroom] could not open the share window for", url);
-    setError("Não foi possível abrir a janela de compartilhamento. Permita pop-ups para este site e tente de novo.");
+    return `${origin}/share-popup?${params.toString()}`;
   }
 
-  function stop() {
-    // Tells the popup to shut down (it listens for share:stop), then
-    // closes it directly too when we still hold a handle -- the
-    // openExternalLink fallback gives us none, hence both paths.
-    stopShare();
-    popupRef.current?.close();
-    popupRef.current = null;
-  }
-
-  return { start, stop, error };
+  return { shareUrl, stop: stopShare };
 }

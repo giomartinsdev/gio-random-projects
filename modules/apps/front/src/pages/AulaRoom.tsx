@@ -27,11 +27,7 @@ export default function AulaRoom() {
   const isHost = Boolean(socket.you && socket.you.userId === socket.hostId);
   const isClosed = socket.status === "closed";
 
-  const share = useLiveShare({
-    roomId: id ?? "",
-    you: socket.you,
-    stopShare: socket.stopShare,
-  });
+  const share = useLiveShare({ roomId: id ?? "", stopShare: socket.stopShare });
 
   useEffect(() => {
     if (!id) return;
@@ -141,20 +137,29 @@ export default function AulaRoom() {
 
           {isHost && !isClosed && (
             <div className="flex items-center gap-2 mt-3">
-              <button
-                onClick={() => share.start("screen")}
-                disabled={socket.sharing}
-                className="px-3 h-9 rounded-lg text-xs font-heading font-semibold border border-white/15 text-buteco-cream/80 hover:border-buteco-amber/40 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Compartilhar tela
-              </button>
-              <button
-                onClick={() => share.start("camera")}
-                disabled={socket.sharing}
-                className="px-3 h-9 rounded-lg text-xs font-heading font-semibold border border-white/15 text-buteco-cream/80 hover:border-buteco-amber/40 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Câmera
-              </button>
+              {/* Real links, not window.open() -- see useLiveShare.ts:
+                  Discord intercepts programmatic popups inside an
+                  Activity and they silently never navigate. */}
+              {!socket.sharing && (
+                <>
+                  <a
+                    href={share.shareUrl("screen")}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 h-9 flex items-center rounded-lg text-xs font-heading font-semibold border border-white/15 text-buteco-cream/80 hover:border-buteco-amber/40 transition-colors cursor-pointer"
+                  >
+                    Compartilhar tela
+                  </a>
+                  <a
+                    href={share.shareUrl("camera")}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 h-9 flex items-center rounded-lg text-xs font-heading font-semibold border border-white/15 text-buteco-cream/80 hover:border-buteco-amber/40 transition-colors cursor-pointer"
+                  >
+                    Câmera
+                  </a>
+                </>
+              )}
               {socket.sharing && (
                 <button
                   onClick={share.stop}
@@ -163,7 +168,6 @@ export default function AulaRoom() {
                   Parar
                 </button>
               )}
-              {share.error && <p className="text-red-300/80 text-xs font-mono ml-1">{share.error}</p>}
             </div>
           )}
         </div>
