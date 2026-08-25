@@ -239,8 +239,8 @@ jobs:
           REPLACE_ARGS=()
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
             case "$app" in
-              domain-api) REPLACE_ARGS+=("-replace=module.compute_app.docker_container.domain_api") ;;
-              domain-worker) REPLACE_ARGS+=("-replace=module.compute_app.docker_container.domain_worker") ;;
+              domain-api) REPLACE_ARGS+=("-replace=module.compute_apps_domain_api.docker_container.domain_api") ;;
+              domain-worker) REPLACE_ARGS+=("-replace=module.compute_apps_domain_api.docker_container.domain_worker") ;;
             esac
           done
           terraform apply -input=false -lock-timeout=300s -auto-approve "${REPLACE_ARGS[@]}"
