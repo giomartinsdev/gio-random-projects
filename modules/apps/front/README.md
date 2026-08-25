@@ -36,7 +36,7 @@ npm run dev
 ## Deploying
 
 Static build (`vite build`) served by nginx — see `Dockerfile`.
-`VITE_POST_API_URL`/`VITE_BOOKCLUB_API_URL` are baked in at **build**
+`VITE_POST_API_URL`/`VITE_BOOKCLUB_API_URL`/`VITE_CLASSROOM_API_URL` are baked in at **build**
 time (Vite convention), not read at container runtime — see
 `ts-ci-cd.yml`'s `build-args` for where those are set for production
 builds.

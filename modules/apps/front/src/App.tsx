@@ -8,6 +8,8 @@ import PostView from "./pages/PostView.js";
 import PostCreate from "./pages/PostCreate.js";
 import BookClubHome from "./pages/BookClubHome.js";
 import BookClubRoom from "./pages/BookClubRoom.js";
+import AulasHome from "./pages/AulasHome.js";
+import AulaRoom from "./pages/AulaRoom.js";
 
 export default function App() {
   return (
@@ -22,6 +24,8 @@ export default function App() {
           <Route path="/perfil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/clube-do-livro" element={<ProtectedRoute><BookClubHome /></ProtectedRoute>} />
           <Route path="/clube-do-livro/:id" element={<ProtectedRoute><BookClubRoom /></ProtectedRoute>} />
+          <Route path="/aulas" element={<ProtectedRoute><AulasHome /></ProtectedRoute>} />
+          <Route path="/aulas/:id" element={<ProtectedRoute><AulaRoom /></ProtectedRoute>} />
         </Routes>
       </Layout>
     </BrowserRouter>

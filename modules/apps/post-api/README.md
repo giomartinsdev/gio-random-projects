@@ -57,8 +57,9 @@ To turn it on:
    - Root mapping (`/`) → `classroom-bdd.giomartins.dev`
    - `/postapi` → `post-api.giomartins.dev`
    - `/bookclubapi` → `bookclub-api.giomartins.dev`
+   - `/classroomapi` → `classroom-api.giomartins.dev`
 
-   These prefixes are hardcoded in `front/src/lib/discordActivity.ts`'s `patchUrlMappings` call — if you change them there, change them here too.
+   These prefixes are hardcoded in `front/src/lib/discordUrlPatch.ts`'s `patchUrlMappings` call — if you change them there, change them here too.
 3. Under **OAuth2**, note the Client ID and Client Secret.
 4. Set `DISCORD_CLIENT_ID`/`DISCORD_CLIENT_SECRET` here (this service) and `VITE_DISCORD_CLIENT_ID` on `front` (build-time, same value as the client ID — Discord client IDs are public by design). In this repo's deploy, both come from the `DISCORD_CLIENT_ID`/`DISCORD_CLIENT_SECRET` GitHub Actions secrets via Terraform (`modules/infra/terraform/variables.tf`).
 5. Launch the Activity from Discord (Activities panel in a voice channel, or via the app's own invite/install flow) — `frame_id` in the URL is how the front app detects it's running inside Discord at all.

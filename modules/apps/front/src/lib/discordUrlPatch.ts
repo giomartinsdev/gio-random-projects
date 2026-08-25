@@ -10,10 +10,11 @@ import { patchUrlMappings } from "@discord/embedded-app-sdk";
 // this file first, before anything else (including App.js, which
 // transitively imports authClient.js), to guarantee that ordering. See
 // discordActivity.ts for the rest of the auth flow and post-api/
-// bookclub-api READMEs for why these prefixes exist.
+// bookclub-api/classroom-api READMEs for why these prefixes exist.
 if (new URLSearchParams(window.location.search).has("frame_id")) {
   patchUrlMappings([
     { prefix: "/postapi", target: new URL(import.meta.env.VITE_POST_API_URL as string).host },
     { prefix: "/bookclubapi", target: new URL(import.meta.env.VITE_BOOKCLUB_API_URL as string).host },
+    { prefix: "/classroomapi", target: new URL(import.meta.env.VITE_CLASSROOM_API_URL as string).host },
   ]);
 }

@@ -37,6 +37,9 @@ export default function NavBar() {
           <Link to="/clube-do-livro" className="text-buteco-cream/70 hover:text-buteco-amber transition-colors">
             Clube do Livro
           </Link>
+          <Link to="/aulas" className="text-buteco-cream/70 hover:text-buteco-amber transition-colors">
+            Aulas
+          </Link>
           {session ? (
             <>
               <Link to="/posts/novo" className="text-buteco-cream/70 hover:text-buteco-amber transition-colors">
