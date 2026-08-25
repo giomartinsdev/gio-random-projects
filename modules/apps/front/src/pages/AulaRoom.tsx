@@ -185,6 +185,9 @@ export default function AulaRoom() {
                   Parar
                 </button>
               )}
+              {rtc.shareError && (
+                <p className="text-red-300/80 text-xs font-mono ml-1">{rtc.shareError}</p>
+              )}
             </div>
           )}
         </div>

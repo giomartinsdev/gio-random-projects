@@ -30,6 +30,7 @@ export function useWebRTCBroadcast(opts: {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [sharing, setSharing] = useState<"screen" | "camera" | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
 
   function closePeer(id: string) {
     peersRef.current.get(id)?.close();
@@ -81,10 +82,25 @@ export function useWebRTCBroadcast(opts: {
 
   async function startSharing(kind: "screen" | "camera") {
     stopSharing();
-    const stream =
-      kind === "screen"
-        ? await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
-        : await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    setShareError(null);
+    let stream: MediaStream;
+    try {
+      stream =
+        kind === "screen"
+          ? await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+          : await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    } catch (err) {
+      // Surfaced to the UI (see AulaRoom.tsx) instead of failing
+      // silently -- inside Discord's Activity iframe this rejects with
+      // a Permissions-Policy / NotAllowedError rather than showing any
+      // native picker, so without this the buttons look like they do
+      // nothing at all.
+      const name = err instanceof Error ? err.name : "Error";
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[classroom] ${kind} share failed:`, name, message);
+      setShareError(`${name}: ${message}`);
+      return;
+    }
     // If the user stops sharing via the browser/OS's own "Stop
     // sharing" control (screen share only), react the same as
     // clicking our own stop button.
@@ -163,5 +179,5 @@ export function useWebRTCBroadcast(opts: {
     };
   }, []);
 
-  return { localStream, remoteStream, sharing, startSharing, stopSharing, handleSignal };
+  return { localStream, remoteStream, sharing, shareError, startSharing, stopSharing, handleSignal };
 }
