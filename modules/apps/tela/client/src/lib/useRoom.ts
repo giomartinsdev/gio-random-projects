@@ -29,10 +29,13 @@ const RECONNECT_MAX_MS = 8_000;
 // resolution (often 1440p or 4K) at up to 60fps, and two of those at
 // once will out-run a laptop CPU.
 //
-// A shared screen is text far more often than it is video, so 1080p at
-// 15fps reads better than 4K at 5fps once things get tight.
+// 1080p30 rather than the monitor's native resolution. The framerate is
+// a ceiling, not a promise: with a bitrate cap and
+// degradationPreference "maintain-resolution", the encoder drops frames
+// on its own when it can't afford 30 -- so asking for 30 costs nothing
+// when there's headroom and degrades gracefully when there isn't.
 const SCREEN_CONSTRAINTS: MediaTrackConstraints = {
-  frameRate: { ideal: 15, max: 30 },
+  frameRate: { ideal: 30, max: 30 },
   width: { max: 1920 },
   height: { max: 1080 },
 };
