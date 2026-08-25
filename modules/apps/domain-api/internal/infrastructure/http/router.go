@@ -19,6 +19,19 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 	r.Get("/openapi.yaml", ServeOpenAPISpec)
 	r.Get("/docs", ServeDocs)
 
+	// TEMPORARY diagnostic for the classroom-api 401 investigation --
+	// exposes only the labels this process currently has loaded (never
+	// the key values themselves), so it's safe to leave unauthenticated
+	// for the short time it takes to confirm whether "classroom-api" is
+	// actually in the resolved DOMAIN_API_KEYS. Remove once resolved.
+	r.Get("/debug/key-labels", func(w http.ResponseWriter, _ *http.Request) {
+		labels := make([]string, 0, len(keys))
+		for _, label := range keys {
+			labels = append(labels, label)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"labels": labels, "count": len(keys)})
+	})
+
 	r.Group(func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler {
 			return Secure(next, keys, limiter, log)
