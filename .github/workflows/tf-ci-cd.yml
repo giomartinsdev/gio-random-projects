@@ -133,6 +133,7 @@ jobs:
           mv 'module.compute_vaultwarden.docker_container.vaultwarden' 'module.compute_services_vaultwarden.docker_container.vaultwarden'
           mv 'module.compute_vaultwarden.docker_volume.vaultwarden_data' 'module.compute_services_vaultwarden.docker_volume.vaultwarden_data'
           mv 'module.compute_vaultwarden_bridge[0].docker_container.vaultwarden_bridge' 'module.compute_services_vaultwarden_bridge[0].docker_container.vaultwarden_bridge'
+          mv 'module.compute_registry' 'module.compute_services_registry'
 
       - name: Plan
         env:

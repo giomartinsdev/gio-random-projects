@@ -37,7 +37,14 @@ locals {
   ])
 }
 
+# The apply that (accidentally, during the onion-architecture cutover)
+# destroyed this ruleset for real means the zone may no longer have
+# one for this phase to adopt -- for_each over an empty list when
+# existing_custom_waf_ruleset_id is null skips the import entirely and
+# lets Terraform create a fresh one instead, rather than erroring on a
+# null interpolation.
 import {
-  to = module.cloud_cloudflare.cloudflare_ruleset.registry_mtls_enforce
-  id = "zones/${var.cloudflare_zone_id}/${local.existing_custom_waf_ruleset_id}"
+  for_each = local.existing_custom_waf_ruleset_id != null ? [local.existing_custom_waf_ruleset_id] : []
+  to       = module.cloud_cloudflare.cloudflare_ruleset.registry_mtls_enforce
+  id       = "zones/${var.cloudflare_zone_id}/${each.value}"
 }
