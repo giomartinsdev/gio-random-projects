@@ -30,6 +30,32 @@ function isBlockedHostname(hostname: string): boolean {
   return BLOCKED_HOSTNAME_PATTERNS.some((p) => p.test(hostname));
 }
 
+const MAX_REDIRECTS = 5;
+
+// Most real-world image hosts redirect at least once (picsum.photos,
+// the one this repo's own seed post actually uses, always 302s to a
+// randomized CDN URL) -- rejecting every redirect outright, as the
+// SSRF guard used to, makes the common case unusable. Following them
+// is safe as long as EVERY hop gets the same isBlockedHostname check
+// the initial URL got: a public host redirecting to an internal one
+// is exactly the SSRF shape this guards against, so each Location
+// header is re-validated before it's fetched, not just the original
+// caller-supplied URL.
+async function fetchFollowingSafeRedirects(url: URL): Promise<Response | { blocked: true }> {
+  let current = url;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const res = await fetch(current.toString(), { redirect: "manual" });
+    if (res.status < 300 || res.status >= 400) return res;
+    const location = res.headers.get("location");
+    if (!location) return res;
+    const next = new URL(location, current);
+    if (next.protocol !== "http:" && next.protocol !== "https:") return { blocked: true };
+    if (isBlockedHostname(next.hostname)) return { blocked: true };
+    current = next;
+  }
+  return { blocked: true };
+}
+
 // Exists for exactly one caller: front's resolveImageUrl (see its own
 // comment) inside a Discord Activity, where a post's coverImageUrl is
 // an arbitrary author-pasted URL Discord's iframe sandbox can't reach
@@ -57,18 +83,14 @@ export function createImageProxyRouter() {
       return c.json({ error: "url host is not allowed" }, 400);
     }
 
-    let upstream: Response;
+    let upstream: Response | { blocked: true };
     try {
-      // manual, not follow: a redirect target isn't re-checked against
-      // isBlockedHostname above, so blindly following one would let an
-      // otherwise-public host redirect this request straight at an
-      // internal one.
-      upstream = await fetch(parsed.toString(), { redirect: "manual" });
+      upstream = await fetchFollowingSafeRedirects(parsed);
     } catch {
       return c.json({ error: "failed to fetch image" }, 502);
     }
-    if (upstream.type === "opaqueredirect" || (upstream.status >= 300 && upstream.status < 400)) {
-      return c.json({ error: "url redirects are not followed" }, 502);
+    if ("blocked" in upstream) {
+      return c.json({ error: "url redirected to a disallowed host, or too many redirects" }, 502);
     }
     if (!upstream.ok) return c.json({ error: `upstream returned ${upstream.status}` }, 502);
 
