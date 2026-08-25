@@ -154,12 +154,13 @@ export function createRoomsRouter(auth: Auth, db: Db, domainApi: DomainApiClient
     if (room.host_id !== user.id) return c.json({ error: "forbidden" }, 403);
 
     try {
+      // domain-worker's RoomRepository.Delete is a soft close (status
+      // -> "closed"), not a physical DELETE -- the room, its messages,
+      // and this PDF all stay exactly as they are. Nothing here
+      // touches bookclub_document or MinIO: a closed room can still be
+      // opened read-only later (see GET /:id/pdf), same document as
+      // before.
       const accepted = await domainApi.deleteRoom(room.id, user.id);
-      const [doc] = await db.select().from(bookclubDocument).where(eq(bookclubDocument.id, room.document_id));
-      if (doc) {
-        await minio.remove(doc.objectKey).catch(() => {});
-        await db.delete(bookclubDocument).where(eq(bookclubDocument.id, room.document_id));
-      }
       return c.json(accepted, 202);
     } catch (err) {
       if (err instanceof DomainApiError && err.status === 400) return c.json({ error: err.message }, 400);

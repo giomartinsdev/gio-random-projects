@@ -185,6 +185,16 @@ export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, minio:
             return;
           }
 
+          // A closed room ("Encerrar sala") stays viewable -- the
+          // `init` payload already sent on open still carries page,
+          // chat history, and status -- but goes read-only: no new
+          // page turns, drawings, text, or chat past this point.
+          // cursor:move is allowed through (purely ephemeral, never
+          // persisted, harmless either way) so a reader can still
+          // point things out to someone else looking at the same
+          // closed room.
+          if (room.status === "closed" && msg.type !== "cursor:move") return;
+
           switch (msg.type) {
             case "chat:send": {
               const body = typeof msg.body === "string" ? msg.body.trim().slice(0, 2000) : "";

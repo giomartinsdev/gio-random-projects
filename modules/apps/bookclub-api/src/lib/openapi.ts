@@ -112,9 +112,11 @@ paths:
           $ref: "#/components/responses/NotFound"
     delete:
       summary: >
-        End the room (host only) — the book is finished, not paused;
-        this is the only way a room stops existing (async — returns
-        202)
+        End the room (host only) — a soft close, not a deletion: sets
+        status to "closed" and keeps the room, its PDF, and its chat
+        history exactly as they were. A closed room stays listed and
+        readable, it just stops accepting page turns, drawings, and
+        new chat (async — returns 202)
       security:
         - bearerAuth: []
       responses:

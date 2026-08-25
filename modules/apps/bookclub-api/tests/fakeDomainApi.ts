@@ -66,12 +66,16 @@ export function startFakeDomainApi(apiKey: string) {
     return c.json({ command_id: crypto.randomUUID(), status: "accepted" }, 202);
   });
 
+  // Mirrors domain-worker's real RoomRepository.Delete: a soft close
+  // (status -> "closed"), not a physical removal -- the room stays
+  // gettable/listable, same as production.
   app.delete("/rooms/:id", async (c) => {
     const room = rooms.get(c.req.param("id"));
     if (!room) return c.json({ error: "not found" }, 404);
     const body = await c.req.json();
     if (body.host_id !== room.host_id) return c.json({ error: "only the host may modify this room" }, 400);
-    rooms.delete(c.req.param("id"));
+    room.status = "closed";
+    room.updated_at = new Date().toISOString();
     return c.json({ command_id: crypto.randomUUID(), status: "accepted" }, 202);
   });
 

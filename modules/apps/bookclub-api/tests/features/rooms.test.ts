@@ -97,8 +97,16 @@ describe("rooms", () => {
     });
     expect(okDelete.status).toBe(202);
 
+    // "Encerrar sala" is a soft close, not a deletion -- the room
+    // stays gettable (now with status "closed") and its PDF stays
+    // fetchable, nothing about the room or its document is destroyed.
     const afterDelete = await app.request(`/rooms/${created.id}`);
-    expect(afterDelete.status).toBe(404);
+    expect(afterDelete.status).toBe(200);
+    const closedRoom = await afterDelete.json();
+    expect(closedRoom.status).toBe("closed");
+
+    const pdfAfterDelete = await app.request(`/rooms/${created.id}/pdf`, { headers: authHeaders("user-2", "Ana") });
+    expect(pdfAfterDelete.status).toBe(200);
   });
 
   it("rejects a room with no title", async () => {
