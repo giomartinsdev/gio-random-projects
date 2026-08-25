@@ -108,59 +108,22 @@ jobs:
       - name: Validate
         run: terraform validate
 
-      # TEMPORARY incident-recovery scoping: the previous apply destroyed
-      # the tunnel's ingress config and rotated the "docker" Access
-      # service token without completing, leaving public routing down
-      # and the Docker provider unauthenticated. -refresh=false skips
-      # refreshing docker_* resources (which would fail with the stale
-      # token before we can fix it) and -target limits this run to just
-      # the two Cloudflare-only resources needed to restore routing.
-      # Revert this block once the outage is confirmed fixed.
-      - name: Plan
-        env:
-          REPLACE_GROUP: ${{ github.event.inputs.replace_vault_seed_group }}
-        run: |
-          REPLACE_ARGS=()
-          if [ -n "$REPLACE_GROUP" ]; then
-            REPLACE_ADDR="null_resource.vault_seed[\"${REPLACE_GROUP}\"]"
-            REPLACE_ARGS+=("-replace=${REPLACE_ADDR}")
-          fi
-          terraform plan -input=false -lock-timeout=300s -refresh=false \
-            -target=module.cloud_cloudflare.cloudflare_zero_trust_tunnel_cloudflared.homelab \
-            -target=module.cloud_cloudflare.cloudflare_zero_trust_tunnel_cloudflared_config.homelab \
-            -target='module.compute_app.docker_container.domain_api' \
-            -target='module.compute_app.docker_container.domain_worker' \
-            -target='module.compute_apps_bookclub_api.docker_container.bookclub_api_migrate' \
-            -target='module.compute_apps_domain_api.docker_container.domain_api' \
-            -target='module.compute_apps_domain_api.docker_container.domain_worker' \
-            -target='module.compute_apps_post_api.docker_container.post_api_migrate' \
-            -target='module.compute_bookclub_api.docker_container.bookclub_api_migrate' \
-            -target='module.compute_data.docker_container.postgres' \
-            -target='module.compute_data.docker_container.redis' \
-            -target='module.compute_data.docker_network.apps' \
-            -target='module.compute_data.docker_volume.postgres_data' \
-            -target='module.compute_post_api.docker_container.post_api_migrate' \
-            -target='module.compute_services_vaultwarden.docker_container.vaultwarden' \
-            -target='module.compute_services_vaultwarden.docker_volume.vaultwarden_data' \
-            -target='module.compute_services_vaultwarden_bridge[0].docker_container.vaultwarden_bridge' \
-            -target='module.compute_vaultwarden.docker_container.vaultwarden' \
-            -target='module.compute_vaultwarden.docker_volume.vaultwarden_data' \
-            -target='module.compute_vaultwarden_bridge[0].docker_container.vaultwarden_bridge' \
-            -target='module.network_docker_apps.docker_network.apps' \
-            -target='module.storage_postgres.docker_container.postgres' \
-            -target='module.storage_postgres.docker_volume.postgres_data' \
-            -target='module.storage_redis.docker_container.redis' \
-            -out=tfplan "${REPLACE_ARGS[@]}"
-
-      - name: Apply
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
-        run: terraform apply -input=false -lock-timeout=300s -auto-approve tfplan
-
-      # Deliberately unmasked: this run is deleted immediately after
-      # gh secret set picks these up (see the git history for this
-      # commit -- reverted right after use).
-      - name: Show new docker service token (incident recovery only)
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+      # TEMPORARY incident recovery, phase 1: the mixed old/new-address
+      # state from the interrupted onion-architecture apply is too
+      # tangled to reconcile safely, so the plan is a full wipe and
+      # clean recreate instead (user-confirmed, including data loss on
+      # postgres/vaultwarden/minio -- assumed backed up elsewhere).
+      # `terraform output` only reads state, no provider auth needed,
+      # so this step alone is safe to run even though the Docker
+      # provider is currently unauthenticated (stale rotated service
+      # token) -- it exists only to surface that new token so the
+      # CLOUDFLARE_DOCKER_CLIENT_ID/SECRET GitHub secrets can be
+      # updated *before* the real destroy+apply (phase 2, added once
+      # phase 1's token is confirmed live) needs to talk to Docker.
+      #
+      # Deliberately unmasked in the log: this run is deleted right
+      # after gh secret set picks these values up.
+      - name: Phase 1 -- show current docker service token
         run: |
           echo "docker_client_id=$(terraform output -json service_token_client_ids | jq -r .docker)"
           echo "docker_client_secret=$(terraform output -json service_token_client_secrets | jq -r .docker)"
