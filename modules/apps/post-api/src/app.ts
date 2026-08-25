@@ -7,6 +7,7 @@ import { docsHtml, openApiYaml } from "./lib/openapi.js";
 import { createPostsRouter } from "./routes/posts.js";
 import { createFeedRouter } from "./routes/feed.js";
 import { createDiscordRouter } from "./routes/discord.js";
+import { createImageProxyRouter } from "./routes/imageProxy.js";
 import { createRateLimiter } from "./lib/rateLimiter.js";
 
 export function createApp(
@@ -36,11 +37,13 @@ export function createApp(
 
   app.use("/posts/*", createRateLimiter({ requestsPerMinute: 60, burst: 100 }));
   app.use("/discord/*", createRateLimiter({ requestsPerMinute: 20, burst: 20 }));
+  app.use("/image-proxy", createRateLimiter({ requestsPerMinute: 60, burst: 60 }));
 
   app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
   app.route("/posts", createPostsRouter(auth, domainApi));
   app.route("/", createFeedRouter(domainApi, siteUrl));
+  app.route("/", createImageProxyRouter());
 
   // Opt-in: absent until DISCORD_CLIENT_ID/SECRET are configured (see
   // README), so this stays a total no-op for every environment that

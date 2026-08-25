@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router";
 import { api, type Post } from "../lib/api.js";
 import { useSession } from "../lib/authClient.js";
 import MarkdownContent from "../components/MarkdownContent.js";
+import { resolveImageUrl } from "../lib/discordActivity.js";
 
 function formatDate(iso: string | null) {
   if (!iso) return "";
@@ -40,7 +41,7 @@ export default function PostView() {
     <article className="max-w-2xl mx-auto animate-fade-in-up">
       {post.coverImageUrl && (
         <div className="glass-card overflow-hidden mb-8 -mx-6 sm:mx-0">
-          <img src={post.coverImageUrl} alt="" className="w-full max-h-96 object-cover" />
+          <img src={resolveImageUrl(post.coverImageUrl)} alt="" className="w-full max-h-96 object-cover" />
         </div>
       )}
 

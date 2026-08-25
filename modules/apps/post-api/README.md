@@ -24,7 +24,7 @@ This service's own Postgres connection (`DATABASE_URL`) is used
 `verification`) — nothing content-related lives there.
 
 - **Framework**: [Hono](https://hono.dev).
-- **Auth**: [Better Auth](https://www.better-auth.com), email+password today, `bearer` plugin enabled (`Authorization: Bearer <token>` — headless-friendly, no cookie jar needed). Discord OAuth slots in later as another provider in `src/lib/auth.ts`.
+- **Auth**: [Better Auth](https://www.better-auth.com), email+password for the normal site, plus a Discord social provider (`src/lib/auth.ts`) used only by the Discord Activity flow below. `bearer` plugin enabled (`Authorization: Bearer <token>`) — the Activity's session travels that way, not as a cookie, since cookies don't survive the discordsays.com proxy Activities load through.
 - **domain-api client**: plain `fetch`-based, authenticated with `X-API-Key` (one of the keys in domain-api's `DOMAIN_API_KEYS`).
 - **Tests**: Vitest. Better Auth is tested against real Postgres via testcontainers (`tests/testDb.ts`); domain-api is stood in for by a real HTTP server (`tests/fakeDomainApi.ts`) implementing its actual contract — not the real Go binary (that would need its own Postgres/Redis/domain-worker to exercise), but a genuine network hop, not an in-process mock.
 
@@ -38,12 +38,17 @@ This service's own Postgres connection (`DATABASE_URL`) is used
 | PATCH | `/posts/:id` | owner only | Looks up current author via domain-api first; 403 for non-owners, 404 if missing; 202 on forward |
 | DELETE | `/posts/:id` | owner only | Same ownership check; 202 on forward |
 | GET | `/feed.xml` | none | RSS 2.0, last 50 published posts |
+| GET | `/image-proxy?url=` | none | Re-fetches an external image URL, streaming it back — rejects private/loopback hosts and non-image responses |
 | POST | `/discord/token` | none | Discord Activity OAuth code → access_token exchange. Only mounted when `DISCORD_CLIENT_ID`/`DISCORD_CLIENT_SECRET` are set — see "Discord Activity" below |
-| * | `/api/auth/*` | — | Better Auth's own routes (sign-up, sign-in, etc.) |
+| * | `/api/auth/*` | — | Better Auth's own routes (sign-up, sign-in, etc.), including `/api/auth/sign-in/social` which the Activity flow below uses |
 
 ## Discord Activity
 
-`front` can run embedded inside Discord as an [Activity](https://discord.com/developers/docs/activities/overview) — the whole site, unmodified, launched from a voice channel. This service's half is `/discord/token`; the other half is `front/src/lib/discordActivity.ts`. Both stay inert (no route mounted, SDK never initialized) until configured.
+`front` can run embedded inside Discord as an [Activity](https://discord.com/developers/docs/activities/overview) — the whole site, unmodified, launched from a voice channel, and the user is signed into the site automatically as their Discord identity (no separate login form). This service's half is `/discord/token` + the `discord` social provider in `src/lib/auth.ts`; the other half is `front/src/lib/discordActivity.ts`. All of it stays inert (no route mounted, SDK never initialized) until configured.
+
+**Why auto-login works without a browser OAuth redirect**: the Activity SDK's `authorize()` already gets a real Discord-issued `code`, exchanged here for an `access_token` through Discord's actual token endpoint using `DISCORD_CLIENT_SECRET`. That round-trip *is* the proof of identity. The frontend then calls Better Auth's `/api/auth/sign-in/social` directly with that access_token (as an `idToken.accessToken`, Discord's provider doesn't do JWT/OIDC so `auth.ts` overrides `verifyIdToken` to trust it — see that file's comment for why this is still safe), which creates an account on first use and returns a bearer session token. Cookies can't carry that session (Discord proxies everything through a `discordsays.com` origin, incompatible with post-api's cross-subdomain cookie), so it's stored client-side instead and attached as `Authorization: Bearer` on every request — see `front/src/lib/discordAuthToken.ts`.
+
+**Images**: a post's `coverImageUrl`/inline markdown images are whatever external host the author pasted — Discord's Activity sandbox can't reach arbitrary hosts, only ones with a URL Mapping. `front/src/lib/discordActivity.ts`'s `resolveImageUrl()` routes them through `/image-proxy` (which *is* mapped) instead, everywhere a post image renders. No-op outside a Discord Activity.
 
 To turn it on:
 

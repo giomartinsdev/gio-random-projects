@@ -1,4 +1,6 @@
 import { DiscordSDK, patchUrlMappings } from "@discord/embedded-app-sdk";
+import { setDiscordBearerToken } from "./discordAuthToken.js";
+import { authClient } from "./authClient.js";
 
 // Discord always appends this when it launches the app as an
 // Activity (iframed inside a voice channel / the Activities panel)
@@ -7,6 +9,18 @@ import { DiscordSDK, patchUrlMappings } from "@discord/embedded-app-sdk";
 // call site.
 export function isDiscordActivity(): boolean {
   return new URLSearchParams(window.location.search).has("frame_id");
+}
+
+// A post's coverImageUrl is whatever the author pasted -- some
+// arbitrary external host Discord's Activity sandbox has no URL
+// Mapping for (and never could: the set of possible image hosts is
+// unbounded). Route it through post-api's /image-proxy instead, which
+// IS covered by the /postapi mapping. No-op outside a Discord
+// Activity. Used by PostCard/PostView/PostCreate wherever a post's
+// image renders.
+export function resolveImageUrl(url: string): string {
+  if (!url || !isDiscordActivity()) return url;
+  return `${import.meta.env.VITE_POST_API_URL}/image-proxy?url=${encodeURIComponent(url)}`;
 }
 
 // Discord Activities load through a Discord-owned virtual origin
@@ -41,18 +55,18 @@ export async function initDiscordActivity(): Promise<void> {
   // authorize (get a one-time code) -> exchange it server-side for an
   // access_token (client_secret can never touch the browser) ->
   // authenticate (hands the token back to Discord's client so it
-  // knows who's using the activity). None of this touches this
-  // site's own Better Auth session -- that's still the separate,
-  // regular email/password login inside the embedded page. This step
-  // is what makes Discord treat the iframe as a legitimate,
-  // authorized Activity at all; skipping it leaves the panel blank
-  // in most Discord clients.
+  // knows who's using the activity). This is what makes Discord treat
+  // the iframe as a legitimate, authorized Activity at all -- skipping
+  // it leaves the panel blank in most Discord clients. "email" is
+  // requested alongside "identify" because signing into this site
+  // below requires one (Better Auth users need an email); Discord
+  // shows both as a single combined consent the first time.
   const { code } = await discordSdk.commands.authorize({
     client_id: clientId,
     response_type: "code",
     state: "",
     prompt: "none",
-    scope: ["identify"],
+    scope: ["identify", "email"],
   });
 
   const tokenRes = await fetch(`${import.meta.env.VITE_POST_API_URL}/discord/token`, {
@@ -67,4 +81,37 @@ export async function initDiscordActivity(): Promise<void> {
   const { access_token } = (await tokenRes.json()) as { access_token: string };
 
   await discordSdk.commands.authenticate({ access_token });
+
+  // Signs into THIS site as that Discord user (creating an account on
+  // first use) -- see auth.ts's `discord` social provider config for
+  // why this is safe despite skipping normal id_token verification.
+  // The response's `token` is a Better Auth bearer session; stored
+  // for discordAuthToken.ts's getters, which authClient.ts/api.ts/
+  // bookclubApi.ts all read on every subsequent request. Cookies
+  // aren't usable here (see discordAuthToken.ts), so this is the
+  // entire sign-in -- there's no separate step, no login form shown.
+  const signInRes = await fetch(`${import.meta.env.VITE_POST_API_URL}/api/auth/sign-in/social`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      provider: "discord",
+      idToken: { token: access_token, accessToken: access_token },
+    }),
+  });
+  if (!signInRes.ok) {
+    console.error("[discord-activity] site sign-in failed:", await signInRes.text());
+    return;
+  }
+  const { token } = (await signInRes.json()) as { token?: string };
+  if (!token) return;
+  setDiscordBearerToken(token);
+
+  // main.tsx fires this before the app even renders, so the app's
+  // FIRST session fetch already happened (and came back logged-out --
+  // there was no token yet). NavBar/ProtectedRoute etc. all read
+  // useSession(), a shared store that doesn't know anything changed
+  // until told to -- calling this client action re-fetches /get-session
+  // (now with the bearer token attached) AND updates that shared
+  // store, which is what actually re-renders them.
+  await authClient.getSession();
 }

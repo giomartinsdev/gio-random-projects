@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { Link } from "react-router";
 import type { Post } from "../lib/api.js";
+import { resolveImageUrl } from "../lib/discordActivity.js";
 
 function formatDate(iso: string | null) {
   if (!iso) return "";
@@ -23,7 +24,7 @@ export default function PostCard({ post, animationDelay }: { post: Post; animati
       {post.coverImageUrl && (
         <div className="h-40 overflow-hidden">
           <img
-            src={post.coverImageUrl}
+            src={resolveImageUrl(post.coverImageUrl)}
             alt=""
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />

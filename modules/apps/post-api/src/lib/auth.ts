@@ -4,13 +4,22 @@ import { bearer } from "better-auth/plugins";
 import type { Db } from "../db/index.js";
 import * as schema from "../db/schema.js";
 
-// Email+password today; Discord OAuth slots in later as another
-// provider entry here -- nothing else in this file (or the schema)
-// needs to change for that, by design. bearer plugin: this is a
-// headless API with non-browser consumers in mind (a future Discord
-// bot, scripts) -- Authorization: Bearer <token> instead of requiring
-// cookie jars everywhere a client talks to it.
-export function createAuth(db: Db, secret: string, baseURL?: string, trustedOrigins?: string[]) {
+// Email+password is the direct sign-up path; Discord below is
+// deliberately not a normal OAuth redirect flow -- it exists to let
+// the Discord Activity (front/src/lib/discordActivity.ts) turn an
+// already-Discord-verified user into a Better Auth session, using an
+// access_token that flow already obtained through a real server-side
+// code exchange (post-api's routes/discord.ts). bearer plugin: that
+// session travels as an Authorization header, not a cookie -- see
+// discordAuthToken.ts's own comment for why cookies can't cross the
+// discordsays.com proxy Activities load through.
+export function createAuth(
+  db: Db,
+  secret: string,
+  baseURL?: string,
+  trustedOrigins?: string[],
+  discord?: { clientId: string; clientSecret: string },
+) {
   return betterAuth({
     secret,
     baseURL,
@@ -22,6 +31,32 @@ export function createAuth(db: Db, secret: string, baseURL?: string, trustedOrig
     emailAndPassword: {
       enabled: true,
     },
+    socialProviders: discord
+      ? {
+          discord: {
+            clientId: discord.clientId,
+            clientSecret: discord.clientSecret,
+            // Implicit sign-up stays ON (the default) -- a first-time
+            // Discord user should get an account created automatically,
+            // not bounce off a missing-account error. That's the whole
+            // point ("já entre autorizado").
+            // The real verification already happened: routes/discord.ts
+            // exchanged the Activity's one-time code for this access_token
+            // through Discord's actual token endpoint, using our
+            // client_secret -- that round-trip IS the proof it's genuine.
+            // What follows (getUserInfo calling Discord's /users/@me with
+            // it as a Bearer token) is the actual security check: a forged
+            // or expired token fails there with a real 401 from Discord,
+            // not here. This override only exists because Better Auth's
+            // idToken sign-in path requires SOME verifier to be present
+            // before it'll even attempt the provider.getUserInfo call --
+            // Discord's bundled provider has no JWT/OIDC id_token config
+            // to check against (it doesn't request the openid scope), so
+            // without this the whole path 404s as ID_TOKEN_NOT_SUPPORTED.
+            verifyIdToken: async () => true,
+          },
+        }
+      : undefined,
     plugins: [bearer()],
     // front (a different registrable domain than post-api, not just a
     // subdomain -- e.g. localhost:5173 in dev) makes this a genuinely

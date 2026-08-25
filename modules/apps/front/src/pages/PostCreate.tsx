@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router";
 import { api } from "../lib/api.js";
 import Button from "../components/Button.js";
 import MarkdownContent from "../components/MarkdownContent.js";
+import { resolveImageUrl } from "../lib/discordActivity.js";
 
 type ToolbarAction = {
   label: string;
@@ -161,7 +162,7 @@ export default function PostCreate() {
           />
           {coverImageUrl && (
             <img
-              src={coverImageUrl}
+              src={resolveImageUrl(coverImageUrl)}
               alt="Prévia da capa"
               className="w-14 h-14 rounded-lg object-cover border border-buteco-amber/20 shrink-0"
               onError={(e) => (e.currentTarget.style.visibility = "hidden")}

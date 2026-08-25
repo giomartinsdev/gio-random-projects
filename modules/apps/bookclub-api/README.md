@@ -64,6 +64,16 @@ so a session cookie set by post-api's login also validates here. If
 post-api's cookie config ever changes, this file needs the matching
 change.
 
+A Discord Activity session (see post-api/README.md) never has a
+cookie at all -- it's a bearer token instead, which a WebSocket
+upgrade request and a plain `fetch` for PDF bytes can't attach as a
+header. `routes/rooms.ts`'s `sessionRequestHeaders` accepts the same
+token as a `?token=` query param on both `GET /rooms/:id/ws` and
+`GET /rooms/:id/pdf` as a fallback, folding it into a synthetic
+Authorization header before calling `getSession()`. front's
+`bookclubApi.ts` (`pdfUrl`/`wsUrl`) appends it automatically when a
+Discord bearer token is set; omitted entirely otherwise.
+
 ## Realtime protocol (`GET /rooms/:id/ws`)
 
 Client → server messages: `chat:send` (optionally carries

@@ -10,8 +10,24 @@ import { DomainApiError, NotFoundError, type DomainApiClient, type DomainRoom } 
 // Generous for a book chapter or a short book.
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
+// The Discord Activity bearer session (see front's discordAuthToken.ts)
+// can't reach either of these call sites through a normal Authorization
+// header: WebSocket's browser API has no way to set custom headers on
+// the upgrade request, and the PDF <iframe>/fetch-for-bytes path in
+// BookClubRoom.tsx is simplest as a plain URL. A `?token=` query param
+// is the standard fallback for both -- folded into an Authorization
+// header here so auth.api.getSession sees the same shape either way.
+export function sessionRequestHeaders(req: Request): Headers {
+  const headers = new Headers(req.headers);
+  if (!headers.has("authorization")) {
+    const token = new URL(req.url).searchParams.get("token");
+    if (token) headers.set("authorization", `Bearer ${token}`);
+  }
+  return headers;
+}
+
 async function requireUser(auth: Auth, c: { req: { raw: Request } }) {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  const session = await auth.api.getSession({ headers: sessionRequestHeaders(c.req.raw) });
   return session?.user ?? null;
 }
 

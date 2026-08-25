@@ -79,6 +79,33 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "502":
           description: Discord's own token endpoint rejected the exchange
+  /image-proxy:
+    get:
+      summary: >
+        Re-fetches an arbitrary image URL and streams it back. Exists
+        for the Discord Activity: a post's coverImageUrl/inline images
+        are whatever external host the author pasted, unreachable from
+        inside Discord's iframe sandbox without going through a
+        mapped domain first. Rejects loopback/private/link-local
+        hostnames and non-image responses.
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          description: Upstream fetch failed, redirected, returned non-2xx, wasn't an image, or exceeded the size limit
   /posts:
     get:
       summary: List published posts

@@ -1,3 +1,5 @@
+import { getDiscordBearerToken } from "./discordAuthToken.js";
+
 const BASE_URL = import.meta.env.VITE_POST_API_URL as string;
 
 export type Post = {
@@ -18,10 +20,15 @@ export type Post = {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const bearer = getDiscordBearerToken();
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
     credentials: "include",
-    headers: { "content-type": "application/json", ...init?.headers },
+    headers: {
+      "content-type": "application/json",
+      ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+      ...init?.headers,
+    },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));

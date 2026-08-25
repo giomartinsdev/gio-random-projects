@@ -27,7 +27,7 @@ const discordClientSecret = process.env.DISCORD_CLIENT_SECRET;
 const discord = discordClientId && discordClientSecret ? { clientId: discordClientId, clientSecret: discordClientSecret } : undefined;
 
 const { db } = createDb(databaseUrl);
-const auth = createAuth(db, authSecret, process.env.BETTER_AUTH_URL, frontendOrigins);
+const auth = createAuth(db, authSecret, process.env.BETTER_AUTH_URL, frontendOrigins, discord);
 const domainApi = createDomainApiClient(domainApiUrl, domainApiKey);
 const app = createApp(auth, domainApi, frontendOrigins, discord);
 

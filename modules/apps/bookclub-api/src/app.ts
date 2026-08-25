@@ -6,7 +6,7 @@ import type { Auth } from "./lib/auth.js";
 import type { Db } from "./db/index.js";
 import type { MinioClient } from "./lib/minioClient.js";
 import { NotFoundError, type DomainApiClient, type DomainMessage } from "./lib/domainApiClient.js";
-import { createRoomsRouter } from "./routes/rooms.js";
+import { createRoomsRouter, sessionRequestHeaders } from "./routes/rooms.js";
 import { createRateLimiter } from "./lib/rateLimiter.js";
 import { docsHtml, openApiYaml } from "./lib/openapi.js";
 import * as roomHub from "./ws/roomHub.js";
@@ -136,7 +136,7 @@ export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, minio:
         return { onOpen: (_evt, ws) => ws.close(1008, "room not found") };
       }
 
-      const session = await auth.api.getSession({ headers: c.req.raw.headers });
+      const session = await auth.api.getSession({ headers: sessionRequestHeaders(c.req.raw) });
       let room;
       if (session) {
         try {

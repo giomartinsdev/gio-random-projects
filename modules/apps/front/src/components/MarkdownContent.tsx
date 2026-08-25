@@ -1,5 +1,6 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { resolveImageUrl } from "../lib/discordActivity.js";
 
 function hostnameOf(href: string): string | null {
   try {
@@ -102,6 +103,13 @@ function LinkChip({
 }
 
 const components: Components = {
+  // Same reasoning as PostCard/PostView's cover image -- an inline
+  // markdown image is whatever external host the author pasted,
+  // unreachable from inside a Discord Activity's iframe sandbox
+  // without going through post-api's /image-proxy first.
+  img({ src, ...props }) {
+    return <img src={typeof src === "string" ? resolveImageUrl(src) : src} {...props} />;
+  },
   a({ href, children, ...props }) {
     if (!href) return <a {...props}>{children}</a>;
 
