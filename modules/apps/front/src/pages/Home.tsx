@@ -20,12 +20,32 @@ export default function Home() {
 
   return (
     <div>
-      <h1 className="font-heading font-bold text-4xl mb-1 animate-fade-in-up">
-        Posts <span className="text-gradient">recentes</span>
-      </h1>
-      <p className="text-buteco-cream/60 mb-10 animate-fade-in-up" style={{ animationDelay: "80ms" }}>
-        Artigos e cursos publicados pela comunidade
-      </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="font-heading font-bold text-4xl mb-1 animate-fade-in-up">
+            Posts <span className="text-gradient">recentes</span>
+          </h1>
+          <p className="text-buteco-cream/60 animate-fade-in-up" style={{ animationDelay: "80ms" }}>
+            Artigos e cursos publicados pela comunidade
+          </p>
+        </div>
+        <a
+          href={api.feedUrl}
+          target="_blank"
+          rel="noreferrer"
+          title="Assinar por RSS"
+          className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-heading font-semibold text-buteco-cream/60 border border-white/10 hover:border-buteco-amber/40 hover:text-buteco-amber transition-colors animate-fade-in-up shrink-0"
+          style={{ animationDelay: "80ms" }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none" />
+            <path d="M4 11a9 9 0 0 1 9 9" />
+            <path d="M4 4a16 16 0 0 1 16 16" />
+          </svg>
+          RSS
+        </a>
+      </div>
+      <div className="mb-10" />
 
       {error && <p className="text-red-400">{error}</p>}
       {posts === null && !error && <p className="text-buteco-cream/60">Carregando…</p>}

@@ -52,4 +52,5 @@ export const api = {
     }),
   deletePost: (id: string) =>
     request<{ command_id: string; status: string }>(`/posts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  feedUrl: `${BASE_URL}/feed.xml`,
 };

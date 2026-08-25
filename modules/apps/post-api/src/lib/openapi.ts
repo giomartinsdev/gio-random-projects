@@ -35,6 +35,16 @@ paths:
                   status:
                     type: string
                     example: ok
+  /feed.xml:
+    get:
+      summary: RSS 2.0 feed of the most recent published posts (last 50)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/rss+xml:
+              schema:
+                type: string
   /posts:
     get:
       summary: List published posts
