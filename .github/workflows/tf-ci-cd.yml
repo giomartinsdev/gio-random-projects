@@ -25,6 +25,9 @@ on:
       replace_vault_seed_group:
         description: "Optional: secrets.tf vault_item_groups key to force-rerun (e.g. domain_api_keys, after a lost concurrent write -- see incident notes on that local). The quoted null_resource.vault_seed[\"...\"] address is built from this, not typed directly -- GitHub's dispatch-input plumbing strips embedded quotes before Terraform ever sees them."
         required: false
+      replace_target:
+        description: "Optional: any other full Terraform resource address to force-replace (e.g. module.compute_services_vaultwarden_bridge.docker_container.vaultwarden_bridge, when the bridge's own in-memory secret cache goes stale and env vars alone don't force a recreate). Passed through as-is to -replace=."
+        required: false
 
 defaults:
   run:
@@ -113,11 +116,15 @@ jobs:
       - name: Plan
         env:
           REPLACE_GROUP: ${{ github.event.inputs.replace_vault_seed_group }}
+          REPLACE_TARGET: ${{ github.event.inputs.replace_target }}
         run: |
           REPLACE_ARGS=()
           if [ -n "$REPLACE_GROUP" ]; then
             REPLACE_ADDR="null_resource.vault_seed[\"${REPLACE_GROUP}\"]"
             REPLACE_ARGS+=("-replace=${REPLACE_ADDR}")
+          fi
+          if [ -n "$REPLACE_TARGET" ]; then
+            REPLACE_ARGS+=("-replace=${REPLACE_TARGET}")
           fi
           terraform plan -input=false -lock-timeout=300s -out=tfplan "${REPLACE_ARGS[@]}"
 
