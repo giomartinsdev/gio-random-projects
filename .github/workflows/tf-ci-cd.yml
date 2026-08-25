@@ -134,6 +134,17 @@ jobs:
           mv 'module.compute_vaultwarden.docker_volume.vaultwarden_data' 'module.compute_services_vaultwarden.docker_volume.vaultwarden_data'
           mv 'module.compute_vaultwarden_bridge[0].docker_container.vaultwarden_bridge' 'module.compute_services_vaultwarden_bridge[0].docker_container.vaultwarden_bridge'
           mv 'module.compute_registry' 'module.compute_services_registry'
+          mv 'module.compute_minio' 'module.storage_minio'
+          mv 'module.compute_front' 'module.compute_apps_front'
+          mv 'module.compute_monitoring' 'module.compute_services_monitoring'
+          mv 'module.compute_ninerouter' 'module.compute_services_ai_proxy'
+          # Genuinely orphaned, not a move: the first apply created a
+          # *second*, new-address mTLS cert successfully before erroring,
+          # so this old one is a real duplicate Cloudflare won't let
+          # Terraform delete while still referenced elsewhere. Drop
+          # tracking rather than fight the live "in use" 400 -- the new
+          # cert is already the one wired into the hostname association.
+          terraform state rm -lock-timeout=300s 'module.cloudflare.cloudflare_mtls_certificate.registry_ca' || echo "skip: already untracked"
 
       - name: Plan
         env:
