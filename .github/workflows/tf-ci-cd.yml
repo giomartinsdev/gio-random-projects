@@ -28,6 +28,9 @@ on:
       replace_target:
         description: "Optional: any other full Terraform resource address to force-replace (e.g. module.compute_services_vaultwarden_bridge.docker_container.vaultwarden_bridge, when the bridge's own in-memory secret cache goes stale and env vars alone don't force a recreate). Passed through as-is to -replace=."
         required: false
+      state_rm_target:
+        description: "Optional, use with care: a Terraform resource address to drop from state (terraform state rm) BEFORE planning -- the next apply then creates it fresh from scratch, for cases where -replace's destroy+recreate isn't enough (e.g. a null_resource.vault_seed[...] whose local-exec keeps editing a stale/duplicate Vaultwarden item by name; state rm + fresh create is a genuinely different upsert path than replace's destroy+recreate of the same tracked resource). Runs once, right before Plan."
+        required: false
 
 defaults:
   run:
@@ -112,6 +115,10 @@ jobs:
 
       - name: Validate
         run: terraform validate
+
+      - name: State rm (optional)
+        if: github.event.inputs.state_rm_target != ''
+        run: terraform state rm "${{ github.event.inputs.state_rm_target }}"
 
       - name: Plan
         env:
