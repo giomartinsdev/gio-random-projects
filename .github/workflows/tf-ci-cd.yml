@@ -28,8 +28,8 @@ on:
       replace_target:
         description: "Optional: any other full Terraform resource address to force-replace (e.g. module.compute_services_vaultwarden_bridge.docker_container.vaultwarden_bridge, when the bridge's own in-memory secret cache goes stale and env vars alone don't force a recreate). Passed through as-is to -replace=."
         required: false
-      state_rm_target:
-        description: "Optional, use with care: a Terraform resource address to drop from state (terraform state rm) BEFORE planning -- the next apply then creates it fresh from scratch, for cases where -replace's destroy+recreate isn't enough (e.g. a null_resource.vault_seed[...] whose local-exec keeps editing a stale/duplicate Vaultwarden item by name; state rm + fresh create is a genuinely different upsert path than replace's destroy+recreate of the same tracked resource). Runs once, right before Plan."
+      state_rm_vault_seed_group:
+        description: "Optional, use with care: same secrets.tf vault_item_groups key replace_vault_seed_group takes, but drops null_resource.vault_seed[...] from state entirely (terraform state rm) before planning, instead of -replace-ing it -- for when a stale/duplicate Vaultwarden item keeps getting upserted by name and destroy+recreate of the SAME tracked resource isn't enough. Just the bare key, e.g. domain_api_keys -- no quotes/brackets (same reason replace_vault_seed_group's own description gives)."
         required: false
 
 defaults:
@@ -117,8 +117,10 @@ jobs:
         run: terraform validate
 
       - name: State rm (optional)
-        if: github.event.inputs.state_rm_target != ''
-        run: terraform state rm "${{ github.event.inputs.state_rm_target }}"
+        if: github.event.inputs.state_rm_vault_seed_group != ''
+        env:
+          STATE_RM_GROUP: ${{ github.event.inputs.state_rm_vault_seed_group }}
+        run: terraform state rm "null_resource.vault_seed[\"${STATE_RM_GROUP}\"]"
 
       - name: Plan
         env:
