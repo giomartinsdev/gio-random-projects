@@ -13,7 +13,7 @@ type Participant = {
 };
 
 export type Stroke = { points: [number, number][]; color: string };
-export type TextAnnotation = { id: string; x: number; y: number; text: string; color: string };
+export type TextAnnotation = { id: string; x: number; y: number; text: string; color: string; fontSize: number };
 
 type RoomState = {
   participants: Map<WSContext, Participant>;
@@ -76,6 +76,34 @@ export function addText(roomId: string, text: TextAnnotation) {
   const room = getOrCreateRoom(roomId);
   room.texts.push(text);
   if (room.texts.length > 200) room.texts.shift();
+}
+
+// Move/resize both mutate the SAME annotation object callers already
+// hold a reference to via previous addText/broadcast calls, but we
+// look it up by id here rather than trust a client-supplied object --
+// the id is the only thing a "text:move"/"text:resize" message can
+// legitimately claim to be about.
+export function moveText(roomId: string, id: string, x: number, y: number): boolean {
+  const t = rooms.get(roomId)?.texts.find((t) => t.id === id);
+  if (!t) return false;
+  t.x = x;
+  t.y = y;
+  return true;
+}
+
+export function resizeText(roomId: string, id: string, fontSize: number): boolean {
+  const t = rooms.get(roomId)?.texts.find((t) => t.id === id);
+  if (!t) return false;
+  t.fontSize = fontSize;
+  return true;
+}
+
+export function removeText(roomId: string, id: string): boolean {
+  const room = rooms.get(roomId);
+  if (!room) return false;
+  const before = room.texts.length;
+  room.texts = room.texts.filter((t) => t.id !== id);
+  return room.texts.length !== before;
 }
 
 export function clearAnnotations(roomId: string) {

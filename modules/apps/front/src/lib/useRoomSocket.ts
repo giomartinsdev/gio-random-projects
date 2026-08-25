@@ -12,7 +12,7 @@ export type ChatMessage = {
 export type CursorStyle = "normal" | "laser";
 export type Cursor = { userId: string; userName: string; x: number; y: number; style: CursorStyle };
 export type Stroke = { points: [number, number][]; color: string };
-export type TextAnnotation = { id: string; x: number; y: number; text: string; color: string };
+export type TextAnnotation = { id: string; x: number; y: number; text: string; color: string; fontSize: number };
 export type Participant = { userId: string; userName: string };
 
 type RoomSocketState = {
@@ -118,6 +118,24 @@ export function useRoomSocket(roomId: string) {
           setState((s) => ({ ...s, texts: [...s.texts, msg as unknown as TextAnnotation] }));
           break;
 
+        case "text:move":
+          setState((s) => ({
+            ...s,
+            texts: s.texts.map((t) => (t.id === msg.id ? { ...t, x: msg.x as number, y: msg.y as number } : t)),
+          }));
+          break;
+
+        case "text:resize":
+          setState((s) => ({
+            ...s,
+            texts: s.texts.map((t) => (t.id === msg.id ? { ...t, fontSize: msg.fontSize as number } : t)),
+          }));
+          break;
+
+        case "text:remove":
+          setState((s) => ({ ...s, texts: s.texts.filter((t) => t.id !== msg.id) }));
+          break;
+
         case "draw:clear":
           setState((s) => ({ ...s, strokes: [], texts: [] }));
           break;
@@ -137,7 +155,11 @@ export function useRoomSocket(roomId: string) {
     setPage: (page: number) => send({ type: "page:set", page }),
     sendCursor: (x: number, y: number, style: CursorStyle = "normal") => send({ type: "cursor:move", x, y, style }),
     sendStroke: (points: [number, number][], color: string) => send({ type: "draw:stroke", points, color }),
-    sendText: (x: number, y: number, text: string, color: string) => send({ type: "text:add", x, y, text, color }),
+    sendText: (x: number, y: number, text: string, color: string, fontSize: number) =>
+      send({ type: "text:add", x, y, text, color, fontSize }),
+    moveText: (id: string, x: number, y: number) => send({ type: "text:move", id, x, y }),
+    resizeText: (id: string, fontSize: number) => send({ type: "text:resize", id, fontSize }),
+    removeText: (id: string) => send({ type: "text:remove", id }),
     clearDrawing: () => send({ type: "draw:clear" }),
   };
 }

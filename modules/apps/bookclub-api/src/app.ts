@@ -66,17 +66,11 @@ export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, minio:
           const payload = JSON.parse(data) as Record<string, unknown>;
           switch (eventName) {
             case "room.updated":
-              // room.updated fires for a page turn OR a pause/resume
-              // (see routes' updateRoom calls in the "page:set" and
-              // "room:close"/"room:reopen" WS handlers below) -- the
-              // event carries full current state either way, so one
-              // broadcast covers both. Clearing annotations here,
-              // driven by the SAME event, keeps every connected
+              // room.updated fires on every page turn (see the
+              // "page:set" WS handler below) -- clearing annotations
+              // here, driven by the SAME event, keeps every connected
               // client in lockstep instead of racing an immediate
-              // local clear against this async echo; on a pure
-              // pause/resume (page unchanged) this just means
-              // annotations reset too, which is fine -- pausing is a
-              // coarse, infrequent action, not a live drawing session.
+              // local clear against this async echo.
               roomHub.clearAnnotations(roomId);
               roomHub.broadcast(roomId, {
                 type: "page:changed",
@@ -190,23 +184,6 @@ export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, minio:
               break;
             }
 
-            // Pausing doesn't disconnect anyone or delete anything --
-            // it's a status flag participants' own UI reacts to (see
-            // pages/BookClubRoom.tsx's paused overlay). Reopening just
-            // flips the flag back; current_page was never touched, so
-            // "resuming where it left off" needs no extra logic here.
-            case "room:close": {
-              if (userId !== hostId) return;
-              await domainApi.updateRoom(roomId, { host_id: hostId, status: "paused" });
-              break;
-            }
-
-            case "room:reopen": {
-              if (userId !== hostId) return;
-              await domainApi.updateRoom(roomId, { host_id: hostId, status: "open" });
-              break;
-            }
-
             case "cursor:move": {
               const x = Number(msg.x);
               const y = Number(msg.y);
@@ -236,16 +213,53 @@ export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, minio:
               const x = Number(msg.x);
               const y = Number(msg.y);
               const text = typeof msg.text === "string" ? msg.text.trim().slice(0, 280) : "";
+              const fontSizeRaw = Number(msg.fontSize);
+              const fontSize = Number.isFinite(fontSizeRaw) ? Math.min(48, Math.max(10, fontSizeRaw)) : 16;
               if (!Number.isFinite(x) || !Number.isFinite(y) || !text) return;
               const annotation = {
                 id: crypto.randomUUID(),
                 x,
                 y,
                 text,
+                fontSize,
                 color: typeof msg.color === "string" ? msg.color : "#F5A623",
               };
               roomHub.addText(roomId, annotation);
               roomHub.broadcast(roomId, { type: "text:add", ...annotation });
+              break;
+            }
+
+            // Drag-to-move and a font-size stepper for one already-placed
+            // annotation -- the host-only counterpart to the plain
+            // "add and never touch again" flow above.
+            case "text:move": {
+              if (userId !== hostId) return;
+              const id = typeof msg.id === "string" ? msg.id : "";
+              const x = Number(msg.x);
+              const y = Number(msg.y);
+              if (!id || !Number.isFinite(x) || !Number.isFinite(y)) return;
+              if (!roomHub.moveText(roomId, id, x, y)) return;
+              roomHub.broadcast(roomId, { type: "text:move", id, x, y });
+              break;
+            }
+
+            case "text:resize": {
+              if (userId !== hostId) return;
+              const id = typeof msg.id === "string" ? msg.id : "";
+              const fontSizeRaw = Number(msg.fontSize);
+              if (!id || !Number.isFinite(fontSizeRaw)) return;
+              const fontSize = Math.min(48, Math.max(10, fontSizeRaw));
+              if (!roomHub.resizeText(roomId, id, fontSize)) return;
+              roomHub.broadcast(roomId, { type: "text:resize", id, fontSize });
+              break;
+            }
+
+            case "text:remove": {
+              if (userId !== hostId) return;
+              const id = typeof msg.id === "string" ? msg.id : "";
+              if (!id) return;
+              if (!roomHub.removeText(roomId, id)) return;
+              roomHub.broadcast(roomId, { type: "text:remove", id });
               break;
             }
 

@@ -1,10 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, Link } from "react-router";
+import { useParams, useNavigate, Link } from "react-router";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { bookclubApi, type Room } from "../lib/bookclubApi.js";
-import { useRoomSocket, type Stroke, type TextAnnotation } from "../lib/useRoomSocket.js";
+import { useRoomSocket, type Stroke } from "../lib/useRoomSocket.js";
+import {
+  IconSelect,
+  IconLaser,
+  IconPen,
+  IconText,
+  IconTrash,
+  IconMaximize,
+  IconMinimize,
+  IconBookmark,
+  IconQuote,
+  IconClose,
+  IconDrag,
+  IconEnd,
+} from "../components/RoomIcons.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
@@ -14,11 +28,16 @@ const MAX_PAGE_WIDTH = 800;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.5;
 const ZOOM_STEP = 0.25;
+const TEXT_FONT_MIN = 10;
+const TEXT_FONT_MAX = 48;
+const TEXT_FONT_DEFAULT = 16;
+const TEXT_FONT_STEP = 2;
 
 type Tool = "select" | "laser" | "pen" | "text";
 
 export default function BookClubRoom() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [room, setRoom] = useState<Room | null | undefined>(undefined);
   const [pdfData, setPdfData] = useState<ArrayBuffer | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -30,6 +49,12 @@ export default function BookClubRoom() {
   const [pendingTextAt, setPendingTextAt] = useState<[number, number] | null>(null);
   const [textDraft, setTextDraft] = useState("");
   const [pageRequestDraft, setPageRequestDraft] = useState("");
+  // Which placed annotation is being dragged right now, and its live
+  // (not-yet-committed) position -- kept purely local so the drag
+  // itself feels instant instead of waiting on a socket round-trip for
+  // every pointermove. text:move only goes out once, on release.
+  const [draggingText, setDraggingText] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [endingRoom, setEndingRoom] = useState(false);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const pageBoxRef = useRef<HTMLDivElement>(null);
@@ -40,6 +65,7 @@ export default function BookClubRoom() {
   const currentStrokeRef = useRef<[number, number][]>([]);
   const lastCursorSentRef = useRef(0);
   const textActionTakenRef = useRef(false);
+  const dragOffsetRef = useRef<[number, number]>([0, 0]);
 
   const socket = useRoomSocket(id ?? "");
   const isHost = Boolean(socket.you && socket.you.userId === socket.hostId);
@@ -94,7 +120,7 @@ export default function BookClubRoom() {
   const renderWidth = Math.round(baseWidth * zoom);
 
   const redraw = useCallback(
-    (strokes: Stroke[], texts: TextAnnotation[], cursors: typeof socket.cursors, live: [number, number][] | null) => {
+    (strokes: Stroke[], cursors: typeof socket.cursors, live: [number, number][] | null) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
@@ -116,17 +142,6 @@ export default function BookClubRoom() {
 
       for (const s of strokes) strokePath(s.points, s.color);
       if (live) strokePath(live, PEN_COLOR);
-
-      for (const t of texts) {
-        const x = t.x * width;
-        const y = t.y * height;
-        ctx.font = "600 16px 'Space Grotesk', sans-serif";
-        const metrics = ctx.measureText(t.text);
-        ctx.fillStyle = "rgba(42, 23, 15, 0.85)";
-        ctx.fillRect(x - 4, y - 18, metrics.width + 8, 24);
-        ctx.fillStyle = t.color;
-        ctx.fillText(t.text, x, y);
-      }
 
       for (const c of Object.values(cursors)) {
         if (c.userId === socket.you?.userId) continue;
@@ -153,8 +168,8 @@ export default function BookClubRoom() {
   );
 
   useEffect(() => {
-    redraw(socket.strokes, socket.texts, socket.cursors, null);
-  }, [socket.strokes, socket.texts, socket.cursors, redraw]);
+    redraw(socket.strokes, socket.cursors, null);
+  }, [socket.strokes, socket.cursors, redraw]);
 
   function syncCanvasSize() {
     const canvas = canvasRef.current;
@@ -162,7 +177,7 @@ export default function BookClubRoom() {
     if (!canvas || !box) return;
     canvas.width = box.clientWidth;
     canvas.height = box.clientHeight;
-    redraw(socket.strokes, socket.texts, socket.cursors, null);
+    redraw(socket.strokes, socket.cursors, null);
   }
 
   function pointFromEvent(e: React.PointerEvent | React.MouseEvent): [number, number] {
@@ -183,7 +198,7 @@ export default function BookClubRoom() {
 
     if (drawingRef.current) {
       currentStrokeRef.current.push([x, y]);
-      redraw(socket.strokes, socket.texts, socket.cursors, currentStrokeRef.current);
+      redraw(socket.strokes, socket.cursors, currentStrokeRef.current);
     }
   }
 
@@ -218,7 +233,7 @@ export default function BookClubRoom() {
     if (textActionTakenRef.current) return;
     textActionTakenRef.current = true;
     if (pendingTextAt && textDraft.trim()) {
-      socket.sendText(pendingTextAt[0], pendingTextAt[1], textDraft.trim(), PEN_COLOR);
+      socket.sendText(pendingTextAt[0], pendingTextAt[1], textDraft.trim(), PEN_COLOR, TEXT_FONT_DEFAULT);
     }
     setPendingTextAt(null);
     setTextDraft("");
@@ -229,6 +244,59 @@ export default function BookClubRoom() {
     textActionTakenRef.current = true;
     setPendingTextAt(null);
     setTextDraft("");
+  }
+
+  // Fractional (0..1) position within the page box -- the same
+  // coordinate space cursors/strokes/text already travel in (see
+  // useRoomSocket's own comment), computed against pageBoxRef instead
+  // of canvasRef since annotations render as their own layer, not
+  // through the canvas that the "select" tool intentionally makes
+  // click-through.
+  function textPointFromEvent(e: React.PointerEvent): [number, number] {
+    const box = pageBoxRef.current;
+    if (!box) return [0, 0];
+    const rect = box.getBoundingClientRect();
+    return [(e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height];
+  }
+
+  function handleTextPointerDown(e: React.PointerEvent, tId: string, tx: number, ty: number) {
+    if (!isHost) return;
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const [px, py] = textPointFromEvent(e);
+    dragOffsetRef.current = [tx - px, ty - py];
+    setDraggingText({ id: tId, x: tx, y: ty });
+  }
+
+  function handleTextPointerMove(e: React.PointerEvent) {
+    if (!draggingText) return;
+    const [px, py] = textPointFromEvent(e);
+    const x = Math.min(1, Math.max(0, px + dragOffsetRef.current[0]));
+    const y = Math.min(1, Math.max(0, py + dragOffsetRef.current[1]));
+    setDraggingText((d) => (d ? { ...d, x, y } : d));
+  }
+
+  function handleTextPointerUp() {
+    if (!draggingText) return;
+    socket.moveText(draggingText.id, draggingText.x, draggingText.y);
+    setDraggingText(null);
+  }
+
+  function resizeAnnotation(tId: string, currentSize: number, delta: number) {
+    const next = Math.min(TEXT_FONT_MAX, Math.max(TEXT_FONT_MIN, currentSize + delta));
+    if (next !== currentSize) socket.resizeText(tId, next);
+  }
+
+  async function endRoom() {
+    if (!id || endingRoom) return;
+    if (!confirm("Encerrar esta sala? Isso marca o livro como concluído e a sala deixa de existir para todo mundo.")) return;
+    setEndingRoom(true);
+    try {
+      await bookclubApi.deleteRoom(id);
+      navigate("/clube-do-livro");
+    } catch {
+      setEndingRoom(false);
+    }
   }
 
   function toggleFullscreen() {
@@ -299,7 +367,19 @@ export default function BookClubRoom() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3 glass-card px-4 py-2">
+          <div className="flex items-center gap-2">
+            {isHost && (
+              <button
+                onClick={endRoom}
+                disabled={endingRoom}
+                title="Encerrar a sala -- o livro terminou"
+                className="flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-heading font-semibold text-red-300/80 border border-red-400/30 hover:border-red-400/60 hover:text-red-300 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <IconEnd size={15} />
+                {endingRoom ? "Encerrando…" : "Encerrar sala"}
+              </button>
+            )}
+            <div className="flex items-center gap-3 glass-card px-4 py-2">
             <button
               disabled={!isHost || page <= 1}
               onClick={() => socket.setPage(page - 1)}
@@ -320,6 +400,7 @@ export default function BookClubRoom() {
             >
               próxima →
             </button>
+            </div>
           </div>
         </div>
 
@@ -353,10 +434,10 @@ export default function BookClubRoom() {
             <span className="w-px h-5 bg-white/10 mx-1" />
             <button
               onClick={toggleFullscreen}
-              className="w-8 h-8 rounded-lg text-buteco-cream/80 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-buteco-cream/80 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer"
               title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
             >
-              {isFullscreen ? "⤦" : "⛶"}
+              {isFullscreen ? <IconMinimize size={16} /> : <IconMaximize size={16} />}
             </button>
           </div>
 
@@ -364,30 +445,30 @@ export default function BookClubRoom() {
             <div className="flex items-center gap-1 glass-card p-1.5">
               {(
                 [
-                  ["select", "🖱️", "Selecionar / ler texto"],
-                  ["laser", "🔦", "Apontador (some sozinho)"],
-                  ["pen", "✏️", "Caneta"],
-                  ["text", "🔤", "Escrever texto"],
-                ] as [Tool, string, string][]
-              ).map(([t, icon, label]) => (
+                  ["select", IconSelect, "Selecionar / ler texto"],
+                  ["laser", IconLaser, "Apontador (some sozinho)"],
+                  ["pen", IconPen, "Caneta"],
+                  ["text", IconText, "Escrever texto"],
+                ] as [Tool, typeof IconSelect, string][]
+              ).map(([t, Icon, label]) => (
                 <button
                   key={t}
                   onClick={() => setTool(t)}
                   title={label}
-                  className={`w-9 h-9 rounded-lg text-sm transition-colors cursor-pointer ${
+                  className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
                     tool === t ? "bg-buteco-amber text-buteco-navy" : "text-buteco-cream/80 hover:bg-white/10"
                   }`}
                 >
-                  {icon}
+                  <Icon size={17} />
                 </button>
               ))}
               <span className="w-px h-5 bg-white/10 mx-1" />
               <button
                 onClick={() => socket.clearDrawing()}
                 title="Limpar anotações desta página"
-                className="w-9 h-9 rounded-lg text-sm text-buteco-cream/80 hover:bg-white/10 transition-colors cursor-pointer"
+                className="w-9 h-9 rounded-lg flex items-center justify-center text-buteco-cream/80 hover:bg-white/10 transition-colors cursor-pointer"
               >
-                🗑️
+                <IconTrash size={17} />
               </button>
             </div>
           )}
@@ -448,6 +529,66 @@ export default function BookClubRoom() {
                 }}
               />
             )}
+
+            {/* Real DOM elements, not canvas-drawn -- lets browser text
+                selection/copy work on annotations same as on the PDF's
+                own text layer, and lets the host drag/resize/delete
+                one annotation individually instead of only an
+                all-or-nothing clear. */}
+            {socket.texts.map((t) => {
+              const isDragging = draggingText?.id === t.id;
+              const x = isDragging ? draggingText.x : t.x;
+              const y = isDragging ? draggingText.y : t.y;
+              return (
+                <div
+                  key={t.id}
+                  className="absolute z-10 flex items-center gap-1"
+                  style={{ left: `${x * 100}%`, top: `${y * 100}%`, transform: "translateY(-100%)" }}
+                >
+                  <span
+                    onPointerDown={isHost ? (e) => handleTextPointerDown(e, t.id, t.x, t.y) : undefined}
+                    onPointerMove={isHost ? handleTextPointerMove : undefined}
+                    onPointerUp={isHost ? handleTextPointerUp : undefined}
+                    className="rounded px-1.5 py-0.5 font-heading font-semibold whitespace-nowrap"
+                    style={{
+                      backgroundColor: "rgba(42, 23, 15, 0.85)",
+                      color: t.color,
+                      fontSize: t.fontSize,
+                      cursor: isHost ? (isDragging ? "grabbing" : "grab") : "text",
+                      touchAction: isHost ? "none" : undefined,
+                    }}
+                  >
+                    {t.text}
+                  </span>
+                  {isHost && !isDragging && (
+                    <span className="flex items-center gap-0.5 rounded bg-buteco-brown-dark/90 border border-white/10 px-0.5">
+                      <IconDrag size={12} className="text-buteco-cream/30 mx-0.5" />
+                      <button
+                        onClick={() => resizeAnnotation(t.id, t.fontSize, -TEXT_FONT_STEP)}
+                        title="Diminuir texto"
+                        className="w-5 h-5 flex items-center justify-center text-buteco-cream/70 hover:text-buteco-amber cursor-pointer text-xs"
+                      >
+                        −
+                      </button>
+                      <button
+                        onClick={() => resizeAnnotation(t.id, t.fontSize, TEXT_FONT_STEP)}
+                        title="Aumentar texto"
+                        className="w-5 h-5 flex items-center justify-center text-buteco-cream/70 hover:text-buteco-amber cursor-pointer text-xs"
+                      >
+                        +
+                      </button>
+                      <button
+                        onClick={() => socket.removeText(t.id)}
+                        title="Remover esta anotação"
+                        className="w-5 h-5 flex items-center justify-center text-buteco-cream/70 hover:text-red-400 cursor-pointer"
+                      >
+                        <IconClose size={11} />
+                      </button>
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -486,7 +627,10 @@ export default function BookClubRoom() {
 
         {!isHost && (
           <form onSubmit={submitPageRequest} className="px-3 pt-3 border-t border-white/10 flex gap-2 items-center">
-            <span className="text-xs text-buteco-cream/50 shrink-0">📖 pedir página</span>
+            <span className="flex items-center gap-1 text-xs text-buteco-cream/50 shrink-0">
+              <IconBookmark size={13} />
+              pedir página
+            </span>
             <input
               type="number"
               min={1}
@@ -509,9 +653,9 @@ export default function BookClubRoom() {
             type="button"
             onClick={quoteCurrentPage}
             title="Citar a página atual"
-            className="px-2 rounded-lg text-buteco-cream/60 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+            className="px-2 rounded-lg flex items-center text-buteco-cream/60 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer shrink-0"
           >
-            📍
+            <IconQuote size={16} />
           </button>
           <input
             type="text"
