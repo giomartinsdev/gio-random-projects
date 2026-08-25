@@ -68,8 +68,9 @@ locals {
     {
       # 9router: OpenAI-compatible AI proxy with auto-fallback across
       # 40+ providers (Claude, GPT, Gemini, …). Dashboard at /dashboard,
-      # API at /v1. Protected by Google SSO Access (same as beszel/vault)
-      # as the outer auth layer; the dashboard has its own login inside.
+      # API at /v1. Excluded from Cloudflare Access (Google SSO) so CLI/
+      # terminal clients (OpenCode, Claude Code, etc.) can reach /v1 directly
+      # without browser redirects. Dashboard is protected by INITIAL_PASSWORD.
       # Port matches module.compute_ninerouter's container port (20128).
       hostname = "ai.giomartins.dev"
       service  = "http://localhost:20128"

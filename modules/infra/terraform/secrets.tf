@@ -235,13 +235,6 @@ locals {
         ACCESS_SVC_TOKEN_BESZEL_CLIENT_SECRET = module.cloudflare.protected_hosts_service_token_client_secrets["beszel.giomartins.dev"]
       }
     }
-    access_svc_token_ninerouter = {
-      trigger = module.cloudflare.protected_hosts_service_token_client_ids["ai.giomartins.dev"]
-      items = {
-        ACCESS_SVC_TOKEN_NINEROUTER_CLIENT_ID     = module.cloudflare.protected_hosts_service_token_client_ids["ai.giomartins.dev"]
-        ACCESS_SVC_TOKEN_NINEROUTER_CLIENT_SECRET = module.cloudflare.protected_hosts_service_token_client_secrets["ai.giomartins.dev"]
-      }
-    }
     access_svc_token_minio = {
       trigger = module.cloudflare.protected_hosts_service_token_client_ids["minio.giomartins.dev"]
       items = {

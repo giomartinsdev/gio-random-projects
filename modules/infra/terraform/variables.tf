@@ -46,6 +46,7 @@ variable "excluded_hostnames" {
     "post-api.giomartins.dev",      # own Better Auth — a browser SSO redirect would break API/bot clients, same reasoning as domain.giomartins.dev
     "bookclub-api.giomartins.dev",  # own Better Auth session check — same reasoning, plus a redirect would break the front's WebSocket upgrade
     "classroom-bdd.giomartins.dev", # meant to be publicly readable by anyone, not gated behind Google SSO
+    "ai.giomartins.dev",            # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
   ]
 }
 
