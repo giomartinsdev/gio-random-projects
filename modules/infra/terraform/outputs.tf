@@ -35,3 +35,16 @@ output "registry_client_key_pem" {
   value     = module.cloud_cloudflare.registry_client_key_pem
   sensitive = true
 }
+
+# For logging into Adminer (adminer.giomartins.dev) -- Server:
+# "postgres" (the container name), Username/Database:
+# postgres_user below (default "domain"), Password: postgres_password
+# below. Adminer never stores these; they're typed in fresh each visit.
+output "postgres_user" {
+  value = module.storage_postgres.postgres_user
+}
+
+output "postgres_password" {
+  value     = random_password.postgres.result
+  sensitive = true
+}
