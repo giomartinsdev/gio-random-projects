@@ -18,7 +18,6 @@ import (
 var (
 	ErrNotFound     = errors.New("sala não encontrada")
 	ErrWrongSecret  = errors.New("senha incorreta")
-	ErrHostTaken    = errors.New("essa sala já tem alguém compartilhando")
 	ErrTooManyRooms = errors.New("limite de salas atingido, tente de novo em alguns minutos")
 )
 
@@ -56,15 +55,14 @@ type Room struct {
 	ID        string
 	CreatedAt time.Time
 
-	salt      []byte
-	hash      []byte
-	hostToken string
+	salt []byte
+	hash []byte
 
-	mu       sync.Mutex
-	host     *Peer
-	viewers  map[string]*Peer
-	emptyAt  time.Time // zero while anyone is connected
-	lastSeen time.Time
+	mu        sync.Mutex
+	peers     map[string]*Peer
+	nextLabel int
+	emptyAt   time.Time // zero while anyone is connected
+	lastSeen  time.Time
 }
 
 type Registry struct {
@@ -77,36 +75,31 @@ func NewRegistry() *Registry {
 	return &Registry{rooms: make(map[string]*Room), now: time.Now}
 }
 
-// Create makes a room whose password is `password`. The returned
-// hostToken is the ONLY way to connect as the one who shares a screen
-// -- it goes to whoever created the room and nowhere else, so knowing
-// the password lets you watch but never take over the broadcast.
-func (r *Registry) Create(password string) (*Room, string, error) {
+// Create makes a room whose password is `password`. The password is
+// the only credential there is: everyone who has it is a full
+// participant who can both publish a stream and watch the others.
+func (r *Registry) Create(password string) (*Room, error) {
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	hash, err := scrypt.Key([]byte(password), salt, scryptN, scryptR, scryptP, scryptKeyLen)
 	if err != nil {
-		return nil, "", err
-	}
-	token, err := randomString(32)
-	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if len(r.rooms) >= maxRooms {
-		return nil, "", ErrTooManyRooms
+		return nil, ErrTooManyRooms
 	}
 
 	var id string
 	for {
 		candidate, err := randomCode(codeLength)
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
 		if _, taken := r.rooms[candidate]; !taken {
 			id = candidate
@@ -120,13 +113,12 @@ func (r *Registry) Create(password string) (*Room, string, error) {
 		CreatedAt: now,
 		salt:      salt,
 		hash:      hash,
-		hostToken: token,
-		viewers:   make(map[string]*Peer),
+		peers:     make(map[string]*Peer),
 		emptyAt:   now,
 		lastSeen:  now,
 	}
 	r.rooms[id] = room
-	return room, token, nil
+	return room, nil
 }
 
 func (r *Registry) Get(id string) (*Room, error) {
@@ -148,7 +140,7 @@ func (r *Registry) Sweep() {
 	defer r.mu.Unlock()
 	for id, room := range r.rooms {
 		room.mu.Lock()
-		empty := room.host == nil && len(room.viewers) == 0
+		empty := len(room.peers) == 0
 		expired := (empty && !room.emptyAt.IsZero() && now.Sub(room.emptyAt) > emptyRoomGrace) ||
 			now.Sub(room.CreatedAt) > maxRoomAge
 		room.mu.Unlock()
@@ -190,14 +182,10 @@ func (room *Room) CheckPassword(password string) bool {
 	return subtle.ConstantTimeCompare(got, room.hash) == 1
 }
 
-func (room *Room) CheckHostToken(token string) bool {
-	return subtle.ConstantTimeCompare([]byte(token), []byte(room.hostToken)) == 1
-}
-
-// RandomID is the same generator the host token uses, exported for
-// per-connection peer ids (see httpapi's WebSocket handler). Peer ids
-// are only meaningful inside one room, but they're unguessable anyway
-// so nobody can address a peer they haven't been told about.
+// RandomID generates per-connection peer ids (see httpapi's WebSocket
+// handler). Peer ids are only meaningful inside one room, but they're
+// unguessable anyway so nobody can address a peer they haven't been
+// told about.
 func RandomID(n int) (string, error) {
 	return randomString(n)
 }

@@ -2,30 +2,42 @@ package rooms
 
 import (
 	"encoding/json"
+	"strconv"
 	"time"
 )
 
-// Peer is one open WebSocket in a room. The server never looks inside
-// the WebRTC payloads it moves between peers -- it only knows who is
-// the host, who the viewers are, and how to hand a message from one to
-// another.
+// Peer is one open WebSocket in a room. Everyone in a room is the same
+// kind of participant: anyone may publish a stream at any time, and
+// everyone receives whatever the others are publishing. There is no
+// host.
 type Peer struct {
 	ID   string
-	Role string // "host" or "viewer"
+	Name string
 
-	// Buffered so a slow reader can't block the sender. Overflowing it
-	// means that peer is too far behind to keep up, and it gets dropped
-	// rather than stalling the room -- see Send.
+	// Buffered so a slow reader can't block whoever is sending. Filling
+	// it means that peer is too far behind to keep up, and its messages
+	// get dropped rather than stalling the room -- see Send.
 	send   chan []byte
 	closed chan struct{}
+
+	// Guarded by the owning Room's mutex.
+	publishing bool
+}
+
+// PeerInfo is the public view of a peer: what everyone else is told
+// about it.
+type PeerInfo struct {
+	ID         string `json:"peerId"`
+	Name       string `json:"name"`
+	Publishing bool   `json:"publishing"`
 }
 
 const sendBuffer = 32
 
-func NewPeer(id, role string) *Peer {
+func NewPeer(id, name string) *Peer {
 	return &Peer{
 		ID:     id,
-		Role:   role,
+		Name:   name,
 		send:   make(chan []byte, sendBuffer),
 		closed: make(chan struct{}),
 	}
@@ -35,9 +47,9 @@ func NewPeer(id, role string) *Peer {
 func (p *Peer) Outgoing() <-chan []byte { return p.send }
 
 // Send queues a message, dropping it if this peer's buffer is full.
-// Losing a signalling message is survivable (the peer connection
-// simply fails and the viewer can reload); blocking the whole room on
-// one stuck client is not.
+// Losing a signalling message is survivable -- that one peer connection
+// fails and can be retried -- while blocking the room on one stuck
+// client is not.
 func (p *Peer) Send(v any) {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -50,8 +62,8 @@ func (p *Peer) Send(v any) {
 	}
 }
 
-// Close is safe to call more than once -- both the read loop ending
-// and an explicit room teardown can reach it.
+// Close is safe to call more than once -- both the read loop ending and
+// an explicit teardown can reach it.
 func (p *Peer) Close() {
 	select {
 	case <-p.closed:
@@ -64,119 +76,129 @@ func (p *Peer) Close() {
 
 func (p *Peer) Done() <-chan struct{} { return p.closed }
 
-// JoinAsHost claims the single host slot. A room has exactly one
-// screen being shared, so a second host is refused rather than
-// silently replacing the first.
-func (room *Room) JoinAsHost(p *Peer) error {
+// Join adds a peer and returns everyone already in the room, so the
+// newcomer immediately knows who is here and who is currently
+// publishing (and can therefore expect an offer from them).
+func (room *Room) Join(p *Peer) []PeerInfo {
 	room.mu.Lock()
-	if room.host != nil {
-		room.mu.Unlock()
-		return ErrHostTaken
-	}
-	room.host = p
+	existing := room.peerInfosLocked()
+	room.peers[p.ID] = p
 	room.emptyAt = time.Time{}
 	room.lastSeen = time.Now()
-	viewers := room.viewerList()
 	room.mu.Unlock()
 
-	// The host needs to know who is already waiting so it can offer to
-	// each of them immediately.
-	for _, v := range viewers {
-		p.Send(map[string]any{"type": "viewer:join", "peerId": v.ID})
-	}
-	room.broadcastToViewers(map[string]any{"type": "host:online"})
-	return nil
+	room.Broadcast(map[string]any{"type": "peer:join", "peerId": p.ID, "name": p.Name}, p.ID)
+	return existing
 }
 
-func (room *Room) JoinAsViewer(p *Peer) {
-	room.mu.Lock()
-	room.viewers[p.ID] = p
-	room.emptyAt = time.Time{}
-	room.lastSeen = time.Now()
-	host := room.host
-	room.mu.Unlock()
-
-	if host != nil {
-		host.Send(map[string]any{"type": "viewer:join", "peerId": p.ID})
-	}
-}
-
-// Leave removes a peer and tells whoever cares. When the host leaves,
-// viewers are told explicitly instead of being left staring at a
-// frozen last frame.
 func (room *Room) Leave(p *Peer) {
 	room.mu.Lock()
-	var hostLeft bool
-	if room.host == p {
-		room.host = nil
-		hostLeft = true
-	} else {
-		delete(room.viewers, p.ID)
-	}
-	host := room.host
-	if room.host == nil && len(room.viewers) == 0 {
+	delete(room.peers, p.ID)
+	if len(room.peers) == 0 {
 		room.emptyAt = time.Now()
 	}
 	room.lastSeen = time.Now()
 	room.mu.Unlock()
 
-	if hostLeft {
-		room.broadcastToViewers(map[string]any{"type": "host:offline"})
-		return
-	}
-	if host != nil {
-		host.Send(map[string]any{"type": "viewer:leave", "peerId": p.ID})
-	}
+	// Everyone else tears down both directions of their connection with
+	// this peer -- see the client's useRoom.
+	room.Broadcast(map[string]any{"type": "peer:leave", "peerId": p.ID}, p.ID)
 }
 
-// Relay hands one peer's signalling payload to exactly one other peer.
-// Viewers may only ever talk to the host, and the host only to a
-// viewer that's actually in this room -- so a viewer can't reach
-// another viewer, and `from` is always the server's own idea of who
-// sent it rather than anything the client claimed.
-func (room *Room) Relay(from *Peer, to string, payload json.RawMessage) {
+// SetPublishing records that a peer started or stopped sharing and
+// tells everyone else. Publishing is announced rather than inferred so
+// a viewer knows to expect an offer (or to drop a tile) without
+// waiting on WebRTC state.
+func (room *Room) SetPublishing(p *Peer, publishing bool) {
 	room.mu.Lock()
-	var target *Peer
-	if from.Role == "host" {
-		target = room.viewers[to]
-	} else if room.host != nil && room.host.ID == to {
-		target = room.host
+	if peer, ok := room.peers[p.ID]; ok {
+		peer.publishing = publishing
 	}
 	room.lastSeen = time.Now()
 	room.mu.Unlock()
 
-	if target == nil {
+	event := "publish:stop"
+	if publishing {
+		event = "publish:start"
+	}
+	room.Broadcast(map[string]any{"type": event, "peerId": p.ID}, p.ID)
+}
+
+// Relay hands one peer's signalling payload to another peer in the same
+// room. With everyone able to publish, any pair may legitimately need
+// to talk -- so the check is simply "is the target in this room", and
+// `from` is always the server's own idea of who sent it rather than
+// anything the client claimed.
+func (room *Room) Relay(from *Peer, to string, payload json.RawMessage) {
+	room.mu.Lock()
+	target := room.peers[to]
+	room.lastSeen = time.Now()
+	room.mu.Unlock()
+
+	if target == nil || target.ID == from.ID {
 		return
 	}
 	target.Send(map[string]any{"type": "signal", "from": from.ID, "payload": payload})
 }
 
-func (room *Room) HasHost() bool {
+// Broadcast sends to everyone except excludeID (pass "" to include
+// everyone).
+func (room *Room) Broadcast(v any, excludeID string) {
 	room.mu.Lock()
-	defer room.mu.Unlock()
-	return room.host != nil
-}
-
-func (room *Room) ViewerCount() int {
-	room.mu.Lock()
-	defer room.mu.Unlock()
-	return len(room.viewers)
-}
-
-func (room *Room) broadcastToViewers(v any) {
-	room.mu.Lock()
-	viewers := room.viewerList()
+	targets := make([]*Peer, 0, len(room.peers))
+	for id, p := range room.peers {
+		if id == excludeID {
+			continue
+		}
+		targets = append(targets, p)
+	}
 	room.mu.Unlock()
-	for _, p := range viewers {
+
+	for _, p := range targets {
 		p.Send(v)
 	}
 }
 
+func (room *Room) PeerInfos() []PeerInfo {
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	return room.peerInfosLocked()
+}
+
+func (room *Room) PeerCount() int {
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	return len(room.peers)
+}
+
+func (room *Room) PublisherCount() int {
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	n := 0
+	for _, p := range room.peers {
+		if p.publishing {
+			n++
+		}
+	}
+	return n
+}
+
+// NextName hands out "Pessoa 1", "Pessoa 2", … in join order. Nobody
+// signs in, but a grid of streams is unreadable without some label to
+// tell the tiles apart. Numbers keep climbing rather than being reused,
+// so two people who join and leave don't end up sharing a name.
+func (room *Room) NextName() string {
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	room.nextLabel++
+	return "Pessoa " + strconv.Itoa(room.nextLabel)
+}
+
 // Caller must hold room.mu.
-func (room *Room) viewerList() []*Peer {
-	out := make([]*Peer, 0, len(room.viewers))
-	for _, p := range room.viewers {
-		out = append(out, p)
+func (room *Room) peerInfosLocked() []PeerInfo {
+	out := make([]PeerInfo, 0, len(room.peers))
+	for _, p := range room.peers {
+		out = append(out, PeerInfo{ID: p.ID, Name: p.Name, Publishing: p.publishing})
 	}
 	return out
 }

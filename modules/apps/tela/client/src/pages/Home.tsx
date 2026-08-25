@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { MonitorUp, LogIn, Loader2 } from "lucide-react";
-import { api, rememberHostToken } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,11 +24,10 @@ export default function Home() {
     setError(null);
     setCreating(true);
     try {
-      const { roomId, hostToken } = await api.createRoom(createPassword);
-      // Kept out of the URL on purpose -- the link is meant to be
-      // shared, and anyone holding this token could take over the share.
-      rememberHostToken(roomId, hostToken);
-      navigate(`/r/${roomId}`);
+      const { roomId } = await api.createRoom(createPassword);
+      // Same as joining: the password is the only credential, and it
+      // travels in navigation state rather than the URL.
+      navigate(`/r/${roomId}`, { state: { password: createPassword } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "não foi possível criar a sala");
       setCreating(false);
@@ -58,14 +57,14 @@ export default function Home() {
         <div className="mb-8 text-center">
           <h1 className="text-4xl font-bold tracking-tight">tela</h1>
           <p className="mt-2 text-muted-foreground">
-            Compartilhe sua tela por um link e uma senha. Sem cadastro.
+            Uma sala, várias telas. Todo mundo pode compartilhar. Sem cadastro.
           </p>
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle className="text-xl">Começar</CardTitle>
-            <CardDescription>Crie uma sala para compartilhar, ou entre numa que te passaram.</CardDescription>
+            <CardDescription>Crie uma sala, ou entre numa que te passaram.</CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs
@@ -73,8 +72,8 @@ export default function Home() {
               onValueChange={() => setError(null)}
             >
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="create">Compartilhar</TabsTrigger>
-                <TabsTrigger value="join">Assistir</TabsTrigger>
+                <TabsTrigger value="create">Criar sala</TabsTrigger>
+                <TabsTrigger value="join">Entrar</TabsTrigger>
               </TabsList>
 
               <TabsContent value="create">
@@ -92,7 +91,7 @@ export default function Home() {
                       minLength={4}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Quem quiser assistir vai precisar dela junto com o código da sala.
+                      Quem entrar vai precisar dela junto com o código da sala.
                     </p>
                   </div>
                   <Button type="submit" className="w-full" disabled={creating}>

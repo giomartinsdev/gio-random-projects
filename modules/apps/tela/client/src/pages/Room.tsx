@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { Check, Copy, Eye, Loader2, MonitorUp, Play, ScreenShareOff, Video } from "lucide-react";
-import { api, readHostToken } from "@/lib/api";
-import { canShareCamera, canShareScreen, useScreenShare } from "@/lib/useScreenShare";
+import { Check, Copy, Loader2, MonitorUp, Play, ScreenShareOff, Users, Video, X } from "lucide-react";
+import { api } from "@/lib/api";
+import { canShareCamera, canShareScreen, useRoom } from "@/lib/useRoom";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,17 +15,15 @@ export default function Room() {
   const roomId = (id ?? "").toUpperCase();
   const location = useLocation();
 
-  const hostToken = readHostToken(roomId);
   // Passed through navigation state by the join form so the password
   // never lands in the URL. Someone opening a shared link directly has
-  // no state, and gets the password prompt below instead.
+  // no state and gets the prompt below instead.
   const [password, setPassword] = useState<string | null>(
     (location.state as { password?: string } | null)?.password ?? null,
   );
 
-  if (hostToken) return <HostRoom roomId={roomId} token={hostToken} />;
-  if (password) return <ViewerRoom roomId={roomId} password={password} />;
-  return <PasswordPrompt roomId={roomId} onUnlocked={setPassword} />;
+  if (!password) return <PasswordPrompt roomId={roomId} onUnlocked={setPassword} />;
+  return <LiveRoom roomId={roomId} password={password} />;
 }
 
 function PasswordPrompt({ roomId, onUnlocked }: { roomId: string; onUnlocked: (p: string) => void }) {
@@ -52,7 +50,7 @@ function PasswordPrompt({ roomId, onUnlocked }: { roomId: string; onUnlocked: (p
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-xl">Sala {roomId}</CardTitle>
-          <CardDescription>Digite a senha para assistir.</CardDescription>
+          <CardDescription>Digite a senha para entrar.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">
@@ -84,201 +82,254 @@ function PasswordPrompt({ roomId, onUnlocked }: { roomId: string; onUnlocked: (p
   );
 }
 
-function HostRoom({ roomId, token }: { roomId: string; token: string }) {
-  const share = useScreenShare({ role: "host", roomId, token });
-  const videoRef = useRef<HTMLVideoElement>(null);
-  useWakeLock(share.isSharing);
+type Tile = { peerId: string; name: string; stream: MediaStream | null; isYou: boolean };
 
-  useEffect(() => {
-    if (videoRef.current) videoRef.current.srcObject = share.localStream;
-  }, [share.localStream]);
+function LiveRoom({ roomId, password }: { roomId: string; password: string }) {
+  const room = useRoom(roomId, password);
+  const [selected, setSelected] = useState<string | null>(null);
 
-  if (share.status === "host-taken") {
-    return (
-      <div className="flex min-h-dvh items-center justify-center px-4">
-        <Alert variant="destructive" className="max-w-md">
-          <AlertDescription>{share.errorMessage ?? "Essa sala já tem alguém compartilhando."}</AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-
-  return (
-    <RoomLayout
-      roomId={roomId}
-      badge={
-        <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-          <Eye className="size-4" />
-          <span className="tabular-nums">{share.viewerCount}</span>
-          <span className="hidden sm:inline">
-            {share.viewerCount === 1 ? "pessoa assistindo" : "pessoas assistindo"}
-          </span>
-        </span>
-      }
-      actions={
-        share.isSharing ? (
-          <Button variant="destructive" onClick={share.stopSharing} className="flex-1 sm:flex-none">
-            <ScreenShareOff />
-            Parar
-          </Button>
-        ) : (
-          <>
-            {canShareScreen && (
-              <Button onClick={() => share.startSharing("screen")} className="flex-1 sm:flex-none">
-                <MonitorUp />
-                Compartilhar tela
-              </Button>
-            )}
-            {canShareCamera && (
-              <Button
-                variant={canShareScreen ? "secondary" : "default"}
-                onClick={() => share.startSharing("camera")}
-                className="flex-1 sm:flex-none"
-              >
-                <Video />
-                Câmera
-              </Button>
-            )}
-          </>
-        )
-      }
-    >
-      {share.isSharing ? (
-        <video ref={videoRef} autoPlay playsInline muted className="w-full flex-1 min-h-0 object-contain" />
-      ) : (
-        <Empty>
-          {canShareScreen ? (
-            <p>Escolha compartilhar sua tela ou sua câmera.</p>
-          ) : (
-            <>
-              <p>Compartilhe sua câmera para começar.</p>
-              {/* Not something to work around: no mobile browser
-                  implements getDisplayMedia, so this is worth saying
-                  plainly rather than leaving a button that can only fail. */}
-              <p className="mt-2 max-w-xs text-sm">
-                Compartilhar a tela do celular não é possível pelo navegador — para isso, abra esta sala num
-                computador.
-              </p>
-            </>
-          )}
-          <p className="mt-4 text-sm">
-            Passe o código <Code>{roomId}</Code> e a senha para quem vai assistir.
-          </p>
-        </Empty>
-      )}
-
-      {share.errorMessage && (
-        <div className="absolute inset-x-4 bottom-4">
-          <Alert variant="destructive">
-            <AlertDescription className="font-mono text-xs">{share.errorMessage}</AlertDescription>
-          </Alert>
-        </div>
-      )}
-    </RoomLayout>
-  );
-}
-
-function ViewerRoom({ roomId, password }: { roomId: string; password: string }) {
-  const share = useScreenShare({ role: "viewer", roomId, password });
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [needsTap, setNeedsTap] = useState(false);
-  useWakeLock(share.remoteStream !== null);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.srcObject = share.remoteStream;
-    if (!share.remoteStream) {
-      setNeedsTap(false);
-      return;
+  // Everyone currently publishing, me included. A tile can exist before
+  // its stream arrives (the peer announced publishing but WebRTC is
+  // still negotiating), which is why stream is nullable.
+  const tiles = useMemo<Tile[]>(() => {
+    const list: Tile[] = [];
+    if (room.localStream && room.you) {
+      list.push({ peerId: room.you.peerId, name: "Você", stream: room.localStream, isYou: true });
     }
-    // Phones refuse to autoplay anything carrying sound. Rather than
-    // muting the stream outright (and silently losing whatever audio the
-    // host is sharing), try to play and fall back to asking for the one
-    // tap the browser is waiting for.
-    video.play().then(
-      () => setNeedsTap(false),
-      () => setNeedsTap(true),
-    );
-  }, [share.remoteStream]);
+    for (const peer of room.peers) {
+      if (!peer.publishing) continue;
+      list.push({
+        peerId: peer.peerId,
+        name: peer.name,
+        stream: room.remoteStreams[peer.peerId] ?? null,
+        isYou: false,
+      });
+    }
+    return list;
+  }, [room.localStream, room.you, room.peers, room.remoteStreams]);
 
-  function playNow() {
-    const video = videoRef.current;
-    if (!video) return;
-    video.play().then(
-      () => setNeedsTap(false),
-      () => {
-        // Still blocked -- muting always satisfies the autoplay policy,
-        // so at least the picture starts.
-        video.muted = true;
-        void video.play();
-        setNeedsTap(false);
-      },
-    );
-  }
+  useWakeLock(tiles.length > 0);
+
+  // A selected tile that stops publishing would otherwise leave a
+  // fullscreen view of nothing.
+  useEffect(() => {
+    if (selected && !tiles.some((t) => t.peerId === selected)) setSelected(null);
+  }, [selected, tiles]);
+
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelected(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected]);
+
+  const selectedTile = tiles.find((t) => t.peerId === selected) ?? null;
+  const peopleCount = room.peers.length + 1;
 
   return (
-    <RoomLayout
-      roomId={roomId}
-      badge={
-        <span className="text-sm text-muted-foreground">
-          {share.status === "connected" ? "assistindo" : "conectando…"}
-        </span>
-      }
-    >
-      {share.remoteStream ? (
-        <>
-          <video ref={videoRef} autoPlay playsInline className="w-full flex-1 min-h-0 object-contain" />
-          {needsTap && (
-            <button
-              onClick={playNow}
-              className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70"
-            >
-              <Play className="size-12" />
-              <span className="text-lg font-medium">Toque para assistir</span>
-            </button>
-          )}
-        </>
-      ) : (
-        <Empty>
-          {share.hostOnline ? (
-            <p>Aguardando a pessoa escolher o que compartilhar…</p>
-          ) : (
-            <p>Ninguém está compartilhando nessa sala ainda.</p>
-          )}
-        </Empty>
-      )}
-    </RoomLayout>
-  );
-}
-
-function RoomLayout({
-  roomId,
-  badge,
-  actions,
-  children,
-}: {
-  roomId: string;
-  badge?: React.ReactNode;
-  actions?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    // dvh, not vh: on mobile the browser's own chrome slides in and out,
-    // and vh is measured against the tallest state -- a vh-sized page is
-    // permanently a little taller than what's actually visible.
     <div className="flex min-h-dvh flex-col">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2.5 sm:px-4 sm:py-3">
         <Link to="/" className="text-lg font-bold tracking-tight">
           tela
         </Link>
         <CopyableCode code={roomId} />
-        {badge}
+        <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+          <Users className="size-4" />
+          <span className="tabular-nums">{peopleCount}</span>
+          <span className="hidden sm:inline">{peopleCount === 1 ? "pessoa" : "pessoas"}</span>
+        </span>
+        {room.status !== "connected" && (
+          <span className="text-sm text-muted-foreground">
+            {room.status === "closed" ? "desconectado" : "conectando…"}
+          </span>
+        )}
+
         {/* Full width on a phone (the buttons split the row), pushed to
-            the right once there's room for everything on one line. */}
-        {actions && <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">{actions}</div>}
+            the right once everything fits on one line. */}
+        <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">
+          {room.isSharing ? (
+            <Button variant="destructive" onClick={room.stopSharing} className="flex-1 sm:flex-none">
+              <ScreenShareOff />
+              Parar
+            </Button>
+          ) : (
+            <>
+              {canShareScreen && (
+                <Button onClick={() => room.startSharing("screen")} className="flex-1 sm:flex-none">
+                  <MonitorUp />
+                  Compartilhar tela
+                </Button>
+              )}
+              {canShareCamera && (
+                <Button
+                  variant={canShareScreen ? "secondary" : "default"}
+                  onClick={() => room.startSharing("camera")}
+                  className="flex-1 sm:flex-none"
+                >
+                  <Video />
+                  Câmera
+                </Button>
+              )}
+            </>
+          )}
+        </div>
       </header>
-      <main className="relative flex flex-1 bg-black">{children}</main>
+
+      <main className="relative flex flex-1 bg-black">
+        {selectedTile ? (
+          <FullscreenTile tile={selectedTile} onClose={() => setSelected(null)} />
+        ) : tiles.length === 0 ? (
+          <Empty roomId={roomId} />
+        ) : (
+          <Grid tiles={tiles} onSelect={setSelected} />
+        )}
+
+        {room.errorMessage && (
+          <div className="absolute inset-x-4 bottom-4">
+            <Alert variant="destructive">
+              <AlertDescription className="font-mono text-xs">{room.errorMessage}</AlertDescription>
+            </Alert>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function Grid({ tiles, onSelect }: { tiles: Tile[]; onSelect: (peerId: string) => void }) {
+  return (
+    <div
+      className={
+        // One column on a phone; two or three once there's width for
+        // them, but never more columns than there are streams.
+        "grid flex-1 auto-rows-fr gap-2 p-2 sm:gap-3 sm:p-3 " +
+        (tiles.length === 1 ? "grid-cols-1" : tiles.length <= 4 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3")
+      }
+    >
+      {tiles.map((tile) => (
+        <button
+          key={tile.peerId}
+          onClick={() => onSelect(tile.peerId)}
+          className="group relative min-h-0 overflow-hidden rounded-lg border bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <TileVideo tile={tile} />
+          <span className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 text-left text-sm">
+            <span className="truncate font-medium">{tile.name}</span>
+            <span className="shrink-0 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+              ver em tela cheia
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function FullscreenTile({ tile, onClose }: { tile: Tile; onClose: () => void }) {
+  return (
+    <div className="absolute inset-0 flex flex-col bg-black">
+      <TileVideo tile={tile} className="flex-1" />
+      <div className="absolute left-3 top-3 rounded-md bg-black/70 px-3 py-1.5 text-sm font-medium">
+        {tile.name}
+      </div>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={onClose}
+        className="absolute right-3 top-3"
+        aria-label="Voltar para o grid"
+      >
+        <X className="size-4" />
+        Voltar
+      </Button>
+    </div>
+  );
+}
+
+function TileVideo({ tile, className = "" }: { tile: Tile; className?: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [needsTap, setNeedsTap] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.srcObject = tile.stream;
+    if (!tile.stream) {
+      setNeedsTap(false);
+      return;
+    }
+    // Phones refuse to autoplay anything carrying sound. Rather than
+    // muting other people's streams outright (and silently dropping
+    // their audio), try to play and fall back to asking for the one tap
+    // the browser is waiting for. My own tile is always muted -- playing
+    // my own microphone back at me would echo.
+    video.play().then(
+      () => setNeedsTap(false),
+      () => setNeedsTap(true),
+    );
+  }, [tile.stream]);
+
+  if (!tile.stream) {
+    return (
+      <div className={`flex h-full w-full items-center justify-center text-sm text-muted-foreground ${className}`}>
+        conectando…
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted={tile.isYou}
+        className={`h-full w-full object-contain ${className}`}
+      />
+      {needsTap && (
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            const video = videoRef.current;
+            if (!video) return;
+            video.play().then(
+              () => setNeedsTap(false),
+              () => {
+                // Still blocked -- muting always satisfies the autoplay
+                // policy, so at least the picture starts.
+                video.muted = true;
+                void video.play();
+                setNeedsTap(false);
+              },
+            );
+          }}
+          className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70"
+        >
+          <Play className="size-10" />
+          <span className="text-sm font-medium">Toque para assistir</span>
+        </span>
+      )}
+    </>
+  );
+}
+
+function Empty({ roomId }: { roomId: string }) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-muted-foreground">
+      <p>Ninguém está compartilhando ainda.</p>
+      {canShareScreen ? (
+        <p className="mt-2 text-sm">Qualquer pessoa na sala pode começar — inclusive você.</p>
+      ) : (
+        <p className="mt-2 max-w-xs text-sm">
+          Você pode compartilhar sua câmera. Compartilhar a tela do celular não é possível pelo navegador — para
+          isso, abra esta sala num computador.
+        </p>
+      )}
+      <p className="mt-4 text-sm">
+        Passe o código <Code>{roomId}</Code> e a senha para quem for entrar.
+      </p>
     </div>
   );
 }
@@ -307,14 +358,6 @@ function CopyableCode({ code }: { code: string }) {
       {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
       {code}
     </Button>
-  );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-muted-foreground">
-      {children}
-    </div>
   );
 }
 

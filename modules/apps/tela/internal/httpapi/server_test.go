@@ -25,7 +25,7 @@ func newServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func createRoom(t *testing.T, srv *httptest.Server, password string) (roomID, hostToken string) {
+func createRoom(t *testing.T, srv *httptest.Server, password string) string {
 	t.Helper()
 	res, err := srv.Client().Post(srv.URL+"/api/rooms", "application/json",
 		strings.NewReader(`{"password":"`+password+`"}`))
@@ -37,13 +37,12 @@ func createRoom(t *testing.T, srv *httptest.Server, password string) (roomID, ho
 		t.Fatalf("create room: status %d", res.StatusCode)
 	}
 	var body struct {
-		RoomID    string `json:"roomId"`
-		HostToken string `json:"hostToken"`
+		RoomID string `json:"roomId"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	return body.RoomID, body.HostToken
+	return body.RoomID
 }
 
 func dial(t *testing.T, srv *httptest.Server, query string) (*websocket.Conn, *http.Response, error) {
@@ -106,7 +105,7 @@ func TestCreateRoomRejectsShortPassword(t *testing.T) {
 
 func TestCheckPassword(t *testing.T) {
 	srv := newServer(t)
-	roomID, _ := createRoom(t, srv, "segredo123")
+	roomID := createRoom(t, srv, "segredo123")
 
 	// Room codes are shown uppercase but people paste them however they
 	// like, so lookups are case-insensitive.
@@ -133,180 +132,182 @@ func TestCheckPassword(t *testing.T) {
 	}
 }
 
-func TestViewerNeedsCorrectPassword(t *testing.T) {
+func TestJoinNeedsCorrectPassword(t *testing.T) {
 	srv := newServer(t)
-	roomID, _ := createRoom(t, srv, "segredo123")
+	roomID := createRoom(t, srv, "segredo123")
 
-	if _, _, err := dial(t, srv, "room="+roomID+"&role=viewer&password=errada"); err == nil {
+	if _, _, err := dial(t, srv, "room="+roomID+"&password=errada"); err == nil {
 		t.Fatal("expected the upgrade to be refused with a wrong password")
 	}
 }
 
-func TestHostNeedsToken(t *testing.T) {
+func TestJoinUnknownRoom(t *testing.T) {
 	srv := newServer(t)
-	roomID, _ := createRoom(t, srv, "segredo123")
-
-	// Knowing the password lets you watch, never take over the share.
-	if _, _, err := dial(t, srv, "room="+roomID+"&role=host&token=segredo123"); err == nil {
-		t.Fatal("expected the upgrade to be refused without the host token")
+	if _, _, err := dial(t, srv, "room=ZZZZZZ&password=segredo123"); err == nil {
+		t.Fatal("expected the upgrade to be refused for a room that doesn't exist")
 	}
 }
 
-// The core flow: host and viewer find each other and the server moves
-// an opaque payload from one to the other, tagged with who really sent
-// it rather than whatever the sender claimed.
+func join(t *testing.T, srv *httptest.Server, roomID string) (*websocket.Conn, string) {
+	t.Helper()
+	conn := mustDial(t, srv, "room="+roomID+"&password=segredo123")
+	welcome := read(t, conn)
+	if welcome["type"] != "welcome" {
+		t.Fatalf("expected welcome, got %v", welcome["type"])
+	}
+	id, _ := welcome["peerId"].(string)
+	if id == "" {
+		t.Fatal("welcome carried no peer id")
+	}
+	return conn, id
+}
+
+// The core flow: two peers find each other and the server moves an
+// opaque payload between them, stamped with who really sent it rather
+// than whatever the sender claimed.
 func TestSignallingRelay(t *testing.T) {
 	srv := newServer(t)
-	roomID, hostToken := createRoom(t, srv, "segredo123")
+	roomID := createRoom(t, srv, "segredo123")
 
-	host := mustDial(t, srv, "room="+roomID+"&role=host&token="+hostToken)
-	if got := read(t, host)["type"]; got != "welcome" {
-		t.Fatalf("host: expected welcome, got %v", got)
-	}
+	a, aID := join(t, srv, roomID)
+	b, bID := join(t, srv, roomID)
+	read(t, a) // peer:join for b
 
-	viewer := mustDial(t, srv, "room="+roomID+"&role=viewer&password=segredo123")
-	viewerWelcome := read(t, viewer)
-	if viewerWelcome["hostOnline"] != true {
-		t.Fatal("viewer: expected hostOnline to be true")
-	}
-	viewerID, _ := viewerWelcome["peerId"].(string)
-	hostID := ""
-
-	join := read(t, host)
-	if join["type"] != "viewer:join" {
-		t.Fatalf("host: expected viewer:join, got %v", join["type"])
-	}
-	if join["peerId"] != viewerID {
-		t.Fatalf("host was told about %v but the viewer is %v", join["peerId"], viewerID)
-	}
-
-	write(t, host, map[string]any{
+	write(t, a, map[string]any{
 		"type":    "signal",
-		"to":      viewerID,
+		"to":      bID,
 		"payload": map[string]any{"kind": "offer", "sdp": "FAKE_SDP"},
 	})
 
-	relayed := read(t, viewer)
+	relayed := read(t, b)
 	if relayed["type"] != "signal" {
-		t.Fatalf("viewer: expected signal, got %v", relayed["type"])
+		t.Fatalf("expected signal, got %v", relayed["type"])
 	}
-	payload, _ := relayed["payload"].(map[string]any)
-	if payload["sdp"] != "FAKE_SDP" {
+	if payload, _ := relayed["payload"].(map[string]any); payload["sdp"] != "FAKE_SDP" {
 		t.Fatalf("payload did not survive the relay: %v", relayed["payload"])
 	}
-	hostID, _ = relayed["from"].(string)
-	if hostID == "" {
-		t.Fatal("relayed message carried no sender id")
+	if relayed["from"] != aID {
+		t.Fatalf("relayed message claimed to be from %v, expected %v", relayed["from"], aID)
 	}
 
-	// And back the other way.
-	write(t, viewer, map[string]any{
-		"type":    "signal",
-		"to":      hostID,
-		"payload": map[string]any{"kind": "answer", "sdp": "FAKE_ANSWER"},
-	})
-	answer := read(t, host)
-	answerPayload, _ := answer["payload"].(map[string]any)
-	if answerPayload["sdp"] != "FAKE_ANSWER" {
-		t.Fatalf("answer did not survive the relay: %v", answer["payload"])
-	}
-	if answer["from"] != viewerID {
-		t.Fatalf("answer claimed to be from %v, expected %v", answer["from"], viewerID)
-	}
-}
-
-func TestSecondHostIsRefused(t *testing.T) {
-	srv := newServer(t)
-	roomID, hostToken := createRoom(t, srv, "segredo123")
-
-	first := mustDial(t, srv, "room="+roomID+"&role=host&token="+hostToken)
-	read(t, first) // welcome
-
-	// The upgrade succeeds (the token is valid) and the server then
-	// closes it, so the failure shows up on the first read.
-	second, _, err := dial(t, srv, "room="+roomID+"&role=host&token="+hostToken)
-	if err != nil {
-		return // refused outright is fine too
-	}
-	defer second.Close(websocket.StatusNormalClosure, "")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if _, _, err := second.Read(ctx); err == nil {
-		t.Fatal("expected the second host to be closed out")
-	}
-}
-
-func TestViewersCannotReachEachOther(t *testing.T) {
-	srv := newServer(t)
-	roomID, hostToken := createRoom(t, srv, "segredo123")
-
-	host := mustDial(t, srv, "room="+roomID+"&role=host&token="+hostToken)
-	read(t, host)
-
-	a := mustDial(t, srv, "room="+roomID+"&role=viewer&password=segredo123")
-	aID, _ := read(t, a)["peerId"].(string)
-	read(t, host) // viewer:join for a
-
-	b := mustDial(t, srv, "room="+roomID+"&role=viewer&password=segredo123")
-	read(t, b)
-	read(t, host) // viewer:join for b
-
-	// b addresses a directly. A viewer may only ever talk to the host,
-	// so this must go nowhere rather than letting one guest reach
-	// another.
+	// And back the other way -- with everyone able to publish, both
+	// directions are ordinary traffic now.
 	write(t, b, map[string]any{
 		"type":    "signal",
 		"to":      aID,
+		"payload": map[string]any{"kind": "answer", "sdp": "FAKE_ANSWER"},
+	})
+	answer := read(t, a)
+	if payload, _ := answer["payload"].(map[string]any); payload["sdp"] != "FAKE_ANSWER" {
+		t.Fatalf("answer did not survive the relay: %v", answer["payload"])
+	}
+	if answer["from"] != bID {
+		t.Fatalf("answer claimed to be from %v, expected %v", answer["from"], bID)
+	}
+}
+
+// Anyone may publish, and more than one at a time -- that's the whole
+// point of the grid.
+func TestEveryonePublishesIndependently(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, aID := join(t, srv, roomID)
+	b, bID := join(t, srv, roomID)
+	read(t, a) // peer:join for b
+
+	write(t, a, map[string]any{"type": "publish:start"})
+	if got := read(t, b); got["type"] != "publish:start" || got["peerId"] != aID {
+		t.Fatalf("b should have been told a started publishing, got %v", got)
+	}
+
+	// b publishing too must not disturb a's stream in any way.
+	write(t, b, map[string]any{"type": "publish:start"})
+	if got := read(t, a); got["type"] != "publish:start" || got["peerId"] != bID {
+		t.Fatalf("a should have been told b started publishing, got %v", got)
+	}
+
+	write(t, a, map[string]any{"type": "publish:stop"})
+	if got := read(t, b); got["type"] != "publish:stop" || got["peerId"] != aID {
+		t.Fatalf("b should have been told a stopped, got %v", got)
+	}
+}
+
+// Someone arriving mid-session has to learn who is already publishing,
+// or they'd sit on an empty grid until the next state change.
+func TestWelcomeListsWhoIsAlreadyPublishing(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, aID := join(t, srv, roomID)
+	write(t, a, map[string]any{"type": "publish:start"})
+
+	late := mustDial(t, srv, "room="+roomID+"&password=segredo123")
+	welcome := read(t, late)
+
+	peers, _ := welcome["peers"].([]any)
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 existing peer, got %v", welcome["peers"])
+	}
+	peer, _ := peers[0].(map[string]any)
+	if peer["peerId"] != aID {
+		t.Fatalf("expected peer %v, got %v", aID, peer["peerId"])
+	}
+	if peer["publishing"] != true {
+		t.Fatalf("expected a to be listed as publishing, got %v", peer)
+	}
+	if name, _ := peer["name"].(string); name == "" {
+		t.Fatal("peers need a name for the grid to label them")
+	}
+}
+
+func TestPeerJoinAndLeaveAreAnnounced(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, _ := join(t, srv, roomID)
+
+	b, _, err := dial(t, srv, "room="+roomID+"&password=segredo123")
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	bID, _ := read(t, b)["peerId"].(string)
+
+	joined := read(t, a)
+	if joined["type"] != "peer:join" || joined["peerId"] != bID {
+		t.Fatalf("expected peer:join for %s, got %v", bID, joined)
+	}
+	if name, _ := joined["name"].(string); name == "" {
+		t.Fatal("peer:join carried no name")
+	}
+
+	_ = b.Close(websocket.StatusNormalClosure, "")
+
+	left := read(t, a)
+	if left["type"] != "peer:leave" || left["peerId"] != bID {
+		t.Fatalf("expected peer:leave for %s, got %v", bID, left)
+	}
+}
+
+// Peer ids are unguessable, but the relay checks room membership
+// anyway rather than trusting that.
+func TestRelayDoesNotCrossRooms(t *testing.T) {
+	srv := newServer(t)
+	roomA := createRoom(t, srv, "segredo123")
+	roomB := createRoom(t, srv, "segredo123")
+
+	outsider, _ := join(t, srv, roomB)
+	victim, victimID := join(t, srv, roomA)
+
+	write(t, outsider, map[string]any{
+		"type":    "signal",
+		"to":      victimID,
 		"payload": map[string]any{"kind": "offer", "sdp": "SHOULD_NOT_ARRIVE"},
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	if _, data, err := a.Read(ctx); err == nil {
-		t.Fatalf("viewer received a message from another viewer: %s", data)
-	}
-}
-
-func TestViewerLeaveNotifiesHost(t *testing.T) {
-	srv := newServer(t)
-	roomID, hostToken := createRoom(t, srv, "segredo123")
-
-	host := mustDial(t, srv, "room="+roomID+"&role=host&token="+hostToken)
-	read(t, host)
-
-	viewer, _, err := dial(t, srv, "room="+roomID+"&role=viewer&password=segredo123")
-	if err != nil {
-		t.Fatalf("viewer dial: %v", err)
-	}
-	viewerID, _ := read(t, viewer)["peerId"].(string)
-	read(t, host) // viewer:join
-
-	_ = viewer.Close(websocket.StatusNormalClosure, "")
-
-	leave := read(t, host)
-	if leave["type"] != "viewer:leave" || leave["peerId"] != viewerID {
-		t.Fatalf("expected viewer:leave for %s, got %v", viewerID, leave)
-	}
-}
-
-func TestViewerToldWhenHostGoesAway(t *testing.T) {
-	srv := newServer(t)
-	roomID, hostToken := createRoom(t, srv, "segredo123")
-
-	host, _, err := dial(t, srv, "room="+roomID+"&role=host&token="+hostToken)
-	if err != nil {
-		t.Fatalf("host dial: %v", err)
-	}
-	read(t, host)
-
-	viewer := mustDial(t, srv, "room="+roomID+"&role=viewer&password=segredo123")
-	read(t, viewer) // welcome
-	read(t, host)   // viewer:join
-
-	_ = host.Close(websocket.StatusNormalClosure, "")
-
-	if got := read(t, viewer)["type"]; got != "host:offline" {
-		t.Fatalf("expected host:offline, got %v", got)
+	if _, data, err := victim.Read(ctx); err == nil {
+		t.Fatalf("a peer in another room reached this one: %s", data)
 	}
 }

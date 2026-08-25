@@ -67,7 +67,7 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room, hostToken, err := s.registry.Create(req.Password)
+	room, err := s.registry.Create(req.Password)
 	if err != nil {
 		if errors.Is(err, rooms.ErrTooManyRooms) {
 			writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -78,10 +78,7 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"roomId":    room.ID,
-		"hostToken": hostToken,
-	})
+	writeJSON(w, http.StatusCreated, map[string]any{"roomId": room.ID})
 }
 
 // Deliberately says nothing about whether the room exists beyond
@@ -93,9 +90,9 @@ func (s *Server) handleRoomStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"roomId":   room.ID,
-		"sharing":  room.HasHost(),
-		"watching": room.ViewerCount(),
+		"roomId":     room.ID,
+		"people":     room.PeerCount(),
+		"publishing": room.PublisherCount(),
 	})
 }
 
@@ -127,7 +124,7 @@ func (s *Server) handleCheckPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	s.limiter.reset(ip)
 
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "sharing": room.HasHost()})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "people": room.PeerCount()})
 }
 
 // Serves the built SPA, falling back to index.html for any path the
