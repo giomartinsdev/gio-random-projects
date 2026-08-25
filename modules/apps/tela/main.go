@@ -15,11 +15,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela/internal/rooms"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela/internal/sfu"
 )
 
 func main() {
@@ -29,6 +31,22 @@ func main() {
 	// in progress. Unset means memory only -- fine for local dev, but in
 	// production this should point at a volume.
 	statePath := env("STATE_FILE", "")
+
+	// Media is forwarded by the SFU rather than meshed between browsers,
+	// so this process is a WebRTC endpoint now: it needs a UDP port
+	// reachable from the browsers, and it has to advertise an address
+	// they can actually get to. Inside Docker that's the HOST's address,
+	// not the container's -- hence SFU_PUBLIC_IP. On a LAN that's the
+	// machine's local address; on a VPS, its public one.
+	media, err := sfu.New(sfu.Options{
+		PublicIP: os.Getenv("SFU_PUBLIC_IP"),
+		UDPPort:  envInt("SFU_UDP_PORT", 7881),
+		STUNURLs: []string{"stun:stun.l.google.com:19302"},
+	})
+	if err != nil {
+		log.Fatalf("could not start the SFU: %v", err)
+	}
+	log.Printf("sfu listening on udp/%d advertising %q", envInt("SFU_UDP_PORT", 7881), os.Getenv("SFU_PUBLIC_IP"))
 
 	registry := rooms.NewRegistry(statePath)
 	if err := registry.Load(); err != nil {
@@ -43,7 +61,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:    ":" + port,
-		Handler: httpapi.New(registry, webDir).Handler(),
+		Handler: httpapi.New(registry, webDir, media).Handler(),
 		// No WriteTimeout: a WebSocket connection is meant to stay open
 		// for as long as the screen share lasts, and WriteTimeout would
 		// cut it off. Per-write deadlines in the WS write loop cover the
@@ -76,4 +94,12 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envInt(key string, fallback int) int {
+	v, err := strconv.Atoi(os.Getenv(key))
+	if err != nil || v <= 0 {
+		return fallback
+	}
+	return v
 }

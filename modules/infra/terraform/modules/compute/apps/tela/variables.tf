@@ -20,3 +20,27 @@ variable "watchtower_enabled" {
   type        = bool
   default     = false
 }
+
+variable "sfu_public_ip" {
+  description = <<-EOT
+    Address browsers should send media to. Not reachable through the
+    Cloudflare tunnel -- WebRTC needs UDP straight to this host, so this
+    must be an address clients can actually route to:
+
+      - same LAN as the server: its local address (e.g. 192.168.1.50)
+      - reachable from the internet: the public IP, with this port
+        forwarded to the host
+      - a VPS: its public IP
+
+    Empty means the SFU advertises the container's private address and
+    no browser can connect.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "sfu_udp_port" {
+  description = "Single UDP port carrying all media (ICE mux). Published unmapped, since the port number is baked into the ICE candidates the SFU advertises."
+  type        = number
+  default     = 7881
+}

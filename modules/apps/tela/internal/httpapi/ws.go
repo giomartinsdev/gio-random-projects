@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/pion/webrtc/v4"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela/internal/rooms"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela/internal/sfu"
 )
 
 const (
@@ -21,15 +23,20 @@ const (
 )
 
 type clientMessage struct {
-	Type    string          `json:"type"`
-	To      string          `json:"to"`
-	Payload json.RawMessage `json:"payload"`
+	Type      string                     `json:"type"`
+	SDP       *webrtc.SessionDescription `json:"sdp,omitempty"`
+	Candidate *webrtc.ICECandidateInit   `json:"candidate,omitempty"`
 }
 
-// The WebSocket carries nothing but WebRTC signalling. Video never
-// touches this server -- it goes straight between browsers, so what
-// scales with the number of streams is the browsers' upload, not
-// anything here.
+// The WebSocket carries signalling only; the media itself rides the
+// SFU's own UDP connections (internal/sfu).
+//
+// Each person has up to two peer connections with the server: one
+// publishing, created when they start sharing, and one subscribing,
+// opened as soon as they join so anything already being shared reaches
+// them immediately. That's a fixed cost per person no matter how many
+// people are watching -- the mesh this replaced made whoever shared
+// encode once per viewer.
 //
 // Everyone in a room is the same kind of participant: the password is
 // the only credential, and any peer may start publishing at any time
@@ -119,14 +126,62 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		"resume": room.ResumeToken(peerID, peer.Name),
 	})
 
-	readLoop(ctx, conn, room, peer)
+	// Subscribing from the moment they join means whatever is already
+	// being shared reaches them without waiting for the next change.
+	var subscriber *sfu.Subscriber
+	if s.sfu != nil {
+		subscriber, err = s.sfu.Subscribe(room.ID, peerID,
+			func(c webrtc.ICECandidateInit) {
+				peer.Send(map[string]any{"type": "subscribe:ice", "candidate": c})
+			},
+			func(offer webrtc.SessionDescription) {
+				peer.Send(map[string]any{"type": "subscribe:offer", "sdp": offer})
+			},
+		)
+		if err != nil {
+			log.Printf("subscribe failed for %s in %s: %v", peerID, room.ID, err)
+		}
+	}
 
+	session := &wsSession{server: s, room: room, peer: peer, subscriber: subscriber}
+	session.readLoop(ctx, conn)
+
+	session.close()
 	room.Leave(peer)
 	peer.Close()
 	_ = conn.Close(websocket.StatusNormalClosure, "")
 }
 
-func readLoop(ctx context.Context, conn *websocket.Conn, room *rooms.Room, peer *rooms.Peer) {
+// wsSession is one person's connection: the signalling socket plus the
+// two media connections hanging off it.
+type wsSession struct {
+	server     *Server
+	room       *rooms.Room
+	peer       *rooms.Peer
+	subscriber *sfu.Subscriber
+	publisher  *sfu.Publisher
+}
+
+func (w *wsSession) close() {
+	if w.publisher != nil {
+		w.publisher.Close()
+	}
+	if w.subscriber != nil {
+		w.subscriber.Close()
+	}
+}
+
+// stopPublishing tears down the send side without touching the receive
+// side -- someone who stops sharing keeps watching.
+func (w *wsSession) stopPublishing() {
+	if w.publisher != nil {
+		w.publisher.Close()
+		w.publisher = nil
+	}
+	w.room.SetPublishing(w.peer, false)
+}
+
+func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -139,25 +194,71 @@ func readLoop(ctx context.Context, conn *websocket.Conn, room *rooms.Room, peer 
 		}
 
 		switch msg.Type {
-		case "signal":
-			if msg.To == "" || len(msg.Payload) == 0 {
-				continue
-			}
-			// The server has no idea what's inside Payload -- SDP and ICE
-			// are the browsers' business. It only checks the target is in
-			// this room and stamps the real sender (see Room.Relay).
-			room.Relay(peer, msg.To, msg.Payload)
+		// Starting to share. The browser offers because it's the one
+		// that knows what it's about to send.
+		case "publish:offer":
+			w.handlePublishOffer(msg)
 
-		case "publish:start":
-			room.SetPublishing(peer, true)
+		case "publish:ice":
+			if msg.Candidate != nil && w.publisher != nil {
+				_ = w.publisher.AddICECandidate(*msg.Candidate)
+			}
 
 		case "publish:stop":
-			room.SetPublishing(peer, false)
+			w.stopPublishing()
+
+		// The reply to an offer the server made (see sfu.Subscriber:
+		// the server offers on the receive side, because tracks come and
+		// go as people start and stop sharing).
+		case "subscribe:answer":
+			if msg.SDP != nil && w.subscriber != nil {
+				if err := w.subscriber.Answer(*msg.SDP); err != nil {
+					log.Printf("subscribe answer from %s: %v", w.peer.ID, err)
+				}
+			}
+
+		case "subscribe:ice":
+			if msg.Candidate != nil && w.subscriber != nil {
+				_ = w.subscriber.AddICECandidate(*msg.Candidate)
+			}
 
 		case "ping":
-			peer.Send(map[string]any{"type": "pong"})
+			w.peer.Send(map[string]any{"type": "pong"})
 		}
 	}
+}
+
+func (w *wsSession) handlePublishOffer(msg clientMessage) {
+	if msg.SDP == nil {
+		return
+	}
+	if w.server.sfu == nil {
+		w.peer.Send(map[string]any{"type": "publish:error", "error": "servidor sem SFU configurado"})
+		return
+	}
+	// Re-publishing (switching from screen to camera, say) replaces the
+	// previous connection rather than stacking a second one.
+	if w.publisher != nil {
+		w.publisher.Close()
+		w.publisher = nil
+	}
+
+	publisher, answer, err := w.server.sfu.Publish(w.room.ID, w.peer.ID, *msg.SDP,
+		func(c webrtc.ICECandidateInit) {
+			w.peer.Send(map[string]any{"type": "publish:ice", "candidate": c})
+		},
+	)
+	if err != nil {
+		log.Printf("publish failed for %s in %s: %v", w.peer.ID, w.room.ID, err)
+		w.peer.Send(map[string]any{"type": "publish:error", "error": "não foi possível iniciar a transmissão"})
+		return
+	}
+
+	w.publisher = publisher
+	w.peer.Send(map[string]any{"type": "publish:answer", "sdp": answer})
+	// Announced separately from the media so the grid can show someone
+	// as sharing while their connection is still negotiating.
+	w.room.SetPublishing(w.peer, true)
 }
 
 func writeLoop(ctx context.Context, conn *websocket.Conn, peer *rooms.Peer) {

@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/pion/webrtc/v4"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela/internal/rooms"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela/internal/sfu"
 )
 
 // Everything below runs against a real HTTP server over a real
@@ -21,7 +23,14 @@ import (
 // the transport would test nothing worth testing.
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(httpapi.New(rooms.NewRegistry(""), t.TempDir()).Handler())
+	// A real SFU on an OS-assigned port: the signalling handler now owns
+	// publisher/subscriber connections, so handing it nil would leave
+	// half the paths under test unexercised.
+	media, err := sfu.New(sfu.Options{UDPPort: 0})
+	if err != nil {
+		t.Fatalf("sfu: %v", err)
+	}
+	srv := httptest.NewServer(httpapi.New(rooms.NewRegistry(""), t.TempDir(), media).Handler())
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -163,105 +172,6 @@ func join(t *testing.T, srv *httptest.Server, roomID string) (*websocket.Conn, s
 	return conn, id
 }
 
-// The core flow: two peers find each other and the server moves an
-// opaque payload between them, stamped with who really sent it rather
-// than whatever the sender claimed.
-func TestSignallingRelay(t *testing.T) {
-	srv := newServer(t)
-	roomID := createRoom(t, srv, "segredo123")
-
-	a, aID := join(t, srv, roomID)
-	b, bID := join(t, srv, roomID)
-	read(t, a) // peer:join for b
-
-	write(t, a, map[string]any{
-		"type":    "signal",
-		"to":      bID,
-		"payload": map[string]any{"kind": "offer", "sdp": "FAKE_SDP"},
-	})
-
-	relayed := read(t, b)
-	if relayed["type"] != "signal" {
-		t.Fatalf("expected signal, got %v", relayed["type"])
-	}
-	if payload, _ := relayed["payload"].(map[string]any); payload["sdp"] != "FAKE_SDP" {
-		t.Fatalf("payload did not survive the relay: %v", relayed["payload"])
-	}
-	if relayed["from"] != aID {
-		t.Fatalf("relayed message claimed to be from %v, expected %v", relayed["from"], aID)
-	}
-
-	// And back the other way -- with everyone able to publish, both
-	// directions are ordinary traffic now.
-	write(t, b, map[string]any{
-		"type":    "signal",
-		"to":      aID,
-		"payload": map[string]any{"kind": "answer", "sdp": "FAKE_ANSWER"},
-	})
-	answer := read(t, a)
-	if payload, _ := answer["payload"].(map[string]any); payload["sdp"] != "FAKE_ANSWER" {
-		t.Fatalf("answer did not survive the relay: %v", answer["payload"])
-	}
-	if answer["from"] != bID {
-		t.Fatalf("answer claimed to be from %v, expected %v", answer["from"], bID)
-	}
-}
-
-// Anyone may publish, and more than one at a time -- that's the whole
-// point of the grid.
-func TestEveryonePublishesIndependently(t *testing.T) {
-	srv := newServer(t)
-	roomID := createRoom(t, srv, "segredo123")
-
-	a, aID := join(t, srv, roomID)
-	b, bID := join(t, srv, roomID)
-	read(t, a) // peer:join for b
-
-	write(t, a, map[string]any{"type": "publish:start"})
-	if got := read(t, b); got["type"] != "publish:start" || got["peerId"] != aID {
-		t.Fatalf("b should have been told a started publishing, got %v", got)
-	}
-
-	// b publishing too must not disturb a's stream in any way.
-	write(t, b, map[string]any{"type": "publish:start"})
-	if got := read(t, a); got["type"] != "publish:start" || got["peerId"] != bID {
-		t.Fatalf("a should have been told b started publishing, got %v", got)
-	}
-
-	write(t, a, map[string]any{"type": "publish:stop"})
-	if got := read(t, b); got["type"] != "publish:stop" || got["peerId"] != aID {
-		t.Fatalf("b should have been told a stopped, got %v", got)
-	}
-}
-
-// Someone arriving mid-session has to learn who is already publishing,
-// or they'd sit on an empty grid until the next state change.
-func TestWelcomeListsWhoIsAlreadyPublishing(t *testing.T) {
-	srv := newServer(t)
-	roomID := createRoom(t, srv, "segredo123")
-
-	a, aID := join(t, srv, roomID)
-	write(t, a, map[string]any{"type": "publish:start"})
-
-	late := mustDial(t, srv, "room="+roomID+"&password=segredo123")
-	welcome := read(t, late)
-
-	peers, _ := welcome["peers"].([]any)
-	if len(peers) != 1 {
-		t.Fatalf("expected 1 existing peer, got %v", welcome["peers"])
-	}
-	peer, _ := peers[0].(map[string]any)
-	if peer["peerId"] != aID {
-		t.Fatalf("expected peer %v, got %v", aID, peer["peerId"])
-	}
-	if peer["publishing"] != true {
-		t.Fatalf("expected a to be listed as publishing, got %v", peer)
-	}
-	if name, _ := peer["name"].(string); name == "" {
-		t.Fatal("peers need a name for the grid to label them")
-	}
-}
-
 func TestPeerJoinAndLeaveAreAnnounced(t *testing.T) {
 	srv := newServer(t)
 	roomID := createRoom(t, srv, "segredo123")
@@ -287,29 +197,6 @@ func TestPeerJoinAndLeaveAreAnnounced(t *testing.T) {
 	left := read(t, a)
 	if left["type"] != "peer:leave" || left["peerId"] != bID {
 		t.Fatalf("expected peer:leave for %s, got %v", bID, left)
-	}
-}
-
-// Peer ids are unguessable, but the relay checks room membership
-// anyway rather than trusting that.
-func TestRelayDoesNotCrossRooms(t *testing.T) {
-	srv := newServer(t)
-	roomA := createRoom(t, srv, "segredo123")
-	roomB := createRoom(t, srv, "segredo123")
-
-	outsider, _ := join(t, srv, roomB)
-	victim, victimID := join(t, srv, roomA)
-
-	write(t, outsider, map[string]any{
-		"type":    "signal",
-		"to":      victimID,
-		"payload": map[string]any{"kind": "offer", "sdp": "SHOULD_NOT_ARRIVE"},
-	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	if _, data, err := victim.Read(ctx); err == nil {
-		t.Fatalf("a peer in another room reached this one: %s", data)
 	}
 }
 
@@ -383,4 +270,121 @@ func TestResumeTakesOverAStaleConnection(t *testing.T) {
 	if _, _, err := stale.Read(ctx); err == nil {
 		t.Fatal("expected the stale socket to be closed out")
 	}
+}
+
+// Anyone may publish, and more than one at a time -- that's the whole
+// point of the grid.
+func TestEveryonePublishesIndependently(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, aID := join(t, srv, roomID)
+	b, bID := join(t, srv, roomID)
+	readUntil(t, a, "peer:join")
+
+	publish(t, a)
+	if got := readUntil(t, b, "publish:start"); got["peerId"] != aID {
+		t.Fatalf("b should have been told a started publishing, got %v", got)
+	}
+
+	// b publishing too must not disturb a's stream in any way.
+	publish(t, b)
+	if got := readUntil(t, a, "publish:start"); got["peerId"] != bID {
+		t.Fatalf("a should have been told b started publishing, got %v", got)
+	}
+
+	write(t, a, map[string]any{"type": "publish:stop"})
+	if got := readUntil(t, b, "publish:stop"); got["peerId"] != aID {
+		t.Fatalf("b should have been told a stopped, got %v", got)
+	}
+}
+
+// Someone arriving mid-session has to learn who is already publishing,
+// or they'd sit on an empty grid until the next state change.
+func TestWelcomeListsWhoIsAlreadyPublishing(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, aID := join(t, srv, roomID)
+	publish(t, a)
+
+	late := mustDial(t, srv, "room="+roomID+"&password=segredo123")
+	welcome := read(t, late)
+
+	peers, _ := welcome["peers"].([]any)
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 existing peer, got %v", welcome["peers"])
+	}
+	peer, _ := peers[0].(map[string]any)
+	if peer["peerId"] != aID {
+		t.Fatalf("expected peer %v, got %v", aID, peer["peerId"])
+	}
+	if peer["publishing"] != true {
+		t.Fatalf("expected a to be listed as publishing, got %v", peer)
+	}
+	if name, _ := peer["name"].(string); name == "" {
+		t.Fatal("peers need a name for the grid to label them")
+	}
+}
+
+// readUntil skips past whatever else is in flight (ICE trickling, other
+// people's events) to the message the test is actually waiting for.
+func readUntil(t *testing.T, conn *websocket.Conn, want string) map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		msg := read(t, conn)
+		if msg["type"] == want {
+			return msg
+		}
+	}
+	t.Fatalf("never received a %q message", want)
+	return nil
+}
+
+// A real publish handshake: a peer connection with a real track, an
+// offer over the WebSocket, and the SFU's answer. Publishing state is a
+// consequence of media actually being accepted now, not a flag the
+// client asserts, so there's no shortcut worth taking here.
+func publish(t *testing.T, conn *websocket.Conn) *webrtc.PeerConnection {
+	t.Helper()
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("peer connection: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+
+	track, err := webrtc.NewTrackLocalStaticSample(
+		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, "video", "stream")
+	if err != nil {
+		t.Fatalf("track: %v", err)
+	}
+	if _, err := pc.AddTrack(track); err != nil {
+		t.Fatalf("add track: %v", err)
+	}
+
+	offer, err := pc.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("offer: %v", err)
+	}
+	if err := pc.SetLocalDescription(offer); err != nil {
+		t.Fatalf("set local: %v", err)
+	}
+	<-webrtc.GatheringCompletePromise(pc)
+
+	write(t, conn, map[string]any{"type": "publish:offer", "sdp": pc.LocalDescription()})
+
+	answer := readUntil(t, conn, "publish:answer")
+	raw, err := json.Marshal(answer["sdp"])
+	if err != nil {
+		t.Fatalf("marshal answer: %v", err)
+	}
+	var sdp webrtc.SessionDescription
+	if err := json.Unmarshal(raw, &sdp); err != nil {
+		t.Fatalf("unmarshal answer: %v", err)
+	}
+	if err := pc.SetRemoteDescription(sdp); err != nil {
+		t.Fatalf("set remote: %v", err)
+	}
+	return pc
 }

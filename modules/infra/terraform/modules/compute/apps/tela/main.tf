@@ -26,6 +26,15 @@ resource "docker_container" "tela" {
   env = [
     "PORT=8000",
     "STATE_FILE=/data/rooms.json",
+    # The SFU is a WebRTC endpoint, so browsers connect to it directly
+    # over UDP -- they can't reach it through the Cloudflare tunnel, which
+    # only carries HTTP. This address is what it advertises to them, and
+    # inside Docker it has to be the HOST's address rather than the
+    # container's: on a LAN the machine's local IP, on a VPS its public
+    # one. Left empty, the SFU advertises the container's private address
+    # and nothing can connect.
+    "SFU_PUBLIC_IP=${var.sfu_public_ip}",
+    "SFU_UDP_PORT=${var.sfu_udp_port}",
   ]
 
   # Rooms live in memory, but the room registry itself (code, password
@@ -41,6 +50,17 @@ resource "docker_container" "tela" {
   ports {
     internal = 8000
     external = var.external_port
+  }
+
+  # All media rides this one port (an ICE UDP mux), so deployment means
+  # opening a single port rather than a range. It must be published on
+  # the same number inside and out: the candidates the SFU advertises
+  # carry this port number, so remapping it would send browsers to a
+  # port nothing is listening on.
+  ports {
+    internal = var.sfu_udp_port
+    external = var.sfu_udp_port
+    protocol = "udp"
   }
 
   networks_advanced {

@@ -168,3 +168,8 @@ variable "discord_client_secret" {
   sensitive   = true
 }
 
+variable "tela_sfu_public_ip" {
+  description = "Address tela's SFU advertises to browsers. See modules/compute/apps/tela/variables.tf -- media is UDP straight to the host and cannot go through the Cloudflare tunnel."
+  type        = string
+  default     = ""
+}

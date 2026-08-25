@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela/internal/rooms"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela/internal/sfu"
 )
 
 type Server struct {
@@ -22,14 +23,19 @@ type Server struct {
 	webDir   string
 	limiter  *attemptLimiter
 	mux      *http.ServeMux
+	// Forwards media between peers. Nil means no SFU configured, in
+	// which case publishing is refused with a clear message rather than
+	// failing halfway through a handshake.
+	sfu *sfu.Server
 }
 
-func New(registry *rooms.Registry, webDir string) *Server {
+func New(registry *rooms.Registry, webDir string, media *sfu.Server) *Server {
 	s := &Server{
 		registry: registry,
 		webDir:   webDir,
 		limiter:  newAttemptLimiter(),
 		mux:      http.NewServeMux(),
+		sfu:      media,
 	}
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)

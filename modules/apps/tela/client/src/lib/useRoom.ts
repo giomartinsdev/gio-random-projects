@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readIdentity, rememberIdentity, wsUrl } from "./api";
 
-// Public STUN only -- no TURN relay is run for this. That covers home
-// networks and most consumer NATs; behind a symmetric NAT or a strict
-// corporate firewall a peer connection won't establish and that tile
-// stays stuck on "conectando…".
+// STUN for this browser's side of the connection. The server advertises
+// its own reachable address directly (see the Go side's SFU_PUBLIC_IP),
+// so there's no TURN here: on a network that blocks UDP outright the
+// connection won't establish.
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
 // Someone dropping off is usually a blip -- a reload, a moment of bad
 // wifi, or this server being redeployed -- not someone leaving. Tearing
-// their video down the instant the WebSocket says they're gone turns a
-// two-second gap into a visible interruption, so it waits. If they come
-// back within the window under the same identity, the teardown is
-// cancelled and the stream was never disturbed.
+// their tile down the instant the WebSocket says they're gone turns a
+// two-second gap into a visible interruption, so it waits.
 const LEAVE_GRACE_MS = 12_000;
 
 // Reconnect backoff. Starts fast because the common case is a deploy --
@@ -21,19 +19,10 @@ const LEAVE_GRACE_MS = 12_000;
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 8_000;
 
-// This is a mesh: whoever is sharing encodes a SEPARATE stream for each
-// person watching. Two viewers means two encodes, three means three --
-// so the cost of each one has to stay modest or the encoder falls
-// behind and the picture stutters. Unconstrained capture is the usual
-// culprit: without these, the browser captures at the monitor's native
-// resolution (often 1440p or 4K) at up to 60fps, and two of those at
-// once will out-run a laptop CPU.
-//
 // 1080p30 rather than the monitor's native resolution. The framerate is
 // a ceiling, not a promise: with a bitrate cap and
 // degradationPreference "maintain-resolution", the encoder drops frames
-// on its own when it can't afford 30 -- so asking for 30 costs nothing
-// when there's headroom and degrades gracefully when there isn't.
+// on its own when it can't afford 30.
 const SCREEN_CONSTRAINTS: MediaTrackConstraints = {
   frameRate: { ideal: 30, max: 30 },
   width: { max: 1920 },
@@ -51,13 +40,12 @@ const CAMERA_CONSTRAINTS: MediaTrackConstraints = {
   height: { max: 720 },
 };
 
-// Total upload to spend on video, split between everyone watching --
-// the bottleneck is one uplink shared by every outgoing connection, so
-// what matters is the sum, not the per-connection figure. Floored so a
-// big room degrades to something ugly-but-moving rather than nothing.
-const SCREEN_BITRATE_BUDGET = 2_500_000;
-const CAMERA_BITRATE_BUDGET = 1_200_000;
-const MIN_BITRATE = 250_000;
+// One upload, not one per viewer: the server fans the stream out, so
+// this is a flat cost however many people are watching. That's the
+// whole reason the SFU exists, and why this is no longer divided by the
+// size of the audience.
+const SCREEN_MAX_BITRATE = 2_500_000;
+const CAMERA_MAX_BITRATE = 1_200_000;
 
 export type Status = "connecting" | "connected" | "reconnecting" | "error" | "closed";
 export type Source = "screen" | "camera";
@@ -74,20 +62,19 @@ export const canShareScreen =
 export const canShareCamera =
   typeof navigator !== "undefined" && typeof navigator.mediaDevices?.getUserMedia === "function";
 
-// Everyone in a room is an equal participant: anyone can publish at any
-// time and everyone receives whatever the others publish. That makes
-// this a mesh, so each pair of peers can need TWO peer connections --
-// one carrying A's stream to B, another carrying B's to A.
+// Two peer connections with the server, and that's all, however many
+// people are in the room:
 //
-// They're kept in separate maps rather than one bidirectional
-// connection because a single connection with both sides offering at
-// once hits glare (two simultaneous offers on the same PC), and the
-// publisher is always the offerer here. Every signalling payload
-// therefore carries the SENDER's role in that particular connection, so
-// the receiver knows which of the two maps an answer or ICE candidate
-// belongs to -- without it, an ICE candidate is ambiguous.
-type SignalRole = "publisher" | "subscriber";
-
+//   publish   -- this browser's own stream going up. Created when you
+//                start sharing; this side offers, because it's the one
+//                that knows what it's about to send.
+//   subscribe -- everyone else's streams coming down, multiplexed. The
+//                SERVER offers on this one, since tracks appear and
+//                vanish as people start and stop sharing.
+//
+// The mesh this replaced needed a connection per person and made the
+// publisher encode separately for each of them, which is why a second
+// viewer used to halve the framerate.
 export function useRoom(roomId: string, password: string) {
   const [status, setStatus] = useState<Status>("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -96,44 +83,26 @@ export function useRoom(roomId: string, password: string) {
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [source, setSource] = useState<Source | null>(null);
-  const sourceRef = useRef<Source | null>(null);
-  sourceRef.current = source;
-  // Whether my own audio is going out. Kept across shares so the choice
-  // sticks: someone who turned the mic off doesn't want it back on the
-  // next time they share.
   const [sendingAudio, setSendingAudio] = useState(true);
-  const sendingAudioRef = useRef(true);
-  sendingAudioRef.current = sendingAudio;
 
   const wsRef = useRef<WebSocket | null>(null);
-  // Connections where I'm the one publishing, keyed by who's receiving.
-  const outgoingRef = useRef<Map<string, RTCPeerConnection>>(new Map());
-  // Connections where someone else is publishing to me, keyed by them.
-  const incomingRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const publishRef = useRef<RTCPeerConnection | null>(null);
+  const subscribeRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  // Read from WS callbacks, which are created once and would otherwise
-  // close over a stale list.
-  const peersRef = useRef<Peer[]>([]);
-  peersRef.current = peers;
-  // Teardowns waiting out the grace period below, keyed by peer.
   const pendingLeaveRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Read inside the WebSocket callbacks, which are created once and
+  // would otherwise close over stale values.
+  const sendingAudioRef = useRef(true);
+  sendingAudioRef.current = sendingAudio;
+  const sourceRef = useRef<Source | null>(null);
+  sourceRef.current = source;
+  const remoteStreamsRef = useRef<Record<string, MediaStream>>({});
+  remoteStreamsRef.current = remoteStreams;
 
   const send = useCallback((payload: unknown) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(payload));
     }
-  }, []);
-
-  const signal = useCallback(
-    (to: string, role: SignalRole, body: Record<string, unknown>) => {
-      send({ type: "signal", to, payload: { ...body, role } });
-    },
-    [send],
-  );
-
-  const closeOutgoing = useCallback((peerId: string) => {
-    outgoingRef.current.get(peerId)?.close();
-    outgoingRef.current.delete(peerId);
   }, []);
 
   const cancelPendingLeave = useCallback((peerId: string) => {
@@ -144,9 +113,7 @@ export function useRoom(roomId: string, password: string) {
     }
   }, []);
 
-  const closeIncoming = useCallback((peerId: string) => {
-    incomingRef.current.get(peerId)?.close();
-    incomingRef.current.delete(peerId);
+  const dropRemote = useCallback((peerId: string) => {
     setRemoteStreams((current) => {
       if (!(peerId in current)) return current;
       const next = { ...current };
@@ -155,60 +122,22 @@ export function useRoom(roomId: string, password: string) {
     });
   }, []);
 
-  // --- publishing side ---
+  // --- publishing ---
 
-  // Caps what one outgoing connection may spend, and tells the encoder
-  // what to sacrifice when it can't keep up. For a shared screen that's
-  // framerate (keep the text legible); for a camera it's resolution
-  // (keep the motion smooth).
-  const applyEncodingLimits = useCallback((pc: RTCPeerConnection, viewers: number) => {
+  // Caps what this browser sends and tells the encoder what to give up
+  // when it can't keep up: for a screen that's framerate (keep the text
+  // legible), for a camera it's resolution (keep the motion smooth).
+  const applyEncodingLimits = useCallback((pc: RTCPeerConnection) => {
     const screen = sourceRef.current !== "camera";
-    const budget = screen ? SCREEN_BITRATE_BUDGET : CAMERA_BITRATE_BUDGET;
-    const perViewer = Math.max(MIN_BITRATE, Math.floor(budget / Math.max(1, viewers)));
-
     for (const sender of pc.getSenders()) {
       if (sender.track?.kind !== "video") continue;
       const params = sender.getParameters();
       if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-      params.encodings[0].maxBitrate = perViewer;
+      params.encodings[0].maxBitrate = screen ? SCREEN_MAX_BITRATE : CAMERA_MAX_BITRATE;
       params.degradationPreference = screen ? "maintain-resolution" : "maintain-framerate";
       // Best-effort: not every browser accepts every field, and a
-      // rejected tuning shouldn't break the connection itself.
+      // rejected tuning shouldn't break the connection.
       sender.setParameters(params).catch(() => {});
-    }
-  }, []);
-
-  const offerTo = useCallback(
-    async (peerId: string) => {
-      const stream = localStreamRef.current;
-      if (!stream) return; // not publishing -- they get an offer when I start
-
-      closeOutgoing(peerId);
-      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-      outgoingRef.current.set(peerId, pc);
-
-      for (const track of stream.getTracks()) pc.addTrack(track, stream);
-      applyEncodingLimits(pc, Math.max(1, peersRef.current.length));
-      pc.onicecandidate = (ev) => {
-        if (ev.candidate) signal(peerId, "publisher", { kind: "ice", candidate: ev.candidate.toJSON() });
-      };
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      signal(peerId, "publisher", { kind: "offer", sdp: pc.localDescription });
-    },
-    [closeOutgoing, signal],
-  );
-
-  // Muting by disabling the track rather than removing it: `enabled =
-  // false` makes the track send silence, which needs no renegotiation
-  // and no new offer to every peer. Dropping the track instead would
-  // mean tearing down and rebuilding every outgoing connection just to
-  // toggle a microphone.
-  const setAudio = useCallback((on: boolean) => {
-    setSendingAudio(on);
-    for (const track of localStreamRef.current?.getAudioTracks() ?? []) {
-      track.enabled = on;
     }
   }, []);
 
@@ -217,9 +146,11 @@ export function useRoom(roomId: string, password: string) {
     localStreamRef.current = null;
     setLocalStream(null);
     setSource(null);
-    for (const peerId of [...outgoingRef.current.keys()]) closeOutgoing(peerId);
+    sourceRef.current = null;
+    publishRef.current?.close();
+    publishRef.current = null;
     send({ type: "publish:stop" });
-  }, [closeOutgoing, send]);
+  }, [send]);
 
   const startSharing = useCallback(
     async (from: Source) => {
@@ -239,76 +170,49 @@ export function useRoom(roomId: string, password: string) {
         return;
       }
 
-      // getDisplayMedia only yields an audio track if the person also
-      // ticked "share audio" in the picker, so there may be nothing here
-      // to disable -- the UI reads hasAudioTrack to say so rather than
-      // offering a control that does nothing.
-      for (const track of stream.getAudioTracks()) {
-        track.enabled = sendingAudioRef.current;
-      }
-
-      // Tells the encoder what this footage actually is, so it knows
-      // what to protect: "detail" keeps text sharp on a shared screen at
-      // the cost of framerate, "motion" does the opposite for a camera.
+      // Tells the encoder what this footage actually is: "detail" keeps
+      // text sharp on a shared screen at the cost of framerate, "motion"
+      // does the opposite for a camera.
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) videoTrack.contentHint = from === "screen" ? "detail" : "motion";
+      // getDisplayMedia only yields audio if the person also ticked
+      // "share audio", so there may be nothing here to disable.
+      for (const track of stream.getAudioTracks()) track.enabled = sendingAudioRef.current;
 
       localStreamRef.current = stream;
       setLocalStream(stream);
       setSource(from);
       sourceRef.current = from;
       // The browser's own "Stop sharing" bar ends the track.
-      stream.getVideoTracks()[0]?.addEventListener("ended", () => stopSharing());
+      videoTrack?.addEventListener("ended", () => stopSharing());
 
-      send({ type: "publish:start" });
-      for (const peer of peersRef.current) {
-        await offerTo(peer.peerId).catch(() => {});
-      }
-    },
-    [offerTo, send, stopSharing],
-  );
-
-  // The budget is split between everyone watching, so it has to be
-  // redivided when someone joins or leaves -- otherwise going from one
-  // viewer to two would try to send twice as much rather than the same
-  // amount split in half, which is exactly how a mesh saturates an
-  // uplink.
-  useEffect(() => {
-    if (!localStream) return;
-    const viewers = Math.max(1, peers.length);
-    for (const pc of outgoingRef.current.values()) applyEncodingLimits(pc, viewers);
-  }, [localStream, peers.length, applyEncodingLimits]);
-
-  // --- receiving side ---
-
-  const answerOffer = useCallback(
-    async (from: string, sdp: RTCSessionDescriptionInit) => {
-      // Renegotiating from scratch is simpler than patching a live
-      // connection, and only happens when someone restarts their share.
-      closeIncoming(from);
+      // Replace rather than stack, so switching from screen to camera
+      // doesn't leave the previous connection running.
+      publishRef.current?.close();
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-      incomingRef.current.set(from, pc);
+      publishRef.current = pc;
 
+      for (const track of stream.getTracks()) pc.addTrack(track, stream);
+      applyEncodingLimits(pc);
       pc.onicecandidate = (ev) => {
-        if (ev.candidate) signal(from, "subscriber", { kind: "ice", candidate: ev.candidate.toJSON() });
-      };
-      pc.ontrack = (ev) => {
-        const stream = ev.streams[0];
-        if (stream) setRemoteStreams((current) => ({ ...current, [from]: stream }));
+        if (ev.candidate) send({ type: "publish:ice", candidate: ev.candidate.toJSON() });
       };
 
-      await pc.setRemoteDescription(sdp);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      signal(from, "subscriber", { kind: "answer", sdp: pc.localDescription });
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      send({ type: "publish:offer", sdp: pc.localDescription });
     },
-    [closeIncoming, signal],
+    [applyEncodingLimits, send, stopSharing],
   );
 
+  const setAudio = useCallback((on: boolean) => {
+    setSendingAudio(on);
+    // Disabling the track sends silence, which needs no renegotiation;
+    // removing it would mean rebuilding the publish connection.
+    for (const track of localStreamRef.current?.getAudioTracks() ?? []) track.enabled = on;
+  }, []);
+
   useEffect(() => {
-    // `disposed` separates leaving the room (unmount) from losing the
-    // socket (retry). Only the former tears down peer connections --
-    // during a reconnect the video is still flowing over them.
     let disposed = false;
     let attempt = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -316,10 +220,8 @@ export function useRoom(roomId: string, password: string) {
     const connect = () => {
       if (disposed) return;
 
-      // Reclaims the identity the server issued, so the others in the
-      // room keep the connections they already have instead of seeing a
-      // stranger arrive (see api.ts's Identity and the server's resume
-      // handshake).
+      // Reclaims the identity the server issued, so a reconnect slots
+      // back into the room rather than arriving as a stranger.
       const saved = readIdentity(roomId);
       const ws = new WebSocket(
         wsUrl({
@@ -330,167 +232,169 @@ export function useRoom(roomId: string, password: string) {
       );
       wsRef.current = ws;
 
-    ws.onopen = () => {
-      attempt = 0;
-      setStatus("connected");
-    };
+      ws.onopen = () => {
+        attempt = 0;
+        setStatus("connected");
+      };
 
-    ws.onclose = () => {
-      if (disposed) return;
-      setStatus("reconnecting");
-      // Jittered so a room full of people doesn't reconnect in lockstep
-      // and stampede a server that just came back up.
-      const backoff = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** attempt);
-      attempt++;
-      retryTimer = setTimeout(connect, backoff * (0.5 + Math.random()));
-    };
+      ws.onclose = () => {
+        if (disposed) return;
+        setStatus("reconnecting");
+        // Jittered so a room full of people doesn't reconnect in
+        // lockstep and stampede a server that just came back up.
+        const backoff = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** attempt);
+        attempt++;
+        retryTimer = setTimeout(connect, backoff * (0.5 + Math.random()));
+      };
 
-    // A rejected upgrade (401/404) reaches the browser without detail,
-    // so the page checks the room over HTTP first; this is the fallback.
-    // onclose fires too, so the retry is already handled.
-    ws.onerror = () => setStatus((s) => (s === "connecting" ? "error" : s));
+      ws.onerror = () => setStatus((s) => (s === "connecting" ? "error" : s));
 
-    ws.onmessage = async (evt) => {
-      let msg: Record<string, unknown>;
-      try {
-        msg = JSON.parse(evt.data);
-      } catch {
-        return;
-      }
+      ws.onmessage = async (evt) => {
+        let msg: Record<string, unknown>;
+        try {
+          msg = JSON.parse(evt.data);
+        } catch {
+          return;
+        }
 
-      switch (msg.type) {
-        case "welcome": {
-          const myId = msg.peerId as string;
-          const myName = msg.name as string;
-          setYou({ peerId: myId, name: myName });
-          // Kept so a reconnect can reclaim this identity rather than
-          // coming back as a stranger.
-          rememberIdentity(roomId, { peerId: myId, name: myName, resume: (msg.resume as string) ?? "" });
+        switch (msg.type) {
+          case "welcome": {
+            const myId = msg.peerId as string;
+            const myName = msg.name as string;
+            setYou({ peerId: myId, name: myName });
+            rememberIdentity(roomId, { peerId: myId, name: myName, resume: (msg.resume as string) ?? "" });
 
-          const list = (msg.peers as Peer[]) ?? [];
-          setPeers(list);
+            const list = (msg.peers as Peer[]) ?? [];
+            setPeers(list);
 
-          // This may be a reconnect -- a reload, or this server being
-          // redeployed. Anyone still here kept their identity, so the
-          // connections already open to them are still valid and still
-          // carrying video: rebuilding them is exactly the interruption
-          // all of this exists to avoid. Only drop what's genuinely gone.
-          const present = new Set(list.map((p) => p.peerId));
-          for (const id of [...outgoingRef.current.keys()]) {
-            if (!present.has(id)) closeOutgoing(id);
-          }
-          for (const id of [...incomingRef.current.keys()]) {
-            if (!present.has(id)) closeIncoming(id);
-          }
-          for (const id of [...pendingLeaveRef.current.keys()]) {
-            if (present.has(id)) cancelPendingLeave(id);
-          }
-
-          // A restarted server has forgotten I was publishing, so say it
-          // again -- and offer only to people I'm not already connected to.
-          if (localStreamRef.current) {
-            send({ type: "publish:start" });
-            for (const peer of list) {
-              if (!outgoingRef.current.has(peer.peerId)) {
-                await offerTo(peer.peerId).catch(() => {});
-              }
+            const present = new Set(list.map((p) => p.peerId));
+            for (const id of [...pendingLeaveRef.current.keys()]) {
+              if (present.has(id)) cancelPendingLeave(id);
             }
+            for (const id of Object.keys(remoteStreamsRef.current)) {
+              if (!present.has(id)) dropRemote(id);
+            }
+
+            // A restarted server has forgotten everything, this
+            // browser's publish connection included -- so republish from
+            // scratch. The receive side is re-offered by the server.
+            if (localStreamRef.current && sourceRef.current) {
+              subscribeRef.current?.close();
+              subscribeRef.current = null;
+              await startSharing(sourceRef.current).catch(() => {});
+            }
+            break;
           }
-          break;
-        }
 
-        case "peer:join": {
-          const peer: Peer = { peerId: msg.peerId as string, name: msg.name as string, publishing: false };
-          setPeers((current) => [...current.filter((p) => p.peerId !== peer.peerId), peer]);
-
-          // Back inside the grace window: the connection to them never
-          // went away, so leave it be rather than renegotiating.
-          const returning = pendingLeaveRef.current.has(peer.peerId) && outgoingRef.current.has(peer.peerId);
-          cancelPendingLeave(peer.peerId);
-          if (!returning) {
-            // If I'm mid-share, the newcomer needs my stream too.
-            await offerTo(peer.peerId).catch(() => {});
+          case "peer:join": {
+            const peer: Peer = { peerId: msg.peerId as string, name: msg.name as string, publishing: false };
+            setPeers((current) => [...current.filter((p) => p.peerId !== peer.peerId), peer]);
+            cancelPendingLeave(peer.peerId);
+            break;
           }
-          break;
-        }
 
-        case "peer:leave": {
-          const peerId = msg.peerId as string;
-          setPeers((current) => current.filter((p) => p.peerId !== peerId));
-          // Deferred rather than immediate -- see LEAVE_GRACE_MS.
-          cancelPendingLeave(peerId);
-          pendingLeaveRef.current.set(
-            peerId,
-            setTimeout(() => {
-              pendingLeaveRef.current.delete(peerId);
-              closeOutgoing(peerId);
-              closeIncoming(peerId);
-            }, LEAVE_GRACE_MS),
-          );
-          break;
-        }
-
-        case "publish:start": {
-          const peerId = msg.peerId as string;
-          setPeers((current) => current.map((p) => (p.peerId === peerId ? { ...p, publishing: true } : p)));
-          break;
-        }
-
-        case "publish:stop": {
-          const peerId = msg.peerId as string;
-          setPeers((current) => current.map((p) => (p.peerId === peerId ? { ...p, publishing: false } : p)));
-          closeIncoming(peerId);
-          break;
-        }
-
-        case "signal": {
-          const from = msg.from as string;
-          const payload = msg.payload as Record<string, unknown>;
-          const senderRole = payload.role as SignalRole;
-
-          if (payload.kind === "offer") {
-            await answerOffer(from, payload.sdp as RTCSessionDescriptionInit).catch(() => {});
-            return;
+          case "peer:leave": {
+            const peerId = msg.peerId as string;
+            setPeers((current) => current.filter((p) => p.peerId !== peerId));
+            // Deferred rather than immediate -- see LEAVE_GRACE_MS.
+            cancelPendingLeave(peerId);
+            pendingLeaveRef.current.set(
+              peerId,
+              setTimeout(() => {
+                pendingLeaveRef.current.delete(peerId);
+                dropRemote(peerId);
+              }, LEAVE_GRACE_MS),
+            );
+            break;
           }
-          // The sender's role tells us which of the two connections with
-          // this peer the message belongs to.
-          const pc =
-            senderRole === "publisher" ? incomingRef.current.get(from) : outgoingRef.current.get(from);
-          if (!pc) return;
 
-          if (payload.kind === "answer") {
-            await pc.setRemoteDescription(payload.sdp as RTCSessionDescriptionInit).catch(() => {});
-          } else if (payload.kind === "ice") {
-            // A candidate landing before setRemoteDescription is dropped
-            // rather than queued -- rare enough with this signalling
-            // order that the bookkeeping isn't worth it.
-            await pc.addIceCandidate(payload.candidate as RTCIceCandidateInit).catch(() => {});
+          case "publish:start":
+            setPeers((current) =>
+              current.map((p) => (p.peerId === msg.peerId ? { ...p, publishing: true } : p)),
+            );
+            break;
+
+          case "publish:stop": {
+            const peerId = msg.peerId as string;
+            setPeers((current) => current.map((p) => (p.peerId === peerId ? { ...p, publishing: false } : p)));
+            dropRemote(peerId);
+            break;
           }
-          break;
-        }
-      }
-    };
 
+          case "publish:answer": {
+            const pc = publishRef.current;
+            if (pc && msg.sdp) {
+              await pc.setRemoteDescription(msg.sdp as RTCSessionDescriptionInit).catch(() => {});
+            }
+            break;
+          }
+
+          case "publish:ice": {
+            const pc = publishRef.current;
+            if (pc && msg.candidate) {
+              await pc.addIceCandidate(msg.candidate as RTCIceCandidateInit).catch(() => {});
+            }
+            break;
+          }
+
+          case "publish:error":
+            setErrorMessage((msg.error as string) ?? "não foi possível transmitir");
+            break;
+
+          // The server offers on the receive side, and re-offers every
+          // time someone starts or stops sharing.
+          case "subscribe:offer": {
+            let pc = subscribeRef.current;
+            if (!pc) {
+              pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+              subscribeRef.current = pc;
+              pc.onicecandidate = (ev) => {
+                if (ev.candidate) send({ type: "subscribe:ice", candidate: ev.candidate.toJSON() });
+              };
+              pc.ontrack = (ev) => {
+                // The SFU tags every outgoing track with the publisher's
+                // peer id as its stream id, which is how a track is
+                // matched back to the person it came from.
+                const stream = ev.streams[0];
+                if (!stream) return;
+                setRemoteStreams((current) => ({ ...current, [stream.id]: stream }));
+              };
+            }
+            await pc.setRemoteDescription(msg.sdp as RTCSessionDescriptionInit).catch(() => {});
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            send({ type: "subscribe:answer", sdp: pc.localDescription });
+            break;
+          }
+
+          case "subscribe:ice": {
+            const pc = subscribeRef.current;
+            if (pc && msg.candidate) {
+              await pc.addIceCandidate(msg.candidate as RTCIceCandidateInit).catch(() => {});
+            }
+            break;
+          }
+        }
+      };
     };
 
     connect();
 
-    // Leaving the room for real: everything goes, including the peer
-    // connections a reconnect deliberately preserves.
+    // Leaving the room for real.
     return () => {
       disposed = true;
       clearTimeout(retryTimer);
       for (const timer of pendingLeaveRef.current.values()) clearTimeout(timer);
       pendingLeaveRef.current.clear();
       wsRef.current?.close();
-      for (const pc of outgoingRef.current.values()) pc.close();
-      for (const pc of incomingRef.current.values()) pc.close();
-      outgoingRef.current.clear();
-      incomingRef.current.clear();
+      publishRef.current?.close();
+      subscribeRef.current?.close();
+      publishRef.current = null;
+      subscribeRef.current = null;
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     };
-  }, [roomId, password, offerTo, answerOffer, closeOutgoing, closeIncoming, cancelPendingLeave, send]);
+  }, [roomId, password, cancelPendingLeave, dropRemote, send, startSharing]);
 
   return {
     status,
