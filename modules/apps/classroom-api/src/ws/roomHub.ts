@@ -22,6 +22,12 @@ type RoomState = {
   // bookclub-api's drawing/texts) -- included in the WS `init` payload
   // so a client joining mid-class sees the current content immediately.
   notepad: string;
+  // Whether the host is currently sharing, and the most recent frame
+  // (a base64 JPEG data URL). Both go out in `init` so someone joining
+  // mid-class sees the screen immediately instead of a blank panel
+  // until the next frame lands. Never persisted, same as the notepad.
+  sharing: boolean;
+  lastFrame: string | null;
 };
 
 const rooms = new Map<string, RoomState>();
@@ -29,7 +35,7 @@ const rooms = new Map<string, RoomState>();
 function getOrCreateRoom(roomId: string): RoomState {
   let room = rooms.get(roomId);
   if (!room) {
-    room = { participants: new Map(), notepad: "" };
+    room = { participants: new Map(), notepad: "", sharing: false, lastFrame: null };
     rooms.set(roomId, room);
   }
   return room;
@@ -47,35 +53,6 @@ export function broadcast(roomId: string, payload: unknown, exclude?: WSContext)
       // best-effort -- a dead socket gets cleaned up by its own onClose
     }
   }
-}
-
-// Targeted delivery for WebRTC signaling (offer/answer/ICE candidates
-// are between exactly two participants, never everyone) -- looks the
-// recipient up by userId rather than trusting a client-supplied
-// WSContext, same "only trust what the server itself tracked"
-// reasoning as text:move/resize below in bookclub-api's own hub.
-//
-// Delivers to EVERY connection open under that userId, not just the
-// first -- the same person can legitimately be connected twice at
-// once (the host's own Activity tab plus the screen/camera capture
-// popup useWebRTCBroadcast.ts opens for them, see SharePopup.tsx).
-// Both sides tag their payloads with a relayId + role so each ignores
-// the echo of its own messages that this fans out to it as well.
-export function sendTo(roomId: string, userId: string, payload: unknown): boolean {
-  const room = rooms.get(roomId);
-  if (!room) return false;
-  const data = JSON.stringify(payload);
-  let delivered = false;
-  for (const [ws, p] of room.participants) {
-    if (p.userId !== userId) continue;
-    try {
-      ws.send(data);
-    } catch {
-      // best-effort, same as broadcast
-    }
-    delivered = true;
-  }
-  return delivered;
 }
 
 export function join(roomId: string, ws: WSContext, userId: string, userName: string) {
@@ -109,4 +86,19 @@ export function setNotepad(roomId: string, content: string) {
 
 export function notepadOf(roomId: string): string {
   return rooms.get(roomId)?.notepad ?? "";
+}
+
+export function setSharing(roomId: string, sharing: boolean) {
+  const room = getOrCreateRoom(roomId);
+  room.sharing = sharing;
+  if (!sharing) room.lastFrame = null;
+}
+
+export function setLastFrame(roomId: string, frame: string) {
+  getOrCreateRoom(roomId).lastFrame = frame;
+}
+
+export function shareStateOf(roomId: string) {
+  const room = rooms.get(roomId);
+  return { sharing: room?.sharing ?? false, lastFrame: room?.lastFrame ?? null };
 }

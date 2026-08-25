@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router";
 import { classroomApi, type Room } from "../lib/classroomApi.js";
-import { useClassSocket, type SignalPayload } from "../lib/useClassSocket.js";
-import { useWebRTCBroadcast } from "../lib/useWebRTCBroadcast.js";
+import { useClassSocket } from "../lib/useClassSocket.js";
+import { useLiveShare } from "../lib/useLiveShare.js";
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import { IconEnd } from "../components/RoomIcons.js";
 
@@ -22,23 +22,16 @@ export default function AulaRoom() {
   const [notepadDraft, setNotepadDraft] = useState("");
   const notepadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
-  const signalHandlerRef = useRef<(from: string, payload: SignalPayload) => void>(() => {});
-  const socket = useClassSocket(id ?? "", (from, payload) => signalHandlerRef.current(from, payload));
+  const socket = useClassSocket(id ?? "");
   const isHost = Boolean(socket.you && socket.you.userId === socket.hostId);
   const isClosed = socket.status === "closed";
 
-  const rtc = useWebRTCBroadcast({
+  const share = useLiveShare({
     roomId: id ?? "",
-    isHost,
-    hostId: socket.hostId,
     you: socket.you,
-    participants: socket.participants,
-    sendSignal: socket.sendSignal,
+    stopShare: socket.stopShare,
   });
-  signalHandlerRef.current = rtc.handleSignal;
 
   useEffect(() => {
     if (!id) return;
@@ -60,14 +53,6 @@ export default function AulaRoom() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [socket.chatHistory.length]);
-
-  useEffect(() => {
-    if (localVideoRef.current) localVideoRef.current.srcObject = rtc.localStream;
-  }, [rtc.localStream]);
-
-  useEffect(() => {
-    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = rtc.remoteStream;
-  }, [rtc.remoteStream]);
 
   function handleNotepadChange(value: string) {
     setNotepadDraft(value);
@@ -139,19 +124,17 @@ export default function AulaRoom() {
       <div className="flex flex-col lg:flex-row gap-4" style={{ height: "min(70vh, 640px)" }}>
         <div className="flex-[3] min-w-0 glass-card p-4 flex flex-col">
           <div className="flex-1 min-h-0 rounded-lg bg-black/40 flex items-center justify-center overflow-hidden relative">
-            {isHost ? (
-              rtc.localStream ? (
-                <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-contain" />
-              ) : (
-                <p className="text-buteco-cream/40 text-sm text-center px-6">
-                  {isClosed ? "aula encerrada" : "compartilhe sua tela ou câmera pra começar"}
-                </p>
-              )
-            ) : rtc.remoteStream ? (
-              <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain" />
+            {socket.frame ? (
+              <img src={socket.frame} alt="tela compartilhada pelo professor" className="w-full h-full object-contain" />
+            ) : socket.sharing ? (
+              <p className="text-buteco-cream/40 text-sm text-center px-6">recebendo a imagem…</p>
             ) : (
               <p className="text-buteco-cream/40 text-sm text-center px-6">
-                {isClosed ? "aula encerrada" : "esperando o professor compartilhar a tela ou câmera…"}
+                {isClosed
+                  ? "aula encerrada"
+                  : isHost
+                    ? "compartilhe sua tela ou câmera pra começar"
+                    : "esperando o professor compartilhar a tela ou câmera…"}
               </p>
             )}
           </div>
@@ -159,36 +142,28 @@ export default function AulaRoom() {
           {isHost && !isClosed && (
             <div className="flex items-center gap-2 mt-3">
               <button
-                onClick={() => rtc.startSharing("screen")}
-                className={`px-3 h-9 rounded-lg text-xs font-heading font-semibold border transition-colors cursor-pointer ${
-                  rtc.sharing === "screen"
-                    ? "border-buteco-amber text-buteco-amber bg-buteco-amber/10"
-                    : "border-white/15 text-buteco-cream/80 hover:border-buteco-amber/40"
-                }`}
+                onClick={() => share.start("screen")}
+                disabled={socket.sharing}
+                className="px-3 h-9 rounded-lg text-xs font-heading font-semibold border border-white/15 text-buteco-cream/80 hover:border-buteco-amber/40 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Compartilhar tela
               </button>
               <button
-                onClick={() => rtc.startSharing("camera")}
-                className={`px-3 h-9 rounded-lg text-xs font-heading font-semibold border transition-colors cursor-pointer ${
-                  rtc.sharing === "camera"
-                    ? "border-buteco-amber text-buteco-amber bg-buteco-amber/10"
-                    : "border-white/15 text-buteco-cream/80 hover:border-buteco-amber/40"
-                }`}
+                onClick={() => share.start("camera")}
+                disabled={socket.sharing}
+                className="px-3 h-9 rounded-lg text-xs font-heading font-semibold border border-white/15 text-buteco-cream/80 hover:border-buteco-amber/40 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Câmera
               </button>
-              {rtc.sharing && (
+              {socket.sharing && (
                 <button
-                  onClick={rtc.stopSharing}
+                  onClick={share.stop}
                   className="px-3 h-9 rounded-lg text-xs font-heading font-semibold border border-red-400/30 text-red-300/80 hover:border-red-400/60 hover:text-red-300 transition-colors cursor-pointer"
                 >
                   Parar
                 </button>
               )}
-              {rtc.shareError && (
-                <p className="text-red-300/80 text-xs font-mono ml-1">{rtc.shareError}</p>
-              )}
+              {share.error && <p className="text-red-300/80 text-xs font-mono ml-1">{share.error}</p>}
             </div>
           )}
         </div>

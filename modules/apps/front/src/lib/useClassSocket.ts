@@ -3,7 +3,6 @@ import { classroomApi } from "./classroomApi.js";
 
 export type ChatMessage = { id: string; userId: string; userName: string; body: string; createdAt: string };
 export type Participant = { userId: string; userName: string };
-export type SignalPayload = Record<string, unknown>;
 
 type ClassSocketState = {
   connected: boolean;
@@ -13,6 +12,11 @@ type ClassSocketState = {
   participants: Participant[];
   chatHistory: ChatMessage[];
   notepad: string;
+  // The host's live screen/camera: whether a share is running, and
+  // the most recent frame as a JPEG data URL. See useLiveShare.ts for
+  // why this is a frame stream rather than WebRTC.
+  sharing: boolean;
+  frame: string | null;
 };
 
 const initialState: ClassSocketState = {
@@ -23,17 +27,13 @@ const initialState: ClassSocketState = {
   participants: [],
   chatHistory: [],
   notepad: "",
+  sharing: false,
+  frame: null,
 };
 
-// onSignal fires for every incoming webrtc:signal message, outside
-// React state -- AulaRoom.tsx's WebRTC peer-connection logic (offers,
-// answers, ICE candidates) needs to react to these immediately, not
-// wait on a render cycle the way reading them back out of state would.
-export function useClassSocket(roomId: string, onSignal: (from: string, payload: SignalPayload) => void) {
+export function useClassSocket(roomId: string) {
   const [state, setState] = useState<ClassSocketState>(initialState);
   const wsRef = useRef<WebSocket | null>(null);
-  const onSignalRef = useRef(onSignal);
-  onSignalRef.current = onSignal;
 
   useEffect(() => {
     setState(initialState);
@@ -56,6 +56,8 @@ export function useClassSocket(roomId: string, onSignal: (from: string, payload:
             participants: msg.participants as Participant[],
             chatHistory: msg.chatHistory as ChatMessage[],
             notepad: (msg.notepad as string) ?? "",
+            sharing: Boolean(msg.sharing),
+            frame: (msg.lastFrame as string | null) ?? null,
           }));
           break;
 
@@ -77,8 +79,16 @@ export function useClassSocket(roomId: string, onSignal: (from: string, payload:
           setState((s) => ({ ...s, notepad: (msg.content as string) ?? "" }));
           break;
 
-        case "webrtc:signal":
-          onSignalRef.current(msg.from as string, msg.payload as SignalPayload);
+        case "share:start":
+          setState((s) => ({ ...s, sharing: true }));
+          break;
+
+        case "share:stop":
+          setState((s) => ({ ...s, sharing: false, frame: null }));
+          break;
+
+        case "frame":
+          setState((s) => ({ ...s, sharing: true, frame: msg.data as string }));
           break;
       }
     };
@@ -94,6 +104,8 @@ export function useClassSocket(roomId: string, onSignal: (from: string, payload:
     ...state,
     sendChat: (body: string) => send({ type: "chat:send", body }),
     updateNotepad: (content: string) => send({ type: "notepad:update", content }),
-    sendSignal: (to: string, payload: SignalPayload) => send({ type: "webrtc:signal", to, payload }),
+    // Host-only server-side; the capture popup listens for the
+    // resulting broadcast and closes itself. See useLiveShare.ts.
+    stopShare: () => send({ type: "share:stop" }),
   };
 }
