@@ -120,7 +120,21 @@ jobs:
       # (each `mv` just prints "already moved" and continues).
       - name: Fix pending resource-address moves
         run: |
-          mv() { terraform state mv -lock-timeout=300s "$1" "$2" || echo "skip: $1 (already moved or absent)"; }
+          # docker_volume/docker_network resources are keyed by their
+          # real Docker *name*, not by Terraform address -- wherever the
+          # very first (pre-moved.tf) apply already created a fresh
+          # object at the new address before erroring out, `state mv`
+          # can't land (destination already occupied by a *different*
+          # tracked resource pointing at the same real object). Falls
+          # back to just dropping the old-address tracking in that case
+          # -- the new address is already the correct, live owner.
+          mv() {
+            if terraform state mv -lock-timeout=300s "$1" "$2" 2>/tmp/mv_err; then
+              return
+            fi
+            cat /tmp/mv_err
+            terraform state rm -lock-timeout=300s "$1" || echo "skip: $1 (already moved or absent)"
+          }
           mv 'module.cloudflare.cloudflare_zero_trust_tunnel_cloudflared.homelab' 'module.cloud_cloudflare.cloudflare_zero_trust_tunnel_cloudflared.homelab'
           mv 'module.compute_app.docker_container.domain_api' 'module.compute_apps_domain_api.docker_container.domain_api'
           mv 'module.compute_app.docker_container.domain_worker' 'module.compute_apps_domain_api.docker_container.domain_worker'
@@ -138,6 +152,9 @@ jobs:
           mv 'module.compute_front' 'module.compute_apps_front'
           mv 'module.compute_monitoring' 'module.compute_services_monitoring'
           mv 'module.compute_ninerouter' 'module.compute_services_ai_proxy'
+          mv 'module.compute_data.docker_volume.redis_data' 'module.storage_redis.docker_volume.redis_data'
+          mv 'module.compute_registry.docker_volume.registry_data' 'module.compute_services_registry.docker_volume.registry_data'
+          mv 'module.compute_registry.docker_volume.registry_auth' 'module.compute_services_registry.docker_volume.registry_auth'
           # Genuinely orphaned, not a move: the first apply created a
           # *second*, new-address mTLS cert successfully before erroring,
           # so this old one is a real duplicate Cloudflare won't let
