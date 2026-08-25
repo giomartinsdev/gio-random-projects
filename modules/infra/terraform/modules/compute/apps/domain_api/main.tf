@@ -36,14 +36,25 @@ resource "docker_container" "domain_api" {
   image   = "${var.registry_host}/domain-api:latest"
   restart = "unless-stopped"
 
-  env = concat([
+  # TEMPORARY: domain_api specifically does NOT get
+  # local.secrets_bridge_env (domain_worker below still does) --
+  # investigating classroom-api's DOMAIN_API_KEYS never showing up via
+  # the bridge's GET /secret/DOMAIN_API_KEYS despite the Vaultwarden
+  # item itself being re-seeded from scratch (state rm + fresh create)
+  # and the bridge container restarted after that. Forces
+  # config.Load()'s resolve() onto its env-var fallback instead, which
+  # IS provably current (both DOMAIN_API_KEYS and DATABASE_URL below
+  # are computed from the exact same locals the vault_seed items use).
+  # Revert once the vault-side staleness is understood -- see incident
+  # notes to add once resolved.
+  env = [
     "DATABASE_URL=${local.database_url}",
     "REDIS_ADDR=${var.redis_host}:6379",
     "HTTP_ADDR=:8000",
     "DOMAIN_API_KEYS=${var.domain_api_keys}",
     "RATE_LIMIT_RPS=${var.rate_limit_rps}",
     "RATE_LIMIT_BURST=${var.rate_limit_burst}",
-  ], local.secrets_bridge_env)
+  ]
 
   ports {
     internal = 8000
