@@ -56,8 +56,12 @@ func (h *RoomHandlers) CreateRoom(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
-	if input.HostID == "" || input.Title == "" || input.DocumentID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody{Error: "host_id, title and document_id are required"})
+	// document_id is optional -- classroom-api always sends "" (a live
+	// class has no document), bookclub-api always sends a real PDF id.
+	// See domain-worker's domain/room/room.go for the same relaxation
+	// on the write side.
+	if input.HostID == "" || input.Title == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "host_id and title are required"})
 		return
 	}
 	h.publish(w, r, application.ActionCreateRoom, input)

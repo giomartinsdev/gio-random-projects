@@ -1,12 +1,16 @@
-// Package room is the domain layer for the Room aggregate ("Clube do
-// Livro") — plain Go types and business rules, no database, no HTTP,
-// no Redis, and deliberately no idea what a "book club" or a "PDF" is:
-// DocumentID is an opaque string bookclub-api gave us, same as
-// author_id is an opaque string on Post. Page-turn permissions, chat,
-// and every other bookclub-specific rule live in bookclub-api, not
-// here — this aggregate only knows "a room has a host, a current
-// page, and an open/paused status", the same generic ownership shape
-// Post already has (status here mirrors Post's own draft/published).
+// Package room is the domain layer for the Room aggregate — plain Go
+// types and business rules, no database, no HTTP, no Redis, and
+// deliberately no idea what a "book club", "class", or "PDF" is:
+// DocumentID is an opaque string the calling service gave us (or left
+// empty), same as author_id is an opaque string on Post. Page-turn
+// permissions, chat, and every other caller-specific rule live in
+// that service, not here — this aggregate only knows "a room has a
+// host, a current page, and an open/paused/closed status", the same
+// generic ownership shape Post already has (status here mirrors
+// Post's own draft/published). Two callers share it today:
+// bookclub-api (DocumentID = a PDF's id) and classroom-api (DocumentID
+// left "" — a live class has no document, only a host's shared
+// screen/camera and a notepad, both handled entirely in that service).
 package room
 
 import (
@@ -26,12 +30,11 @@ const (
 )
 
 var (
-	ErrHostRequired     = errors.New("host_id is required")
-	ErrTitleRequired    = errors.New("title is required")
-	ErrDocumentRequired = errors.New("document_id is required")
-	ErrInvalidPage      = errors.New("current_page must be at least 1")
-	ErrInvalidStatus    = errors.New("status must be \"open\" or \"paused\"")
-	ErrForbidden        = errors.New("only the host may modify this room")
+	ErrHostRequired  = errors.New("host_id is required")
+	ErrTitleRequired = errors.New("title is required")
+	ErrInvalidPage   = errors.New("current_page must be at least 1")
+	ErrInvalidStatus = errors.New("status must be \"open\" or \"paused\"")
+	ErrForbidden     = errors.New("only the host may modify this room")
 )
 
 type Room struct {
@@ -49,15 +52,15 @@ func validStatus(s string) bool { return s == StatusOpen || s == StatusPaused }
 
 // New constructs a Room, enforcing the aggregate's invariants at the
 // one place they can't be bypassed — same shape as domain/post.New.
+// documentID is optional (classroom-api always passes ""); when a
+// caller does have one (bookclub-api's PDF id) it's just carried
+// along opaquely, never validated here.
 func New(id, hostID, title, documentID string) (Room, error) {
 	if hostID == "" {
 		return Room{}, ErrHostRequired
 	}
 	if title == "" {
 		return Room{}, ErrTitleRequired
-	}
-	if documentID == "" {
-		return Room{}, ErrDocumentRequired
 	}
 
 	now := time.Now().UTC()
