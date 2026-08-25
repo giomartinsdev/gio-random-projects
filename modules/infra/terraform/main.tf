@@ -137,9 +137,9 @@ module "compute_apps_tela" {
     docker = docker
   }
 
-  network_name  = module.network_docker_apps.network_name
-  registry_host = var.registry_host
-  sfu_public_ip = var.tela_sfu_public_ip
+  network_name    = module.network_docker_apps.network_name
+  registry_host   = var.registry_host
+  sfu_public_host = var.tela_sfu_media_hostname != "" ? var.tela_sfu_media_hostname : var.tela_sfu_public_host
 }
 
 module "compute_apps_front" {

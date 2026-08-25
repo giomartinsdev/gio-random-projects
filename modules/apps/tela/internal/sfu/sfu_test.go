@@ -267,3 +267,40 @@ func countVideoSections(sdp string) int {
 	}
 	return count
 }
+
+// A hostname is resolved to an address at startup, because ICE
+// candidates carry addresses and browsers don't resolve names handed to
+// them in a candidate.
+func TestPublicHostAcceptsAnIPOrAHostname(t *testing.T) {
+	direct, err := sfu.New(sfu.Options{UDPPort: 0, PublicHost: "203.0.113.7"})
+	if err != nil {
+		t.Fatalf("literal ip: %v", err)
+	}
+	if got := direct.PublicIP(); got != "203.0.113.7" {
+		t.Fatalf("a literal IP should be used as-is, got %q", got)
+	}
+
+	named, err := sfu.New(sfu.Options{UDPPort: 0, PublicHost: "localhost"})
+	if err != nil {
+		t.Fatalf("hostname: %v", err)
+	}
+	if got := named.PublicIP(); got != "127.0.0.1" {
+		t.Fatalf("expected localhost to resolve to 127.0.0.1, got %q", got)
+	}
+
+	none, err := sfu.New(sfu.Options{UDPPort: 0})
+	if err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	if got := none.PublicIP(); got != "" {
+		t.Fatalf("nothing configured should advertise nothing, got %q", got)
+	}
+}
+
+// A name that doesn't resolve fails at startup rather than silently
+// advertising nothing and leaving video that never begins.
+func TestUnresolvableHostFailsLoudly(t *testing.T) {
+	if _, err := sfu.New(sfu.Options{UDPPort: 0, PublicHost: "nao-existe.invalid"}); err == nil {
+		t.Fatal("expected an unresolvable host to be an error")
+	}
+}

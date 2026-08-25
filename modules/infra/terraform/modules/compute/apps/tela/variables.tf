@@ -21,19 +21,26 @@ variable "watchtower_enabled" {
   default     = false
 }
 
-variable "sfu_public_ip" {
+variable "sfu_public_host" {
   description = <<-EOT
-    Address browsers should send media to. Not reachable through the
-    Cloudflare tunnel -- WebRTC needs UDP straight to this host, so this
-    must be an address clients can actually route to:
+    Where browsers should send media -- an IP or a hostname (resolved
+    once at startup). Media does NOT go through the Cloudflare tunnel:
+    WebRTC is UDP straight to this host, so whatever goes here must
+    route to the machine itself.
 
-      - same LAN as the server: its local address (e.g. 192.168.1.50)
-      - reachable from the internet: the public IP, with this port
-        forwarded to the host
-      - a VPS: its public IP
+      - same LAN as the server: its local address, or a name resolving
+        to it (e.g. 192.168.1.50)
+      - reachable from the internet: a hostname with an UNPROXIED A
+        record (grey cloud) pointing at the public IP, with this UDP
+        port forwarded to the host
+      - a VPS: its public IP, or an unproxied name for it
+
+    NOT tela.giomartins.dev: that's a proxied CNAME to the tunnel and
+    resolves to Cloudflare, so media sent there is dropped.
 
     Empty means the SFU advertises the container's private address and
-    no browser can connect.
+    no browser can connect -- the app logs a warning at startup when
+    that happens.
   EOT
   type        = string
   default     = ""

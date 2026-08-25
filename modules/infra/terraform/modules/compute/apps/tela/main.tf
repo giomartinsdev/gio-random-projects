@@ -27,13 +27,14 @@ resource "docker_container" "tela" {
     "PORT=8000",
     "STATE_FILE=/data/rooms.json",
     # The SFU is a WebRTC endpoint, so browsers connect to it directly
-    # over UDP -- they can't reach it through the Cloudflare tunnel, which
-    # only carries HTTP. This address is what it advertises to them, and
-    # inside Docker it has to be the HOST's address rather than the
-    # container's: on a LAN the machine's local IP, on a VPS its public
-    # one. Left empty, the SFU advertises the container's private address
-    # and nothing can connect.
-    "SFU_PUBLIC_IP=${var.sfu_public_ip}",
+    # over UDP -- it can't be reached through the Cloudflare tunnel,
+    # which only carries HTTP. This is the address it advertises, and
+    # inside Docker it has to be the HOST's, not the container's.
+    #
+    # A hostname is fine (resolved at startup) as long as it resolves to
+    # THIS machine -- which rules out the proxied record serving the
+    # site, since that resolves to Cloudflare. See sfu_public_host.
+    "SFU_PUBLIC_HOST=${var.sfu_public_host}",
     "SFU_UDP_PORT=${var.sfu_udp_port}",
   ]
 

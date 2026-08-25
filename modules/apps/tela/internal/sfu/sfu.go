@@ -17,6 +17,7 @@ package sfu
 import (
 	"fmt"
 	"io"
+	"net"
 	"sync"
 	"time"
 
@@ -35,16 +36,25 @@ const keyframeInterval = 2 * time.Second
 type Server struct {
 	api *webrtc.API
 	cfg webrtc.Configuration
+	// What we ended up advertising, so startup can log it -- the most
+	// common failure here is advertising an address browsers can't
+	// reach, and that is invisible without saying which one it is.
+	publicIP string
 
 	mu    sync.RWMutex
 	rooms map[string]*Room
 }
 
 type Options struct {
-	// The address browsers will send media to. On a VPS this is its
-	// public IP -- without it the server would advertise only its
-	// private address and no browser could reach it.
-	PublicIP string
+	// Where browsers should send media. Either a literal IP or a
+	// hostname, which is resolved once at startup -- ICE candidates
+	// carry addresses, not names, so a name has to become an address
+	// before anything is advertised.
+	//
+	// It has to resolve to THIS machine. A hostname behind a proxy (a
+	// Cloudflare-proxied record, say) resolves to the proxy, and media
+	// sent there goes nowhere: WebRTC is UDP straight to the host.
+	PublicHost string
 	// Single UDP port for all media, so deployment means opening one
 	// port rather than a range.
 	UDPPort int
@@ -74,10 +84,15 @@ func New(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("udp mux on port %d: %w", opts.UDPPort, err)
 	}
 	settings.SetICEUDPMux(mux)
-	if opts.PublicIP != "" {
+
+	publicIP, err := resolvePublicIP(opts.PublicHost)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", opts.PublicHost, err)
+	}
+	if publicIP != "" {
 		// Makes the server advertise the address browsers can actually
 		// reach, rather than the container's private one.
-		settings.SetNAT1To1IPs([]string{opts.PublicIP}, webrtc.ICECandidateTypeHost)
+		settings.SetNAT1To1IPs([]string{publicIP}, webrtc.ICECandidateTypeHost)
 	}
 
 	iceServers := make([]webrtc.ICEServer, 0, len(opts.STUNURLs))
@@ -86,6 +101,7 @@ func New(opts Options) (*Server, error) {
 	}
 
 	return &Server{
+		publicIP: publicIP,
 		api: webrtc.NewAPI(
 			webrtc.WithMediaEngine(media),
 			webrtc.WithInterceptorRegistry(registry.registry),
@@ -231,4 +247,39 @@ func requestKeyframes(pc *webrtc.PeerConnection, remote *webrtc.TrackRemote, don
 			}
 		}
 	}
+}
+
+// PublicIP is the address being advertised to browsers, resolved from
+// whatever PublicHost was given. Empty means none was configured and
+// only local addresses are advertised.
+func (s *Server) PublicIP() string { return s.publicIP }
+
+// resolvePublicIP turns a hostname into the address ICE will advertise.
+// Resolved once, at startup: pion bakes this into the setting engine
+// when the API is built, so a name whose address later changes needs a
+// restart to be picked up.
+//
+// IPv4 is preferred: the 1-to-1 NAT mapping this feeds exists to
+// paper over a NAT, and NAT is an IPv4 problem.
+func resolvePublicIP(host string) (string, error) {
+	if host == "" {
+		return "", nil
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return host, nil
+	}
+
+	addrs, err := net.LookupIP(host)
+	if err != nil {
+		return "", err
+	}
+	for _, addr := range addrs {
+		if v4 := addr.To4(); v4 != nil {
+			return v4.String(), nil
+		}
+	}
+	if len(addrs) > 0 {
+		return addrs[0].String(), nil
+	}
+	return "", fmt.Errorf("no addresses found")
 }

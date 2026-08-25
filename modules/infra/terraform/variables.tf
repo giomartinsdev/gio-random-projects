@@ -168,8 +168,26 @@ variable "discord_client_secret" {
   sensitive   = true
 }
 
-variable "tela_sfu_public_ip" {
-  description = "Address tela's SFU advertises to browsers. See modules/compute/apps/tela/variables.tf -- media is UDP straight to the host and cannot go through the Cloudflare tunnel."
+variable "tela_sfu_public_host" {
+  description = "Address or hostname tela's SFU advertises to browsers. See modules/compute/apps/tela/variables.tf -- media is UDP straight to the host and cannot go through the Cloudflare tunnel. Ignored when tela_sfu_media_hostname is set."
+  type        = string
+  default     = ""
+}
+
+# Media can't use the proxied hostnames the rest of the config creates:
+# those are CNAMEs to the tunnel and resolve to Cloudflare, which won't
+# carry UDP. Setting these two makes an UNPROXIED A record pointing
+# straight at the machine, which the SFU then advertises -- so the
+# address lives in DNS instead of being pasted into a variable, and a
+# changing IP is one record edit rather than a redeploy.
+variable "tela_sfu_media_hostname" {
+  description = "Hostname for an unproxied A record pointing at the machine running tela's SFU (e.g. tela-media.giomartins.dev). Requires tela_sfu_media_ip. Leave empty to skip the record and use tela_sfu_public_host directly."
+  type        = string
+  default     = ""
+}
+
+variable "tela_sfu_media_ip" {
+  description = "IP the media hostname resolves to: the machine's public IP with the SFU's UDP port forwarded to it, or its LAN address if everyone is on the same network."
   type        = string
   default     = ""
 }

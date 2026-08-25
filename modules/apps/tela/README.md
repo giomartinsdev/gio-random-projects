@@ -15,26 +15,50 @@ um domínio.
 
 ## Como funciona
 
-O vídeo **não passa por este servidor**. Os navegadores se conectam
-diretamente por WebRTC; o servidor só apresenta uns aos outros,
-repassando offer/answer/ICE pelo WebSocket. O custo do servidor não
-cresce com a resolução nem com o número de telas.
+O vídeo passa por um **SFU** (`internal/sfu`): quem compartilha manda
+**um** stream para o servidor, e o servidor repassa os pacotes para
+todo mundo que está assistindo. Nada é transcodificado — pacote entra,
+pacote sai — então o custo do servidor é contabilidade por pacote, não
+codificação por quadro.
 
-É uma malha: cada par de pessoas pode precisar de **duas** conexões — uma
-levando o stream de A até B, outra o de B até A. São separadas de
-propósito, porque uma conexão só com os dois lados ofertando ao mesmo
-tempo cai em *glare*. Por isso cada mensagem de sinalização carrega o
-papel de quem enviou (`publisher` ou `subscriber`): sem isso um candidato
-ICE seria ambíguo entre as duas conexões.
+Antes isso era uma malha, e quem compartilhava codificava um stream
+separado por espectador: duas pessoas assistindo eram dois encodes e o
+dobro de upload, que era exatamente o que travava tudo. Agora o custo de
+quem transmite não cresce com a plateia.
 
-O preço da malha é o upload de quem compartilha, que se multiplica pelo
-número de pessoas na sala. Funciona bem para um grupo pequeno; passar
-disso pediria um SFU.
+Cada navegador mantém duas conexões com o servidor, não importa o tamanho
+da sala: uma **publicando** (o navegador oferta, porque é ele quem sabe o
+que vai mandar) e uma **assinando** (o *servidor* oferta, porque tracks
+aparecem e somem conforme as pessoas começam e param, e cada mudança
+exige um offer novo).
 
-Só há STUN público configurado, sem TURN. Cobre redes domésticas e a
-maioria dos NATs de consumidor; atrás de NAT simétrico ou firewall
-corporativo restritivo a conexão simplesmente não estabelece, e o
-espectador fica em "conectando…".
+### A mídia não passa pelo túnel
+
+Isto é o que decide se funciona. O servidor virou um endpoint WebRTC:
+os navegadores mandam UDP direto para ele, numa porta só
+(`SFU_UDP_PORT`, padrão 7881, multiplexada por ICE). O túnel Cloudflare
+carrega só HTTP, então **a mídia não passa por ele**.
+
+`SFU_PUBLIC_HOST` é o endereço que o SFU anuncia nos candidatos ICE.
+Pode ser um IP ou um hostname (resolvido uma vez, no boot — candidatos
+ICE carregam endereços, não nomes). O que importa é que resolva para
+*esta máquina*:
+
+- **mesma rede** que o servidor: o IP local dele;
+- **pela internet**: um hostname com registro A **sem proxy** (nuvem
+  cinza) apontando para o IP público, com a porta UDP encaminhada;
+- **VPS**: o IP público dela.
+
+Não serve `tela.giomartins.dev`: é um CNAME proxiado para o túnel e
+resolve para a Cloudflare, então mídia mandada para lá é descartada. O
+Terraform cria um registro separado sem proxy para isso — veja
+`tela_sfu_media_hostname` em `modules/infra/terraform/variables.tf`.
+
+Sem `SFU_PUBLIC_HOST` o servidor anuncia o endereço privado do container
+e ninguém conecta; ele grita isso no log ao subir.
+
+Só há STUN público, sem TURN — numa rede que bloqueia UDP a conexão não
+estabelece.
 
 ## Estado
 

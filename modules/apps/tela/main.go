@@ -34,19 +34,28 @@ func main() {
 
 	// Media is forwarded by the SFU rather than meshed between browsers,
 	// so this process is a WebRTC endpoint now: it needs a UDP port
-	// reachable from the browsers, and it has to advertise an address
-	// they can actually get to. Inside Docker that's the HOST's address,
-	// not the container's -- hence SFU_PUBLIC_IP. On a LAN that's the
-	// machine's local address; on a VPS, its public one.
+	// browsers can reach, and it has to advertise an address they can
+	// actually get to. Inside Docker that's the HOST's address, not the
+	// container's. A hostname works and is resolved at startup -- but it
+	// must resolve to this machine, so a proxied record (which resolves
+	// to the proxy) is exactly the wrong thing to point at it.
+	sfuPort := envInt("SFU_UDP_PORT", 7881)
 	media, err := sfu.New(sfu.Options{
-		PublicIP: os.Getenv("SFU_PUBLIC_IP"),
-		UDPPort:  envInt("SFU_UDP_PORT", 7881),
-		STUNURLs: []string{"stun:stun.l.google.com:19302"},
+		PublicHost: os.Getenv("SFU_PUBLIC_HOST"),
+		UDPPort:    sfuPort,
+		STUNURLs:   []string{"stun:stun.l.google.com:19302"},
 	})
 	if err != nil {
 		log.Fatalf("could not start the SFU: %v", err)
 	}
-	log.Printf("sfu listening on udp/%d advertising %q", envInt("SFU_UDP_PORT", 7881), os.Getenv("SFU_PUBLIC_IP"))
+	if media.PublicIP() == "" {
+		// Worth shouting about: without this the SFU advertises the
+		// container's private address and no browser can connect, which
+		// otherwise shows up only as video that never starts.
+		log.Printf("WARNING: SFU_PUBLIC_HOST is not set -- browsers will not be able to reach the SFU")
+	} else {
+		log.Printf("sfu on udp/%d advertising %s (from %q)", sfuPort, media.PublicIP(), os.Getenv("SFU_PUBLIC_HOST"))
+	}
 
 	registry := rooms.NewRegistry(statePath)
 	if err := registry.Load(); err != nil {
