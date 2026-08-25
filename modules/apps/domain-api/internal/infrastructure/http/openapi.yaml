@@ -110,6 +110,320 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /posts:
+    get:
+      summary: List published posts
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  posts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Post"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      summary: Create a post (async — returns 202, not the created row)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostCreateInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /posts/slug/{slug}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get a published post by slug
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Post not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /posts/id/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: >
+        Get any post by id, drafts included — not for public browsing
+        (no status filter). Exists so post-api can look up a post's
+        current author_id before forwarding an edit/delete command;
+        post-api itself already enforces ownership before calling
+        this.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Post not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /posts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      summary: Update a post (async — returns 202)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostUpdateInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      summary: >
+        Delete a post (async — returns 202). Unusually for a DELETE,
+        takes a JSON body: the caller (post-api) already validated
+        author_id owns this post and passes it through here for the
+        aggregate to check again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostDeleteInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /rooms:
+    get:
+      summary: List every room
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rooms:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Room"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      summary: Create a room (async — returns 202, not the created row)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomCreateInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /rooms/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a room by id
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    put:
+      summary: >
+        Update a room — page turns AND open/close both go through
+        this (async — returns 202). Bookclub-specific rules like
+        "only the host may turn the page" are enforced by bookclub-api
+        before it ever calls here, not by this aggregate.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomUpdateInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      summary: >
+        Delete a room (async — returns 202). Takes a JSON body, same
+        reasoning as DELETE /posts/{id}.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomDeleteInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /rooms/{id}/events:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: >
+        Server-Sent Events stream of this room's domain events
+        (room.updated, message.created). Server-to-server only —
+        bookclub-api's own process is the one subscriber, relaying
+        onward to its browser WebSocket clients; a browser EventSource
+        can't attach the required X-API-Key header itself.
+      responses:
+        "200":
+          description: text/event-stream, never closes on its own
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /messages:
+    get:
+      summary: List a room's chat message history
+      parameters:
+        - name: room_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      summary: Send a chat message (async — returns 202, not the created row)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageCreateInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 components:
   securitySchemes:
     apiKeyAuth:
@@ -145,6 +459,174 @@ components:
           type: string
         email:
           type: string
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        author_id:
+          type: string
+        title:
+          type: string
+        slug:
+          type: string
+        body_markdown:
+          type: string
+        excerpt:
+          type: string
+        cover_image_url:
+          type: string
+        type:
+          type: string
+          enum: [article, course]
+        status:
+          type: string
+          enum: [draft, published]
+        source:
+          type: string
+          enum: [native, imported]
+        source_url:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+    PostCreateInput:
+      type: object
+      required: [author_id, title, body_markdown]
+      properties:
+        author_id:
+          type: string
+        title:
+          type: string
+        body_markdown:
+          type: string
+        excerpt:
+          type: string
+        cover_image_url:
+          type: string
+        type:
+          type: string
+          enum: [article, course]
+        status:
+          type: string
+          enum: [draft, published]
+    PostUpdateInput:
+      type: object
+      required: [author_id]
+      properties:
+        author_id:
+          type: string
+        title:
+          type: string
+        body_markdown:
+          type: string
+        excerpt:
+          type: string
+        cover_image_url:
+          type: string
+        status:
+          type: string
+          enum: [draft, published]
+    PostDeleteInput:
+      type: object
+      required: [author_id]
+      properties:
+        author_id:
+          type: string
+    Room:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        host_id:
+          type: string
+        title:
+          type: string
+        document_id:
+          type: string
+        current_page:
+          type: integer
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    RoomCreateInput:
+      type: object
+      required: [host_id, title, document_id]
+      properties:
+        host_id:
+          type: string
+        title:
+          type: string
+        document_id:
+          type: string
+    RoomUpdateInput:
+      type: object
+      required: [host_id]
+      properties:
+        host_id:
+          type: string
+        title:
+          type: string
+        current_page:
+          type: integer
+        status:
+          type: string
+    RoomDeleteInput:
+      type: object
+      required: [host_id]
+      properties:
+        host_id:
+          type: string
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        room_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        user_name:
+          type: string
+        body:
+          type: string
+        requested_page:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    MessageCreateInput:
+      type: object
+      required: [room_id, user_id, body]
+      properties:
+        room_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        user_name:
+          type: string
+        body:
+          type: string
+        requested_page:
+          type: integer
     Error:
       type: object
       properties:

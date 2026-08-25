@@ -7,6 +7,30 @@ async function requireAuth(auth: Auth, c: { req: { raw: Request } }) {
   return session?.user.id ?? null;
 }
 
+const TITLE_MAX = 300;
+const EXCERPT_MAX = 1000;
+const BODY_MAX = 500_000;
+const URL_MAX = 2048;
+
+// domain-api/domain-worker persist whatever gets forwarded here with
+// no length limit of their own (see this codebase's earlier UX audit
+// of bookclub-api's PDF upload, which had a similar unbounded-input
+// gap) -- these are generous enough to never bother a real
+// article/course, just to stop an unbounded body from reaching
+// Postgres via the command pipeline at all.
+function checkContentLengths(body: {
+  title?: string;
+  bodyMarkdown?: string;
+  excerpt?: string;
+  coverImageUrl?: string;
+}): string | null {
+  if (body.title && body.title.length > TITLE_MAX) return `title must be under ${TITLE_MAX} characters`;
+  if (body.bodyMarkdown && body.bodyMarkdown.length > BODY_MAX) return `bodyMarkdown must be under ${BODY_MAX} characters`;
+  if (body.excerpt && body.excerpt.length > EXCERPT_MAX) return `excerpt must be under ${EXCERPT_MAX} characters`;
+  if (body.coverImageUrl && body.coverImageUrl.length > URL_MAX) return `coverImageUrl must be under ${URL_MAX} characters`;
+  return null;
+}
+
 function serialize(p: DomainPost) {
   return {
     id: p.id,
@@ -57,6 +81,8 @@ export function createPostsRouter(auth: Auth, domainApi: DomainApiClient) {
     if (!body.title || !body.bodyMarkdown) {
       return c.json({ error: "title and bodyMarkdown are required" }, 400);
     }
+    const lengthError = checkContentLengths(body);
+    if (lengthError) return c.json({ error: lengthError }, 400);
 
     try {
       const accepted = await domainApi.create({
@@ -102,6 +128,8 @@ export function createPostsRouter(auth: Auth, domainApi: DomainApiClient) {
       coverImageUrl?: string;
       status?: "draft" | "published";
     }>();
+    const lengthError = checkContentLengths(body);
+    if (lengthError) return c.json({ error: lengthError }, 400);
 
     const accepted = await domainApi.update(existing.id, {
       author_id: userId,

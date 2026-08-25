@@ -40,17 +40,27 @@ export function createRoomsRouter(auth: Auth, db: Db, domainApi: DomainApiClient
     if (!user) return c.json({ error: "unauthorized" }, 401);
 
     const body = await c.req.parseBody();
-    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const title = typeof body.title === "string" ? body.title.trim().slice(0, 200) : "";
     const pdf = body.pdf;
 
     if (!title) return c.json({ error: "title is required" }, 400);
     if (!(pdf instanceof File)) return c.json({ error: "pdf file is required" }, 400);
-    if (pdf.type && pdf.type !== "application/pdf") return c.json({ error: "file must be a PDF" }, 400);
     if (pdf.size > MAX_PDF_BYTES) {
       return c.json({ error: `pdf must be under ${Math.floor(MAX_PDF_BYTES / 1024 / 1024)}MB` }, 400);
     }
 
     const bytes = Buffer.from(await pdf.arrayBuffer());
+    // The client-supplied `pdf.type` is just whatever Content-Type the
+    // browser/attacker chose to send -- a renamed non-PDF with a
+    // spoofed header sailed through the old `pdf.type !==
+    // "application/pdf"` check (and an EMPTY type skipped it
+    // entirely, since `pdf.type &&` short-circuits on falsy). Every
+    // real PDF starts with this 5-byte magic number regardless of
+    // what header claims; sniff the actual bytes instead.
+    if (!bytes.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
+      return c.json({ error: "file must be a PDF" }, 400);
+    }
+
     const documentId = randomUUID();
     const objectKey = `${documentId}.pdf`;
 

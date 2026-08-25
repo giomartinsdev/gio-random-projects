@@ -1,11 +1,14 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import { createNodeWebSocket } from "@hono/node-ws";
 import type { Auth } from "./lib/auth.js";
 import type { Db } from "./db/index.js";
 import type { MinioClient } from "./lib/minioClient.js";
 import { NotFoundError, type DomainApiClient, type DomainMessage } from "./lib/domainApiClient.js";
 import { createRoomsRouter } from "./routes/rooms.js";
+import { createRateLimiter } from "./lib/rateLimiter.js";
+import { docsHtml, openApiYaml } from "./lib/openapi.js";
 import * as roomHub from "./ws/roomHub.js";
 
 function serializeMessage(m: DomainMessage) {
@@ -32,9 +35,25 @@ export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, minio:
     }),
   );
 
+  // A JSON/WS API with no first-party HTML to protect from framing or
+  // inline-script injection -- these headers guard the few HTTP
+  // response paths that DO return browser-rendered content (error
+  // pages, any future static asset) against the standard set of
+  // clickjacking/MIME-sniffing/XSS-via-header vectors at effectively
+  // zero cost to the ones that don't.
+  app.use("*", secureHeaders());
+
+  app.use("/rooms/*", createRateLimiter({ requestsPerMinute: 60, burst: 100 }));
+
   app.route("/rooms", createRoomsRouter(auth, db, domainApi, minio));
 
   app.get("/health", (c) => c.json({ status: "ok" }));
+
+  // Public — no auth, same reasoning as post-api/domain-api's own
+  // docs routes: documentation, not data, gating it would just make
+  // it unreachable for anyone deciding whether to integrate at all.
+  app.get("/openapi.yaml", (c) => c.text(openApiYaml, 200, { "content-type": "application/yaml" }));
+  app.get("/docs", (c) => c.html(docsHtml));
 
   // One SSE connection to domain-api PER ROOM (not per participant),
   // kept open for as long as at least one WebSocket client is in that

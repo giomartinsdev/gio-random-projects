@@ -5,6 +5,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { bookclubApi, type Room } from "../lib/bookclubApi.js";
 import { useRoomSocket, type Stroke } from "../lib/useRoomSocket.js";
+import ConfirmDialog from "../components/ConfirmDialog.js";
 import {
   IconSelect,
   IconLaser,
@@ -55,6 +56,7 @@ export default function BookClubRoom() {
   // every pointermove. text:move only goes out once, on release.
   const [draggingText, setDraggingText] = useState<{ id: string; x: number; y: number } | null>(null);
   const [endingRoom, setEndingRoom] = useState(false);
+  const [confirmingEnd, setConfirmingEnd] = useState(false);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const pageBoxRef = useRef<HTMLDivElement>(null);
@@ -289,13 +291,13 @@ export default function BookClubRoom() {
 
   async function endRoom() {
     if (!id || endingRoom) return;
-    if (!confirm("Encerrar esta sala? Isso marca o livro como concluído e a sala deixa de existir para todo mundo.")) return;
     setEndingRoom(true);
     try {
       await bookclubApi.deleteRoom(id);
       navigate("/clube-do-livro");
     } catch {
       setEndingRoom(false);
+      setConfirmingEnd(false);
     }
   }
 
@@ -370,7 +372,7 @@ export default function BookClubRoom() {
           <div className="flex items-center gap-2">
             {isHost && (
               <button
-                onClick={endRoom}
+                onClick={() => setConfirmingEnd(true)}
                 disabled={endingRoom}
                 title="Encerrar a sala -- o livro terminou"
                 className="flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-heading font-semibold text-red-300/80 border border-red-400/30 hover:border-red-400/60 hover:text-red-300 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
@@ -674,6 +676,17 @@ export default function BookClubRoom() {
           </button>
         </form>
       </aside>
+
+      <ConfirmDialog
+        open={confirmingEnd}
+        title="Encerrar esta sala?"
+        description="Isso marca o livro como concluído e a sala deixa de existir para todo mundo."
+        confirmLabel="Encerrar"
+        danger
+        busy={endingRoom}
+        onConfirm={endRoom}
+        onCancel={() => setConfirmingEnd(false)}
+      />
     </div>
   );
 }

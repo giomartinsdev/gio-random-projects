@@ -35,6 +35,7 @@ export function createAuth(connectionString: string, secret: string, baseURL: st
       defaultCookieAttributes: {
         sameSite: "none",
         secure: true,
+        httpOnly: true,
       },
       crossSubDomainCookies: {
         enabled: true,

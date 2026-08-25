@@ -44,6 +44,7 @@ export function createAuth(db: Db, secret: string, baseURL?: string, trustedOrig
       defaultCookieAttributes: {
         sameSite: "none",
         secure: true,
+        httpOnly: true,
       },
       crossSubDomainCookies: {
         enabled: true,
