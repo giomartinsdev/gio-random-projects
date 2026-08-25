@@ -53,7 +53,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
+    <div className="flex min-h-dvh flex-col items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
           <h1 className="text-4xl font-bold tracking-tight">tela</h1>
@@ -113,6 +113,9 @@ export default function Home() {
                       onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                       className="font-mono tracking-widest uppercase"
                       maxLength={6}
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      spellCheck={false}
                       required
                     />
                   </div>

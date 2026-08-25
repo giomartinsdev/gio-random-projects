@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { Check, Copy, Eye, Loader2, MonitorUp, ScreenShareOff } from "lucide-react";
-import { readHostToken } from "@/lib/api";
-import { useScreenShare } from "@/lib/useScreenShare";
+import { Check, Copy, Eye, Loader2, MonitorUp, Play, ScreenShareOff, Video } from "lucide-react";
+import { api, readHostToken } from "@/lib/api";
+import { canShareCamera, canShareScreen, useScreenShare } from "@/lib/useScreenShare";
+import { useWakeLock } from "@/lib/useWakeLock";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { api } from "@/lib/api";
 
 export default function Room() {
   const { id } = useParams<{ id: string }>();
@@ -48,7 +48,7 @@ function PasswordPrompt({ roomId, onUnlocked }: { roomId: string; onUnlocked: (p
   }
 
   return (
-    <Shell>
+    <div className="flex min-h-dvh items-center justify-center px-4 py-10">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-xl">Sala {roomId}</CardTitle>
@@ -80,13 +80,14 @@ function PasswordPrompt({ roomId, onUnlocked }: { roomId: string; onUnlocked: (p
           </form>
         </CardContent>
       </Card>
-    </Shell>
+    </div>
   );
 }
 
 function HostRoom({ roomId, token }: { roomId: string; token: string }) {
   const share = useScreenShare({ role: "host", roomId, token });
   const videoRef = useRef<HTMLVideoElement>(null);
+  useWakeLock(share.isSharing);
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.srcObject = share.localStream;
@@ -94,13 +95,11 @@ function HostRoom({ roomId, token }: { roomId: string; token: string }) {
 
   if (share.status === "host-taken") {
     return (
-      <Shell>
+      <div className="flex min-h-dvh items-center justify-center px-4">
         <Alert variant="destructive" className="max-w-md">
-          <AlertDescription>
-            {share.errorMessage ?? "Essa sala já tem alguém compartilhando."}
-          </AlertDescription>
+          <AlertDescription>{share.errorMessage ?? "Essa sala já tem alguém compartilhando."}</AlertDescription>
         </Alert>
-      </Shell>
+      </div>
     );
   }
 
@@ -110,20 +109,37 @@ function HostRoom({ roomId, token }: { roomId: string; token: string }) {
       badge={
         <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
           <Eye className="size-4" />
-          {share.viewerCount} {share.viewerCount === 1 ? "pessoa assistindo" : "pessoas assistindo"}
+          <span className="tabular-nums">{share.viewerCount}</span>
+          <span className="hidden sm:inline">
+            {share.viewerCount === 1 ? "pessoa assistindo" : "pessoas assistindo"}
+          </span>
         </span>
       }
       actions={
         share.isSharing ? (
-          <Button variant="destructive" onClick={share.stopSharing}>
+          <Button variant="destructive" onClick={share.stopSharing} className="flex-1 sm:flex-none">
             <ScreenShareOff />
             Parar
           </Button>
         ) : (
-          <Button onClick={share.startSharing}>
-            <MonitorUp />
-            Compartilhar tela
-          </Button>
+          <>
+            {canShareScreen && (
+              <Button onClick={() => share.startSharing("screen")} className="flex-1 sm:flex-none">
+                <MonitorUp />
+                Compartilhar tela
+              </Button>
+            )}
+            {canShareCamera && (
+              <Button
+                variant={canShareScreen ? "secondary" : "default"}
+                onClick={() => share.startSharing("camera")}
+                className="flex-1 sm:flex-none"
+              >
+                <Video />
+                Câmera
+              </Button>
+            )}
+          </>
         )
       }
     >
@@ -131,8 +147,21 @@ function HostRoom({ roomId, token }: { roomId: string; token: string }) {
         <video ref={videoRef} autoPlay playsInline muted className="w-full flex-1 min-h-0 object-contain" />
       ) : (
         <Empty>
-          <p>Clique em "Compartilhar tela" para começar.</p>
-          <p className="mt-1 text-sm">
+          {canShareScreen ? (
+            <p>Escolha compartilhar sua tela ou sua câmera.</p>
+          ) : (
+            <>
+              <p>Compartilhe sua câmera para começar.</p>
+              {/* Not something to work around: no mobile browser
+                  implements getDisplayMedia, so this is worth saying
+                  plainly rather than leaving a button that can only fail. */}
+              <p className="mt-2 max-w-xs text-sm">
+                Compartilhar a tela do celular não é possível pelo navegador — para isso, abra esta sala num
+                computador.
+              </p>
+            </>
+          )}
+          <p className="mt-4 text-sm">
             Passe o código <Code>{roomId}</Code> e a senha para quem vai assistir.
           </p>
         </Empty>
@@ -152,10 +181,41 @@ function HostRoom({ roomId, token }: { roomId: string; token: string }) {
 function ViewerRoom({ roomId, password }: { roomId: string; password: string }) {
   const share = useScreenShare({ role: "viewer", roomId, password });
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [needsTap, setNeedsTap] = useState(false);
+  useWakeLock(share.remoteStream !== null);
 
   useEffect(() => {
-    if (videoRef.current) videoRef.current.srcObject = share.remoteStream;
+    const video = videoRef.current;
+    if (!video) return;
+    video.srcObject = share.remoteStream;
+    if (!share.remoteStream) {
+      setNeedsTap(false);
+      return;
+    }
+    // Phones refuse to autoplay anything carrying sound. Rather than
+    // muting the stream outright (and silently losing whatever audio the
+    // host is sharing), try to play and fall back to asking for the one
+    // tap the browser is waiting for.
+    video.play().then(
+      () => setNeedsTap(false),
+      () => setNeedsTap(true),
+    );
   }, [share.remoteStream]);
+
+  function playNow() {
+    const video = videoRef.current;
+    if (!video) return;
+    video.play().then(
+      () => setNeedsTap(false),
+      () => {
+        // Still blocked -- muting always satisfies the autoplay policy,
+        // so at least the picture starts.
+        video.muted = true;
+        void video.play();
+        setNeedsTap(false);
+      },
+    );
+  }
 
   return (
     <RoomLayout
@@ -167,7 +227,18 @@ function ViewerRoom({ roomId, password }: { roomId: string; password: string }) 
       }
     >
       {share.remoteStream ? (
-        <video ref={videoRef} autoPlay playsInline className="w-full flex-1 min-h-0 object-contain" />
+        <>
+          <video ref={videoRef} autoPlay playsInline className="w-full flex-1 min-h-0 object-contain" />
+          {needsTap && (
+            <button
+              onClick={playNow}
+              className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70"
+            >
+              <Play className="size-12" />
+              <span className="text-lg font-medium">Toque para assistir</span>
+            </button>
+          )}
+        </>
       ) : (
         <Empty>
           {share.hostOnline ? (
@@ -193,16 +264,19 @@ function RoomLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-        <div className="flex items-center gap-3">
-          <Link to="/" className="text-lg font-bold tracking-tight">
-            tela
-          </Link>
-          <CopyableCode code={roomId} />
-          {badge}
-        </div>
-        {actions}
+    // dvh, not vh: on mobile the browser's own chrome slides in and out,
+    // and vh is measured against the tallest state -- a vh-sized page is
+    // permanently a little taller than what's actually visible.
+    <div className="flex min-h-dvh flex-col">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2.5 sm:px-4 sm:py-3">
+        <Link to="/" className="text-lg font-bold tracking-tight">
+          tela
+        </Link>
+        <CopyableCode code={roomId} />
+        {badge}
+        {/* Full width on a phone (the buttons split the row), pushed to
+            the right once there's room for everything on one line. */}
+        {actions && <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">{actions}</div>}
       </header>
       <main className="relative flex flex-1 bg-black">{children}</main>
     </div>
@@ -213,13 +287,18 @@ function CopyableCode({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
+    const link = `${window.location.origin}/r/${code}`;
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/r/${code}`);
+      await navigator.clipboard.writeText(link);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Clipboard blocked (insecure context, permissions) -- the code is
-      // on screen to read out either way.
+      // The clipboard API is unavailable in plenty of mobile contexts.
+      // A share sheet is the natural fallback on a phone, and the code
+      // is on screen to read out either way.
+      if (navigator.share) {
+        navigator.share({ title: "tela", url: link }).catch(() => {});
+      }
     }
   }
 
@@ -241,8 +320,4 @@ function Empty({ children }: { children: React.ReactNode }) {
 
 function Code({ children }: { children: React.ReactNode }) {
   return <span className="rounded bg-secondary px-1.5 py-0.5 font-mono tracking-widest">{children}</span>;
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return <div className="flex min-h-screen items-center justify-center px-4 py-12">{children}</div>;
 }

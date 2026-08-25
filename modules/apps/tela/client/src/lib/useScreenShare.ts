@@ -8,6 +8,17 @@ import { wsUrl } from "./api";
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
 export type Status = "connecting" | "connected" | "host-taken" | "error" | "closed";
+export type Source = "screen" | "camera";
+
+// Mobile browsers -- iOS Safari and Chrome on Android alike -- simply
+// don't implement getDisplayMedia: capturing a phone's screen from a
+// web page isn't a thing. Checked once here so the UI can offer the
+// camera instead of a button that could only ever fail.
+export const canShareScreen =
+  typeof navigator !== "undefined" && typeof navigator.mediaDevices?.getDisplayMedia === "function";
+
+export const canShareCamera =
+  typeof navigator !== "undefined" && typeof navigator.mediaDevices?.getUserMedia === "function";
 
 type Options =
   | { role: "host"; roomId: string; token: string }
@@ -24,6 +35,7 @@ export function useScreenShare(opts: Options) {
   const [viewerCount, setViewerCount] = useState(0);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [source, setSource] = useState<Source | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
@@ -82,32 +94,47 @@ export function useScreenShare(opts: Options) {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     setLocalStream(null);
+    setSource(null);
     closeAllPeers();
   }, [closeAllPeers]);
 
-  const startSharing = useCallback(async () => {
-    setErrorMessage(null);
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-    } catch (err) {
-      const name = err instanceof Error ? err.name : "Error";
-      // Dismissing the picker is a normal thing to do, not an error.
-      if (name !== "NotAllowedError" && name !== "AbortError") {
-        setErrorMessage(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
+  const startSharing = useCallback(
+    async (source: Source = "screen") => {
+      setErrorMessage(null);
+      let stream: MediaStream;
+      try {
+        stream =
+          source === "screen"
+            ? await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+            : // Rear camera by default -- the point of sharing a phone's
+              // camera is usually to show something, not yourself.
+              // `ideal` rather than `exact` so a laptop with one webcam
+              // still works instead of throwing OverconstrainedError.
+              await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: { ideal: "environment" } },
+                audio: true,
+              });
+      } catch (err) {
+        const name = err instanceof Error ? err.name : "Error";
+        // Dismissing the picker is a normal thing to do, not an error.
+        if (name !== "NotAllowedError" && name !== "AbortError") {
+          setErrorMessage(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
+        }
+        return;
       }
-      return;
-    }
 
-    localStreamRef.current = stream;
-    setLocalStream(stream);
-    // The browser's own "Stop sharing" bar ends the track.
-    stream.getVideoTracks()[0]?.addEventListener("ended", () => stopSharing());
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      setSource(source);
+      // The browser's own "Stop sharing" bar ends the track.
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => stopSharing());
 
-    for (const viewerId of viewersRef.current) {
-      await offerTo(viewerId).catch(() => {});
-    }
-  }, [offerTo, stopSharing]);
+      for (const viewerId of viewersRef.current) {
+        await offerTo(viewerId).catch(() => {});
+      }
+    },
+    [offerTo, stopSharing],
+  );
 
   // --- viewer side ---
 
@@ -243,6 +270,7 @@ export function useScreenShare(opts: Options) {
     viewerCount,
     localStream,
     remoteStream,
+    source,
     isSharing: localStream !== null,
     startSharing,
     stopSharing,

@@ -33,5 +33,15 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    /* The page is a fixed-height app shell, not a document -- letting it
+       rubber-band on iOS just reveals background behind the video. */
+    overscroll-behavior: none;
+  }
+
+  /* With viewport-fit=cover the header would otherwise sit under a
+     notch or the home indicator. */
+  header {
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
   }
 }
