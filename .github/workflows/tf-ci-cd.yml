@@ -108,6 +108,14 @@ jobs:
       - name: Validate
         run: terraform validate
 
+      # TEMPORARY incident-recovery scoping: the previous apply destroyed
+      # the tunnel's ingress config and rotated the "docker" Access
+      # service token without completing, leaving public routing down
+      # and the Docker provider unauthenticated. -refresh=false skips
+      # refreshing docker_* resources (which would fail with the stale
+      # token before we can fix it) and -target limits this run to just
+      # the two Cloudflare-only resources needed to restore routing.
+      # Revert this block once the outage is confirmed fixed.
       - name: Plan
         env:
           REPLACE_GROUP: ${{ github.event.inputs.replace_vault_seed_group }}
@@ -117,11 +125,23 @@ jobs:
             REPLACE_ADDR="null_resource.vault_seed[\"${REPLACE_GROUP}\"]"
             REPLACE_ARGS+=("-replace=${REPLACE_ADDR}")
           fi
-          terraform plan -input=false -lock-timeout=300s -out=tfplan "${REPLACE_ARGS[@]}"
+          terraform plan -input=false -lock-timeout=300s -refresh=false \
+            -target=module.cloud_cloudflare.cloudflare_zero_trust_tunnel_cloudflared.homelab \
+            -target=module.cloud_cloudflare.cloudflare_zero_trust_tunnel_cloudflared_config.homelab \
+            -out=tfplan "${REPLACE_ARGS[@]}"
 
       - name: Apply
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
         run: terraform apply -input=false -lock-timeout=300s -auto-approve tfplan
+
+      # Deliberately unmasked: this run is deleted immediately after
+      # gh secret set picks these up (see the git history for this
+      # commit -- reverted right after use).
+      - name: Show new docker service token (incident recovery only)
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+        run: |
+          echo "docker_client_id=$(terraform output -json service_token_client_ids | jq -r .docker)"
+          echo "docker_client_secret=$(terraform output -json service_token_client_secrets | jq -r .docker)"
 
       # Backs up the "secret zero" credentials Terraform itself needs
       # to authenticate -- by definition it can't fetch these FROM the
