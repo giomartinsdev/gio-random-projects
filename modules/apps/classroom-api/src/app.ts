@@ -10,11 +10,6 @@ import { docsHtml, openApiYaml } from "./lib/openapi.js";
 import * as roomHub from "./ws/roomHub.js";
 
 const NOTEPAD_MAX = 20_000;
-// One base64 JPEG frame. SharePopup caps capture at 1280px wide and
-// quality 0.5, which lands well under this even on a busy screen --
-// this is the "something is wrong, don't relay it to everyone" bound,
-// not the expected size.
-const FRAME_MAX = 900_000;
 
 function serializeMessage(m: DomainMessage) {
   return {
@@ -126,19 +121,15 @@ export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigin
     }
   }
 
-  // Realtime channel for one class: chat, a shared notepad, and the
-  // host's shared screen/camera as a JPEG frame stream. The host is
-  // the ONE media source and every frame is fanned out from here.
-  //
-  // This started as WebRTC signaling (host->viewer mesh, server never
-  // touching media). That can't work in the target environment: inside
-  // a Discord Activity's iframe RTCPeerConnection is not a
-  // constructor, so neither sending nor receiving peer-to-peer video
-  // is possible. Frames over this socket use only what the Activity
-  // does allow. The tradeoff is real -- a few frames per second and
-  // no audio track (class audio rides Discord's own voice channel) --
-  // and relaying media through one process puts a ceiling on class
-  // size that a real SFU wouldn't have.
+  // Realtime channel for one class: chat, a shared notepad, and
+  // WebRTC signaling for the host's shared screen/camera. The host is
+  // the ONE media source -- each viewer opens its own peer connection
+  // directly to the host (a mesh with the host at the center), so this
+  // server never touches media itself, only relays opaque signaling
+  // payloads (offer/answer/ICE) between exactly two participants by
+  // userId (see ws/roomHub.ts's sendTo). Fine for a small class; an
+  // SFU would be the next step if this ever needs to scale past a
+  // handful of simultaneous viewers.
   app.get(
     "/rooms/:id/ws",
     upgradeWebSocket(async (c) => {
@@ -181,7 +172,6 @@ export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigin
               participants: roomHub.participantsOf(roomId),
               chatHistory: messages.map(serializeMessage),
               notepad: roomHub.notepadOf(roomId),
-              ...roomHub.shareStateOf(roomId),
             }),
           );
           // Lets the host (and any already-connected viewer) know a
@@ -225,35 +215,16 @@ export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigin
               break;
             }
 
-            // Screen/camera share, as a stream of JPEG frames rather
-            // than WebRTC: inside a Discord Activity's iframe
-            // RTCPeerConnection isn't even a constructor (Discord
-            // removes it), so peer-to-peer video is impossible there
-            // in BOTH directions. WebSocket + canvas are allowed,
-            // hence this. See front's pages/SharePopup.tsx for the
-            // capture/encode half.
-            //
-            // Only the host may drive any of this -- a viewer sending
-            // these is ignored outright rather than errored, same
-            // permissive-ignore convention as the malformed-message
-            // cases above.
-            case "share:start":
-            case "share:stop": {
-              if (userId !== hostId) return;
-              roomHub.setSharing(roomId, msg.type === "share:start");
-              roomHub.broadcast(roomId, { type: msg.type }, ws);
-              break;
-            }
-
-            case "frame": {
-              if (userId !== hostId) return;
-              const data = typeof msg.data === "string" ? msg.data : "";
-              // Oversized frames are dropped, not truncated: half a
-              // JPEG renders as nothing useful anyway, and the next
-              // frame is only ~500ms out.
-              if (!data || data.length > FRAME_MAX) return;
-              roomHub.setLastFrame(roomId, data);
-              roomHub.broadcast(roomId, { type: "frame", data }, ws);
+            // Opaque relay -- this server has no idea what an SDP
+            // offer/answer or an ICE candidate even looks like, it
+            // just forwards `payload` to the participant named by
+            // `to`, tagging it with who it's actually from (never
+            // trust a client-supplied "from"). Every WebRTC semantic
+            // lives entirely in front's useClassSocket.ts/AulaRoom.tsx.
+            case "webrtc:signal": {
+              const to = typeof msg.to === "string" ? msg.to : "";
+              if (!to || !("payload" in msg)) return;
+              roomHub.sendTo(roomId, to, { type: "webrtc:signal", from: userId, payload: msg.payload });
               break;
             }
           }
@@ -261,23 +232,7 @@ export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigin
 
         onClose: (_evt, ws) => {
           roomHub.leave(roomId, ws);
-          // Only announce a leave once EVERY connection for this
-          // userId is gone -- the host is legitimately connected
-          // twice while sharing (this Activity tab, plus the
-          // screen/camera capture popup, see SharePopup.tsx), and a
-          // naive per-socket leave broadcast here would tell every
-          // viewer "the host left" the instant they stop sharing.
-          const stillPresent = roomHub.participantsOf(roomId).some((p) => p.userId === userId);
-          if (!stillPresent) {
-            roomHub.broadcast(roomId, { type: "participant:leave", userId });
-            // The host closing the capture popup (or the whole tab)
-            // ends the share -- without this the panel would sit on
-            // its last frame forever, looking live but frozen.
-            if (userId === hostId) {
-              roomHub.setSharing(roomId, false);
-              roomHub.broadcast(roomId, { type: "share:stop" });
-            }
-          }
+          roomHub.broadcast(roomId, { type: "participant:leave", userId });
           stopRoomSubscriptionIfEmpty(roomId);
         },
       };

@@ -22,12 +22,6 @@ type RoomState = {
   // bookclub-api's drawing/texts) -- included in the WS `init` payload
   // so a client joining mid-class sees the current content immediately.
   notepad: string;
-  // Whether the host is currently sharing, and the most recent frame
-  // (a base64 JPEG data URL). Both go out in `init` so someone joining
-  // mid-class sees the screen immediately instead of a blank panel
-  // until the next frame lands. Never persisted, same as the notepad.
-  sharing: boolean;
-  lastFrame: string | null;
 };
 
 const rooms = new Map<string, RoomState>();
@@ -35,7 +29,7 @@ const rooms = new Map<string, RoomState>();
 function getOrCreateRoom(roomId: string): RoomState {
   let room = rooms.get(roomId);
   if (!room) {
-    room = { participants: new Map(), notepad: "", sharing: false, lastFrame: null };
+    room = { participants: new Map(), notepad: "" };
     rooms.set(roomId, room);
   }
   return room;
@@ -55,6 +49,26 @@ export function broadcast(roomId: string, payload: unknown, exclude?: WSContext)
   }
 }
 
+// Targeted delivery for WebRTC signaling (offer/answer/ICE candidates
+// are between exactly two participants, never everyone) -- looks the
+// recipient up by userId rather than trusting a client-supplied
+// WSContext, same "only trust what the server itself tracked"
+// reasoning as text:move/resize below in bookclub-api's own hub.
+export function sendTo(roomId: string, userId: string, payload: unknown): boolean {
+  const room = rooms.get(roomId);
+  if (!room) return false;
+  for (const [ws, p] of room.participants) {
+    if (p.userId !== userId) continue;
+    try {
+      ws.send(JSON.stringify(payload));
+    } catch {
+      // best-effort, same as broadcast
+    }
+    return true;
+  }
+  return false;
+}
+
 export function join(roomId: string, ws: WSContext, userId: string, userName: string) {
   getOrCreateRoom(roomId).participants.set(ws, { ws, userId, userName });
 }
@@ -66,18 +80,9 @@ export function leave(roomId: string, ws: WSContext) {
   if (room.participants.size === 0) rooms.delete(roomId);
 }
 
-// Deduped by userId, not connection count -- the same person can be
-// connected twice at once (see sendTo's comment above), and every
-// caller of this (the `init` payload, the room-empty check) cares
-// about distinct people, not distinct sockets.
 export function participantsOf(roomId: string) {
   const room = rooms.get(roomId);
-  if (!room) return [];
-  const seen = new Map<string, { userId: string; userName: string }>();
-  for (const p of room.participants.values()) {
-    if (!seen.has(p.userId)) seen.set(p.userId, { userId: p.userId, userName: p.userName });
-  }
-  return [...seen.values()];
+  return room ? [...room.participants.values()].map((p) => ({ userId: p.userId, userName: p.userName })) : [];
 }
 
 export function setNotepad(roomId: string, content: string) {
@@ -86,19 +91,4 @@ export function setNotepad(roomId: string, content: string) {
 
 export function notepadOf(roomId: string): string {
   return rooms.get(roomId)?.notepad ?? "";
-}
-
-export function setSharing(roomId: string, sharing: boolean) {
-  const room = getOrCreateRoom(roomId);
-  room.sharing = sharing;
-  if (!sharing) room.lastFrame = null;
-}
-
-export function setLastFrame(roomId: string, frame: string) {
-  getOrCreateRoom(roomId).lastFrame = frame;
-}
-
-export function shareStateOf(roomId: string) {
-  const room = rooms.get(roomId);
-  return { sharing: room?.sharing ?? false, lastFrame: room?.lastFrame ?? null };
 }

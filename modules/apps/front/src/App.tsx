@@ -10,36 +10,32 @@ import BookClubHome from "./pages/BookClubHome.js";
 import BookClubRoom from "./pages/BookClubRoom.js";
 import AulasHome from "./pages/AulasHome.js";
 import AulaRoom from "./pages/AulaRoom.js";
-import SharePopup from "./pages/SharePopup.js";
+import OpenOnSite from "./components/OpenOnSite.js";
+import { isDiscordActivity } from "./lib/discordActivity.js";
 
 export default function App() {
+  // Live classes need screen capture and WebRTC, neither of which
+  // exists inside a Discord Activity's iframe -- see OpenOnSite.tsx.
+  // Swapped at the route level so the room never mounts there at all
+  // (no pointless WebSocket, no peer connections that would throw).
+  const inActivity = isDiscordActivity();
+
   return (
     <BrowserRouter>
-      <Routes>
-        {/* No Layout, no auth -- a bare window.open() popup that only
-            needs to run getDisplayMedia/getUserMedia and hand the
-            stream back to window.opener. See SharePopup.tsx. */}
-        <Route path="/share-popup" element={<SharePopup />} />
-        <Route
-          path="*"
-          element={
-            <Layout>
-              <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/posts/novo" element={<ProtectedRoute><PostCreate /></ProtectedRoute>} />
-                <Route path="/posts/:id/editar" element={<ProtectedRoute><PostCreate /></ProtectedRoute>} />
-                <Route path="/posts/:slug" element={<PostView />} />
-                <Route path="/perfil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-                <Route path="/clube-do-livro" element={<ProtectedRoute><BookClubHome /></ProtectedRoute>} />
-                <Route path="/clube-do-livro/:id" element={<ProtectedRoute><BookClubRoom /></ProtectedRoute>} />
-                <Route path="/aulas" element={<ProtectedRoute><AulasHome /></ProtectedRoute>} />
-                <Route path="/aulas/:id" element={<ProtectedRoute><AulaRoom /></ProtectedRoute>} />
-              </Routes>
-            </Layout>
-          }
-        />
-      </Routes>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/posts/novo" element={<ProtectedRoute><PostCreate /></ProtectedRoute>} />
+          <Route path="/posts/:id/editar" element={<ProtectedRoute><PostCreate /></ProtectedRoute>} />
+          <Route path="/posts/:slug" element={<PostView />} />
+          <Route path="/perfil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/clube-do-livro" element={<ProtectedRoute><BookClubHome /></ProtectedRoute>} />
+          <Route path="/clube-do-livro/:id" element={<ProtectedRoute><BookClubRoom /></ProtectedRoute>} />
+          <Route path="/aulas" element={<ProtectedRoute>{inActivity ? <OpenOnSite /> : <AulasHome />}</ProtectedRoute>} />
+          <Route path="/aulas/:id" element={<ProtectedRoute>{inActivity ? <OpenOnSite /> : <AulaRoom />}</ProtectedRoute>} />
+        </Routes>
+      </Layout>
     </BrowserRouter>
   );
 }
