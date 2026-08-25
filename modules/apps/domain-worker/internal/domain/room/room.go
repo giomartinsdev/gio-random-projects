@@ -17,6 +17,12 @@ import (
 const (
 	StatusOpen   = "open"
 	StatusPaused = "paused"
+	// StatusClosed is what "Encerrar sala" sets -- the room's terminal
+	// state. Set via Repository.Delete (kept as "Delete" from the
+	// command-issuer's perspective: ending a room's life), which is a
+	// soft close, not a physical DELETE -- the row and every message
+	// in it stay in Postgres forever, just no longer joinable/playable.
+	StatusClosed = "closed"
 )
 
 var (

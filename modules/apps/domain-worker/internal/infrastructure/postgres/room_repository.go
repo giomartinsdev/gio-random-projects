@@ -85,10 +85,20 @@ func (r *RoomRepository) Update(ctx context.Context, room domainroom.Room) error
 	return nil
 }
 
+// Soft close only -- "Encerrar sala" flips status to
+// domainroom.StatusClosed instead of physically deleting the row.
+// The room and every message in it stay in Postgres forever; a closed
+// room just stops being joinable/playable (bookclub-api enforces
+// that, this layer only records the state). Excludes already-closed
+// rooms so this stays idempotent-safe the same way the other writers
+// guard against double-application.
 func (r *RoomRepository) Delete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM rooms WHERE id = $1`, id)
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE rooms SET status = $2, updated_at = now() WHERE id = $1 AND status != $2`,
+		id, domainroom.StatusClosed,
+	)
 	if err != nil {
-		return fmt.Errorf("delete room: %w", err)
+		return fmt.Errorf("close room: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domainroom.ErrNotFound

@@ -31,6 +31,35 @@ CREATE TABLE IF NOT EXISTS posts (
 CREATE INDEX IF NOT EXISTS idx_posts_status_published_at ON posts (status, published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts (author_id);
 
+-- Kept identical to domain-worker's copy -- see its comment. NULL
+-- means "not deleted". domain-api's own post_repository.go filters
+-- every read on `AND deleted_at IS NULL`.
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+-- Kept identical to domain-worker's copy -- domain-api never writes
+-- to this table (domain-worker is the only INSERTer), but embeds the
+-- same schema.sql so both converge on one shared migration source.
+CREATE TABLE IF NOT EXISTS post_revisions (
+    id UUID PRIMARY KEY,
+    post_id UUID NOT NULL,
+    author_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    body_markdown TEXT NOT NULL,
+    excerpt TEXT NOT NULL,
+    cover_image_url TEXT NOT NULL,
+    type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    published_at TIMESTAMPTZ,
+    archived_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_revisions_post_id ON post_revisions (post_id, archived_at DESC);
+
 -- Kept identical to domain-worker's copy -- host_id/document_id are
 -- opaque identifiers, same reasoning as posts.author_id.
 CREATE TABLE IF NOT EXISTS rooms (
@@ -46,6 +75,8 @@ CREATE TABLE IF NOT EXISTS rooms (
 
 -- CREATE TABLE IF NOT EXISTS above is a no-op against an
 -- already-existing table -- see domain-worker's identical comment.
+-- 'closed' is what "Encerrar sala" sets now instead of physically
+-- deleting the row.
 ALTER TABLE rooms ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open';
 
 CREATE INDEX IF NOT EXISTS idx_rooms_host_id ON rooms (host_id);

@@ -32,8 +32,11 @@ func scanPost(row pgx.Row) (domainpost.Post, error) {
 	return p, err
 }
 
+// Every read below filters on deleted_at IS NULL -- see
+// domain-worker's post_repository.go (the actual writer of that
+// column) for why.
 func (r *PostRepository) FindByID(ctx context.Context, id string) (domainpost.Post, error) {
-	row := r.pool.QueryRow(ctx, `SELECT `+postColumns+` FROM posts WHERE id = $1`, id)
+	row := r.pool.QueryRow(ctx, `SELECT `+postColumns+` FROM posts WHERE id = $1 AND deleted_at IS NULL`, id)
 	p, err := scanPost(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domainpost.Post{}, domainpost.ErrNotFound
@@ -45,7 +48,7 @@ func (r *PostRepository) FindByID(ctx context.Context, id string) (domainpost.Po
 }
 
 func (r *PostRepository) FindBySlug(ctx context.Context, slug string) (domainpost.Post, error) {
-	row := r.pool.QueryRow(ctx, `SELECT `+postColumns+` FROM posts WHERE slug = $1`, slug)
+	row := r.pool.QueryRow(ctx, `SELECT `+postColumns+` FROM posts WHERE slug = $1 AND deleted_at IS NULL`, slug)
 	p, err := scanPost(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domainpost.Post{}, domainpost.ErrNotFound
@@ -57,7 +60,7 @@ func (r *PostRepository) FindBySlug(ctx context.Context, slug string) (domainpos
 }
 
 func (r *PostRepository) ListPublished(ctx context.Context) ([]domainpost.Post, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+postColumns+` FROM posts WHERE status = 'published' ORDER BY published_at DESC`)
+	rows, err := r.pool.Query(ctx, `SELECT `+postColumns+` FROM posts WHERE status = 'published' AND deleted_at IS NULL ORDER BY published_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list published posts: %w", err)
 	}
