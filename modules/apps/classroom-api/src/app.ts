@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { createNodeWebSocket } from "@hono/node-ws";
 import type { Auth } from "./lib/auth.js";
-import { NotFoundError, type DomainApiClient, type DomainMessage } from "./lib/domainApiClient.js";
+import { DomainApiError, NotFoundError, type DomainApiClient, type DomainMessage } from "./lib/domainApiClient.js";
 import { createRoomsRouter, sessionRequestHeaders } from "./routes/rooms.js";
 import { createRateLimiter } from "./lib/rateLimiter.js";
 import { docsHtml, openApiYaml } from "./lib/openapi.js";
@@ -40,6 +40,22 @@ export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigin
   app.use("*", secureHeaders());
 
   app.use("/rooms/*", createRateLimiter({ requestsPerMinute: 60, burst: 100 }));
+
+  // Hono's own default for an uncaught exception is a bare 500
+  // "Internal Server Error" with no body -- fine for a genuine bug,
+  // useless for the actual common case here: domain-api being
+  // unreachable or rejecting this service's own API key, which is an
+  // operational fact worth surfacing (502, with the real message), not
+  // an unhandled crash. NotFoundError is deliberately excluded: every
+  // route that can hit it already catches it locally for a proper 404.
+  app.onError((err, c) => {
+    if (err instanceof DomainApiError) {
+      console.error("[classroom-api] domain-api call failed:", err.message);
+      return c.json({ error: "upstream domain-api call failed" }, 502);
+    }
+    console.error("[classroom-api] unhandled error:", err);
+    return c.json({ error: "internal server error" }, 500);
+  });
 
   app.route("/rooms", createRoomsRouter(auth, domainApi));
 
