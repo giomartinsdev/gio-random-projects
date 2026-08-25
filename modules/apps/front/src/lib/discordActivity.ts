@@ -18,9 +18,20 @@ export function isDiscordActivity(): boolean {
 // IS covered by the /postapi mapping. No-op outside a Discord
 // Activity. Used by PostCard/PostView/PostCreate wherever a post's
 // image renders.
+//
+// Deliberately a RELATIVE /postapi/... path, not the absolute
+// VITE_POST_API_URL host: patchUrlMappings (discordUrlPatch.ts) only
+// monkey-patches fetch/XHR/WebSocket, and an <img> tag's src never
+// goes through any of those -- the browser resolves it natively. An
+// absolute cross-origin URL there gets blocked outright by the
+// Activity iframe's CSP (silent broken-image icon, no console error,
+// no network entry). The relative path is proxied by Discord's own
+// infrastructure per the "URL Mappings" config, which every request
+// under the discordsays.com origin goes through regardless of how
+// it's made.
 export function resolveImageUrl(url: string): string {
   if (!url || !isDiscordActivity()) return url;
-  return `${import.meta.env.VITE_POST_API_URL}/image-proxy?url=${encodeURIComponent(url)}`;
+  return `/postapi/image-proxy?url=${encodeURIComponent(url)}`;
 }
 
 // Discord's own console relay (RpcApplicationLogger) JSON-serializes
