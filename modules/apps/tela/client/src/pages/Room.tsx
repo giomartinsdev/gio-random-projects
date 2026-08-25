@@ -128,7 +128,7 @@ function HostRoom({ roomId, token }: { roomId: string; token: string }) {
       }
     >
       {share.isSharing ? (
-        <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-contain" />
+        <video ref={videoRef} autoPlay playsInline muted className="w-full flex-1 min-h-0 object-contain" />
       ) : (
         <Empty>
           <p>Clique em "Compartilhar tela" para começar.</p>
@@ -167,7 +167,7 @@ function ViewerRoom({ roomId, password }: { roomId: string; password: string }) 
       }
     >
       {share.remoteStream ? (
-        <video ref={videoRef} autoPlay playsInline className="h-full w-full object-contain" />
+        <video ref={videoRef} autoPlay playsInline className="w-full flex-1 min-h-0 object-contain" />
       ) : (
         <Empty>
           {share.hostOnline ? (
@@ -204,7 +204,7 @@ function RoomLayout({
         </div>
         {actions}
       </header>
-      <main className="relative flex-1 bg-black">{children}</main>
+      <main className="relative flex flex-1 bg-black">{children}</main>
     </div>
   );
 }
@@ -233,7 +233,7 @@ function CopyableCode({ code }: { code: string }) {
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-6 text-center text-muted-foreground">
+    <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-muted-foreground">
       {children}
     </div>
   );
