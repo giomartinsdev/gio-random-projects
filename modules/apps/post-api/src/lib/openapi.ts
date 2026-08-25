@@ -165,7 +165,11 @@ paths:
           type: string
           format: uuid
     patch:
-      summary: Edit a post (owner only, async — returns 202)
+      summary: >
+        Edit a post (owner only, async — returns 202). Never
+        overwrites content without a trace: domain-worker archives the
+        pre-edit row into post_revisions before applying the update,
+        in the same transaction.
       security:
         - bearerAuth: []
       requestBody:
@@ -184,7 +188,11 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
     delete:
-      summary: Delete a post (owner only, async — returns 202)
+      summary: >
+        Delete a post (owner only, async — returns 202). Soft delete
+        only: domain-worker sets deleted_at instead of removing the
+        row, so the post disappears from every read (list, by slug,
+        by id) without ever being physically destroyed.
       security:
         - bearerAuth: []
       responses:

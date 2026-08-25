@@ -165,6 +165,15 @@ module "compute_services_vaultwarden" {
   network_name = module.network_docker_apps.network_name
 }
 
+module "compute_services_adminer" {
+  source = "./modules/compute/services/adminer"
+  providers = {
+    docker = docker
+  }
+
+  network_name = module.network_docker_apps.network_name
+}
+
 module "compute_services_vaultwarden_bridge" {
   count  = var.vaultwarden_account_email == "" ? 0 : 1
   source = "./modules/compute/services/vaultwarden_bridge"

@@ -86,5 +86,14 @@ locals {
       hostname = "minio.giomartins.dev"
       service  = "http://localhost:9001"
     },
+    {
+      # Adminer — ad-hoc Postgres access for a human, gated by Google
+      # SSO Access as the only outer layer (Adminer carries no DB
+      # credentials of its own; its login form asks for them fresh
+      # every visit — see module.compute_services_adminer's README).
+      # Port must match module.compute_services_adminer's published_port.
+      hostname = "adminer.giomartins.dev"
+      service  = "http://localhost:8092"
+    },
   ]
 }
