@@ -238,9 +238,18 @@ jobs:
         run: |
           REPLACE_ARGS=()
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
+            # An app missing from this list deploys as a silent no-op:
+            # the image tag in state is always ":latest", so with no
+            # -replace Terraform sees no diff and leaves the OLD
+            # container running while the job still reports success.
+            # Every new Go app needs an entry here. The mapping can't be
+            # derived from the name -- domain-worker lives inside
+            # domain-api's module -- so it stays explicit.
             case "$app" in
               domain-api) REPLACE_ARGS+=("-replace=module.compute_apps_domain_api.docker_container.domain_api") ;;
               domain-worker) REPLACE_ARGS+=("-replace=module.compute_apps_domain_api.docker_container.domain_worker") ;;
+              tela) REPLACE_ARGS+=("-replace=module.compute_apps_tela.docker_container.tela") ;;
+              *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
             esac
           done
           terraform apply -input=false -lock-timeout=300s -auto-approve "${REPLACE_ARGS[@]}"
