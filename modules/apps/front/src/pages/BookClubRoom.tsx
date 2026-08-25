@@ -71,6 +71,10 @@ export default function BookClubRoom() {
 
   const socket = useRoomSocket(id ?? "");
   const isHost = Boolean(socket.you && socket.you.userId === socket.hostId);
+  // Server already rejects every mutating WS message on a closed room
+  // (bookclub-api's app.ts onMessage guard) -- this just keeps the UI
+  // from offering controls that would silently do nothing.
+  const isClosed = socket.status === "closed";
 
   useEffect(() => {
     if (!id) return;
@@ -293,7 +297,7 @@ export default function BookClubRoom() {
     if (!id || endingRoom) return;
     setEndingRoom(true);
     try {
-      await bookclubApi.deleteRoom(id);
+      await bookclubApi.closeRoom(id);
       navigate("/clube-do-livro");
     } catch {
       setEndingRoom(false);
@@ -342,7 +346,7 @@ export default function BookClubRoom() {
   if (room === null) {
     return (
       <div className="text-center py-20">
-        <p className="text-buteco-cream/60 mb-4">Essa sala não existe (ou já foi encerrada).</p>
+        <p className="text-buteco-cream/60 mb-4">Essa sala não existe.</p>
         <Link to="/clube-do-livro" className="text-buteco-amber hover:underline">
           Voltar para o Clube do Livro
         </Link>
@@ -364,13 +368,16 @@ export default function BookClubRoom() {
           <div>
             <h1 className="font-heading font-bold text-2xl text-buteco-cream">{room.title}</h1>
             <p className="text-buteco-cream/50 text-sm font-mono">
-              {socket.connected ? "conectado" : "conectando…"} · {socket.participants.length}{" "}
-              {socket.participants.length === 1 ? "pessoa" : "pessoas"} na sala
+              {isClosed
+                ? "sala encerrada · somente leitura"
+                : `${socket.connected ? "conectado" : "conectando…"} · ${socket.participants.length} ${
+                    socket.participants.length === 1 ? "pessoa" : "pessoas"
+                  } na sala`}
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            {isHost && (
+            {isHost && !isClosed && (
               <button
                 onClick={() => setConfirmingEnd(true)}
                 disabled={endingRoom}
@@ -383,10 +390,10 @@ export default function BookClubRoom() {
             )}
             <div className="flex items-center gap-3 glass-card px-4 py-2">
             <button
-              disabled={!isHost || page <= 1}
+              disabled={!isHost || isClosed || page <= 1}
               onClick={() => socket.setPage(page - 1)}
               className="text-buteco-cream/80 hover:text-buteco-amber disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
-              title={isHost ? undefined : "só o mestre da sala vira a página"}
+              title={isClosed ? "sala encerrada" : isHost ? undefined : "só o mestre da sala vira a página"}
             >
               ← anterior
             </button>
@@ -395,10 +402,10 @@ export default function BookClubRoom() {
               {numPages ? ` / ${numPages}` : ""}
             </span>
             <button
-              disabled={!isHost || (numPages > 0 && page >= numPages)}
+              disabled={!isHost || isClosed || (numPages > 0 && page >= numPages)}
               onClick={() => socket.setPage(page + 1)}
               className="text-buteco-cream/80 hover:text-buteco-amber disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
-              title={isHost ? undefined : "só o mestre da sala vira a página"}
+              title={isClosed ? "sala encerrada" : isHost ? undefined : "só o mestre da sala vira a página"}
             >
               próxima →
             </button>
@@ -409,7 +416,9 @@ export default function BookClubRoom() {
         {/* Toolbar: zoom + fullscreen for everyone, presenter tools
             (select/laser/pen/text) host-only -- only the host can
             leave a mark or point with a highlighted cursor, matching
-            the same "só o mestre mexe na página" rule as page turns. */}
+            the same "só o mestre mexe na página" rule as page turns.
+            All of it hidden once the room is closed: nothing left to
+            draw or point at, read-only from here on. */}
         <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
           <div className="flex items-center gap-1 glass-card p-1.5">
             <button
@@ -443,7 +452,7 @@ export default function BookClubRoom() {
             </button>
           </div>
 
-          {isHost && (
+          {isHost && !isClosed && (
             <div className="flex items-center gap-1 glass-card p-1.5">
               {(
                 [
@@ -627,7 +636,7 @@ export default function BookClubRoom() {
           <div ref={chatEndRef} />
         </div>
 
-        {!isHost && (
+        {!isHost && !isClosed && (
           <form onSubmit={submitPageRequest} className="px-3 pt-3 border-t border-white/10 flex gap-2 items-center">
             <span className="flex items-center gap-1 text-xs text-buteco-cream/50 shrink-0">
               <IconBookmark size={13} />
@@ -663,13 +672,13 @@ export default function BookClubRoom() {
             type="text"
             value={chatDraft}
             onChange={(e) => setChatDraft(e.target.value)}
-            placeholder={socket.you ? "Escreva algo…" : "Entre para conversar"}
-            disabled={!socket.you}
+            placeholder={isClosed ? "sala encerrada" : socket.you ? "Escreva algo…" : "Entre para conversar"}
+            disabled={!socket.you || isClosed}
             className="field flex-1 py-2 text-sm"
           />
           <button
             type="submit"
-            disabled={!socket.you}
+            disabled={!socket.you || isClosed}
             className="px-3 rounded-lg bg-buteco-amber text-buteco-navy font-heading font-semibold disabled:opacity-40 cursor-pointer"
           >
             ↑
@@ -680,7 +689,7 @@ export default function BookClubRoom() {
       <ConfirmDialog
         open={confirmingEnd}
         title="Encerrar esta sala?"
-        description="Isso marca o livro como concluído e a sala deixa de existir para todo mundo."
+        description="Isso marca o livro como concluído. A sala continua na lista como encerrada -- ninguém mais pode virar página, desenhar ou mandar mensagem, mas o PDF e o histórico de chat continuam disponíveis pra quem quiser rever."
         confirmLabel="Encerrar"
         danger
         busy={endingRoom}

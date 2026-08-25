@@ -9,6 +9,11 @@ export type Room = {
   hostId: string;
   documentId: string;
   currentPage: number;
+  // "open" | "paused" | "closed" -- a closed room ("Encerrar sala")
+  // stays in this list and stays viewable (PDF, past chat) forever,
+  // it just stops accepting page turns/drawings/new chat. See
+  // domain-worker's room.go for the authoritative status values.
+  status: string;
   createdAt: string;
 };
 
@@ -36,7 +41,11 @@ export const bookclubApi = {
     form.set("pdf", pdf);
     return request<Room>("/rooms", { method: "POST", body: form });
   },
-  deleteRoom: (id: string) => request<void>(`/rooms/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  // Named for what it actually does now: a soft close (status ->
+  // "closed"), not a deletion -- the room, its PDF, and its chat
+  // history all survive. Still a DELETE on the wire (bookclub-api's
+  // route/verb didn't change, only its behavior).
+  closeRoom: (id: string) => request<void>(`/rooms/${encodeURIComponent(id)}`, { method: "DELETE" }),
   // ?token= fallback: neither a plain <fetch> for PDF bytes nor the
   // browser WebSocket API can carry a custom Authorization header --
   // see bookclub-api's sessionRequestHeaders (routes/rooms.ts) for the

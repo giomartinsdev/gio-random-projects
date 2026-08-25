@@ -18,6 +18,11 @@ export type Participant = { userId: string; userName: string };
 type RoomSocketState = {
   connected: boolean;
   page: number;
+  // "open" | "paused" | "closed" -- a closed room's server side
+  // already rejects every mutating message (see bookclub-api's WS
+  // onMessage guard); this is what the UI reads to hide/disable those
+  // controls before the user even tries and gets silently ignored.
+  status: string;
   hostId: string | null;
   you: { userId: string; userName: string } | null;
   participants: Participant[];
@@ -30,6 +35,7 @@ type RoomSocketState = {
 const initialState: RoomSocketState = {
   connected: false,
   page: 1,
+  status: "open",
   hostId: null,
   you: null,
   participants: [],
@@ -64,6 +70,7 @@ export function useRoomSocket(roomId: string) {
           setState((s) => ({
             ...s,
             page: msg.page as number,
+            status: (msg.status as string) ?? "open",
             hostId: msg.hostId as string,
             you: msg.you as RoomSocketState["you"],
             participants: msg.participants as Participant[],

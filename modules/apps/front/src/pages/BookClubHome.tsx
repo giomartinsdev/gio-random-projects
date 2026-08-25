@@ -95,24 +95,36 @@ export default function BookClubHome() {
       {rooms?.length === 0 && <p className="text-buteco-cream/60">Nenhuma sala aberta ainda -- seja o primeiro.</p>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        {rooms?.map((r, i) => (
-          <Link
-            key={r.id}
-            to={`/clube-do-livro/${r.id}`}
-            style={{ animationDelay: `${120 + i * 60}ms` }}
-            className="group glass-card overflow-hidden animate-fade-in-up p-6 hover:bg-white/10 hover:border-buteco-amber/30 hover:-translate-y-0.5 transition-all"
-          >
-            <div className="flex items-center gap-2 mb-2 font-mono text-xs text-buteco-amber/70">
-              <span className="uppercase tracking-wide">Sala</span>
-              <span>·</span>
-              <span>{formatDate(r.createdAt)}</span>
-            </div>
-            <h3 className="font-heading font-semibold text-xl text-buteco-cream group-hover:text-buteco-amber transition-colors">
-              {r.title}
-            </h3>
-            <p className="text-buteco-cream/50 text-sm mt-1">página {r.currentPage}</p>
-          </Link>
-        ))}
+        {rooms?.map((r, i) => {
+          const closed = r.status === "closed";
+          return (
+            <Link
+              key={r.id}
+              to={`/clube-do-livro/${r.id}`}
+              style={{ animationDelay: `${120 + i * 60}ms` }}
+              className={`group glass-card overflow-hidden animate-fade-in-up p-6 hover:bg-white/10 hover:-translate-y-0.5 transition-all ${
+                closed ? "opacity-60 hover:border-white/20" : "hover:border-buteco-amber/30"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2 font-mono text-xs text-buteco-amber/70">
+                <span className="uppercase tracking-wide">Sala</span>
+                <span>·</span>
+                <span>{formatDate(r.createdAt)}</span>
+                {closed && (
+                  <span className="ml-auto px-2 py-0.5 rounded-full bg-white/10 text-buteco-cream/60 normal-case tracking-normal">
+                    Encerrada
+                  </span>
+                )}
+              </div>
+              <h3 className="font-heading font-semibold text-xl text-buteco-cream group-hover:text-buteco-amber transition-colors">
+                {r.title}
+              </h3>
+              <p className="text-buteco-cream/50 text-sm mt-1">
+                {closed ? "leitura do PDF e do histórico de chat" : `página ${r.currentPage}`}
+              </p>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );
