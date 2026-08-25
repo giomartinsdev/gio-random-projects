@@ -11,7 +11,7 @@ import { isDiscordActivity, initDiscordActivity } from "./lib/discordActivity.js
 // the same whether or not the Discord handshake succeeds, per this
 // feature's "full site embedded, unchanged" scope.
 if (isDiscordActivity()) {
-  initDiscordActivity().catch((err) => console.error("[discord-activity] init failed:", err));
+  initDiscordActivity().catch((err) => console.error("[discord-activity] init failed (uncaught):", err));
 }
 
 createRoot(document.getElementById("root")!).render(

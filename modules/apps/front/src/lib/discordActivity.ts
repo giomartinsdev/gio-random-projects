@@ -37,6 +37,24 @@ function targetHost(url: string): string {
   return new URL(url).host;
 }
 
+// Discord's own console relay (RpcApplicationLogger) JSON-serializes
+// whatever gets passed to console.error -- an Error instance's
+// message/stack are non-enumerable, so it comes out the other end as
+// a bare "[object Object]" with zero diagnostic value. Every step
+// below logs a plain string built from this instead of the raw
+// error/response.
+function describeError(err: unknown): string {
+  if (err instanceof Error) return `${err.name}: ${err.message}`;
+  if (typeof err === "object" && err !== null) {
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return String(err);
+    }
+  }
+  return String(err);
+}
+
 export async function initDiscordActivity(): Promise<void> {
   const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID as string | undefined;
   if (!clientId) {
@@ -50,7 +68,13 @@ export async function initDiscordActivity(): Promise<void> {
   ]);
 
   const discordSdk = new DiscordSDK(clientId);
-  await discordSdk.ready();
+  try {
+    await discordSdk.ready();
+  } catch (err) {
+    console.error("[discord-activity] sdk.ready() failed:", describeError(err));
+    return;
+  }
+  console.log("[discord-activity] sdk ready");
 
   // authorize (get a one-time code) -> exchange it server-side for an
   // access_token (client_secret can never touch the browser) ->
@@ -61,26 +85,46 @@ export async function initDiscordActivity(): Promise<void> {
   // requested alongside "identify" because signing into this site
   // below requires one (Better Auth users need an email); Discord
   // shows both as a single combined consent the first time.
-  const { code } = await discordSdk.commands.authorize({
-    client_id: clientId,
-    response_type: "code",
-    state: "",
-    prompt: "none",
-    scope: ["identify", "email"],
-  });
-
-  const tokenRes = await fetch(`${import.meta.env.VITE_POST_API_URL}/discord/token`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code }),
-  });
-  if (!tokenRes.ok) {
-    console.error("[discord-activity] token exchange failed:", await tokenRes.text());
+  let code: string;
+  try {
+    ({ code } = await discordSdk.commands.authorize({
+      client_id: clientId,
+      response_type: "code",
+      state: "",
+      prompt: "none",
+      scope: ["identify", "email"],
+    }));
+  } catch (err) {
+    console.error("[discord-activity] authorize() failed:", describeError(err));
     return;
   }
-  const { access_token } = (await tokenRes.json()) as { access_token: string };
+  console.log("[discord-activity] authorized, got code");
 
-  await discordSdk.commands.authenticate({ access_token });
+  let access_token: string;
+  try {
+    const tokenRes = await fetch(`${import.meta.env.VITE_POST_API_URL}/discord/token`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (!tokenRes.ok) {
+      console.error("[discord-activity] token exchange failed:", tokenRes.status, await tokenRes.text());
+      return;
+    }
+    ({ access_token } = (await tokenRes.json()) as { access_token: string });
+  } catch (err) {
+    console.error("[discord-activity] token exchange threw:", describeError(err));
+    return;
+  }
+  console.log("[discord-activity] got access_token");
+
+  try {
+    await discordSdk.commands.authenticate({ access_token });
+  } catch (err) {
+    console.error("[discord-activity] authenticate() failed:", describeError(err));
+    return;
+  }
+  console.log("[discord-activity] authenticated with discord client");
 
   // Signs into THIS site as that Discord user (creating an account on
   // first use) -- see auth.ts's `discord` social provider config for
@@ -90,21 +134,31 @@ export async function initDiscordActivity(): Promise<void> {
   // bookclubApi.ts all read on every subsequent request. Cookies
   // aren't usable here (see discordAuthToken.ts), so this is the
   // entire sign-in -- there's no separate step, no login form shown.
-  const signInRes = await fetch(`${import.meta.env.VITE_POST_API_URL}/api/auth/sign-in/social`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      provider: "discord",
-      idToken: { token: access_token, accessToken: access_token },
-    }),
-  });
-  if (!signInRes.ok) {
-    console.error("[discord-activity] site sign-in failed:", await signInRes.text());
+  let token: string | undefined;
+  try {
+    const signInRes = await fetch(`${import.meta.env.VITE_POST_API_URL}/api/auth/sign-in/social`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "discord",
+        idToken: { token: access_token, accessToken: access_token },
+      }),
+    });
+    if (!signInRes.ok) {
+      console.error("[discord-activity] site sign-in failed:", signInRes.status, await signInRes.text());
+      return;
+    }
+    ({ token } = (await signInRes.json()) as { token?: string });
+  } catch (err) {
+    console.error("[discord-activity] site sign-in threw:", describeError(err));
     return;
   }
-  const { token } = (await signInRes.json()) as { token?: string };
-  if (!token) return;
+  if (!token) {
+    console.error("[discord-activity] sign-in response had no token");
+    return;
+  }
   setDiscordBearerToken(token);
+  console.log("[discord-activity] signed in, bearer token set");
 
   // main.tsx fires this before the app even renders, so the app's
   // FIRST session fetch already happened (and came back logged-out --
@@ -113,5 +167,10 @@ export async function initDiscordActivity(): Promise<void> {
   // until told to -- calling this client action re-fetches /get-session
   // (now with the bearer token attached) AND updates that shared
   // store, which is what actually re-renders them.
-  await authClient.getSession();
+  try {
+    await authClient.getSession();
+    console.log("[discord-activity] session refetched, should be logged in now");
+  } catch (err) {
+    console.error("[discord-activity] session refetch threw:", describeError(err));
+  }
 }
