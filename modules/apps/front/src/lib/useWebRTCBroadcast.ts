@@ -148,9 +148,19 @@ export function useWebRTCBroadcast(opts: {
       const token = getDiscordBearerToken();
       const params = new URLSearchParams({ kind, roomId, relayId, hostId: you.userId });
       if (token) params.set("token", token);
-      const url = `${window.location.origin}/share-popup?${params.toString()}`;
 
-      const opened = isDiscordActivity()
+      // NOT window.location.origin: inside a Discord Activity that's
+      // Discord's proxy origin (https://<app_id>.discordsays.com),
+      // which only resolves inside the Activity iframe itself. Handing
+      // that to openExternalLink silently does nothing -- Discord
+      // won't open its own proxy domain as an "external" link, and it
+      // wouldn't load as a standalone page anyway. The popup has to
+      // point at this app's REAL public origin.
+      const origin = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined) || window.location.origin;
+      const url = `${origin}/share-popup?${params.toString()}`;
+
+      const inActivity = isDiscordActivity();
+      const opened = inActivity
         ? await openExternalLink(url)
         : (() => {
             const popup = window.open(url, "classroom-share-popup", "width=480,height=360");
@@ -159,8 +169,11 @@ export function useWebRTCBroadcast(opts: {
           })();
 
       if (!opened) {
+        console.error(`[classroom] failed to open share window (activity=${inActivity}) for ${origin}`);
         setShareError(
-          "Não foi possível abrir a janela de compartilhamento -- permita pop-ups para este site e tente de novo.",
+          inActivity
+            ? "O Discord não conseguiu abrir a janela de compartilhamento. Abra a aula pelo site para compartilhar a tela."
+            : "Não foi possível abrir a janela de compartilhamento -- permita pop-ups para este site e tente de novo.",
         );
         relayPcRef.current?.close();
         relayPcRef.current = null;

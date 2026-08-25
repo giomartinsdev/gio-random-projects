@@ -123,6 +123,7 @@ jobs:
             VITE_POST_API_URL=https://post-api.giomartins.dev
             VITE_BOOKCLUB_API_URL=https://bookclub-api.giomartins.dev
             VITE_CLASSROOM_API_URL=https://classroom-api.giomartins.dev
+            VITE_PUBLIC_APP_URL=https://classroom-bdd.giomartins.dev
             VITE_DISCORD_CLIENT_ID=${{ secrets.DISCORD_CLIENT_ID }}
 
   deploy:

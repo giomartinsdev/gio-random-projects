@@ -98,6 +98,11 @@ export async function openExternalLink(url: string): Promise<boolean> {
   try {
     await sdkReady;
     const { opened } = await sdk.commands.openExternalLink({ url });
+    // `opened` is false when the user dismisses Discord's own "you're
+    // about to leave Discord" confirmation, and null when the client
+    // didn't act on it at all -- logged because neither is an error,
+    // so nothing else would surface a share that quietly never opened.
+    console.log(`[discord-activity] openExternalLink(${url}) -> opened=${String(opened)}`);
     return opened ?? false;
   } catch (err) {
     console.error("[discord-activity] openExternalLink failed:", describeError(err));
