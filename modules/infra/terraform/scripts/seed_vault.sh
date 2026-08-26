@@ -83,7 +83,15 @@ upsert_item() {
   fi
 }
 
-echo "$ITEMS_B64" | base64 -d | while IFS="$(printf '\t')" read -r name value_b64; do
+echo "$ITEMS_B64" | base64 -d | while IFS="$(printf '\t')" read -r name value_b64 || [ -n "$name" ]; do
+  # The `|| [ -n "$name" ]` above matters when the LAST pair's value
+  # is empty (an unconfigured optional secret, e.g. Discord's own
+  # client id/secret before that integration is set up): base64 of an
+  # empty string is itself empty, so that line has nothing after its
+  # tab and terraform's join() leaves no trailing newline after it --
+  # `read` returns failure on that final unterminated line even though
+  # it already populated $name/$value_b64 correctly, and without this
+  # clause the loop would silently stop one pair short.
   [ -n "$name" ] || continue
   value=$(echo "$value_b64" | base64 -d)
   upsert_item "$name" "$value"
