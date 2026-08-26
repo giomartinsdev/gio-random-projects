@@ -85,19 +85,6 @@ resource "random_password" "ninerouter_initial_password" {
   special = false
 }
 
-# Zomboid join password (players type this in-game) and admin password
-# (in-game admin-command login). Both seeded into Vaultwarden via the
-# zomboid group below; share the join one with friends freely.
-resource "random_password" "zomboid_server_password" {
-  length  = 16
-  special = false
-}
-
-resource "random_password" "zomboid_admin_password" {
-  length  = 32
-  special = false
-}
-
 # Postgres only applies POSTGRES_PASSWORD on first init of an empty
 # data volume -- changing the env var alone does nothing once the
 # volume already has data, and would leave domain-api/domain-worker
@@ -261,14 +248,6 @@ locals {
       items = {
         NINEROUTER_JWT_SECRET       = random_password.ninerouter_jwt_secret.result
         NINEROUTER_INITIAL_PASSWORD = random_password.ninerouter_initial_password.result
-      }
-    }
-    zomboid = {
-      trigger = "${random_password.zomboid_server_password.result}|${random_password.zomboid_admin_password.result}"
-      items = {
-        ZOMBOID_SERVER_PASSWORD = random_password.zomboid_server_password.result
-        ZOMBOID_ADMIN_USERNAME  = "admin"
-        ZOMBOID_ADMIN_PASSWORD  = random_password.zomboid_admin_password.result
       }
     }
   }

@@ -231,19 +231,13 @@ module "compute_services_adminer" {
   network_name = module.network_docker_apps.network_name
 }
 
-# Game server: UDP-only, so no hostname in locals.tf and no ingress —
-# its ports open straight onto the host's public interface. See
-# modules/compute/services/zomboid/README.md for why it breaks the
-# loopback-only rule every HTTP service follows.
-module "compute_services_zomboid" {
-  source = "./modules/compute/services/zomboid"
-  providers = {
-    docker = docker
-  }
-
-  server_password = random_password.zomboid_server_password.result
-  admin_password  = random_password.zomboid_admin_password.result
-}
+# NOTE: the Project Zomboid game server is NOT a container here — it
+# runs natively on the host (the VPS is arm64 and both SteamCMD and the
+# game's JVM are x86-only; they run via box64, installed and managed by
+# github.com/kaanzapkinus/zomboid-b42-on-arm as a systemd service).
+# A docker/zomboid module was tried first: its amd64-only image
+# segfaults under QEMU emulation on this box. Don't re-add it as a
+# container without solving that.
 
 module "compute_services_vaultwarden_bridge" {
   count  = var.vaultwarden_account_email == "" ? 0 : 1

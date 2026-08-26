@@ -26,8 +26,7 @@ hostname/port pair gets declared — everything else derives from it:
   `locals.tf` straight on the host.
 - **[`modules/compute/services/*`](modules/compute/services/registry/README.md)**
   — registry (+watchtower), beszel monitoring, 9router, vaultwarden
-  (+bridge), adminer, [`zomboid`](modules/compute/services/zomboid/README.md)
-  (game server — the one non-HTTP service), and
+  (+bridge), adminer, and
   [`ingress`](modules/compute/services/ingress/README.md)
   — the single nginx front door everything else routes through.
 
@@ -46,7 +45,11 @@ published port is bound to `127.0.0.1` only, so the edge + ingress pair
 is the only way in from outside (the registry's `:5000` and tela's UDP
 media port are the direct-to-the-box exceptions). The docker provider
 itself connects to dockerd over plain SSH (`ssh://`), so there's no
-exposed Docker API endpoint either.
+exposed Docker API endpoint either. The Project Zomboid game server
+also opens UDP 16261-16262 directly on the host — it's not a container
+here at all (arm64 box, x86-only game: runs natively via box64 under a
+systemd service installed by github.com/kaanzapkinus/zomboid-b42-on-arm;
+see root `main.tf`'s note).
 `var.server_ip` has no default — every CI run discovers it fresh by
 SSHing into the VPS and asking an external IP-echo service, so the DNS
 records stay correct even if the VPS's address ever changes (see each
