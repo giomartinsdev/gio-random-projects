@@ -1,15 +1,15 @@
 #!/usr/bin/env sh
 # Upserts NAME=VALUE pairs into Vaultwarden over the internal docker
-# network -- used both by Terraform (root secrets.tf's
-# null_resource.vault_seed, for the app-level secrets it generates) and
-# directly from tf-ci-cd.yml (to back up the handful of "secret zero"
-# credentials Terraform itself needs to authenticate, which by
-# definition it can't fetch from the vault to configure itself). Never
-# touches vault.giomartins.dev or Cloudflare Access -- this runs over
-# the same "vaultwarden" hostname the bridge itself uses. The one
-# wrinkle: the bw CLI refuses non-HTTPS server URLs even for purely-
-# internal traffic, so this still needs a tiny local self-signed-HTTPS
-# proxy in front of the plain-HTTP internal listener.
+# network -- used by Terraform (root secrets.tf's null_resource.vault_seed)
+# for the app-level secrets it generates. The "secret zero" credentials
+# Terraform itself needs to authenticate (Cloudflare token, R2 keys,
+# the vault's own unlock creds) stay GitHub-Secrets-only -- no backup
+# copy anywhere, since a lost VPS/vault couldn't be used to recover
+# them anyway. Never touches vault.giomartins.dev or Cloudflare Access
+# -- this runs over the same "vaultwarden" hostname the bridge itself
+# uses. The one wrinkle: the bw CLI refuses non-HTTPS server URLs even
+# for purely-internal traffic, so this still needs a tiny local
+# self-signed-HTTPS proxy in front of the plain-HTTP internal listener.
 #
 # Required env: NETWORK_NAME, VAULTWARDEN_CLIENT_ID,
 # VAULTWARDEN_CLIENT_SECRET, VAULTWARDEN_MASTER_PASSWORD, and
