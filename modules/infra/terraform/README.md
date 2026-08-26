@@ -26,7 +26,9 @@ hostname/port pair gets declared — everything else derives from it:
   `locals.tf` straight on the host.
 - **[`modules/compute/services/*`](modules/compute/services/registry/README.md)**
   — registry (+watchtower), beszel monitoring, 9router, vaultwarden
-  (+bridge), adminer, and [`ingress`](modules/compute/services/ingress/README.md)
+  (+bridge), adminer, [`zomboid`](modules/compute/services/zomboid/README.md)
+  (game server — the one non-HTTP service), and
+  [`ingress`](modules/compute/services/ingress/README.md)
   — the single nginx front door everything else routes through.
 
 ## Where the traffic goes

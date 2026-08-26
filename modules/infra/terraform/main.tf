@@ -231,6 +231,20 @@ module "compute_services_adminer" {
   network_name = module.network_docker_apps.network_name
 }
 
+# Game server: UDP-only, so no hostname in locals.tf and no ingress —
+# its ports open straight onto the host's public interface. See
+# modules/compute/services/zomboid/README.md for why it breaks the
+# loopback-only rule every HTTP service follows.
+module "compute_services_zomboid" {
+  source = "./modules/compute/services/zomboid"
+  providers = {
+    docker = docker
+  }
+
+  server_password = random_password.zomboid_server_password.result
+  admin_password  = random_password.zomboid_admin_password.result
+}
+
 module "compute_services_vaultwarden_bridge" {
   count  = var.vaultwarden_account_email == "" ? 0 : 1
   source = "./modules/compute/services/vaultwarden_bridge"
