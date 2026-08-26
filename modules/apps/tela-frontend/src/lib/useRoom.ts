@@ -19,12 +19,15 @@ const LEAVE_GRACE_MS = 12_000;
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 8_000;
 
-// 1080p30 rather than the monitor's native resolution. The framerate is
-// a ceiling, not a promise: with a bitrate cap and
-// degradationPreference "maintain-resolution", the encoder drops frames
-// on its own when it can't afford 30.
+// 1080p120 -- gaming footage lives and dies by smoothness far more
+// than a document/text share does, and every number here is a
+// ceiling, not a promise: TWCC congestion control (see the Go side's
+// sfu.go) backs the actual send rate off in real time on a connection
+// that can't sustain this, same as it always has. The SFU forwards
+// packets unchanged -- nothing is transcoded -- so whatever the
+// browser encodes here is exactly what every viewer receives.
 const SCREEN_CONSTRAINTS: MediaTrackConstraints = {
-  frameRate: { ideal: 30, max: 30 },
+  frameRate: { ideal: 120, max: 120 },
   width: { max: 1920 },
   height: { max: 1080 },
 };
@@ -44,7 +47,15 @@ const CAMERA_CONSTRAINTS: MediaTrackConstraints = {
 // this is a flat cost however many people are watching. That's the
 // whole reason the SFU exists, and why this is no longer divided by the
 // size of the audience.
-const SCREEN_MAX_BITRATE = 2_500_000;
+//
+// 10 Mbps is a real-world ceiling for 1080p120 fast-motion content
+// (games), not an arbitrary round number -- Twitch/OBS's own guidance
+// puts 1080p60 gaming at 6-9 Mbps, and 120fps needs more headroom on
+// top of that even though total bits don't scale linearly with frame
+// count (consecutive frames are similar, so the codec already exploits
+// that). The old 2.5 Mbps was tuned for legible text in a screen
+// share, the opposite workload.
+const SCREEN_MAX_BITRATE = 10_000_000;
 const CAMERA_MAX_BITRATE = 1_200_000;
 
 export type Status = "connecting" | "connected" | "reconnecting" | "error" | "closed";
@@ -125,8 +136,11 @@ export function useRoom(roomId: string, password: string) {
   // --- publishing ---
 
   // Caps what this browser sends and tells the encoder what to give up
-  // when it can't keep up: for a screen that's framerate (keep the text
-  // legible), for a camera it's resolution (keep the motion smooth).
+  // when it can't keep up. Both sources now prefer smooth motion over
+  // sharpness: a screen share used to mean mostly static text/docs
+  // (where a soft frame drop is worse than a slightly blurrier
+  // picture), but 120fps game footage is the opposite -- a stutter is
+  // far more noticeable than the encoder shaving resolution to keep up.
   const applyEncodingLimits = useCallback((pc: RTCPeerConnection) => {
     const screen = sourceRef.current !== "camera";
     for (const sender of pc.getSenders()) {
@@ -134,7 +148,7 @@ export function useRoom(roomId: string, password: string) {
       const params = sender.getParameters();
       if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
       params.encodings[0].maxBitrate = screen ? SCREEN_MAX_BITRATE : CAMERA_MAX_BITRATE;
-      params.degradationPreference = screen ? "maintain-resolution" : "maintain-framerate";
+      params.degradationPreference = "maintain-framerate";
       // Best-effort: not every browser accepts every field, and a
       // rejected tuning shouldn't break the connection.
       sender.setParameters(params).catch(() => {});
