@@ -110,12 +110,43 @@ jobs:
               http = true
               insecure = true
 
+      # SSH access + fetch are only for reaching the vault below --
+      # this job doesn't touch Terraform or var.docker_host at all.
+      - name: Set up SSH access to the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          echo "DOCKER_HOST=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
+
+      # registry_password and discord_client_id aren't secret zero --
+      # they're regular Terraform resource inputs Terraform already
+      # keeps mirrored in Vaultwarden (secrets.tf's "registry" and
+      # "discord" vault_seed groups), so CI reads them from there
+      # instead of also holding its own GitHub-secret copy.
+      - name: Fetch secrets from Vaultwarden
+        env:
+          NETWORK_NAME: apps
+          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
+          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
+          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
+          ITEM_MAP: "REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD DISCORD_CLIENT_ID=DISCORD_CLIENT_ID"
+        run: |
+          modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
+            echo "::add-mask::$v"
+            echo "${k}=${v}" >> "$GITHUB_ENV"
+          done
+
       - name: Log in to registry.giomartins.dev:5000
         uses: docker/login-action@v3
         with:
           registry: registry.giomartins.dev:5000
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
+          username: ${{ env.REGISTRY_USERNAME }}
+          password: ${{ env.REGISTRY_PASSWORD }}
 
       - name: Build and push ${{ matrix.app }}
         uses: docker/build-push-action@v6
@@ -136,7 +167,7 @@ jobs:
             VITE_BOOKCLUB_API_URL=https://bookclub-api.giomartins.dev
             VITE_CLASSROOM_API_URL=https://classroom-api.giomartins.dev
             VITE_PUBLIC_APP_URL=https://classroom-bdd.giomartins.dev
-            VITE_DISCORD_CLIENT_ID=${{ secrets.DISCORD_CLIENT_ID }}
+            VITE_DISCORD_CLIENT_ID=${{ env.DISCORD_CLIENT_ID }}
 
   deploy:
     needs: [discover, build-and-push]
@@ -148,29 +179,22 @@ jobs:
     # Same secrets tf-ci-cd.yml/go-ci-cd.yml/ts-backend-ci-cd.yml use —
     # a real `terraform apply` needs the full variable set regardless
     # of what's actually changing, and nothing here is new.
-    #
-    # NEXT STEP (not yet done): every one of these TF_VAR_*/secrets.*
-    # values is a GitHub Actions secret copy-pasted into every
-    # workflow that runs `terraform apply` -- the plan is to have
-    # Terraform itself seed these into Vaultwarden once (already true
-    # for the app-level secrets it generates, see secrets.tf) and pull
-    # them from there at the start of each of these jobs instead, so
-    # a rotation only ever touches one place.
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}
       TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
       TF_VAR_google_idp_identity_provider_id: ${{ secrets.CLOUDFLARE_GOOGLE_IDP_ID }}
-      TF_VAR_registry_password: ${{ secrets.TF_REGISTRY_PASSWORD }}
       TF_VAR_beszel_agent_key: ${{ secrets.TF_BESZEL_AGENT_KEY }}
       TF_VAR_vaultwarden_account_email: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_EMAIL }}
       TF_VAR_vaultwarden_account_master_password: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
       TF_VAR_vaultwarden_api_client_id: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
       TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-      TF_VAR_discord_client_id: ${{ secrets.DISCORD_CLIENT_ID }}
-      TF_VAR_discord_client_secret: ${{ secrets.DISCORD_CLIENT_SECRET }}
       AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
+      # TF_VAR_registry_password/TF_VAR_discord_client_id/
+      # TF_VAR_discord_client_secret come from Vaultwarden below
+      # instead of their own GitHub secret -- see tf-ci-cd.yml's
+      # "Fetch secrets from Vaultwarden" for why.
     steps:
       - uses: actions/checkout@v4
 
@@ -202,6 +226,21 @@ jobs:
           fi
           echo "TF_VAR_server_ip=$SERVER_IP" >> "$GITHUB_ENV"
 
+      # Same reasoning as tf-ci-cd.yml's own step of the same name.
+      - name: Fetch secrets from Vaultwarden
+        env:
+          DOCKER_HOST: ${{ env.TF_VAR_docker_host }}
+          NETWORK_NAME: apps
+          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
+          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
+          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
+          ITEM_MAP: "TF_VAR_registry_password=REGISTRY_PASSWORD TF_VAR_discord_client_id=DISCORD_CLIENT_ID TF_VAR_discord_client_secret=DISCORD_CLIENT_SECRET REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
+        run: |
+          ./scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
+            echo "::add-mask::$v"
+            echo "${k}=${v}" >> "$GITHUB_ENV"
+          done
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~> 1.10"
@@ -225,8 +264,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: registry.giomartins.dev:5000
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
+          username: ${{ env.REGISTRY_USERNAME }}
+          password: ${{ env.REGISTRY_PASSWORD }}
 
       - name: Pull the image(s) just pushed onto the VPS's own dockerd
         env:

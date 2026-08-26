@@ -130,13 +130,24 @@ local-state, by-hand) bootstrap run.
 | `TF_STATE_R2_ENDPOINT` | endpoint URL from step 2 |
 | `TF_STATE_R2_ACCESS_KEY_ID` | from step 2 |
 | `TF_STATE_R2_SECRET_ACCESS_KEY` | from step 2 |
-| `TF_REGISTRY_PASSWORD` | registry basic-auth password — must match `REGISTRY_PASSWORD` (used by the deploy workflows' push step) and the host's `docker login registry.giomartins.dev:5000` watchtower relies on — see `modules/compute/services/registry`'s README |
 | `TF_BESZEL_AGENT_KEY` | the Beszel hub's SSH public key — blank is fine until the hub's first boot; see `modules/compute/services/monitoring`'s README for how to get it |
 | `TF_VAULTWARDEN_ACCOUNT_EMAIL` | email of your real Vaultwarden account (create it first, through the UI) — blank is fine until then; see `modules/compute/services/vaultwarden_bridge`'s README |
 | `TF_VAULTWARDEN_ACCOUNT_PASSWORD` | that account's master password |
 | `TF_VAULTWARDEN_API_CLIENT_ID` | API key `client_id` from the vault UI → Account Settings → Security → Keys |
 | `TF_VAULTWARDEN_API_CLIENT_SECRET` | matching `client_secret` |
-| `REGISTRY_USERNAME` / `REGISTRY_PASSWORD` | used by the build workflows' `docker login`/push step |
+
+`registry_password` and `discord_client_id`/`discord_client_secret`
+are deliberately **not** GitHub secrets — every workflow's "Fetch
+secrets from Vaultwarden" step reads them from the vault instead
+(secrets.tf's `"registry"` and `"discord"` vault_seed groups keep
+those items current on every apply; `scripts/fetch_vault_secret.sh` is
+the read side). One consequence: a true from-scratch bootstrap (empty
+Vaultwarden, nothing seeded yet) has nothing for that step to fetch —
+run the very first `terraform apply` locally instead, with
+`registry_password`/`discord_client_id`/`discord_client_secret` set in
+`terraform.tfvars` (see "Running locally" below), and CI's
+vault-fetch-based flow takes back over for every apply after that one
+seeds the vault.
 
 Everything else the containers need (postgres password, API keys,
 Better Auth secrets, vaultwarden admin token, 9router credentials, …)
@@ -159,6 +170,12 @@ cloudflare_zone_id              = "<from step 4>"
 google_idp_identity_provider_id = "<from step 5>"
 server_ip                       = "<the VPS's current public IP>"
 docker_host                     = "ssh://ubuntu@<the VPS's public IP>"
+registry_password               = "<openssl rand -base64 24, or the existing one from the vault's REGISTRY_PASSWORD item>"
+# Only needed on a true from-scratch bootstrap -- CI fetches both of
+# these from Vaultwarden once this apply has seeded it (see the
+# GitHub repo secrets section above). Blank disables Discord entirely.
+discord_client_id               = ""
+discord_client_secret           = ""
 EOF
 
 export CLOUDFLARE_API_TOKEN=<token from step 6>
