@@ -1,24 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import {
-  Bell,
-  Check,
-  Copy,
-  Crop,
-  DoorOpen,
-  Link2,
-  Loader2,
-  Mic,
-  MicOff,
-  MonitorUp,
-  Play,
-  ScreenShareOff,
-  Users,
-  Video,
-  Volume2,
-  VolumeX,
-  X,
-} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Crop, Link2, MonitorUp, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareCamera, canShareScreen, useRoom, type Credential } from "@/lib/useRoom";
 import { useWakeLock } from "@/lib/useWakeLock";
@@ -27,6 +10,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AnimatedIcon } from "@/components/ui/animated-icon";
+import {
+  airplayIcon,
+  arrowRightCircleIcon,
+  checkmarkIcon,
+  copyIcon,
+  errorIcon,
+  loadingIcon,
+  microphoneIcon,
+  notificationIcon,
+  playPauseCircleIcon,
+  plusToXIcon,
+  videoIcon,
+  volumeIcon,
+} from "@/lib/lottie-icons";
 
 // A viewer's own preference for how the fullscreen tile fits its
 // space -- purely local rendering, never touches the publisher's
@@ -155,80 +153,91 @@ function EntryGate({
 
   return (
     <div className="flex min-h-dvh items-center justify-center px-4 py-10">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="text-xl">Sala {roomId}</CardTitle>
-          <CardDescription>
-            {mode === "password" ? "Digite a senha para entrar." : "Peça para alguém já na sala te deixar entrar."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <Label htmlFor="display-name">Seu nome (opcional)</Label>
-            <Input
-              id="display-name"
-              placeholder="deixe em branco para um nome aleatório"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={30}
-            />
-          </div>
-
-          {mode === "password" ? (
-            <form onSubmit={submitPassword} className="mt-4 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="password">Senha</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  autoFocus
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={checking}>
-                {checking && <Loader2 className="animate-spin" />}
-                Entrar
-              </Button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("knock");
-                  setError(null);
-                }}
-                className="w-full text-center text-xs text-muted-foreground underline-offset-4 hover:underline"
-              >
-                Não sei a senha -- pedir para entrar
-              </button>
-            </form>
-          ) : (
-            <div className="mt-4 space-y-4">
-              <Button type="button" className="w-full" onClick={requestToJoin} disabled={checking}>
-                {checking ? <Loader2 className="animate-spin" /> : <DoorOpen />}
-                Pedir para entrar
-              </Button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("password");
-                  setError(null);
-                }}
-                className="w-full text-center text-xs text-muted-foreground underline-offset-4 hover:underline"
-              >
-                Tenho a senha
-              </button>
+      <motion.div
+        className="w-full max-w-sm"
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.35, ease: "easeOut" }}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl">Sala {roomId}</CardTitle>
+            <CardDescription>
+              {mode === "password" ? "Digite a senha para entrar." : "Peça para alguém já na sala te deixar entrar."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Label htmlFor="display-name">Seu nome (opcional)</Label>
+              <Input
+                id="display-name"
+                placeholder="deixe em branco para um nome aleatório"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={30}
+              />
             </div>
-          )}
 
-          {error && (
-            <Alert variant="destructive" className="mt-4">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
+            {mode === "password" ? (
+              <form onSubmit={submitPassword} className="mt-4 space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="password">Senha</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    autoFocus
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={checking}>
+                  {checking && <AnimatedIcon animation={loadingIcon} autoplay loop />}
+                  Entrar
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("knock");
+                    setError(null);
+                  }}
+                  className="w-full text-center text-xs text-muted-foreground underline-offset-4 hover:underline"
+                >
+                  Não sei a senha -- pedir para entrar
+                </button>
+              </form>
+            ) : (
+              <div className="mt-4 space-y-4">
+                <Button type="button" className="w-full" onClick={requestToJoin} disabled={checking}>
+                  <AnimatedIcon
+                    animation={checking ? loadingIcon : arrowRightCircleIcon}
+                    autoplay={checking}
+                    loop={checking}
+                  />
+                  Pedir para entrar
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("password");
+                    setError(null);
+                  }}
+                  className="w-full text-center text-xs text-muted-foreground underline-offset-4 hover:underline"
+                >
+                  Tenho a senha
+                </button>
+              </div>
+            )}
+
+            {error && (
+              <Alert variant="destructive" className="mt-4">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   );
 }
@@ -292,11 +301,15 @@ function KnockLobby({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {denied ? (
-            <DoorOpen className="mx-auto size-10 text-muted-foreground" />
-          ) : (
-            <Loader2 className="mx-auto size-10 animate-spin text-muted-foreground" />
-          )}
+          <motion.div
+            key={denied ? "denied" : "waiting"}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="flex justify-center text-muted-foreground"
+          >
+            <AnimatedIcon animation={denied ? errorIcon : loadingIcon} size={40} autoplay loop={!denied} />
+          </motion.div>
           <Button variant="outline" className="w-full" onClick={onCancel}>
             {denied ? "Voltar" : "Cancelar"}
           </Button>
@@ -439,34 +452,38 @@ function LiveRoom({
                     : "Esta transmissão não tem áudio"
                 }
               >
-                {room.sendingAudio && room.hasAudioTrack ? <Mic /> : <MicOff />}
+                <AnimatedIcon animation={microphoneIcon} reverse={!(room.sendingAudio && room.hasAudioTrack)} />
                 <span className="sm:hidden">{room.sendingAudio && room.hasAudioTrack ? "Áudio" : "Sem áudio"}</span>
                 <span className="hidden sm:inline">
                   {!room.hasAudioTrack ? "Sem áudio" : room.sendingAudio ? "Enviando áudio" : "Áudio desligado"}
                 </span>
               </Button>
               <Button variant="destructive" onClick={room.stopSharing} className="flex-1 sm:flex-none">
-                <ScreenShareOff />
+                <AnimatedIcon animation={errorIcon} />
                 Parar
               </Button>
             </>
           ) : (
             <>
               {canShareScreen && (
-                <Button onClick={() => room.startSharing("screen")} className="flex-1 sm:flex-none">
-                  <MonitorUp />
-                  Compartilhar tela
-                </Button>
+                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex-1 sm:flex-none">
+                  <Button onClick={() => room.startSharing("screen")} className="w-full">
+                    <AnimatedIcon animation={airplayIcon} />
+                    Compartilhar tela
+                  </Button>
+                </motion.div>
               )}
               {canShareCamera && (
-                <Button
-                  variant={canShareScreen ? "secondary" : "default"}
-                  onClick={() => room.startSharing("camera")}
-                  className="flex-1 sm:flex-none"
-                >
-                  <Video />
-                  Câmera
-                </Button>
+                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex-1 sm:flex-none">
+                  <Button
+                    variant={canShareScreen ? "secondary" : "default"}
+                    onClick={() => room.startSharing("camera")}
+                    className="w-full"
+                  >
+                    <AnimatedIcon animation={videoIcon} />
+                    Câmera
+                  </Button>
+                </motion.div>
               )}
             </>
           )}
@@ -489,26 +506,37 @@ function LiveRoom({
               </Alert>
             )}
 
-            {room.knockRequests.map((req) => (
-              <Alert key={req.requestId} className="bg-card">
-                <AlertDescription className="flex items-center justify-between gap-3">
-                  <span className="flex items-center gap-2">
-                    <Bell className="size-4 shrink-0 text-muted-foreground" />
-                    <strong>{req.name}</strong> quer entrar na sala
-                  </span>
-                  <span className="flex shrink-0 gap-2">
-                    <Button size="sm" variant="outline" onClick={() => room.denyKnock(req.requestId)}>
-                      <X className="size-4" />
-                      Recusar
-                    </Button>
-                    <Button size="sm" onClick={() => room.approveKnock(req.requestId)}>
-                      <Check className="size-4" />
-                      Aprovar
-                    </Button>
-                  </span>
-                </AlertDescription>
-              </Alert>
-            ))}
+            <AnimatePresence initial={false}>
+              {room.knockRequests.map((req) => (
+                <motion.div
+                  key={req.requestId}
+                  layout
+                  initial={{ opacity: 0, y: -16, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.25, ease: "easeOut" }}
+                >
+                  <Alert className="bg-card">
+                    <AlertDescription className="flex items-center justify-between gap-3">
+                      <span className="flex items-center gap-2">
+                        <AnimatedIcon animation={notificationIcon} autoplay loop className="text-muted-foreground" />
+                        <strong>{req.name}</strong> quer entrar na sala
+                      </span>
+                      <span className="flex shrink-0 gap-2">
+                        <Button size="sm" variant="outline" onClick={() => room.denyKnock(req.requestId)}>
+                          <AnimatedIcon animation={plusToXIcon} reverse />
+                          Recusar
+                        </Button>
+                        <Button size="sm" onClick={() => room.approveKnock(req.requestId)}>
+                          <AnimatedIcon animation={checkmarkIcon} autoplay />
+                          Aprovar
+                        </Button>
+                      </span>
+                    </AlertDescription>
+                  </Alert>
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
         )}
 
@@ -559,30 +587,37 @@ function Grid({
         (tiles.length === 1 ? "grid-cols-1" : tiles.length <= 4 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3")
       }
     >
-      {tiles.map((tile) => (
-        <button
-          key={tile.peerId}
-          onClick={() => onSelect(tile.peerId)}
-          className="group relative min-h-0 overflow-hidden rounded-lg border bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <TileVideo tile={tile} muted={mutedPeers.has(tile.peerId)} />
-          <span className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 text-left text-sm">
-            <span className="truncate font-medium">{tile.name}</span>
-            <span className="shrink-0 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
-              ver em tela cheia
+      <AnimatePresence initial={false}>
+        {tiles.map((tile) => (
+          <motion.button
+            key={tile.peerId}
+            layout
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            onClick={() => onSelect(tile.peerId)}
+            className="group relative min-h-0 overflow-hidden rounded-lg border bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <TileVideo tile={tile} muted={mutedPeers.has(tile.peerId)} />
+            <span className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 text-left text-sm">
+              <span className="truncate font-medium">{tile.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+                ver em tela cheia
+              </span>
             </span>
-          </span>
-          {/* Own tile is always silent (hearing yourself back echoes),
-              so there's nothing to toggle on it. */}
-          {!tile.isYou && hasAudio(tile.stream) && (
-            <MuteButton
-              muted={mutedPeers.has(tile.peerId)}
-              onToggle={() => onToggleMuted(tile.peerId)}
-              className="absolute right-2 top-2"
-            />
-          )}
-        </button>
-      ))}
+            {/* Own tile is always silent (hearing yourself back echoes),
+                so there's nothing to toggle on it. */}
+            {!tile.isYou && hasAudio(tile.stream) && (
+              <MuteButton
+                muted={mutedPeers.has(tile.peerId)}
+                onToggle={() => onToggleMuted(tile.peerId)}
+                className="absolute right-2 top-2"
+              />
+            )}
+          </motion.button>
+        ))}
+      </AnimatePresence>
     </div>
   );
 }
@@ -627,24 +662,32 @@ function PeopleList({
         <span className="tabular-nums">{count}</span>
         <span className="hidden sm:inline">{count === 1 ? "pessoa" : "pessoas"}</span>
       </button>
-      {open && (
-        <div className="absolute left-0 top-full z-20 mt-2 w-56 rounded-md border bg-card p-2 text-card-foreground shadow-md">
-          <p className="mb-1 px-1.5 text-xs font-medium text-muted-foreground">Na sala</p>
-          <ul className="max-h-64 space-y-0.5 overflow-y-auto">
-            {participants.map((p) => (
-              <li key={p.peerId} className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-sm">
-                <span className="truncate">
-                  {p.name}
-                  {p.isYou && <span className="text-muted-foreground"> (você)</span>}
-                </span>
-                {p.publishing && (
-                  <MonitorUp className="size-3.5 shrink-0 text-muted-foreground" aria-label="Compartilhando" />
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ duration: 0.15 }}
+            className="absolute left-0 top-full z-20 mt-2 w-56 origin-top-left rounded-md border bg-card p-2 text-card-foreground shadow-md"
+          >
+            <p className="mb-1 px-1.5 text-xs font-medium text-muted-foreground">Na sala</p>
+            <ul className="max-h-64 space-y-0.5 overflow-y-auto">
+              {participants.map((p) => (
+                <li key={p.peerId} className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-sm">
+                  <span className="truncate">
+                    {p.name}
+                    {p.isYou && <span className="text-muted-foreground"> (você)</span>}
+                  </span>
+                  {p.publishing && (
+                    <MonitorUp className="size-3.5 shrink-0 text-muted-foreground" aria-label="Compartilhando" />
+                  )}
+                </li>
+              ))}
+            </ul>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -674,7 +717,7 @@ function FullscreenTile({
         <AspectModeButton mode={aspectMode} onChange={onAspectModeChange} />
         {!tile.isYou && hasAudio(tile.stream) && <MuteButton muted={muted} onToggle={onToggleMuted} />}
         <Button variant="secondary" size="sm" onClick={onClose} aria-label="Voltar para o grid">
-          <X className="size-4" />
+          <AnimatedIcon animation={plusToXIcon} reverse />
           Voltar
         </Button>
       </div>
@@ -788,7 +831,7 @@ function TileVideo({
             }}
             className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70"
           >
-            <Play className="size-10" />
+            <AnimatedIcon animation={playPauseCircleIcon} size={40} />
             <span className="text-sm font-medium">Toque para assistir</span>
           </span>
         )}
@@ -820,7 +863,7 @@ function MuteButton({
       aria-label={muted ? "Ativar som" : "Silenciar"}
       title={muted ? "Ativar som" : "Silenciar"}
     >
-      {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+      <AnimatedIcon animation={volumeIcon} reverse={muted} />
     </Button>
   );
 }
@@ -887,7 +930,11 @@ function CopyLinkWithPassword({
       title="Copiar link direto com senha"
       className="gap-1.5"
     >
-      {copied ? <Check className="size-4 text-green-500" /> : <Link2 className="size-4" />}
+      {copied ? (
+        <AnimatedIcon animation={checkmarkIcon} autoplay className="text-green-500" />
+      ) : (
+        <Link2 className="size-4" />
+      )}
       <span className="hidden sm:inline">{copied ? "Link com senha copiado!" : "Copiar link com senha"}</span>
       <span className="sm:hidden">{copied ? "Copiado!" : "Link com senha"}</span>
     </Button>
@@ -915,7 +962,7 @@ function CopyableCode({ code }: { code: string }) {
 
   return (
     <Button variant="secondary" size="sm" onClick={copy} className="font-mono tracking-widest" title="Copiar código / link da sala">
-      {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+      <AnimatedIcon animation={copied ? checkmarkIcon : copyIcon} autoplay={copied} />
       {code}
     </Button>
   );
