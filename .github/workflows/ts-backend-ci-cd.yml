@@ -163,6 +163,18 @@ jobs:
     needs: [discover, build-and-push]
     if: needs.discover.outputs.apps != '[]'
     runs-on: ubuntu-latest
+    # Shared across every workflow that runs `terraform apply`
+    # (go-ci-cd.yml, ts-frontend-ci-cd.yml, tf-ci-cd.yml) -- they all
+    # touch the same state file. Without this, pushing to several apps
+    # at once queues up N applies that all race for the same R2 state
+    # lock: each loser sits on `-lock-timeout=300s` and then just
+    # fails, instead of the run queuing safely and going next.
+    # cancel-in-progress stays false on purpose -- killing a
+    # `terraform apply` mid-flight is how you end up with a container
+    # half-recreated and the state disagreeing with reality.
+    concurrency:
+      group: terraform-apply
+      cancel-in-progress: false
     defaults:
       run:
         working-directory: modules/infra/terraform
