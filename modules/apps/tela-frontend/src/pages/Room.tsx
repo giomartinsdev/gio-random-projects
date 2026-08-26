@@ -3,7 +3,7 @@ import { Link, useLocation, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { Crop, Link2, MonitorUp, Users } from "lucide-react";
 import { api } from "@/lib/api";
-import { canShareCamera, canShareScreen, useRoom, type Credential } from "@/lib/useRoom";
+import { canShareCamera, canShareScreen, useRoom, type Credential, type Quality, type Fps, QUALITY_OPTIONS, FPS_OPTIONS } from "@/lib/useRoom";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -439,6 +439,8 @@ function LiveRoom({
         <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">
           {room.isSharing ? (
             <>
+              <QualityButton quality={room.quality} onChange={(q) => { room.setQuality(q); }} />
+              <FpsButton fps={room.fps} onChange={(f) => { room.setFps(f); }} />
               <Button
                 variant="secondary"
                 onClick={() => room.setAudio(!room.sendingAudio)}
@@ -744,6 +746,46 @@ function AspectModeButton({ mode, onChange }: { mode: AspectMode; onChange: (mod
       title={`Ajuste de tela: ${current.label} (toque para ${next.label})`}
     >
       <Crop className="size-4" />
+      {current.label}
+    </Button>
+  );
+}
+
+function QualityButton({ quality, onChange }: { quality: Quality; onChange: (q: Quality) => void }) {
+  const index = QUALITY_OPTIONS.findIndex((o) => o.value === quality);
+  const current = QUALITY_OPTIONS[index] ?? QUALITY_OPTIONS[QUALITY_OPTIONS.length - 1];
+  const next = QUALITY_OPTIONS[(index + 1) % QUALITY_OPTIONS.length];
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(next.value);
+      }}
+      aria-label={`Qualidade: ${current.label} (toque para ${next.label})`}
+      title={`Qualidade: ${current.label} (toque para ${next.label})`}
+    >
+      {current.label}
+    </Button>
+  );
+}
+
+function FpsButton({ fps, onChange }: { fps: Fps; onChange: (f: Fps) => void }) {
+  const index = FPS_OPTIONS.findIndex((o) => o.value === fps);
+  const current = FPS_OPTIONS[index] ?? FPS_OPTIONS[FPS_OPTIONS.length - 1];
+  const next = FPS_OPTIONS[(index + 1) % FPS_OPTIONS.length];
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(next.value);
+      }}
+      aria-label={`FPS: ${current.label} (toque para ${next.label})`}
+      title={`FPS: ${current.label} (toque para ${next.label})`}
+    >
       {current.label}
     </Button>
   );

@@ -19,44 +19,89 @@ const LEAVE_GRACE_MS = 12_000;
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 8_000;
 
-// 1080p120 -- gaming footage lives and dies by smoothness far more
-// than a document/text share does, and every number here is a
-// ceiling, not a promise: TWCC congestion control (see the Go side's
-// sfu.go) backs the actual send rate off in real time on a connection
-// that can't sustain this, same as it always has. The SFU forwards
-// packets unchanged -- nothing is transcoded -- so whatever the
-// browser encodes here is exactly what every viewer receives.
-const SCREEN_CONSTRAINTS: MediaTrackConstraints = {
-  frameRate: { ideal: 120, max: 120 },
-  width: { max: 1920 },
-  height: { max: 1080 },
+// Whoever is sharing picks these before they start -- see
+// AspectModeButton-style pickers in Room.tsx. "source" means "don't
+// constrain this at all", i.e. whatever the display/camera natively
+// gives getDisplayMedia/getUserMedia.
+export type Quality = "360p" | "480p" | "720p" | "1080p" | "source";
+export type Fps = 5 | 15 | 30 | 60 | "source";
+
+export const QUALITY_OPTIONS: { value: Quality; label: string }[] = [
+  { value: "360p", label: "360p" },
+  { value: "480p", label: "480p" },
+  { value: "720p", label: "720p" },
+  { value: "1080p", label: "1080p" },
+  { value: "source", label: "Original" },
+];
+
+export const FPS_OPTIONS: { value: Fps; label: string }[] = [
+  { value: 5, label: "5 fps" },
+  { value: 15, label: "15 fps" },
+  { value: 30, label: "30 fps" },
+  { value: 60, label: "60 fps" },
+  { value: "source", label: "Original" },
+];
+
+const QUALITY_DIMENSIONS: Record<Exclude<Quality, "source">, { width: number; height: number }> = {
+  "360p": { width: 640, height: 360 },
+  "480p": { width: 854, height: 480 },
+  "720p": { width: 1280, height: 720 },
+  "1080p": { width: 1920, height: 1080 },
 };
 
-const CAMERA_CONSTRAINTS: MediaTrackConstraints = {
-  // Rear camera by default -- sharing a phone's camera is usually about
-  // showing something, not yourself. `ideal` rather than `exact` so a
-  // laptop with one webcam still works instead of throwing
-  // OverconstrainedError.
-  facingMode: { ideal: "environment" },
-  frameRate: { max: 30 },
-  width: { max: 1280 },
-  height: { max: 720 },
-};
+// "source" quality has no fixed dimensions to reason about ahead of
+// capture -- 1080p is the stand-in for sizing the bitrate ceiling
+// below, not a real constraint (videoConstraintsFor below never sets
+// width/height for it).
+function dimensionsFor(quality: Quality) {
+  return quality === "source" ? QUALITY_DIMENSIONS["1080p"] : QUALITY_DIMENSIONS[quality];
+}
 
 // One upload, not one per viewer: the server fans the stream out, so
 // this is a flat cost however many people are watching. That's the
-// whole reason the SFU exists, and why this is no longer divided by the
+// whole reason the SFU exists, and why this was never divided by the
 // size of the audience.
 //
-// 10 Mbps is a real-world ceiling for 1080p120 fast-motion content
-// (games), not an arbitrary round number -- Twitch/OBS's own guidance
-// puts 1080p60 gaming at 6-9 Mbps, and 120fps needs more headroom on
-// top of that even though total bits don't scale linearly with frame
-// count (consecutive frames are similar, so the codec already exploits
-// that). The old 2.5 Mbps was tuned for legible text in a screen
-// share, the opposite workload.
-const SCREEN_MAX_BITRATE = 10_000_000;
-const CAMERA_MAX_BITRATE = 1_200_000;
+// Bits-per-pixel-per-frame instead of a table of 25 hand-picked
+// numbers: bitrate scales with both resolution and frame rate, and
+// this scales the same way real encoders do. 0.08 is tuned so
+// 1080p+60fps lands close to the flat 10 Mbps ceiling screen sharing
+// used before quality became selectable (Twitch/OBS's own guidance
+// puts 1080p60 gaming at 6-9 Mbps) -- picking a smaller size or a
+// lower rate now actually saves bandwidth instead of encoding
+// low-detail content at a ceiling sized for 1080p60.
+const BITS_PER_PIXEL_PER_FRAME = 0.08;
+// "source" fps has no fixed number to multiply by either -- 60 is the
+// same stand-in dimensions above uses.
+const CAMERA_BITRATE_SHARE = 0.4; // a phone camera's own encoder needs less than a full desktop capture at the same resolution/fps
+
+function bitrateFor(source: Source, quality: Quality, fps: Fps): number {
+  const { width, height } = dimensionsFor(quality);
+  const rate = fps === "source" ? 60 : fps;
+  const bitrate = width * height * rate * BITS_PER_PIXEL_PER_FRAME;
+  return Math.round(source === "camera" ? bitrate * CAMERA_BITRATE_SHARE : bitrate);
+}
+
+function videoConstraintsFor(source: Source, quality: Quality, fps: Fps): MediaTrackConstraints {
+  const constraints: MediaTrackConstraints =
+    source === "camera"
+      ? // Rear camera by default -- sharing a phone's camera is usually
+        // about showing something, not yourself. `ideal` rather than
+        // `exact` so a laptop with one webcam still works instead of
+        // throwing OverconstrainedError.
+        { facingMode: { ideal: "environment" } }
+      : {};
+
+  if (quality !== "source") {
+    const { width, height } = QUALITY_DIMENSIONS[quality];
+    constraints.width = { ideal: width, max: width };
+    constraints.height = { ideal: height, max: height };
+  }
+  if (fps !== "source") {
+    constraints.frameRate = { ideal: fps, max: fps };
+  }
+  return constraints;
+}
 
 export type Status = "connecting" | "connected" | "reconnecting" | "error" | "closed";
 export type Source = "screen" | "camera";
@@ -114,6 +159,8 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [source, setSource] = useState<Source | null>(null);
   const [sendingAudio, setSendingAudio] = useState(true);
+  const [quality, setQuality] = useState<Quality>("source");
+  const [fps, setFps] = useState<Fps>("source");
 
   const wsRef = useRef<WebSocket | null>(null);
   const publishRef = useRef<RTCPeerConnection | null>(null);
@@ -126,6 +173,10 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   sendingAudioRef.current = sendingAudio;
   const sourceRef = useRef<Source | null>(null);
   sourceRef.current = source;
+  const qualityRef = useRef<Quality>("source");
+  qualityRef.current = quality;
+  const fpsRef = useRef<Fps>("source");
+  fpsRef.current = fps;
   const remoteStreamsRef = useRef<Record<string, MediaStream>>({});
   remoteStreamsRef.current = remoteStreams;
 
@@ -161,12 +212,15 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   // picture), but 120fps game footage is the opposite -- a stutter is
   // far more noticeable than the encoder shaving resolution to keep up.
   const applyEncodingLimits = useCallback((pc: RTCPeerConnection) => {
-    const screen = sourceRef.current !== "camera";
+    const src = sourceRef.current ?? "screen";
+    const q = qualityRef.current;
+    const f = fpsRef.current;
+    const bitrate = bitrateFor(src, q, f);
     for (const sender of pc.getSenders()) {
       if (sender.track?.kind !== "video") continue;
       const params = sender.getParameters();
       if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-      params.encodings[0].maxBitrate = screen ? SCREEN_MAX_BITRATE : CAMERA_MAX_BITRATE;
+      params.encodings[0].maxBitrate = bitrate;
       params.degradationPreference = "maintain-framerate";
       // Best-effort: not every browser accepts every field, and a
       // rejected tuning shouldn't break the connection.
@@ -186,14 +240,22 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   }, [send]);
 
   const startSharing = useCallback(
-    async (from: Source) => {
+    async (from: Source, newQuality?: Quality, newFps?: Fps) => {
+      // Update quality/fps before capturing so applyEncodingLimits
+      // reads the right values when the publish connection is built.
+      if (newQuality !== undefined) setQuality(newQuality);
+      if (newFps !== undefined) setFps(newFps);
+      const q = newQuality ?? qualityRef.current;
+      const f = newFps ?? fpsRef.current;
+
       setErrorMessage(null);
       let stream: MediaStream;
       try {
+        const videoConstraints = videoConstraintsFor(from, q, f);
         stream =
           from === "screen"
-            ? await navigator.mediaDevices.getDisplayMedia({ video: SCREEN_CONSTRAINTS, audio: true })
-            : await navigator.mediaDevices.getUserMedia({ video: CAMERA_CONSTRAINTS, audio: true });
+            ? await navigator.mediaDevices.getDisplayMedia({ video: videoConstraints, audio: true })
+            : await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: true });
       } catch (err) {
         const name = err instanceof Error ? err.name : "Error";
         // Dismissing the picker is a normal thing to do, not an error.
@@ -235,7 +297,7 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
       await pc.setLocalDescription(offer);
       send({ type: "publish:offer", sdp: pc.localDescription });
     },
-    [applyEncodingLimits, send, stopSharing],
+    [applyEncodingLimits, send, stopSharing, quality, fps],
   );
 
   const setAudio = useCallback((on: boolean) => {
@@ -473,6 +535,10 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     sendingAudio,
     setAudio,
     hasAudioTrack: (localStream?.getAudioTracks().length ?? 0) > 0,
+    quality,
+    fps,
+    setQuality,
+    setFps,
     startSharing,
     stopSharing,
     knockRequests,
