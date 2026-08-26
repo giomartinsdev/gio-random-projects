@@ -82,23 +82,37 @@ jobs:
         working-directory: modules/apps/${{ matrix.app }}
         run: go build ./... && go vet ./...
 
+      # The VPS is arm64 (Oracle's free-tier Ampere instances), but this
+      # runner is amd64 -- QEMU is what lets BuildKit actually produce
+      # an arm64 image here instead of one that immediately crash-loops
+      # on the VPS with "exec format error" (confirmed live: that's
+      # exactly what happened to vaultwarden_bridge's amd64 image on
+      # first deploy).
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       # registry.giomartins.dev:5000 is plain HTTP (Phase 1 — see
-      # modules/infra/terraform/README.md), which the daemon rejects by
-      # default unless it's explicitly allow-listed as insecure.
+      # modules/infra/terraform/README.md), which dockerd rejects by
+      # default unless explicitly allow-listed as insecure. `docker
+      # login` itself is routed through the runner's own dockerd, so it
+      # needs this regardless of which buildx driver builds the image.
       - name: Allow the runner's dockerd to talk to the registry over plain HTTP
         run: |
           echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
           sudo systemctl restart docker
 
-      # The "docker" driver delegates to the runner's own dockerd
-      # (rather than BuildKit's isolated docker-container driver, which
-      # would need its own buildkitd.toml insecure-registries entry),
-      # so the daemon.json change above is enough to let it push over
-      # plain HTTP. Trade-off: no type=gha cache backend -- acceptable
-      # for images this small.
+      # Cross-arch builds need BuildKit's own isolated docker-container
+      # driver (the "docker" driver used before this could only ever
+      # target the runner's own architecture) -- which runs its own
+      # BuildKit daemon, so the insecure-registry trust above has to be
+      # repeated here in BuildKit's own config format.
       - uses: docker/setup-buildx-action@v3
         with:
-          driver: docker
+          config-inline: |
+            [registry."registry.giomartins.dev:5000"]
+              http = true
+              insecure = true
 
       - name: Log in to registry.giomartins.dev:5000
         uses: docker/login-action@v3
@@ -112,6 +126,7 @@ jobs:
         with:
           context: modules/apps/${{ matrix.app }}
           push: true
+          platforms: linux/arm64
           tags: |
             registry.giomartins.dev:5000/${{ matrix.app }}:latest
             registry.giomartins.dev:5000/${{ matrix.app }}:${{ github.sha }}
