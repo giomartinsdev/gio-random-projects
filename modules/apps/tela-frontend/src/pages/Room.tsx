@@ -229,6 +229,18 @@ function LiveRoom({
   const selectedTile = tiles.find((t) => t.peerId === selected) ?? null;
   const peopleCount = room.peers.length + 1;
 
+  // Everyone in the room, publishing or not -- unlike tiles above,
+  // which only lists who currently has something on screen. This is
+  // "who's here", not "what's showing".
+  const participants = useMemo(() => {
+    const list: { peerId: string; name: string; isYou: boolean; publishing: boolean }[] = [];
+    if (room.you) list.push({ peerId: room.you.peerId, name: "Você", isYou: true, publishing: !!room.localStream });
+    for (const peer of room.peers) {
+      list.push({ peerId: peer.peerId, name: peer.name, isYou: false, publishing: peer.publishing });
+    }
+    return list;
+  }, [room.you, room.localStream, room.peers]);
+
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2.5 sm:px-4 sm:py-3">
@@ -237,11 +249,7 @@ function LiveRoom({
         </Link>
         <CopyableCode code={roomId} />
         <CopyLinkWithPassword roomId={roomId} password={password} />
-        <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-          <Users className="size-4" />
-          <span className="tabular-nums">{peopleCount}</span>
-          <span className="hidden sm:inline">{peopleCount === 1 ? "pessoa" : "pessoas"}</span>
-        </span>
+        <PeopleList count={peopleCount} participants={participants} />
         {room.status !== "connected" && (
           <span className="text-sm text-muted-foreground">
             {room.status === "reconnecting"
@@ -393,6 +401,68 @@ function Grid({
           )}
         </button>
       ))}
+    </div>
+  );
+}
+
+// Toggled from the people-count badge in the header -- everyone
+// currently in the room, whether or not they have anything on screen
+// right now (tiles only exist for people actually publishing).
+function PeopleList({
+  count,
+  participants,
+}: {
+  count: number;
+  participants: { peerId: string; name: string; isYou: boolean; publishing: boolean }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      >
+        <Users className="size-4" />
+        <span className="tabular-nums">{count}</span>
+        <span className="hidden sm:inline">{count === 1 ? "pessoa" : "pessoas"}</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-2 w-56 rounded-md border bg-card p-2 text-card-foreground shadow-md">
+          <p className="mb-1 px-1.5 text-xs font-medium text-muted-foreground">Na sala</p>
+          <ul className="max-h-64 space-y-0.5 overflow-y-auto">
+            {participants.map((p) => (
+              <li key={p.peerId} className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-sm">
+                <span className="truncate">
+                  {p.name}
+                  {p.isYou && <span className="text-muted-foreground"> (você)</span>}
+                </span>
+                {p.publishing && (
+                  <MonitorUp className="size-3.5 shrink-0 text-muted-foreground" aria-label="Compartilhando" />
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
