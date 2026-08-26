@@ -31,6 +31,9 @@ on:
       state_rm_vault_seed_group:
         description: "Optional, use with care: same secrets.tf vault_item_groups key replace_vault_seed_group takes, but drops null_resource.vault_seed[...] from state entirely (terraform state rm) before planning, instead of -replace-ing it -- for when a stale/duplicate Vaultwarden item keeps getting upserted by name and destroy+recreate of the SAME tracked resource isn't enough. Just the bare key, e.g. domain_api_keys -- no quotes/brackets (same reason replace_vault_seed_group's own description gives)."
         required: false
+      force_unlock_id:
+        description: "Optional: state lock ID to force-unlock before planning -- for when a run gets cancelled (gh run cancel) mid-apply and never releases its own lock, leaving every later run blocked on 'Error acquiring the state lock'. Copy the ID from that error's own output."
+        required: false
 
 defaults:
   run:
@@ -100,6 +103,12 @@ jobs:
 
       - name: Validate
         run: terraform validate
+
+      - name: Force unlock (optional)
+        if: github.event.inputs.force_unlock_id != ''
+        env:
+          LOCK_ID: ${{ github.event.inputs.force_unlock_id }}
+        run: terraform force-unlock -force "$LOCK_ID"
 
       - name: State rm (optional)
         if: github.event.inputs.state_rm_vault_seed_group != ''
