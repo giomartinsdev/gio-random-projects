@@ -11,6 +11,15 @@ name: Terraform deploy
 # API token, a CLOUDFLARE_API_TOKEN scoped for both DNS and Access,
 # and VPS_SSH_PRIVATE_KEY for the docker provider's SSH connection to
 # the VPS).
+#
+# Two jobs, not one: `plan` always runs (PRs included) and uploads the
+# binary plan as an artifact; `apply` downloads that same plan and
+# applies it verbatim, gated behind the `production` GitHub
+# Environment. Add a required reviewer to that environment (repo
+# Settings → Environments → production → Required reviewers) to make
+# every apply wait for a manual approval -- with none configured,
+# `environment:` here is a no-op and apply runs straight through, same
+# as before this split.
 
 on:
   push:
@@ -57,7 +66,7 @@ env:
   # Vaultwarden"'s own comment for why.
 
 jobs:
-  terraform:
+  plan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -153,6 +162,51 @@ jobs:
           fi
           terraform plan -input=false -lock-timeout=300s -out=tfplan "${REPLACE_ARGS[@]}"
 
+      # Binary plan file, not the human-readable summary -- carries
+      # fully-resolved attribute values (including ones the CLI's own
+      # text output redacts as "(sensitive value)"), since `apply`
+      # needs those to actually run. Short retention: this only needs
+      # to survive long enough for the apply job below to pick it up.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: modules/infra/terraform/tfplan
+          retention-days: 1
+
+  apply:
+    needs: plan
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only for DOCKER_HOST -- applying a saved plan doesn't
+      # re-evaluate any variable (server_ip, registry_password, ...),
+      # just the providers' own connections, which the docker provider
+      # still needs a live SSH session for.
+      - name: Set up SSH access to the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          echo "TF_VAR_docker_host=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.10"
+
+      - name: Init
+        run: terraform init -backend-config="endpoints={s3=\"${{ secrets.TF_STATE_R2_ENDPOINT }}\"}"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: modules/infra/terraform
+
       - name: Apply
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
         run: terraform apply -input=false -lock-timeout=300s -auto-approve tfplan
