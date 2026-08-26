@@ -12,7 +12,7 @@ Implementação: `modules/cloud/cloudflare/dns.tf` (`proxied` +
 
 ## Por que o registry fica cinza
 
-CI (`go-ci-cd.yml`/`ts-ci-cd.yml`) faz `docker push` e watchtower faz
+CI (`go-ci-cd.yml`/`ts-frontend-ci-cd.yml`/`ts-backend-ci-cd.yml`) faz `docker push` e watchtower faz
 pull em `registry.giomartins.dev:5000` — HTTP puro. A Cloudflare só
 proxya portas específicas (80/443/8080…); **5000 não está na lista**.
 Com registro laranja, os clients docker resolveriam para os IPs da

@@ -3,7 +3,7 @@
 CI's own Docker registry plus the pull-based redeploy mechanism that
 watches it — the deploy pipeline, not the app or its data stores. No
 dependency on `compute/data` or `compute/app`; those depend on this
-one only implicitly, by pulling images `go-ci-cd.yml`/`ts-ci-cd.yml`
+one only implicitly, by pulling images `go-ci-cd.yml`/`ts-frontend-ci-cd.yml`/`ts-backend-ci-cd.yml`
 push here.
 
 - **`registry`** — `registry:2`, htpasswd-gated (`registry_user`/
@@ -28,7 +28,7 @@ push here.
 
 While unproxied (Phase 1), registry.giomartins.dev:5000 is plain HTTP
 and reached directly — any client talking to it (this module's own
-containers, or a CI runner in `go-ci-cd.yml`/`ts-ci-cd.yml`) needs its
+containers, or a CI runner in `go-ci-cd.yml`/`ts-frontend-ci-cd.yml`/`ts-backend-ci-cd.yml`) needs its
 own dockerd configured with `"insecure-registries":
 ["registry.giomartins.dev:5000"]`, since Docker refuses plain HTTP
 registries by default. `modules/cloud/cloudflare/registry_mtls.tf`
@@ -49,7 +49,7 @@ password itself, so nothing else would make them pick up the
 rewritten htpasswd/config.json files), and it's pushed into
 Vaultwarden as a `REGISTRY_PASSWORD` item (`scripts/seed_vault.sh`).
 
-One piece stays manual regardless: `go-ci-cd.yml`/`ts-ci-cd.yml`'s own
+One piece stays manual regardless: `go-ci-cd.yml`/`ts-frontend-ci-cd.yml`/`ts-backend-ci-cd.yml`'s own
 `docker/login-action` push step reads a static `REGISTRY_PASSWORD` GH
 secret, which has to be updated by hand to match after a rotation (no
 PAT with `secrets:write` exists here to automate that from within CI).

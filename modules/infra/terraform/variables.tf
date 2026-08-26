@@ -64,8 +64,8 @@ variable "docker_host" {
   description = <<-EOT
     Where the docker provider connects — straight to the VPS dockerd
     over SSH, same channel a human `docker` CLI would use. Requires the
-    key in the caller's ssh-agent (CI: tf-ci-cd.yml/go-ci-cd.yml/
-    ts-ci-cd.yml's SSH setup step; locally: your own agent). No
+    key in the caller's ssh-agent (CI: tf-ci-cd.yml/go-ci-cd.yml/ts-frontend-ci-cd.yml/
+    ts-backend-ci-cd.yml's SSH setup step; locally: your own agent). No
     default — always ssh://ubuntu@<server_ip>, and hardcoding that IP
     twice invites the two to drift.
   EOT
@@ -99,7 +99,7 @@ variable "registry_password" {
     resource value computed in the same apply. Everything else about
     it IS automated now — see modules/compute/registry's README and
     this config's secrets.tf (docker_config_install/registry_restart/
-    vault_seed). go-ci-cd.yml/ts-ci-cd.yml's own REGISTRY_PASSWORD GH
+    vault_seed). go-ci-cd.yml/ts-frontend-ci-cd.yml/ts-backend-ci-cd.yml's own REGISTRY_PASSWORD GH
     secret (for their push steps) is the one thing still synced by
     hand after a rotation.
   EOT

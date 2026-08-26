@@ -31,7 +31,7 @@ resource "random_id" "domain_api_key" {
   byte_length = 24
 }
 
-# post-api's own key, separate from the "ci" one above (go-ci-cd.yml/ts-ci-cd.yml's
+# post-api's own key, separate from the "ci" one above (go-ci-cd.yml/ts-backend-ci-cd.yml's
 # terraform apply, unrelated to any HTTP client of domain-api) -- lets
 # either be rotated independently, and makes the audit log's caller
 # label (see domain-api's apikey.go) actually distinguish the two.

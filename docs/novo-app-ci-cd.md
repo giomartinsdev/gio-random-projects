@@ -17,23 +17,29 @@ carinho, porque ele aparece em vários lugares.
 
 ## 2. Como o pipeline descobre seu app
 
-Existem dois workflows e **eles se decidem pelo arquivo que encontram**:
+Três workflows, um por linguagem+camada — **Go se descobre sozinho pelo
+arquivo, TypeScript precisa ser adicionado numa lista explícita**:
 
-| Arquivo em `modules/apps/<nome>/` | Workflow | O que roda no CI |
+| Linguagem/camada | Workflow | Como decide quais apps buildar |
 | --- | --- | --- |
-| `go.mod` | `.github/workflows/go-ci-cd.yml` | `go build ./... && go vet ./...` |
-| `package.json` | `.github/workflows/ts-ci-cd.yml` | build do Docker |
+| Go | `.github/workflows/go-ci-cd.yml` | qualquer pasta com `go.mod` em `modules/apps/<nome>/go.mod` |
+| TypeScript frontend | `.github/workflows/ts-frontend-ci-cd.yml` | nome do app no `ALLOWED_APPS` do job `discover` |
+| TypeScript backend | `.github/workflows/ts-backend-ci-cd.yml` | idem, no seu próprio `ALLOWED_APPS` |
 
-A busca é `find modules/apps -mindepth 2 -maxdepth 2`, ou seja **só olha
-um nível abaixo de `modules/apps/`**. Isso é útil de propósito:
+Um `package.json` sozinho não basta para o TypeScript pegar seu app —
+`front` também tem um, e não é isso que separa frontend de backend. Ao
+criar um app TS novo, adicione o nome no array `ALLOWED_APPS` do
+workflow certo (`ts-frontend-ci-cd.yml` se ele bate `VITE_*` no bundle
+em build time; `ts-backend-ci-cd.yml` se recebe config em runtime via
+Terraform).
+
+Go continua auto-descoberto por `find modules/apps -mindepth 2
+-maxdepth 2 -name go.mod`, **um nível abaixo de `modules/apps/`**:
 
 > Um app Go com frontend React põe o `package.json` em
-> `modules/apps/<nome>/client/package.json` (profundidade 3). O workflow
-> TypeScript não enxerga, e o app builda só pelo pipeline Go — um
-> container, um build. É o que `tela` faz.
-
-Se os dois arquivos ficarem na raiz do app, os dois workflows vão buildar
-a mesma coisa em paralelo. Evite.
+> `modules/apps/<nome>/client/package.json` (profundidade 3) — os
+> workflows TypeScript não enxergam essa profundidade, e o app builda só
+> pelo pipeline Go, um container, um build. É o que `tela` faz.
 
 ## 3. Dockerfile
 
@@ -167,7 +173,10 @@ existir no registry, e falha com `not found`. É esperado — o pipeline do
 app builda, empurra e aplica logo depois. Se quiser rodar de novo à mão:
 
 ```bash
-gh workflow run go-ci-cd.yml -f app=<nome>     # ou ts-ci-cd.yml
+gh workflow run go-ci-cd.yml -f app=<nome>
+# ou, se for TypeScript:
+gh workflow run ts-frontend-ci-cd.yml -f app=<nome>
+gh workflow run ts-backend-ci-cd.yml -f app=<nome>
 ```
 
 Note que mudanças **só** em `.github/workflows/**` não disparam nada (o
@@ -187,6 +196,7 @@ curl -s https://<nome>.giomartins.dev/ | grep -o 'index-[A-Za-z0-9_-]*\.js'
 ## Checklist
 
 - [ ] `modules/apps/<nome>/` com `go.mod` **ou** `package.json` na raiz (não os dois)
+- [ ] se for TypeScript: nome adicionado ao `ALLOWED_APPS` de `ts-frontend-ci-cd.yml` ou `ts-backend-ci-cd.yml` (um `package.json` sozinho não é suficiente)
 - [ ] `Dockerfile` + `.dockerignore`
 - [ ] módulo Terraform em `modules/compute/apps/<nome>/`
 - [ ] `module "compute_apps_<nome>"` no `main.tf`

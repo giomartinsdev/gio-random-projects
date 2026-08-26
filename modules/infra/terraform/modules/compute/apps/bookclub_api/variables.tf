@@ -77,7 +77,7 @@ variable "minio_secret_key" {
 }
 
 variable "watchtower_enabled" {
-  description = "Same reasoning as modules/compute/app's own variable of the same name: false by default, since ts-ci-cd.yml's own terraform apply -replace=... is the actual redeploy mechanism."
+  description = "Same reasoning as modules/compute/app's own variable of the same name: false by default, since ts-backend-ci-cd.yml's own terraform apply -replace=... is the actual redeploy mechanism."
   type        = bool
   default     = false
 }

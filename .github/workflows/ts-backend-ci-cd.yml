@@ -1,32 +1,29 @@
-name: Go deploy
+name: TypeScript backend deploy
 
-# CI/CD for the Go apps under modules/apps/*/ (has both a Dockerfile
-# and a go.mod) — touch only modules/apps/domain-api/** and only the
-# domain-api image rebuilds, gets pushed, and redeploys; same for
-# domain-worker. TypeScript apps go through ts-frontend-ci-cd.yml
-# (front) or ts-backend-ci-cd.yml (post-api/bookclub-api/
-# classroom-api) instead — see either workflow's own header for why
-# this isn't one generic pipeline for every language.
+# CI/CD for the TypeScript backend apps under modules/apps/*/ --
+# post-api, bookclub-api, classroom-api. Split from the frontend
+# pipeline (ts-frontend-ci-cd.yml) because the two build differently
+# in a way that's easy to get wrong sharing one workflow: a backend
+# never bakes VITE_* build-args into its image (its config is real
+# runtime env vars from Terraform instead), and two of the three run a
+# one-shot *-migrate container ahead of the real deploy.
 #
-# Deploys go through Terraform, not watchtower: after pushing, the
-# deploy job runs `terraform apply` against modules/infra/terraform,
-# talking to the VPS dockerd over the same SSH connection tf-ci-cd.yml
-# uses (no exposed Docker API port at all). domain_api/domain_worker's
-# watchtower label defaults to false now:
-# watchtower recreating those containers behind Terraform's back (a
-# new container ID every redeploy) fought Terraform for ownership of
-# the same name on every subsequent apply. See
-# modules/compute/app/variables.tf's watchtower_enabled.
+# ALLOWED_APPS below is the actual pipeline boundary -- add a new
+# backend app there (and nowhere else) to bring it under this
+# pipeline; a package.json alone isn't enough, since front has one
+# too.
 
 on:
   push:
     branches: [main]
     paths:
-      - "modules/apps/**"
+      - "modules/apps/post-api/**"
+      - "modules/apps/bookclub-api/**"
+      - "modules/apps/classroom-api/**"
   workflow_dispatch:
     inputs:
       app:
-        description: "Build only this app (blank = all apps under modules/apps/)"
+        description: "Build only this app (blank = all backend apps)"
         required: false
 
 jobs:
@@ -40,9 +37,10 @@ jobs:
           fetch-depth: 0
 
       - id: list
+        env:
+          ALLOWED_APPS: "post-api bookclub-api classroom-api"
         run: |
-          all_apps=$(find modules/apps -mindepth 2 -maxdepth 2 -name go.mod \
-            -exec dirname {} \; | xargs -n1 basename | sort)
+          all_apps=$(echo "$ALLOWED_APPS" | tr ' ' '\n')
 
           if [ -n "${{ inputs.app }}" ]; then
             apps=$(echo "$all_apps" | grep -x "${{ inputs.app }}" || true)
@@ -72,42 +70,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        if: hashFiles(format('modules/apps/{0}/go.mod', matrix.app)) != ''
+      - uses: actions/setup-node@v4
         with:
-          go-version: "1.25"
-          cache-dependency-path: modules/apps/${{ matrix.app }}/go.sum
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: modules/apps/${{ matrix.app }}/package-lock.json
 
-      - name: Test (Go apps only — skipped for anything without a go.mod)
-        if: hashFiles(format('modules/apps/{0}/go.mod', matrix.app)) != ''
+      - name: Install and test
         working-directory: modules/apps/${{ matrix.app }}
-        run: go build ./... && go vet ./...
+        run: |
+          npm ci
+          npx tsc -p tsconfig.json --noEmit
+          npm test
 
-      # The VPS is arm64 (Oracle's free-tier Ampere instances), but this
-      # runner is amd64 -- QEMU is what lets BuildKit actually produce
-      # an arm64 image here instead of one that immediately crash-loops
-      # on the VPS with "exec format error" (confirmed live: that's
-      # exactly what happened to vaultwarden_bridge's amd64 image on
-      # first deploy).
+      # The VPS is arm64 (Oracle's free-tier Ampere instances), but
+      # this runner is amd64 -- QEMU is what lets BuildKit actually
+      # produce an arm64 image here instead of one that crash-loops on
+      # the VPS with "exec format error".
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
 
       # registry.giomartins.dev:5000 is plain HTTP (Phase 1 — see
       # modules/infra/terraform/README.md), which dockerd rejects by
-      # default unless explicitly allow-listed as insecure. `docker
-      # login` itself is routed through the runner's own dockerd, so it
-      # needs this regardless of which buildx driver builds the image.
+      # default unless explicitly allow-listed as insecure.
       - name: Allow the runner's dockerd to talk to the registry over plain HTTP
         run: |
           echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
           sudo systemctl restart docker
 
       # Cross-arch builds need BuildKit's own isolated docker-container
-      # driver (the "docker" driver used before this could only ever
-      # target the runner's own architecture) -- which runs its own
-      # BuildKit daemon, so the insecure-registry trust above has to be
-      # repeated here in BuildKit's own config format.
+      # driver, which runs its own BuildKit daemon -- so the
+      # insecure-registry trust above has to be repeated here in
+      # BuildKit's own config format.
       - uses: docker/setup-buildx-action@v3
         with:
           config-inline: |
@@ -127,7 +122,6 @@ jobs:
         with:
           context: modules/apps/${{ matrix.app }}
           push: true
-          platforms: linux/arm64
           tags: |
             registry.giomartins.dev:5000/${{ matrix.app }}:latest
             registry.giomartins.dev:5000/${{ matrix.app }}:${{ github.sha }}
@@ -139,10 +133,17 @@ jobs:
     defaults:
       run:
         working-directory: modules/infra/terraform
-    # Same secrets tf-ci-cd.yml uses — a real `terraform apply` needs
-    # the full variable set regardless of what's actually changing, and
-    # nothing here is new: see that workflow and
-    # modules/infra/terraform/README.md's secrets table.
+    # Same secrets tf-ci-cd.yml/go-ci-cd.yml/ts-frontend-ci-cd.yml use
+    # — a real `terraform apply` needs the full variable set
+    # regardless of what's actually changing, and nothing here is new.
+    #
+    # NEXT STEP (not yet done): every one of these TF_VAR_*/secrets.*
+    # values is a GitHub Actions secret copy-pasted into every
+    # workflow that runs `terraform apply` -- the plan is to have
+    # Terraform itself seed these into Vaultwarden once (already true
+    # for the app-level secrets it generates, see secrets.tf) and pull
+    # them from there at the start of each of these jobs instead, so
+    # a rotation only ever touches one place.
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}
       TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -154,13 +155,16 @@ jobs:
       TF_VAR_vaultwarden_account_master_password: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
       TF_VAR_vaultwarden_api_client_id: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
       TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
+      TF_VAR_discord_client_id: ${{ secrets.DISCORD_CLIENT_ID }}
+      TF_VAR_discord_client_secret: ${{ secrets.DISCORD_CLIENT_SECRET }}
       AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v4
 
-      # Same SSH setup tf-ci-cd.yml does — the docker provider talks
-      # straight to the VPS dockerd over ssh://.
+      # The docker provider talks straight to the VPS dockerd over
+      # ssh:// -- moby's ssh connhelper shells out to the system ssh,
+      # so this just installs the deploy key and pins the host key.
       - name: Set up SSH access to the VPS
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
@@ -172,7 +176,9 @@ jobs:
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
           echo "TF_VAR_docker_host=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
 
-      # Same reasoning as tf-ci-cd.yml's own step of the same name.
+      # var.server_ip drives every DNS A record (dns.tf) and tela's
+      # SFU advertisement -- asking the VPS itself keeps giomartins.dev
+      # correct even if its address ever changes.
       - name: Discover the VPS's public IP
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -194,25 +200,10 @@ jobs:
       # -replace below forces Terraform to destroy+recreate the
       # container, but that alone does NOT guarantee a fresh image:
       # dockerd only pulls on create if the tag is missing from its
-      # local cache, and the VPS almost always already has SOME
-      # image cached under registry.giomartins.dev/<app>:latest from
-      # an earlier deploy. Confirmed live: a -replace-only apply
-      # silently redeployed a stale, previously-cached build instead
-      # of what build-and-push had just pushed. An explicit pull
-      # against the remote daemon first is what actually guarantees
-      # this -- but that pull still needs registry credentials.
-      #
-      # Docker resolves those credentials CLIENT-side regardless of
-      # DOCKER_HOST: the `docker` CLI here (on the runner) reads its
-      # OWN ~/.docker/config.json and sends the result as an
-      # X-Registry-Auth header, which the remote daemon then uses to
-      # actually fetch from the registry. The VPS's own config.json
-      # (docker_config_install) is what lets ITS processes -- like
-      # watchtower -- pull; it's irrelevant to a pull commanded from
-      # here. A `docker login` on THIS runner is what's actually
-      # needed, hence the daemon.json + login below (same as
-      # build-and-push's, since `docker login` itself talks to
-      # registry.giomartins.dev:5000 directly, not through DOCKER_HOST).
+      # local cache, and the VPS almost always already has SOME image
+      # cached under registry.giomartins.dev:5000/<app>:latest from an
+      # earlier deploy. An explicit pull against the remote daemon
+      # first is what actually guarantees this.
       - name: Allow the runner's dockerd to talk to the registry over plain HTTP
         run: |
           echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
@@ -235,19 +226,26 @@ jobs:
 
       - name: Deploy the image(s) just pushed
         run: |
+          # Migrate containers are one-shot (must_run=false) with no
+          # argument that changes when the image's CONTENT changes
+          # (image is always pinned to the ":latest" tag string) --
+          # without -replace-ing them too, Terraform sees no diff and
+          # never reruns them, so a schema migration added in this
+          # same push would silently never apply. Bit us for real:
+          # bookclub_message.requested_page shipped in code but
+          # missing in the DB until this was added.
           REPLACE_ARGS=()
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
-            # An app missing from this list deploys as a silent no-op:
-            # the image tag in state is always ":latest", so with no
-            # -replace Terraform sees no diff and leaves the OLD
-            # container running while the job still reports success.
-            # Every new Go app needs an entry here. The mapping can't be
-            # derived from the name -- domain-worker lives inside
-            # domain-api's module -- so it stays explicit.
             case "$app" in
-              domain-api) REPLACE_ARGS+=("-replace=module.compute_apps_domain_api.docker_container.domain_api") ;;
-              domain-worker) REPLACE_ARGS+=("-replace=module.compute_apps_domain_api.docker_container.domain_worker") ;;
-              tela) REPLACE_ARGS+=("-replace=module.compute_apps_tela.docker_container.tela") ;;
+              post-api)
+                REPLACE_ARGS+=("-replace=module.compute_apps_post_api.docker_container.post_api_migrate")
+                REPLACE_ARGS+=("-replace=module.compute_apps_post_api.docker_container.post_api")
+                ;;
+              bookclub-api)
+                REPLACE_ARGS+=("-replace=module.compute_apps_bookclub_api.docker_container.bookclub_api_migrate")
+                REPLACE_ARGS+=("-replace=module.compute_apps_bookclub_api.docker_container.bookclub_api")
+                ;;
+              classroom-api) REPLACE_ARGS+=("-replace=module.compute_apps_classroom_api.docker_container.classroom_api") ;;
               *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
             esac
           done

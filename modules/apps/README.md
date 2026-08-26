@@ -1,11 +1,22 @@
 # modules/apps
 
-Each subfolder with a `Dockerfile` is an independently deployed app,
-auto-discovered by `.github/workflows/go-ci-cd.yml` (Go apps, matched
-by `go.mod`) or `ts-ci-cd.yml` (TypeScript apps, matched by
-`package.json`) — touch only `domain-api/**` and only `domain-api`
-rebuilds, gets pushed to `registry.giomartins.dev`, and redeploys via
-Terraform (see either workflow's own header for why not watchtower).
+Each subfolder with a `Dockerfile` is an independently deployed app —
+touch only `domain-api/**` and only `domain-api` rebuilds, gets pushed
+to `registry.giomartins.dev`, and redeploys via Terraform (see each
+workflow's own header for why not watchtower). Three pipelines, one
+per language+layer:
+
+- **`.github/workflows/go-ci-cd.yml`** — Go apps, auto-discovered by
+  `go.mod` (`domain-api`, `domain-worker`, `tela`).
+- **`.github/workflows/ts-frontend-ci-cd.yml`** — TypeScript frontend
+  apps (`front`), which need `VITE_*` build-args baked into the bundle.
+- **`.github/workflows/ts-backend-ci-cd.yml`** — TypeScript backend
+  apps (`post-api`, `bookclub-api`, `classroom-api`), which take their
+  config as real runtime env vars from Terraform instead.
+
+Unlike Go, a `package.json` alone doesn't put a TypeScript app in
+either pipeline — see `docs/novo-app-ci-cd.md` for the `ALLOWED_APPS`
+list each of those two workflows actually reads.
 
 Folders are named `<bounded-context>-api` / `<bounded-context>-worker`
 — `domain-api`/`domain-worker` today, more pairs alongside them as new

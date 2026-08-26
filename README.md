@@ -10,15 +10,22 @@ modules/
 
 ## Pipelines
 
-Three, split by language and by layer:
+Four, split by language and by layer — one pipeline per concern rather
+than one generic pipeline branching on every difference between them:
 
 - **`.github/workflows/go-ci-cd.yml`** — CI/CD for Go apps under
-  `modules/apps/*/` (has a `go.mod`). Touching only one app's folder
-  rebuilds, tests, pushes, and redeploys only that app.
-- **`.github/workflows/ts-ci-cd.yml`** — same, for TypeScript/Node
-  apps under `modules/apps/*/` (has a `package.json`).
+  `modules/apps/*/`, auto-discovered by `go.mod`. Touching only one
+  app's folder rebuilds, tests, pushes, and redeploys only that app.
+- **`.github/workflows/ts-frontend-ci-cd.yml`** — TypeScript frontend
+  apps (Vite, `VITE_*` build-args baked into the bundle).
+- **`.github/workflows/ts-backend-ci-cd.yml`** — TypeScript backend
+  apps (config as real runtime env vars from Terraform instead).
 - **`.github/workflows/tf-ci-cd.yml`** — plans on PRs touching
   `modules/infra/terraform/`, applies on push to `main`.
+
+Unlike Go's, the two TypeScript pipelines don't auto-discover by file
+presence alone (`front` has a `package.json` too) — see
+`docs/novo-app-ci-cd.md` for each workflow's `ALLOWED_APPS` list.
 
 See `modules/apps/README.md` and `modules/infra/README.md` for what's
 in each.

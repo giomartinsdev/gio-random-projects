@@ -1,6 +1,6 @@
 # Static SPA, nginx-served (see modules/apps/front's Dockerfile) --
 # VITE_POST_API_URL is baked into the bundle at BUILD time
-# (ts-ci-cd.yml's build-args), not something this container's env can
+# (ts-frontend-ci-cd.yml's build-args), not something this container's env can
 # override at runtime.
 locals {
   watchtower_label = var.watchtower_enabled ? [{
