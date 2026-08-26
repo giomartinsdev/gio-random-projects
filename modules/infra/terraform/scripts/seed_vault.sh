@@ -20,8 +20,6 @@ set -eu
 
 SCRIPT=$(cat <<'INNER'
 set -eu
-apk add --no-cache openssl jq >/dev/null
-npm install -g @bitwarden/cli >/dev/null 2>&1
 
 cat > /tmp/proxy.js <<'JS'
 const http = require('http');
@@ -106,15 +104,16 @@ INNER
 CID=$(docker run -d --network "$NETWORK_NAME" \
   -e VAULTWARDEN_CLIENT_ID -e VAULTWARDEN_CLIENT_SECRET -e VAULTWARDEN_MASTER_PASSWORD \
   -e ITEMS_B64 \
-  node:20-alpine sh -c "$SCRIPT")
+  registry.giomartins.dev:5000/vault-cli:latest sh -c "$SCRIPT")
 
 # Poll instead of `docker wait`: that blocks on a single long-held
-# connection until the container exits (npm install alone can take
-# over a minute), and Cloudflare Tunnel's own edge timeout (~100s,
-# independent of anything nginx is configured with) kills it with a
-# 524 before the real response ever arrives. Each inspect call here
-# completes immediately, so no single request is ever held open long
-# enough to hit that.
+# connection until the container exits, and Cloudflare Tunnel's own
+# edge timeout (~100s, independent of anything nginx is configured
+# with) kills it with a 524 before the real response ever arrives.
+# Each inspect call here completes immediately, so no single request
+# is ever held open long enough to hit that -- still worth keeping
+# even now that vault-cli:latest makes a normal run fast, since a
+# large item batch or a slow vault sync could still run long.
 STATUS="running"
 for i in $(seq 1 60); do
   STATUS=$(docker inspect -f '{{.State.Status}}' "$CID")

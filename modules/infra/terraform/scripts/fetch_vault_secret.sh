@@ -18,8 +18,6 @@ set -eu
 
 SCRIPT=$(cat <<'INNER'
 set -eu
-apk add --no-cache openssl jq >/dev/null
-npm install -g @bitwarden/cli >/dev/null 2>&1
 
 cat > /tmp/proxy.js <<'JS'
 const http = require('http');
@@ -83,4 +81,4 @@ INNER
 docker run --rm --network "$NETWORK_NAME" \
   -e VAULTWARDEN_CLIENT_ID -e VAULTWARDEN_CLIENT_SECRET -e VAULTWARDEN_MASTER_PASSWORD \
   -e ITEM_MAP \
-  node:20-alpine sh -c "$SCRIPT"
+  registry.giomartins.dev:5000/vault-cli:latest sh -c "$SCRIPT"
