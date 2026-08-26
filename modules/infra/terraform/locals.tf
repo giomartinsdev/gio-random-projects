@@ -67,16 +67,6 @@ locals {
       port     = 8005
     },
     {
-      # tela-frontend: screen sharing for anyone with a room code and
-      # its password. Excluded from Cloudflare Access because the
-      # whole point is sharing a link with people who have no account
-      # here -- a Google SSO gate only giomartinsdev could pass would
-      # make it useless. The room password is the access control. Port
-      # must match module.compute_apps_tela_frontend's external_port.
-      hostname = "tela.giomartins.dev"
-      port     = 8006
-    },
-    {
       # tela-api: the same tela-frontend page calls this cross-origin
       # for signalling/SFU (see modules/apps/tela-api's own README) --
       # same reasoning as tela.giomartins.dev above for staying out of
@@ -85,16 +75,6 @@ locals {
       # module.compute_apps_tela_api's external_port.
       hostname = "tela-api.giomartins.dev"
       port     = 8007
-    },
-    {
-      # The blog itself -- meant to be publicly readable by anyone,
-      # not just the Google-SSO-allowed emails. In excluded_hostnames
-      # for that reason (Access would otherwise gate the whole site
-      # behind a login only giomartinsdev's own account can pass).
-      # Port must match module.compute_apps_buteco_class_frontend's
-      # external_port.
-      hostname = "buteco-class.giomartins.dev"
-      port     = 8003
     },
     {
       # 9router: OpenAI-compatible AI proxy with auto-fallback across
@@ -110,10 +90,12 @@ locals {
       # MinIO console UI — object storage dashboard for managing buckets,
       # objects, and access policies. Protected by Google SSO Access as
       # the outer layer once proxied; MinIO's own root-credential login
-      # is the inner one. The API port (9000) stays internal-only — only
-      # bookclub-api reaches it by container name over the shared
-      # docker network. Port must match module.storage_minio's console
-      # publish (9001).
+      # is the inner one. bookclub-api and static_sites below reach the
+      # API port (9000) separately -- by container name over the shared
+      # docker network for the former, over loopback for the latter
+      # (ingress runs on the host network, not that docker network).
+      # Port here must match module.storage_minio's console publish
+      # (9001).
       hostname = "minio.giomartins.dev"
       port     = 9001
     },
@@ -125,6 +107,37 @@ locals {
       # Port must match module.compute_services_adminer's published_port.
       hostname = "adminer.giomartins.dev"
       port     = 8092
+    },
+  ]
+
+  # Static SPAs served straight out of a MinIO bucket -- no container
+  # running at all, unlike everything in services above. ingress
+  # (compute/services/ingress) proxies these to MinIO's S3 API by path
+  # (http://127.0.0.1:9000/<bucket>/<key>) instead of by container
+  # port, routing a real asset (has a file extension) to its literal
+  # key and everything else -- every client-side route, "/" included
+  # -- straight to <bucket>/index.html, same effect a real filesystem's
+  # try_files would get (see that module's own template for why a
+  # 404-triggered fallback doesn't work against MinIO's API). See
+  # static_sites.tf for how the bucket itself gets created and made
+  # public-read.
+  static_sites = [
+    {
+      # Screen sharing for anyone with a room code and its password --
+      # same reasoning as tela-api below for staying out of
+      # excluded_hostnames/Access: sharing a link with people who have
+      # no account here is the whole point, and the room password is
+      # the real access control.
+      hostname = "tela.giomartins.dev"
+      bucket   = "tela-frontend"
+    },
+    {
+      # The blog itself -- meant to be publicly readable by anyone,
+      # not just the Google-SSO-allowed emails. In excluded_hostnames
+      # for that reason (Access would otherwise gate the whole site
+      # behind a login only giomartinsdev's own account can pass).
+      hostname = "buteco-class.giomartins.dev"
+      bucket   = "buteco-class-frontend"
     },
   ]
 }

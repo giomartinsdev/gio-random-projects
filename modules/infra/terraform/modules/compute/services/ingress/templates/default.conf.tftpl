@@ -36,3 +36,44 @@ server {
 }
 
 %{ endfor ~}
+
+%{ for s in static_sites ~}
+server {
+  listen 80;
+  server_name ${s.hostname};
+
+  # Static SPA served straight out of MinIO's S3 API (bucket
+  # "${s.bucket}"), path-style -- no container behind this hostname at
+  # all. Host is deliberately NOT forwarded -- MinIO's path-style API
+  # doesn't need it, and passing the public hostname through has no
+  # benefit and only risk (a vhost-style misinterpretation on MinIO's
+  # side).
+  #
+  # Can't try_files against a proxied upstream the way a real
+  # filesystem would, and error_page 404 doesn't work here either: hit
+  # MinIO's S3 API with a trailing-slash (or no-extension) key -- "/"
+  # itself included -- and it answers 200 with an XML bucket listing,
+  # never a 404, so a fallback keyed on the response code would leak
+  # that listing straight to a browser instead of ever firing. Route
+  # on the URL's shape instead: anything that looks like a real static
+  # asset (ends in a file extension) is fetched by its literal key, a
+  # genuinely missing one 404s for real; everything else -- every
+  # client-side route, "/" included -- goes straight to index.html.
+  location ~ ^/.*\.[a-zA-Z0-9]+$ {
+    proxy_pass http://127.0.0.1:${minio_port}/${s.bucket}$uri;
+  }
+
+  location / {
+    # A bare proxy_pass (no URI part) after rewrite forwards the
+    # rewritten URI verbatim -- a prefix location's proxy_pass WITH a
+    # URI part instead replaces only the matched prefix and appends
+    # whatever's left of the original request path, which for
+    # `location /` (matching everything) would tack the entire
+    # original path onto the end of "index.html" instead of replacing
+    # it.
+    rewrite ^ /${s.bucket}/index.html break;
+    proxy_pass http://127.0.0.1:${minio_port};
+  }
+}
+
+%{ endfor ~}

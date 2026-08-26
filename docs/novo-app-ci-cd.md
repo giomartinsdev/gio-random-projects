@@ -82,9 +82,15 @@ resource "docker_container" "<nome>" {
 }
 ```
 
-Portas já usadas hoje: 8003 (buteco-class-frontend), 8004 (bookclub-api),
-8005 (classroom-api), 8006 (tela-frontend), 8007 (tela-api). Pegue a
-próxima.
+Portas já usadas hoje: 8004 (bookclub-api), 8005 (classroom-api), 8007
+(tela-api). Pegue a próxima.
+
+> Isso vale para um app que roda como container. `buteco-class-frontend`
+> e `tela-frontend` não seguem mais essa receita: são builds estáticos
+> espelhados direto num bucket do MinIO, sem container nenhum rodando —
+> veja `modules/infra/terraform/static_sites.tf` e o README de
+> `compute/services/ingress`. Se o app novo for só uma SPA estática sem
+> nenhuma parte de backend, esse é o caminho mais simples, não o daqui.
 
 Depois registre o módulo em `modules/infra/terraform/main.tf`:
 

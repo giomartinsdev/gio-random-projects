@@ -35,8 +35,10 @@ npm run dev
 
 ## Deploying
 
-Static build (`vite build`) served by nginx — see `Dockerfile`.
+Static build (`vite build`) mirrored straight into a MinIO bucket —
+not a container at all, see `modules/infra/terraform/static_sites.tf`
+and `compute/services/ingress`'s README for how that's served.
 `VITE_POST_API_URL`/`VITE_BOOKCLUB_API_URL`/`VITE_CLASSROOM_API_URL` are baked in at **build**
-time (Vite convention), not read at container runtime — see
-`ts-frontend-ci-cd.yml`'s `build-args` for where those are set for production
+time (Vite convention) via real environment variables, not container
+env — see `ts-frontend-ci-cd.yml` for where those are set for production
 builds.

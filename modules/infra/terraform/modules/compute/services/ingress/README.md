@@ -30,6 +30,21 @@ every backend by its own loopback-bound port directly, whether that
 backend actually lives on the shared `apps` bridge network or (tela)
 on the host network itself.
 
+**Static SPAs are a second, separate route type.** `var.static_sites`
+(root `locals.tf`'s `static_sites` list) generates a `server{}` per
+hostname that proxies straight to MinIO's S3 API by path
+(`127.0.0.1:${var.minio_port}/<bucket>/<key>`) instead of a container
+port — there's no container running behind these hostnames at all, see
+`static_sites.tf`. Routing is by the URL's shape, not a 404 fallback:
+nginx can't `try_files` against a proxied upstream the way it would a
+real filesystem, and an `error_page 404` doesn't work either — MinIO's
+S3 API answers a trailing-slash or no-extension key (`/` itself
+included) with 200 and an XML bucket listing, never a 404, so that
+listing would reach the browser instead of the fallback ever firing.
+A path ending in a file extension is fetched by its literal key (a
+genuinely missing one still 404s); everything else, every client-side
+route included, goes straight to `<bucket>/index.html`.
+
 ## Why nginx, not Caddy or Traefik
 
 Static config from a fixed, already-known list (`locals.tf`) needs

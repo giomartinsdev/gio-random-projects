@@ -9,10 +9,14 @@ module "cloud_cloudflare" {
   zone_id                         = var.cloudflare_zone_id
   server_ip                       = var.server_ip
   google_idp_identity_provider_id = var.google_idp_identity_provider_id
-  hostnames                       = [for s in local.services : s.hostname]
-  excluded_hostnames              = var.excluded_hostnames
-  allowed_emails                  = var.allowed_emails
-  session_duration                = var.session_duration
+  # static_sites' hostnames still need their own A record + Access
+  # handling same as everything in services -- they're a different
+  # ingress route (MinIO, not a container port), not a different DNS
+  # or Access story.
+  hostnames          = concat([for s in local.services : s.hostname], [for s in local.static_sites : s.hostname])
+  excluded_hostnames = var.excluded_hostnames
+  allowed_emails     = var.allowed_emails
+  session_duration   = var.session_duration
 }
 
 module "network_docker_apps" {
@@ -141,26 +145,6 @@ module "compute_apps_tela_api" {
   frontend_origins = ["https://tela.giomartins.dev"]
 }
 
-module "compute_apps_tela_frontend" {
-  source = "./modules/compute/apps/tela_frontend"
-  providers = {
-    docker = docker
-  }
-
-  network_name  = module.network_docker_apps.network_name
-  registry_host = var.registry_host
-}
-
-module "compute_apps_buteco_class_frontend" {
-  source = "./modules/compute/apps/buteco_class_frontend"
-  providers = {
-    docker = docker
-  }
-
-  network_name  = module.network_docker_apps.network_name
-  registry_host = var.registry_host
-}
-
 module "compute_services_registry" {
   source = "./modules/compute/services/registry"
   providers = {
@@ -177,27 +161,29 @@ module "compute_services_ingress" {
     docker = docker
   }
 
-  services = [for s in local.services : s if s.hostname != "registry.giomartins.dev"]
+  services     = [for s in local.services : s if s.hostname != "registry.giomartins.dev"]
+  static_sites = local.static_sites
 
   # Every app/service module's own published port has to already be
   # loopback-only for this to actually be the sole way in -- ordering
   # doesn't change correctness (nginx just 502s until a backend is up
   # either way), but starting ingress last keeps a `terraform apply`'s
-  # resource ordering readable.
+  # resource ordering readable. static_sites has no container of its
+  # own to depend on, but the buckets it proxies to need to already
+  # exist -- see null_resource.static_site_buckets below.
   depends_on = [
     module.compute_apps_domain_api,
     module.compute_apps_post_api,
     module.compute_apps_bookclub_api,
     module.compute_apps_classroom_api,
     module.compute_apps_tela_api,
-    module.compute_apps_tela_frontend,
-    module.compute_apps_buteco_class_frontend,
     module.compute_services_registry,
     module.compute_services_monitoring,
     module.compute_services_ai_proxy,
     module.compute_services_vaultwarden,
     module.compute_services_adminer,
     module.storage_minio,
+    null_resource.static_site_buckets,
   ]
 }
 

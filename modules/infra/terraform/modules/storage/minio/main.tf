@@ -37,12 +37,22 @@ resource "docker_container" "minio" {
 
   # Console UI — loopback-only, reachable from outside through
   # compute/services/ingress (minio.giomartins.dev -> 127.0.0.1:9001).
-  # The API port (9000) stays unpublished entirely: only containers on
-  # the shared network need it.
   ports {
     ip       = "127.0.0.1"
     internal = 9001
     external = 9001
+  }
+
+  # S3 API — loopback-only, same reasoning as the console above.
+  # bookclub-api still reaches this by container name over the shared
+  # docker network (unaffected by this); this loopback publish exists
+  # for compute/services/ingress, which runs on the host network and
+  # can't see docker-network container names at all -- see that
+  # module's static_sites for what actually calls this.
+  ports {
+    ip       = "127.0.0.1"
+    internal = 9000
+    external = 9000
   }
 
   networks_advanced {

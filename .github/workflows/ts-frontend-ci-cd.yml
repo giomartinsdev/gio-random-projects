@@ -5,11 +5,19 @@ name: TypeScript frontend deploy
 # (screen sharing's own page, split from tela-api). Split from the
 # backend pipeline (ts-backend-ci-cd.yml) because the two build
 # differently in a way that's easy to get wrong sharing one workflow:
-# only a frontend needs VITE_* build-args baked into the bundle at
-# build time, and its deploy never runs a *-migrate container first.
-# go-ci-cd.yml/tf-ci-cd.yml are their own pipelines for the same
+# only a frontend needs VITE_* env vars baked into the bundle at build
+# time. go-ci-cd.yml/tf-ci-cd.yml are their own pipelines for the same
 # reason -- one pipeline per language+layer, not one generic pipeline
 # branching on every difference between them.
+#
+# Neither app runs as a container: both are plain static builds
+# mirrored into their own MinIO bucket (modules/infra/terraform's
+# static_sites.tf/locals.tf), served by compute/services/ingress
+# proxying straight to MinIO's S3 API. There's nothing here for
+# Terraform to apply on a routine content deploy -- the bucket, the
+# ingress route, and the public-read policy are all infra, created
+# once by tf-ci-cd.yml, not per push. This workflow just replaces a
+# bucket's contents with the latest build.
 #
 # ALLOWED_APPS below is the actual pipeline boundary -- add a new
 # frontend app there (and nowhere else) to bring it under this
@@ -62,7 +70,10 @@ jobs:
           echo "Building: $json"
           echo "apps=$json" >> "$GITHUB_OUTPUT"
 
-  build-and-push:
+  # The bucket mirrored into below is always named after the app
+  # itself (matrix.app) -- see root locals.tf's static_sites list,
+  # where that name<->bucket pairing actually lives.
+  deploy:
     needs: discover
     if: needs.discover.outputs.apps != '[]'
     runs-on: ubuntu-latest
@@ -85,35 +96,27 @@ jobs:
           npx tsc -p tsconfig.json --noEmit
           npm test
 
-      # The VPS is arm64 (Oracle's free-tier Ampere instances), but
-      # this runner is amd64 -- QEMU is what lets BuildKit actually
-      # produce an arm64 image here instead of one that crash-loops on
-      # the VPS with "exec format error".
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
+      # Every VITE_* below is set for every app in the matrix -- Vite
+      # only ever inlines the ones a given app's own code actually
+      # references (import.meta.env.VITE_X), so an unused one here is
+      # a harmless no-op, same convention the old Docker build-args
+      # followed. buteco-class-frontend uses VITE_POST_API_URL/etc;
+      # tela-frontend uses only VITE_TELA_API_URL.
+      - name: Build ${{ matrix.app }}
+        working-directory: modules/apps/${{ matrix.app }}
+        env:
+          VITE_POST_API_URL: https://post-api.giomartins.dev
+          VITE_BOOKCLUB_API_URL: https://bookclub-api.giomartins.dev
+          VITE_CLASSROOM_API_URL: https://classroom-api.giomartins.dev
+          VITE_PUBLIC_APP_URL: https://buteco-class.giomartins.dev
+          VITE_TELA_API_URL: https://tela-api.giomartins.dev
+        run: npm run build
 
-      # registry.giomartins.dev:5000 is plain HTTP (Phase 1 — see
-      # modules/infra/terraform/README.md), which dockerd rejects by
-      # default unless explicitly allow-listed as insecure.
-      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
-        run: |
-          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
-          sudo systemctl restart docker
-
-      # Cross-arch builds need BuildKit's own isolated docker-container
-      # driver, which runs its own BuildKit daemon -- so the
-      # insecure-registry trust above has to be repeated here in
-      # BuildKit's own config format.
-      - uses: docker/setup-buildx-action@v3
-        with:
-          config-inline: |
-            [registry."registry.giomartins.dev:5000"]
-              http = true
-              insecure = true
-
-      # SSH access + fetch are only for reaching the vault below --
-      # this job doesn't touch Terraform or var.docker_host at all.
+      # scp (not the docker provider/API) because the files have to
+      # land on the VPS's own filesystem before "mc mirror" below can
+      # bind-mount them into a container -- DOCKER_HOST=ssh://... runs
+      # containers remotely, but a -v source path is still resolved on
+      # that remote host, not this runner.
       - name: Set up SSH access to the VPS
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
@@ -123,20 +126,27 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
           echo "DOCKER_HOST=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
 
-      # registry_password and discord_client_id aren't secret zero --
-      # they're regular Terraform resource inputs Terraform already
-      # keeps mirrored in Vaultwarden (secrets.tf's "registry" and
-      # "discord" vault_seed groups), so CI reads them from there
-      # instead of also holding its own GitHub-secret copy.
+      - name: Copy the build onto the VPS
+        run: |
+          REMOTE_DIR="/tmp/${{ matrix.app }}-dist-${{ github.run_id }}"
+          ssh "ubuntu@$VPS_HOST" "rm -rf '$REMOTE_DIR'"
+          scp -r "modules/apps/${{ matrix.app }}/dist" "ubuntu@$VPS_HOST:$REMOTE_DIR"
+          echo "REMOTE_DIR=$REMOTE_DIR" >> "$GITHUB_ENV"
+
+      # MinIO's own root credentials, already mirrored into Vaultwarden
+      # by secrets.tf's "minio" vault_seed group -- same reasoning as
+      # every other Terraform-generated secret this repo's CI reads
+      # from the vault instead of holding its own copy.
       - name: Fetch secrets from Vaultwarden
         env:
           NETWORK_NAME: apps
           VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
           VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
           VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD DISCORD_CLIENT_ID=DISCORD_CLIENT_ID"
+          ITEM_MAP: "MINIO_ROOT_USER=MINIO_ROOT_USER MINIO_ROOT_PASSWORD=MINIO_ROOT_PASSWORD"
         run: |
           set -o pipefail
           modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
@@ -144,163 +154,22 @@ jobs:
             echo "${k}=${v}" >> "$GITHUB_ENV"
           done
 
-      - name: Log in to registry.giomartins.dev:5000
-        uses: docker/login-action@v3
-        with:
-          registry: registry.giomartins.dev:5000
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ env.REGISTRY_PASSWORD }}
-
-      # Every build-arg below is passed for every app in the matrix --
-      # an app whose Dockerfile doesn't declare a given ARG just
-      # ignores it (a harmless "InvalidDefaultArgInFrom"-free no-op),
-      # same convention ts-backend-ci-cd.yml's own comment describes.
-      # buteco-class-frontend uses the VITE_POST_API_URL/etc set;
-      # tela-frontend uses only VITE_TELA_API_URL.
-      - name: Build and push ${{ matrix.app }}
-        uses: docker/build-push-action@v6
-        with:
-          context: modules/apps/${{ matrix.app }}
-          push: true
-          platforms: linux/arm64
-          tags: |
-            registry.giomartins.dev:5000/${{ matrix.app }}:latest
-            registry.giomartins.dev:5000/${{ matrix.app }}:${{ github.sha }}
-          build-args: |
-            VITE_POST_API_URL=https://post-api.giomartins.dev
-            VITE_BOOKCLUB_API_URL=https://bookclub-api.giomartins.dev
-            VITE_CLASSROOM_API_URL=https://classroom-api.giomartins.dev
-            VITE_PUBLIC_APP_URL=https://buteco-class.giomartins.dev
-            VITE_DISCORD_CLIENT_ID=${{ env.DISCORD_CLIENT_ID }}
-            VITE_TELA_API_URL=https://tela-api.giomartins.dev
-
-  deploy:
-    needs: [discover, build-and-push]
-    if: needs.discover.outputs.apps != '[]'
-    runs-on: ubuntu-latest
-    # Shared across every workflow that runs `terraform apply`
-    # (go-ci-cd.yml, ts-backend-ci-cd.yml, tf-ci-cd.yml) -- they all
-    # touch the same state file. Without this, pushing to several apps
-    # at once queues up N applies that all race for the same R2 state
-    # lock: each loser sits on `-lock-timeout=300s` and then just
-    # fails, instead of the run queuing safely and going next.
-    # cancel-in-progress stays false on purpose -- killing a
-    # `terraform apply` mid-flight is how you end up with a container
-    # half-recreated and the state disagreeing with reality.
-    concurrency:
-      group: terraform-apply
-      cancel-in-progress: false
-    defaults:
-      run:
-        working-directory: modules/infra/terraform
-    # Same secrets tf-ci-cd.yml/go-ci-cd.yml/ts-backend-ci-cd.yml use —
-    # a real `terraform apply` needs the full variable set regardless
-    # of what's actually changing, and nothing here is new.
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}
-      TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-      TF_VAR_google_idp_identity_provider_id: ${{ secrets.CLOUDFLARE_GOOGLE_IDP_ID }}
-      TF_VAR_beszel_agent_key: ${{ secrets.TF_BESZEL_AGENT_KEY }}
-      TF_VAR_vaultwarden_account_email: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_EMAIL }}
-      TF_VAR_vaultwarden_account_master_password: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-      TF_VAR_vaultwarden_api_client_id: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
-      TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
-      # TF_VAR_registry_password/TF_VAR_discord_client_id/
-      # TF_VAR_discord_client_secret come from Vaultwarden below
-      # instead of their own GitHub secret -- see tf-ci-cd.yml's
-      # "Fetch secrets from Vaultwarden" for why.
-    steps:
-      - uses: actions/checkout@v4
-
-      # The docker provider talks straight to the VPS dockerd over
-      # ssh:// -- moby's ssh connhelper shells out to the system ssh,
-      # so this just installs the deploy key and pins the host key.
-      - name: Set up SSH access to the VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
+      # --remove makes this a true mirror, not just an upload: an
+      # asset from a previous build that's no longer referenced (Vite
+      # content-hashes filenames, so every build's chunks are new
+      # names) gets deleted from the bucket instead of accumulating
+      # forever. --entrypoint sh works around minio/mc's own
+      # ENTRYPOINT (["mc"]), the same as static_sites.tf's bucket
+      # creation does.
+      - name: Mirror the build into MinIO
         run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          echo "TF_VAR_docker_host=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
+          docker run --rm --network apps \
+            -e MC_HOST_local="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000" \
+            -v "$REMOTE_DIR:/dist" \
+            --entrypoint sh minio/mc -c '
+              mc mirror --overwrite --remove /dist "local/${{ matrix.app }}"
+            '
 
-      # var.server_ip drives every DNS A record (dns.tf) and tela-api's
-      # SFU advertisement -- asking the VPS itself keeps giomartins.dev
-      # correct even if its address ever changes.
-      - name: Discover the VPS's public IP
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          SERVER_IP=$(ssh "ubuntu@$VPS_HOST" 'curl -4 -fsS --max-time 5 https://ifconfig.me || curl -4 -fsS --max-time 5 https://api.ipify.org')
-          if [ -z "$SERVER_IP" ]; then
-            echo "::error::could not determine the VPS's public IP"
-            exit 1
-          fi
-          echo "TF_VAR_server_ip=$SERVER_IP" >> "$GITHUB_ENV"
-
-      # Same reasoning as tf-ci-cd.yml's own step of the same name.
-      - name: Fetch secrets from Vaultwarden
-        env:
-          DOCKER_HOST: ${{ env.TF_VAR_docker_host }}
-          NETWORK_NAME: apps
-          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
-          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "TF_VAR_registry_password=REGISTRY_PASSWORD TF_VAR_discord_client_id=DISCORD_CLIENT_ID TF_VAR_discord_client_secret=DISCORD_CLIENT_SECRET REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
-        run: |
-          set -o pipefail
-          ./scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
-            echo "::add-mask::$v"
-            echo "${k}=${v}" >> "$GITHUB_ENV"
-          done
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "~> 1.10"
-
-      - name: Init
-        run: terraform init -backend-config="endpoints={s3=\"${{ secrets.TF_STATE_R2_ENDPOINT }}\"}"
-
-      # -replace below forces Terraform to destroy+recreate the
-      # container, but that alone does NOT guarantee a fresh image:
-      # dockerd only pulls on create if the tag is missing from its
-      # local cache, and the VPS almost always already has SOME image
-      # cached under registry.giomartins.dev:5000/<app>:latest from an
-      # earlier deploy. An explicit pull against the remote daemon
-      # first is what actually guarantees this.
-      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
-        run: |
-          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
-          sudo systemctl restart docker
-
-      - name: Log in to registry.giomartins.dev:5000
-        uses: docker/login-action@v3
-        with:
-          registry: registry.giomartins.dev:5000
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ env.REGISTRY_PASSWORD }}
-
-      - name: Pull the image(s) just pushed onto the VPS's own dockerd
-        env:
-          DOCKER_HOST: ${{ env.TF_VAR_docker_host }}
-        run: |
-          for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
-            docker pull "registry.giomartins.dev:5000/${app}:latest"
-          done
-
-      - name: Deploy the image(s) just pushed
-        run: |
-          REPLACE_ARGS=()
-          for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
-            case "$app" in
-              buteco-class-frontend) REPLACE_ARGS+=("-replace=module.compute_apps_buteco_class_frontend.docker_container.buteco_class_frontend") ;;
-              tela-frontend) REPLACE_ARGS+=("-replace=module.compute_apps_tela_frontend.docker_container.tela_frontend") ;;
-              *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
-            esac
-          done
-          terraform apply -input=false -lock-timeout=300s -auto-approve "${REPLACE_ARGS[@]}"
+      - name: Clean up the copy on the VPS
+        if: always()
+        run: ssh "ubuntu@$VPS_HOST" "rm -rf '$REMOTE_DIR'"

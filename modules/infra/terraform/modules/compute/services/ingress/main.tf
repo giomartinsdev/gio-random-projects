@@ -24,7 +24,9 @@ resource "docker_container" "ingress" {
   # step or volume needed.
   upload {
     content = templatefile("${path.module}/templates/default.conf.tftpl", {
-      services = var.services
+      services     = var.services
+      static_sites = var.static_sites
+      minio_port   = var.minio_port
     })
     file = "/etc/nginx/conf.d/default.conf"
   }
