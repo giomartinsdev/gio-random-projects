@@ -8,10 +8,20 @@
 # docker network — no ports{} block. Only
 # domain-api/domain-worker (and anything else added later) ever call
 # it, over the network by container name.
-
+#
+# Pulled from OUR OWN registry, not ghcr.io/turbootzz/vaultwarden-api
+# directly: that image's own multi-arch manifest is broken upstream
+# (Dockerfile's `ARG TARGETARCH=amd64` never actually gets overridden
+# by their CI, so every platform's "variant" -- including the one
+# tagged arm64 -- contains the literal same amd64 binary; confirmed by
+# reading the raw ELF header, not just a symptom). This is Turbootzz/
+# Vaultwarden-API's source built natively (no cross-compilation, no
+# QEMU) straight on the VPS's own arm64, then pushed here under the
+# same name -- see modules/compute/services/registry's README for
+# rebuild instructions when upstream cuts a new release.
 resource "docker_container" "vaultwarden_bridge" {
   name    = "vaultwarden-api"
-  image   = "ghcr.io/turbootzz/vaultwarden-api:${var.bridge_version}"
+  image   = "${var.registry_host}/vaultwarden-api:${var.bridge_version}"
   restart = "unless-stopped"
 
   env = [

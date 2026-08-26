@@ -13,6 +13,35 @@ public port, no DNS record. Only containers on the same
 network (`var.network_name`) can reach it, by name (`vaultwarden-api`,
 port `8080`).
 
+## Image: built by us, not pulled from ghcr.io/turbootzz directly
+
+`ghcr.io/turbootzz/vaultwarden-api`'s own multi-arch manifest is
+broken upstream: their `Dockerfile` has `ARG TARGETARCH=amd64` with a
+hardcoded default that their own CI never actually overrides per
+platform, so every tag in the manifest list — including the one
+labeled `arm64` — contains the literal same amd64 binary (confirmed by
+reading the raw ELF header, not just inferred from a crash). Running
+it on the VPS needs x86-64 emulation as a result, which conflicts at
+the kernel level with `box64` (see `docs/servidor-zomboid.md` — both
+box64 and QEMU register for the exact same binfmt_misc magic/mask, and
+only one can be active on the whole host at a time; the Zomboid server
+needs box64, so QEMU can't stay registered just for this).
+
+`var.registry_host`'s `vaultwarden-api` image is instead Turbootzz/
+Vaultwarden-API's own source, built natively on the VPS's own arm64
+(no cross-compilation, no emulation of any kind needed) and pushed
+under the same name. To rebuild after upstream cuts a new release:
+
+```bash
+ssh ubuntu@<server_ip>
+rm -rf /tmp/vaultwarden-api-build
+git clone --depth 1 https://github.com/Turbootzz/Vaultwarden-API.git /tmp/vaultwarden-api-build
+cd /tmp/vaultwarden-api-build
+docker build --build-arg TARGETARCH=arm64 -t registry.giomartins.dev:5000/vaultwarden-api:latest .
+docker push registry.giomartins.dev:5000/vaultwarden-api:latest
+terraform apply -replace=module.compute_services_vaultwarden_bridge[0].docker_container.vaultwarden_bridge
+```
+
 ## Why a bootstrap credential is unavoidable
 
 Bitwarden's end-to-end encryption means there's no way to fetch a

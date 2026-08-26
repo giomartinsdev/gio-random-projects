@@ -247,6 +247,7 @@ module "compute_services_vaultwarden_bridge" {
   }
 
   network_name                        = module.network_docker_apps.network_name
+  registry_host                       = var.registry_host
   vaultwarden_account_email           = var.vaultwarden_account_email
   vaultwarden_account_master_password = var.vaultwarden_account_master_password
   vaultwarden_api_client_id           = var.vaultwarden_api_client_id

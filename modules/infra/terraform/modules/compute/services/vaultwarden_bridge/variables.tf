@@ -3,8 +3,13 @@ variable "network_name" {
   type        = string
 }
 
+variable "registry_host" {
+  description = "Host:port to pull vaultwarden-api from -- our own registry, not ghcr.io/turbootzz/vaultwarden-api directly. See this module's main.tf for why."
+  type        = string
+}
+
 variable "bridge_version" {
-  description = "ghcr.io/turbootzz/vaultwarden-api:<version> image tag."
+  description = "<registry_host>/vaultwarden-api:<version> image tag."
   type        = string
   default     = "latest"
 }
