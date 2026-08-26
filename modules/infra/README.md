@@ -18,7 +18,8 @@ Two Terraform configs, nothing else:
 Everything `terraform/` manages: `postgres`/`redis`/`minio`
 (`modules/storage/*`), the app containers (`modules/compute/apps/*`),
 and `registry`/`watchtower` + the service containers
-(`modules/compute/services/*`). Phase 1 of the migration exposes each
-service directly on its own port; flipping the DNS records to proxied
-puts Cloudflare's edge (Access, WAF, mTLS) back in front without any
-other change.
+(`modules/compute/services/*`). Phase 2 of the migration is live:
+every hostname is orange-cloud through Cloudflare, so the edge
+(Access, TLS) sits back in front — except registry.giomartins.dev,
+which stays grey-cloud because its :5000 docker protocol can't transit
+the proxy.

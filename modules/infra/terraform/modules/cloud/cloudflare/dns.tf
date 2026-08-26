@@ -1,16 +1,12 @@
 # One A record per exposed hostname, pointing straight at the server.
 #
-# Phase 1 of the VPS migration: proxied = false (grey cloud) — the
-# names resolve to the machine itself and every service is reached on
-# its own published port (http://IP:PORT), with nothing in front. This
-# is also what keeps registry.giomartins.dev resolving for CI's docker
-# push and the server's own pulls during and after the cutover.
-#
-# Phase 2 (later): flip proxied = true in one apply. The Access
-# applications, WAF ruleset, and registry mTLS hostname association
-# managed by this module stay configured the whole time — they simply
-# start enforcing again the moment traffic flows through the proxy
-# again. Nothing else changes.
+# Phase 2 of the VPS migration is live: every record is orange-cloud
+# (proxied) EXCEPT the ones in locals.tf's direct_hostnames — traffic
+# to proxied hostnames transits Cloudflare's edge first: real TLS on
+# 443 terminates there (no cert management on the VPS; ingress still
+# speaks plain HTTP on origin :80), and the Access applications /
+# service tokens / WAF ruleset this module manages start enforcing the
+# moment traffic flows through. Nothing on the VPS changes.
 #
 # Plain for_each, deliberately: removing a hostname from var.hostnames
 # removes it from this set, and Terraform destroys the orphaned record
@@ -22,6 +18,13 @@ resource "cloudflare_dns_record" "hostname" {
   name    = each.value
   type    = "A"
   content = var.server_ip
-  proxied = false
-  ttl     = 300
+
+  # Orange for everything behind ingress; grey only for hostnames whose
+  # traffic can't transit Cloudflare's proxy at all (see locals.tf).
+  proxied = !contains(local.direct_hostnames, each.value)
+
+  # The API normalizes proxied records' TTL to 1 no matter what is sent,
+  # so sending anything else is a permanent refresh-time diff. Only the
+  # grey-cloud records get a real TTL.
+  ttl = contains(local.direct_hostnames, each.value) ? 300 : 1
 }
