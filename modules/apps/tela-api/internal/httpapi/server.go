@@ -47,6 +47,7 @@ func New(registry *rooms.Registry, media *sfu.Server, allowedOrigins []string) *
 	s.mux.HandleFunc("POST /api/rooms", s.handleCreateRoom)
 	s.mux.HandleFunc("GET /api/rooms", s.handleListRooms)
 	s.mux.HandleFunc("GET /api/rooms/{id}", s.handleRoomStatus)
+	s.mux.HandleFunc("DELETE /api/rooms/{id}", s.handleDeleteRoom)
 	s.mux.HandleFunc("POST /api/rooms/{id}/check", s.handleCheckPassword)
 	s.mux.HandleFunc("POST /api/rooms/{id}/knock", s.handleKnock)
 	s.mux.HandleFunc("GET /api/rooms/{id}/knock/{requestId}", s.handleKnockStatus)
@@ -66,7 +67,7 @@ func (s *Server) cors(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 		if slices.Contains(s.AllowedOrigins, origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		}
 		if r.Method == http.MethodOptions {
@@ -135,6 +136,37 @@ func (s *Server) handleRoomStatus(w http.ResponseWriter, r *http.Request) {
 		"people":     room.PeerCount(),
 		"publishing": room.PublisherCount(),
 	})
+}
+
+type deleteRoomRequest struct {
+	Password string `json:"password"`
+}
+
+// handleDeleteRoom lets the room creator (who knows the password)
+// destroy a room immediately instead of waiting for the janitor.
+func (s *Server) handleDeleteRoom(w http.ResponseWriter, r *http.Request) {
+	var req deleteRoomRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+
+	err := s.registry.Delete(strings.ToLower(r.PathValue("id")), req.Password)
+	if err != nil {
+		if errors.Is(err, rooms.ErrNotFound) {
+			writeError(w, http.StatusNotFound, rooms.ErrNotFound.Error())
+			return
+		}
+		if errors.Is(err, rooms.ErrWrongSecret) {
+			writeError(w, http.StatusUnauthorized, rooms.ErrWrongSecret.Error())
+			return
+		}
+		log.Printf("[tela] delete room failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "não foi possível apagar a sala")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // Lets the join form report a wrong password without first opening a

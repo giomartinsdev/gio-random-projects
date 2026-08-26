@@ -51,6 +51,14 @@ export const api = {
   // never freeze the requester's own tab. See KnockLobby in Room.tsx.
   knockStatus: (roomId: string, requestId: string) =>
     request<KnockStatus>(`/api/rooms/${encodeURIComponent(roomId)}/knock/${encodeURIComponent(requestId)}`),
+
+  // Delete a room -- only the creator (who knows the password) can do
+  // this. Used by the "adm" shortcut in Room.tsx.
+  deleteRoom: (roomId: string, password: string) =>
+    request<{ ok: boolean }>(`/api/rooms/${encodeURIComponent(roomId)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ password }),
+    }),
 };
 
 export function wsUrl(params: Record<string, string>): string {

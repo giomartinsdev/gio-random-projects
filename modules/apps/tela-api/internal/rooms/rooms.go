@@ -155,6 +155,23 @@ func (r *Registry) Get(id string) (*Room, error) {
 	return room, nil
 }
 
+// Delete removes a room after verifying the password. Only the room
+// creator (who knows the password) can delete it.
+func (r *Registry) Delete(id, password string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	room, ok := r.rooms[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if !room.CheckPassword(password) {
+		return ErrWrongSecret
+	}
+	delete(r.rooms, id)
+	r.persist()
+	return nil
+}
+
 // Sweep drops rooms nobody has been connected to for a while, and any
 // room that has simply been around too long. Called on a ticker by
 // StartJanitor.

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Crop, Link2, MonitorUp, Users } from "lucide-react";
+import { Crop, Link2, MonitorUp, Trash2, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareCamera, canShareScreen, useRoom, type Credential, type Quality, type Fps, QUALITY_OPTIONS, FPS_OPTIONS } from "@/lib/useRoom";
 import { useWakeLock } from "@/lib/useWakeLock";
@@ -340,10 +340,12 @@ function LiveRoom({
   onResetPassword?: () => void;
 }) {
   const room = useRoom(roomId, credential, name);
+  const navigate = useNavigate();
   // Only someone who actually typed the password has one to share --
   // someone let in through a knock never learns it, so there's nothing
   // for CopyLinkWithPassword to put in the link.
   const password = "password" in credential ? credential.password : undefined;
+  const isAdm = room.you?.name === "adm";
   const [selected, setSelected] = useState<string | null>(null);
   // Which people I've muted, decided per stream and only on my side --
   // muting someone here doesn't stop them sending audio to anyone else.
@@ -434,13 +436,27 @@ function LiveRoom({
           </span>
         )}
 
+        {isAdm && password && (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={async () => {
+              if (!confirm("Tem certeza que quer apagar esta sala?")) return;
+              await api.deleteRoom(roomId, password);
+              navigate("/");
+            }}
+            className="flex-1 sm:flex-none"
+          >
+            <Trash2 className="size-4" />
+            Apagar sala
+          </Button>
+        )}
+
         {/* Full width on a phone (the buttons split the row), pushed to
             the right once everything fits on one line. */}
         <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">
           {room.isSharing ? (
             <>
-              <QualityButton quality={room.quality} onChange={(q) => { room.setQuality(q); }} />
-              <FpsButton fps={room.fps} onChange={(f) => { room.setFps(f); }} />
               <Button
                 variant="secondary"
                 onClick={() => room.setAudio(!room.sendingAudio)}
@@ -467,6 +483,8 @@ function LiveRoom({
             </>
           ) : (
             <>
+              <QualityButton quality={room.quality} onChange={(q) => { room.setQuality(q); }} />
+              <FpsButton fps={room.fps} onChange={(f) => { room.setFps(f); }} />
               {canShareScreen && (
                 <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex-1 sm:flex-none">
                   <Button onClick={() => room.startSharing("screen")} className="w-full">
