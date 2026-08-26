@@ -1,8 +1,3 @@
-variable "network_name" {
-  description = "Docker network to join. tela talks to nothing else here -- it's on the shared network only so cloudflared can reach it the same way every other app is reached."
-  type        = string
-}
-
 variable "registry_host" {
   description = "Registry host the tela image is pulled from."
   type        = string

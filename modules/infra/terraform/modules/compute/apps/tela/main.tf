@@ -23,8 +23,23 @@ resource "docker_container" "tela" {
   image   = "${var.registry_host}/tela:latest"
   restart = "unless-stopped"
 
+  # Host networking, unlike every other app here. The SFU has to
+  # advertise an address browsers can reach, and inside a bridge network
+  # the only address it can see is the container's private one -- which
+  # would need the real address pasted into a variable to work around.
+  # On the host network it sees the machine's actual interfaces and
+  # advertises the LAN address by itself, so browsers on the same
+  # network connect with nothing configured at all.
+  #
+  # The cost is isolation: the container shares the host's network
+  # namespace. That also means no port mapping -- the app binds
+  # var.external_port directly, which is what cloudflared's ingress
+  # already points at, and the UDP port binds unmapped (it must, since
+  # its number is baked into the ICE candidates the SFU advertises).
+  network_mode = "host"
+
   env = [
-    "PORT=8000",
+    "PORT=${var.external_port}",
     "STATE_FILE=/data/rooms.json",
     # The SFU is a WebRTC endpoint, so browsers connect to it directly
     # over UDP -- it can't be reached through the Cloudflare tunnel,
@@ -46,26 +61,6 @@ resource "docker_container" "tela" {
   volumes {
     volume_name    = docker_volume.tela_state.name
     container_path = "/data"
-  }
-
-  ports {
-    internal = 8000
-    external = var.external_port
-  }
-
-  # All media rides this one port (an ICE UDP mux), so deployment means
-  # opening a single port rather than a range. It must be published on
-  # the same number inside and out: the candidates the SFU advertises
-  # carry this port number, so remapping it would send browsers to a
-  # port nothing is listening on.
-  ports {
-    internal = var.sfu_udp_port
-    external = var.sfu_udp_port
-    protocol = "udp"
-  }
-
-  networks_advanced {
-    name = var.network_name
   }
 
   dynamic "labels" {
