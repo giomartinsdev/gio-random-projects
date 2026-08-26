@@ -110,28 +110,11 @@ jobs:
           VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
           ITEM_MAP: "TF_VAR_registry_password=REGISTRY_PASSWORD TF_VAR_discord_client_id=DISCORD_CLIENT_ID TF_VAR_discord_client_secret=DISCORD_CLIENT_SECRET"
         run: |
-          if FETCHED=$(./scripts/fetch_vault_secret.sh); then
-            echo "$FETCHED" | while IFS='=' read -r k v; do
-              echo "::add-mask::$v"
-              echo "${k}=${v}" >> "$GITHUB_ENV"
-            done
-          else
-            # TEMPORARY BOOTSTRAP FALLBACK: the VPS migration wiped
-            # Vaultwarden's data, and these vault_seed groups'
-            # triggers haven't changed since, so Terraform never
-            # re-ran them against the fresh vault -- nothing for the
-            # fetch above to find yet. Falls back to the old GitHub
-            # secrets just this once so this apply can run at all and
-            # re-seed the vault; remove this whole fallback once
-            # confirmed working from the vault alone on its own.
-            echo "::warning::vault fetch failed, falling back to GitHub secrets for this one bootstrap run"
-            echo "::add-mask::${{ secrets.TF_REGISTRY_PASSWORD }}"
-            echo "TF_VAR_registry_password=${{ secrets.TF_REGISTRY_PASSWORD }}" >> "$GITHUB_ENV"
-            echo "::add-mask::${{ secrets.DISCORD_CLIENT_ID }}"
-            echo "TF_VAR_discord_client_id=${{ secrets.DISCORD_CLIENT_ID }}" >> "$GITHUB_ENV"
-            echo "::add-mask::${{ secrets.DISCORD_CLIENT_SECRET }}"
-            echo "TF_VAR_discord_client_secret=${{ secrets.DISCORD_CLIENT_SECRET }}" >> "$GITHUB_ENV"
-          fi
+          set -o pipefail
+          ./scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
+            echo "::add-mask::$v"
+            echo "${k}=${v}" >> "$GITHUB_ENV"
+          done
 
       - uses: hashicorp/setup-terraform@v3
         with:
