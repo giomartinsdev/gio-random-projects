@@ -178,18 +178,19 @@ jobs:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: production
-    # Shared across every workflow that runs `terraform apply`
-    # (go-ci-cd.yml, ts-frontend-ci-cd.yml, ts-backend-ci-cd.yml) --
-    # they all touch the same state file. Without this, pushing to
-    # several apps at once queues up N applies that all race for the
-    # same R2 state lock: each loser sits on `-lock-timeout=300s` and
-    # then just fails, instead of the run queuing safely and going
-    # next. cancel-in-progress stays false on purpose -- killing a
-    # `terraform apply` mid-flight is how you end up with a container
-    # half-recreated and the state disagreeing with reality.
-    concurrency:
-      group: terraform-apply
-      cancel-in-progress: false
+    # Deliberately NOT in the shared "terraform-apply" concurrency
+    # group the three app-deploy workflows use: this job pauses on a
+    # human approval (environment: production above), and a GitHub
+    # Actions concurrency group only holds one *running* job plus one
+    # *queued* one -- a run sitting in "waiting for approval" occupies
+    # that queued slot for as long as the approval takes, which can be
+    # hours. Sharing the group would mean every automatic app deploy
+    # backs up behind whoever hasn't clicked approve yet, which is
+    # worse than the lock-contention problem the group exists to fix.
+    # Terraform's own state lock (use_lockfile, versions.tf) still
+    # protects a genuine collision here; it's just not FIFO-queued
+    # against the app pipelines the way those three are against each
+    # other.
     steps:
       - uses: actions/checkout@v4
 
