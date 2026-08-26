@@ -45,6 +45,7 @@ func New(registry *rooms.Registry, media *sfu.Server, allowedOrigins []string) *
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("POST /api/rooms", s.handleCreateRoom)
+	s.mux.HandleFunc("GET /api/rooms", s.handleListRooms)
 	s.mux.HandleFunc("GET /api/rooms/{id}", s.handleRoomStatus)
 	s.mux.HandleFunc("POST /api/rooms/{id}/check", s.handleCheckPassword)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
@@ -111,10 +112,18 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"roomId": room.ID})
 }
 
+// Lets the home page show "salas rolando" -- who's live right now --
+// so switching rooms doesn't require someone to paste you a code.
+// Never leaks a password or its hash, only what handleRoomStatus
+// already exposes per-room without auth (a count of people).
+func (s *Server) handleListRooms(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.registry.Active())
+}
+
 // Deliberately says nothing about whether the room exists beyond
 // "found or not" -- no password hints, no viewer identities.
 func (s *Server) handleRoomStatus(w http.ResponseWriter, r *http.Request) {
-	room, err := s.registry.Get(strings.ToUpper(r.PathValue("id")))
+	room, err := s.registry.Get(strings.ToLower(r.PathValue("id")))
 	if err != nil {
 		writeError(w, http.StatusNotFound, rooms.ErrNotFound.Error())
 		return
@@ -127,8 +136,8 @@ func (s *Server) handleRoomStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // Lets the join form report a wrong password without first opening a
-// WebSocket. Rate limited per client IP, since a 6-character room code
-// plus a short password is exactly the shape of thing worth guessing.
+// WebSocket. Rate limited per client IP, since a room code plus a
+// short password is exactly the shape of thing worth guessing.
 func (s *Server) handleCheckPassword(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
 	if !s.limiter.allow(ip) {
@@ -142,7 +151,7 @@ func (s *Server) handleCheckPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room, err := s.registry.Get(strings.ToUpper(r.PathValue("id")))
+	room, err := s.registry.Get(strings.ToLower(r.PathValue("id")))
 	if err != nil {
 		writeError(w, http.StatusNotFound, rooms.ErrNotFound.Error())
 		return

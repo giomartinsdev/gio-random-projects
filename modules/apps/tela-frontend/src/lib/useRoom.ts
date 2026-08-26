@@ -86,7 +86,10 @@ export const canShareCamera =
 // The mesh this replaced needed a connection per person and made the
 // publisher encode separately for each of them, which is why a second
 // viewer used to halve the framerate.
-export function useRoom(roomId: string, password: string) {
+// displayName is only ever sent on a brand-new join (see connect()
+// below) -- once the server has assigned an identity, a reconnect
+// always resumes with the name it already gave out, chosen or not.
+export function useRoom(roomId: string, password: string, displayName?: string) {
   const [status, setStatus] = useState<Status>("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [you, setYou] = useState<{ peerId: string; name: string } | null>(null);
@@ -241,7 +244,11 @@ export function useRoom(roomId: string, password: string) {
         wsUrl({
           room: roomId,
           password,
-          ...(saved ? { peerId: saved.peerId, name: saved.name, resume: saved.resume } : {}),
+          ...(saved
+            ? { peerId: saved.peerId, name: saved.name, resume: saved.resume }
+            : displayName
+              ? { name: displayName }
+              : {}),
         }),
       );
       wsRef.current = ws;
@@ -408,7 +415,7 @@ export function useRoom(roomId: string, password: string) {
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     };
-  }, [roomId, password, cancelPendingLeave, dropRemote, send, startSharing]);
+  }, [roomId, password, displayName, cancelPendingLeave, dropRemote, send, startSharing]);
 
   return {
     status,

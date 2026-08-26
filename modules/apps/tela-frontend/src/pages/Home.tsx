@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { MonitorUp, LogIn, Loader2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { MonitorUp, LogIn, Loader2, Users, Radio } from "lucide-react";
+import { api, type RoomSummary } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,14 +9,45 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+// How often the "salas rolando" list refreshes. Frequent enough that a
+// room appearing/emptying out feels close to live, cheap enough (one
+// small JSON response) that nobody notices the polling.
+const ROOMS_POLL_MS = 5_000;
+
 export default function Home() {
   const navigate = useNavigate();
+  const [tab, setTab] = useState<"create" | "join">("create");
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
   const [createPassword, setCreatePassword] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [joinPassword, setJoinPassword] = useState("");
+  // Shared across both tabs -- it's the same person typing it either
+  // way, and switching tabs to fix a typo shouldn't lose it.
+  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [activeRooms, setActiveRooms] = useState<RoomSummary[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      api
+        .listRooms()
+        .then((rooms) => {
+          if (!cancelled) setActiveRooms(rooms);
+        })
+        .catch(() => {
+          // A failed poll just means the list stays as it was -- not
+          // worth surfacing an error for something this ambient.
+        });
+    };
+    poll();
+    const interval = setInterval(poll, ROOMS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -27,7 +58,7 @@ export default function Home() {
       const { roomId } = await api.createRoom(createPassword);
       // Same as joining: the password is the only credential, and it
       // travels in navigation state rather than the URL.
-      navigate(`/r/${roomId}`, { state: { password: createPassword } });
+      navigate(`/r/${roomId}`, { state: { password: createPassword, name: name.trim() } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "não foi possível criar a sala");
       setCreating(false);
@@ -39,16 +70,22 @@ export default function Home() {
     if (joining) return;
     setError(null);
     setJoining(true);
-    const code = joinCode.trim().toUpperCase();
+    const code = joinCode.trim().toLowerCase();
     try {
       // Checked here so a wrong password is a clear message rather than
       // a WebSocket that just refuses to open.
       await api.checkPassword(code, joinPassword);
-      navigate(`/r/${code}`, { state: { password: joinPassword } });
+      navigate(`/r/${code}`, { state: { password: joinPassword, name: name.trim() } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "não foi possível entrar");
       setJoining(false);
     }
+  }
+
+  function pickRoom(roomId: string) {
+    setJoinCode(roomId);
+    setTab("join");
+    setError(null);
   }
 
   return (
@@ -61,15 +98,56 @@ export default function Home() {
           </p>
         </div>
 
+        {activeRooms.length > 0 && (
+          <Card className="mb-4">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Radio className="size-4 text-green-500" />
+                Salas rolando agora
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {activeRooms.map((room) => (
+                <button
+                  key={room.roomId}
+                  type="button"
+                  onClick={() => pickRoom(room.roomId)}
+                  className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
+                >
+                  <span className="font-mono tracking-wide">{room.roomId}</span>
+                  <span className="inline-flex items-center gap-1 text-muted-foreground">
+                    <Users className="size-3.5" />
+                    {room.people}
+                  </span>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle className="text-xl">Começar</CardTitle>
             <CardDescription>Crie uma sala, ou entre numa que te passaram.</CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 space-y-2">
+              <Label htmlFor="display-name">Seu nome (opcional)</Label>
+              <Input
+                id="display-name"
+                placeholder="deixe em branco para um nome aleatório"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={30}
+              />
+            </div>
+
             <Tabs
-              defaultValue="create"
-              onValueChange={() => setError(null)}
+              value={tab}
+              onValueChange={(v) => {
+                setTab(v as "create" | "join");
+                setError(null);
+              }}
             >
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="create">Criar sala</TabsTrigger>
@@ -107,12 +185,12 @@ export default function Home() {
                     <Label htmlFor="join-code">Código da sala</Label>
                     <Input
                       id="join-code"
-                      placeholder="ABC123"
+                      placeholder="abacate98suco"
                       value={joinCode}
-                      onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                      className="font-mono tracking-widest uppercase"
-                      maxLength={6}
-                      autoCapitalize="characters"
+                      onChange={(e) => setJoinCode(e.target.value)}
+                      className="font-mono tracking-wide"
+                      maxLength={40}
+                      autoCapitalize="none"
                       autoCorrect="off"
                       spellCheck={false}
                       required

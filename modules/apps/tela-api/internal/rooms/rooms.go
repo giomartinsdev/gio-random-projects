@@ -1,14 +1,18 @@
 // Package rooms holds every bit of state this app has: the live
-// rooms and who is connected to each one. Nothing is persisted --
-// there's no database and no user accounts, so a restart simply drops
-// every room, which is the right behaviour for something whose whole
-// lifetime is "someone is sharing their screen right now".
+// rooms and who is connected to each one. The room registry itself
+// (code, password hash, resume key) is persisted to disk when the
+// caller configures a path -- see store.go -- so a redeploy doesn't
+// end sessions in progress. Who is actually connected is never
+// persisted: those are live WebSockets that die with the process
+// anyway, and every client reconnects and re-announces itself.
 package rooms
 
 import (
 	"crypto/rand"
 	"crypto/subtle"
 	"errors"
+	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -21,16 +25,11 @@ var (
 	ErrTooManyRooms = errors.New("limite de salas atingido, tente de novo em alguns minutos")
 )
 
-// Ambiguous characters (0/O, 1/I/L) are left out -- room codes get
-// read out loud and typed by hand.
-const codeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
-
 const (
-	codeLength = 6
-	// Rooms are pure memory, so the only real bound on them is this.
-	// Generous for the intended use (a handful of people sharing a
-	// screen) and low enough that nobody can exhaust the process by
-	// looping on POST /api/rooms.
+	// Rooms are pure memory (or a tiny JSON file), so the only real
+	// bound on them is this. Generous for the intended use (a handful
+	// of people sharing a screen) and low enough that nobody can
+	// exhaust the process by looping on POST /api/rooms.
 	maxRooms = 500
 	// An empty room lingers this long before the janitor drops it, so
 	// the host reloading the page or losing wifi doesn't destroy a
@@ -111,7 +110,7 @@ func (r *Registry) Create(password string) (*Room, error) {
 
 	var id string
 	for {
-		candidate, err := randomCode(codeLength)
+		candidate, err := randomRoomCode()
 		if err != nil {
 			r.mu.Unlock()
 			return nil, err
@@ -196,6 +195,41 @@ func (r *Registry) Count() int {
 	return len(r.rooms)
 }
 
+// RoomSummary is the public view of a room for the home page's "salas
+// rolando" list -- never the password, its hash, or the resume key.
+type RoomSummary struct {
+	ID         string    `json:"roomId"`
+	People     int       `json:"people"`
+	Publishing int       `json:"publishing"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+// Active lists every room with at least one person connected right
+// now, most people first. A room that exists but is empty (still
+// inside its post-disconnect grace period, see Sweep) is left off on
+// purpose -- "rolando" means someone is actually there, not just that
+// the code hasn't expired yet.
+func (r *Registry) Active() []RoomSummary {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	out := make([]RoomSummary, 0, len(r.rooms))
+	for _, room := range r.rooms {
+		people := room.PeerCount()
+		if people == 0 {
+			continue
+		}
+		out = append(out, RoomSummary{
+			ID:         room.ID,
+			People:     people,
+			Publishing: room.PublisherCount(),
+			CreatedAt:  room.CreatedAt,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].People > out[j].People })
+	return out
+}
+
 // CheckPassword is deliberately the slow scrypt comparison rather than
 // a cached boolean: it's the only thing standing between a room code
 // and a stranger watching the screen.
@@ -220,8 +254,48 @@ func randomString(n int) (string, error) {
 	return randomFrom(alphabet, n)
 }
 
-func randomCode(n int) (string, error) {
-	return randomFrom(codeAlphabet, n)
+// randomRoomCode builds a code like "abacate98suco" -- two distinct
+// small Portuguese words around a 2-digit number, instead of the old
+// opaque "DRFG2478". People say these out loud and type them on a
+// phone keyboard; "abacate 98 suco" survives that far better than a
+// string with no vowels to anchor on.
+func randomRoomCode() (string, error) {
+	w1, err := randomWord()
+	if err != nil {
+		return "", err
+	}
+	w2, err := randomWord()
+	if err != nil {
+		return "", err
+	}
+	for w2 == w1 {
+		if w2, err = randomWord(); err != nil {
+			return "", err
+		}
+	}
+	n, err := randomDigitPair()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s%d%s", w1, n, w2), nil
+}
+
+// randomDigitPair returns a number in [10, 99] -- always two digits,
+// so the code's shape (word, two digits, word) is predictable even
+// though the value isn't.
+func randomDigitPair() (int, error) {
+	buf := make([]byte, 1)
+	const span = 90 // 99 - 10 + 1
+	limit := byte(256 - (256 % span))
+	for {
+		if _, err := rand.Read(buf); err != nil {
+			return 0, err
+		}
+		if buf[0] >= limit {
+			continue
+		}
+		return 10 + int(buf[0])%span, nil
+	}
 }
 
 // Rejection sampling rather than modulo: with an alphabet whose length

@@ -43,7 +43,7 @@ type clientMessage struct {
 // while receiving whatever the others publish.
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	roomID := strings.ToUpper(q.Get("room"))
+	roomID := strings.ToLower(q.Get("room"))
 
 	room, err := s.registry.Get(roomID)
 	if err != nil {
@@ -101,7 +101,20 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			_ = conn.Close(websocket.StatusInternalError, "erro interno")
 			return
 		}
-		name = room.NextName()
+		// A fresh join may bring its own display name (the "name" query
+		// param doubles as both "the name a resume token was signed
+		// with" above and "the name this new person typed" here) --
+		// honour it if given, otherwise hand out a small random word
+		// instead of leaving the tile unlabeled.
+		if chosen := sanitizeName(name); chosen != "" {
+			name = chosen
+		} else {
+			name, err = room.RandomName()
+			if err != nil {
+				_ = conn.Close(websocket.StatusInternalError, "erro interno")
+				return
+			}
+		}
 	} else {
 		// A stale socket under this id would otherwise split the
 		// signalling between two connections.
@@ -261,6 +274,27 @@ func (w *wsSession) handlePublishOffer(msg clientMessage) {
 	// Announced separately from the media so the grid can show someone
 	// as sharing while their connection is still negotiating.
 	w.room.SetPublishing(w.peer, true)
+}
+
+const maxNameLength = 30
+
+// sanitizeName trims a client-supplied display name and bounds its
+// length -- someone typing a paragraph into the name field shouldn't
+// get to stretch every tile's label. An empty result (nothing typed,
+// or nothing left after trimming whitespace) means "no preference";
+// the caller falls back to a random word instead.
+func sanitizeName(raw string) string {
+	name := strings.TrimSpace(raw)
+	if name == "" {
+		return ""
+	}
+	// Runes, not bytes -- truncating must not land inside a multi-byte
+	// character (an accented letter, an emoji).
+	r := []rune(name)
+	if len(r) > maxNameLength {
+		r = r[:maxNameLength]
+	}
+	return string(r)
 }
 
 func writeLoop(ctx context.Context, conn *websocket.Conn, peer *rooms.Peer) {

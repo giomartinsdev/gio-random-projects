@@ -240,6 +240,42 @@ func (room *Room) NextName() string {
 	return "Pessoa " + strconv.Itoa(room.nextLabel)
 }
 
+// randomNameAttempts is how many distinct random words get tried
+// before giving up on uniqueness and falling back to NextName --
+// enough that a normal-sized room (a handful of people) essentially
+// never exhausts it, small enough that a pathological room full of
+// bots can't turn this into a long loop.
+const randomNameAttempts = 20
+
+// RandomName picks a small, non-person Portuguese word for whoever
+// didn't type a display name of their own -- "Abacate", not "Pessoa
+// 3". It avoids whatever anyone currently in the room is already
+// called, so two people don't end up as visually-identical "Abacate"
+// tiles; if every attempt collides (which would take a room with
+// dozens of people already sharing this exact small wordlist as
+// names) it falls back to the old numbered scheme instead of looping
+// forever.
+func (room *Room) RandomName() (string, error) {
+	room.mu.Lock()
+	taken := make(map[string]bool, len(room.peers))
+	for _, p := range room.peers {
+		taken[p.Name] = true
+	}
+	room.mu.Unlock()
+
+	for i := 0; i < randomNameAttempts; i++ {
+		w, err := randomWord()
+		if err != nil {
+			return "", err
+		}
+		name := capitalize(w)
+		if !taken[name] {
+			return name, nil
+		}
+	}
+	return room.NextName(), nil
+}
+
 // Caller must hold room.mu.
 func (room *Room) peerInfosLocked() []PeerInfo {
 	out := make([]PeerInfo, 0, len(room.peers))

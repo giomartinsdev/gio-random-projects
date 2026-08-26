@@ -28,7 +28,10 @@ const ASPECT_MODES: { mode: AspectMode; label: string; ratio?: string }[] = [
 
 export default function Room() {
   const { id } = useParams<{ id: string }>();
-  const roomId = (id ?? "").toUpperCase();
+  // Codes are lowercase words now ("abacate98suco"), not the old
+  // uppercase "DRFG2478" -- lowercased here too so a link typed/pasted
+  // in any case still resolves the same room.
+  const roomId = (id ?? "").toLowerCase();
   const location = useLocation();
 
   // Password can arrive through:
@@ -52,12 +55,38 @@ export default function Room() {
     return null;
   });
 
-  if (!password) return <PasswordPrompt roomId={roomId} onUnlocked={setPassword} />;
-  return <LiveRoom roomId={roomId} password={password} onResetPassword={() => setPassword(null)} />;
+  // Set once, from whatever the home page's forms collected -- someone
+  // arriving via a bare link (no navigation state) never had the
+  // chance to type one, and PasswordPrompt below is where they get it
+  // instead.
+  const [name, setName] = useState<string>(() => (location.state as { name?: string } | null)?.name ?? "");
+
+  if (!password) {
+    return (
+      <PasswordPrompt
+        roomId={roomId}
+        name={name}
+        onUnlocked={(p, n) => {
+          setName(n);
+          setPassword(p);
+        }}
+      />
+    );
+  }
+  return <LiveRoom roomId={roomId} password={password} name={name} onResetPassword={() => setPassword(null)} />;
 }
 
-function PasswordPrompt({ roomId, onUnlocked }: { roomId: string; onUnlocked: (p: string) => void }) {
+function PasswordPrompt({
+  roomId,
+  name: initialName,
+  onUnlocked,
+}: {
+  roomId: string;
+  name: string;
+  onUnlocked: (password: string, name: string) => void;
+}) {
   const [password, setPassword] = useState("");
+  const [name, setName] = useState(initialName);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
@@ -68,7 +97,7 @@ function PasswordPrompt({ roomId, onUnlocked }: { roomId: string; onUnlocked: (p
     setError(null);
     try {
       await api.checkPassword(roomId, password);
-      onUnlocked(password);
+      onUnlocked(password, name.trim());
     } catch (err) {
       setError(err instanceof Error ? err.message : "não foi possível entrar");
       setChecking(false);
@@ -84,6 +113,16 @@ function PasswordPrompt({ roomId, onUnlocked }: { roomId: string; onUnlocked: (p
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="display-name">Seu nome (opcional)</Label>
+              <Input
+                id="display-name"
+                placeholder="deixe em branco para um nome aleatório"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={30}
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="password">Senha</Label>
               <Input
@@ -124,13 +163,15 @@ function hasAudio(stream: MediaStream | null): boolean {
 function LiveRoom({
   roomId,
   password,
+  name,
   onResetPassword,
 }: {
   roomId: string;
   password: string;
+  name?: string;
   onResetPassword?: () => void;
 }) {
-  const room = useRoom(roomId, password);
+  const room = useRoom(roomId, password, name);
   const [selected, setSelected] = useState<string | null>(null);
   // Which people I've muted, decided per stream and only on my side --
   // muting someone here doesn't stop them sending audio to anyone else.

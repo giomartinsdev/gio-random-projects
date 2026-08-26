@@ -6,6 +6,7 @@ const API_URL = import.meta.env.VITE_TELA_API_URL ?? "";
 
 export type CreatedRoom = { roomId: string };
 export type RoomStatus = { roomId: string; people: number; publishing: number };
+export type RoomSummary = { roomId: string; people: number; publishing: number; createdAt: string };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
@@ -24,6 +25,11 @@ export const api = {
     request<CreatedRoom>("/api/rooms", { method: "POST", body: JSON.stringify({ password }) }),
 
   getRoom: (roomId: string) => request<RoomStatus>(`/api/rooms/${encodeURIComponent(roomId)}`),
+
+  // Salas rolando agora -- the home page's "join something already
+  // happening" list. Only rooms with someone in them come back; see
+  // the Go side's Registry.Active.
+  listRooms: () => request<RoomSummary[]>("/api/rooms"),
 
   checkPassword: (roomId: string, password: string) =>
     request<{ ok: boolean; people: number }>(`/api/rooms/${encodeURIComponent(roomId)}/check`, {

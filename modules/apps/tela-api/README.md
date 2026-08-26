@@ -68,8 +68,9 @@ estabelece.
 
 ## Estado
 
-Uma sala é um código de 6 caracteres, o hash scrypt da senha e uma chave
-que assina tokens de retomada. **Isso é persistido** (`STATE_FILE`, num
+Uma sala é um código tipo "abacate98suco" (duas palavras e um número),
+o hash scrypt da senha e uma chave que assina tokens de retomada.
+**Isso é persistido** (`STATE_FILE`, num
 volume) para que um deploy não acabe com sessões em andamento. Quem está
 conectado **não** é persistido: são WebSockets vivos que morrem com o
 processo de qualquer jeito, e cada cliente reconecta e se re-anuncia.
@@ -141,7 +142,7 @@ link possa ser colado em qualquer lugar sem vazar o acesso.
 
 Tentativas de senha são limitadas por IP (`CF-Connecting-IP`, definido
 pela Cloudflare quando os registros estiverem proxiados — Fase 2),
-porque um código de 6 caracteres mais uma senha curta é exatamente o
+porque um código de sala mais uma senha curta é exatamente o
 tipo de coisa que vale a pena chutar.
 
 ## Rodando local

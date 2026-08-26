@@ -117,9 +117,9 @@ func TestCheckPassword(t *testing.T) {
 	srv := newServer(t)
 	roomID := createRoom(t, srv, "segredo123")
 
-	// Room codes are shown uppercase but people paste them however they
-	// like, so lookups are case-insensitive.
-	for _, id := range []string{roomID, strings.ToLower(roomID)} {
+	// Room codes are lowercase words but people paste/type them however
+	// they like, so lookups are case-insensitive.
+	for _, id := range []string{roomID, strings.ToUpper(roomID)} {
 		res, err := srv.Client().Post(srv.URL+"/api/rooms/"+id+"/check", "application/json",
 			strings.NewReader(`{"password":"segredo123"}`))
 		if err != nil {
@@ -324,6 +324,67 @@ func TestWelcomeListsWhoIsAlreadyPublishing(t *testing.T) {
 	}
 	if name, _ := peer["name"].(string); name == "" {
 		t.Fatal("peers need a name for the grid to label them")
+	}
+}
+
+// A fresh join may bring its own display name -- typed once on the
+// home page or the join screen, not something the server should
+// override with a random word when the person actually asked for one.
+func TestJoinHonoursAChosenName(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	conn := mustDial(t, srv, "room="+roomID+"&password=segredo123&name="+url.QueryEscape("Giovanni"))
+	welcome := read(t, conn)
+	if welcome["name"] != "Giovanni" {
+		t.Fatalf("expected the chosen name to be honoured, got %v", welcome["name"])
+	}
+}
+
+// Nobody typed a name, so the server must still label the tile with
+// something -- a small random word, not an empty string.
+func TestJoinWithoutANameGetsSomethingAnyway(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	conn := mustDial(t, srv, "room="+roomID+"&password=segredo123")
+	welcome := read(t, conn)
+	name, _ := welcome["name"].(string)
+	if name == "" {
+		t.Fatal("expected an auto-generated name, got an empty one")
+	}
+}
+
+// The home page's "salas rolando" list is how people find a room
+// without a code pasted to them -- it must show a room someone is
+// actually in, and never one that's empty (even if not yet swept).
+func TestListRoomsShowsOnlyOccupiedRooms(t *testing.T) {
+	srv := newServer(t)
+	occupied := createRoom(t, srv, "segredo123")
+	createRoom(t, srv, "segredo456") // never joined -- must not appear
+
+	mustDial(t, srv, "room="+occupied+"&password=segredo123")
+
+	res, err := srv.Client().Get(srv.URL + "/api/rooms")
+	if err != nil {
+		t.Fatalf("list rooms: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	var rooms []struct {
+		RoomID string `json:"roomId"`
+		People int    `json:"people"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&rooms); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(rooms) != 1 {
+		t.Fatalf("expected exactly 1 occupied room listed, got %v", rooms)
+	}
+	if rooms[0].RoomID != occupied || rooms[0].People != 1 {
+		t.Fatalf("expected %s with 1 person, got %+v", occupied, rooms[0])
 	}
 }
 
