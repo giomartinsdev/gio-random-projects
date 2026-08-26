@@ -24,7 +24,9 @@ hostname/port pair gets declared — everything else derives from it:
   `locals.tf` straight on the host.
 - **[`modules/compute/services/*`](modules/compute/services/registry/README.md)**
   — registry (+watchtower), beszel monitoring, 9router, vaultwarden
-  (+bridge), adminer, and [`ingress`](modules/compute/services/ingress/README.md)
+  (+bridge), adminer, [`zomboid`](modules/compute/services/zomboid/README.md)
+  (game server — the one non-HTTP service), and
+  [`ingress`](modules/compute/services/ingress/README.md)
   — the single nginx front door everything else routes through.
 
 ## Where the traffic goes
@@ -37,7 +39,10 @@ network listening on `:80`, routing by `Host` header to
 `127.0.0.1:<port>` for every entry in `locals.tf`'s `services` list.
 Every app/service container's own published port is bound to
 `127.0.0.1` only, so `http://<hostname>/` (no port needed) is the only
-way to reach any of them from outside the box. The docker provider
+way to reach any of them from outside the box. (The one exception is
+non-HTTP traffic ingress can't carry:
+[project-zomboid](modules/compute/services/zomboid/README.md)'s UDP
+game ports open straight onto the public interface.) The docker provider
 itself connects to dockerd over plain SSH (`ssh://`), so there's no
 exposed Docker API endpoint either.
 `var.server_ip` has no default — every CI run discovers it fresh by
