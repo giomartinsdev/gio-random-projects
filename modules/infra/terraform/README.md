@@ -9,10 +9,12 @@ that. `locals.tf`'s `services` list is the one place a new
 hostname/port pair gets declared — everything else derives from it:
 
 - **[`modules/cloud/cloudflare`](modules/cloud/cloudflare/README.md)** —
-  one A record per hostname (grey-cloud → the VPS IP until the proxy
-  flip), Access applications/policies/service tokens for everything not
-  in `excluded_hostnames`, and registry.giomartins.dev's mTLS chain +
-  WAF enforcement rule (dormant until Phase 2 — see below).
+  one A record per hostname, orange-cloud through Cloudflare's proxy
+  except registry.giomartins.dev (grey — its :5000 docker protocol
+  can't transit the proxy), Access applications/policies/service
+  tokens for everything not in `excluded_hostnames`, and
+  registry.giomartins.dev's mTLS chain + WAF enforcement rule (dormant
+  while its record stays grey — see that file).
 - **[`modules/network/docker_apps`](modules/network/docker_apps/README.md)**
   — the shared `apps` docker network every container joins.
 - **[`modules/storage/*`](modules/storage/postgres/README.md)** —
@@ -31,18 +33,18 @@ hostname/port pair gets declared — everything else derives from it:
 
 ## Where the traffic goes
 
-Phase 1 (current): every DNS record is a **grey-cloud A record → the
-VPS IP**. `modules/compute/services/ingress` is the only thing with a
-port open on every interface (besides SSH and the registry's own
-`:5000` — see that module's README) — a single `nginx` on the host
-network listening on `:80`, routing by `Host` header to
-`127.0.0.1:<port>` for every entry in `locals.tf`'s `services` list.
-Every app/service container's own published port is bound to
-`127.0.0.1` only, so `http://<hostname>/` (no port needed) is the only
-way to reach any of them from outside the box. (The one exception is
-non-HTTP traffic ingress can't carry:
-[project-zomboid](modules/compute/services/zomboid/README.md)'s UDP
-game ports open straight onto the public interface.) The docker provider
+Phase 2 (current): every DNS record is **orange-cloud through
+Cloudflare's proxy**, except `registry.giomartins.dev` (grey — CI's
+`docker push` and watchtower's pulls speak plain HTTP to its `:5000`,
+and 5000 isn't a port Cloudflare proxies; see
+`modules/cloud/cloudflare/locals.tf`). Browser traffic gets real TLS at
+Cloudflare's edge, which forwards to the VPS over HTTP :80 —
+`modules/compute/services/ingress`, a single `nginx` on the host
+network routing by `Host` header to `127.0.0.1:<port>` for every entry
+in `locals.tf`'s `services` list. Every app/service container's own
+published port is bound to `127.0.0.1` only, so the edge + ingress pair
+is the only way in from outside (the registry's `:5000` and tela's UDP
+media port are the direct-to-the-box exceptions). The docker provider
 itself connects to dockerd over plain SSH (`ssh://`), so there's no
 exposed Docker API endpoint either.
 `var.server_ip` has no default — every CI run discovers it fresh by
@@ -50,11 +52,11 @@ SSHing into the VPS and asking an external IP-echo service, so the DNS
 records stay correct even if the VPS's address ever changes (see each
 workflow's "Discover the VPS's public IP" step).
 
-Phase 2 (later): flip `proxied = true` on
-`modules/cloud/cloudflare/dns.tf`'s record resource in one apply. The
-Access applications, WAF ruleset, and registry mTLS hostname
-association this config already manages start enforcing again the
-moment traffic flows through Cloudflare's edge — no other change.
+The edge layers arm automatically with the flip: hostnames not in
+`excluded_hostnames` sit behind Cloudflare Access (Google SSO for
+humans; per-hostname service tokens — seeded into Vaultwarden — for
+machines), and registry's mTLS WAF rule stays dormant as long as its
+record stays grey.
 
 ## State
 
