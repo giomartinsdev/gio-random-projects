@@ -22,3 +22,14 @@ Three, split by language and by layer:
 
 See `modules/apps/README.md` and `modules/infra/README.md` for what's
 in each.
+
+## Docs
+
+- [`docs/servidor-zomboid.md`](docs/servidor-zomboid.md) — the Project
+  Zomboid dedicated server: why it runs natively (arm64/x86), systemd +
+  box64 architecture, ports/firewall, data layout, ops runbook.
+- [`docs/cloudflare-edge-fase-2.md`](docs/cloudflare-edge-fase-2.md) —
+  the proxy flip (registry carve-out, SSL flexible pin) and the
+  incidents it settled.
+- [`docs/novo-app-ci-cd.md`](docs/novo-app-ci-cd.md) — recipe for a new
+  app with build → push → terraform apply CI/CD.
