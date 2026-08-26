@@ -145,6 +145,24 @@ pela Cloudflare quando os registros estiverem proxiados — Fase 2),
 porque um código de sala mais uma senha curta é exatamente o
 tipo de coisa que vale a pena chutar.
 
+## Pedir para entrar (knock)
+
+Quem tem só o código da sala, sem a senha, pode bater na porta em vez
+de adivinhar: `POST /api/rooms/{id}/knock` registra um pedido e avisa
+todo mundo que já está dentro pelo próprio WebSocket (`knock:request`)
+— não existe host, então qualquer pessoa presente pode aprovar ou
+recusar (`knock:approve` / `knock:deny`), e a decisão vale pra sala
+inteira (`knock:resolved` desfaz o aviso em todas as telas de uma vez,
+não só na de quem clicou).
+
+Quem pediu não fica com uma conexão aberta esperando resposta — isso
+travaria a aba numa sala lenta ou sem ninguém prestando atenção. Em vez
+disso, faz polling em `GET /api/rooms/{id}/knock/{requestId}` a cada
+~1,5s. Aprovado, a resposta já vem com um `admitToken`: uma senha
+pessoal e temporária (30 minutos, ver `knock.go`'s `admitTokenTTL`) que
+abre o WebSocket no lugar da senha de verdade, que essa pessoa nunca
+chega a saber.
+
 ## Rodando local
 
 ```bash
@@ -164,21 +182,26 @@ go test ./...   # relay de sinalização, autorização, ciclo de vida da sala
 | Rota | O quê |
 | --- | --- |
 | `POST /api/rooms` | cria uma sala — `{password}` → `{roomId}` |
+| `GET /api/rooms` | salas com alguém dentro agora — a lista "salas rolando" da home |
 | `GET /api/rooms/{id}` | status público — quantas pessoas e quantas compartilhando |
 | `POST /api/rooms/{id}/check` | valida a senha antes de abrir o WebSocket |
-| `GET /ws?room=&password=` | sinalização |
+| `POST /api/rooms/{id}/knock` | pede para entrar sem a senha — `{name}` → `{requestId}` |
+| `GET /api/rooms/{id}/knock/{requestId}` | status do pedido, com `admitToken` quando aprovado |
+| `GET /ws?room=&password=` (ou `&admitToken=`) | sinalização |
 | `GET /healthz` | liveness + número de salas |
 
-Mensagens do WebSocket: `welcome` (com a lista de quem já está na sala e
-quem já está compartilhando), `peer:join`, `peer:leave`, `publish:start`,
-`publish:stop` e `signal`. O servidor nunca olha dentro do `payload` de um
-`signal` — SDP e ICE são assunto dos navegadores. Ele só confere que o
-destinatário está na mesma sala e carimba quem realmente enviou (ver
-`Room.Relay`).
+Mensagens do WebSocket: `welcome` (com a lista de quem já está na sala,
+quem já está compartilhando e qualquer pedido de entrada ainda sem
+resposta), `peer:join`, `peer:leave`, `publish:start`, `publish:stop`,
+`knock:request`, `knock:resolved` e `signal`. O servidor nunca olha
+dentro do `payload` de um `signal` — SDP e ICE são assunto dos
+navegadores. Ele só confere que o destinatário está na mesma sala e
+carimba quem realmente enviou (ver `Room.Relay`).
 
-Cada pessoa recebe um nome automático (“Pessoa 1”, “Pessoa 2”…) na ordem
-de entrada — ninguém faz login, mas um grid sem rótulo nenhum fica
-ilegível.
+Quem entra pode digitar um nome; quem deixa em branco recebe uma
+palavra pequena e aleatória em português (“Abacate”, “Girafa”…) em vez
+de um nome de pessoa de verdade — ninguém faz login, mas um grid sem
+rótulo nenhum fica ilegível.
 
 ## No celular
 

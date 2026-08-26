@@ -48,6 +48,8 @@ func New(registry *rooms.Registry, media *sfu.Server, allowedOrigins []string) *
 	s.mux.HandleFunc("GET /api/rooms", s.handleListRooms)
 	s.mux.HandleFunc("GET /api/rooms/{id}", s.handleRoomStatus)
 	s.mux.HandleFunc("POST /api/rooms/{id}/check", s.handleCheckPassword)
+	s.mux.HandleFunc("POST /api/rooms/{id}/knock", s.handleKnock)
+	s.mux.HandleFunc("GET /api/rooms/{id}/knock/{requestId}", s.handleKnockStatus)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	return s
@@ -164,6 +166,72 @@ func (s *Server) handleCheckPassword(w http.ResponseWriter, r *http.Request) {
 	s.limiter.reset(ip)
 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "people": room.PeerCount()})
+}
+
+type knockCreateRequest struct {
+	Name string `json:"name"`
+}
+
+// handleKnock is the whole point of not needing the password: anyone
+// with just the room code can ask to be let in, and everyone already
+// inside is notified over their own WebSocket (see rooms.Knock). Rate
+// limited the same way a password guess is -- it's the same kind of
+// "someone hammering a room they don't have the credentials for".
+func (s *Server) handleKnock(w http.ResponseWriter, r *http.Request) {
+	ip := clientIP(r)
+	if !s.limiter.allow(ip) {
+		writeError(w, http.StatusTooManyRequests, "muitas tentativas, espere um pouco")
+		return
+	}
+
+	var req knockCreateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+
+	room, err := s.registry.Get(strings.ToLower(r.PathValue("id")))
+	if err != nil {
+		writeError(w, http.StatusNotFound, rooms.ErrNotFound.Error())
+		return
+	}
+
+	k, err := room.Knock(sanitizeName(req.Name))
+	if err != nil {
+		if errors.Is(err, rooms.ErrTooManyKnocks) {
+			writeError(w, http.StatusTooManyRequests, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "não foi possível pedir para entrar")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"requestId": k.ID})
+}
+
+// handleKnockStatus is polled by whoever is waiting in the lobby --
+// deliberately not a held-open connection, so an absent or slow room
+// never blocks their tab (see this app's concurrency note in
+// Room.tsx's knock lobby). The admit token only comes back once the
+// request is actually approved.
+func (s *Server) handleKnockStatus(w http.ResponseWriter, r *http.Request) {
+	room, err := s.registry.Get(strings.ToLower(r.PathValue("id")))
+	if err != nil {
+		writeError(w, http.StatusNotFound, rooms.ErrNotFound.Error())
+		return
+	}
+
+	k, ok := room.KnockLookup(r.PathValue("requestId"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "pedido não encontrado ou expirado")
+		return
+	}
+
+	resp := map[string]any{"status": k.Status}
+	if k.Status == rooms.KnockApproved {
+		resp["admitToken"] = k.AdmitToken
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func decodeJSON(r *http.Request, dst any) error {

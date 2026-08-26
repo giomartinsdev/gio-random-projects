@@ -388,6 +388,116 @@ func TestListRoomsShowsOnlyOccupiedRooms(t *testing.T) {
 	}
 }
 
+// The whole point of a knock: someone with just the room code, and no
+// password, gets in anyway once a member already inside approves.
+func TestKnockApprovalAdmitsWithoutAPassword(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	member, _ := join(t, srv, roomID)
+
+	res, err := srv.Client().Post(srv.URL+"/api/rooms/"+roomID+"/knock", "application/json",
+		strings.NewReader(`{"name":"Visitante"}`))
+	if err != nil {
+		t.Fatalf("knock: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", res.StatusCode)
+	}
+	var created struct {
+		RequestID string `json:"requestId"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&created); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	// The member already inside sees the request over their own socket.
+	notice := readUntil(t, member, "knock:request")
+	if notice["requestId"] != created.RequestID || notice["name"] != "Visitante" {
+		t.Fatalf("expected a knock:request for %s, got %v", created.RequestID, notice)
+	}
+
+	write(t, member, map[string]any{"type": "knock:approve", "requestId": created.RequestID})
+	readUntil(t, member, "knock:resolved")
+
+	statusRes, err := srv.Client().Get(srv.URL + "/api/rooms/" + roomID + "/knock/" + created.RequestID)
+	if err != nil {
+		t.Fatalf("knock status: %v", err)
+	}
+	defer statusRes.Body.Close()
+	var status struct {
+		Status     string `json:"status"`
+		AdmitToken string `json:"admitToken"`
+	}
+	if err := json.NewDecoder(statusRes.Body).Decode(&status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.Status != "approved" || status.AdmitToken == "" {
+		t.Fatalf("expected an approved status with an admit token, got %+v", status)
+	}
+
+	// No password at all -- the admit token alone is enough.
+	admitted, _, err := dial(t, srv, "room="+roomID+"&admitToken="+status.AdmitToken)
+	if err != nil {
+		t.Fatalf("dial with admit token: %v", err)
+	}
+	t.Cleanup(func() { _ = admitted.Close(websocket.StatusNormalClosure, "") })
+	welcome := read(t, admitted)
+	if welcome["name"] != "Visitante" {
+		t.Fatalf("expected the name given at knock time, got %v", welcome["name"])
+	}
+
+	// And the request is gone from the other member's view too.
+	if got := readUntil(t, member, "peer:join"); got["peerId"] != welcome["peerId"] {
+		t.Fatalf("expected the admitted visitor to be announced, got %v", got)
+	}
+}
+
+// A denied request must not leave any way in -- no admit token is
+// ever handed out.
+func TestKnockDenialGivesNoWayIn(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+	member, _ := join(t, srv, roomID)
+
+	res, err := srv.Client().Post(srv.URL+"/api/rooms/"+roomID+"/knock", "application/json",
+		strings.NewReader(`{"name":"Estranho"}`))
+	if err != nil {
+		t.Fatalf("knock: %v", err)
+	}
+	defer res.Body.Close()
+	var created struct {
+		RequestID string `json:"requestId"`
+	}
+	json.NewDecoder(res.Body).Decode(&created)
+
+	readUntil(t, member, "knock:request")
+	write(t, member, map[string]any{"type": "knock:deny", "requestId": created.RequestID})
+	readUntil(t, member, "knock:resolved")
+
+	statusRes, err := srv.Client().Get(srv.URL + "/api/rooms/" + roomID + "/knock/" + created.RequestID)
+	if err != nil {
+		t.Fatalf("knock status: %v", err)
+	}
+	defer statusRes.Body.Close()
+	var status struct {
+		Status     string `json:"status"`
+		AdmitToken string `json:"admitToken"`
+	}
+	json.NewDecoder(statusRes.Body).Decode(&status)
+	if status.Status != "denied" {
+		t.Fatalf("expected denied, got %q", status.Status)
+	}
+	if status.AdmitToken != "" {
+		t.Fatal("a denied request must never carry an admit token")
+	}
+
+	if _, _, err := dial(t, srv, "room="+roomID+"&admitToken="); err == nil {
+		t.Fatal("expected the upgrade to be refused with no password and no admit token")
+	}
+}
+
 // readUntil skips past whatever else is in flight (ICE trickling, other
 // people's events) to the message the test is actually waiting for.
 func readUntil(t *testing.T, conn *websocket.Conn, want string) map[string]any {

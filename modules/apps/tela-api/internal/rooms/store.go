@@ -60,6 +60,7 @@ func (r *Registry) Load() error {
 			hash:      p.Hash,
 			resumeKey: p.ResumeKey,
 			peers:     make(map[string]*Peer),
+			knocks:    make(map[string]*Knock),
 			emptyAt:   now,
 			lastSeen:  now,
 		}

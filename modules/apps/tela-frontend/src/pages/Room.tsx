@@ -1,8 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { Check, Copy, Crop, Link2, Loader2, Mic, MicOff, MonitorUp, Play, ScreenShareOff, Users, Video, Volume2, VolumeX, X } from "lucide-react";
+import {
+  Bell,
+  Check,
+  Copy,
+  Crop,
+  DoorOpen,
+  Link2,
+  Loader2,
+  Mic,
+  MicOff,
+  MonitorUp,
+  Play,
+  ScreenShareOff,
+  Users,
+  Video,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 import { api } from "@/lib/api";
-import { canShareCamera, canShareScreen, useRoom } from "@/lib/useRoom";
+import { canShareCamera, canShareScreen, useRoom, type Credential } from "@/lib/useRoom";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,18 +56,18 @@ export default function Room() {
   // 1. Navigation state (joining / creating from home)
   // 2. Query param ?pwd=... / ?password=... / ?p=... (direct link shared with password)
   // 3. Hash #pwd=... / #password=... / #p=...
-  const [password, setPassword] = useState<string | null>(() => {
+  const [credential, setCredential] = useState<Credential | null>(() => {
     const statePassword = (location.state as { password?: string } | null)?.password;
-    if (statePassword) return statePassword;
+    if (statePassword) return { password: statePassword };
 
     const searchParams = new URLSearchParams(location.search);
     const queryPwd = searchParams.get("pwd") || searchParams.get("password") || searchParams.get("p");
-    if (queryPwd) return queryPwd;
+    if (queryPwd) return { password: queryPwd };
 
     if (location.hash) {
       const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
       const hashPwd = hashParams.get("pwd") || hashParams.get("password") || hashParams.get("p");
-      if (hashPwd) return hashPwd;
+      if (hashPwd) return { password: hashPwd };
     }
 
     return null;
@@ -57,51 +75,82 @@ export default function Room() {
 
   // Set once, from whatever the home page's forms collected -- someone
   // arriving via a bare link (no navigation state) never had the
-  // chance to type one, and PasswordPrompt below is where they get it
+  // chance to type one, and EntryGate below is where they get it
   // instead.
   const [name, setName] = useState<string>(() => (location.state as { name?: string } | null)?.name ?? "");
 
-  if (!password) {
+  if (!credential) {
     return (
-      <PasswordPrompt
+      <EntryGate
         roomId={roomId}
         name={name}
-        onUnlocked={(p, n) => {
+        onUnlocked={(c, n) => {
           setName(n);
-          setPassword(p);
+          setCredential(c);
         }}
       />
     );
   }
-  return <LiveRoom roomId={roomId} password={password} name={name} onResetPassword={() => setPassword(null)} />;
+  return <LiveRoom roomId={roomId} credential={credential} name={name} onResetPassword={() => setCredential(null)} />;
 }
 
-function PasswordPrompt({
+// Two ways in, picked with a tab-like toggle: the password (instant),
+// or "pedir para entrar" -- a knock that notifies everyone already in
+// the room and waits for one of them to answer. See KnockLobby for the
+// waiting side of that.
+function EntryGate({
   roomId,
   name: initialName,
   onUnlocked,
 }: {
   roomId: string;
   name: string;
-  onUnlocked: (password: string, name: string) => void;
+  onUnlocked: (credential: Credential, name: string) => void;
 }) {
+  const [mode, setMode] = useState<"password" | "knock">("password");
   const [password, setPassword] = useState("");
   const [name, setName] = useState(initialName);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const [knockRequestId, setKnockRequestId] = useState<string | null>(null);
 
-  async function submit(e: React.FormEvent) {
+  async function submitPassword(e: React.FormEvent) {
     e.preventDefault();
     if (checking) return;
     setChecking(true);
     setError(null);
     try {
       await api.checkPassword(roomId, password);
-      onUnlocked(password, name.trim());
+      onUnlocked({ password }, name.trim());
     } catch (err) {
       setError(err instanceof Error ? err.message : "não foi possível entrar");
       setChecking(false);
     }
+  }
+
+  async function requestToJoin() {
+    setError(null);
+    setChecking(true);
+    try {
+      const { requestId } = await api.knock(roomId, name.trim());
+      setKnockRequestId(requestId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "não foi possível pedir para entrar");
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  if (knockRequestId) {
+    return (
+      <KnockLobby
+        roomId={roomId}
+        requestId={knockRequestId}
+        name={name.trim()}
+        onApproved={(admitToken) => onUnlocked({ admitToken }, name.trim())}
+        onCancel={() => setKnockRequestId(null)}
+      />
+    );
   }
 
   return (
@@ -109,42 +158,148 @@ function PasswordPrompt({
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-xl">Sala {roomId}</CardTitle>
-          <CardDescription>Digite a senha para entrar.</CardDescription>
+          <CardDescription>
+            {mode === "password" ? "Digite a senha para entrar." : "Peça para alguém já na sala te deixar entrar."}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={submit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="display-name">Seu nome (opcional)</Label>
-              <Input
-                id="display-name"
-                placeholder="deixe em branco para um nome aleatório"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                maxLength={30}
-              />
+          <div className="space-y-2">
+            <Label htmlFor="display-name">Seu nome (opcional)</Label>
+            <Input
+              id="display-name"
+              placeholder="deixe em branco para um nome aleatório"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={30}
+            />
+          </div>
+
+          {mode === "password" ? (
+            <form onSubmit={submitPassword} className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="password">Senha</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  autoFocus
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={checking}>
+                {checking && <Loader2 className="animate-spin" />}
+                Entrar
+              </Button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("knock");
+                  setError(null);
+                }}
+                className="w-full text-center text-xs text-muted-foreground underline-offset-4 hover:underline"
+              >
+                Não sei a senha -- pedir para entrar
+              </button>
+            </form>
+          ) : (
+            <div className="mt-4 space-y-4">
+              <Button type="button" className="w-full" onClick={requestToJoin} disabled={checking}>
+                {checking ? <Loader2 className="animate-spin" /> : <DoorOpen />}
+                Pedir para entrar
+              </Button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("password");
+                  setError(null);
+                }}
+                className="w-full text-center text-xs text-muted-foreground underline-offset-4 hover:underline"
+              >
+                Tenho a senha
+              </button>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                autoFocus
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={checking}>
-              {checking && <Loader2 className="animate-spin" />}
-              Entrar
-            </Button>
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-          </form>
+          )}
+
+          {error && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// The waiting side of a knock -- polled rather than a held-open
+// request, so a slow or unattended room never freezes this tab. See
+// tela-api's knock.go for why this is safe to poll: the request itself
+// is cheap, stateless-per-call, and rate limited the same way a
+// password guess would be.
+const KNOCK_POLL_MS = 1_500;
+
+function KnockLobby({
+  roomId,
+  requestId,
+  name,
+  onApproved,
+  onCancel,
+}: {
+  roomId: string;
+  requestId: string;
+  name: string;
+  onApproved: (admitToken: string) => void;
+  onCancel: () => void;
+}) {
+  const [denied, setDenied] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const status = await api.knockStatus(roomId, requestId);
+        if (cancelled) return;
+        if (status.status === "approved" && status.admitToken) {
+          onApproved(status.admitToken);
+        } else if (status.status === "denied") {
+          setDenied(true);
+        }
+      } catch {
+        // A 404 here means the request expired -- treated the same as
+        // a denial rather than surfacing a network error for it.
+        if (!cancelled) setDenied(true);
+      }
+    };
+    poll();
+    const interval = setInterval(poll, KNOCK_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [roomId, requestId, onApproved]);
+
+  return (
+    <div className="flex min-h-dvh items-center justify-center px-4 py-10">
+      <Card className="w-full max-w-sm text-center">
+        <CardHeader>
+          <CardTitle className="text-xl">Sala {roomId}</CardTitle>
+          <CardDescription>
+            {denied
+              ? "Ninguém te deixou entrar dessa vez."
+              : `Esperando alguém aprovar${name ? `, ${name}` : ""}…`}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {denied ? (
+            <DoorOpen className="mx-auto size-10 text-muted-foreground" />
+          ) : (
+            <Loader2 className="mx-auto size-10 animate-spin text-muted-foreground" />
+          )}
+          <Button variant="outline" className="w-full" onClick={onCancel}>
+            {denied ? "Voltar" : "Cancelar"}
+          </Button>
         </CardContent>
       </Card>
     </div>
@@ -162,16 +317,20 @@ function hasAudio(stream: MediaStream | null): boolean {
 
 function LiveRoom({
   roomId,
-  password,
+  credential,
   name,
   onResetPassword,
 }: {
   roomId: string;
-  password: string;
+  credential: Credential;
   name?: string;
   onResetPassword?: () => void;
 }) {
-  const room = useRoom(roomId, password, name);
+  const room = useRoom(roomId, credential, name);
+  // Only someone who actually typed the password has one to share --
+  // someone let in through a knock never learns it, so there's nothing
+  // for CopyLinkWithPassword to put in the link.
+  const password = "password" in credential ? credential.password : undefined;
   const [selected, setSelected] = useState<string | null>(null);
   // Which people I've muted, decided per stream and only on my side --
   // muting someone here doesn't stop them sending audio to anyone else.
@@ -248,7 +407,7 @@ function LiveRoom({
           tela
         </Link>
         <CopyableCode code={roomId} />
-        <CopyLinkWithPassword roomId={roomId} password={password} />
+        {password && <CopyLinkWithPassword roomId={roomId} password={password} />}
         <PeopleList count={peopleCount} participants={participants} />
         {room.status !== "connected" && (
           <span className="text-sm text-muted-foreground">
@@ -315,18 +474,41 @@ function LiveRoom({
       </header>
 
       <main className="relative flex flex-1 bg-black">
-        {room.status === "error" && (
-          <div className="absolute inset-x-4 top-4 z-10 mx-auto max-w-md">
-            <Alert variant="destructive">
-              <AlertDescription className="flex items-center justify-between gap-3 text-xs">
-                <span>Falha ao conectar na sala (senha incorreta ou sala fechada).</span>
-                {onResetPassword && (
-                  <Button size="sm" variant="outline" onClick={onResetPassword} className="h-7 shrink-0 text-xs">
-                    Digitar senha
-                  </Button>
-                )}
-              </AlertDescription>
-            </Alert>
+        {(room.status === "error" || room.knockRequests.length > 0) && (
+          <div className="absolute inset-x-4 top-4 z-10 mx-auto flex max-w-md flex-col gap-2">
+            {room.status === "error" && (
+              <Alert variant="destructive">
+                <AlertDescription className="flex items-center justify-between gap-3 text-xs">
+                  <span>Falha ao conectar na sala (senha incorreta ou sala fechada).</span>
+                  {onResetPassword && (
+                    <Button size="sm" variant="outline" onClick={onResetPassword} className="h-7 shrink-0 text-xs">
+                      Digitar senha
+                    </Button>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {room.knockRequests.map((req) => (
+              <Alert key={req.requestId} className="bg-card">
+                <AlertDescription className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2">
+                    <Bell className="size-4 shrink-0 text-muted-foreground" />
+                    <strong>{req.name}</strong> quer entrar na sala
+                  </span>
+                  <span className="flex shrink-0 gap-2">
+                    <Button size="sm" variant="outline" onClick={() => room.denyKnock(req.requestId)}>
+                      <X className="size-4" />
+                      Recusar
+                    </Button>
+                    <Button size="sm" onClick={() => room.approveKnock(req.requestId)}>
+                      <Check className="size-4" />
+                      Aprovar
+                    </Button>
+                  </span>
+                </AlertDescription>
+              </Alert>
+            ))}
           </div>
         )}
 
@@ -643,7 +825,7 @@ function MuteButton({
   );
 }
 
-function Empty({ roomId, password }: { roomId: string; password: string }) {
+function Empty({ roomId, password }: { roomId: string; password?: string }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-muted-foreground">
       <p>Ninguém está compartilhando ainda.</p>
@@ -655,12 +837,20 @@ function Empty({ roomId, password }: { roomId: string; password: string }) {
           isso, abra esta sala num computador.
         </p>
       )}
-      <p className="mt-4 text-sm">
-        Passe o código <Code>{roomId}</Code> e a senha para quem for entrar, ou envie o link direto:
-      </p>
-      <div className="mt-3">
-        <CopyLinkWithPassword roomId={roomId} password={password} variant="outline" />
-      </div>
+      {password ? (
+        <>
+          <p className="mt-4 text-sm">
+            Passe o código <Code>{roomId}</Code> e a senha para quem for entrar, ou envie o link direto:
+          </p>
+          <div className="mt-3">
+            <CopyLinkWithPassword roomId={roomId} password={password} variant="outline" />
+          </div>
+        </>
+      ) : (
+        <p className="mt-4 text-sm">
+          Quem não tiver a senha pode pedir para entrar direto pelo código <Code>{roomId}</Code>.
+        </p>
+      )}
     </div>
   );
 }

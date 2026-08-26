@@ -20,9 +20,10 @@ import (
 )
 
 var (
-	ErrNotFound     = errors.New("sala não encontrada")
-	ErrWrongSecret  = errors.New("senha incorreta")
-	ErrTooManyRooms = errors.New("limite de salas atingido, tente de novo em alguns minutos")
+	ErrNotFound      = errors.New("sala não encontrada")
+	ErrWrongSecret   = errors.New("senha incorreta")
+	ErrTooManyRooms  = errors.New("limite de salas atingido, tente de novo em alguns minutos")
+	ErrTooManyKnocks = errors.New("muita gente pedindo para entrar, tente de novo em alguns minutos")
 )
 
 const (
@@ -67,6 +68,10 @@ type Room struct {
 	nextLabel int
 	emptyAt   time.Time // zero while anyone is connected
 	lastSeen  time.Time
+	// Requests to enter without the password -- see knock.go. Never
+	// persisted: like connected peers, these are meaningless across a
+	// restart (nobody is still waiting on the other end).
+	knocks map[string]*Knock
 }
 
 type Registry struct {
@@ -129,6 +134,7 @@ func (r *Registry) Create(password string) (*Room, error) {
 		hash:      hash,
 		resumeKey: resumeKey,
 		peers:     make(map[string]*Peer),
+		knocks:    make(map[string]*Knock),
 		emptyAt:   now,
 		lastSeen:  now,
 	}
@@ -161,6 +167,7 @@ func (r *Registry) Sweep() {
 		empty := len(room.peers) == 0
 		expired := (empty && !room.emptyAt.IsZero() && now.Sub(room.emptyAt) > emptyRoomGrace) ||
 			now.Sub(room.CreatedAt) > maxRoomAge
+		room.sweepKnocksLocked()
 		room.mu.Unlock()
 		if expired {
 			delete(r.rooms, id)

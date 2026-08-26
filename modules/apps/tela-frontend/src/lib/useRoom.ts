@@ -62,6 +62,12 @@ export type Status = "connecting" | "connected" | "reconnecting" | "error" | "cl
 export type Source = "screen" | "camera";
 
 export type Peer = { peerId: string; name: string; publishing: boolean };
+export type KnockRequest = { requestId: string; name: string };
+
+// Either credential admits on its own -- a password proves you were
+// given one, an admit token proves someone already inside approved a
+// knock instead. Never both at once: see useRoom's connect().
+export type Credential = { password: string } | { admitToken: string };
 
 // Mobile browsers -- iOS Safari and Chrome on Android alike -- don't
 // implement getDisplayMedia: capturing a phone's screen from a web page
@@ -89,11 +95,21 @@ export const canShareCamera =
 // displayName is only ever sent on a brand-new join (see connect()
 // below) -- once the server has assigned an identity, a reconnect
 // always resumes with the name it already gave out, chosen or not.
-export function useRoom(roomId: string, password: string, displayName?: string) {
+export function useRoom(roomId: string, credential: Credential, displayName?: string) {
+  // Pulled out as primitives rather than depending on `credential`
+  // itself below -- a caller passing a fresh object literal every
+  // render (the common case) would otherwise reconnect the WebSocket
+  // on every render instead of only when the actual value changes.
+  const credentialPassword = "password" in credential ? credential.password : undefined;
+  const credentialAdmitToken = "admitToken" in credential ? credential.admitToken : undefined;
+
   const [status, setStatus] = useState<Status>("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [you, setYou] = useState<{ peerId: string; name: string } | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
+  // Requests to enter without the password -- broadcast to everyone
+  // currently in the room, answered by whoever gets there first.
+  const [knockRequests, setKnockRequests] = useState<KnockRequest[]>([]);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [source, setSource] = useState<Source | null>(null);
@@ -238,12 +254,16 @@ export function useRoom(roomId: string, password: string, displayName?: string) 
       if (disposed) return;
 
       // Reclaims the identity the server issued, so a reconnect slots
-      // back into the room rather than arriving as a stranger.
+      // back into the room rather than arriving as a stranger. The
+      // credential itself is sent on every attempt, resume included --
+      // the server checks it unconditionally (see the Go side's
+      // handleWS), resume only ever affects which identity you get,
+      // never whether you get in at all.
       const saved = readIdentity(roomId);
       const ws = new WebSocket(
         wsUrl({
           room: roomId,
-          password,
+          ...(credentialPassword ? { password: credentialPassword } : { admitToken: credentialAdmitToken ?? "" }),
           ...(saved
             ? { peerId: saved.peerId, name: saved.name, resume: saved.resume }
             : displayName
@@ -287,6 +307,12 @@ export function useRoom(roomId: string, password: string, displayName?: string) 
 
             const list = (msg.peers as Peer[]) ?? [];
             setPeers(list);
+            setKnockRequests(
+              (msg.pendingKnocks as { id: string; name: string }[] | undefined)?.map((k) => ({
+                requestId: k.id,
+                name: k.name,
+              })) ?? [],
+            );
 
             const present = new Set(list.map((p) => p.peerId));
             for (const id of [...pendingLeaveRef.current.keys()]) {
@@ -395,6 +421,21 @@ export function useRoom(roomId: string, password: string, displayName?: string) 
             }
             break;
           }
+
+          case "knock:request": {
+            const req: KnockRequest = { requestId: msg.requestId as string, name: msg.name as string };
+            setKnockRequests((current) => [...current.filter((k) => k.requestId !== req.requestId), req]);
+            break;
+          }
+
+          // Resolved by anyone, including someone other than whoever's
+          // looking at this tab -- the banner has to disappear here too,
+          // not just for whoever clicked.
+          case "knock:resolved": {
+            const requestId = msg.requestId as string;
+            setKnockRequests((current) => current.filter((k) => k.requestId !== requestId));
+            break;
+          }
         }
       };
     };
@@ -415,7 +456,10 @@ export function useRoom(roomId: string, password: string, displayName?: string) 
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     };
-  }, [roomId, password, displayName, cancelPendingLeave, dropRemote, send, startSharing]);
+  }, [roomId, credentialPassword, credentialAdmitToken, displayName, cancelPendingLeave, dropRemote, send, startSharing]);
+
+  const approveKnock = useCallback((requestId: string) => send({ type: "knock:approve", requestId }), [send]);
+  const denyKnock = useCallback((requestId: string) => send({ type: "knock:deny", requestId }), [send]);
 
   return {
     status,
@@ -431,5 +475,8 @@ export function useRoom(roomId: string, password: string, displayName?: string) 
     hasAudioTrack: (localStream?.getAudioTracks().length ?? 0) > 0,
     startSharing,
     stopSharing,
+    knockRequests,
+    approveKnock,
+    denyKnock,
   };
 }

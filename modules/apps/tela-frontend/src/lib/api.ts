@@ -7,6 +7,7 @@ const API_URL = import.meta.env.VITE_TELA_API_URL ?? "";
 export type CreatedRoom = { roomId: string };
 export type RoomStatus = { roomId: string; people: number; publishing: number };
 export type RoomSummary = { roomId: string; people: number; publishing: number; createdAt: string };
+export type KnockStatus = { status: "pending" | "approved" | "denied"; admitToken?: string };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
@@ -36,6 +37,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ password }),
     }),
+
+  // Asks to enter without the password -- everyone already in the room
+  // gets notified over their own WebSocket (see useRoom's
+  // knockRequests) and can approve or deny it from there.
+  knock: (roomId: string, name: string) =>
+    request<{ requestId: string }>(`/api/rooms/${encodeURIComponent(roomId)}/knock`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+
+  // Polled rather than held open -- a slow or unattended room must
+  // never freeze the requester's own tab. See KnockLobby in Room.tsx.
+  knockStatus: (roomId: string, requestId: string) =>
+    request<KnockStatus>(`/api/rooms/${encodeURIComponent(roomId)}/knock/${encodeURIComponent(requestId)}`),
 };
 
 export function wsUrl(params: Record<string, string>): string {

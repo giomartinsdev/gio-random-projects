@@ -26,6 +26,7 @@ type clientMessage struct {
 	Type      string                     `json:"type"`
 	SDP       *webrtc.SessionDescription `json:"sdp,omitempty"`
 	Candidate *webrtc.ICECandidateInit   `json:"candidate,omitempty"`
+	RequestID string                     `json:"requestId,omitempty"`
 }
 
 // The WebSocket carries signalling only; the media itself rides the
@@ -52,13 +53,16 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Authorised BEFORE the upgrade, so a failed attempt is a plain HTTP
-	// status the browser can actually read.
+	// status the browser can actually read. Two independent ways in:
+	// the password, or an admit token from an approved knock (see
+	// rooms/knock.go) -- either is sufficient, neither is required.
 	ip := clientIP(r)
 	if !s.limiter.allow(ip) {
 		http.Error(w, "muitas tentativas", http.StatusTooManyRequests)
 		return
 	}
-	if !room.CheckPassword(q.Get("password")) {
+	knockName, admitted := room.CheckAdmitToken(q.Get("admitToken"))
+	if !admitted && !room.CheckPassword(q.Get("password")) {
 		s.limiter.fail(ip)
 		http.Error(w, rooms.ErrWrongSecret.Error(), http.StatusUnauthorized)
 		return
@@ -105,10 +109,15 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		// param doubles as both "the name a resume token was signed
 		// with" above and "the name this new person typed" here) --
 		// honour it if given, otherwise hand out a small random word
-		// instead of leaving the tile unlabeled.
-		if chosen := sanitizeName(name); chosen != "" {
-			name = chosen
-		} else {
+		// instead of leaving the tile unlabeled. Someone admitted via a
+		// knock already gave a name when they asked to enter, which
+		// takes priority over a same-request "name" query param.
+		switch {
+		case knockName != "":
+			name = knockName
+		case sanitizeName(name) != "":
+			name = sanitizeName(name)
+		default:
 			name, err = room.RandomName()
 			if err != nil {
 				_ = conn.Close(websocket.StatusInternalError, "erro interno")
@@ -139,6 +148,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		"peers":  existing,
 		// Kept by the client and presented on reconnect (see above).
 		"resume": room.ResumeToken(peerID, peer.Name),
+		// Requests broadcast before this connection existed would
+		// otherwise never reach it -- someone joining mid-wait still
+		// needs to see (and be able to answer) a knock already in
+		// flight.
+		"pendingKnocks": room.PendingKnocks(),
 	})
 
 	// Subscribing from the moment they join means whatever is already
@@ -239,6 +253,15 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 
 		case "ping":
 			w.peer.Send(map[string]any{"type": "pong"})
+
+		// Anyone currently in the room may answer a knock -- there's no
+		// host, so this is deliberately not restricted to whoever
+		// happens to click first.
+		case "knock:approve":
+			w.room.ResolveKnock(msg.RequestID, true)
+
+		case "knock:deny":
+			w.room.ResolveKnock(msg.RequestID, false)
 		}
 	}
 }
