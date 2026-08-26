@@ -32,6 +32,7 @@ resource "docker_container" "classroom_api" {
   ]
 
   ports {
+    ip       = "127.0.0.1"
     internal = 8000
     external = var.external_port
   }

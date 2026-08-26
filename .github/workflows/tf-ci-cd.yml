@@ -73,6 +73,23 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          echo "TF_VAR_docker_host=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
+
+      # var.server_ip drives every DNS A record (dns.tf) and tela's SFU
+      # advertisement -- asking the VPS itself for its own public IP
+      # means giomartins.dev's records stay correct even if the VPS's
+      # address ever changes, with nothing to update by hand.
+      - name: Discover the VPS's public IP
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          SERVER_IP=$(ssh "ubuntu@$VPS_HOST" 'curl -4 -fsS --max-time 5 https://ifconfig.me || curl -4 -fsS --max-time 5 https://api.ipify.org')
+          if [ -z "$SERVER_IP" ]; then
+            echo "::error::could not determine the VPS's public IP"
+            exit 1
+          fi
+          echo "Discovered server_ip=$SERVER_IP"
+          echo "TF_VAR_server_ip=$SERVER_IP" >> "$GITHUB_ENV"
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -123,7 +140,7 @@ jobs:
       - name: Back up bootstrap secrets to Vaultwarden
         if: github.event_name == 'workflow_dispatch'
         env:
-          DOCKER_HOST: ssh://ubuntu@168.138.135.6
+          DOCKER_HOST: ${{ env.TF_VAR_docker_host }}
           NETWORK_NAME: apps
           VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
           VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}

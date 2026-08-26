@@ -12,7 +12,7 @@ hostname/port pair gets declared — everything else derives from it:
   one A record per hostname (grey-cloud → the VPS IP until the proxy
   flip), Access applications/policies/service tokens for everything not
   in `excluded_hostnames`, and registry.giomartins.dev's mTLS chain +
-  WAF enforcement rule.
+  WAF enforcement rule (dormant until Phase 2 — see below).
 - **[`modules/network/docker_apps`](modules/network/docker_apps/README.md)**
   — the shared `apps` docker network every container joins.
 - **[`modules/storage/*`](modules/storage/postgres/README.md)** —
@@ -24,15 +24,26 @@ hostname/port pair gets declared — everything else derives from it:
   `locals.tf` straight on the host.
 - **[`modules/compute/services/*`](modules/compute/services/registry/README.md)**
   — registry (+watchtower), beszel monitoring, 9router, vaultwarden
-  (+bridge), adminer.
+  (+bridge), adminer, and [`ingress`](modules/compute/services/ingress/README.md)
+  — the single nginx front door everything else routes through.
 
 ## Where the traffic goes
 
 Phase 1 (current): every DNS record is a **grey-cloud A record → the
-VPS IP**, so each service is reached directly as
-`http://<hostname>:<port>` or `http://<server_ip>:<port>` — nothing
-sits in front of anything. The docker provider connects to dockerd over
-plain SSH (`ssh://`), so there is no exposed Docker API endpoint at all.
+VPS IP**. `modules/compute/services/ingress` is the only thing with a
+port open on every interface (besides SSH and the registry's own
+`:5000` — see that module's README) — a single `nginx` on the host
+network listening on `:80`, routing by `Host` header to
+`127.0.0.1:<port>` for every entry in `locals.tf`'s `services` list.
+Every app/service container's own published port is bound to
+`127.0.0.1` only, so `http://<hostname>/` (no port needed) is the only
+way to reach any of them from outside the box. The docker provider
+itself connects to dockerd over plain SSH (`ssh://`), so there's no
+exposed Docker API endpoint either.
+`var.server_ip` has no default — every CI run discovers it fresh by
+SSHing into the VPS and asking an external IP-echo service, so the DNS
+records stay correct even if the VPS's address ever changes (see each
+workflow's "Discover the VPS's public IP" step).
 
 Phase 2 (later): flip `proxied = true` on
 `modules/cloud/cloudflare/dns.tf`'s record resource in one apply. The
@@ -91,14 +102,10 @@ local-state, by-hand) bootstrap run.
    rules). The private key becomes the `VPS_SSH_PRIVATE_KEY` repo
    secret; the IP/host becomes `VPS_HOST`.
 
-8. **`/etc/docker/certs.d/registry.giomartins.dev/` must already exist
-   on the VPS** — `sudo mkdir -p /etc/docker/certs.d/registry.giomartins.dev`,
-   by hand, once. Docker bind mounts don't create their host-side
-   source path themselves; without this,
-   `compute/services/registry`'s `registry_client_cert_install`
-   resource fails outright instead of writing the mTLS client cert
-   there. (Same for `/root/.docker`: created automatically on any
-   modern distro, but verify if `docker_config_install` complains.)
+8. **`/root/.docker` must exist on the VPS** — created automatically on
+   any modern distro, but verify if `docker_config_install` complains;
+   Docker bind mounts don't create their host-side source path
+   themselves.
 
 ## GitHub repo secrets
 
@@ -113,14 +120,13 @@ local-state, by-hand) bootstrap run.
 | `TF_STATE_R2_ENDPOINT` | endpoint URL from step 2 |
 | `TF_STATE_R2_ACCESS_KEY_ID` | from step 2 |
 | `TF_STATE_R2_SECRET_ACCESS_KEY` | from step 2 |
-| `TF_REGISTRY_PASSWORD` | registry basic-auth password — must match `REGISTRY_PASSWORD` (used by the deploy workflows' push step) and the host's `docker login registry.giomartins.dev` watchtower relies on — see `modules/compute/services/registry`'s README |
+| `TF_REGISTRY_PASSWORD` | registry basic-auth password — must match `REGISTRY_PASSWORD` (used by the deploy workflows' push step) and the host's `docker login registry.giomartins.dev:5000` watchtower relies on — see `modules/compute/services/registry`'s README |
 | `TF_BESZEL_AGENT_KEY` | the Beszel hub's SSH public key — blank is fine until the hub's first boot; see `modules/compute/services/monitoring`'s README for how to get it |
 | `TF_VAULTWARDEN_ACCOUNT_EMAIL` | email of your real Vaultwarden account (create it first, through the UI) — blank is fine until then; see `modules/compute/services/vaultwarden_bridge`'s README |
 | `TF_VAULTWARDEN_ACCOUNT_PASSWORD` | that account's master password |
 | `TF_VAULTWARDEN_API_CLIENT_ID` | API key `client_id` from the vault UI → Account Settings → Security → Keys |
 | `TF_VAULTWARDEN_API_CLIENT_SECRET` | matching `client_secret` |
 | `REGISTRY_USERNAME` / `REGISTRY_PASSWORD` | used by the build workflows' `docker login`/push step |
-| `REGISTRY_CLIENT_CERT` / `REGISTRY_CLIENT_KEY` | mTLS client cert for pushes through Cloudflare — outputs of the first apply |
 
 Everything else the containers need (postgres password, API keys,
 Better Auth secrets, vaultwarden admin token, 9router credentials, …)
@@ -141,6 +147,8 @@ cat > terraform.tfvars <<EOF
 cloudflare_account_id           = "<from step 3>"
 cloudflare_zone_id              = "<from step 4>"
 google_idp_identity_provider_id = "<from step 5>"
+server_ip                       = "<the VPS's current public IP>"
+docker_host                     = "ssh://ubuntu@<the VPS's public IP>"
 EOF
 
 export CLOUDFLARE_API_TOKEN=<token from step 6>

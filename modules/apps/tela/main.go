@@ -68,8 +68,13 @@ func main() {
 	registry.StartJanitor(stopJanitor)
 	defer close(stopJanitor)
 
+	// Host networking (see the container's own docs) means this binds
+	// straight onto the VPS's interfaces -- BIND_HOST lets the ingress
+	// deployment keep it off everything but loopback, since nginx is
+	// the only thing meant to reach it directly. Empty (bare metal /
+	// dev) falls back to every interface, same as before this existed.
 	server := &http.Server{
-		Addr:    ":" + port,
+		Addr:    os.Getenv("BIND_HOST") + ":" + port,
 		Handler: httpapi.New(registry, webDir, media).Handler(),
 		// No WriteTimeout: a WebSocket connection is meant to stay open
 		// for as long as the screen share lasts, and WriteTimeout would

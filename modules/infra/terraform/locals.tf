@@ -6,11 +6,14 @@
 # in front (proxied = true), an Access application too unless listed in
 # excluded_hostnames.
 #
-# Phase 1 of the migration: everything is reachable directly as
-# http://<server_ip>:<port> (the records are grey-cloud, so each
-# hostname resolves to the machine itself and the port column says
-# where to connect). Phase 2 flips proxied = true and the edge layers
-# re-arm with zero further config.
+# Phase 1 of the migration: the records are grey-cloud, so each
+# hostname resolves straight to the machine itself, and
+# compute/services/ingress routes it from there by Host header to the
+# port column below (which stays here rather than in the ingress
+# module itself, since it's also what each app/service module
+# publishes its container port as). Phase 2 flips proxied = true and
+# the edge layers re-arm with zero further config -- ingress already
+# terminates on the same port (80) Cloudflare's proxy expects.
 locals {
   services = [
     {

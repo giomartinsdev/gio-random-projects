@@ -76,7 +76,7 @@ provider "docker" {
   # same channel a human `docker` CLI would use, no exposed TCP port,
   # no Access service token, no header-injecting proxy anywhere in the
   # path. The remote host needs the key in the caller's ssh-agent (CI:
-  # tf-deploy.yml's SSH setup step; locally: your own agent).
+  # tf-ci-cd.yml's SSH setup step; locally: your own agent).
   #
   # A pull triggered over the Docker API (as this provider does, unlike
   # the docker CLI) carries its own auth per-request — dockerd does NOT

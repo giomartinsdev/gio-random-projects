@@ -157,10 +157,37 @@ module "compute_services_registry" {
     docker = docker
   }
 
-  registry_user            = var.registry_user
-  registry_password        = var.registry_password
-  registry_client_cert_pem = module.cloud_cloudflare.registry_client_cert_pem
-  registry_client_key_pem  = module.cloud_cloudflare.registry_client_key_pem
+  registry_user     = var.registry_user
+  registry_password = var.registry_password
+}
+
+module "compute_services_ingress" {
+  source = "./modules/compute/services/ingress"
+  providers = {
+    docker = docker
+  }
+
+  services = [for s in local.services : s if s.hostname != "registry.giomartins.dev"]
+
+  # Every app/service module's own published port has to already be
+  # loopback-only for this to actually be the sole way in -- ordering
+  # doesn't change correctness (nginx just 502s until a backend is up
+  # either way), but starting ingress last keeps a `terraform apply`'s
+  # resource ordering readable.
+  depends_on = [
+    module.compute_apps_domain_api,
+    module.compute_apps_post_api,
+    module.compute_apps_bookclub_api,
+    module.compute_apps_classroom_api,
+    module.compute_apps_tela,
+    module.compute_apps_front,
+    module.compute_services_registry,
+    module.compute_services_monitoring,
+    module.compute_services_ai_proxy,
+    module.compute_services_vaultwarden,
+    module.compute_services_adminer,
+    module.storage_minio,
+  ]
 }
 
 module "compute_services_monitoring" {

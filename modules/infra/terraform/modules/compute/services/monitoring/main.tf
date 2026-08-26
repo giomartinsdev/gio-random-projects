@@ -17,15 +17,14 @@ resource "docker_container" "beszel_hub" {
     name = var.network_name
   }
 
-  # Published straight on the host — reached directly as
-  # beszel.giomartins.dev:8090 (grey-cloud record → server_ip) or
-  # http://server_ip:8090, and later through Cloudflare once the
-  # records flip proxied. There used to be an intermediate
-  # beszel-proxy container in this path working around a
-  # Cloudflare-Tunnel HTTP/2 quirk; the tunnel is gone and the proxy
-  # with it. PocketBase (Beszel's own base) is happy with a plain
-  # HTTP/1.1 origin.
+  # Loopback-only: compute/services/ingress is the only thing that
+  # reaches this directly, proxying beszel.giomartins.dev to
+  # 127.0.0.1:8090. There used to be an intermediate beszel-proxy
+  # container in this path working around a Cloudflare-Tunnel HTTP/2
+  # quirk; the tunnel is gone and the proxy with it. PocketBase
+  # (Beszel's own base) is happy with a plain HTTP/1.1 origin.
   ports {
+    ip       = "127.0.0.1"
     internal = 8090
     external = 8090
   }

@@ -60,11 +60,13 @@ resource "docker_container" "ninerouter" {
     target = "/app/data"
   }
 
-  # Published so the dashboard/API is reachable on the host directly
-  # (grey-cloud DNS → server_ip, or the raw IP). Without this binding,
-  # nothing outside the docker network can reach it — same reason
-  # vaultwarden publishes 8222 and minio publishes 9001.
+  # Loopback-only — compute/services/ingress is what actually exposes
+  # the dashboard/API, proxying ai.giomartins.dev to 127.0.0.1:20128.
+  # Without this binding at all, nothing outside the docker network
+  # could reach it — same reason vaultwarden publishes 8222 and minio
+  # publishes 9001.
   ports {
+    ip       = "127.0.0.1"
     internal = 20128
     external = 20128
   }

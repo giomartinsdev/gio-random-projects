@@ -39,6 +39,12 @@ resource "docker_container" "tela" {
 
   env = [
     "PORT=${var.external_port}",
+    # The ingress (compute/services/ingress) is the only thing meant to
+    # reach the HTTP side directly -- it runs on the host network too
+    # and proxies by Host header to 127.0.0.1:${var.external_port}.
+    # The UDP media port below is unaffected: it has to stay reachable
+    # from the internet directly, since it's WebRTC media, not HTTP.
+    "BIND_HOST=127.0.0.1",
     "STATE_FILE=/data/rooms.json",
     # The SFU is a WebRTC endpoint, so browsers connect to it directly
     # over UDP -- plain HTTP proxies don't carry media. This is the

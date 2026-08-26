@@ -180,9 +180,10 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func clientIP(r *http.Request) string {
-	// Behind Cloudflare + cloudflared, so the direct RemoteAddr is
-	// always the tunnel. CF-Connecting-IP is set by the edge and is the
-	// only header here that isn't attacker-controlled.
+	// Behind Cloudflare and the host's own nginx ingress, so the direct
+	// RemoteAddr is always localhost. CF-Connecting-IP is set by the
+	// edge and passed through untouched -- the only header here that
+	// isn't attacker-controlled.
 	if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
 		return ip
 	}

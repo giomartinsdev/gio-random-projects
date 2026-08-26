@@ -55,18 +55,17 @@ resource "docker_container" "htpasswd_init" {
   }
 }
 
-# Writes the VPS host's own `docker login registry.giomartins.dev`
+# Writes the VPS host's own `docker login registry.giomartins.dev:5000`
 # credentials file -- watchtower's pulls (and any docker_container
-# resource here, if ever recreated) need this. Same bind-mount
-# one-shot pattern as registry_client_cert_install below. Whole-file
-# overwrite is safe here: this host has never logged into any registry
-# other than this one.
+# resource here, if ever recreated) need this. Whole-file overwrite is
+# safe here: this host has never logged into any registry other than
+# this one.
 resource "docker_container" "docker_config_install" {
   name       = "registry-docker-config-install"
   image      = "alpine:3"
   entrypoint = ["sh", "-c"]
   command = [
-    "mkdir -p /dockerconfig && printf '{\"auths\":{\"registry.giomartins.dev\":{\"auth\":\"%s\"}}}' \"$REGISTRY_AUTH_B64\" > /dockerconfig/config.json"
+    "mkdir -p /dockerconfig && printf '{\"auths\":{\"registry.giomartins.dev:5000\":{\"auth\":\"%s\"}}}' \"$REGISTRY_AUTH_B64\" > /dockerconfig/config.json"
   ]
   must_run = false
   attach   = true
@@ -130,11 +129,11 @@ resource "docker_container" "registry" {
   }
 }
 
-# The pull-based half of apps-deploy.yml's CD: polls the registry above
-# and redeploys any running container labeled
+# The pull-based half of the deploy pipeline's CD: polls the registry
+# above and redeploys any running container labeled
 # com.centurylinklabs.watchtower.enable=true (compute/app's api/worker,
-# when watchtower_enabled = true there) — no inbound access to
-# gio-server required, unlike a push-based deploy would need.
+# when watchtower_enabled = true there) — no inbound access to the VPS
+# required, unlike a push-based deploy would need.
 resource "docker_container" "watchtower" {
   name    = "watchtower"
   image   = "containrrr/watchtower:latest"
@@ -153,7 +152,7 @@ resource "docker_container" "watchtower" {
     target = "/var/run/docker.sock"
   }
 
-  # `docker login registry.giomartins.dev` must already have been run
+  # `docker login registry.giomartins.dev:5000` must already have been run
   # on the host with var.registry_user/registry_password — Terraform
   # has no way to populate this file itself, and it's what lets
   # watchtower pull from an authenticated registry. See README.
@@ -164,33 +163,5 @@ resource "docker_container" "watchtower" {
     read_only = true
   }
 
-  depends_on = [docker_container.registry_client_cert_install]
-}
-
-# One-shot: writes the mTLS client cert/key (module.cloudflare's
-# registry_mtls.tf) into dockerd's own per-registry cert directory on
-# gio-server — the exact path dockerd checks automatically for ANY
-# connection it makes to registry.giomartins.dev, covering watchtower's
-# pulls above and this module's own docker_container.registry
-# resource if it's ever recreated, with no separate manual step.
-resource "docker_container" "registry_client_cert_install" {
-  name       = "registry-client-cert-install"
-  image      = "alpine:3"
-  entrypoint = ["sh", "-c"]
-  command = [
-    "mkdir -p /certs && printf '%s' \"$CLIENT_CERT\" > /certs/client.cert && printf '%s' \"$CLIENT_KEY\" > /certs/client.key"
-  ]
-  must_run = false
-  attach   = true
-
-  env = [
-    "CLIENT_CERT=${var.registry_client_cert_pem}",
-    "CLIENT_KEY=${var.registry_client_key_pem}",
-  ]
-
-  mounts {
-    type   = "bind"
-    source = "/etc/docker/certs.d/registry.giomartins.dev"
-    target = "/certs"
-  }
+  depends_on = [docker_container.docker_config_install]
 }

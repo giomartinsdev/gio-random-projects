@@ -14,6 +14,7 @@ resource "docker_container" "adminer" {
   restart = "unless-stopped"
 
   ports {
+    ip       = "127.0.0.1"
     internal = 8080
     external = var.published_port
   }

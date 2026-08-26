@@ -61,7 +61,7 @@ variable "secrets_bridge_api_key" {
 }
 
 variable "watchtower_enabled" {
-  description = "Whether to label api/worker for modules/infra/watchtower to auto-redeploy on a new registry image. False by default: watchtower recreating these containers outside Terraform (new container ID each time) fights this module's own docker_container resources for ownership of the same name every time apps-deploy.yml pushes -- apps-deploy.yml's own `terraform apply -replace=...` is the actual redeploy mechanism now instead."
+  description = "Whether to label api/worker for modules/infra/watchtower to auto-redeploy on a new registry image. False by default: watchtower recreating these containers outside Terraform (new container ID each time) fights this module's own docker_container resources for ownership of the same name every time go-ci-cd.yml pushes -- go-ci-cd.yml's own `terraform apply -replace=...` is the actual redeploy mechanism now instead."
   type        = bool
   default     = false
 }

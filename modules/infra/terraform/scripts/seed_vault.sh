@@ -2,7 +2,7 @@
 # Upserts NAME=VALUE pairs into Vaultwarden over the internal docker
 # network -- used both by Terraform (root secrets.tf's
 # null_resource.vault_seed, for the app-level secrets it generates) and
-# directly from tf-deploy.yml (to back up the handful of "secret zero"
+# directly from tf-ci-cd.yml (to back up the handful of "secret zero"
 # credentials Terraform itself needs to authenticate, which by
 # definition it can't fetch from the vault to configure itself). Never
 # touches vault.giomartins.dev or Cloudflare Access -- this runs over

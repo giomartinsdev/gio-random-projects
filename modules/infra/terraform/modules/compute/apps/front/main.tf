@@ -15,6 +15,7 @@ resource "docker_container" "front" {
   restart = "unless-stopped"
 
   ports {
+    ip       = "127.0.0.1"
     internal = 80
     external = var.external_port
   }

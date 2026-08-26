@@ -78,32 +78,28 @@ jobs:
           npx tsc -p tsconfig.json --noEmit
           npm test
 
-      # registry.giomartins.dev requires mTLS now (see
-      # modules/infra/terraform/modules/cloudflare/registry_mtls.tf) —
-      # htpasswd alone stopped being enough to get past the edge.
-      # Docker has no way to attach a client certificate through
-      # BuildKit's isolated docker-container driver (the default), so
-      # this uses the classic "docker" driver instead: it delegates to
-      # the runner's own dockerd, which resolves
-      # /etc/docker/certs.d/<host>/{client.cert,client.key}
-      # automatically, the same convention gio-server's dockerd uses
-      # for watchtower's pulls. Trade-off: the "docker" driver doesn't
-      # support the type=gha cache backend below, so pushes here build
-      # without cross-run caching — acceptable for images this small.
-      - name: Install registry.giomartins.dev's mTLS client certificate
+      # registry.giomartins.dev:5000 is plain HTTP (Phase 1 — see
+      # modules/infra/terraform/README.md), which the daemon rejects by
+      # default unless it's explicitly allow-listed as insecure.
+      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
         run: |
-          sudo mkdir -p /etc/docker/certs.d/registry.giomartins.dev
-          echo "${{ secrets.REGISTRY_CLIENT_CERT }}" | sudo tee /etc/docker/certs.d/registry.giomartins.dev/client.cert > /dev/null
-          echo "${{ secrets.REGISTRY_CLIENT_KEY }}" | sudo tee /etc/docker/certs.d/registry.giomartins.dev/client.key > /dev/null
+          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
+          sudo systemctl restart docker
 
+      # The "docker" driver delegates to the runner's own dockerd
+      # (rather than BuildKit's isolated docker-container driver, which
+      # would need its own buildkitd.toml insecure-registries entry),
+      # so the daemon.json change above is enough to let it push over
+      # plain HTTP. Trade-off: no type=gha cache backend -- acceptable
+      # for images this small.
       - uses: docker/setup-buildx-action@v3
         with:
           driver: docker
 
-      - name: Log in to registry.giomartins.dev
+      - name: Log in to registry.giomartins.dev:5000
         uses: docker/login-action@v3
         with:
-          registry: registry.giomartins.dev
+          registry: registry.giomartins.dev:5000
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
@@ -113,8 +109,8 @@ jobs:
           context: modules/apps/${{ matrix.app }}
           push: true
           tags: |
-            registry.giomartins.dev/${{ matrix.app }}:latest
-            registry.giomartins.dev/${{ matrix.app }}:${{ github.sha }}
+            registry.giomartins.dev:5000/${{ matrix.app }}:latest
+            registry.giomartins.dev:5000/${{ matrix.app }}:${{ github.sha }}
           # Vite bakes VITE_* env vars into the static bundle at build
           # time, not read at runtime -- only front needs this;
           # unrecognized build-args are harmless no-ops for any other
@@ -155,8 +151,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Same SSH setup tf-ci-cd.yml does — the docker provider talks
-      # straight to the VPS dockerd over ssh:// (var.docker_host's
-      # default).
+      # straight to the VPS dockerd over ssh://.
       - name: Set up SSH access to the VPS
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
@@ -166,6 +161,19 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          echo "TF_VAR_docker_host=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
+
+      # Same reasoning as tf-ci-cd.yml's own step of the same name.
+      - name: Discover the VPS's public IP
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          SERVER_IP=$(ssh "ubuntu@$VPS_HOST" 'curl -4 -fsS --max-time 5 https://ifconfig.me || curl -4 -fsS --max-time 5 https://api.ipify.org')
+          if [ -z "$SERVER_IP" ]; then
+            echo "::error::could not determine the VPS's public IP"
+            exit 1
+          fi
+          echo "TF_VAR_server_ip=$SERVER_IP" >> "$GITHUB_ENV"
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -177,25 +185,24 @@ jobs:
       # See go-ci-cd.yml's own "Pull the image(s) just pushed" step for
       # why this pull (with its own registry login) is what actually
       # guarantees a fresh image, not just -replace.
-      - name: Install registry.giomartins.dev's mTLS client certificate
+      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
         run: |
-          sudo mkdir -p /etc/docker/certs.d/registry.giomartins.dev
-          echo "${{ secrets.REGISTRY_CLIENT_CERT }}" | sudo tee /etc/docker/certs.d/registry.giomartins.dev/client.cert > /dev/null
-          echo "${{ secrets.REGISTRY_CLIENT_KEY }}" | sudo tee /etc/docker/certs.d/registry.giomartins.dev/client.key > /dev/null
+          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
+          sudo systemctl restart docker
 
-      - name: Log in to registry.giomartins.dev
+      - name: Log in to registry.giomartins.dev:5000
         uses: docker/login-action@v3
         with:
-          registry: registry.giomartins.dev
+          registry: registry.giomartins.dev:5000
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
       - name: Pull the image(s) just pushed onto the VPS's own dockerd
         env:
-          DOCKER_HOST: ssh://ubuntu@168.138.135.6
+          DOCKER_HOST: ${{ env.TF_VAR_docker_host }}
         run: |
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
-            docker pull "registry.giomartins.dev/${app}:latest"
+            docker pull "registry.giomartins.dev:5000/${app}:latest"
           done
 
       - name: Deploy the image(s) just pushed

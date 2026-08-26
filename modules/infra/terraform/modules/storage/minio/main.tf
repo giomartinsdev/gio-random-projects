@@ -35,10 +35,12 @@ resource "docker_container" "minio" {
     "MINIO_BROWSER=on",
   ]
 
-  # Console UI — published so it's reachable on the host directly.
-  # The API port (9000) stays unpublished: only containers on the
-  # shared network need it.
+  # Console UI — loopback-only, reachable from outside through
+  # compute/services/ingress (minio.giomartins.dev -> 127.0.0.1:9001).
+  # The API port (9000) stays unpublished entirely: only containers on
+  # the shared network need it.
   ports {
+    ip       = "127.0.0.1"
     internal = 9001
     external = 9001
   }

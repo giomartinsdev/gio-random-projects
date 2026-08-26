@@ -37,6 +37,7 @@ resource "docker_container" "vaultwarden" {
   ]
 
   ports {
+    ip       = "127.0.0.1"
     internal = 80
     external = var.published_port
   }
