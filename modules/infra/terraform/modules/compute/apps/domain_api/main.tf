@@ -9,16 +9,17 @@ locals {
     value = "true"
   }] : []
 
-  # Only set when the bridge actually exists (var.secrets_bridge_url
-  # empty until modules/compute/vaultwarden_bridge is — see its own
-  # README for why that can't have a real default). DATABASE_URL/
-  # DOMAIN_API_KEYS above stay set regardless, as a fallback the app's
-  # own config.Load() only uses when these two are absent — see
-  # modules/apps/domain-api's internal/infrastructure/config.
-  secrets_bridge_env = var.secrets_bridge_url == "" ? [] : [
-    "SECRETS_BRIDGE_URL=${var.secrets_bridge_url}",
-    "SECRETS_BRIDGE_API_KEY=${var.secrets_bridge_api_key}",
-  ]
+  # Was conditionally set whenever the bridge exists, for both
+  # containers below to read as a fallback source ahead of their own
+  # DATABASE_URL/DOMAIN_API_KEYS env vars. Neither container gets it
+  # now -- see the TEMPORARY comment on docker_container.domain_api,
+  # which now also applies to domain_worker: config.Load()'s resolve()
+  # treats the bridge's 404 (item not found -- confirmed itself, not
+  # domain_worker's own DATABASE_URL, went missing after a VPS
+  # migration reset Vaultwarden's data) as fatal instead of falling
+  # through to the env var, so setting these at all was actively
+  # breaking domain_worker rather than backing it up.
+  secrets_bridge_env = []
 }
 
 resource "docker_container" "domain_api" {
@@ -36,14 +37,14 @@ resource "docker_container" "domain_api" {
   image   = "${var.registry_host}/domain-api:latest"
   restart = "unless-stopped"
 
-  # TEMPORARY: domain_api specifically does NOT get
-  # local.secrets_bridge_env (domain_worker below still does) --
-  # investigating classroom-api's DOMAIN_API_KEYS never showing up via
-  # the bridge's GET /secret/DOMAIN_API_KEYS despite the Vaultwarden
-  # item itself being re-seeded from scratch (state rm + fresh create)
-  # and the bridge container restarted after that. Forces
-  # config.Load()'s resolve() onto its env-var fallback instead, which
-  # IS provably current (both DOMAIN_API_KEYS and DATABASE_URL below
+  # TEMPORARY: neither this container nor domain_worker below gets
+  # local.secrets_bridge_env (now always []) -- investigating
+  # DOMAIN_API_KEYS/DATABASE_URL never showing up via the bridge's own
+  # GET /secret/... despite the Vaultwarden item itself being
+  # re-seeded from scratch (state rm + fresh create, or a whole fresh
+  # Vaultwarden instance after the VPS migration) and the bridge
+  # container restarted after that. Forces config.Load()'s resolve()
+  # onto its env-var fallback instead, which IS provably current (both
   # are computed from the exact same locals the vault_seed items use).
   # Revert once the vault-side staleness is understood -- see incident
   # notes to add once resolved.
