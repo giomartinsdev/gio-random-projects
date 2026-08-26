@@ -28,27 +28,25 @@ resource "docker_container" "tela" {
   # the only address it can see is the container's private one -- which
   # would need the real address pasted into a variable to work around.
   # On the host network it sees the machine's actual interfaces and
-  # advertises the LAN address by itself, so browsers on the same
-  # network connect with nothing configured at all.
+  # advertises the VPS's public IP by itself.
   #
   # The cost is isolation: the container shares the host's network
   # namespace. That also means no port mapping -- the app binds
-  # var.external_port directly, which is what cloudflared's ingress
-  # already points at, and the UDP port binds unmapped (it must, since
-  # its number is baked into the ICE candidates the SFU advertises).
+  # var.external_port directly (the HTTP side), and the UDP port binds
+  # unmapped (it must, since its number is baked into the ICE
+  # candidates the SFU advertises).
   network_mode = "host"
 
   env = [
     "PORT=${var.external_port}",
     "STATE_FILE=/data/rooms.json",
     # The SFU is a WebRTC endpoint, so browsers connect to it directly
-    # over UDP -- it can't be reached through the Cloudflare tunnel,
-    # which only carries HTTP. This is the address it advertises, and
-    # inside Docker it has to be the HOST's, not the container's.
-    #
-    # A hostname is fine (resolved at startup) as long as it resolves to
-    # THIS machine -- which rules out the proxied record serving the
-    # site, since that resolves to Cloudflare. See sfu_public_host.
+    # over UDP -- plain HTTP proxies don't carry media. This is the
+    # address it advertises, and inside Docker it has to be the HOST's,
+    # not the container's. On the VPS that's simply its static public
+    # IP (var.server_ip) -- no DNS indirection needed anymore, the old
+    # home-setup media hostname was for an address that changed without
+    # warning.
     "SFU_PUBLIC_HOST=${var.sfu_public_host}",
     "SFU_UDP_PORT=${var.sfu_udp_port}",
   ]

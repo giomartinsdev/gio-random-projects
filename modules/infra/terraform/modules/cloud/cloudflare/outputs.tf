@@ -8,11 +8,6 @@ output "excluded_hostnames" {
   value       = var.excluded_hostnames
 }
 
-output "tunnel_id" {
-  description = "The imported tunnel's ID."
-  value       = cloudflare_zero_trust_tunnel_cloudflared.homelab.id
-}
-
 output "service_token_client_ids" {
   description = "Access service token Client IDs, keyed by service_token_hostnames' short name (\"docker\", \"domain\") — set as the CLOUDFLARE_<KEY>_CLIENT_ID CI secrets."
   value       = { for k, v in cloudflare_zero_trust_access_service_token.ci : k => v.client_id }

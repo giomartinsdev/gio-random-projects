@@ -8,23 +8,13 @@ variable "zone_id" {
   type        = string
 }
 
-variable "tunnel_name" {
-  description = "Name of the existing cloudflared tunnel (imported, not created — see tunnel.tf)."
-  type        = string
-  default     = "gio-server"
-}
-
-variable "tunnel_id" {
+variable "server_ip" {
   description = <<-EOT
-    ID of the existing cloudflared tunnel every DNS record points at.
-    Also the default for modules/infra/terraform-bootstrap's own
-    tunnel_id variable — that's what makes the actual cloudflared
-    process on gio-server present itself as this tunnel; this variable
-    only needs the ID to build each CNAME's target and to import the
-    resource into state.
+    Public IP of the VPS every DNS record resolves to. Grey-cloud
+    records until the proxy flip; the same IP is what Cloudflare
+    connects to once they're orange.
   EOT
   type        = string
-  default     = "36f8270d-52a2-4635-b9f2-f5174307e76e"
 }
 
 variable "google_idp_identity_provider_id" {
@@ -37,29 +27,26 @@ variable "google_idp_identity_provider_id" {
   type        = string
 }
 
-variable "ingress_rules" {
-  description = "Every hostname/service pair this homelab exposes — see the root module's locals.tf, the single source of truth this and the compute modules both derive from."
-  type = list(object({
-    hostname = string
-    service  = string
-  }))
+variable "hostnames" {
+  description = "Every hostname this homelab exposes — see the root module's locals.tf, the single source of truth."
+  type        = list(string)
 }
 
 variable "excluded_hostnames" {
   description = <<-EOT
-    Hostnames from var.ingress_rules that must NOT get the Google-SSO
-    Cloudflare Access application applications.tf sets up — because
-    Access's browser-redirect login flow would break any non-browser
-    client hitting them. Every one still gets a second auth layer, just
-    not that one: domain-api and docker.giomartins.dev each get their
-    own non-interactive service-token Access application instead (see
+    Hostnames from var.hostnames that must NOT get the Google-SSO
+    Cloudflare Access application access.tf sets up — because Access's
+    browser-redirect login flow would break any non-browser client
+    hitting them. Every one still gets a second auth layer, just not
+    that one: domain.giomartins.dev gets its own non-interactive
+    service-token Access application instead (see
     service_token_access.tf — no redirect, just two static headers any
     HTTP client can send), and registry.giomartins.dev gets mTLS
     instead of an Access application at all (see registry_mtls.tf —
     Docker's push/pull tooling can't send custom headers either, so
     even a service token wouldn't work there). Every hostname in
-    var.ingress_rules is protected by default; list the exceptions
-    here, not the other way around.
+    var.hostnames is protected by default; list the exceptions here,
+    not the other way around.
   EOT
   type        = list(string)
   default     = []

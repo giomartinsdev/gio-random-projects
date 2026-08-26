@@ -4,6 +4,6 @@ output "container_name" {
 }
 
 output "external_port" {
-  description = "Host port tela is published on, matched by locals.tf's ingress rule."
+  description = "Host port tela is published on, matched by locals.tf's service entry."
   value       = var.external_port
 }

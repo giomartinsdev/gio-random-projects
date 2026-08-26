@@ -7,9 +7,9 @@ module "cloud_cloudflare" {
 
   account_id                      = var.cloudflare_account_id
   zone_id                         = var.cloudflare_zone_id
-  tunnel_id                       = var.cloudflare_tunnel_id
+  server_ip                       = var.server_ip
   google_idp_identity_provider_id = var.google_idp_identity_provider_id
-  ingress_rules                   = local.ingress_rules
+  hostnames                       = [for s in local.services : s.hostname]
   excluded_hostnames              = var.excluded_hostnames
   allowed_emails                  = var.allowed_emails
   session_duration                = var.session_duration
@@ -138,7 +138,7 @@ module "compute_apps_tela" {
   }
 
   registry_host   = var.registry_host
-  sfu_public_host = var.tela_sfu_media_hostname != "" ? var.tela_sfu_media_hostname : var.tela_sfu_public_host
+  sfu_public_host = var.server_ip
 }
 
 module "compute_apps_front" {

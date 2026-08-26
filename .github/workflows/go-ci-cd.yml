@@ -11,7 +11,7 @@ name: Go deploy
 # deploy job runs `terraform apply` against modules/infra/terraform
 # with -var overriding the built app's image tag to this exact commit
 # SHA, over the same docker.giomartins.dev Access-gated Docker Engine
-# API tf-deploy.yml uses (no inbound access to gio-server needed —
+# API tf-deploy.yml uses (no inbound access to the VPS beyond SSH —
 # that connection is outbound-initiated by cloudflared either way).
 # domain_api/domain_worker's watchtower label defaults to false now:
 # watchtower recreating those containers behind Terraform's back (a
@@ -92,7 +92,7 @@ jobs:
       # this uses the classic "docker" driver instead: it delegates to
       # the runner's own dockerd, which resolves
       # /etc/docker/certs.d/<host>/{client.cert,client.key}
-      # automatically, the same convention gio-server's dockerd uses
+      # automatically, the same convention the VPS's dockerd uses
       # for watchtower's pulls. Trade-off: the "docker" driver doesn't
       # support the type=gha cache backend below, so pushes here build
       # without cross-run caching — acceptable for images this small.
@@ -144,45 +144,23 @@ jobs:
       TF_VAR_vaultwarden_account_master_password: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
       TF_VAR_vaultwarden_api_client_id: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
       TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-      TF_VAR_docker_host: "tcp://localhost:2475"
       AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Start Cloudflare Access header-injecting proxy for dockerd
+      # Same SSH setup tf-ci-cd.yml does — the docker provider talks
+      # straight to the VPS dockerd over ssh:// (var.docker_host's
+      # default).
+      - name: Set up SSH access to the VPS
         env:
-          CF_ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_ID }}
-          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_SECRET }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
-          cat > /tmp/default.conf.template <<'EOF'
-          server {
-              listen 2475;
-              client_max_body_size 0;
-              location / {
-                  proxy_pass https://docker.giomartins.dev;
-                  proxy_set_header Host docker.giomartins.dev;
-                  proxy_set_header CF-Access-Client-Id "${CF_ACCESS_CLIENT_ID}";
-                  proxy_set_header CF-Access-Client-Secret "${CF_ACCESS_CLIENT_SECRET}";
-                  proxy_ssl_server_name on;
-                  proxy_http_version 1.1;
-                  # docker exec/attach hijacks the connection into a raw
-                  # TCP stream (an HTTP Upgrade) -- without these, nginx
-                  # won't forward the upgrade and `docker exec` fails
-                  # with "unable to upgrade to tcp, received 200".
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection "upgrade";
-                  proxy_read_timeout 300s;
-                  proxy_send_timeout 300s;
-              }
-          }
-          EOF
-          docker run -d --name access-proxy --network host \
-            -e CF_ACCESS_CLIENT_ID \
-            -e CF_ACCESS_CLIENT_SECRET \
-            -v /tmp/default.conf.template:/etc/nginx/templates/default.conf.template:ro \
-            nginx:alpine
-          sleep 2
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -194,7 +172,7 @@ jobs:
       # -replace below forces Terraform to destroy+recreate the
       # container, but that alone does NOT guarantee a fresh image:
       # dockerd only pulls on create if the tag is missing from its
-      # local cache, and gio-server almost always already has SOME
+      # local cache, and the VPS almost always already has SOME
       # image cached under registry.giomartins.dev/<app>:latest from
       # an earlier deploy. Confirmed live: a -replace-only apply
       # silently redeployed a stale, previously-cached build instead
@@ -206,7 +184,7 @@ jobs:
       # DOCKER_HOST: the `docker` CLI here (on the runner) reads its
       # OWN ~/.docker/config.json and sends the result as an
       # X-Registry-Auth header, which the remote daemon then uses to
-      # actually fetch from the registry. gio-server's own config.json
+      # actually fetch from the registry. The VPS's own config.json
       # (docker_config_install) is what lets ITS processes -- like
       # watchtower -- pull; it's irrelevant to a pull commanded from
       # here. A `docker login` on THIS runner is what's actually
@@ -226,9 +204,9 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Pull the image(s) just pushed onto gio-server's own dockerd
+      - name: Pull the image(s) just pushed onto the VPS's own dockerd
         env:
-          DOCKER_HOST: tcp://localhost:2475
+          DOCKER_HOST: ssh://ubuntu@168.138.135.6
         run: |
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
             docker pull "registry.giomartins.dev/${app}:latest"

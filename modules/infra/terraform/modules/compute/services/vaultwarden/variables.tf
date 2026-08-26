@@ -1,11 +1,11 @@
 variable "hostname" {
-  description = "Public hostname this vault is reachable at — must match the Cloudflare Tunnel ingress rule pointing at var.published_port. Baked into DOMAIN."
+  description = "Public hostname this vault is reachable at — must match locals.tf's service entry for var.published_port. Baked into DOMAIN."
   type        = string
   default     = "vault.giomartins.dev"
 }
 
 variable "published_port" {
-  description = "Host port the container's internal :80 is published on — what the tunnel's ingress rule for var.hostname must point at."
+  description = "Host port the container's internal :80 is published on — what locals.tf's service entry for var.hostname must match."
   type        = number
   default     = 8222
 }
@@ -23,6 +23,6 @@ variable "admin_token" {
 }
 
 variable "network_name" {
-  description = "Docker network (from module.compute_data) to join — lets modules/compute/vaultwarden_bridge reach this container by name (\"vaultwarden\") instead of only through the published port/tunnel."
+  description = "Docker network (from module.compute_data) to join — lets modules/compute/vaultwarden_bridge reach this container by name (\"vaultwarden\") instead of through the published port."
   type        = string
 }

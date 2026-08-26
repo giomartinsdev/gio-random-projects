@@ -149,41 +149,23 @@ jobs:
       TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
       TF_VAR_discord_client_id: ${{ secrets.DISCORD_CLIENT_ID }}
       TF_VAR_discord_client_secret: ${{ secrets.DISCORD_CLIENT_SECRET }}
-      TF_VAR_docker_host: "tcp://localhost:2475"
       AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Start Cloudflare Access header-injecting proxy for dockerd
+      # Same SSH setup tf-ci-cd.yml does — the docker provider talks
+      # straight to the VPS dockerd over ssh:// (var.docker_host's
+      # default).
+      - name: Set up SSH access to the VPS
         env:
-          CF_ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_ID }}
-          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_SECRET }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
-          cat > /tmp/default.conf.template <<'EOF'
-          server {
-              listen 2475;
-              client_max_body_size 0;
-              location / {
-                  proxy_pass https://docker.giomartins.dev;
-                  proxy_set_header Host docker.giomartins.dev;
-                  proxy_set_header CF-Access-Client-Id "${CF_ACCESS_CLIENT_ID}";
-                  proxy_set_header CF-Access-Client-Secret "${CF_ACCESS_CLIENT_SECRET}";
-                  proxy_ssl_server_name on;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection "upgrade";
-                  proxy_read_timeout 300s;
-                  proxy_send_timeout 300s;
-              }
-          }
-          EOF
-          docker run -d --name access-proxy --network host \
-            -e CF_ACCESS_CLIENT_ID \
-            -e CF_ACCESS_CLIENT_SECRET \
-            -v /tmp/default.conf.template:/etc/nginx/templates/default.conf.template:ro \
-            nginx:alpine
-          sleep 2
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -208,9 +190,9 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Pull the image(s) just pushed onto gio-server's own dockerd
+      - name: Pull the image(s) just pushed onto the VPS's own dockerd
         env:
-          DOCKER_HOST: tcp://localhost:2475
+          DOCKER_HOST: ssh://ubuntu@168.138.135.6
         run: |
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
             docker pull "registry.giomartins.dev/${app}:latest"

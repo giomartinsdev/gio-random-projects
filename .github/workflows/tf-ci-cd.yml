@@ -3,14 +3,14 @@ name: Terraform deploy
 # modules/infra/terraform is the source of truth for everything
 # Cloudflare AND for postgres/redis/api/worker container definitions
 # in this repo — all driven from that config's locals.tf and
-# compute.tf. Plans on PRs touching it; applies on push to main. State
+# main.tf. Plans on PRs touching it; applies on push to main. State
 # lives in Cloudflare R2 (bucket created once via
 # modules/infra/terraform-bootstrap) — see
 # modules/infra/terraform/README.md for the one-time setup this still
 # depends on (account ID, zone ID, Google identity provider ID, an R2
-# API token, a CLOUDFLARE_API_TOKEN scoped for both DNS and Access, and
-# the docker.giomartins.dev Access service token compute.tf's provider
-# "docker" connects through).
+# API token, a CLOUDFLARE_API_TOKEN scoped for both DNS and Access,
+# and VPS_SSH_PRIVATE_KEY for the docker provider's SSH connection to
+# the VPS).
 
 on:
   push:
@@ -49,7 +49,6 @@ env:
   TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
   TF_VAR_discord_client_id: ${{ secrets.DISCORD_CLIENT_ID }}
   TF_VAR_discord_client_secret: ${{ secrets.DISCORD_CLIENT_SECRET }}
-  TF_VAR_docker_host: "tcp://localhost:2475"
   AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
 
@@ -59,52 +58,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The docker provider (compute.tf) can't attach the
-      # CF-Access-Client-Id/Secret headers docker.giomartins.dev's
-      # Access service-token policy requires — same limitation the
-      # registry push workaround this repo used to have ran into. This
-      # sidecar terminates plain HTTP on localhost, injects those two
-      # headers on every request, forwards to the real (HTTPS,
-      # Access-protected) daemon. Terraform only ever talks to
-      # localhost:2475.
-      - name: Start Cloudflare Access header-injecting proxy for dockerd
+      # The docker provider talks straight to the VPS dockerd over SSH
+      # (var.docker_host's default, ssh://ubuntu@<server-ip>) — moby's
+      # ssh connhelper shells out to the system `ssh`, so this step
+      # just installs the deploy key and pins the host key. No exposed
+      # Docker TCP port, no Access service token, no proxy sidecar
+      # anywhere in the path.
+      - name: Set up SSH access to the VPS
         env:
-          CF_ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_ID }}
-          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_SECRET }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
-          cat > /tmp/default.conf.template <<'EOF'
-          server {
-              listen 2475;
-              client_max_body_size 0;
-              location / {
-                  proxy_pass https://docker.giomartins.dev;
-                  proxy_set_header Host docker.giomartins.dev;
-                  proxy_set_header CF-Access-Client-Id "${CF_ACCESS_CLIENT_ID}";
-                  proxy_set_header CF-Access-Client-Secret "${CF_ACCESS_CLIENT_SECRET}";
-                  proxy_ssl_server_name on;
-                  proxy_http_version 1.1;
-                  # docker exec/attach hijacks the connection into a raw
-                  # TCP stream (an HTTP Upgrade) -- without these, nginx
-                  # won't forward the upgrade and `docker exec` fails
-                  # with "unable to upgrade to tcp, received 200".
-                  # Plain docker_container CRUD never needed this.
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection "upgrade";
-                  # nginx's 60s default read timeout kills long-polling
-                  # calls like `docker wait` before a slow container
-                  # (e.g. one doing npm install) finishes, with a 504.
-                  proxy_read_timeout 300s;
-                  proxy_send_timeout 300s;
-              }
-          }
-          EOF
-          docker run -d --name access-proxy --network host \
-            -e CF_ACCESS_CLIENT_ID \
-            -e CF_ACCESS_CLIENT_SECRET \
-            -v /tmp/default.conf.template:/etc/nginx/templates/default.conf.template:ro \
-            nginx:alpine
-          sleep 2
-          docker logs access-proxy
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -155,7 +123,7 @@ jobs:
       - name: Back up bootstrap secrets to Vaultwarden
         if: github.event_name == 'workflow_dispatch'
         env:
-          DOCKER_HOST: tcp://localhost:2475
+          DOCKER_HOST: ssh://ubuntu@168.138.135.6
           NETWORK_NAME: apps
           VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
           VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
@@ -164,8 +132,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           CLOUDFLARE_GOOGLE_IDP_ID: ${{ secrets.CLOUDFLARE_GOOGLE_IDP_ID }}
-          CLOUDFLARE_DOCKER_CLIENT_ID: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_ID }}
-          CLOUDFLARE_DOCKER_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_DOCKER_CLIENT_SECRET }}
           TF_STATE_R2_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
           TF_STATE_R2_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
           TF_STATE_R2_ENDPOINT: ${{ secrets.TF_STATE_R2_ENDPOINT }}
@@ -181,8 +147,6 @@ jobs:
             "CLOUDFLARE_ACCOUNT_ID" "$(b64 "$CLOUDFLARE_ACCOUNT_ID")" \
             "CLOUDFLARE_ZONE_ID" "$(b64 "$CLOUDFLARE_ZONE_ID")" \
             "CLOUDFLARE_GOOGLE_IDP_ID" "$(b64 "$CLOUDFLARE_GOOGLE_IDP_ID")" \
-            "CLOUDFLARE_DOCKER_CLIENT_ID" "$(b64 "$CLOUDFLARE_DOCKER_CLIENT_ID")" \
-            "CLOUDFLARE_DOCKER_CLIENT_SECRET" "$(b64 "$CLOUDFLARE_DOCKER_CLIENT_SECRET")" \
             "TF_STATE_R2_ACCESS_KEY_ID" "$(b64 "$TF_STATE_R2_ACCESS_KEY_ID")" \
             "TF_STATE_R2_SECRET_ACCESS_KEY" "$(b64 "$TF_STATE_R2_SECRET_ACCESS_KEY")" \
             "TF_STATE_R2_ENDPOINT" "$(b64 "$TF_STATE_R2_ENDPOINT")" \

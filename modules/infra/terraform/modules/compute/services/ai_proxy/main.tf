@@ -4,8 +4,8 @@
 #   - Dashboard: /dashboard  (login with INITIAL_PASSWORD)
 #   - API:       /v1         (OpenAI-compatible endpoint for CLI tools)
 #
-# No port published to the host — only reachable via the Cloudflare
-# tunnel (var.hostname), same as beszel and vaultwarden here.
+# Published on the host so it's reachable directly as ai.giomartins.dev
+# (grey-cloud record → server_ip) or http://server_ip:20128.
 
 resource "docker_volume" "ninerouter_data" {
   name = "ninerouter_data"
@@ -60,19 +60,18 @@ resource "docker_container" "ninerouter" {
     target = "/app/data"
   }
 
-  # Published so the Cloudflare tunnel (cloudflared, running on the
-  # host) can reach the dashboard/API via localhost:20128. Without
-  # this binding, the tunnel's ingress rule resolves to nothing and
-  # returns 502 — same reason vaultwarden publishes 8222 and minio
-  # publishes 9001.
+  # Published so the dashboard/API is reachable on the host directly
+  # (grey-cloud DNS → server_ip, or the raw IP). Without this binding,
+  # nothing outside the docker network can reach it — same reason
+  # vaultwarden publishes 8222 and minio publishes 9001.
   ports {
     internal = 20128
     external = 20128
   }
 
   # Reachable by container name ("9router") on the shared apps
-  # network — future modules can reach /v1 without going through the
-  # public tunnel (lower latency, no Cloudflare hop).
+  # network — future modules can reach /v1 without leaving the host
+  # (lower latency, no public hop).
   networks_advanced {
     name = var.network_name
   }

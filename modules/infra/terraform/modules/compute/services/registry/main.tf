@@ -3,15 +3,17 @@
 # the deploy pipeline, not the app itself.
 
 resource "docker_volume" "registry_data" {
-  # Same name the pre-Terraform compose stack used — keeps the actual
-  # pushed image blobs across the cutover instead of starting empty.
+  # Same name the pre-Terraform compose stack used on the old home
+  # server. On the VPS this volume is born fresh — image blobs
+  # repopulate from CI's next push.
   name = "registry_registry-data"
 
-  # The imported volume carries com.docker.compose.* labels from its
+  # The imported volume carried com.docker.compose.* labels from its
   # compose-managed past. labels is an immutable (ForceNew) attribute,
   # so without this, the mere absence of those labels from this
-  # resource's config would destroy and recreate the volume on first
-  # apply — losing exactly the data importing it was meant to keep.
+  # resource's config would destroy and recreate the volume on apply —
+  # losing exactly the data importing it was meant to keep. Kept for
+  # the same reason: any future adoption shouldn't fight this config.
   lifecycle {
     ignore_changes = [labels]
   }
@@ -53,10 +55,9 @@ resource "docker_container" "htpasswd_init" {
   }
 }
 
-# Writes gio-server's own `docker login registry.giomartins.dev`
+# Writes the VPS host's own `docker login registry.giomartins.dev`
 # credentials file -- watchtower's pulls (and any docker_container
-# resource here, if ever recreated) need this, and it used to be a
-# manual `docker login` run by hand on the host. Same bind-mount
+# resource here, if ever recreated) need this. Same bind-mount
 # one-shot pattern as registry_client_cert_install below. Whole-file
 # overwrite is safe here: this host has never logged into any registry
 # other than this one.
@@ -102,12 +103,11 @@ resource "docker_container" "registry" {
     "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd",
     # Without this, blob-upload responses embed an ABSOLUTE Location
     # URL built from whatever Host header the registry saw — which
-    # escapes any reverse proxy in front of it (Cloudflare Tunnel/
-    # Access here). The client follows that Location directly on the
-    # next request, bypassing the proxy (and whatever auth it
-    # injected) entirely. Relative URLs resolve against the original
-    # request's host instead, so every follow-up stays on the same
-    # path in.
+    # escapes any reverse proxy in front of it (Cloudflare's proxy
+    # once the records flip proxied). The client follows that Location
+    # directly on the next request, bypassing the proxy entirely.
+    # Relative URLs resolve against the original request's host
+    # instead, so every follow-up stays on the same path in.
     "REGISTRY_HTTP_RELATIVEURLS=true",
   ]
 
