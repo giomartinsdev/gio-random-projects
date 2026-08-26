@@ -1,11 +1,11 @@
 variable "hostname" {
-  description = "Public hostname Adminer is reachable at — must match the Cloudflare Tunnel ingress rule pointing at var.published_port."
+  description = "Public hostname Adminer is reachable at — must match locals.tf's service entry for var.published_port."
   type        = string
   default     = "adminer.giomartins.dev"
 }
 
 variable "published_port" {
-  description = "Host port the container's internal :8080 is published on — what the tunnel's ingress rule for var.hostname must point at."
+  description = "Host port the container's internal :8080 is published on — what locals.tf's service entry for var.hostname must match."
   type        = number
   default     = 8092
 }

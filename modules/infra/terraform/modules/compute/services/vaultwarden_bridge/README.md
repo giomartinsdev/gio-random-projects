@@ -9,7 +9,7 @@ AES-256-CBC-HMAC), and re-exposes individual items over a trivial
 instead of reimplementing Bitwarden's decryption themselves.
 
 Not reachable outside the docker network — no `ports{}` block, no
-tunnel ingress rule, no DNS record. Only containers on the same
+public port, no DNS record. Only containers on the same
 network (`var.network_name`) can reach it, by name (`vaultwarden-api`,
 port `8080`).
 

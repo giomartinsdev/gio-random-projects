@@ -10,12 +10,6 @@ variable "cloudflare_zone_id" {
   type        = string
 }
 
-variable "cloudflare_tunnel_id" {
-  description = "ID of the cloudflared tunnel every DNS record points at — see module.cloudflare's own variables.tf for the full explanation."
-  type        = string
-  default     = "36f8270d-52a2-4635-b9f2-f5174307e76e"
-}
-
 variable "google_idp_identity_provider_id" {
   description = <<-EOT
     ID of the existing Google identity provider in Zero Trust →
@@ -34,15 +28,14 @@ variable "allowed_emails" {
 
 variable "excluded_hostnames" {
   description = <<-EOT
-    Hostnames from locals.tf's ingress_rules that must NOT get a
-    Cloudflare Access application — see module.cloudflare's own
-    variables.tf for the full explanation.
+    Hostnames from locals.tf that must NOT get a Cloudflare Access
+    application once the records go proxied — see module.cloudflare's
+    own variables.tf for the full explanation.
   EOT
   type        = list(string)
   default = [
     "registry.giomartins.dev",      # docker login/push — own htpasswd auth + mTLS (modules/cloudflare/registry_mtls.tf); Docker tooling can't do a browser SSO redirect or send custom Access headers
     "domain.giomartins.dev",        # REST API clients — own X-API-Key auth + a service-token Access application (modules/cloudflare/service_token_access.tf)
-    "docker.giomartins.dev",        # this config's own docker provider — a service-token Access application (modules/cloudflare/service_token_access.tf)
     "post-api.giomartins.dev",      # own Better Auth — a browser SSO redirect would break API/bot clients, same reasoning as domain.giomartins.dev
     "bookclub-api.giomartins.dev",  # own Better Auth session check — same reasoning, plus a redirect would break the front's WebSocket upgrade
     "classroom-api.giomartins.dev", # own Better Auth session check — same reasoning as bookclub-api.giomartins.dev
@@ -58,18 +51,25 @@ variable "session_duration" {
   default     = "24h"
 }
 
+# --- server ---
+
+variable "server_ip" {
+  description = "Public IP of the VPS. Target of every DNS record (grey-cloud until the proxy flip) and tela's SFU advertisement."
+  type        = string
+}
+
 # --- docker provider connection ---
 
 variable "docker_host" {
   description = <<-EOT
-    Where the docker provider connects — a local header-injecting proxy,
-    not docker.giomartins.dev directly (see versions.tf's provider
-    "docker" comment). Defaults to the address
-    .github/workflows/tf-deploy.yml's sidecar listens on; override for
-    local runs.
+    Where the docker provider connects — straight to the VPS dockerd
+    over SSH, same channel a human `docker` CLI would use. Requires the
+    key in the caller's ssh-agent (CI: tf-ci-cd.yml/go-ci-cd.yml/
+    ts-ci-cd.yml's SSH setup step; locally: your own agent). No
+    default — always ssh://ubuntu@<server_ip>, and hardcoding that IP
+    twice invites the two to drift.
   EOT
   type        = string
-  default     = "tcp://localhost:2475"
 }
 
 # --- compute/data + compute/app ---
@@ -79,9 +79,9 @@ variable "docker_host" {
 # --- compute/registry ---
 
 variable "registry_host" {
-  description = "Hostname docker_container/docker_image resources pull images from, and the docker provider's registry_auth is scoped to (versions.tf)."
+  description = "Host:port docker_container/docker_image resources pull images from, and the docker provider's registry_auth is scoped to (versions.tf). Port 5000 because the registry serves plain HTTP (see modules/compute/services/registry) -- a bare hostname makes Docker assume HTTPS on 443, which nothing listens on until the Phase 2 proxy flip."
   type        = string
-  default     = "registry.giomartins.dev"
+  default     = "registry.giomartins.dev:5000"
 }
 
 variable "registry_user" {
@@ -99,9 +99,9 @@ variable "registry_password" {
     resource value computed in the same apply. Everything else about
     it IS automated now — see modules/compute/registry's README and
     this config's secrets.tf (docker_config_install/registry_restart/
-    vault_seed). apps-deploy.yml's own REGISTRY_PASSWORD GH secret (for
-    its push step) is the one thing still synced by hand after a
-    rotation.
+    vault_seed). go-ci-cd.yml/ts-ci-cd.yml's own REGISTRY_PASSWORD GH
+    secret (for their push steps) is the one thing still synced by
+    hand after a rotation.
   EOT
   type        = string
   sensitive   = true
@@ -166,28 +166,4 @@ variable "discord_client_secret" {
   type        = string
   default     = ""
   sensitive   = true
-}
-
-variable "tela_sfu_public_host" {
-  description = "Address or hostname tela's SFU advertises to browsers. See modules/compute/apps/tela/variables.tf -- media is UDP straight to the host and cannot go through the Cloudflare tunnel. Ignored when tela_sfu_media_hostname is set."
-  type        = string
-  default     = ""
-}
-
-# Media can't use the proxied hostnames the rest of the config creates:
-# those are CNAMEs to the tunnel and resolve to Cloudflare, which won't
-# carry UDP. Setting these two makes an UNPROXIED A record pointing
-# straight at the machine, which the SFU then advertises -- so the
-# address lives in DNS instead of being pasted into a variable, and a
-# changing IP is one record edit rather than a redeploy.
-variable "tela_sfu_media_hostname" {
-  description = "Hostname for an unproxied A record pointing at the machine running tela's SFU (e.g. tela-media.giomartins.dev). Requires tela_sfu_media_ip. Leave empty to skip the record and use tela_sfu_public_host directly."
-  type        = string
-  default     = ""
-}
-
-variable "tela_sfu_media_ip" {
-  description = "IP the media hostname resolves to: the machine's public IP with the SFU's UDP port forwarded to it, or its LAN address if everyone is on the same network."
-  type        = string
-  default     = ""
 }

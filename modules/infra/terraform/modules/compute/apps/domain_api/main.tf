@@ -25,10 +25,10 @@ resource "docker_container" "domain_api" {
   name = "domain-api"
   # Deliberately a stable literal, not a variable — a version that
   # changed per-deploy (the first attempt at this) meant any apply
-  # that DIDN'T pass that override (every routine tf-deploy.yml run)
+  # that DIDN'T pass that override (every routine go-ci-cd.yml run)
   # silently reverted it back to a default, flip-flopping against
-  # whatever apps-deploy.yml had just pinned. Since this string never
-  # changes, tf-deploy.yml's applies never touch it. apps-deploy.yml
+  # whatever go-ci-cd.yml had just pinned. Since this string never
+  # changes, go-ci-cd.yml's applies never touch it. go-ci-cd.yml
   # instead forces the actual redeploy with `terraform apply
   # -replace=module.compute_app.docker_container.domain_api`, which
   # re-pulls and recreates unconditionally, picking up whatever
@@ -57,6 +57,7 @@ resource "docker_container" "domain_api" {
   ]
 
   ports {
+    ip       = "127.0.0.1"
     internal = 8000
     external = 8000
   }

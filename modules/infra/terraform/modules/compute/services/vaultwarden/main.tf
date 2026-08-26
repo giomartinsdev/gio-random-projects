@@ -18,6 +18,10 @@ resource "docker_container" "vaultwarden" {
     # Must match the externally-visible URL exactly — Vaultwarden
     # embeds this in WebAuthn challenges and icon-fetch requests; a
     # mismatch breaks passkey login silently.
+    #
+    # HTTPS via Cloudflare returns once the DNS records flip proxied;
+    # in the direct-IP phase the vault is reached over plain HTTP and
+    # passkey login simply waits until then.
     "DOMAIN=https://${var.hostname}",
     # Cloudflare Access already gates who can reach this hostname at
     # all (Google SSO, allowed_emails) before Vaultwarden's own login
@@ -33,13 +37,14 @@ resource "docker_container" "vaultwarden" {
   ]
 
   ports {
+    ip       = "127.0.0.1"
     internal = 80
     external = var.published_port
   }
 
   # Also reachable by container name ("vaultwarden") on the internal
   # apps network — modules/compute/vaultwarden_bridge's own container
-  # talks to it this way, not through the published port/tunnel.
+  # talks to it this way, not through the published port.
   networks_advanced {
     name = var.network_name
   }

@@ -1,54 +1,63 @@
 # Terraform
 
-Source of truth for Cloudflare (DNS, Access, tunnel routing) **and**
-for gio-server's core containers (postgres, redis, domain-api,
-domain-worker, and more as new bounded contexts show up). This root
-module wires up provider configuration (`versions.tf`, the only place
-`provider` blocks live — see its own comment on why) and its child
-modules; it declares no resources of its own beyond that. `locals.tf`'s
-`ingress_rules` list is the one place a new hostname/service gets
-declared — everything else derives from it:
+Source of truth for Cloudflare (DNS, Access, registry mTLS) **and** for
+the VPS's core containers (postgres, redis, minio, the APIs, the front,
+and every service module). This root module wires up provider
+configuration (`versions.tf`, the only place `provider` blocks live)
+and its child modules; it declares no resources of its own beyond
+that. `locals.tf`'s `services` list is the one place a new
+hostname/port pair gets declared — everything else derives from it:
 
-- **[`modules/cloudflare`](modules/cloudflare/README.md)** — DNS, Access
-  applications/policies, and the tunnel's remote-managed config, for
-  every hostname in `ingress_rules` (minus `excluded_hostnames`). Also
-  owns the Access service token gating `docker.giomartins.dev`.
-- **[`modules/compute/data`](modules/compute/data/README.md)** — the
-  stateful layer: postgres, redis, the shared `apps` docker network,
-  and their volumes.
-- **[`modules/compute/app`](modules/compute/app/README.md)** — the
-  stateless layer: `<bounded-context>-api`/`<bounded-context>-worker`
-  container pairs, wired to `compute/data`'s outputs. Labeled for
-  `compute/registry`'s watchtower to redeploy on a new `:latest` push.
-- **[`modules/compute/registry`](modules/compute/registry/README.md)**
-  — the deploy pipeline: CI's own image registry plus the watchtower
-  that polls it. Depends on neither of the other compute modules; they
-  depend on it implicitly, by pulling images `apps-deploy.yml` pushes
-  here.
-- **[`modules/compute/monitoring`](modules/compute/monitoring/README.md)**
-  — Beszel: host/container CPU/memory/disk stats, at
-  `beszel.giomartins.dev`. Depends only on `compute/data`'s network.
+- **[`modules/cloud/cloudflare`](modules/cloud/cloudflare/README.md)** —
+  one A record per hostname (grey-cloud → the VPS IP until the proxy
+  flip), Access applications/policies/service tokens for everything not
+  in `excluded_hostnames`, and registry.giomartins.dev's mTLS chain +
+  WAF enforcement rule (dormant until Phase 2 — see below).
+- **[`modules/network/docker_apps`](modules/network/docker_apps/README.md)**
+  — the shared `apps` docker network every container joins.
+- **[`modules/storage/*`](modules/storage/postgres/README.md)** —
+  postgres, redis, minio: stateful, internal-only (no published ports
+  except minio's console).
+- **[`modules/compute/apps/*`](modules/compute/apps/domain_api/README.md)**
+  — domain-api (+worker), post-api, bookclub-api, classroom-api,
+  tela, front: stateless app containers, each publishing its port from
+  `locals.tf` straight on the host.
+- **[`modules/compute/services/*`](modules/compute/services/registry/README.md)**
+  — registry (+watchtower), beszel monitoring, 9router, vaultwarden
+  (+bridge), adminer, and [`ingress`](modules/compute/services/ingress/README.md)
+  — the single nginx front door everything else routes through.
 
-  Every compute module **depends on `modules/infra/terraform-bootstrap`'s**
-  `docker-api-proxy` being deployed on gio-server — a workaround for a
-  Cloudflare Tunnel quirk (HTTP/2→1.1 translation adding chunked
-  encoding to bodyless requests) that would otherwise break every
-  `docker_container` apply — see that directory's README.
+## Where the traffic goes
 
-`moved.tf` records this module's flat-to-nested-module history so
-`terraform apply` updates resource addresses in state instead of
-destroying and recreating live infrastructure; safe to delete once
-everyone's state has picked it up.
+Phase 1 (current): every DNS record is a **grey-cloud A record → the
+VPS IP**. `modules/compute/services/ingress` is the only thing with a
+port open on every interface (besides SSH and the registry's own
+`:5000` — see that module's README) — a single `nginx` on the host
+network listening on `:80`, routing by `Host` header to
+`127.0.0.1:<port>` for every entry in `locals.tf`'s `services` list.
+Every app/service container's own published port is bound to
+`127.0.0.1` only, so `http://<hostname>/` (no port needed) is the only
+way to reach any of them from outside the box. The docker provider
+itself connects to dockerd over plain SSH (`ssh://`), so there's no
+exposed Docker API endpoint either.
+`var.server_ip` has no default — every CI run discovers it fresh by
+SSHing into the VPS and asking an external IP-echo service, so the DNS
+records stay correct even if the VPS's address ever changes (see each
+workflow's "Discover the VPS's public IP" step).
 
-Add a hostname to `ingress_rules` and it gets DNS + Access protection
-by default the next time this applies; add it to `excluded_hostnames`
-too if it needs to stay open to non-browser clients.
+Phase 2 (later): flip `proxied = true` on
+`modules/cloud/cloudflare/dns.tf`'s record resource in one apply. The
+Access applications, WAF ruleset, and registry mTLS hostname
+association this config already manages start enforcing again the
+moment traffic flows through Cloudflare's edge — no other change.
+
+## State
 
 State lives in Cloudflare R2. The bucket itself is defined as code too
-— `modules/infra/terraform-bootstrap` — not duplicated here, because this
-config's own remote state can't depend on a bucket this same config
-creates. See that directory's README for the (one-time, local-state,
-by-hand) bootstrap run.
+— `modules/infra/terraform-bootstrap` — not duplicated here, because
+this config's own remote state can't depend on a bucket this same
+config creates. See that directory's README for the (one-time,
+local-state, by-hand) bootstrap run.
 
 ## One-time setup (dashboard/account steps only you can do)
 
@@ -86,19 +95,17 @@ by-hand) bootstrap run.
    - Zone / SSL and Certificates / Edit (scoped to giomartins.dev — for
      `registry_mtls.tf`'s `cloudflare_certificate_authorities_hostname_associations`)
 
-7. **`modules/infra/terraform-bootstrap`'s `cloudflared`/`docker-api-proxy`
-   and the daemon port move** — applied once by hand, not by this
-   Terraform config (see that directory's README for why). Do this
-   before the first `compute_*` module apply, or every
-   `docker_container` resource here will fail against the Cloudflare
-   Tunnel quirk that proxy works around.
+7. **SSH key for CI on the VPS** — generate a dedicated keypair
+   (`ssh-keygen -t ed25519 -f vps-deploy -N ""`), add the public key to
+   the VPS user's `~/.ssh/authorized_keys`, give that user passwordless
+   docker access (either membership in the `docker` group or sudo
+   rules). The private key becomes the `VPS_SSH_PRIVATE_KEY` repo
+   secret; the IP/host becomes `VPS_HOST`.
 
-8. **`/etc/docker/certs.d/registry.giomartins.dev/` must already exist
-   on gio-server** — `mkdir -p /etc/docker/certs.d/registry.giomartins.dev`,
-   by hand, once. Docker bind mounts don't create their host-side
-   source path themselves; without this,
-   `compute/registry`'s `registry_client_cert_install` resource fails
-   outright instead of writing the mTLS client cert there.
+8. **`/root/.docker` must exist on the VPS** — created automatically on
+   any modern distro, but verify if `docker_config_install` complains;
+   Docker bind mounts don't create their host-side source path
+   themselves.
 
 ## GitHub repo secrets
 
@@ -108,28 +115,30 @@ by-hand) bootstrap run.
 | `CLOUDFLARE_ACCOUNT_ID` | from step 3 |
 | `CLOUDFLARE_ZONE_ID` | from step 4 |
 | `CLOUDFLARE_GOOGLE_IDP_ID` | from step 5 |
-| `CLOUDFLARE_DOCKER_CLIENT_ID` | `modules/cloudflare`'s service token output — set once after the first apply |
-| `CLOUDFLARE_DOCKER_CLIENT_SECRET` | same, the `client_secret` output (sensitive) |
+| `VPS_SSH_PRIVATE_KEY` | deploy keypair's private half, from step 7 |
+| `VPS_HOST` | the VPS IP/hostname (`ssh-keyscan` target), from step 7 |
 | `TF_STATE_R2_ENDPOINT` | endpoint URL from step 2 |
 | `TF_STATE_R2_ACCESS_KEY_ID` | from step 2 |
 | `TF_STATE_R2_SECRET_ACCESS_KEY` | from step 2 |
-| `TF_POSTGRES_PASSWORD` | postgres/domain-api/domain-worker password — generate: `openssl rand -base64 24` |
-| `TF_DOMAIN_API_KEYS` | domain-api container's `DOMAIN_API_KEYS` — `key:label` pairs |
-| `TF_REGISTRY_PASSWORD` | registry basic-auth password — must match `REGISTRY_PASSWORD` (used by `apps-deploy.yml`'s push step) and the host's `docker login registry.giomartins.dev` watchtower relies on — see `modules/compute/registry`'s README |
-| `TF_BESZEL_AGENT_KEY` | the Beszel hub's SSH public key — blank is fine until the hub's first boot; see `modules/compute/monitoring`'s README for how to get it |
-| `TF_VAULTWARDEN_ADMIN_TOKEN` | token gating `vault.giomartins.dev/admin` — generate: `openssl rand -base64 48`; see `modules/compute/vaultwarden`'s README |
-| `TF_VAULTWARDEN_ACCOUNT_EMAIL` | email of your real Vaultwarden account (create it first, through the UI) — blank is fine until then; see `modules/compute/vaultwarden_bridge`'s README |
+| `TF_REGISTRY_PASSWORD` | registry basic-auth password — must match `REGISTRY_PASSWORD` (used by the deploy workflows' push step) and the host's `docker login registry.giomartins.dev:5000` watchtower relies on — see `modules/compute/services/registry`'s README |
+| `TF_BESZEL_AGENT_KEY` | the Beszel hub's SSH public key — blank is fine until the hub's first boot; see `modules/compute/services/monitoring`'s README for how to get it |
+| `TF_VAULTWARDEN_ACCOUNT_EMAIL` | email of your real Vaultwarden account (create it first, through the UI) — blank is fine until then; see `modules/compute/services/vaultwarden_bridge`'s README |
 | `TF_VAULTWARDEN_ACCOUNT_PASSWORD` | that account's master password |
-| `TF_VAULTWARDEN_API_CLIENT_ID` | API key `client_id` from vault.giomartins.dev → Account Settings → Security → Keys |
+| `TF_VAULTWARDEN_API_CLIENT_ID` | API key `client_id` from the vault UI → Account Settings → Security → Keys |
 | `TF_VAULTWARDEN_API_CLIENT_SECRET` | matching `client_secret` |
-| `TF_VAULTWARDEN_BRIDGE_API_KEY` | bearer token domain-api/domain-worker use to call the bridge — generate: `openssl rand -base64 32`; blank disables the bridge module entirely |
+| `REGISTRY_USERNAME` / `REGISTRY_PASSWORD` | used by the build workflows' `docker login`/push step |
 
-Once these are set, `.github/workflows/tf-deploy.yml` plans on every PR
-touching this directory, and applies on push to `main` — including a
-sidecar step that injects `CLOUDFLARE_DOCKER_CLIENT_ID/SECRET` as
-`CF-Access-Client-Id/Secret` headers for the `docker` provider's
-connection, since that provider has no way to attach custom headers
-itself.
+Everything else the containers need (postgres password, API keys,
+Better Auth secrets, vaultwarden admin token, 9router credentials, …)
+is generated by Terraform itself — see `secrets.tf` — and seeded into
+Vaultwarden automatically. Retrieve with `terraform output` after an
+apply.
+
+Once these are set, `.github/workflows/tf-ci-cd.yml` plans on every PR
+touching this directory, and applies on push to `main`. Its docker
+provider step needs no proxy anymore: it installs
+`VPS_SSH_PRIVATE_KEY` into `~/.ssh` and lets the provider's
+`ssh://docker_host` talk to the VPS directly.
 
 ## Running locally
 
@@ -138,18 +147,17 @@ cat > terraform.tfvars <<EOF
 cloudflare_account_id           = "<from step 3>"
 cloudflare_zone_id              = "<from step 4>"
 google_idp_identity_provider_id = "<from step 5>"
-postgres_password                = "<generate: openssl rand -base64 24>"
-domain_api_keys                  = "<key:label>"
+server_ip                       = "<the VPS's current public IP>"
+docker_host                     = "ssh://ubuntu@<the VPS's public IP>"
 EOF
 
 export CLOUDFLARE_API_TOKEN=<token from step 6>
 export AWS_ACCESS_KEY_ID=<from step 2>
 export AWS_SECRET_ACCESS_KEY=<from step 2>
 
-# The docker provider needs the same header-injecting proxy CI uses —
-# run one locally (any HTTP proxy that adds CF-Access-Client-Id/Secret
-# and forwards to https://docker.giomartins.dev works), then:
-export TF_VAR_docker_host="tcp://localhost:<your local proxy port>"
+# The docker provider connects to the VPS over SSH — just make sure
+# your agent holds a key the VPS accepts:
+ssh-add ~/.ssh/<your vps key>
 
 terraform init -backend-config="endpoints={s3=\"<endpoint from step 2>\"}"
 terraform plan

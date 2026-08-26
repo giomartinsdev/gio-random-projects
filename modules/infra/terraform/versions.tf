@@ -72,19 +72,19 @@ provider "cloudflare" {
 }
 
 provider "docker" {
-  # Points at a local header-injecting proxy (nginx), NOT directly at
-  # docker.giomartins.dev — this provider has no way to attach the
-  # CF-Access-Client-Id/Secret headers Access requires itself. The
-  # proxy forwards to https://docker.giomartins.dev with those headers
-  # injected; this only ever talks to localhost. See README.md and
-  # .github/workflows/tf-deploy.yml's sidecar step.
+  # Talks straight to the VPS dockerd over SSH (var.docker_host) — the
+  # same channel a human `docker` CLI would use, no exposed TCP port,
+  # no Access service token, no header-injecting proxy anywhere in the
+  # path. The remote host needs the key in the caller's ssh-agent (CI:
+  # tf-ci-cd.yml's SSH setup step; locally: your own agent).
   #
   # A pull triggered over the Docker API (as this provider does, unlike
   # the docker CLI) carries its own auth per-request — dockerd does NOT
   # fall back to the host's `docker login`-populated config.json for
-  # API-originated pulls. Without this, every docker_container/
-  # docker_image resource pulling from registry.giomartins.dev (now
-  # htpasswd-gated) fails with "no basic auth credentials".
+  # API-originated pulls. registry_auth below supplies that per-pull;
+  # without it, every docker_container/docker_image resource pulling
+  # from registry.giomartins.dev (htpasswd-gated) fails with "no basic
+  # auth credentials".
   registry_auth {
     address  = var.registry_host
     username = var.registry_user

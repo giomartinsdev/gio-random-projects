@@ -1,8 +1,8 @@
 # Beszel: a hub (dashboard + SQLite storage) and an agent (collects
 # host/container stats, reachable only by the hub — it never listens
-# for anything else). Both run on gio-server since there's only one
-# host to monitor; the hub connects to the agent over the shared
-# docker network below, not the public internet.
+# for anything else). Both run on the VPS since there's only one host
+# to monitor; the hub connects to the agent over the shared docker
+# network below, not the public internet.
 
 resource "docker_volume" "beszel_data" {
   name = "beszel_data"
@@ -17,21 +17,18 @@ resource "docker_container" "beszel_hub" {
     name = var.network_name
   }
 
-  # No published port — only reachable over the docker network, by
-  # beszel-proxy (modules/infra/terraform-bootstrap, not here — see
-  # that module's README for why: building beszel-proxy's image needs
-  # a docker_image + build{} resource, and that consistently fails
-  # ("no active session ... context deadline exceeded") when applied
-  # through this config's own CI proxy chain. Confirmed live: the
-  # exact same resource, applied through terraform-bootstrap's direct
-  # SSH-tunneled connection instead, builds fine — BuildKit's build
-  # protocol needs a real bidirectional session the intermediary
-  # proxies (nginx sidecar, docker-api-proxy) were never designed to
-  # relay, unlike the plain request/response traffic every other
-  # docker_container/docker_image (no build{}) resource in this repo
-  # sends). Publishing this directly used to work for most calls, but
-  # not for POST /api/collections/users/auth-refresh — see that
-  # proxy's own comment.
+  # Loopback-only: compute/services/ingress is the only thing that
+  # reaches this directly, proxying beszel.giomartins.dev to
+  # 127.0.0.1:8090. There used to be an intermediate beszel-proxy
+  # container in this path working around a Cloudflare-Tunnel HTTP/2
+  # quirk; the tunnel is gone and the proxy with it. PocketBase
+  # (Beszel's own base) is happy with a plain HTTP/1.1 origin.
+  ports {
+    ip       = "127.0.0.1"
+    internal = 8090
+    external = 8090
+  }
+
   mounts {
     type   = "volume"
     source = docker_volume.beszel_data.name

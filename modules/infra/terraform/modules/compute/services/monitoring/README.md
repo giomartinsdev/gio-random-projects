@@ -1,31 +1,25 @@
-# module "compute/monitoring"
+# module "compute/services/monitoring"
 
-Host and per-container CPU/memory/disk stats for gio-server —
+Host and per-container CPU/memory/disk stats for the VPS —
 [Beszel](https://github.com/henrygd/beszel), chosen for being a
 single small Go binary on both sides, unlike heavier
-Prometheus+Grafana+cAdvisor stacks this host's 8GB RAM would rather
-not spend on observability.
+Prometheus+Grafana+cAdvisor stacks this host would rather not spend on
+observability.
 
-- **`docker_container.beszel_hub`** — the dashboard + SQLite storage.
-  No published port — only reachable over the docker network, by
-  `beszel-proxy`, a **separate** `modules/infra/terraform-bootstrap`
-  resource (not this module — see that config's own README for why:
-  building its image needs a `docker_image` + `build {}` resource that
-  only works applied through that config's direct connection).
-  `beszel-proxy` joins this module's docker network by name to reach
-  `beszel-hub`; there's no Terraform-level reference between the two
-  configs, just the same real network on the same real host.
+- **`docker_container.beszel_hub`** — the dashboard + SQLite storage,
+  published straight on host port 8090 (reached as `beszel.giomartins.dev:8090`
+  or `http://<server_ip>:8090`; Cloudflare Access re-gates it once the
+  DNS records flip proxied).
 - **`docker_container.beszel_agent`** — collects stats and waits for
   the hub to connect; never initiates anything itself. Needs
   `/var/run/docker.sock` bind-mounted to see other containers' stats,
-  same as `compute/registry`'s watchtower does for redeploys. Refuses
-  to even start without a real `KEY`, so this resource has
+  same as `compute/services/registry`'s watchtower does for redeploys.
+  Refuses to even start without a real `KEY`, so this resource has
   `count = var.agent_key != "" ? 1 : 0` — absent entirely rather than
   crash-looping until you have one (see below).
 
-Both join `compute/data`'s network (passed in as `network_name`, not
-created here) so the hub can reach the agent by container name — same
-network `beszel-proxy` joins from the other config to reach the hub.
+Both join the shared `apps` network (passed in as `network_name`, not
+created here) so the hub can reach the agent by container name.
 Neither needs postgres or redis.
 
 ## Connecting the hub to the agent
@@ -38,11 +32,11 @@ started once and you've clicked through this. First apply:
 1. `terraform apply` with `beszel_agent_key` left at its default `""`
    — only the hub comes up; the agent resource doesn't exist yet
    (its `count` is 0).
-2. Open `https://beszel.giomartins.dev`, create the admin account,
-   then **Add System** — name it (e.g. `gio-server`), host
-   `beszel-agent` (the container name the agent will resolve to over
-   the shared docker network once it exists), port `45876`. The
-   dialog shows the public key to install on the agent; copy it.
+2. Open `http://<server_ip>:8090`, create the admin account, then
+   **Add System** — name it (e.g. `vps`), host `beszel-agent` (the
+   container name the agent will resolve to over the shared docker
+   network once it exists), port `45876`. The dialog shows the public
+   key to install on the agent; copy it.
 3. Set `beszel_agent_key` to that value and `terraform apply` again —
    this creates `beszel_agent` for the first time, with `KEY` already
    set, and the system added in step 2 starts reporting.

@@ -8,13 +8,8 @@ output "excluded_hostnames" {
   value       = var.excluded_hostnames
 }
 
-output "tunnel_id" {
-  description = "The imported tunnel's ID."
-  value       = cloudflare_zero_trust_tunnel_cloudflared.homelab.id
-}
-
 output "service_token_client_ids" {
-  description = "Access service token Client IDs, keyed by service_token_hostnames' short name (\"docker\", \"domain\") — set as the CLOUDFLARE_<KEY>_CLIENT_ID CI secrets."
+  description = "Access service token Client IDs, keyed by service_token_hostnames' short name (\"domain\") — set as the CLOUDFLARE_<KEY>_CLIENT_ID CI secrets."
   value       = { for k, v in cloudflare_zero_trust_access_service_token.ci : k => v.client_id }
 }
 
@@ -36,7 +31,7 @@ output "protected_hosts_service_token_client_secrets" {
 }
 
 output "registry_client_cert_pem" {
-  description = "mTLS client certificate for registry.giomartins.dev — install at /etc/docker/certs.d/registry.giomartins.dev/client.cert wherever docker push/pull happens (CI, gio-server for watchtower). See registry_mtls.tf."
+  description = "mTLS client certificate for registry.giomartins.dev, for a future Phase 2 (proxied) reactivation — dormant and unused while Phase 1's grey-cloud records mean this WAF rule never fires. See registry_mtls.tf."
   value       = tls_locally_signed_cert.registry_client.cert_pem
 }
 

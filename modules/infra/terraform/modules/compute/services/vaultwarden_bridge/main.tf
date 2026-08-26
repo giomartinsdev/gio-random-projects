@@ -5,7 +5,7 @@
 # something domain-api/domain-worker should reimplement themselves),
 # and re-exposes individual items over a trivial internal
 # `GET /secret/:name` REST API. Nothing here is reachable outside the
-# docker network — no ports{} block, no tunnel ingress rule. Only
+# docker network — no ports{} block. Only
 # domain-api/domain-worker (and anything else added later) ever call
 # it, over the network by container name.
 

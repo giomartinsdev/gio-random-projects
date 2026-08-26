@@ -75,7 +75,7 @@ variable "discord_client_secret" {
 }
 
 variable "watchtower_enabled" {
-  description = "Same reasoning as modules/compute/app's own variable of the same name: false by default, since apps-deploy.yml's own terraform apply -replace=... is the actual redeploy mechanism."
+  description = "Same reasoning as modules/compute/app's own variable of the same name: false by default, since go-ci-cd.yml's own terraform apply -replace=... is the actual redeploy mechanism."
   type        = bool
   default     = false
 }
