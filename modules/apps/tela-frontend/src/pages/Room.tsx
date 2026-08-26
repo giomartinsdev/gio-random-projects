@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { Check, Copy, Link2, Loader2, Mic, MicOff, MonitorUp, Play, ScreenShareOff, Users, Video, Volume2, VolumeX, X } from "lucide-react";
+import { Check, Copy, Crop, Link2, Loader2, Mic, MicOff, MonitorUp, Play, ScreenShareOff, Users, Video, Volume2, VolumeX, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareCamera, canShareScreen, useRoom } from "@/lib/useRoom";
 import { useWakeLock } from "@/lib/useWakeLock";
@@ -9,6 +9,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+
+// A viewer's own preference for how the fullscreen tile fits its
+// space -- purely local rendering, never touches the publisher's
+// actual stream/encoding (see useRoom.ts for that). "auto" letterboxes
+// at the stream's real ratio; the fixed ratios crop/pad to match a
+// specific shape (useful for a game recorded 4:3, say, watched on a
+// 16:9 screen); "fill" crops to cover the tile edge-to-edge regardless
+// of ratio.
+type AspectMode = "auto" | "16:9" | "4:3" | "1:1" | "fill";
+const ASPECT_MODES: { mode: AspectMode; label: string; ratio?: string }[] = [
+  { mode: "auto", label: "Original" },
+  { mode: "16:9", label: "16:9", ratio: "16 / 9" },
+  { mode: "4:3", label: "4:3", ratio: "4 / 3" },
+  { mode: "1:1", label: "1:1", ratio: "1 / 1" },
+  { mode: "fill", label: "Preencher" },
+];
 
 export default function Room() {
   const { id } = useParams<{ id: string }>();
@@ -119,6 +135,10 @@ function LiveRoom({
   // Which people I've muted, decided per stream and only on my side --
   // muting someone here doesn't stop them sending audio to anyone else.
   const [mutedPeers, setMutedPeers] = useState<Set<string>>(new Set());
+  // One choice for the whole session, not per-tile: switching who
+  // you're watching in fullscreen keeps whatever fit you picked
+  // instead of resetting to "Original" every time.
+  const [aspectMode, setAspectMode] = useState<AspectMode>("auto");
 
   const toggleMuted = (peerId: string) =>
     setMutedPeers((current) => {
@@ -267,6 +287,8 @@ function LiveRoom({
             muted={mutedPeers.has(selectedTile.peerId)}
             onToggleMuted={() => toggleMuted(selectedTile.peerId)}
             onClose={() => setSelected(null)}
+            aspectMode={aspectMode}
+            onAspectModeChange={setAspectMode}
           />
         ) : tiles.length === 0 ? (
           <Empty roomId={roomId} password={password} />
@@ -339,19 +361,24 @@ function FullscreenTile({
   muted,
   onToggleMuted,
   onClose,
+  aspectMode,
+  onAspectModeChange,
 }: {
   tile: Tile;
   muted: boolean;
   onToggleMuted: () => void;
   onClose: () => void;
+  aspectMode: AspectMode;
+  onAspectModeChange: (mode: AspectMode) => void;
 }) {
   return (
     <div className="absolute inset-0 flex flex-col bg-black">
-      <TileVideo tile={tile} muted={muted} className="flex-1" />
+      <TileVideo tile={tile} muted={muted} aspectMode={aspectMode} className="flex-1" />
       <div className="absolute left-3 top-3 rounded-md bg-black/70 px-3 py-1.5 text-sm font-medium">
         {tile.name}
       </div>
       <div className="absolute right-3 top-3 flex gap-2">
+        <AspectModeButton mode={aspectMode} onChange={onAspectModeChange} />
         {!tile.isYou && hasAudio(tile.stream) && <MuteButton muted={muted} onToggle={onToggleMuted} />}
         <Button variant="secondary" size="sm" onClick={onClose} aria-label="Voltar para o grid">
           <X className="size-4" />
@@ -362,7 +389,41 @@ function FullscreenTile({
   );
 }
 
-function TileVideo({ tile, muted, className = "" }: { tile: Tile; muted: boolean; className?: string }) {
+// Cycles through ASPECT_MODES on each click rather than a dropdown --
+// only 5 options, and a single tap/click is faster than opening a
+// menu for something people will flip a few times per session at most.
+function AspectModeButton({ mode, onChange }: { mode: AspectMode; onChange: (mode: AspectMode) => void }) {
+  const index = ASPECT_MODES.findIndex((m) => m.mode === mode);
+  const current = ASPECT_MODES[index] ?? ASPECT_MODES[0];
+  const next = ASPECT_MODES[(index + 1) % ASPECT_MODES.length];
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(next.mode);
+      }}
+      aria-label={`Ajuste de tela: ${current.label} (toque para ${next.label})`}
+      title={`Ajuste de tela: ${current.label} (toque para ${next.label})`}
+    >
+      <Crop className="size-4" />
+      {current.label}
+    </Button>
+  );
+}
+
+function TileVideo({
+  tile,
+  muted,
+  aspectMode = "auto",
+  className = "",
+}: {
+  tile: Tile;
+  muted: boolean;
+  aspectMode?: AspectMode;
+  className?: string;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [needsTap, setNeedsTap] = useState(false);
 
@@ -393,41 +454,53 @@ function TileVideo({ tile, muted, className = "" }: { tile: Tile; muted: boolean
     );
   }
 
+  // "auto" shows the stream at its real ratio, untouched (object-contain,
+  // no fixed box). The fixed ratios (16:9, 4:3, 1:1) bound a box of that
+  // shape and crop the video to fill it -- a deliberate re-frame, not a
+  // letterbox. "fill" skips the box and crops straight to the tile.
+  const fixedRatio = ASPECT_MODES.find((m) => m.mode === aspectMode)?.ratio;
+  const fit = aspectMode === "auto" ? "object-contain" : "object-cover";
+
   return (
-    <>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        // My own tile is always silent -- playing my own microphone back
-        // at me would echo. Everyone else's follows this viewer's choice.
-        muted={tile.isYou || muted}
-        className={`h-full w-full object-contain ${className}`}
-      />
-      {needsTap && (
-        <span
-          onClick={(e) => {
-            e.stopPropagation();
-            const video = videoRef.current;
-            if (!video) return;
-            video.play().then(
-              () => setNeedsTap(false),
-              () => {
-                // Still blocked -- muting always satisfies the autoplay
-                // policy, so at least the picture starts.
-                video.muted = true;
-                void video.play();
-                setNeedsTap(false);
-              },
-            );
-          }}
-          className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70"
-        >
-          <Play className="size-10" />
-          <span className="text-sm font-medium">Toque para assistir</span>
-        </span>
-      )}
-    </>
+    <div className={`relative flex h-full w-full items-center justify-center overflow-hidden ${className}`}>
+      <div
+        className={fixedRatio ? "relative" : "relative h-full w-full"}
+        style={fixedRatio ? { aspectRatio: fixedRatio, height: "100%", width: "auto", maxWidth: "100%" } : undefined}
+      >
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          // My own tile is always silent -- playing my own microphone back
+          // at me would echo. Everyone else's follows this viewer's choice.
+          muted={tile.isYou || muted}
+          className={`h-full w-full ${fit}`}
+        />
+        {needsTap && (
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              const video = videoRef.current;
+              if (!video) return;
+              video.play().then(
+                () => setNeedsTap(false),
+                () => {
+                  // Still blocked -- muting always satisfies the autoplay
+                  // policy, so at least the picture starts.
+                  video.muted = true;
+                  void video.play();
+                  setNeedsTap(false);
+                },
+              );
+            }}
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70"
+          >
+            <Play className="size-10" />
+            <span className="text-sm font-medium">Toque para assistir</span>
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 
