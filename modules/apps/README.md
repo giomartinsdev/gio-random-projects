@@ -7,9 +7,10 @@ workflow's own header for why not watchtower). Three pipelines, one
 per language+layer:
 
 - **`.github/workflows/go-ci-cd.yml`** — Go apps, auto-discovered by
-  `go.mod` (`domain-api`, `domain-worker`, `tela`).
+  `go.mod` (`domain-api`, `domain-worker`, `tela-api`).
 - **`.github/workflows/ts-frontend-ci-cd.yml`** — TypeScript frontend
-  apps (`front`), which need `VITE_*` build-args baked into the bundle.
+  apps (`buteco-class-frontend`, `tela-frontend`), which need `VITE_*`
+  build-args baked into the bundle.
 - **`.github/workflows/ts-backend-ci-cd.yml`** — TypeScript backend
   apps (`post-api`, `bookclub-api`, `classroom-api`), which take their
   config as real runtime env vars from Terraform instead.
@@ -29,8 +30,9 @@ only ever fit one.
 - **`domain-worker/`** — the only writer, consumes commands off the
   event bus, applies them, records an audit trail.
 - **`post-api/`** — headless content API for Buteco dos Devs (articles/courses, Better Auth). Independent Node/TypeScript stack, not Go like the rest of this folder — see its own README for why. A future `buteco-bot` (Discord integration) would be just another consumer of this same API, not a new bounded context.
-- **`front/`** — the blog's React frontend, talking to `post-api` and `bookclub-api` directly from the browser. Same Node/TypeScript stack as `post-api`.
+- **`buteco-class-frontend/`** — the blog's React frontend, talking to `post-api` and `bookclub-api` directly from the browser. Same Node/TypeScript stack as `post-api`.
 - **`bookclub-api/`** — realtime PDF room service ("Clube do Livro"): upload a PDF, open a room, others join over a WebSocket for live page-turning, host annotations, and chat. Unlike `post-api`, it owns its rooms/documents/messages tables directly (no domain-api CQRS hop) and reuses post-api's own Better Auth session instead of its own login — see its README for why both.
+- **`tela-api/`** / **`tela-frontend/`** — screen sharing at `tela.giomartins.dev`: a Go SFU/signalling backend and its own separate React frontend, talking to each other over CORS (own containers, own origins). Shares nothing with the rest of this folder — no Postgres, no Better Auth, no domain-api. See `tela-api/README.md` for how the SFU itself works.
 
 `domain-api` and `domain-worker` are deliberately independent Go
 modules (each with its own `go.mod`) even though they agree on the

@@ -34,7 +34,7 @@ variable "hostname" {
 variable "frontend_origins" {
   description = "Origins allowed to call classroom-api cross-origin (CORS) and trusted by Better Auth for its CSRF check."
   type        = list(string)
-  default     = ["https://classroom-bdd.giomartins.dev", "http://localhost:5173"]
+  default     = ["https://buteco-class.giomartins.dev", "http://localhost:5173"]
 }
 
 variable "external_port" {

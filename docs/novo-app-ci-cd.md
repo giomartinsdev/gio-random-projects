@@ -4,7 +4,7 @@ Como levar um projeto novo de zero até um domínio próprio rodando em
 produção, neste repositório. O caminho todo é: **descoberta automática →
 build da imagem → push no registry → `terraform apply`**.
 
-Se você quiser um exemplo completo para copiar, `modules/apps/tela` é o
+Se você quiser um exemplo completo para copiar, `modules/apps/tela-api` é o
 mais recente e o mais autocontido (um container, um domínio, sem banco).
 
 ---
@@ -27,7 +27,7 @@ arquivo, TypeScript precisa ser adicionado numa lista explícita**:
 | TypeScript backend | `.github/workflows/ts-backend-ci-cd.yml` | idem, no seu próprio `ALLOWED_APPS` |
 
 Um `package.json` sozinho não basta para o TypeScript pegar seu app —
-`front` também tem um, e não é isso que separa frontend de backend. Ao
+`buteco-class-frontend` também tem um, e não é isso que separa frontend de backend. Ao
 criar um app TS novo, adicione o nome no array `ALLOWED_APPS` do
 workflow certo (`ts-frontend-ci-cd.yml` se ele bate `VITE_*` no bundle
 em build time; `ts-backend-ci-cd.yml` se recebe config em runtime via
@@ -39,7 +39,7 @@ Go continua auto-descoberto por `find modules/apps -mindepth 2
 > Um app Go com frontend React põe o `package.json` em
 > `modules/apps/<nome>/client/package.json` (profundidade 3) — os
 > workflows TypeScript não enxergam essa profundidade, e o app builda só
-> pelo pipeline Go, um container, um build. É o que `tela` faz.
+> pelo pipeline Go, um container, um build. É o que `tela-api` faz.
 
 ## 3. Dockerfile
 
@@ -82,8 +82,9 @@ resource "docker_container" "<nome>" {
 }
 ```
 
-Portas já usadas hoje: 8003 (front), 8004 (bookclub-api), 8005
-(classroom-api), 8006 (tela). Pegue a próxima.
+Portas já usadas hoje: 8003 (buteco-class-frontend), 8004 (bookclub-api),
+8005 (classroom-api), 8006 (tela-frontend), 8007 (tela-api). Pegue a
+próxima.
 
 Depois registre o módulo em `modules/infra/terraform/main.tf`:
 
@@ -132,7 +133,7 @@ cada workflow:
 ```bash
 case "$app" in
   domain-api)    REPLACE_ARGS+=("-replace=module.compute_apps_domain_api.docker_container.domain_api") ;;
-  tela)          REPLACE_ARGS+=("-replace=module.compute_apps_tela.docker_container.tela") ;;
+  tela-api)      REPLACE_ARGS+=("-replace=module.compute_apps_tela_api.docker_container.tela_api") ;;
   <nome>)        REPLACE_ARGS+=("-replace=module.compute_apps_<nome>.docker_container.<nome>") ;;
   *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
 esac
@@ -141,7 +142,7 @@ esac
 O mapeamento é explícito porque não dá para derivar do nome:
 `domain-worker`, por exemplo, mora dentro do módulo do `domain-api`.
 
-> Aconteceu de verdade com o `tela`: dois deploys "com sucesso" seguidos,
+> Aconteceu de verdade com o `tela-api`: dois deploys "com sucesso" seguidos,
 > e o site continuou servindo o primeiro bundle. O `*)` com warning
 > existe agora justamente para essa falha aparecer.
 

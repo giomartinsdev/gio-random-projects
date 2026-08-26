@@ -1,14 +1,15 @@
 name: TypeScript frontend deploy
 
-# CI/CD for the TypeScript frontend apps under modules/apps/*/ -- today
-# just front (the classroom-bdd SPA). Split from the backend pipeline
-# (ts-backend-ci-cd.yml) because the two build differently in a way
-# that's easy to get wrong sharing one workflow: only a frontend needs
-# VITE_* build-args baked into the bundle at build time, and its
-# deploy never runs a *-migrate container first. go-ci-cd.yml/
-# tf-ci-cd.yml are their own pipelines for the same reason -- one
-# pipeline per language+layer, not one generic pipeline branching on
-# every difference between them.
+# CI/CD for the TypeScript frontend apps under modules/apps/*/ --
+# buteco-class-frontend (the Buteco dos Devs SPA) and tela-frontend
+# (screen sharing's own page, split from tela-api). Split from the
+# backend pipeline (ts-backend-ci-cd.yml) because the two build
+# differently in a way that's easy to get wrong sharing one workflow:
+# only a frontend needs VITE_* build-args baked into the bundle at
+# build time, and its deploy never runs a *-migrate container first.
+# go-ci-cd.yml/tf-ci-cd.yml are their own pipelines for the same
+# reason -- one pipeline per language+layer, not one generic pipeline
+# branching on every difference between them.
 #
 # ALLOWED_APPS below is the actual pipeline boundary -- add a new
 # frontend app there (and nowhere else) to bring it under this
@@ -19,7 +20,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "modules/apps/front/**"
+      - "modules/apps/buteco-class-frontend/**"
+      - "modules/apps/tela-frontend/**"
   workflow_dispatch:
     inputs:
       app:
@@ -38,7 +40,7 @@ jobs:
 
       - id: list
         env:
-          ALLOWED_APPS: front
+          ALLOWED_APPS: "buteco-class-frontend tela-frontend"
         run: |
           all_apps=$(echo "$ALLOWED_APPS" | tr ' ' '\n')
 
@@ -149,6 +151,12 @@ jobs:
           username: ${{ env.REGISTRY_USERNAME }}
           password: ${{ env.REGISTRY_PASSWORD }}
 
+      # Every build-arg below is passed for every app in the matrix --
+      # an app whose Dockerfile doesn't declare a given ARG just
+      # ignores it (a harmless "InvalidDefaultArgInFrom"-free no-op),
+      # same convention ts-backend-ci-cd.yml's own comment describes.
+      # buteco-class-frontend uses the VITE_POST_API_URL/etc set;
+      # tela-frontend uses only VITE_TELA_API_URL.
       - name: Build and push ${{ matrix.app }}
         uses: docker/build-push-action@v6
         with:
@@ -158,17 +166,13 @@ jobs:
           tags: |
             registry.giomartins.dev:5000/${{ matrix.app }}:latest
             registry.giomartins.dev:5000/${{ matrix.app }}:${{ github.sha }}
-          # Vite bakes VITE_* env vars into the static bundle at build
-          # time, not read at runtime -- that's the whole reason this
-          # is a separate pipeline from the backend apps, which take
-          # the equivalent values (e.g. DISCORD_CLIENT_ID) as real
-          # runtime env vars via Terraform instead.
           build-args: |
             VITE_POST_API_URL=https://post-api.giomartins.dev
             VITE_BOOKCLUB_API_URL=https://bookclub-api.giomartins.dev
             VITE_CLASSROOM_API_URL=https://classroom-api.giomartins.dev
-            VITE_PUBLIC_APP_URL=https://classroom-bdd.giomartins.dev
+            VITE_PUBLIC_APP_URL=https://buteco-class.giomartins.dev
             VITE_DISCORD_CLIENT_ID=${{ env.DISCORD_CLIENT_ID }}
+            VITE_TELA_API_URL=https://tela-api.giomartins.dev
 
   deploy:
     needs: [discover, build-and-push]
@@ -213,7 +217,7 @@ jobs:
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
           echo "TF_VAR_docker_host=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
 
-      # var.server_ip drives every DNS A record (dns.tf) and tela's
+      # var.server_ip drives every DNS A record (dns.tf) and tela-api's
       # SFU advertisement -- asking the VPS itself keeps giomartins.dev
       # correct even if its address ever changes.
       - name: Discover the VPS's public IP
@@ -282,7 +286,8 @@ jobs:
           REPLACE_ARGS=()
           for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
             case "$app" in
-              front) REPLACE_ARGS+=("-replace=module.compute_apps_front.docker_container.front") ;;
+              buteco-class-frontend) REPLACE_ARGS+=("-replace=module.compute_apps_buteco_class_frontend.docker_container.buteco_class_frontend") ;;
+              tela-frontend) REPLACE_ARGS+=("-replace=module.compute_apps_tela_frontend.docker_container.tela_frontend") ;;
               *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
             esac
           done

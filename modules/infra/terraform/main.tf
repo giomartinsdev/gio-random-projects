@@ -128,21 +128,31 @@ module "compute_apps_classroom_api" {
   depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api]
 }
 
-# Standalone: no database, no shared auth, no domain-api -- so unlike
-# every other app module here it takes nothing but the network and the
-# registry. See modules/compute/apps/tela/main.tf.
-module "compute_apps_tela" {
-  source = "./modules/compute/apps/tela"
+# Standalone: no database, no shared auth, no domain-api. Split from
+# tela-frontend (below) -- see modules/compute/apps/tela_api/main.tf.
+module "compute_apps_tela_api" {
+  source = "./modules/compute/apps/tela_api"
   providers = {
     docker = docker
   }
 
-  registry_host   = var.registry_host
-  sfu_public_host = var.server_ip
+  registry_host    = var.registry_host
+  sfu_public_host  = var.server_ip
+  frontend_origins = ["https://tela.giomartins.dev"]
 }
 
-module "compute_apps_front" {
-  source = "./modules/compute/apps/front"
+module "compute_apps_tela_frontend" {
+  source = "./modules/compute/apps/tela_frontend"
+  providers = {
+    docker = docker
+  }
+
+  network_name  = module.network_docker_apps.network_name
+  registry_host = var.registry_host
+}
+
+module "compute_apps_buteco_class_frontend" {
+  source = "./modules/compute/apps/buteco_class_frontend"
   providers = {
     docker = docker
   }
@@ -179,8 +189,9 @@ module "compute_services_ingress" {
     module.compute_apps_post_api,
     module.compute_apps_bookclub_api,
     module.compute_apps_classroom_api,
-    module.compute_apps_tela,
-    module.compute_apps_front,
+    module.compute_apps_tela_api,
+    module.compute_apps_tela_frontend,
+    module.compute_apps_buteco_class_frontend,
     module.compute_services_registry,
     module.compute_services_monitoring,
     module.compute_services_ai_proxy,

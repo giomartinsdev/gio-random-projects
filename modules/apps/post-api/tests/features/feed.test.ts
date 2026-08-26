@@ -32,7 +32,7 @@ beforeAll(async () => {
   stopDomainApi = fakeDomainApi.stop;
   const domainApi = createDomainApiClient(fakeDomainApi.url, DOMAIN_API_KEY);
 
-  app = createApp(auth, domainApi, ["https://classroom-bdd.giomartins.dev"]);
+  app = createApp(auth, domainApi, ["https://buteco-class.giomartins.dev"]);
 }, 60_000);
 
 afterAll(async () => {
@@ -59,7 +59,7 @@ describe("GET /feed.xml", () => {
     expect(res.headers.get("content-type")).toContain("application/rss+xml");
     const xml = await res.text();
     expect(xml).toContain("<title>Publicado no feed</title>");
-    expect(xml).toContain("https://classroom-bdd.giomartins.dev/posts/");
+    expect(xml).toContain("https://buteco-class.giomartins.dev/posts/");
   });
 
   it("omits a draft post from the feed (negative)", async () => {

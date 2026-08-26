@@ -39,8 +39,9 @@ variable "excluded_hostnames" {
     "post-api.giomartins.dev",      # own Better Auth — a browser SSO redirect would break API/bot clients, same reasoning as domain.giomartins.dev
     "bookclub-api.giomartins.dev",  # own Better Auth session check — same reasoning, plus a redirect would break the front's WebSocket upgrade
     "classroom-api.giomartins.dev", # own Better Auth session check — same reasoning as bookclub-api.giomartins.dev
-    "classroom-bdd.giomartins.dev", # meant to be publicly readable by anyone, not gated behind Google SSO
+    "buteco-class.giomartins.dev",  # meant to be publicly readable by anyone, not gated behind Google SSO
     "tela.giomartins.dev",          # rooms are shared with people who have no account here; the room password is the access control
+    "tela-api.giomartins.dev",      # same tela-frontend page calls this cross-origin for signalling/SFU — a browser SSO redirect would break every fetch/WebSocket call
     "ai.giomartins.dev",            # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
   ]
 }
@@ -156,7 +157,7 @@ variable "vaultwarden_api_client_secret" {
 }
 
 variable "discord_client_id" {
-  description = "Discord Application client ID for the classroom-bdd Discord Activity -- blank (the default) leaves the whole feature disabled: post-api's /discord/token route doesn't mount, and front's Activity handshake logs an error and no-ops. Register the app at discord.com/developers/applications, enable Activities, then set this and discord_client_secret."
+  description = "Discord Application client ID for the buteco-class Discord Activity -- blank (the default) leaves the whole feature disabled: post-api's /discord/token route doesn't mount, and front's Activity handshake logs an error and no-ops. Register the app at discord.com/developers/applications, enable Activities, then set this and discord_client_secret."
   type        = string
   default     = ""
 }

@@ -4,7 +4,7 @@ Infra-as-code and app code for the VPS, all under `modules/`.
 
 ```
 modules/
-  apps/      independently deployed apps — api, worker, front, tela, ...
+  apps/      independently deployed apps — api, worker, buteco-class-frontend, tela-api, tela-frontend, ...
   infra/     terraform (Cloudflare DNS/Access + VPS containers), registry, watchtower
 ```
 
@@ -24,7 +24,7 @@ than one generic pipeline branching on every difference between them:
   `modules/infra/terraform/`, applies on push to `main`.
 
 Unlike Go's, the two TypeScript pipelines don't auto-discover by file
-presence alone (`front` has a `package.json` too) — see
+presence alone (every app has a `package.json`, frontend or not) — see
 `docs/novo-app-ci-cd.md` for each workflow's `ALLOWED_APPS` list.
 
 See `modules/apps/README.md` and `modules/infra/README.md` for what's

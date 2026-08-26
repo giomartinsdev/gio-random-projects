@@ -54,7 +54,7 @@ To turn it on:
 
 1. Register an application at [discord.com/developers/applications](https://discord.com/developers/applications), enable **Activities** for it.
 2. Under **Activities → URL Mappings**, set:
-   - Root mapping (`/`) → `classroom-bdd.giomartins.dev`
+   - Root mapping (`/`) → `buteco-class.giomartins.dev`
    - `/postapi` → `post-api.giomartins.dev`
    - `/bookclubapi` → `bookclub-api.giomartins.dev`
    - `/classroomapi` → `classroom-api.giomartins.dev`

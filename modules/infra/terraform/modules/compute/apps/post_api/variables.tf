@@ -34,7 +34,7 @@ variable "hostname" {
 variable "frontend_origins" {
   description = "Origins allowed to call post-api cross-origin (CORS) and trusted by Better Auth for its CSRF check."
   type        = list(string)
-  default     = ["https://classroom-bdd.giomartins.dev", "http://localhost:5173"]
+  default     = ["https://buteco-class.giomartins.dev", "http://localhost:5173"]
 }
 
 variable "external_port" {
@@ -62,7 +62,7 @@ variable "domain_api_key" {
 }
 
 variable "discord_client_id" {
-  description = "Discord Application's client ID for the classroom-bdd Discord Activity -- blank until that app is registered in the Discord Developer Portal. Safe to be non-secret (it's public in the frontend bundle too), kept alongside the secret below purely so both halves of this feature toggle together."
+  description = "Discord Application's client ID for the buteco-class Discord Activity -- blank until that app is registered in the Discord Developer Portal. Safe to be non-secret (it's public in the frontend bundle too), kept alongside the secret below purely so both halves of this feature toggle together."
   type        = string
   default     = ""
 }

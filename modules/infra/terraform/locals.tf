@@ -67,22 +67,33 @@ locals {
       port     = 8005
     },
     {
-      # tela: screen sharing for anyone with a room code and its
-      # password. Excluded from Cloudflare Access because the whole
-      # point is sharing a link with people who have no account here --
-      # a Google SSO gate only giomartinsdev could pass would make it
-      # useless. The room password is the access control. Port must
-      # match module.compute_apps_tela's external_port.
+      # tela-frontend: screen sharing for anyone with a room code and
+      # its password. Excluded from Cloudflare Access because the
+      # whole point is sharing a link with people who have no account
+      # here -- a Google SSO gate only giomartinsdev could pass would
+      # make it useless. The room password is the access control. Port
+      # must match module.compute_apps_tela_frontend's external_port.
       hostname = "tela.giomartins.dev"
       port     = 8006
+    },
+    {
+      # tela-api: the same tela-frontend page calls this cross-origin
+      # for signalling/SFU (see modules/apps/tela-api's own README) --
+      # same reasoning as tela.giomartins.dev above for staying out of
+      # Access, a Google SSO redirect would break every fetch/WebSocket
+      # call from the browser. Port must match
+      # module.compute_apps_tela_api's external_port.
+      hostname = "tela-api.giomartins.dev"
+      port     = 8007
     },
     {
       # The blog itself -- meant to be publicly readable by anyone,
       # not just the Google-SSO-allowed emails. In excluded_hostnames
       # for that reason (Access would otherwise gate the whole site
       # behind a login only giomartinsdev's own account can pass).
-      # Port must match module.compute_apps_front's external_port.
-      hostname = "classroom-bdd.giomartins.dev"
+      # Port must match module.compute_apps_buteco_class_frontend's
+      # external_port.
+      hostname = "buteco-class.giomartins.dev"
       port     = 8003
     },
     {
