@@ -255,6 +255,14 @@ resource "docker_container" "grafana" {
     external = 3000
   }
 
+  # The datasources point at prometheus/loki/tempo by container name —
+  # without this block Docker left grafana on the default bridge network,
+  # where those names don't resolve and every panel in the UI fails with
+  # a dial error (the stack's own "no data" bug).
+  networks_advanced {
+    name = var.network_name
+  }
+
   memory = 512
 
   log_opts = {
