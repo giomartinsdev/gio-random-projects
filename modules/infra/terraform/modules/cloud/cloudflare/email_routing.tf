@@ -157,27 +157,25 @@ data "cloudflare_email_routing_dns" "recommended" {
 }
 
 locals {
-  email_dkim_records = {
-    for rec in try(
-      [
-        for rec in data.cloudflare_email_routing_dns.recommended.result.record : rec
-        if rec.type == "TXT" &&
-        endswith(rec.name, "_domainkey.${local.email_zone_apex}")
-      ],
-      []
-    ) :
-    "${rec.type}:${rec.name}" => rec
-  }
+  # try() swallows the null the API returns for an un-onboarded zone.
+  # Only the DKIM record survives the filter — MX and the apex SPF are
+  # managed by the resources above, and adopting them here too would
+  # create exact duplicates.
+  email_dkim = [for rec in try(data.cloudflare_email_routing_dns.recommended.result.record, []) :
+    rec if rec.type == "TXT" && endswith(rec.name, "_domainkey.${local.email_zone_apex}")
+  ]
 }
 
+# count (not for_each): the data source is read at apply time, and
+# Terraform can't enumerate for_each keys it doesn't know at plan
+# time — count defers gracefully instead.
 resource "cloudflare_dns_record" "email_dkim" {
-  for_each = local.email_dkim_records
+  count = length(local.email_dkim) > 0 ? 1 : 0
 
-  zone_id  = var.zone_id
-  name     = each.value.name
-  type     = each.value.type
-  content  = each.value.content
-  priority = null
-  ttl      = 1
-  comment  = "Cloudflare Email Routing DKIM (Terraform)"
+  zone_id = var.zone_id
+  name    = local.email_dkim[count.index].name
+  type    = "TXT"
+  content = local.email_dkim[count.index].content
+  ttl     = 1
+  comment = "Cloudflare Email Routing DKIM (Terraform)"
 }
