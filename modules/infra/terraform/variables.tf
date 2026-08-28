@@ -59,6 +59,15 @@ variable "email_routing_destination" {
   default     = "giovannidealmeidamartins@gmail.com"
 }
 
+variable "email_routing_rules" {
+  description = "Custom addresses on the domain as local part → destination mailbox (each destination must have its Cloudflare verification email clicked before its rule activates)."
+  type        = map(string)
+  default = {
+    gio     = "giovannidealmeidamartins@gmail.com"
+    contact = "workwithgiomartinsdev@gmail.com"
+  }
+}
+
 # --- server ---
 
 variable "server_ip" {

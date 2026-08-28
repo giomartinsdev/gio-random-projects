@@ -6,10 +6,11 @@
 #
 # Two one-time manual steps this file can't do for you:
 #
-#  1. Cloudflare emails the destination a verification link — click it.
-#     Rules only forward to VERIFIED addresses, so an apply that runs
-#     before the click fails creating the rules — click, then re-run
-#     the apply.
+#  1. Cloudflare emails EACH destination a verification link — click
+#     each one (they arrive in the destination's own inbox, not via
+#     the routing). Rules only forward to VERIFIED addresses, so an
+#     apply that adds a rule before its destination is verified fails
+#     creating that rule (error 2054) — click, then re-run the apply.
 #  2. Gmail: Settings → Accounts → "Send mail as" → add the address,
 #     confirm with the code that lands in the inbox (via the routing
 #     above), SMTP smtp.gmail.com :587 + your Gmail App Password
@@ -125,33 +126,56 @@ resource "null_resource" "email_routing_enable" {
 }
 
 # The destination mailbox. Creating this makes Cloudflare email it a
-# verification link — until someone clicks it, every rule below fails
-# to create ("destination address not verified"). Terraform can't click
-# the link for you; see the file header.
+# verification link — until someone clicks it, every rule forwarding
+# to it fails to create ("destination address not verified", error
+# 2054). Terraform can't click the link for you; see the file header.
+# This one stays a single resource (not for_each) so the already-
+# verified primary address keeps its state identity through rule
+# changes.
 resource "cloudflare_email_routing_address" "destination" {
   account_id = var.account_id
   email      = var.email_routing_destination
 }
 
-resource "cloudflare_email_routing_rule" "primary" {
+locals {
+  # Rule destinations beyond the catch-all's own — each needs its own
+  # registration (and its own clicked verification link) before rules
+  # may forward to it.
+  email_extra_destinations = toset([
+    for dest in values(var.email_routing_rules) : dest
+    if dest != var.email_routing_destination
+  ])
+}
+
+resource "cloudflare_email_routing_address" "extra_destinations" {
+  for_each = local.email_extra_destinations
+
+  account_id = var.account_id
+  email      = each.value
+}
+
+resource "cloudflare_email_routing_rule" "rules" {
+  for_each = var.email_routing_rules
+
   zone_id = var.zone_id
-  name    = "${var.email_routing_local_part} → gmail"
+  name    = "${each.key} → gmail"
   enabled = true
 
   matchers = [{
     type  = "literal"
     field = "to"
-    value = "${var.email_routing_local_part}@${local.email_zone_apex}"
+    value = "${each.key}@${local.email_zone_apex}"
   }]
 
   actions = [{
     type  = "forward"
-    value = [var.email_routing_destination]
+    value = [each.value]
   }]
 
   depends_on = [
     null_resource.email_routing_enable,
     cloudflare_email_routing_address.destination,
+    cloudflare_email_routing_address.extra_destinations,
   ]
 }
 

@@ -22,6 +22,7 @@ module "cloud_cloudflare" {
   # state, not on any hostname's ingress — so it slots into this
   # module rather than into compute.
   email_routing_destination = var.email_routing_destination
+  email_routing_rules       = var.email_routing_rules
 }
 
 module "network_docker_apps" {

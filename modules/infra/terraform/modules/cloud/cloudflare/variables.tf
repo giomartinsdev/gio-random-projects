@@ -75,13 +75,14 @@ variable "email_routing_destination" {
   type        = string
 }
 
-variable "email_routing_local_part" {
+variable "email_routing_rules" {
   description = <<-EOT
-    Local part of the primary custom address (the one before the @) —
-    with the default, that's gio@giomartins.dev via the literal routing
-    rule. Any other address on the domain is covered by the catch-all
-    rule regardless.
+    Custom addresses to create, as local part → destination mailbox
+    (e.g. { gio = "...", contact = "..." }). Each distinct destination
+    gets registered as an Email Routing address — which emails it a
+    verification link that someone must click before rules forwarding
+    to it activate — and each entry gets its own literal forward rule.
+    Anything not listed here is still covered by the catch-all.
   EOT
-  type        = string
-  default     = "gio"
+  type        = map(string)
 }
