@@ -101,7 +101,13 @@
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{level=~`(?i)error|fatal|50`} or {job=`docker`} |= `ERROR`",
+          "expr": "{level=~`(?i)error|fatal|50`}",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{job=`docker`} |= `ERROR`",
           "queryType": "range"
         }
       ]
