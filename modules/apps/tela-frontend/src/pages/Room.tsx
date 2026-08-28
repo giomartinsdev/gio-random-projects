@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { ShareDialog, type ShareChoice } from "@/components/ShareDialog";
 import { useDismissable } from "@/lib/useDismissable";
+import { enterFullscreen, exitFullscreen, fullscreenChangeEventName, isFullscreen } from "@/lib/fullscreen";
 import {
   airplayIcon,
   arrowRightCircleIcon,
@@ -403,13 +404,45 @@ function LiveRoom({
     if (selected && !tiles.some((t) => t.peerId === selected)) setSelected(null);
   }, [selected, tiles]);
 
+  // True fullscreen: picking a tile sends the room's <main> (which the
+  // overlay already covers corner to corner) into the Fullscreen API, so
+  // the browser's own bars go away with the page's. Opening has to be in
+  // the click handler itself -- browsers tie the request to the gesture.
+  const mainRef = useRef<HTMLElement>(null);
+  const openFullscreenTile = useCallback((peerId: string) => {
+    setSelected(peerId);
+    if (mainRef.current) void enterFullscreen(mainRef.current);
+  }, []);
+
+  // The one close path for every exit: Voltar, Escape, or the browser's
+  // own Esc falling out of native fullscreen (fullscreenchange below).
+  const closeFullscreenTile = useCallback(() => {
+    setSelected(null);
+    void exitFullscreen();
+  }, []);
+
   useEffect(() => {
     if (!selected) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSelected(null);
+      if (e.key === "Escape") closeFullscreenTile();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [selected, closeFullscreenTile]);
+
+  useEffect(() => {
+    if (!selected) return;
+    const onFsChange = () => {
+      if (!isFullscreen()) closeFullscreenTile();
+    };
+    document.addEventListener(fullscreenChangeEventName(), onFsChange);
+    return () => document.removeEventListener(fullscreenChangeEventName(), onFsChange);
+  }, [selected, closeFullscreenTile]);
+
+  // Closed from another direction -- the sharer stopped, say -- while
+  // the browser is still fullscreen: let go of the screen too.
+  useEffect(() => {
+    if (!selected && isFullscreen()) void exitFullscreen();
   }, [selected]);
 
   const selectedTile = tiles.find((t) => t.peerId === selected) ?? null;
@@ -536,7 +569,7 @@ function LiveRoom({
         </div>
       </header>
 
-      <main className="relative flex flex-1 bg-black">
+      <main ref={mainRef} className="relative flex flex-1 bg-black">
         {(room.status === "error" || room.knockRequests.length > 0) && (
           <div className="absolute inset-x-4 top-4 z-10 mx-auto flex max-w-md flex-col gap-2">
             {room.status === "error" && (
@@ -591,14 +624,14 @@ function LiveRoom({
             tile={selectedTile}
             muted={mutedPeers.has(selectedTile.peerId)}
             onToggleMuted={() => toggleMuted(selectedTile.peerId)}
-            onClose={() => setSelected(null)}
+            onClose={closeFullscreenTile}
             aspectMode={aspectMode}
             onAspectModeChange={setAspectMode}
           />
         ) : tiles.length === 0 ? (
           <Empty roomId={roomId} password={password} />
         ) : (
-          <Grid tiles={tiles} mutedPeers={mutedPeers} onToggleMuted={toggleMuted} onSelect={setSelected} />
+          <Grid tiles={tiles} mutedPeers={mutedPeers} onToggleMuted={toggleMuted} onSelect={openFullscreenTile} />
         )}
 
         {room.errorMessage && (
