@@ -31,7 +31,7 @@ func (h *MessageHandlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	messages, err := h.messages.ListByRoom(r.Context(), roomID)
 	if err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": toMessageResponses(messages)})
@@ -50,18 +50,18 @@ func (h *MessageHandlers) CreateMessage(w http.ResponseWriter, r *http.Request) 
 
 	raw, err := json.Marshal(input)
 	if err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	cmd := application.Command{ID: uuid.NewString(), Action: application.ActionCreateMessage, Payload: raw}
 	if err := h.commands.Publish(r.Context(), cmd); err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, acceptedBody{CommandID: cmd.ID, Status: "accepted"})
 }
 
-func (h *MessageHandlers) internalError(w http.ResponseWriter, err error) {
-	h.log.Error("internal error", "error", err)
+func (h *MessageHandlers) internalError(r *http.Request, w http.ResponseWriter, err error) {
+	h.log.ErrorContext(r.Context(), "internal error", "error", err)
 	writeJSON(w, http.StatusInternalServerError, errorBody{Error: "internal server error"})
 }

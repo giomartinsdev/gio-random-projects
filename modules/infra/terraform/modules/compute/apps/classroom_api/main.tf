@@ -28,6 +28,10 @@ resource "docker_container" "classroom_api" {
     "DOMAIN_API_URL=${var.domain_api_url}",
     "DOMAIN_API_KEY=${var.domain_api_key}",
     "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
+    # Traces + metrics only — logs flow via alloy's docker-socket scrape
+    # of this container's stdout (see otlp_endpoint's description).
+    "OTEL_EXPORTER_OTLP_ENDPOINT=${var.otlp_endpoint}",
+    "OTEL_SERVICE_NAME=classroom-api",
     "PORT=8000",
   ]
 

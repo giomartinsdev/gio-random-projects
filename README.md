@@ -27,6 +27,15 @@ Unlike Go's, the two TypeScript pipelines don't auto-discover by file
 presence alone (every app has a `package.json`, frontend or not) — see
 `docs/novo-app-ci-cd.md` for each workflow's `ALLOWED_APPS` list.
 
+## Observability
+
+Every app ships OpenTelemetry traces + metrics to a self-hosted Grafana
+stack on the same VPS, and every container's stdout lands in Loki —
+dashboards at `grafana.giomartins.dev` (Cloudflare Access + Grafana
+login, password in Vaultwarden). Architecture, data flow, retention,
+and the recipe for wiring a new app live in
+[`modules/infra/terraform/modules/compute/services/observability/README.md`](modules/infra/terraform/modules/compute/services/observability/README.md).
+
 See `modules/apps/README.md` and `modules/infra/README.md` for what's
 in each.
 

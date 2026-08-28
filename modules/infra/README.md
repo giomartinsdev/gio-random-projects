@@ -18,7 +18,10 @@ Two Terraform configs, nothing else:
 Everything `terraform/` manages: `postgres`/`redis`/`minio`
 (`modules/storage/*`), the app containers (`modules/compute/apps/*`),
 and `registry`/`watchtower` + the service containers
-(`modules/compute/services/*`). Phase 2 of the migration is live:
+(`modules/compute/services/*`) — including the Grafana observability
+stack (`modules/compute/services/observability`), which every app ships
+its traces/metrics to and whose alloy tails every container's stdout
+into Loki. Phase 2 of the migration is live:
 every hostname is orange-cloud through Cloudflare, so the edge
 (Access, TLS) sits back in front — except registry.giomartins.dev,
 which stays grey-cloud because its :5000 docker protocol can't transit

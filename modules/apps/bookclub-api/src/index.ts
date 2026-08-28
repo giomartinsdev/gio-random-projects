@@ -1,9 +1,13 @@
+// First import, deliberately: the OpenTelemetry hooks must be in place
+// before http/pg/fetch are first used. See telemetry.ts's header.
+import "./telemetry.js";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 import { createAuth } from "./lib/auth.js";
 import { createDb } from "./db/index.js";
 import { createDomainApiClient } from "./lib/domainApiClient.js";
 import { createMinioClient } from "./lib/minioClient.js";
+import { logger } from "./logger.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const authSecret = process.env.BETTER_AUTH_SECRET;
@@ -40,6 +44,6 @@ await minio.ensureBucket();
 const { app, injectWebSocket } = createApp(auth, db, domainApi, minio, frontendOrigins);
 
 const server = serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`bookclub-api listening on :${info.port}`);
+  logger.info(`bookclub-api listening on :${info.port}`);
 });
 injectWebSocket(server);

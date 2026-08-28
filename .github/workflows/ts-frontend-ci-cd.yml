@@ -101,7 +101,9 @@ jobs:
       # references (import.meta.env.VITE_X), so an unused one here is
       # a harmless no-op, same convention the old Docker build-args
       # followed. buteco-class-frontend uses VITE_POST_API_URL/etc;
-      # tela-frontend uses only VITE_TELA_API_URL.
+      # tela-frontend uses only VITE_TELA_API_URL. Both also get
+      # VITE_OTEL_EXPORTER_OTLP_ENDPOINT (the browser telemetry in each
+      # app's src/telemetry.ts).
       - name: Build ${{ matrix.app }}
         working-directory: modules/apps/${{ matrix.app }}
         env:
@@ -110,6 +112,7 @@ jobs:
           VITE_CLASSROOM_API_URL: https://classroom-api.giomartins.dev
           VITE_PUBLIC_APP_URL: https://buteco-class.giomartins.dev
           VITE_TELA_API_URL: https://tela-api.giomartins.dev
+          VITE_OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
         run: npm run build
 
       # scp (not the docker provider/API) because the files have to

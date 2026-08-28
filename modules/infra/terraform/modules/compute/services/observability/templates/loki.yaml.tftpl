@@ -1,0 +1,52 @@
+# Single-binary Loki: tsdb + schema v13 (structured metadata, what
+# native OTLP ingestion relies on to keep trace_id/service attributes
+# queryable — the OTLP /otlp endpoint is dormant today since apps' logs
+# arrive via alloy's docker scrape, but leaving v13 + structured
+# metadata on means turning that path on later is a config edit, not a
+# re-index). Retention 7d, enforced by the compactor — small VPS.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: "2026-08-01"
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  tsdb_shipper:
+    active_index_directory: /loki/tsdb-index
+    cache_location: /loki/tsdb-cache
+
+# retention_enabled WITHOUT delete_request_store refuses to boot —
+# Loki demands knowing where deletion requests live.
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+limits_config:
+  allow_structured_metadata: true
+  retention_period: 168h
+
+analytics:
+  reporting_enabled: false

@@ -1,0 +1,31 @@
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+# Local single-node backend (no S3/MinIO coupling — MinIO is for app
+# payloads, and a trace store that dies with its object store would be
+# worse than one that lives on a docker volume). 72h, not the 7d Loki
+# gets: span volume from the SFU-heavy apps dwarfs log volume, and
+# traces age out of usefulness much faster than logs do.
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal
+    compactor:
+      compaction_window: 1h
+      max_block_bytes: 100M
+      block_retention: 72h
+
+usage_report:
+  reporting_enabled: false

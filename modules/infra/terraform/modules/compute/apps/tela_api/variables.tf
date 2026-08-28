@@ -43,3 +43,16 @@ variable "sfu_udp_port" {
   type        = number
   default     = 7881
 }
+
+variable "otlp_endpoint" {
+  description = <<-EOT
+    module.compute_services_observability's otlp_endpoint_loopback
+    output — this container is network_mode = host, so it can't resolve
+    docker-network names and reaches alloy over the host's loopback
+    instead. Traces + metrics only; logs flow via alloy's docker-socket
+    scrape of stdout. Empty disables telemetry entirely — the telemetry
+    package no-ops and local dev never needs a collector running.
+  EOT
+  type        = string
+  default     = ""
+}

@@ -31,7 +31,7 @@ func NewRoomHandlers(rooms domainroom.Repository, commands application.CommandPu
 func (h *RoomHandlers) ListRooms(w http.ResponseWriter, r *http.Request) {
 	rooms, err := h.rooms.ListAll(r.Context())
 	if err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"rooms": toRoomResponses(rooms)})
@@ -44,7 +44,7 @@ func (h *RoomHandlers) GetRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, toRoomResponse(room))
@@ -98,18 +98,18 @@ func (h *RoomHandlers) DeleteRoom(w http.ResponseWriter, r *http.Request) {
 func (h *RoomHandlers) publish(w http.ResponseWriter, r *http.Request, action application.Action, payload any) {
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	cmd := application.Command{ID: uuid.NewString(), Action: action, Payload: raw}
 	if err := h.commands.Publish(r.Context(), cmd); err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, acceptedBody{CommandID: cmd.ID, Status: "accepted"})
 }
 
-func (h *RoomHandlers) internalError(w http.ResponseWriter, err error) {
-	h.log.Error("internal error", "error", err)
+func (h *RoomHandlers) internalError(r *http.Request, w http.ResponseWriter, err error) {
+	h.log.ErrorContext(r.Context(), "internal error", "error", err)
 	writeJSON(w, http.StatusInternalServerError, errorBody{Error: "internal server error"})
 }

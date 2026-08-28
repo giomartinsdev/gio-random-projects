@@ -55,6 +55,10 @@ resource "docker_container" "domain_api" {
     "DOMAIN_API_KEYS=${var.domain_api_keys}",
     "RATE_LIMIT_RPS=${var.rate_limit_rps}",
     "RATE_LIMIT_BURST=${var.rate_limit_burst}",
+    # Traces + metrics only — logs flow via alloy's docker-socket scrape
+    # of this container's stdout (see otlp_endpoint's description).
+    "OTEL_EXPORTER_OTLP_ENDPOINT=${var.otlp_endpoint}",
+    "OTEL_SERVICE_NAME=domain-api",
   ]
 
   ports {
@@ -85,6 +89,8 @@ resource "docker_container" "domain_worker" {
   env = concat([
     "DATABASE_URL=${local.database_url}",
     "REDIS_ADDR=${var.redis_host}:6379",
+    "OTEL_EXPORTER_OTLP_ENDPOINT=${var.otlp_endpoint}",
+    "OTEL_SERVICE_NAME=domain-worker",
   ], local.secrets_bridge_env)
 
   networks_advanced {

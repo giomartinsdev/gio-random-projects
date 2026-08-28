@@ -71,7 +71,7 @@ func (h *SSEHandlers) StreamRoomEvents(w http.ResponseWriter, r *http.Request) {
 				Payload   json.RawMessage `json:"payload"`
 			}
 			if err := json.Unmarshal([]byte(msg.Payload), &envelope); err != nil {
-				h.log.Error("sse: decode envelope failed", "error", err)
+				h.log.ErrorContext(ctx, "sse: decode envelope failed", "error", err)
 				continue
 			}
 

@@ -16,8 +16,13 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	goredis "github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
@@ -32,10 +37,11 @@ import (
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/config"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/postgres"
 	inredis "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/redis"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/telemetry"
 )
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	log := slog.New(telemetry.NewLogger(slog.NewJSONHandler(os.Stdout, nil)))
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -45,6 +51,21 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Telemetry failing to start must never stop command processing —
+	// degrade to no telemetry and carry on. Empty
+	// OTEL_EXPORTER_OTLP_ENDPOINT (local dev) skips init entirely; see
+	// internal/telemetry.
+	shutdownTelemetry, err := telemetry.Init(ctx, "domain-worker")
+	if err != nil {
+		log.Error("telemetry init failed; continuing without it", "error", err)
+		shutdownTelemetry = func(context.Context) error { return nil }
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = shutdownTelemetry(shutdownCtx)
+	}()
 
 	pool, err := postgres.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -121,6 +142,16 @@ func main() {
 // aggregate; this is the one place that knows how to fan a Command
 // back out to its owning handler.
 func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
+	// One span per command: the handler, the audit write and the event
+	// publish below are the whole story of that write, and the
+	// trace_id stamped into the log lines ties every one of them to it.
+	ctx, span := otel.Tracer("domain-worker").Start(ctx, "process "+string(cmd.Action),
+		trace.WithAttributes(
+			attribute.String("command.id", cmd.ID),
+			attribute.String("command.action", string(cmd.Action)),
+		))
+	defer span.End()
+
 	var (
 		evt        interface{ EventName() string }
 		err        error
@@ -174,15 +205,19 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 		Success:    err == nil,
 	}
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		entry.Error = err.Error()
-		log.Error("command failed", "error", err, "command_id", cmd.ID, "action", cmd.Action)
+		log.ErrorContext(ctx, "command failed", "error", err, "command_id", cmd.ID, "action", cmd.Action)
 	} else if evt != nil {
-		if err := eventBus.Publish(ctx, evt); err != nil {
-			log.Error("publish event failed", "error", err, "command_id", cmd.ID)
+		if pubErr := eventBus.Publish(ctx, evt); pubErr != nil {
+			span.RecordError(pubErr)
+			log.ErrorContext(ctx, "publish event failed", "error", pubErr, "command_id", cmd.ID)
 		}
 	}
-	if err := audits.Record(ctx, entry); err != nil {
-		log.Error("audit write failed", "error", err, "command_id", cmd.ID)
+	if auditErr := audits.Record(ctx, entry); auditErr != nil {
+		span.RecordError(auditErr)
+		log.ErrorContext(ctx, "audit write failed", "error", auditErr, "command_id", cmd.ID)
 	}
 }
 

@@ -72,6 +72,7 @@ module "compute_apps_domain_api" {
   domain_api_keys        = local.domain_api_keys
   secrets_bridge_url     = length(module.compute_services_vaultwarden_bridge) > 0 ? module.compute_services_vaultwarden_bridge[0].internal_url : ""
   secrets_bridge_api_key = random_password.vaultwarden_bridge_api_key.result
+  otlp_endpoint          = module.compute_services_observability.otlp_endpoint
 
   depends_on = [null_resource.postgres_password_sync]
 }
@@ -91,6 +92,7 @@ module "compute_apps_post_api" {
   domain_api_key        = random_id.post_api_domain_key.hex
   discord_client_id     = var.discord_client_id
   discord_client_secret = var.discord_client_secret
+  otlp_endpoint         = module.compute_services_observability.otlp_endpoint
 
   depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api]
 }
@@ -111,6 +113,7 @@ module "compute_apps_bookclub_api" {
   minio_endpoint     = module.storage_minio.endpoint
   minio_access_key   = module.storage_minio.root_user
   minio_secret_key   = random_password.minio_root_password.result
+  otlp_endpoint      = module.compute_services_observability.otlp_endpoint
 
   depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api, module.storage_minio]
 }
@@ -128,6 +131,7 @@ module "compute_apps_classroom_api" {
   registry_host      = var.registry_host
   better_auth_secret = random_password.post_api_better_auth_secret.result
   domain_api_key     = random_id.classroom_api_domain_key.hex
+  otlp_endpoint      = module.compute_services_observability.otlp_endpoint
 
   depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api]
 }
@@ -143,6 +147,8 @@ module "compute_apps_tela_api" {
   registry_host    = var.registry_host
   sfu_public_host  = var.server_ip
   frontend_origins = ["https://tela.giomartins.dev"]
+  # Host-networked container — loopback endpoint, not the docker-network one.
+  otlp_endpoint = module.compute_services_observability.otlp_endpoint_loopback
 }
 
 module "compute_services_registry" {
@@ -182,6 +188,7 @@ module "compute_services_ingress" {
     module.compute_services_ai_proxy,
     module.compute_services_vaultwarden,
     module.compute_services_adminer,
+    module.compute_services_observability,
     module.storage_minio,
     null_resource.static_site_buckets,
   ]
@@ -226,6 +233,32 @@ module "compute_services_adminer" {
   }
 
   network_name = module.network_docker_apps.network_name
+}
+
+# Grafana + loki + prometheus + tempo + alloy — logs/metrics/traces for
+# everything else on this VPS, with alloy as the one OTLP front door
+# (see that module's README for the data flow). Its otlp_endpoint
+# output is what every compute/apps/* module feeds its containers as
+# OTEL_EXPORTER_OTLP_ENDPOINT.
+module "compute_services_observability" {
+  source = "./modules/compute/services/observability"
+  providers = {
+    docker = docker
+  }
+
+  network_name           = module.network_docker_apps.network_name
+  grafana_admin_password = random_password.grafana_admin_password.result
+  # The origins browsers may POST telemetry from. buteco-class also runs
+  # as a Discord Activity, where window.location.origin is Discord's
+  # wildcard *.discordsays.com proxy — that's a real origin this
+  # endpoint has to accept (the wildcard form is what the receiver's
+  # CORS config matches on), or every Activity user's telemetry dies on
+  # its first preflight.
+  frontend_origins = [
+    "https://buteco-class.giomartins.dev",
+    "https://tela.giomartins.dev",
+    "https://*.discordsays.com",
+  ]
 }
 
 # NOTE: the Project Zomboid game server is NOT a container here — it

@@ -4,6 +4,10 @@ interface ImportMetaEnv {
   readonly VITE_POST_API_URL: string;
   readonly VITE_BOOKCLUB_API_URL: string;
   readonly VITE_CLASSROOM_API_URL: string;
+  // Public OTLP endpoint for the browser SDK (src/telemetry.ts) — baked
+  // in at build time by ts-frontend-ci-cd.yml. Unset locally = no
+  // browser telemetry at all.
+  readonly VITE_OTEL_EXPORTER_OTLP_ENDPOINT?: string;
   // This app's own PUBLIC origin. Needed because inside a Discord
   // Activity window.location.origin is Discord's proxy origin
   // (https://<app_id>.discordsays.com), which only resolves within the

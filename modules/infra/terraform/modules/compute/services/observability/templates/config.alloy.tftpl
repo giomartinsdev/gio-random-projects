@@ -1,0 +1,102 @@
+// Every backend app points OTEL_EXPORTER_OTLP_ENDPOINT at
+// http://alloy:4318 (in-docker; tela-api, which is host-networked, uses
+// the loopback publish). The two SPAs' browsers hit
+// otel.giomartins.dev → ingress → 127.0.0.1:4318. CORS is locked to
+// exactly the SPA origins (plus Discord's Activity iframe origin, which
+// buteco-class-frontend sometimes runs inside) — that, enforced by the
+// browser, is the public endpoint's whole access control.
+
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+    cors {
+      allowed_origins = ${jsonencode(frontend_origins)}
+    }
+  }
+
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  send_batch_size = 1024
+  timeout         = "5s"
+
+  output {
+    metrics = [otelcol.exporter.prometheusremotewrite.prometheus.input]
+    traces  = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+    tls {
+      insecure = true
+    }
+  }
+}
+
+otelcol.exporter.prometheusremotewrite "prometheus" {
+  endpoint = "http://prometheus:9090/api/v1/write"
+}
+
+// Every container's stdout — postgres, redis, minio, ingress, the APIs
+// themselves — tailed through the Docker API and pushed to Loki. This
+// is the ONLY log path by design: apps that also have an OTel SDK do
+// NOT forward logs over OTLP (that would double-ingest every line);
+// instead their stdout JSON carries trace_id, injected by the app's own
+// slog handler / pino mixin, and Grafana's derived-field link
+// jumps from the log line to the trace in Tempo.
+discovery.docker "containers" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "10s"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  labels     = { job = "docker" }
+  forward_to = [loki.process.containers.receiver]
+}
+
+loki.process "containers" {
+  // Apps log JSON (slog/pino); the infra containers log plain text.
+  // stage.json extracts level when the line parses and no-ops when it
+  // doesn't, so everything passes through.
+  stage.json {
+    expressions = {
+      level = "level",
+    }
+  }
+
+  stage.labels {
+    values = {
+      level = "level",
+    }
+  }
+
+  forward_to = [loki.write.loki.receiver]
+}
+
+loki.write "loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

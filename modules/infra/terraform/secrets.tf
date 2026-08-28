@@ -85,6 +85,19 @@ resource "random_password" "ninerouter_initial_password" {
   special = false
 }
 
+# Grafana's admin login — retrieve GRAFANA_ADMIN_PASSWORD from
+# Vaultwarden after the first apply. The outer layer in front of it is
+# Cloudflare Access (grafana.giomartins.dev, Google SSO — same shape as
+# beszel), this is the inner one. Write-once caveat, same class of
+# problem as postgres's init-only password below: Grafana creates the
+# admin user on the container's FIRST boot with whatever env var it
+# sees; changing the password afterwards needs the container recreated
+# (tf-ci-cd.yml's replace_target dispatch: docker_container.grafana).
+resource "random_password" "grafana_admin_password" {
+  length  = 32
+  special = false
+}
+
 # Postgres only applies POSTGRES_PASSWORD on first init of an empty
 # data volume -- changing the env var alone does nothing once the
 # volume already has data, and would leave domain-api/domain-worker
@@ -262,6 +275,12 @@ locals {
       items = {
         NINEROUTER_JWT_SECRET       = random_password.ninerouter_jwt_secret.result
         NINEROUTER_INITIAL_PASSWORD = random_password.ninerouter_initial_password.result
+      }
+    }
+    grafana = {
+      trigger = random_password.grafana_admin_password.result
+      items = {
+        GRAFANA_ADMIN_PASSWORD = random_password.grafana_admin_password.result
       }
     }
   }

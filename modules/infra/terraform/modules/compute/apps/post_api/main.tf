@@ -49,6 +49,10 @@ resource "docker_container" "post_api" {
     "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
     "DISCORD_CLIENT_ID=${var.discord_client_id}",
     "DISCORD_CLIENT_SECRET=${var.discord_client_secret}",
+    # Traces + metrics only — logs flow via alloy's docker-socket scrape
+    # of this container's stdout (see otlp_endpoint's description).
+    "OTEL_EXPORTER_OTLP_ENDPOINT=${var.otlp_endpoint}",
+    "OTEL_SERVICE_NAME=post-api",
     "PORT=8000",
   ]
 

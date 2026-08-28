@@ -108,6 +108,29 @@ locals {
       hostname = "adminer.giomartins.dev"
       port     = 8092
     },
+    {
+      # Grafana — the observability front door (logs/metrics/traces
+      # dashboards over the whole stack, see
+      # module.compute_services_observability's README). Google-SSO
+      # Access as the outer layer, exactly like beszel above; Grafana's
+      # own Terraform-generated admin login is the inner one. Port must
+      # match module.compute_services_observability's grafana publish.
+      hostname = "grafana.giomartins.dev"
+      port     = 3000
+    },
+    {
+      # Alloy's OTLP/HTTP endpoint for the two SPAs' browsers (see that
+      # module's README for the whole data flow). Deliberately excluded
+      # from Access via excluded_hostnames — a public visitor's browser
+      # can't pass a Google SSO redirect, and the whole point is that
+      # buteco-class's and tela's visitors send telemetry without an
+      # account here. The receiver's CORS allowlist (exactly these two
+      # SPA origins, enforced by the browser) plus OTLP-only payloads
+      # are the access control. Port must match
+      # module.compute_services_observability's alloy publish.
+      hostname = "otel.giomartins.dev"
+      port     = 4318
+    },
   ]
 
   # Static SPAs served straight out of a MinIO bucket -- no container

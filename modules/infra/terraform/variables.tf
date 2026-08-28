@@ -43,6 +43,7 @@ variable "excluded_hostnames" {
     "tela.giomartins.dev",          # rooms are shared with people who have no account here; the room password is the access control
     "tela-api.giomartins.dev",      # same tela-frontend page calls this cross-origin for signalling/SFU — a browser SSO redirect would break every fetch/WebSocket call
     "ai.giomartins.dev",            # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
+    "otel.giomartins.dev",          # public visitors' browsers send SPA telemetry here — a Google SSO redirect would break every one of them; alloy's OTLP receiver CORS allowlist (the two SPA origins only) is the access control (modules/compute/services/observability)
   ]
 }
 

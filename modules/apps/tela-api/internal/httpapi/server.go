@@ -9,7 +9,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -18,6 +18,8 @@ import (
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/sfu"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type Server struct {
@@ -32,15 +34,17 @@ type Server struct {
 	// CORS headers for and the WebSocket accepts a connection from. See
 	// ws.go's use of this for why it can't just trust r.Host anymore.
 	AllowedOrigins []string
+	log            *slog.Logger
 }
 
-func New(registry *rooms.Registry, media *sfu.Server, allowedOrigins []string) *Server {
+func New(registry *rooms.Registry, media *sfu.Server, allowedOrigins []string, log *slog.Logger) *Server {
 	s := &Server{
 		registry:       registry,
 		limiter:        newAttemptLimiter(),
 		mux:            http.NewServeMux(),
 		sfu:            media,
 		AllowedOrigins: allowedOrigins,
+		log:            log,
 	}
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -56,7 +60,19 @@ func New(registry *rooms.Registry, media *sfu.Server, allowedOrigins []string) *
 	return s
 }
 
-func (s *Server) Handler() http.Handler { return s.cors(s.mux) }
+// otelhttp wraps the whole transport (CORS included) so every request
+// gets exactly one span, and its context feeds every log line below --
+// trace_id in the JSON output is what links a line to its trace in
+// Tempo. Span names use the URL path (the mux's route patterns aren't
+// visible to otelhttp before the request is dispatched, and every span
+// sharing an operation name reads terribly in Tempo).
+func (s *Server) Handler() http.Handler {
+	return otelhttp.NewHandler(s.cors(s.mux), "tela-api",
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return r.Method + " " + r.URL.Path
+		}),
+	)
+}
 
 // Wraps every route: tela-frontend calls this API cross-origin now, so
 // every response needs the CORS headers, not just a subset -- the
@@ -68,7 +84,11 @@ func (s *Server) cors(next http.Handler) http.Handler {
 		if slices.Contains(s.AllowedOrigins, origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			// traceparent/tracestate/baggage: the frontend's fetch
+			// instrumentation (tela-frontend/src/telemetry.ts) adds these
+			// to every call, and a preflight that doesn't allow them
+			// kills the request before it starts.
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, traceparent, tracestate, baggage")
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -107,7 +127,7 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, err.Error())
 			return
 		}
-		log.Printf("[tela] create room failed: %v", err)
+		s.log.ErrorContext(r.Context(), "create room failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "não foi possível criar a sala")
 		return
 	}
@@ -161,7 +181,7 @@ func (s *Server) handleDeleteRoom(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, rooms.ErrWrongSecret.Error())
 			return
 		}
-		log.Printf("[tela] delete room failed: %v", err)
+		s.log.ErrorContext(r.Context(), "delete room failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "não foi possível apagar a sala")
 		return
 	}
