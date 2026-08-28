@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Crop, Link2, MonitorUp, Trash2, Users } from "lucide-react";
+import { Crop, Link2, MonitorUp, SlidersHorizontal, Trash2, Users } from "lucide-react";
 import { api } from "@/lib/api";
-import { canShareCamera, canShareScreen, useRoom, type Credential, type Quality, type Fps, QUALITY_OPTIONS, FPS_OPTIONS } from "@/lib/useRoom";
+import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
+import { ShareDialog, type ShareChoice } from "@/components/ShareDialog";
 import {
   airplayIcon,
   arrowRightCircleIcon,
@@ -355,6 +356,15 @@ function LiveRoom({
   // instead of resetting to "Original" every time.
   const [aspectMode, setAspectMode] = useState<AspectMode>("auto");
 
+  // The share panel: opened by the header's "Compartilhar" button, or by
+  // its "Qualidade" variant once a share is already live.
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  // True from confirm until the capture settles -- while the browser's
+  // own picker is up the button stays inert, so a double click can't
+  // queue two getDisplayMedia calls (the hook also guards this, this
+  // just keeps the button honest).
+  const [starting, setStarting] = useState(false);
+
   const toggleMuted = (peerId: string) =>
     setMutedPeers((current) => {
       const next = new Set(current);
@@ -415,6 +425,26 @@ function LiveRoom({
     return list;
   }, [room.you, room.localStream, room.peers]);
 
+  // Whatever the dialog confirms: live shares only retune the encoder
+  // (see applyQuality) -- a real change of source/quality is the next
+  // share's business. `starting` covers the browser picker window.
+  const confirmShare = (choice: ShareChoice) => {
+    setShareDialogOpen(false);
+    if (room.isSharing) {
+      room.applyQuality(choice.quality, choice.fps);
+      return;
+    }
+    setStarting(true);
+    const surface = choice.source === "screen" ? choice.surface : undefined;
+    room
+      .startSharing(choice.source, choice.quality, choice.fps, surface)
+      .finally(() => setStarting(false));
+  };
+
+  // Label for the live "Qualidade" button, showing what's actually
+  // being sent right now.
+  const qualityLabel = QUALITY_OPTIONS.find((o) => o.value === room.quality)?.label ?? String(room.quality);
+
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2.5 sm:px-4 sm:py-3">
@@ -453,10 +483,22 @@ function LiveRoom({
         )}
 
         {/* Full width on a phone (the buttons split the row), pushed to
-            the right once everything fits on one line. */}
+            the right once everything fits on one line. Source, quality
+            and FPS all live behind the share button now -- pre-stream in
+            the dialog, mid-stream via its live variant. */}
         <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">
           {room.isSharing ? (
             <>
+              <Button
+                variant="secondary"
+                onClick={() => setShareDialogOpen(true)}
+                className="flex-1 sm:flex-none"
+                title="Mudar qualidade e FPS sem recomeçar a transmissão"
+              >
+                <SlidersHorizontal className="size-4" />
+                <span className="sm:hidden">Qualidade</span>
+                <span className="hidden sm:inline">Qualidade: {qualityLabel}</span>
+              </Button>
               <Button
                 variant="secondary"
                 onClick={() => room.setAudio(!room.sendingAudio)}
@@ -482,30 +524,12 @@ function LiveRoom({
               </Button>
             </>
           ) : (
-            <>
-              <QualityButton quality={room.quality} onChange={(q) => { room.setQuality(q); }} />
-              <FpsButton fps={room.fps} onChange={(f) => { room.setFps(f); }} />
-              {canShareScreen && (
-                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex-1 sm:flex-none">
-                  <Button onClick={() => room.startSharing("screen")} className="w-full">
-                    <AnimatedIcon animation={airplayIcon} />
-                    Compartilhar tela
-                  </Button>
-                </motion.div>
-              )}
-              {canShareCamera && (
-                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex-1 sm:flex-none">
-                  <Button
-                    variant={canShareScreen ? "secondary" : "default"}
-                    onClick={() => room.startSharing("camera")}
-                    className="w-full"
-                  >
-                    <AnimatedIcon animation={videoIcon} />
-                    Câmera
-                  </Button>
-                </motion.div>
-              )}
-            </>
+            <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex-1 sm:flex-none">
+              <Button onClick={() => setShareDialogOpen(true)} disabled={starting} className="w-full">
+                <AnimatedIcon animation={canShareScreen ? airplayIcon : videoIcon} />
+                {canShareScreen ? "Compartilhar" : "Compartilhar câmera"}
+              </Button>
+            </motion.div>
           )}
         </div>
       </header>
@@ -583,6 +607,15 @@ function LiveRoom({
           </div>
         )}
       </main>
+
+      <ShareDialog
+        open={shareDialogOpen}
+        canScreenShare={canShareScreen}
+        sharing={room.isSharing}
+        initial={{ source: canShareScreen ? "screen" : "camera", quality: room.quality, fps: room.fps, surface: room.surface }}
+        onOpenChange={setShareDialogOpen}
+        onConfirm={confirmShare}
+      />
     </div>
   );
 }
@@ -764,46 +797,6 @@ function AspectModeButton({ mode, onChange }: { mode: AspectMode; onChange: (mod
       title={`Ajuste de tela: ${current.label} (toque para ${next.label})`}
     >
       <Crop className="size-4" />
-      {current.label}
-    </Button>
-  );
-}
-
-function QualityButton({ quality, onChange }: { quality: Quality; onChange: (q: Quality) => void }) {
-  const index = QUALITY_OPTIONS.findIndex((o) => o.value === quality);
-  const current = QUALITY_OPTIONS[index] ?? QUALITY_OPTIONS[QUALITY_OPTIONS.length - 1];
-  const next = QUALITY_OPTIONS[(index + 1) % QUALITY_OPTIONS.length];
-  return (
-    <Button
-      variant="secondary"
-      size="sm"
-      onClick={(e) => {
-        e.stopPropagation();
-        onChange(next.value);
-      }}
-      aria-label={`Qualidade: ${current.label} (toque para ${next.label})`}
-      title={`Qualidade: ${current.label} (toque para ${next.label})`}
-    >
-      {current.label}
-    </Button>
-  );
-}
-
-function FpsButton({ fps, onChange }: { fps: Fps; onChange: (f: Fps) => void }) {
-  const index = FPS_OPTIONS.findIndex((o) => o.value === fps);
-  const current = FPS_OPTIONS[index] ?? FPS_OPTIONS[FPS_OPTIONS.length - 1];
-  const next = FPS_OPTIONS[(index + 1) % FPS_OPTIONS.length];
-  return (
-    <Button
-      variant="secondary"
-      size="sm"
-      onClick={(e) => {
-        e.stopPropagation();
-        onChange(next.value);
-      }}
-      aria-label={`FPS: ${current.label} (toque para ${next.label})`}
-      title={`FPS: ${current.label} (toque para ${next.label})`}
-    >
       {current.label}
     </Button>
   );

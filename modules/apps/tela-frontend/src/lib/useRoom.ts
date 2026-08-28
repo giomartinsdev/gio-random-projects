@@ -42,6 +42,17 @@ export const FPS_OPTIONS: { value: Fps; label: string }[] = [
   { value: "source", label: "Original" },
 ];
 
+// What the display picker should start on. Purely a hint to Chrome's own
+// getDisplayMedia picker (Firefox and Safari pick their own defaults) --
+// it saves a click, it doesn't enforce anything.
+export type DisplaySurface = "monitor" | "window" | "browser";
+
+export const SURFACE_OPTIONS: { value: DisplaySurface; label: string }[] = [
+  { value: "monitor", label: "Tela inteira" },
+  { value: "window", label: "Janela" },
+  { value: "browser", label: "Aba" },
+];
+
 const QUALITY_DIMENSIONS: Record<Exclude<Quality, "source">, { width: number; height: number }> = {
   "360p": { width: 640, height: 360 },
   "480p": { width: 854, height: 480 },
@@ -82,7 +93,28 @@ function bitrateFor(source: Source, quality: Quality, fps: Fps): number {
   return Math.round(source === "camera" ? bitrate * CAMERA_BITRATE_SHARE : bitrate);
 }
 
-function videoConstraintsFor(source: Source, quality: Quality, fps: Fps): MediaTrackConstraints {
+// How much the encoder must shrink captured frames for the chosen
+// quality to hold, from the track's ACTUAL capture size -- what was shared
+// is whatever the browser granted, not the constraint asked for.
+// Undefined when there's nothing to shrink (Original, or already at the
+// target size). Scale can only ever be >= 1: an encoder cannot upscale
+// what it never captured.
+function scaleResolutionDownByFor(settings: MediaTrackSettings, quality: Quality): number | undefined {
+  if (quality === "source" || !settings.width || !settings.height) return undefined;
+  const { width, height } = QUALITY_DIMENSIONS[quality];
+  const scale = Math.max(settings.width / width, settings.height / height);
+  if (scale <= 1.05) return undefined;
+  // Half-step rounding keeps the ratio from drift-flickering between
+  // every setParameters call; 16 is the spec's cap.
+  return Math.min(16, Math.round(scale * 2) / 2);
+}
+
+function videoConstraintsFor(
+  source: Source,
+  quality: Quality,
+  fps: Fps,
+  surface?: DisplaySurface,
+): MediaTrackConstraints {
   const constraints: MediaTrackConstraints =
     source === "camera"
       ? // Rear camera by default -- sharing a phone's camera is usually
@@ -100,7 +132,26 @@ function videoConstraintsFor(source: Source, quality: Quality, fps: Fps): MediaT
   if (fps !== "source") {
     constraints.frameRate = { ideal: fps, max: fps };
   }
+  // Chrome biases its picker to the surface chosen ahead of time in the
+  // share dialog. Strictly `{ideal}`, never `{exact}`: {exact} would make
+  // browsers that don't support the hint fail the whole capture instead
+  // of ignoring it.
+  if (source === "screen" && surface && surface !== "monitor") {
+    constraints.displaySurface = { ideal: surface };
+  }
   return constraints;
+}
+
+// getDisplayMedia options lib.dom doesn't type yet: not offering this
+// very tab (about to capture itself) and letting people Alt-Tab between
+// windows mid-share without renegotiating.
+function gdmOptions(video: MediaTrackConstraints): DisplayMediaStreamOptions {
+  return {
+    video,
+    audio: true,
+    selfBrowserSurface: "exclude",
+    surfaceSwitching: "include",
+  } as DisplayMediaStreamOptions;
 }
 
 export type Status = "connecting" | "connected" | "reconnecting" | "error" | "closed";
@@ -161,12 +212,33 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   const [sendingAudio, setSendingAudio] = useState(true);
   const [quality, setQuality] = useState<Quality>("source");
   const [fps, setFps] = useState<Fps>("source");
+  const [surface, setSurface] = useState<DisplaySurface>("window");
 
   const wsRef = useRef<WebSocket | null>(null);
   const publishRef = useRef<RTCPeerConnection | null>(null);
   const subscribeRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const pendingLeaveRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Which offer the publish connection last sent. Answers carry the
+  // number back; replies for a connection that a re-share already
+  // replaced must not describe the replacement's SDP.
+  const publishSeqRef = useRef(0);
+  // One capture → one recovery attempt. Unlimited auto-retry against a
+  // genuinely dead uplink is a tempting way to loop publish:offer at the
+  // server.
+  const retriedRef = useRef(false);
+  // Dismissed the moment sharing starts; guards double-clicks and the
+  // welcome-republish race, both of which used to open two pickers or
+  // juggle two offers.
+  const startingRef = useRef(false);
+  // Signals travel over the WebSocket one at a time, but handlers run
+  // concurrently: two subscribe:offers (someone joining as another person
+  // starts sharing) used to drive setRemoteDescription on the same peer
+  // connection in parallel. Answers are serialized through this chain.
+  const subscribeChainRef = useRef<Promise<void>>(Promise.resolve());
+  // Set below -- publishStream's connection-state handler needs to reach
+  // the recovery path, which is itself defined in terms of publishStream.
+  const republishRef = useRef<(reason: string) => void>(() => {});
   // Read inside the WebSocket callbacks, which are created once and
   // would otherwise close over stale values.
   const sendingAudioRef = useRef(true);
@@ -177,6 +249,8 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   qualityRef.current = quality;
   const fpsRef = useRef<Fps>("source");
   fpsRef.current = fps;
+  const surfaceRef = useRef<DisplaySurface>("window");
+  surfaceRef.current = surface;
   const remoteStreamsRef = useRef<Record<string, MediaStream>>({});
   remoteStreamsRef.current = remoteStreams;
 
@@ -211,7 +285,8 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   // (where a soft frame drop is worse than a slightly blurrier
   // picture), but 120fps game footage is the opposite -- a stutter is
   // far more noticeable than the encoder shaving resolution to keep up.
-  const applyEncodingLimits = useCallback((pc: RTCPeerConnection) => {
+  const applyEncodingLimits = useCallback((pc: RTCPeerConnection | null) => {
+    if (!pc) return;
     const src = sourceRef.current ?? "screen";
     const q = qualityRef.current;
     const f = fpsRef.current;
@@ -220,11 +295,21 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
       if (sender.track?.kind !== "video") continue;
       const params = sender.getParameters();
       if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-      params.encodings[0].maxBitrate = bitrate;
+      const encoding = params.encodings[0];
+      encoding.maxBitrate = bitrate;
+      // Two levers beyond bitrate make quality changes apply live
+      // without recapturing: cap the encoder's own output rate, and have
+      // it scale captured frames down to the chosen size.
+      if (f !== "source") encoding.maxFramerate = f;
+      else delete encoding.maxFramerate;
+      const scale = scaleResolutionDownByFor(sender.track?.getSettings() ?? {}, q);
+      if (scale) encoding.scaleResolutionDownBy = scale;
+      else delete encoding.scaleResolutionDownBy;
       params.degradationPreference = "maintain-framerate";
       // Best-effort: not every browser accepts every field, and a
-      // rejected tuning shouldn't break the connection.
-      sender.setParameters(params).catch(() => {});
+      // rejected tuning shouldn't break the connection -- but a flat
+      // swallow would hide a total failure to e.g. save bandwidth.
+      sender.setParameters(params).catch(() => console.warn("o encoder ignorou um ajuste de qualidade"));
     }
   }, []);
 
@@ -236,68 +321,144 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     sourceRef.current = null;
     publishRef.current?.close();
     publishRef.current = null;
+    retriedRef.current = false;
     send({ type: "publish:stop" });
   }, [send]);
 
-  const startSharing = useCallback(
-    async (from: Source, newQuality?: Quality, newFps?: Fps) => {
-      // Update quality/fps before capturing so applyEncodingLimits
-      // reads the right values when the publish connection is built.
-      if (newQuality !== undefined) setQuality(newQuality);
-      if (newFps !== undefined) setFps(newFps);
-      const q = newQuality ?? qualityRef.current;
-      const f = newFps ?? fpsRef.current;
-
-      setErrorMessage(null);
-      let stream: MediaStream;
-      try {
-        const videoConstraints = videoConstraintsFor(from, q, f);
-        stream =
-          from === "screen"
-            ? await navigator.mediaDevices.getDisplayMedia({ video: videoConstraints, audio: true })
-            : await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: true });
-      } catch (err) {
-        const name = err instanceof Error ? err.name : "Error";
-        // Dismissing the picker is a normal thing to do, not an error.
-        if (name !== "NotAllowedError" && name !== "AbortError") {
-          setErrorMessage(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
-        }
-        return;
-      }
-
-      // Tells the encoder what this footage actually is: "detail" keeps
-      // text sharp on a shared screen at the cost of framerate, "motion"
-      // does the opposite for a camera.
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) videoTrack.contentHint = from === "screen" ? "detail" : "motion";
-      // getDisplayMedia only yields audio if the person also ticked
-      // "share audio", so there may be nothing here to disable.
-      for (const track of stream.getAudioTracks()) track.enabled = sendingAudioRef.current;
-
-      localStreamRef.current = stream;
-      setLocalStream(stream);
-      setSource(from);
-      sourceRef.current = from;
-      // The browser's own "Stop sharing" bar ends the track.
-      videoTrack?.addEventListener("ended", () => stopSharing());
-
+  // Wire up and offer one publish connection for an already-captured
+  // stream. Both the capture path and the failed-uplink recovery land
+  // here; the source was already committed to sourceRef by whoever
+  // captured.
+  const publishStream = useCallback(
+    async (stream: MediaStream) => {
       // Replace rather than stack, so switching from screen to camera
       // doesn't leave the previous connection running.
       publishRef.current?.close();
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       publishRef.current = pc;
+      const seq = ++publishSeqRef.current;
 
       for (const track of stream.getTracks()) pc.addTrack(track, stream);
       applyEncodingLimits(pc);
       pc.onicecandidate = (ev) => {
         if (ev.candidate) send({ type: "publish:ice", candidate: ev.candidate.toJSON() });
       };
+      // A fallen uplink used to be invisible -- the tile kept saying the
+      // stream was live while nothing moved since the last answer.
+      // `failed` is the browser's last word on ICE, so this is the one
+      // moment recovery cannot happen without help.
+      pc.onconnectionstatechange = () => {
+        if (publishRef.current !== pc) return; // superseded by a newer share
+        if (pc.connectionState === "failed") {
+          republishRef.current("a transmissão caiu — tente compartilhar de novo");
+        }
+      };
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      send({ type: "publish:offer", sdp: pc.localDescription });
+      // The offer is numbered; the answer comes back with the same
+      // number, and answers for superseded connections are dropped.
+      send({ type: "publish:offer", seq, sdp: pc.localDescription });
     },
-    [applyEncodingLimits, send, stopSharing, quality, fps],
+    [applyEncodingLimits, send],
+  );
+
+  const republish = useCallback(
+    (reason: string) => {
+      const stream = localStreamRef.current;
+      if (!stream || retriedRef.current) {
+        setErrorMessage(reason);
+        return;
+      }
+      retriedRef.current = true;
+      void publishStream(stream);
+    },
+    [publishStream],
+  );
+  republishRef.current = republish;
+
+  const startSharing = useCallback(
+    async (from: Source, newQuality?: Quality, newFps?: Fps, newSurface?: DisplaySurface) => {
+      if (startingRef.current) return;
+      startingRef.current = true;
+      try {
+        // Committed to refs before anything async runs, so the capture
+        // and the connection it feeds agree -- and so changing settings
+        // here never recreates this callback and never touches the
+        // WebSocket's effect (quality and its friends are read through
+        // refs, not closed over).
+        if (newQuality !== undefined) {
+          setQuality(newQuality);
+          qualityRef.current = newQuality;
+        }
+        if (newFps !== undefined) {
+          setFps(newFps);
+          fpsRef.current = newFps;
+        }
+        if (newSurface !== undefined) {
+          setSurface(newSurface);
+          surfaceRef.current = newSurface;
+        }
+        retriedRef.current = false;
+        const q = qualityRef.current;
+        const f = fpsRef.current;
+        const s = surfaceRef.current;
+
+        setErrorMessage(null);
+        let stream: MediaStream;
+        try {
+          const videoConstraints = videoConstraintsFor(from, q, f, s);
+          stream =
+            from === "screen"
+              ? await navigator.mediaDevices.getDisplayMedia(gdmOptions(videoConstraints))
+              : await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: true });
+        } catch (err) {
+          const name = err instanceof Error ? err.name : "Error";
+          // Dismissing the picker is a normal thing to do, not an error.
+          if (name !== "NotAllowedError" && name !== "AbortError") {
+            setErrorMessage(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
+          }
+          return;
+        }
+
+        // Tells the encoder what this footage actually is: "detail" keeps
+        // text sharp on a shared screen at the cost of framerate, "motion"
+        // does the opposite for a camera.
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) videoTrack.contentHint = from === "screen" ? "detail" : "motion";
+        // getDisplayMedia only yields audio if the person also ticked
+        // "share audio", so there may be nothing here to disable.
+        for (const track of stream.getAudioTracks()) track.enabled = sendingAudioRef.current;
+
+        localStreamRef.current = stream;
+        setLocalStream(stream);
+        setSource(from);
+        sourceRef.current = from;
+        // The browser's own "Stop sharing" bar ends the track.
+        videoTrack?.addEventListener("ended", () => stopSharing());
+
+        await publishStream(stream);
+      } finally {
+        startingRef.current = false;
+      }
+    },
+    [publishStream, send, stopSharing],
+  );
+
+  // Mid-stream quality change: re-tunes the live connection's encoders.
+  // No recapture, no renegotiation, nothing touches the server. Shrinking
+  // is real -- the encoder scales frames down immediately -- but growing
+  // past what was captured can't happen through setParameters, so the UI
+  // re-shares for that instead.
+  const applyQuality = useCallback(
+    (q: Quality, f: Fps) => {
+      setQuality(q);
+      setFps(f);
+      qualityRef.current = q;
+      fpsRef.current = f;
+      applyEncodingLimits(publishRef.current);
+    },
+    [applyEncodingLimits],
   );
 
   const setAudio = useCallback((on: boolean) => {
@@ -385,12 +546,15 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
             }
 
             // A restarted server has forgotten everything, this
-            // browser's publish connection included -- so republish from
-            // scratch. The receive side is re-offered by the server.
+            // browser's publish connection included -- so republish.
+            // The capture itself survived the disconnect (nobody called
+            // stopSharing), so re-offer the same tracks instead of
+            // making the person re-pick the window; the receive side is
+            // re-offered by the server.
             if (localStreamRef.current && sourceRef.current) {
               subscribeRef.current?.close();
               subscribeRef.current = null;
-              await startSharing(sourceRef.current).catch(() => {});
+              await publishStream(localStreamRef.current).catch(() => {});
             }
             break;
           }
@@ -432,8 +596,19 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
 
           case "publish:answer": {
             const pc = publishRef.current;
-            if (pc && msg.sdp) {
-              await pc.setRemoteDescription(msg.sdp as RTCSessionDescriptionInit).catch(() => {});
+            if (!pc || !msg.sdp) break;
+            // An answer for a superseded offer (a fast re-share swapped
+            // the connection) must not be applied to the replacement's
+            // description -- it used to fail here, the failure was
+            // swallowed, and the replacement never connected. Servers
+            // that predate the numbering don't echo a seq at all; take
+            // those as current.
+            if (typeof msg.seq === "number" && msg.seq !== publishSeqRef.current) break;
+            try {
+              await pc.setRemoteDescription(msg.sdp as RTCSessionDescriptionInit);
+            } catch (err) {
+              console.error("publish:answer rejected", err);
+              setErrorMessage("o servidor recusou a transmissão");
             }
             break;
           }
@@ -453,28 +628,56 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
           // The server offers on the receive side, and re-offers every
           // time someone starts or stops sharing.
           case "subscribe:offer": {
-            let pc = subscribeRef.current;
-            if (!pc) {
-              pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-              subscribeRef.current = pc;
-              pc.onicecandidate = (ev) => {
-                if (ev.candidate) send({ type: "subscribe:ice", candidate: ev.candidate.toJSON() });
-              };
-              pc.ontrack = (ev) => {
-                // The SFU tags every outgoing track with the publisher's
-                // peer id as its stream id, which is how a track is
-                // matched back to the person it came from.
-                const stream = ev.streams[0];
-                if (!stream) return;
-                setRemoteStreams((current) => ({ ...current, [stream.id]: stream }));
-              };
-            }
-            await pc.setRemoteDescription(msg.sdp as RTCSessionDescriptionInit).catch(() => {});
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            send({ type: "subscribe:answer", sdp: pc.localDescription });
+            const answerOffer = async () => {
+              let pc = subscribeRef.current;
+              if (!pc) {
+                const fresh = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+                subscribeRef.current = fresh;
+                fresh.onicecandidate = (ev) => {
+                  if (ev.candidate) send({ type: "subscribe:ice", candidate: ev.candidate.toJSON() });
+                };
+                fresh.ontrack = (ev) => {
+                  // The SFU tags every outgoing track with the publisher's
+                  // peer id as its stream id, which is how a track is
+                  // matched back to the person it came from.
+                  const stream = ev.streams[0];
+                  if (!stream) return;
+                  setRemoteStreams((current) => ({ ...current, [stream.id]: stream }));
+                };
+                // There is no "resubscribe" message in the protocol: a
+                // receive connection that gave up (ICE failed for good)
+                // is only repairable by starting the session over. The
+                // WebSocket's own reconnection does that, and the server
+                // re-attaches every live track to the new subscriber.
+                fresh.onconnectionstatechange = () => {
+                  if (fresh.connectionState !== "failed") return;
+                  fresh.close();
+                  if (subscribeRef.current === fresh) subscribeRef.current = null;
+                  wsRef.current?.close();
+                };
+                pc = fresh;
+              }
+              await pc.setRemoteDescription(msg.sdp as RTCSessionDescriptionInit);
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+              send({ type: "subscribe:answer", sdp: pc.localDescription });
+            };
+            // ws.onmessage runs handlers concurrently -- an await in one
+            // message's processing cannot stop the next message's. Two
+            // offers in that window must still be applied in order, so
+            // the whole sequence rides one chain.
+            subscribeChainRef.current = subscribeChainRef.current
+              .then(answerOffer, answerOffer)
+              .catch((err) => console.error("subscribe negotiation failed", err));
             break;
           }
+
+          // The server could not negotiate this viewer's receive side --
+          // surface it on the room's error banner rather than leaving a
+          // tile stuck on "connecting".
+          case "subscribe:error":
+            setErrorMessage((msg.error as string) ?? "falha ao negociar o vídeo recebido");
+            break;
 
           case "subscribe:ice": {
             const pc = subscribeRef.current;
@@ -537,8 +740,11 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     hasAudioTrack: (localStream?.getAudioTracks().length ?? 0) > 0,
     quality,
     fps,
+    surface,
     setQuality,
     setFps,
+    setSurface,
+    applyQuality,
     startSharing,
     stopSharing,
     knockRequests,
