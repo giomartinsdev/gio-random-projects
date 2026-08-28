@@ -53,6 +53,12 @@ variable "session_duration" {
   default     = "24h"
 }
 
+variable "email_routing_destination" {
+  description = "Gmail mailbox everything Cloudflare Email Routing forwards to (see modules/cloud/cloudflare/email_routing.tf) — also the identity Gmail's Send-mail-as uses. One-time manual step after apply: click Cloudflare's verification email, or the rules stay inert."
+  type        = string
+  default     = "giovannidealmeidamartins@gmail.com"
+}
+
 # --- server ---
 
 variable "server_ip" {
