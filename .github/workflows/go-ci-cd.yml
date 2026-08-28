@@ -81,7 +81,10 @@ jobs:
       - name: Test (Go apps only — skipped for anything without a go.mod)
         if: hashFiles(format('modules/apps/{0}/go.mod', matrix.app)) != ''
         working-directory: modules/apps/${{ matrix.app }}
-        run: go build ./... && go vet ./...
+        # The SFU regression tests spin up real peer connections and can
+        # take tens of seconds; without this step they'd never gate a
+        # deploy no matter how many tests are written.
+        run: go build ./... && go vet ./... && go test ./...
 
       # The VPS is arm64 (Oracle's free-tier Ampere instances), but this
       # runner is amd64 -- QEMU is what lets BuildKit actually produce
