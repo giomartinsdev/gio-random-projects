@@ -10,6 +10,40 @@ distributor:
         http:
           endpoint: 0.0.0.0:4318
 
+# Grafana 12's Tempo datasource fires TraceQL *metrics* queries
+# (| rate(), | histogram_over_time()) as soon as you open Explore with a
+# 6h+ window. Those are served by the metrics_generator — without this
+# block every one of them 500s ("error finding generators: empty ring"),
+# and anything over the default 3h cap 400s. This is the single-binary
+# recipe from Tempo's own docker-compose example: span-metrics +
+# service-graphs computed locally and remote-written into Prometheus
+# (tempo_spanmetrics_*, tempo_service_graphs_*), local_blocks so the
+# freshest minutes are queryable before they reach the store.
+query_frontend:
+  metrics:
+    max_duration: 24h
+
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+  traces_storage:
+    path: /var/tempo/generator/traces
+  processor:
+    local_blocks:
+      filter_server_spans: false
+      flush_to_storage: true
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [service-graphs, span-metrics, local-blocks]
+
 # Local single-node backend (no S3/MinIO coupling — MinIO is for app
 # payloads, and a trace store that dies with its object store would be
 # worse than one that lives on a docker volume). 72h, not the 7d Loki
