@@ -2,6 +2,7 @@ package sfu
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/pion/webrtc/v4"
 )
@@ -14,6 +15,11 @@ type Publisher struct {
 	room   *Room
 	peerID string
 	done   chan struct{}
+	// Close is asked for from two directions at once -- the person
+	// stopping their share (the WS session's teardown) and this very PC
+	// noticing its own connection state flip to closed/failed. Closing
+	// done twice is a panic, so exactly one signal closes it.
+	closeOnce sync.Once
 }
 
 // Publish takes the browser's offer and returns the server's answer.
@@ -27,6 +33,17 @@ func (s *Server) Publish(roomID, peerID string, offer webrtc.SessionDescription,
 
 	room := s.room(roomID)
 	p := &Publisher{pc: pc, server: s, room: room, peerID: peerID, done: make(chan struct{})}
+
+	// The person re-sharing is the same peer id as the share being
+	// replaced, and that old connection's teardown drains asynchronously;
+	// clear out whatever it left behind before this connection's tracks
+	// register, so the room never holds two shares' worth of tracks for
+	// one person.
+	if removed, subs := room.reapStalePublisher(p); len(removed) > 0 {
+		for _, sub := range subs {
+			sub.removeTracks(removed)
+		}
+	}
 
 	// We only ever receive here, but the transceivers have to exist
 	// before setting the remote description or the tracks have nowhere
@@ -55,7 +72,7 @@ func (s *Server) Publish(roomID, peerID string, offer webrtc.SessionDescription,
 		if err != nil {
 			return
 		}
-		track := &publishedTrack{local: local, remote: remote, publisher: peerID}
+		track := &publishedTrack{local: local, remote: remote, publisher: peerID, pub: p}
 
 		for _, sub := range room.addTrack(track) {
 			sub.addTrack(track)
@@ -67,10 +84,13 @@ func (s *Server) Publish(roomID, peerID string, offer webrtc.SessionDescription,
 
 		forward(remote, local)
 
-		// The track ended: drop this publisher's tracks and let the
-		// subscribers renegotiate without them.
-		for _, sub := range room.removePublisher(peerID) {
-			sub.removePublisher(peerID)
+		// The track ended: drop THIS connection's tracks and let the
+		// subscribers renegotiate without them. A replacement connection
+		// from the same person may already be live; its tracks must
+		// survive this cleanup.
+		removed, subs := room.removePublisherTracks(p)
+		for _, sub := range subs {
+			sub.removeTracks(removed)
 		}
 		s.dropRoomIfEmpty(room.id)
 	})
@@ -84,13 +104,16 @@ func (s *Server) Publish(roomID, peerID string, offer webrtc.SessionDescription,
 	})
 
 	if err := pc.SetRemoteDescription(offer); err != nil {
+		p.Close()
 		return nil, nil, fmt.Errorf("set remote description: %w", err)
 	}
 	answer, err := pc.CreateAnswer(nil)
 	if err != nil {
+		p.Close()
 		return nil, nil, fmt.Errorf("create answer: %w", err)
 	}
 	if err := pc.SetLocalDescription(answer); err != nil {
+		p.Close()
 		return nil, nil, fmt.Errorf("set local description: %w", err)
 	}
 
@@ -102,16 +125,14 @@ func (p *Publisher) AddICECandidate(c webrtc.ICECandidateInit) error {
 }
 
 func (p *Publisher) Close() {
-	select {
-	case <-p.done:
-		return
-	default:
-	}
-	close(p.done)
+	p.closeOnce.Do(func() {
+		close(p.done)
 
-	for _, sub := range p.room.removePublisher(p.peerID) {
-		sub.removePublisher(p.peerID)
-	}
-	_ = p.pc.Close()
-	p.server.dropRoomIfEmpty(p.room.id)
+		removed, subs := p.room.removePublisherTracks(p)
+		for _, sub := range subs {
+			sub.removeTracks(removed)
+		}
+		_ = p.pc.Close()
+		p.server.dropRoomIfEmpty(p.room.id)
+	})
 }

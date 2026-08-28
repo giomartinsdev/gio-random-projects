@@ -26,6 +26,11 @@ type clientMessage struct {
 	SDP       *webrtc.SessionDescription `json:"sdp,omitempty"`
 	Candidate *webrtc.ICECandidateInit   `json:"candidate,omitempty"`
 	RequestID string                     `json:"requestId,omitempty"`
+	// Which publish offer this message is about. The client numbers its
+	// offers and matches replies by number -- an answer that belongs to a
+	// discarded connection (a fast re-share) must not be applied to the
+	// replacement's description. Echoed verbatim in publish:answer.
+	Seq int `json:"seq,omitempty"`
 }
 
 // The WebSocket carries signalling only; the media itself rides the
@@ -165,6 +170,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			func(offer webrtc.SessionDescription) {
 				peer.Send(map[string]any{"type": "subscribe:offer", "sdp": offer})
 			},
+			func(code string) {
+				peer.Send(map[string]any{"type": "subscribe:error", "error": code})
+			},
 		)
 		if err != nil {
 			s.log.ErrorContext(r.Context(), "subscribe failed", "peer_id", peerID, "room_id", room.ID, "error", err)
@@ -300,7 +308,7 @@ func (w *wsSession) handlePublishOffer(msg clientMessage) {
 	}
 
 	w.publisher = publisher
-	w.peer.Send(map[string]any{"type": "publish:answer", "sdp": answer})
+	w.peer.Send(map[string]any{"type": "publish:answer", "seq": msg.Seq, "sdp": answer})
 	// Announced separately from the media so the grid can show someone
 	// as sharing while their connection is still negotiating.
 	w.room.SetPublishing(w.peer, true)
