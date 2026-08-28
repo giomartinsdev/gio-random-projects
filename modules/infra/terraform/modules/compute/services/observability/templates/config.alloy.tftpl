@@ -29,7 +29,7 @@ otelcol.processor.batch "default" {
   timeout         = "5s"
 
   output {
-    metrics = [otelcol.exporter.prometheusremotewrite.prometheus.input]
+    metrics = [otelcol.exporter.prometheus.prometheus.input]
     traces  = [otelcol.exporter.otlp.tempo.input]
   }
 }
@@ -43,8 +43,19 @@ otelcol.exporter.otlp "tempo" {
   }
 }
 
-otelcol.exporter.prometheusremotewrite "prometheus" {
-  endpoint = "http://prometheus:9090/api/v1/write"
+// OTLP metrics can't be sent to Prometheus directly — Prometheus's
+// remote-write receiver speaks its own protocol. This exporter converts
+// OTLP metrics into Alloy's Prometheus pipeline (the components with a
+// forward_to), whose remote_write then ships them to Prometheus's
+// receiver (--web.enable-remote-write-receiver on the container).
+otelcol.exporter.prometheus "prometheus" {
+  forward_to = [prometheus.remote_write.prometheus.receiver]
+}
+
+prometheus.remote_write "prometheus" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
 }
 
 // Every container's stdout — postgres, redis, minio, ingress, the APIs

@@ -22,10 +22,15 @@ storage:
       path: /var/tempo/blocks
     wal:
       path: /var/tempo/wal
-    compactor:
-      compaction_window: 1h
-      max_block_bytes: 100M
-      block_retention: 72h
+
+# Compaction/retention are their own top-level block in Tempo 2.x —
+# nesting them under storage.trace fails to parse ("field compactor
+# not found in type tempodb.Config"). Only block_retention is set:
+# the compaction window and max block size keep Tempo's defaults
+# (1h / 100GiB — far beyond what this box produces).
+compactor:
+  compaction:
+    block_retention: 72h
 
 usage_report:
   reporting_enabled: false
