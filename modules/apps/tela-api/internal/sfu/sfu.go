@@ -128,6 +128,11 @@ type publishedTrack struct {
 	// Publisher peer id -- carried on the track so subscribers can tell
 	// whose picture they're looking at.
 	publisher string
+	// The connection this track came from. The peer id alone says nothing
+	// about WHICH share of that person's it was: re-sharing opens a new
+	// connection under the same id, and the old one's teardown drains
+	// asynchronously -- see removePublisherTracks.
+	pub *Publisher
 }
 
 func (s *Server) room(roomID string) *Room {
@@ -189,18 +194,73 @@ func (r *Room) addTrack(t *publishedTrack) []*Subscriber {
 	return subs
 }
 
-func (r *Room) removePublisher(peerID string) []*Subscriber {
+// removePublisherTracks drops exactly one connection's published tracks
+// and returns them alongside the subscribers that need to hear about it.
+// Keyed by connection, not peer id: re-sharing under the same peer id
+// happens on a brand-new connection while the old one's teardown is still
+// draining (each track's forwarding goroutine notices in its own time), and
+// a late teardown wiping the new connection's freshly registered tracks is
+// precisely what left other people's tiles stuck on "connecting".
+func (r *Room) removePublisherTracks(p *Publisher) (removed []*publishedTrack, subs []*Subscriber) {
 	r.mu.Lock()
-	delete(r.tracks, peerID)
-	subs := make([]*Subscriber, 0, len(r.subscribers))
-	for id, sub := range r.subscribers {
-		if id == peerID {
+	defer r.mu.Unlock()
+
+	kept := r.tracks[p.peerID][:0]
+	for _, t := range r.tracks[p.peerID] {
+		if t.pub == p {
+			removed = append(removed, t)
 			continue
 		}
-		subs = append(subs, sub)
+		kept = append(kept, t)
+	}
+	if len(removed) == 0 {
+		return nil, nil
+	}
+	if len(kept) == 0 {
+		delete(r.tracks, p.peerID)
+	} else {
+		r.tracks[p.peerID] = kept
+	}
+	for id, sub := range r.subscribers {
+		if id != p.peerID {
+			subs = append(subs, sub)
+		}
+	}
+	return removed, subs
+}
+
+// reapStalePublisher drops every track this peer's EARLIER connections
+// still have registered, called from inside the new connection's Publish.
+// Mostly belt-and-braces on top of removePublisherTracks -- the stale
+// connection's per-track goroutines clean themselves up, just
+// asynchronously, and nothing else guaranteed the room read clean before
+// the new connection's first track landed.
+func (r *Room) reapStalePublisher(p *Publisher) (removed []*publishedTrack, subs []*Subscriber) {
+	r.mu.Lock()
+	kept := r.tracks[p.peerID][:0]
+	for _, t := range r.tracks[p.peerID] {
+		if t.pub != p {
+			removed = append(removed, t)
+			continue
+		}
+		kept = append(kept, t)
+	}
+	if len(removed) == 0 {
+		r.mu.Unlock()
+		return nil, nil
+	}
+	if len(kept) == 0 {
+		delete(r.tracks, p.peerID)
+	} else {
+		r.tracks[p.peerID] = kept
+	}
+	for id, sub := range r.subscribers {
+		if id != p.peerID {
+			subs = append(subs, sub)
+		}
 	}
 	r.mu.Unlock()
-	return subs
+	return removed, subs
 }
 
 // forward pumps one publisher's RTP straight into every subscriber's
