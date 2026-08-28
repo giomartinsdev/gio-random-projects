@@ -67,8 +67,11 @@ terraform {
 provider "cloudflare" {
   # Reads CLOUDFLARE_API_TOKEN from the environment — never set inline
   # here. Needs Account / Access: Apps and Policies / Edit, Account /
-  # Access: Organizations, Identity Providers, and Groups / Read, and
-  # Zone / DNS / Edit — see modules/cloudflare's README.
+  # Access: Organizations, Identity Providers, and Groups / Read,
+  # Zone / DNS / Edit, Zone / Zone Settings / Edit, and (for Email
+  # Routing — modules/cloudflare/email_routing.tf) Zone / Email
+  # Routing Rules / Edit + Account / Email Routing Addresses / Edit —
+  # see modules/cloudflare's README.
 }
 
 provider "docker" {

@@ -16,42 +16,40 @@
 #     (needs 2FA on the Google account — myaccount.google.com →
 #     Security → App passwords).
 #
-# The DNS records come from the API itself (data source below): the
-# three MX to route{1,2,3}.mx.cloudflare.net, the zone's DKIM key and
-# the SPF suggestion. Only the apex SPF is re-created by hand, because
-# the verbatim recommendation lacks the Google include.
-
-data "cloudflare_email_routing_dns" "recommended" {
-  zone_id = var.zone_id
-}
+# The MX/SPF/DMARC records are written by hand rather than copied from
+# the API: the cloudflare_email_routing_dns data source returns null
+# for a zone that never onboarded Email Routing (checked live —
+# "Iteration over null value" on the first plan), and the onboard
+# wizard's records aren't individually manageable afterwards. The one
+# value that can't be written by hand is the zone-specific DKIM key —
+# that comes from the data source at the bottom, which adopts it
+# automatically once the API starts returning it.
 
 locals {
-  # The apex hostname as the API spells it (e.g. "giomartins.dev") —
-  # derived rather than hardcoded so SPF/DMARC/rule names can't drift
-  # from what Cloudflare itself expects for this zone.
-  email_zone_apex = [for rec in data.cloudflare_email_routing_dns.recommended.result.record : rec.name if rec.type == "MX"][0]
+  # The apex hostname. The module only receives a zone_id, and the
+  # email_routing_dns data source is null for this zone, so the domain
+  # is spelled out here rather than derived.
+  email_zone_apex = "giomartins.dev"
 
-  # Cloudflare's recommended set minus the apex SPF (re-created below
-  # with the Google include merged in). Keyed on type+name+content so
-  # any change Cloudflare makes to the recommendation shows up as a
-  # replace of exactly the changed record.
-  email_routing_records = {
-    for rec in data.cloudflare_email_routing_dns.recommended.result.record :
-    "${rec.type}:${rec.name}:${rec.content}" => rec
-    if !(rec.type == "TXT" && startswith(rec.content, "v=spf1"))
+  # Cloudflare generates a random priority per zone (8/19/29 on one,
+  # 52/98/91 on another — verified against public zones); the values
+  # have no functional effect since every host is Cloudflare's, so
+  # 10/20/30 keeps it deterministic.
+  email_mx_records = {
+    primary = { priority = 10, host = "route1.mx.cloudflare.net" }
+    second  = { priority = 20, host = "route2.mx.cloudflare.net" }
+    third   = { priority = 30, host = "route3.mx.cloudflare.net" }
   }
 }
 
-resource "cloudflare_dns_record" "email_routing" {
-  for_each = local.email_routing_records
+resource "cloudflare_dns_record" "email_mx" {
+  for_each = local.email_mx_records
 
-  zone_id = var.zone_id
-  name    = each.value.name
-  type    = each.value.type
-  content = each.value.content
-  # Only MX carries a priority; sending one for a TXT is what the API
-  # rejects, and null is what non-MX records expect.
-  priority = each.value.type == "MX" ? each.value.priority : null
+  zone_id  = var.zone_id
+  name     = local.email_zone_apex
+  type     = "MX"
+  content  = each.value.host
+  priority = each.value.priority
   ttl      = 1
   comment  = "Cloudflare Email Routing (Terraform)"
 }
@@ -142,4 +140,44 @@ resource "cloudflare_email_routing_catch_all" "catch_all" {
     cloudflare_email_routing_settings.zone,
     cloudflare_email_routing_address.destination,
   ]
+}
+
+# The zone-specific DKIM key (selector cf2024-1) is the one record that
+# can't be hand-written — only Cloudflare knows the key, and it
+# generates it when Email Routing is onboarded. This data source only
+# works AFTER that (null today — see the file header), so depends_on
+# defers its read to apply time, right after the settings above enable
+# the feature. Everything except the DKIM record is filtered out: MX
+# and the apex SPF are managed by the resources above, and adopting
+# them here too would create exact duplicates.
+data "cloudflare_email_routing_dns" "recommended" {
+  zone_id = var.zone_id
+
+  depends_on = [cloudflare_email_routing_settings.zone]
+}
+
+locals {
+  email_dkim_records = {
+    for rec in try(
+      [
+        for rec in data.cloudflare_email_routing_dns.recommended.result.record : rec
+        if rec.type == "TXT" &&
+        endswith(rec.name, "_domainkey.${local.email_zone_apex}")
+      ],
+      []
+    ) :
+    "${rec.type}:${rec.name}" => rec
+  }
+}
+
+resource "cloudflare_dns_record" "email_dkim" {
+  for_each = local.email_dkim_records
+
+  zone_id  = var.zone_id
+  name     = each.value.name
+  type     = each.value.type
+  content  = each.value.content
+  priority = null
+  ttl      = 1
+  comment  = "Cloudflare Email Routing DKIM (Terraform)"
 }
