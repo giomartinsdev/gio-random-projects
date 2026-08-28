@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Crop, Link2, MonitorUp, SlidersHorizontal, Trash2, Users } from "lucide-react";
+import { Check, Crop, Link2, MonitorUp, SlidersHorizontal, Trash2, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
 import { useWakeLock } from "@/lib/useWakeLock";
@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { ShareDialog, type ShareChoice } from "@/components/ShareDialog";
+import { useDismissable } from "@/lib/useDismissable";
 import {
   airplayIcon,
   arrowRightCircleIcon,
@@ -29,11 +30,12 @@ import {
 
 // A viewer's own preference for how the fullscreen tile fits its
 // space -- purely local rendering, never touches the publisher's
-// actual stream/encoding (see useRoom.ts for that). "auto" letterboxes
-// at the stream's real ratio; the fixed ratios crop/pad to match a
-// specific shape (useful for a game recorded 4:3, say, watched on a
-// 16:9 screen); "fill" crops to cover the tile edge-to-edge regardless
-// of ratio.
+// actual stream/encoding (see useRoom.ts for that). "auto" shows the
+// stream at its real ratio; the fixed ratios letterbox inside a box of
+// that shape -- nothing is ever cut away, the bars just absorb the
+// difference (useful for a game recorded 4:3, say, watched on a 16:9
+// screen); "fill" is the deliberate-crop option, covering the tile
+// edge-to-edge and yes, losing the edges.
 type AspectMode = "auto" | "16:9" | "4:3" | "1:1" | "fill";
 const ASPECT_MODES: { mode: AspectMode; label: string; ratio?: string }[] = [
   { mode: "auto", label: "Original" },
@@ -686,23 +688,8 @@ function PeopleList({
   participants: { peerId: string; name: string; isYou: boolean; publishing: boolean }[];
 }) {
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  const containerRef = useDismissable<HTMLDivElement>(open, close);
 
   return (
     <div ref={containerRef} className="relative">
@@ -778,27 +765,68 @@ function FullscreenTile({
   );
 }
 
-// Cycles through ASPECT_MODES on each click rather than a dropdown --
-// only 5 options, and a single tap/click is faster than opening a
-// menu for something people will flip a few times per session at most.
+// The fullscreen tile's fit selector. Was a single button that cycled
+// the five modes blindly -- you couldn't go back one step without
+// walking the list around -- so it's a small popover now, same
+// dismissal mechanics as the PeopleList.
 function AspectModeButton({ mode, onChange }: { mode: AspectMode; onChange: (mode: AspectMode) => void }) {
-  const index = ASPECT_MODES.findIndex((m) => m.mode === mode);
-  const current = ASPECT_MODES[index] ?? ASPECT_MODES[0];
-  const next = ASPECT_MODES[(index + 1) % ASPECT_MODES.length];
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const wrapRef = useDismissable<HTMLDivElement>(open, close);
+  const current = ASPECT_MODES.find((m) => m.mode === mode) ?? ASPECT_MODES[0];
   return (
-    <Button
-      variant="secondary"
-      size="sm"
-      onClick={(e) => {
-        e.stopPropagation();
-        onChange(next.mode);
-      }}
-      aria-label={`Ajuste de tela: ${current.label} (toque para ${next.label})`}
-      title={`Ajuste de tela: ${current.label} (toque para ${next.label})`}
-    >
-      <Crop className="size-4" />
-      {current.label}
-    </Button>
+    <div ref={wrapRef} className="relative">
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Ajuste de tela: ${current.label}`}
+        title={`Ajuste de tela: ${current.label}`}
+      >
+        <Crop className="size-4" />
+        {current.label}
+      </Button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-0 top-full z-30 mt-2 w-52 origin-top-right rounded-md border bg-card p-1 text-card-foreground shadow-md"
+          >
+            {ASPECT_MODES.map((m) => (
+              <button
+                key={m.mode}
+                type="button"
+                aria-pressed={m.mode === mode}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onChange(m.mode);
+                  close();
+                }}
+                className={
+                  "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground" +
+                  (m.mode === mode ? " font-medium" : "")
+                }
+              >
+                <Check className={"size-3.5 shrink-0" + (m.mode === mode ? "" : " invisible")} />
+                {m.label}
+                {m.ratio && <span className="ml-auto text-xs text-muted-foreground">{m.ratio}</span>}
+              </button>
+            ))}
+            <p className="px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+              As proporções fixas exibem tudo, sem cortar. "Preencher" recorta de propósito.
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -844,51 +872,54 @@ function TileVideo({
   }
 
   // "auto" shows the stream at its real ratio, untouched (object-contain,
-  // no fixed box). The fixed ratios (16:9, 4:3, 1:1) bound a box of that
-  // shape and crop the video to fill it -- a deliberate re-frame, not a
-  // letterbox. "fill" skips the box and crops straight to the tile.
+  // filling the tile). The fixed ratios (16:9, 4:3, 1:1) constrain the
+  // VIDEO element itself to a box of that shape -- with aspectRatio on a
+  // replaced element plus max-w/max-h, CSS resolves "the largest box of
+  // this ratio that fits", so a 16:9 stream under a 4:3 box keeps its
+  // whole picture letterboxed instead of having its sides shaved off the
+  // way object-cover did. "fill" is the one deliberate crop.
   const fixedRatio = ASPECT_MODES.find((m) => m.mode === aspectMode)?.ratio;
-  const fit = aspectMode === "auto" ? "object-contain" : "object-cover";
+  const fit = fixedRatio
+    ? "max-h-full max-w-full object-contain"
+    : aspectMode === "fill"
+      ? "h-full w-full object-cover"
+      : "h-full w-full object-contain";
 
   return (
     <div className={`relative flex h-full w-full items-center justify-center overflow-hidden ${className}`}>
-      <div
-        className={fixedRatio ? "relative" : "relative h-full w-full"}
-        style={fixedRatio ? { aspectRatio: fixedRatio, height: "100%", width: "auto", maxWidth: "100%" } : undefined}
-      >
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          // My own tile is always silent -- playing my own microphone back
-          // at me would echo. Everyone else's follows this viewer's choice.
-          muted={tile.isYou || muted}
-          className={`h-full w-full ${fit}`}
-        />
-        {needsTap && (
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              const video = videoRef.current;
-              if (!video) return;
-              video.play().then(
-                () => setNeedsTap(false),
-                () => {
-                  // Still blocked -- muting always satisfies the autoplay
-                  // policy, so at least the picture starts.
-                  video.muted = true;
-                  void video.play();
-                  setNeedsTap(false);
-                },
-              );
-            }}
-            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70"
-          >
-            <AnimatedIcon animation={playPauseCircleIcon} size={40} />
-            <span className="text-sm font-medium">Toque para assistir</span>
-          </span>
-        )}
-      </div>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        // My own tile is always silent -- playing my own microphone back
+        // at me would echo. Everyone else's follows this viewer's choice.
+        muted={tile.isYou || muted}
+        style={fixedRatio ? { aspectRatio: fixedRatio } : undefined}
+        className={fit}
+      />
+      {needsTap && (
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            const video = videoRef.current;
+            if (!video) return;
+            video.play().then(
+              () => setNeedsTap(false),
+              () => {
+                // Still blocked -- muting always satisfies the autoplay
+                // policy, so at least the picture starts.
+                video.muted = true;
+                void video.play();
+                setNeedsTap(false);
+              },
+            );
+          }}
+          className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70"
+        >
+          <AnimatedIcon animation={playPauseCircleIcon} size={40} />
+          <span className="text-sm font-medium">Toque para assistir</span>
+        </span>
+      )}
     </div>
   );
 }
