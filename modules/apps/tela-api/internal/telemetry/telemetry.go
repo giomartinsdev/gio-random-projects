@@ -54,14 +54,19 @@ func Init(ctx context.Context, serviceName string) (func(context.Context) error,
 
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 
-	traceExp, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint))
+	// Both exporters read OTEL_EXPORTER_OTLP_ENDPOINT from the env
+	// themselves (OTel spec: the base URL gets /v1/traces and /v1/metrics
+	// appended). Deliberately NOT WithEndpointURL(endpoint): there, a
+	// path-less URL targets the ROOT path verbatim — the signal path is
+	// not appended — and every export 404s against the collector.
+	traceExp, err := otlptracehttp.New(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("telemetry trace exporter: %w", err)
 	}
 	tp := sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(traceExp))
 	otel.SetTracerProvider(tp)
 
-	meterExp, err := otlpmetrichttp.New(ctx, otlpmetrichttp.WithEndpointURL(endpoint))
+	meterExp, err := otlpmetrichttp.New(ctx)
 	if err != nil {
 		_ = tp.Shutdown(ctx) // don't leak the half-installed trace pipeline
 		return nil, fmt.Errorf("telemetry metric exporter: %w", err)
