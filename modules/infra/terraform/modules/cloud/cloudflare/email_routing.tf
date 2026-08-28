@@ -144,38 +144,36 @@ resource "cloudflare_email_routing_catch_all" "catch_all" {
 
 # The zone-specific DKIM key (selector cf2024-1) is the one record that
 # can't be hand-written — only Cloudflare knows the key, and it
-# generates it when Email Routing is onboarded. This data source only
-# works AFTER that (null today — see the file header), so depends_on
-# defers its read to apply time, right after the settings above enable
-# the feature. Everything except the DKIM record is filtered out: MX
-# and the apex SPF are managed by the resources above, and adopting
-# them here too would create exact duplicates.
+# generates it when Email Routing is onboarded. Deliberately read at
+# PLAN time (no depends_on): a depends_on defers the read to apply,
+# and Terraform then rejects any for_each/count keyed on the result
+# ("cannot be determined until apply" — seen on runs 33201159630 and
+# 33201987778). Read at plan, the null the API returns for an
+# un-onboarded zone collapses to an empty map and nothing is created;
+# once the API starts returning the recommendation, the next apply
+# adopts the DKIM automatically.
 data "cloudflare_email_routing_dns" "recommended" {
   zone_id = var.zone_id
-
-  depends_on = [cloudflare_email_routing_settings.zone]
 }
 
 locals {
-  # try() swallows the null the API returns for an un-onboarded zone.
   # Only the DKIM record survives the filter — MX and the apex SPF are
   # managed by the resources above, and adopting them here too would
   # create exact duplicates.
-  email_dkim = [for rec in try(data.cloudflare_email_routing_dns.recommended.result.record, []) :
-    rec if rec.type == "TXT" && endswith(rec.name, "_domainkey.${local.email_zone_apex}")
-  ]
+  email_dkim_records = {
+    for rec in try(data.cloudflare_email_routing_dns.recommended.result.record, []) :
+    "${rec.type}:${rec.name}" => rec
+    if rec.type == "TXT" && endswith(rec.name, "_domainkey.${local.email_zone_apex}")
+  }
 }
 
-# count (not for_each): the data source is read at apply time, and
-# Terraform can't enumerate for_each keys it doesn't know at plan
-# time — count defers gracefully instead.
 resource "cloudflare_dns_record" "email_dkim" {
-  count = length(local.email_dkim) > 0 ? 1 : 0
+  for_each = local.email_dkim_records
 
   zone_id = var.zone_id
-  name    = local.email_dkim[count.index].name
+  name    = each.value.name
   type    = "TXT"
-  content = local.email_dkim[count.index].content
+  content = each.value.content
   ttl     = 1
   comment = "Cloudflare Email Routing DKIM (Terraform)"
 }
