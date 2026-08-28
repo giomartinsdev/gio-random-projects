@@ -157,11 +157,19 @@ data "cloudflare_email_routing_dns" "recommended" {
 }
 
 locals {
+  # The API returns result.record = null for an un-onboarded zone —
+  # and try() alone can't help, because null is a valid value, not an
+  # error: try hands it straight through and the for-expression below
+  # would still blow up ("Iteration over null value", run 33202536127).
+  # try() covers the case where result itself is absent (that IS an
+  # error); the explicit null check handles record being null.
+  email_dns_raw = try(data.cloudflare_email_routing_dns.recommended.result.record, null)
+
   # Only the DKIM record survives the filter — MX and the apex SPF are
   # managed by the resources above, and adopting them here too would
   # create exact duplicates.
   email_dkim_records = {
-    for rec in try(data.cloudflare_email_routing_dns.recommended.result.record, []) :
+    for rec in (local.email_dns_raw == null ? [] : local.email_dns_raw) :
     "${rec.type}:${rec.name}" => rec
     if rec.type == "TXT" && endswith(rec.name, "_domainkey.${local.email_zone_apex}")
   }
