@@ -80,13 +80,48 @@ resource "cloudflare_dns_record" "email_dmarc" {
   comment = "DMARC monitor-only (Terraform)"
 }
 
-# The on/off switch for the whole feature — with no rules, forwarding
-# does nothing; with rules, a disabled switch silently drops mail. The
-# resource's `enabled` attribute is read-only in the v5 provider:
-# creating this resource is what turns Email Routing on (deleting it
-# turns it off).
-resource "cloudflare_email_routing_settings" "zone" {
-  zone_id = var.zone_id
+# The zone-level on/off switch for the whole feature — with no rules,
+# forwarding does nothing; with rules, a disabled switch silently
+# drops mail.
+#
+# This used to be `cloudflare_email_routing_settings`, but that
+# resource is broken in every shipping provider version: 5.23.0
+# chokes unmarshaling the API's new support_subaddress field, and
+# 5.24.0 added the field to the model but not the schema, so the
+# framework can't convert the plan object at all ("mismatch between
+# struct and object: support_subaddress", runs 33203333537 and
+# 33203877532 — main is unfixed as of 2026-08-28). The enable is a
+# single idempotent PATCH, so until the provider ships a working
+# resource this does it directly, with the same CLOUDFLARE_API_TOKEN
+# the cloudflare provider itself runs on (inherited by the shell —
+# never written to state or logs). A failed PATCH fails the apply;
+# a failed provisioner taints the resource, so the next apply retries.
+# The one gap: toggling it off in the dashboard won't be re-enabled
+# until zone_id changes — same trade the Google IDP accepts.
+resource "null_resource" "email_routing_enable" {
+  triggers = {
+    zone_id = var.zone_id
+  }
+
+  provisioner "local-exec" {
+    environment = {
+      ZONE_ID = var.zone_id
+    }
+    command = <<-EOT
+      curl -sS -X PATCH \
+        "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/email/routing" \
+        -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data '{"enabled":true}' \
+        | grep -q '"success":true'
+    EOT
+  }
+
+  depends_on = [
+    cloudflare_dns_record.email_mx,
+    cloudflare_dns_record.email_spf,
+    cloudflare_dns_record.email_dmarc,
+  ]
 }
 
 # The destination mailbox. Creating this makes Cloudflare email it a
@@ -115,7 +150,7 @@ resource "cloudflare_email_routing_rule" "primary" {
   }]
 
   depends_on = [
-    cloudflare_email_routing_settings.zone,
+    null_resource.email_routing_enable,
     cloudflare_email_routing_address.destination,
   ]
 }
@@ -137,7 +172,7 @@ resource "cloudflare_email_routing_catch_all" "catch_all" {
   }]
 
   depends_on = [
-    cloudflare_email_routing_settings.zone,
+    null_resource.email_routing_enable,
     cloudflare_email_routing_address.destination,
   ]
 }
@@ -165,11 +200,13 @@ locals {
   # error); the explicit null check handles record being null.
   email_dns_raw = try(data.cloudflare_email_routing_dns.recommended.result.record, null)
 
+  email_dns_list = local.email_dns_raw == null ? [] : local.email_dns_raw
+
   # Only the DKIM record survives the filter — MX and the apex SPF are
   # managed by the resources above, and adopting them here too would
   # create exact duplicates.
   email_dkim_records = {
-    for rec in (local.email_dns_raw == null ? [] : local.email_dns_raw) :
+    for rec in local.email_dns_list :
     "${rec.type}:${rec.name}" => rec
     if rec.type == "TXT" && endswith(rec.name, "_domainkey.${local.email_zone_apex}")
   }
