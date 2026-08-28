@@ -62,3 +62,26 @@ variable "session_duration" {
   type        = string
   default     = "24h"
 }
+
+variable "email_routing_destination" {
+  description = <<-EOT
+    The Gmail mailbox everything Cloudflare Email Routing forwards to
+    (see email_routing.tf). Must be a real inbox someone controls —
+    Cloudflare emails it a verification link, and the routing rules
+    stay inert until it's clicked. Defaults to nothing: pass the same
+    address as allowed_emails[0] so the whole homelab funnels into one
+    mailbox.
+  EOT
+  type        = string
+}
+
+variable "email_routing_local_part" {
+  description = <<-EOT
+    Local part of the primary custom address (the one before the @) —
+    with the default, that's gio@giomartins.dev via the literal routing
+    rule. Any other address on the domain is covered by the catch-all
+    rule regardless.
+  EOT
+  type        = string
+  default     = "gio"
+}

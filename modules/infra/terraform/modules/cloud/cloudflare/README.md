@@ -11,6 +11,7 @@ and registry.giomartins.dev's mTLS setup.
 | `access.tf` | `cloudflare_zero_trust_access_policy`/`_application` — Google SSO, one pair per non-excluded hostname (enforces only once records are proxied) |
 | `service_token_access.tf` | Service token + dedicated Access application per hostname in `local.service_token_hostnames` (`domain.giomartins.dev`) — the second layer for hostnames that can't take a browser-redirect login flow |
 | `registry_mtls.tf` | A locally-generated CA + client certificate, and the Cloudflare resources that require it at the edge for `registry.giomartins.dev` — the second layer for the one hostname that can't even take custom HTTP headers (Docker's push/pull tooling) |
+| `email_routing.tf` | `cloudflare_email_routing_*` + the DNS records Email Routing needs (MX ×3, DKIM from the `cloudflare_email_routing_dns` data source, SPF with Google's include merged in, DMARC p=none) — mail to `gio@giomartins.dev` and the catch-all forwards to the destination Gmail. Needs the API token to hold `Zone/Email Routing Rules/Edit` + `Account/Email Routing Addresses/Edit`, and the destination's verification email to be clicked before rules activate (header of the file has the full checklist) |
 
 ## Inputs
 

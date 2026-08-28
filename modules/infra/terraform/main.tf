@@ -17,6 +17,11 @@ module "cloud_cloudflare" {
   excluded_hostnames = var.excluded_hostnames
   allowed_emails     = var.allowed_emails
   session_duration   = var.session_duration
+
+  # Email Routing lives on the zone's DNS (MX/SPF/DKIM) plus account
+  # state, not on any hostname's ingress — so it slots into this
+  # module rather than into compute.
+  email_routing_destination = var.email_routing_destination
 }
 
 module "network_docker_apps" {
