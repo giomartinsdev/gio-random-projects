@@ -26,7 +26,10 @@ hostname/port pair gets declared — everything else derives from it:
   `locals.tf` straight on the host.
 - **[`modules/compute/services/*`](modules/compute/services/registry/README.md)**
   — registry (+watchtower), beszel monitoring, 9router, vaultwarden
-  (+bridge), adminer, and
+  (+bridge), adminer,
+  [`observability`](modules/compute/services/observability/README.md)
+  (grafana + loki + prometheus + tempo + alloy: logs, metrics, traces
+  for everything else here), and
   [`ingress`](modules/compute/services/ingress/README.md)
   — the single nginx front door everything else routes through.
 

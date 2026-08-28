@@ -82,6 +82,14 @@ resource "docker_container" "<nome>" {
 }
 ```
 
+**Telemetria**: inclua desde já o env que toda app nova recebe hoje —
+`OTEL_EXPORTER_OTLP_ENDPOINT = module.compute_services_observability.otlp_endpoint`
+(e `OTEL_SERVICE_NAME = "<nome>"`). Logs já fluem para o Grafana sem
+nenhum trabalho extra (o alloy faz scrape do stdout de todo container);
+com esse env, traces e métricas também entram — copie o pacote
+`internal/telemetry` de um app Go ou `src/telemetry.ts` de um backend
+TS. A receita completa está no README do módulo observability.
+
 Portas já usadas hoje: 8004 (bookclub-api), 8005 (classroom-api), 8007
 (tela-api). Pegue a próxima.
 

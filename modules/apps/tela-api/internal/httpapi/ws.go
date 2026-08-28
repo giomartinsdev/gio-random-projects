@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -168,11 +167,15 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			},
 		)
 		if err != nil {
-			log.Printf("subscribe failed for %s in %s: %v", peerID, room.ID, err)
+			s.log.ErrorContext(r.Context(), "subscribe failed", "peer_id", peerID, "room_id", room.ID, "error", err)
 		}
 	}
 
-	session := &wsSession{server: s, room: room, peer: peer, subscriber: subscriber}
+	// Kept for logging after the upgrade: the request context (and the
+	// GET /ws span riding in it) lives as long as the connection does,
+	// so error lines from the read loop and the publisher carry the
+	// same trace_id as the connection's span.
+	session := &wsSession{server: s, room: room, peer: peer, subscriber: subscriber, ctx: ctx}
 	session.readLoop(ctx, conn)
 
 	session.close()
@@ -189,6 +192,10 @@ type wsSession struct {
 	peer       *rooms.Peer
 	subscriber *sfu.Subscriber
 	publisher  *sfu.Publisher
+	// The connection's lifetime context (see the constructor) -- what
+	// makes log lines from handlers that predate the read loop carry
+	// trace_id too.
+	ctx context.Context
 }
 
 func (w *wsSession) close() {
@@ -242,7 +249,7 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 		case "subscribe:answer":
 			if msg.SDP != nil && w.subscriber != nil {
 				if err := w.subscriber.Answer(*msg.SDP); err != nil {
-					log.Printf("subscribe answer from %s: %v", w.peer.ID, err)
+					w.server.log.ErrorContext(ctx, "subscribe answer failed", "peer_id", w.peer.ID, "error", err)
 				}
 			}
 
@@ -287,7 +294,7 @@ func (w *wsSession) handlePublishOffer(msg clientMessage) {
 		},
 	)
 	if err != nil {
-		log.Printf("publish failed for %s in %s: %v", w.peer.ID, w.room.ID, err)
+		w.server.log.ErrorContext(w.ctx, "publish failed", "peer_id", w.peer.ID, "room_id", w.room.ID, "error", err)
 		w.peer.Send(map[string]any{"type": "publish:error", "error": "não foi possível iniciar a transmissão"})
 		return
 	}
@@ -351,11 +358,6 @@ func writeLoop(ctx context.Context, conn *websocket.Conn, peer *rooms.Peer) {
 			return
 		}
 	}
-}
-
-func init() {
-	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
-	log.SetPrefix("[tela-api] ")
 }
 
 // coder/websocket's OriginPatterns matches host[:port], no scheme --

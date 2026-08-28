@@ -34,7 +34,7 @@ func NewHandlers(users domainuser.Repository, commands application.CommandPublis
 func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.users.List(r.Context())
 	if err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, toUserResponses(users))
@@ -48,7 +48,7 @@ func (h *Handlers) GetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, toUserResponse(user))
@@ -92,12 +92,12 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) publish(w http.ResponseWriter, r *http.Request, action application.Action, payload any) {
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	cmd := application.Command{ID: uuid.NewString(), Action: action, Payload: raw}
 	if err := h.commands.Publish(r.Context(), cmd); err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, acceptedBody{CommandID: cmd.ID, Status: "accepted"})
@@ -107,8 +107,8 @@ func (h *Handlers) Healthz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *Handlers) internalError(w http.ResponseWriter, err error) {
-	h.log.Error("internal error", "error", err)
+func (h *Handlers) internalError(r *http.Request, w http.ResponseWriter, err error) {
+	h.log.ErrorContext(r.Context(), "internal error", "error", err)
 	writeJSON(w, http.StatusInternalServerError, errorBody{Error: "internal server error"})
 }
 

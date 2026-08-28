@@ -56,6 +56,13 @@ resource "docker_container" "tela_api" {
     # Now a cross-origin caller (tela-frontend's own hostname/container)
     # instead of same-origin -- see internal/httpapi's AllowedOrigins.
     "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
+    # Loopback, not http://alloy:4318: host networking means docker DNS
+    # doesn't exist here -- alloy's 4318 is published on 127.0.0.1 for
+    # ingress, and this container shares the host's loopback. Traces +
+    # metrics only -- logs flow via alloy's docker-socket scrape of
+    # stdout (see otlp_endpoint's description).
+    "OTEL_EXPORTER_OTLP_ENDPOINT=${var.otlp_endpoint}",
+    "OTEL_SERVICE_NAME=tela-api",
   ]
 
   # Rooms live in memory, but the room registry itself (code, password

@@ -12,7 +12,7 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,9 +24,30 @@ import (
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/sfu"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/telemetry"
 )
 
 func main() {
+	// JSON slog (not the stdlib logger this used to use) so the line
+	// lands in Loki as structured fields — level gets a label, and the
+	// telemetry handler stamps trace_id/span_id onto anything logged
+	// inside a request span.
+	log := slog.New(telemetry.NewLogger(slog.NewJSONHandler(os.Stdout, nil)))
+
+	shutdownTelemetry, err := telemetry.Init(context.Background(), "tela-api")
+	if err != nil {
+		// Telemetry failing to start must never stop the signalling
+		// server — degrade to no telemetry and carry on. Empty
+		// OTEL_EXPORTER_OTLP_ENDPOINT (local dev) skips init entirely.
+		log.Error("telemetry init failed; continuing without it", "error", err)
+		shutdownTelemetry = func(context.Context) error { return nil }
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = shutdownTelemetry(shutdownCtx)
+	}()
+
 	port := env("PORT", "8000")
 	// tela-frontend's own origin(s), comma-separated -- same convention
 	// as bookclub-api/post-api/classroom-api's FRONTEND_ORIGINS. Empty
@@ -55,23 +76,24 @@ func main() {
 		STUNURLs:   []string{"stun:stun.l.google.com:19302"},
 	})
 	if err != nil {
-		log.Fatalf("could not start the SFU: %v", err)
+		log.Error("could not start the SFU", "error", err)
+		os.Exit(1)
 	}
 	if media.PublicIP() == "" {
 		// Worth shouting about: without this the SFU advertises the
 		// container's private address and no browser can connect, which
 		// otherwise shows up only as video that never starts.
-		log.Printf("WARNING: SFU_PUBLIC_HOST is not set -- browsers will not be able to reach the SFU")
+		log.Warn("SFU_PUBLIC_HOST is not set -- browsers will not be able to reach the SFU")
 	} else {
-		log.Printf("sfu on udp/%d advertising %s (from %q)", sfuPort, media.PublicIP(), os.Getenv("SFU_PUBLIC_HOST"))
+		log.Info("sfu started", "udp_port", sfuPort, "public_ip", media.PublicIP(), "public_host", os.Getenv("SFU_PUBLIC_HOST"))
 	}
 
 	registry := rooms.NewRegistry(statePath)
 	if err := registry.Load(); err != nil {
 		// Losing rooms is bad; refusing to boot is worse.
-		log.Printf("could not restore rooms from %q: %v", statePath, err)
+		log.Warn("could not restore rooms", "state_file", statePath, "error", err)
 	} else if statePath != "" {
-		log.Printf("rooms restored from %q: %d", statePath, registry.Count())
+		log.Info("rooms restored", "state_file", statePath, "count", registry.Count())
 	}
 	stopJanitor := make(chan struct{})
 	registry.StartJanitor(stopJanitor)
@@ -84,7 +106,7 @@ func main() {
 	// dev) falls back to every interface, same as before this existed.
 	server := &http.Server{
 		Addr:    os.Getenv("BIND_HOST") + ":" + port,
-		Handler: httpapi.New(registry, media, allowedOrigins).Handler(),
+		Handler: httpapi.New(registry, media, allowedOrigins, log).Handler(),
 		// No WriteTimeout: a WebSocket connection is meant to stay open
 		// for as long as the screen share lasts, and WriteTimeout would
 		// cut it off. Per-write deadlines in the WS write loop cover the
@@ -94,9 +116,10 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("listening on :%s (allowed origins: %v)", port, allowedOrigins)
+		log.Info("listening", "port", port, "allowed_origins", allowedOrigins)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("server failed: %v", err)
+			log.Error("server failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -104,11 +127,11 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 
-	log.Println("shutting down")
+	log.Info("shutting down")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("graceful shutdown failed: %v", err)
+		log.Error("graceful shutdown failed", "error", err)
 	}
 }
 

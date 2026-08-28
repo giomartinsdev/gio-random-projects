@@ -3,6 +3,8 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -30,7 +32,8 @@ func newServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatalf("sfu: %v", err)
 	}
-	srv := httptest.NewServer(httpapi.New(rooms.NewRegistry(""), media, []string{"http://example.com"}).Handler())
+	srv := httptest.NewServer(httpapi.New(rooms.NewRegistry(""), media,
+		[]string{"http://example.com"}, slog.New(slog.NewJSONHandler(io.Discard, nil))).Handler())
 	t.Cleanup(srv.Close)
 	return srv
 }

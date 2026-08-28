@@ -66,3 +66,16 @@ variable "watchtower_enabled" {
   type        = bool
   default     = false
 }
+
+variable "otlp_endpoint" {
+  description = <<-EOT
+    module.compute_services_observability's otlp_endpoint output — where
+    traces and metrics go. Logs are NOT sent here: they flow via alloy's
+    docker-socket scrape of stdout (structured JSON like pino already
+    emits), so no log exporter ships in the bundle. Empty disables
+    telemetry entirely — the telemetry module no-ops and local dev never
+    needs a collector running.
+  EOT
+  type        = string
+  default     = ""
+}

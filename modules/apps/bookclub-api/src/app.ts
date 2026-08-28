@@ -31,7 +31,11 @@ export function createApp(auth: Auth, db: Db, domainApi: DomainApiClient, minio:
     cors({
       origin: frontendOrigins,
       credentials: true,
-      allowHeaders: ["content-type", "authorization"],
+      // traceparent/tracestate/baggage: the frontend's fetch
+      // instrumentation (buteco-class-frontend/src/telemetry.ts) adds
+      // these to every call — a preflight that doesn't allow them kills
+      // the request before it starts.
+      allowHeaders: ["content-type", "authorization", "traceparent", "tracestate", "baggage"],
     }),
   );
 

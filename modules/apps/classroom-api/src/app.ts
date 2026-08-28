@@ -7,6 +7,7 @@ import { DomainApiError, NotFoundError, type DomainApiClient, type DomainMessage
 import { createRoomsRouter, sessionRequestHeaders } from "./routes/rooms.js";
 import { createRateLimiter } from "./lib/rateLimiter.js";
 import { docsHtml, openApiYaml } from "./lib/openapi.js";
+import { logger } from "./logger.js";
 import * as roomHub from "./ws/roomHub.js";
 
 const NOTEPAD_MAX = 20_000;
@@ -30,7 +31,11 @@ export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigin
     cors({
       origin: frontendOrigins,
       credentials: true,
-      allowHeaders: ["content-type", "authorization"],
+      // traceparent/tracestate/baggage: the frontend's fetch
+      // instrumentation (buteco-class-frontend/src/telemetry.ts) adds
+      // these to every call — a preflight that doesn't allow them kills
+      // the request before it starts.
+      allowHeaders: ["content-type", "authorization", "traceparent", "tracestate", "baggage"],
     }),
   );
 
@@ -50,7 +55,7 @@ export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigin
   // route that can hit it already catches it locally for a proper 404.
   app.onError((err, c) => {
     if (err instanceof DomainApiError) {
-      console.error("[classroom-api] domain-api call failed:", err.message);
+      logger.error({ err }, "domain-api call failed");
       // 502/504/52x are Cloudflare's own reserved "gateway" range --
       // it silently REPLACES the origin's response body for those
       // exact codes with its own generic text, discarding whatever
@@ -59,7 +64,7 @@ export function createApp(auth: Auth, domainApi: DomainApiClient, frontendOrigin
       // it's what actually reaches the caller with this message intact.
       return c.json({ error: `upstream domain-api call failed: ${err.message}` }, 500);
     }
-    console.error("[classroom-api] unhandled error:", err);
+    logger.error({ err }, "unhandled error");
     return c.json({ error: "internal server error" }, 500);
   });
 

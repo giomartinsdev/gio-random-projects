@@ -18,12 +18,15 @@ import (
 	httpapi "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/http"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/postgres"
 	inredis "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/redis"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/telemetry"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const shutdownTimeout = 10 * time.Second
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	log := slog.New(telemetry.NewLogger(slog.NewJSONHandler(os.Stdout, nil)))
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -35,6 +38,20 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Telemetry failing to start must never take the API down — degrade
+	// to no telemetry and carry on. Empty OTEL_EXPORTER_OTLP_ENDPOINT
+	// (local dev) skips init entirely; see internal/telemetry.
+	shutdownTelemetry, err := telemetry.Init(ctx, "domain-api")
+	if err != nil {
+		log.Error("telemetry init failed; continuing without it", "error", err)
+		shutdownTelemetry = func(context.Context) error { return nil }
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		_ = shutdownTelemetry(shutdownCtx)
+	}()
 
 	pool, err := postgres.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -74,7 +91,14 @@ func main() {
 
 	router := httpapi.NewRouter(handlers, postHandlers, roomHandlers, messageHandlers, sseHandlers, apiKeys, rateLimiter, log)
 
-	server := &http.Server{Addr: cfg.HTTPAddr, Handler: router}
+	server := &http.Server{Addr: cfg.HTTPAddr, Handler: otelhttp.NewHandler(router, "domain-api",
+		// chi's route patterns aren't visible to otelhttp, so name the
+		// span from the request itself — "POST /posts" reads far better
+		// in Tempo than every span sharing the operation name.
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return r.Method + " " + r.URL.Path
+		}),
+	)}
 
 	go func() {
 		<-ctx.Done()

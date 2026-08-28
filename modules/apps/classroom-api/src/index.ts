@@ -1,7 +1,11 @@
+// First import, deliberately: the OpenTelemetry hooks must be in place
+// before http/pg/fetch are first used. See telemetry.ts's header.
+import "./telemetry.js";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 import { createAuth } from "./lib/auth.js";
 import { createDomainApiClient } from "./lib/domainApiClient.js";
+import { logger } from "./logger.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const authSecret = process.env.BETTER_AUTH_SECRET;
@@ -29,6 +33,6 @@ const domainApi = createDomainApiClient(domainApiUrl, domainApiKey);
 const { app, injectWebSocket } = createApp(auth, domainApi, frontendOrigins);
 
 const server = serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`classroom-api listening on :${info.port}`);
+  logger.info(`classroom-api listening on :${info.port}`);
 });
 injectWebSocket(server);

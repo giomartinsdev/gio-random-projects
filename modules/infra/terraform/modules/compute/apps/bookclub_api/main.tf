@@ -55,6 +55,10 @@ resource "docker_container" "bookclub_api" {
     "MINIO_SECRET_KEY=${var.minio_secret_key}",
     "MINIO_BUCKET=bookclub-pdfs",
     "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
+    # Traces + metrics only — logs flow via alloy's docker-socket scrape
+    # of this container's stdout (see otlp_endpoint's description).
+    "OTEL_EXPORTER_OTLP_ENDPOINT=${var.otlp_endpoint}",
+    "OTEL_SERVICE_NAME=bookclub-api",
     "PORT=8000",
   ]
 

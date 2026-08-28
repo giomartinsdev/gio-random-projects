@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -24,9 +25,12 @@ type PostHandlers struct {
 
 // Logger is the exact slice of *slog.Logger Handlers already uses --
 // declared here so this file doesn't need to import log/slog just to
-// name the field type twice.
+// name the field type twice. ErrorContext exists alongside Error so the
+// telemetry handler (internal/telemetry) can see the request's span and
+// stamp trace_id/span_id onto the line.
 type Logger interface {
 	Error(msg string, args ...any)
+	ErrorContext(ctx context.Context, msg string, args ...any)
 }
 
 func NewPostHandlers(posts domainpost.Repository, commands application.CommandPublisher, log Logger) *PostHandlers {
@@ -36,7 +40,7 @@ func NewPostHandlers(posts domainpost.Repository, commands application.CommandPu
 func (h *PostHandlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 	posts, err := h.posts.ListPublished(r.Context())
 	if err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"posts": toPostResponses(posts)})
@@ -44,7 +48,7 @@ func (h *PostHandlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 
 func (h *PostHandlers) GetPostBySlug(w http.ResponseWriter, r *http.Request) {
 	p, err := h.posts.FindBySlug(r.Context(), chi.URLParam(r, "slug"))
-	h.respondPost(w, p, err)
+	h.respondPost(r, w, p, err)
 }
 
 // GetPostByID is not exposed for public browsing (no status filter --
@@ -55,16 +59,16 @@ func (h *PostHandlers) GetPostBySlug(w http.ResponseWriter, r *http.Request) {
 // concept of post-api's own users to check that themselves.
 func (h *PostHandlers) GetPostByID(w http.ResponseWriter, r *http.Request) {
 	p, err := h.posts.FindByID(r.Context(), chi.URLParam(r, "id"))
-	h.respondPost(w, p, err)
+	h.respondPost(r, w, p, err)
 }
 
-func (h *PostHandlers) respondPost(w http.ResponseWriter, p domainpost.Post, err error) {
+func (h *PostHandlers) respondPost(r *http.Request, w http.ResponseWriter, p domainpost.Post, err error) {
 	if errors.Is(err, domainpost.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "post not found"})
 		return
 	}
 	if err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, toPostResponse(p))
@@ -114,18 +118,18 @@ func (h *PostHandlers) DeletePost(w http.ResponseWriter, r *http.Request) {
 func (h *PostHandlers) publish(w http.ResponseWriter, r *http.Request, action application.Action, payload any) {
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	cmd := application.Command{ID: uuid.NewString(), Action: action, Payload: raw}
 	if err := h.commands.Publish(r.Context(), cmd); err != nil {
-		h.internalError(w, err)
+		h.internalError(r, w, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, acceptedBody{CommandID: cmd.ID, Status: "accepted"})
 }
 
-func (h *PostHandlers) internalError(w http.ResponseWriter, err error) {
-	h.log.Error("internal error", "error", err)
+func (h *PostHandlers) internalError(r *http.Request, w http.ResponseWriter, err error) {
+	h.log.ErrorContext(r.Context(), "internal error", "error", err)
 	writeJSON(w, http.StatusInternalServerError, errorBody{Error: "internal server error"})
 }

@@ -35,7 +35,7 @@ func Secure(next http.Handler, keys APIKeys, limiter *IPRateLimiter, log *slog.L
 
 		ip := clientIP(r)
 		if !limiter.Allow(ip) {
-			log.Warn("rate limited", "ip", ip, "path", r.URL.Path)
+			log.WarnContext(r.Context(), "rate limited", "ip", ip, "path", r.URL.Path)
 			writeJSON(w, http.StatusTooManyRequests, errorBody{Error: "too many requests"})
 			return
 		}
