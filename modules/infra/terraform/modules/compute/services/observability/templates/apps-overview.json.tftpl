@@ -127,7 +127,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (job) ({__name__=~\"go_sched_goroutines_goroutines|go_goroutines|process_runtime_go_goroutines\"})",
+          "expr": "sum by (job) ({__name__=~\"go_goroutine_count|go_sched_goroutines_goroutines|go_goroutines\"})",
           "legendFormat": "{{job}}"
         }
       ]
