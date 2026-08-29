@@ -138,6 +138,42 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /posts/import:
+    post:
+      summary: >
+        Fetch a public dev.to / TabNews / Medium article and normalize
+        it to a markdown draft. Only supports those three hosts
+        (per-provider API or scrape); the response is NOT a created
+        post -- it pre-fills an editor that the author reviews and
+        publishes through the normal POST /posts. The attribution
+        footer ("Retirado daqui do ...") is already appended to
+        bodyMarkdown.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  description: A public link on dev.to, tabnews.com.br or medium.com
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportedPost"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          description: The source page could not be fetched or parsed
   /posts/{slug}:
     parameters:
       - name: slug
@@ -400,6 +436,27 @@ components:
         counted:
           type: boolean
           description: false when the viewer visited their own profile
+    ImportedPost:
+      type: object
+      description: >
+        Normalized draft from /posts/import -- not a persisted post.
+        bodyMarkdown already carries the attribution footer.
+      properties:
+        provider:
+          type: string
+          enum: [dev.to, tabnews, medium]
+        title:
+          type: string
+        bodyMarkdown:
+          type: string
+        excerpt:
+          type: string
+          nullable: true
+        coverImageUrl:
+          type: string
+          nullable: true
+        originalUrl:
+          type: string
     PostInput:
       type: object
       required: [title, bodyMarkdown]

@@ -52,6 +52,7 @@ synchronous tables here, one Postgres round-trip, no queue. Two tables:
 |---|---|---|---|
 | GET | `/posts` | none | Published posts only, proxied from domain-api; enriched with `likeCount`/`likedByMe` for the caller |
 | POST | `/posts` | required | Forwards to domain-api, returns 202 |
+| POST | `/posts/import` | required | Fetches a public dev.to / TabNews / Medium link and returns it as a markdown draft (not a persisted post) with the "Retirado daqui do…" attribution footer already appended — see `src/lib/importAdapter.ts`. Does NOT support arbitrary hosts (SSRF by allowlist, not by blocklist) |
 | GET | `/posts/:slug` | none | Published only; 404 for drafts/missing; like fields like the list |
 | GET | `/posts/liked/by-me` | required | Current user's liked published posts, newest like first |
 | POST | `/posts/:id/like` | required | Like (idempotent) → `{ likeCount, likedByMe }`; 404 if domain-api doesn't know the post |
