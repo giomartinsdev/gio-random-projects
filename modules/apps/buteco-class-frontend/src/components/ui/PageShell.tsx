@@ -16,7 +16,9 @@ const widths: Record<PageWidth, string> = {
 // its width here instead.
 export function PageShell({ width = "content", className, children }: { width?: PageWidth; className?: string; children: ReactNode }) {
   return (
-    <div className={cn("mx-auto w-full px-4 sm:px-6 py-8 sm:py-10", widths[width], className)}>{children}</div>
+    // pt-14 (56px) clears the fixed reopen pill (top-3 + 40px tall =
+    // bottom at 52px) that rides along on screens without the rail.
+    <div className={cn("mx-auto w-full px-4 sm:px-6 pt-14 pb-8 sm:pt-10 sm:pb-10", widths[width], className)}>{children}</div>
   );
 }
 

@@ -5,7 +5,14 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { bookclubApi, type Room } from "../lib/bookclubApi.js";
 import { useRoomSocket, type Stroke } from "../lib/useRoomSocket.js";
-import { ConfirmDialog, Input } from "../components/ui/index.js";
+import { Banner, Button, ConfirmDialog, Input, PageShell, Skeleton, Spinner } from "../components/ui/index.js";
+import {
+  RoomHeader,
+  RoomShell,
+  RoomStatusBadge,
+  ParticipantsStrip,
+  ChatPanel,
+} from "../components/room/index.js";
 import {
   IconSelect,
   IconLaser,
@@ -62,7 +69,6 @@ export default function BookClubRoom() {
   const pageBoxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
   const drawingRef = useRef(false);
   const currentStrokeRef = useRef<[number, number][]>([]);
   const lastCursorSentRef = useRef(0);
@@ -114,16 +120,23 @@ export default function BookClubRoom() {
     return () => document.removeEventListener("fullscreenchange", onFsChange);
   }, []);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [socket.chatHistory.length]);
-
-  useEffect(() => {
-    if (pendingTextAt) textInputRef.current?.focus();
-  }, [pendingTextAt]);
-
   const page = socket.page || room?.currentPage || 1;
   const renderWidth = Math.round(baseWidth * zoom);
+
+  // Page turns from the keyboard for the host (same rule as the
+  // on-screen arrows). Skips when focus is in an input/textarea --
+  // arrows must stay characters there (chat composer, page-request
+  // field, annotation editor).
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLElement && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+      if (!isHost || isClosed) return;
+      if (e.key === "ArrowLeft" && page > 1) socket.setPage(page - 1);
+      if (e.key === "ArrowRight" && !(numPages > 0 && page >= numPages)) socket.setPage(page + 1);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isHost, isClosed, page, numPages, socket]);
 
   const redraw = useCallback(
     (strokes: Stroke[], cursors: typeof socket.cursors, live: [number, number][] | null) => {
@@ -313,8 +326,7 @@ export default function BookClubRoom() {
     }
   }
 
-  function submitChat(e: React.FormEvent) {
-    e.preventDefault();
+  function submitChatDraft() {
     if (!chatDraft.trim()) return;
     socket.sendChat(chatDraft.trim());
     setChatDraft("");
@@ -342,15 +354,25 @@ export default function BookClubRoom() {
   // identity keeps `file` stable across re-renders.
   const pdfFile = useMemo(() => (pdfData ? { data: pdfData } : null), [pdfData]);
 
-  if (room === undefined) return <p className="text-buteco-cream/60">Carregando…</p>;
+  if (room === undefined) {
+    return (
+      <PageShell width="full">
+        <div role="status" className="flex items-center gap-3 text-buteco-cream/60 text-sm">
+          <Spinner size="sm" /> Carregando a sala…
+        </div>
+      </PageShell>
+    );
+  }
   if (room === null) {
     return (
-      <div className="text-center py-20">
-        <p className="text-buteco-cream/60 mb-4">Essa sala não existe.</p>
-        <Link to="/clube-do-livro" className="text-buteco-amber hover:underline">
-          Voltar para o Clube do Livro
-        </Link>
-      </div>
+      <PageShell width="content">
+        <div className="text-center py-20">
+          <p className="text-buteco-cream/60 mb-4">Essa sala não existe.</p>
+          <Link to="/clube-do-livro" className="text-buteco-amber hover:underline">
+            Voltar para o Clube do Livro
+          </Link>
+        </div>
+      </PageShell>
     );
   }
 
@@ -362,22 +384,14 @@ export default function BookClubRoom() {
   const canvasInteractive = tool !== "select";
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 animate-fade-in-up">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <div>
-            <h1 className="font-heading font-bold text-2xl text-buteco-cream">{room.title}</h1>
-            <p className="text-buteco-cream/50 text-sm font-mono">
-              {isClosed
-                ? "sala encerrada · somente leitura"
-                : `${socket.connected ? "conectado" : "conectando…"} · ${socket.participants.length} ${
-                    socket.participants.length === 1 ? "pessoa" : "pessoas"
-                  } na sala`}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {isHost && !isClosed && (
+    <RoomShell
+      header={
+        <RoomHeader
+          title={room.title}
+          status={<RoomStatusBadge connected={socket.connected} closed={isClosed} />}
+          actions={
+            isHost &&
+            !isClosed && (
               <button
                 onClick={() => setConfirmingEnd(true)}
                 disabled={endingRoom}
@@ -387,44 +401,87 @@ export default function BookClubRoom() {
                 <IconEnd size={15} />
                 {endingRoom ? "Encerrando…" : "Encerrar sala"}
               </button>
-            )}
-            <div className="flex items-center gap-3 glass-card px-4 py-2">
-            <button
-              disabled={!isHost || isClosed || page <= 1}
-              onClick={() => socket.setPage(page - 1)}
-              className="text-buteco-cream/80 hover:text-buteco-amber disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
-              title={isClosed ? "sala encerrada" : isHost ? undefined : "só o mestre da sala vira a página"}
-            >
-              ← anterior
-            </button>
-            <span className="font-mono text-sm text-buteco-amber">
-              {page}
-              {numPages ? ` / ${numPages}` : ""}
-            </span>
-            <button
-              disabled={!isHost || isClosed || (numPages > 0 && page >= numPages)}
-              onClick={() => socket.setPage(page + 1)}
-              className="text-buteco-cream/80 hover:text-buteco-amber disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
-              title={isClosed ? "sala encerrada" : isHost ? undefined : "só o mestre da sala vira a página"}
-            >
-              próxima →
-            </button>
-            </div>
+            )
+          }
+        />
+      }
+      aside={
+        <div className="flex flex-col gap-3 flex-1 min-h-0">
+          <div className="glass-card rounded-2xl px-3 sm:px-4 py-2.5 shrink-0">
+            <ParticipantsStrip participants={socket.participants} hostId={socket.hostId} currentUserId={socket.you?.userId ?? null} />
+          </div>
+
+          <div className="glass-card rounded-2xl overflow-hidden flex flex-col h-96 lg:h-auto lg:flex-1 min-h-0">
+            <ChatPanel
+              messages={socket.chatHistory}
+              disabled={!socket.you || isClosed}
+              disabledPlaceholder={isClosed ? "sala encerrada" : "entre para conversar"}
+              placeholder={socket.you ? "Escreva algo…" : "Entre para conversar"}
+              draft={chatDraft}
+              onDraftChange={setChatDraft}
+              onSend={submitChatDraft}
+              highlightPageNumbers
+              onGoToPage={isHost ? (n) => socket.setPage(n) : undefined}
+              toolbar={
+                <button
+                  type="button"
+                  onClick={quoteCurrentPage}
+                  title="Citar a página atual"
+                  className="px-2 rounded-lg flex items-center text-buteco-cream/60 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+                >
+                  <IconQuote size={16} />
+                </button>
+              }
+              aboveComposer={
+                !isHost &&
+                !isClosed && (
+                  <form onSubmit={submitPageRequest} className="px-2.5 sm:px-3 pt-2.5 border-t border-white/10 flex gap-2 items-center">
+                    <span className="flex items-center gap-1 text-xs text-buteco-cream/50 shrink-0">
+                      <IconBookmark size={13} />
+                      pedir página
+                    </span>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={pageRequestDraft}
+                      onChange={(e) => setPageRequestDraft(e.target.value)}
+                      placeholder={String(page)}
+                      size="sm"
+                      className="w-20"
+                    />
+                    <Button type="submit" size="sm" variant="secondary">
+                      Pedir
+                    </Button>
+                  </form>
+                )
+              }
+              emptyHint="Ninguém falou ainda -- combine a próxima página por aqui."
+            />
           </div>
         </div>
+      }
+    >
+      <div className="flex-1 min-h-0 flex flex-col gap-2.5">
+        {!isHost && !isClosed && (
+          <Banner tone="info" className="shrink-0">
+            só quem abriu a sala vira página e desenha -- peça troca de página por aqui.
+          </Banner>
+        )}
 
-        {/* Toolbar: zoom + fullscreen for everyone, presenter tools
-            (select/laser/pen/text) host-only -- only the host can
-            leave a mark or point with a highlighted cursor, matching
-            the same "só o mestre mexe na página" rule as page turns.
-            All of it hidden once the room is closed: nothing left to
-            draw or point at, read-only from here on. */}
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-          <div className="flex items-center gap-1 glass-card p-1.5">
+        {/* Toolbar: zoom + fullscreen + page turns for everyone,
+            presenter tools (select/laser/pen/text) host-only -- only
+            the host can leave a mark or point with a highlighted
+            cursor, matching the same "só o mestre mexe na página" rule
+            as page turns. Host-only pieces disappear once the room is
+            closed: nothing left to draw or point at, read-only from
+            here on. */}
+        <div className="flex items-center justify-between flex-wrap gap-2 shrink-0">
+          <div className="flex items-center gap-1 glass-card p-1.5 rounded-xl">
             <button
               onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}
               className="w-8 h-8 rounded-lg text-buteco-cream/80 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer"
               title="Diminuir zoom"
+              aria-label="Diminuir zoom"
             >
               −
             </button>
@@ -439,21 +496,44 @@ export default function BookClubRoom() {
               onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}
               className="w-8 h-8 rounded-lg text-buteco-cream/80 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer"
               title="Aumentar zoom"
+              aria-label="Aumentar zoom"
             >
               +
+            </button>
+            <span className="w-px h-5 bg-white/10 mx-1" />
+            <button
+              onClick={() => socket.setPage(page - 1)}
+              disabled={!isHost || isClosed || page <= 1}
+              className="px-2 h-8 rounded-lg font-mono text-xs text-buteco-cream/80 hover:text-buteco-amber disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              title={isClosed ? "sala encerrada" : isHost ? undefined : "só o mestre da sala vira a página"}
+            >
+              ← anterior
+            </button>
+            <span className="px-1 font-mono text-sm text-buteco-amber">
+              {page}
+              {numPages ? ` / ${numPages}` : ""}
+            </span>
+            <button
+              onClick={() => socket.setPage(page + 1)}
+              disabled={!isHost || isClosed || (numPages > 0 && page >= numPages)}
+              className="px-2 h-8 rounded-lg font-mono text-xs text-buteco-cream/80 hover:text-buteco-amber disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              title={isClosed ? "sala encerrada" : isHost ? undefined : "só o mestre vira a página"}
+            >
+              próxima →
             </button>
             <span className="w-px h-5 bg-white/10 mx-1" />
             <button
               onClick={toggleFullscreen}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-buteco-cream/80 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer"
               title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
+              aria-label={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
             >
               {isFullscreen ? <IconMinimize size={16} /> : <IconMaximize size={16} />}
             </button>
           </div>
 
           {isHost && !isClosed && (
-            <div className="flex items-center gap-1 glass-card p-1.5">
+            <div className="flex items-center gap-1 glass-card p-1.5 rounded-xl">
               {(
                 [
                   ["select", IconSelect, "Selecionar / ler texto"],
@@ -466,6 +546,8 @@ export default function BookClubRoom() {
                   key={t}
                   onClick={() => setTool(t)}
                   title={label}
+                  aria-label={label}
+                  aria-pressed={tool === t}
                   className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
                     tool === t ? "bg-buteco-amber text-buteco-navy" : "text-buteco-cream/80 hover:bg-white/10"
                   }`}
@@ -477,6 +559,7 @@ export default function BookClubRoom() {
               <button
                 onClick={() => socket.clearDrawing()}
                 title="Limpar anotações desta página"
+                aria-label="Limpar anotações desta página"
                 className="w-9 h-9 rounded-lg flex items-center justify-center text-buteco-cream/80 hover:bg-white/10 transition-colors cursor-pointer"
               >
                 <IconTrash size={17} />
@@ -485,16 +568,9 @@ export default function BookClubRoom() {
           )}
         </div>
 
-        {!isHost && (
-          <p className="text-buteco-cream/40 text-xs mb-3 font-mono">
-            só quem abriu a sala vira página e desenha -- peça troca de página pelo chat, ao lado →
-          </p>
-        )}
-
         <div
           ref={viewportRef}
-          className="relative glass-card overflow-auto flex justify-center"
-          style={{ maxHeight: "70vh" }}
+          className="relative flex-1 min-h-0 max-h-[80dvh] lg:max-h-none glass-card rounded-2xl overflow-auto flex justify-center"
         >
           <div
             ref={pageBoxRef}
@@ -577,6 +653,7 @@ export default function BookClubRoom() {
                       <button
                         onClick={() => resizeAnnotation(t.id, t.fontSize, -TEXT_FONT_STEP)}
                         title="Diminuir texto"
+                        aria-label="Diminuir texto"
                         className="w-5 h-5 flex items-center justify-center text-buteco-cream/70 hover:text-buteco-amber cursor-pointer text-xs"
                       >
                         −
@@ -584,6 +661,7 @@ export default function BookClubRoom() {
                       <button
                         onClick={() => resizeAnnotation(t.id, t.fontSize, TEXT_FONT_STEP)}
                         title="Aumentar texto"
+                        aria-label="Aumentar texto"
                         className="w-5 h-5 flex items-center justify-center text-buteco-cream/70 hover:text-buteco-amber cursor-pointer text-xs"
                       >
                         +
@@ -591,6 +669,7 @@ export default function BookClubRoom() {
                       <button
                         onClick={() => socket.removeText(t.id)}
                         title="Remover esta anotação"
+                        aria-label="Remover esta anotação"
                         className="w-5 h-5 flex items-center justify-center text-buteco-cream/70 hover:text-red-400 cursor-pointer"
                       >
                         <IconClose size={11} />
@@ -604,88 +683,6 @@ export default function BookClubRoom() {
         </div>
       </div>
 
-      <aside className="w-full lg:w-80 shrink-0 flex flex-col glass-card overflow-hidden" style={{ maxHeight: 700 }}>
-        <div className="px-4 py-3 border-b border-white/10">
-          <h2 className="font-heading font-semibold text-buteco-cream">Chat</h2>
-          <p className="text-buteco-cream/40 text-xs">{socket.participants.map((p) => p.userName).join(", ")}</p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
-          {socket.chatHistory.map((m) =>
-            m.requestedPage ? (
-              <div key={m.id} className="rounded-lg border border-buteco-amber/30 bg-buteco-amber/10 p-2">
-                <p className="text-xs text-buteco-cream/90">
-                  <span className="font-heading text-buteco-amber">{m.userName}</span> {m.body}
-                </p>
-                {isHost && (
-                  <button
-                    onClick={() => socket.setPage(m.requestedPage!)}
-                    className="mt-1 text-xs font-heading font-semibold text-buteco-navy bg-buteco-amber rounded px-2 py-0.5 cursor-pointer hover:bg-buteco-amber-light transition-colors"
-                  >
-                    Ir para a página {m.requestedPage} →
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div key={m.id}>
-                <span className="font-heading text-sm text-buteco-amber">{m.userName}</span>
-                <p className="text-buteco-cream/90 text-sm break-words">{m.body}</p>
-              </div>
-            ),
-          )}
-          <div ref={chatEndRef} />
-        </div>
-
-        {!isHost && !isClosed && (
-          <form onSubmit={submitPageRequest} className="px-3 pt-3 border-t border-white/10 flex gap-2 items-center">
-            <span className="flex items-center gap-1 text-xs text-buteco-cream/50 shrink-0">
-              <IconBookmark size={13} />
-              pedir página
-            </span>
-            <Input
-              type="number"
-              min={1}
-              value={pageRequestDraft}
-              onChange={(e) => setPageRequestDraft(e.target.value)}
-              placeholder={String(page)}
-              className="flex-1"
-            />
-            <button
-              type="submit"
-              className="px-2 py-1.5 rounded-lg bg-buteco-brown-light text-buteco-cream text-xs font-heading font-semibold border border-buteco-amber/40 hover:border-buteco-amber transition-colors cursor-pointer"
-            >
-              Pedir
-            </button>
-          </form>
-        )}
-
-        <form onSubmit={submitChat} className="p-3 border-t border-white/10 flex gap-2">
-          <button
-            type="button"
-            onClick={quoteCurrentPage}
-            title="Citar a página atual"
-            className="px-2 rounded-lg flex items-center text-buteco-cream/60 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer shrink-0"
-          >
-            <IconQuote size={16} />
-          </button>
-          <Input
-            type="text"
-            value={chatDraft}
-            onChange={(e) => setChatDraft(e.target.value)}
-            placeholder={isClosed ? "sala encerrada" : socket.you ? "Escreva algo…" : "Entre para conversar"}
-            disabled={!socket.you || isClosed}
-            className="flex-1"
-          />
-          <button
-            type="submit"
-            disabled={!socket.you || isClosed}
-            className="px-3 rounded-lg bg-buteco-amber text-buteco-navy font-heading font-semibold disabled:opacity-40 cursor-pointer"
-          >
-            ↑
-          </button>
-        </form>
-      </aside>
-
       <ConfirmDialog
         open={confirmingEnd}
         title="Encerrar esta sala?"
@@ -696,10 +693,10 @@ export default function BookClubRoom() {
         onConfirm={endRoom}
         onCancel={() => setConfirmingEnd(false)}
       />
-    </div>
+    </RoomShell>
   );
 }
 
 function PdfPlaceholder() {
-  return <div className="w-full aspect-[3/4] flex items-center justify-center text-buteco-cream/40">Carregando PDF…</div>;
+  return <Skeleton className="w-full aspect-[3/4]" />;
 }
