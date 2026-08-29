@@ -40,11 +40,15 @@ same design tokens, reproduced here.
 
 ### Routes
 
-`/` (home), `/login`, `/posts/:slug` (read), `/posts/novo` and
-`/posts/:id/editar` (editor, protected), `/perfil` (protected),
-`/clube-do-livro` + `/clube-do-livro/:id` (protected PDF rooms,
-lazily loaded), `/aulas` + `/aulas/:id` (protected live classes,
-lazily loaded — inside a Discord Activity both swap to
+`/` (home), `/login` (Discord first, email/senha collapsed below),
+`/posts/:slug` (read), `/posts/novo` and `/posts/:id/editar` (editor,
+protected), `/perfil` (own, protected) and `/perfil/:id` (public —
+anyone, even anonymous, can see a person's posts; own vs. other is
+decided per id) — the profile page has Posts \| Curtidas \| Aulas
+tabs (Curtidas only on your own profile; Aulas lists the rooms that
+person hosted), `/clube-do-livro` + `/clube-do-livro/:id` (protected
+PDF rooms, lazily loaded), `/aulas` + `/aulas/:id` (protected live
+classes, lazily loaded — inside a Discord Activity both swap to
 `components/OpenOnSite.tsx`).
 
 ### localStorage keys
@@ -73,6 +77,14 @@ domain-api would need one. Saving a draft still works (`PATCH`/`POST`
 with `status: "draft"`), the editor keeps a local autosaved copy per
 post, and the profile page shows a published-post list; drafts only
 resurface there through the editor's restored-draft banner.
+
+Engagement edges worth knowing: the profile view counter only counts
+**logged-in distinct visitors** (anonymous visits are deliberately not
+tracked — no fingerprinting — and the badge says so via tooltip);
+viewing your own profile never counts. Likes are idempotent and
+optimistic in the UI (reverts on server error); the "who liked this"
+list doesn't exist, only the count. Posts are filterable by author on
+the client only — domain-api has no by-author list endpoint.
 
 ## Running locally
 

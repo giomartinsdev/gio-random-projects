@@ -4,6 +4,8 @@ import { ArrowLeft, PencilLine } from "lucide-react";
 import { api, type Post } from "../lib/api.js";
 import { useSession } from "../lib/authClient.js";
 import MarkdownContent from "../components/MarkdownContent.js";
+import AuthorChip from "../components/AuthorChip.js";
+import LikeButton from "../components/LikeButton.js";
 import { resolveImageUrl } from "../lib/discordActivity.js";
 import { EmptyState, PageShell, Badge, Skeleton } from "../components/ui/index.js";
 import { readingTimeLabel } from "../lib/readingTime.js";
@@ -88,24 +90,28 @@ export default function PostView() {
             </span>
           </div>
           <h1 className="font-heading font-bold text-4xl text-buteco-cream leading-tight mb-3">{post.title}</h1>
-          {isAuthor && (
-            <Link
-              to={`/posts/${post.id}/editar`}
-              className="inline-flex items-center gap-1.5 text-sm text-buteco-cream/60 hover:text-buteco-amber transition-colors"
-            >
-              <PencilLine size={14} />
-              Editar este post
-            </Link>
-          )}
+          <div className="flex flex-wrap items-center gap-4">
+            <AuthorChip userId={post.authorId} />
+            {isAuthor && (
+              <Link
+                to={`/posts/${post.id}/editar`}
+                className="inline-flex items-center gap-1.5 text-sm text-buteco-cream/50 hover:text-buteco-amber transition-colors"
+              >
+                <PencilLine size={14} />
+                Editar este post
+              </Link>
+            )}
+          </div>
         </div>
 
         <MarkdownContent content={post.bodyMarkdown} />
 
-        <div className="mt-12 pt-6 border-t border-white/5">
+        <div className="flex items-center justify-between mt-12 pt-6 border-t border-white/5">
           <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-buteco-cream/50 hover:text-buteco-amber transition-colors">
             <ArrowLeft size={14} />
             Início
           </Link>
+          <LikeButton post={post} />
         </div>
       </PageShell>
     </article>

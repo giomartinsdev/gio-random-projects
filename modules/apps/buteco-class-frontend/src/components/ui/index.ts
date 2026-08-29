@@ -11,6 +11,7 @@ export { default as Skeleton } from "./Skeleton.js";
 export { default as Spinner } from "./Spinner.js";
 export { default as Badge } from "./Badge.js";
 export { default as EmptyState } from "./EmptyState.js";
+export { default as Tabs, type TabDef } from "./Tabs.js";
 export { default as ErrorState } from "./ErrorState.js";
 export { default as Banner } from "./Banner.js";
 export { default as SkipLink } from "./SkipLink.js";

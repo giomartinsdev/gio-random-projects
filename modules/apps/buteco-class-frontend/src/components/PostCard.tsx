@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import type { Post } from "../lib/api.js";
 import { resolveImageUrl } from "../lib/discordActivity.js";
 import { readingTimeLabel } from "../lib/readingTime.js";
+import LikeButton from "./LikeButton.js";
 import { Badge } from "./ui/index.js";
 
 function formatDate(iso: string | null) {
@@ -52,6 +53,12 @@ export default function PostCard({ post, animationDelay }: { post: Post; animati
           {post.title}
         </h3>
         {post.excerpt && <p className="text-buteco-cream/60 text-sm line-clamp-3">{post.excerpt}</p>}
+        {/* Like chip from the list payload. Inside a Link: the click must
+            not navigate when it's a real like toggle -- LikeButton handles
+            that; without a session it renders static (useLike no-ops). */}
+        <div className="mt-3 flex items-center">
+          <LikeButton post={post} className="-ml-2" />
+        </div>
       </div>
     </Link>
   );

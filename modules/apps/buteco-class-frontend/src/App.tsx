@@ -59,6 +59,9 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+      // Public profile: anyone (even anonymous) can see a person's posts
+      // -- the page itself handles the own-vs-someone-else split from the id.
+      { path: "/perfil/:id", element: <Profile /> },
       {
         path: "/clube-do-livro",
         element: (

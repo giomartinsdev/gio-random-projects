@@ -17,7 +17,31 @@ export type Post = {
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;
+  // Engagement fields post-api adds to every read. Optional in the type
+  // because a pre-deploy cached payload (or the editor's listPostsCached
+  // TTL window) can legitimately lack them -- read with `?? 0` / `=== true`.
+  likeCount?: number;
+  likedByMe?: boolean;
 };
+
+// Public profile identity from GET /users/:id -- the API never returns
+// email here, keep it that way in the client shape too.
+export type PublicUser = {
+  id: string;
+  name: string;
+  image: string | null;
+  createdAt: string;
+};
+
+export type ProfileData = {
+  user: PublicUser;
+  // Distinct logged-in visitors; anonymous visits are not counted.
+  viewCount: number;
+};
+
+export type LikeState = { likeCount: number; likedByMe: boolean };
+
+export type ViewAck = { viewCount: number; counted: boolean };
 
 // Thin shim over the shared http client with this API's contract:
 // 202/204 envelopes are discarded (the command was accepted, that's
@@ -71,5 +95,19 @@ export const api = {
     }),
   deletePost: (id: string) =>
     request<{ command_id: string; status: string }>(`/posts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  likePost: (id: string) =>
+    request<LikeState>(`/posts/${encodeURIComponent(id)}/like`, { method: "POST" }),
+  // Unlike is tolerant server-side (200 even if never liked / post gone)
+  // -- callers can treat any 200 here as settled.
+  unlikePost: (id: string) =>
+    request<LikeState>(`/posts/${encodeURIComponent(id)}/like`, { method: "DELETE" }),
+  // Liked published posts, newest like first. 401 without a session.
+  listLikedPosts: () => request<{ posts: Post[] }>("/posts/liked/by-me"),
+  // Public identity + view count (never includes email).
+  getUser: (id: string) => request<ProfileData>(`/users/${encodeURIComponent(id)}`),
+  // Registers this viewer's visit (fire-and-forget for callers); only
+  // counted with a session, self-views come back counted:false.
+  viewProfile: (id: string) =>
+    request<ViewAck>(`/users/${encodeURIComponent(id)}/view`, { method: "POST" }),
   feedUrl: `${BASE_URL}/feed.xml`,
 };
