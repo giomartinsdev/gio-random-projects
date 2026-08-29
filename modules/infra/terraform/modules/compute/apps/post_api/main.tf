@@ -49,6 +49,9 @@ resource "docker_container" "post_api" {
     "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
     "DISCORD_CLIENT_ID=${var.discord_client_id}",
     "DISCORD_CLIENT_SECRET=${var.discord_client_secret}",
+    # Post announcer (lib/announcer.ts) -- blank disables the background
+    # poller entirely (index.ts).
+    "DISCORD_ANNOUNCE_WEBHOOK_URL=${var.discord_announce_webhook_url}",
     # Post images (routes/images.ts): when MINIO_* is set the /images
     # router mounts (index.ts's all-or-nothing env read), backed by
     # module.storage_minio; MEDIA_BASE_URL is the public host ingress

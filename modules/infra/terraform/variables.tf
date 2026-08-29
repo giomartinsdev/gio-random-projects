@@ -26,6 +26,13 @@ variable "allowed_emails" {
   default     = ["giovannidealmeidamartins@gmail.com", "workwithgiomartinsdev@gmail.com"]
 }
 
+variable "discord_announce_webhook_url" {
+  description = "Discord channel webhook for buteco post announcements (post-api's post announcer polls it -- see modules/apps/post-api's README). Create under Server Settings → Integrations → Webhooks. Empty state is intentional: without it the poller never starts and nothing is announced."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "excluded_hostnames" {
   description = <<-EOT
     Hostnames from locals.tf that must NOT get a Cloudflare Access

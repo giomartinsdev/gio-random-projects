@@ -74,6 +74,13 @@ variable "discord_client_secret" {
   sensitive   = true
 }
 
+variable "discord_announce_webhook_url" {
+  description = "Discord channel webhook URL the post announcer polls to (see src/lib/announcer.ts -- announces posts published in the last 24h, max 3/sweep, 30min cadence). Blank disables the poller. The URL itself is the credential."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 # --- post images (MinIO) ---
 
 variable "minio_endpoint" {

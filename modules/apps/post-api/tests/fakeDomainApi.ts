@@ -72,7 +72,7 @@ export function startFakeDomainApi(apiKey: string) {
       source_url: "",
       created_at: now,
       updated_at: now,
-      published_at: status === "published" ? now : null,
+      published_at: body.published_at ?? (status === "published" ? now : null),
     };
     posts.set(id, post);
     return c.json({ command_id: crypto.randomUUID(), status: "accepted" }, 202);

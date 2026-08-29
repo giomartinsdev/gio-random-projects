@@ -89,19 +89,20 @@ module "compute_apps_post_api" {
     docker = docker
   }
 
-  network_name          = module.network_docker_apps.network_name
-  postgres_host         = module.storage_postgres.postgres_host
-  postgres_user         = module.storage_postgres.postgres_user
-  postgres_password     = random_password.postgres.result
-  registry_host         = var.registry_host
-  better_auth_secret    = random_password.post_api_better_auth_secret.result
-  domain_api_key        = random_id.post_api_domain_key.hex
-  discord_client_id     = var.discord_client_id
-  discord_client_secret = var.discord_client_secret
-  minio_endpoint        = module.storage_minio.endpoint
-  minio_access_key      = module.storage_minio.root_user
-  minio_secret_key      = random_password.minio_root_password.result
-  otlp_endpoint         = module.compute_services_observability.otlp_endpoint
+  network_name                 = module.network_docker_apps.network_name
+  postgres_host                = module.storage_postgres.postgres_host
+  postgres_user                = module.storage_postgres.postgres_user
+  postgres_password            = random_password.postgres.result
+  registry_host                = var.registry_host
+  better_auth_secret           = random_password.post_api_better_auth_secret.result
+  domain_api_key               = random_id.post_api_domain_key.hex
+  discord_client_id            = var.discord_client_id
+  discord_client_secret        = var.discord_client_secret
+  discord_announce_webhook_url = var.discord_announce_webhook_url
+  minio_endpoint               = module.storage_minio.endpoint
+  minio_access_key             = module.storage_minio.root_user
+  minio_secret_key             = random_password.minio_root_password.result
+  otlp_endpoint                = module.compute_services_observability.otlp_endpoint
 
   depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api]
 }

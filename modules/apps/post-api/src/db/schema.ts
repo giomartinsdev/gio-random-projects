@@ -105,3 +105,13 @@ export const profileViews = pgTable(
   },
   (t) => [primaryKey({ columns: [t.profileUserId, t.viewerUserId] })],
 );
+
+// Announce dedup for the Discord webhook poller (lib/announcer.ts):
+// posts can't change since domain posts are immutable once published,
+// so a bare "already announced" id list is all idempotency needs. Same
+// no-FK stance as post_likes -- a webhook post id whose post later
+// vanished from domain-api is inert history.
+export const announcedPosts = pgTable("announced_posts", {
+  postId: text("post_id").primaryKey(),
+  announcedAt: timestamp("announced_at").notNull().defaultNow(),
+});
