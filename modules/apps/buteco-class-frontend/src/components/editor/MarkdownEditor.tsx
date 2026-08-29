@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Bold, Code, Heading2, Image as ImageIcon, Italic, Link2, List, ListOrdered, Music2, Quote, Youtube } from "lucide-react";
+import { Bold, Code, Heading2, Image as ImageIcon, Italic, Link2, List, ListOrdered, Loader2, Music2, Quote, Youtube } from "lucide-react";
 import MarkdownContent from "../MarkdownContent.js";
 import { Textarea, IconButton } from "../ui/index.js";
 import { cn } from "../../lib/cn.js";
+import { api } from "../../lib/api.js";
 
 type Insert = {
   id: string;
@@ -27,7 +28,6 @@ const EDITS: Insert[] = [
   { id: "ordered-list", title: "Lista numerada", icon: ListOrdered, before: "\n1. ", after: "", placeholder: "item" },
   { id: "code", title: "Código", icon: Code, before: "`", after: "`", placeholder: "código" },
   { id: "link", title: "Link (Ctrl/⌘+K)", icon: Link2, before: "[", after: "](https://)", placeholder: "texto do link" },
-  { id: "image", title: "Imagem", icon: ImageIcon, before: "![", after: "](https://)", placeholder: "alt da imagem" },
   {
     id: "youtube",
     title: "Link do YouTube (Ctrl/⌘+Shift+L)",
@@ -67,7 +67,9 @@ export default function MarkdownEditor({
   label?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [tab, setTab] = useState<"write" | "preview">("write");
+  const [uploading, setUploading] = useState(false);
 
   function insert(edit: Insert) {
     const el = textareaRef.current;
@@ -92,6 +94,35 @@ export default function MarkdownEditor({
     });
   }
 
+  // Same insertion point dance without the wrapper/placeholder split --
+  // an uploaded image lands as one ready-made `![alt](url)` snippet.
+  function insertMarkdown(text: string) {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.setRangeText(text, el.selectionStart, el.selectionEnd, "end");
+    onChange(el.value);
+    requestAnimationFrame(() => el.focus());
+  }
+
+  async function handlePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Reset first so picking the same file again re-fires onChange.
+    e.target.value = "";
+    if (!file || uploading) return;
+    setUploading(true);
+    try {
+      const { url } = await api.uploadImage(file);
+      const alt = file.name.replace(/\.[a-z0-9]+$/i, "").trim() || "imagem";
+      insertMarkdown(`![${alt}](${url})`);
+    } catch {
+      // Upload failed (MinIO down, not logged in): fall back to the
+      // old pasted-URL template rather than losing the click entirely.
+      insertMarkdown(`![imagem](https://)`);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (!(e.metaKey || e.ctrlKey)) return;
     const key = e.key.toLowerCase();
@@ -110,6 +141,19 @@ export default function MarkdownEditor({
           const Icon = edit.icon;
           return <IconButton key={edit.id} label={edit.title} size="sm" onClick={() => insert(edit)}><Icon size={15} /></IconButton>;
         })}
+        {/* Upload real (MinIO) instead of the old paste-a-URL insert --
+            the picker keeps the same spot in the toolbar the "image"
+            button always had. */}
+        <IconButton label="Enviar imagem" size="sm" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+          {uploading ? <Loader2 size={15} className="animate-spin" /> : <ImageIcon size={15} />}
+        </IconButton>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={(e) => void handlePicked(e)}
+        />
       </div>
 
       {/* Mobile: write/preview tabs. Desktop: split panes, preview always up. */}

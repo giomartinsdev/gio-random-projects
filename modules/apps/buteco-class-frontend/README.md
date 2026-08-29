@@ -88,8 +88,15 @@ Engagement edges worth knowing: the profile view counter only counts
 tracked — no fingerprinting — and the badge says so via tooltip);
 viewing your own profile never counts. Likes are idempotent and
 optimistic in the UI (reverts on server error); the "who liked this"
-list doesn't exist, only the count. Posts are filterable by author on
-the client only — domain-api has no by-author list endpoint.
+list doesn't exist, only the count.
+
+Images in posts are no longer external-only: the editor's toolbar and
+the cover field's "Enviar imagem" upload straight to post-api's MinIO
+bucket (`media.giomartins.dev`, public-read — see post-api's README),
+and the editor's image button inserts `![alt](url)` with the returned
+URL. Pasting an arbitrary external image URL still works (that's the
+`https://` inputs), and inside a Discord Activity all of it keeps
+walking `resolveImageUrl`'s proxy.
 
 ## Running locally
 

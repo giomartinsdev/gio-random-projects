@@ -102,6 +102,15 @@ export const api = {
   // markdown. 400 on unsupported sites, 502 when the source failed.
   importPost: (url: string) =>
     request<ImportedPost>("/posts/import", { method: "POST", body: JSON.stringify({ url }) }),
+  // Upload a post image (cover or inline). Straight to httpRequest with
+  // json:false -- multipart must set its own boundary. The server stores
+  // the bytes in MinIO and the returned public URL is what the post
+  // references.
+  uploadImage: (file: File) => {
+    const form = new FormData();
+    form.set("file", file);
+    return httpRequest<{ url: string }>(BASE_URL, "/images/upload", { method: "POST", body: form, json: false, voidStatuses: [202, 204] });
+  },
   createPost: (input: {
     title: string;
     bodyMarkdown: string;
