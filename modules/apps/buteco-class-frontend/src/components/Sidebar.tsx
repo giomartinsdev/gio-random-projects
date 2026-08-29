@@ -8,9 +8,6 @@ import { isDiscordActivity } from "../lib/discordActivity.js";
 import { signOut, useSession } from "../lib/authClient.js";
 import { cn } from "../lib/cn.js";
 
-// The rail's desktop icon set, index-aligned with lib/nav.ts's NAV.
-const NAV_ICONS = [HomeIcon, BookOpen, MonitorPlay, PenLine] as const;
-
 // The Excalidraw "drawer, can be closed" piece, in three desktop
 // states (see useRailState): a 72px icon rail, the same rail with an
 // overlay sheet of labels (mouse-leave / Escape / navigation close
@@ -19,6 +16,15 @@ const NAV_ICONS = [HomeIcon, BookOpen, MonitorPlay, PenLine] as const;
 // The Activity gets no "Sair" either: its session is a module-scoped
 // Discord bearer, not a cookie (see discordAuthToken.ts), so signing
 // out there is meaningless -- a reload re-establishes it.
+
+// The rail's desktop icon set, index-aligned with lib/nav.ts's NAV.
+const NAV_ICONS = [HomeIcon, BookOpen, MonitorPlay, PenLine] as const;
+
+// Matches the drawerOut/scrimOut durations in index.css: the sheet
+// stays mounted for this long to play its exit animation, and only
+// then flips to the closed rail state.
+const CLOSE_MS = 150;
+
 export default function Sidebar({ state, onState }: { state: RailState; onState: (s: RailState) => void }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -26,41 +32,94 @@ export default function Sidebar({ state, onState }: { state: RailState; onState:
   const desktopViewport = useMediaQuery("(min-width: 1024px)");
   const isDesktop = !activity && desktopViewport;
   const [mobileOpen, setMobileOpen] = useState(false);
+  // While true, the sheet is still mounted but playing its exit
+  // animation; the real state flip happens when the timer lands.
+  const [closing, setClosing] = useState(false);
   const { data: session } = useSession();
   const sheetOpen = mobileOpen || (isDesktop && state === "expanded");
   const leaveTimerRef = useRef<number | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
 
-  // Route changes dismiss every transient sidebar surface: "expanded"
-  // hands the row back to the content, the mobile drawer slides away.
+  // Every fresh load on desktop arrives with the drawer expanded
+  // (animating in) -- people read with the labels showing, that's the
+  // point of the sheet. A deliberately hidden rail stays hidden.
   useEffect(() => {
-    setMobileOpen(false);
-    if (state === "expanded") onState("collapsed");
-    // onState changes identity every render (setState wrapper);
-    // depending on it would fire this effect constantly.
+    if (isDesktop && state !== "hidden") onState("expanded");
+    // Intentionally once per mount: this is an entry default, not a
+    // watcher (viewport resizes mid-session don't force it back open).
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Route changes dismiss every transient sidebar surface -- with the
+  // exit animation. Skipped on the mount pass: that first run belongs
+  // to the entry default above, and closing on arrival would fight it.
+  const routedOnceRef = useRef(false);
+  useEffect(() => {
+    if (!routedOnceRef.current) {
+      routedOnceRef.current = true;
+      return;
+    }
+    beginClose(false);
   }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // No dependency array on purpose: the handler closes over this
+  // render's sheetOpen/closing/beginClose, and re-subscribing per
+  // render keeps those fresh for a few listeners (cheap).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
-      if (sheetOpen) {
-        if (isDesktop) onState("collapsed");
-        else setMobileOpen(false);
-      }
+      if (sheetOpen && !closing) beginClose(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sheetOpen, isDesktop, onState]);
+  });
 
-  function scheduleCollapse() {
-    if (leaveTimerRef.current) window.clearTimeout(leaveTimerRef.current);
-    leaveTimerRef.current = window.setTimeout(() => onState("collapsed"), 120);
+  // Unmount cleanup for all the deferred flips.
+  useEffect(
+    () => () => {
+      if (leaveTimerRef.current) window.clearTimeout(leaveTimerRef.current);
+      if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+    },
+    [],
+  );
+
+  function beginClose(hide: boolean) {
+    // Already animating out: don't restart the exit clock.
+    if (closing) return;
+    if (!sheetOpen) {
+      // Nothing to animate -- the state change is the whole job.
+      if (hide) onState("hidden");
+      return;
+    }
+    setClosing(true);
+    if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      setClosing(false);
+      setMobileOpen(false);
+      onState(hide ? "hidden" : "collapsed");
+    }, CLOSE_MS);
   }
 
-  function cancelCollapse() {
+  // Only the pill / a fresh open cancels an in-flight close (reopening
+  // mid-fade from the sheet itself would snap the exit animation back).
+  function cancelClose() {
+    if (!closeTimerRef.current) return;
+    window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+    setClosing(false);
+  }
+
+  function cancelLeave() {
     if (leaveTimerRef.current) {
       window.clearTimeout(leaveTimerRef.current);
       leaveTimerRef.current = null;
     }
+  }
+
+  function scheduleCollapse() {
+    if (closing) return;
+    cancelLeave();
+    leaveTimerRef.current = window.setTimeout(() => beginClose(false), 120);
   }
 
   return (
@@ -70,10 +129,14 @@ export default function Sidebar({ state, onState }: { state: RailState; onState:
       {(!isDesktop || state === "hidden") && (
         <button
           type="button"
-          onClick={() => (isDesktop ? onState("collapsed") : setMobileOpen(true))}
+          onClick={() => {
+            cancelClose();
+            if (isDesktop) onState("collapsed");
+            else setMobileOpen(true);
+          }}
           title="Abrir menu"
           aria-label="Abrir menu"
-          className="fixed top-3 left-3 z-40 w-10 h-10 grid place-items-center rounded-lg bg-buteco-brown-dark/90 border border-white/10 shadow-card text-buteco-cream/90 hover:text-buteco-amber hover:border-buteco-amber/40 transition-colors cursor-pointer"
+          className="fixed top-3 left-3 z-40 w-10 h-10 grid place-items-center rounded-lg bg-buteco-brown-dark/90 border border-white/10 shadow-card text-buteco-cream/90 hover:text-buteco-amber hover:border-buteco-amber/40 transition-colors cursor-pointer animate-fade-in-down"
         >
           <Menu size={18} />
         </button>
@@ -112,18 +175,28 @@ export default function Sidebar({ state, onState }: { state: RailState; onState:
 
       {/* The label sheet: desktop expansion and the Activity style
           overlay drawer share one geometry; only the scrim + dialog
-          semantics differ. */}
+          semantics differ. It stays mounted through `closing` so the
+          exit animation can play before the state flips. */}
       {sheetOpen && (
         <>
-          {mobileOpen && <div className="fixed inset-0 z-40 bg-black/50" aria-hidden="true" onClick={() => setMobileOpen(false)} />}
+          {mobileOpen && (
+            <div
+              aria-hidden="true"
+              onClick={() => beginClose(false)}
+              className={cn("fixed inset-0 z-40 bg-black/50", closing ? "animate-scrim-out" : "animate-scrim-in")}
+            />
+          )}
           <div
             role={mobileOpen ? "dialog" : undefined}
             aria-modal={mobileOpen || undefined}
             aria-label={mobileOpen ? "Menu" : undefined}
             onMouseLeave={scheduleCollapse}
-            onMouseEnter={cancelCollapse}
-            className="fixed inset-y-0 left-0 z-50 flex w-60 flex-col py-4 px-3 bg-buteco-brown-dark/95 border-r border-white/10 shadow-card animate-fade-in-up"
-            style={{ animationDuration: mobileOpen ? "200ms" : "150ms" }}
+            onMouseEnter={cancelLeave}
+            className={cn(
+              "fixed inset-y-0 left-0 z-50 flex w-60 flex-col py-4 px-3 bg-buteco-brown-dark/95 border-r border-white/10 shadow-card",
+              closing ? "animate-drawer-out" : "animate-drawer-in",
+            )}
+            style={{ animationDuration: closing ? `${CLOSE_MS}ms` : mobileOpen ? "200ms" : "170ms" }}
           >
             <div className="flex items-center justify-between mb-4 px-1">
               <Link to="/" title="Sala de aula do Buteco" className="flex items-center gap-2 rounded-lg">
@@ -134,7 +207,7 @@ export default function Sidebar({ state, onState }: { state: RailState; onState:
                 {isDesktop && (
                   <button
                     type="button"
-                    onClick={() => onState("hidden")}
+                    onClick={() => beginClose(true)}
                     title="Fechar o menu de vez (reabre pelo canto)"
                     aria-label="Fechar o menu"
                     className="w-8 h-8 grid place-items-center rounded-lg text-buteco-cream/40 hover:text-buteco-cream hover:bg-white/5 transition-colors cursor-pointer"
@@ -144,7 +217,7 @@ export default function Sidebar({ state, onState }: { state: RailState; onState:
                 )}
                 <button
                   type="button"
-                  onClick={() => (isDesktop ? onState("collapsed") : setMobileOpen(false))}
+                  onClick={() => beginClose(false)}
                   title={isDesktop ? "Recolher" : "Fechar"}
                   aria-label={isDesktop ? "Recolher menu" : "Fechar menu"}
                   className="w-8 h-8 grid place-items-center rounded-lg text-buteco-cream/50 hover:text-buteco-cream hover:bg-white/5 transition-colors cursor-pointer"
