@@ -43,6 +43,18 @@ export type LikeState = { likeCount: number; likedByMe: boolean };
 
 export type ViewAck = { viewCount: number; counted: boolean };
 
+// Draft material from POST /posts/import -- NOT a persisted post; the
+// author reviews it in the editor and publishes through createPost.
+// bodyMarkdown already ends with the "Retirado daqui do …" footer.
+export type ImportedPost = {
+  provider: "dev.to" | "tabnews" | "medium";
+  title: string;
+  bodyMarkdown: string;
+  excerpt?: string;
+  coverImageUrl?: string;
+  originalUrl: string;
+};
+
 // Thin shim over the shared http client with this API's contract:
 // 202/204 envelopes are discarded (the command was accepted, that's
 // all the caller cares about).
@@ -77,6 +89,10 @@ export const api = {
     return listInFlight;
   },
   getPost: (slug: string) => request<Post>(`/posts/${encodeURIComponent(slug)}`),
+  // Server-side fetch of a Medium/dev.to/TabNews link, normalized to
+  // markdown. 400 on unsupported sites, 502 when the source failed.
+  importPost: (url: string) =>
+    request<ImportedPost>("/posts/import", { method: "POST", body: JSON.stringify({ url }) }),
   createPost: (input: {
     title: string;
     bodyMarkdown: string;
