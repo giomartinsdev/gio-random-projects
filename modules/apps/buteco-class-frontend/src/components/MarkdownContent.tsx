@@ -146,7 +146,7 @@ const components: Components = {
 
 export default function MarkdownContent({ content }: { content: string }) {
   return (
-    <div className="prose prose-invert prose-amber max-w-none font-body text-buteco-cream/90 prose-headings:font-heading prose-a:no-underline prose-code:font-mono prose-img:rounded-xl">
+    <div className="prose prose-invert max-w-none font-body text-buteco-cream/90 prose-headings:font-heading prose-a:no-underline prose-code:font-mono prose-img:rounded-xl">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>

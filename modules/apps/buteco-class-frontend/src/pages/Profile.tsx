@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { api, type Post } from "../lib/api.js";
 import { useSession } from "../lib/authClient.js";
 import PostCard from "../components/PostCard.js";
-import Button from "../components/Button.js";
+import { buttonClasses } from "../components/ui/index.js";
 
 // post-api's GET /posts only ever returns published posts (domain-api
 // has no "list my drafts too" endpoint yet) -- this profile can only
@@ -15,9 +15,8 @@ export default function Profile() {
 
   useEffect(() => {
     if (!session) return;
-    api.listPosts().then((res) => {
-      setPosts(res.posts.filter((p) => p.authorId === session.user.id));
-    });
+    const userId = session.user.id;
+    api.listPosts().then((res) => setPosts(res.posts.filter((p) => p.authorId === userId)));
   }, [session]);
 
   if (!session) return null;
@@ -34,8 +33,8 @@ export default function Profile() {
             <p className="text-buteco-cream/50 text-sm">{session.user.email}</p>
           </div>
         </div>
-        <Link to="/posts/novo">
-          <Button>+ Novo post</Button>
+        <Link to="/posts/novo" className={buttonClasses()}>
+          + Novo post
         </Link>
       </div>
 

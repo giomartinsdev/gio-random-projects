@@ -28,19 +28,42 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }: Props) {
+  const panelRef = useRef<HTMLDivElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (open) confirmRef.current?.focus();
-  }, [open]);
-
-  useEffect(() => {
     if (!open) return;
+    // Confirm is the action the read-then-decide flow points at.
+    const focusTimer = window.setTimeout(() => confirmRef.current?.focus(), 0);
+
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") {
+        onCancel();
+        return;
+      }
+      // Tab trap: cycle inside the panel instead of leaking focus to
+      // the page behind the overlay.
+      if (e.key !== "Tab" || !panelRef.current) return;
+      const focusables = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>('button, [href], input, textarea, [tabindex]:not([tabindex="-1"])'),
+      ).filter((el) => !el.hasAttribute("disabled"));
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
+
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      window.clearTimeout(focusTimer);
+    };
   }, [open, onCancel]);
 
   if (!open) return null;
@@ -53,11 +76,12 @@ export default function ConfirmDialog({
       onClick={onCancel}
     >
       <div
+        ref={panelRef}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         aria-describedby="confirm-dialog-description"
-        className="glass-card glow-amber bg-buteco-brown-dark w-full max-w-sm p-6"
+        className="glass-card bg-buteco-brown-dark w-full max-w-sm p-6 shadow-glow"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="confirm-dialog-title" className="font-heading font-bold text-lg text-buteco-cream mb-2">
@@ -67,17 +91,10 @@ export default function ConfirmDialog({
           {description}
         </p>
         <div className="flex justify-end gap-3">
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={busy} size="sm" className="px-4 py-2">
             {cancelLabel}
           </Button>
-          <Button
-            ref={confirmRef}
-            type="button"
-            variant={danger ? "primary" : "primary"}
-            onClick={onConfirm}
-            disabled={busy}
-            className={danger ? "!bg-red-500 hover:!bg-red-400 !shadow-red-500/20" : ""}
-          >
+          <Button ref={confirmRef} type="button" variant={danger ? "danger" : "primary"} onClick={onConfirm} disabled={busy} size="sm" className="px-4 py-2">
             {busy ? "Aguarde…" : confirmLabel}
           </Button>
         </div>

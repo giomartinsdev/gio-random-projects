@@ -5,7 +5,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { bookclubApi, type Room } from "../lib/bookclubApi.js";
 import { useRoomSocket, type Stroke } from "../lib/useRoomSocket.js";
-import ConfirmDialog from "../components/ConfirmDialog.js";
+import { ConfirmDialog, Input } from "../components/ui/index.js";
 import {
   IconSelect,
   IconLaser,
@@ -642,13 +642,13 @@ export default function BookClubRoom() {
               <IconBookmark size={13} />
               pedir página
             </span>
-            <input
+            <Input
               type="number"
               min={1}
               value={pageRequestDraft}
               onChange={(e) => setPageRequestDraft(e.target.value)}
               placeholder={String(page)}
-              className="field flex-1 py-1.5 text-sm"
+              className="flex-1"
             />
             <button
               type="submit"
@@ -668,13 +668,13 @@ export default function BookClubRoom() {
           >
             <IconQuote size={16} />
           </button>
-          <input
+          <Input
             type="text"
             value={chatDraft}
             onChange={(e) => setChatDraft(e.target.value)}
             placeholder={isClosed ? "sala encerrada" : socket.you ? "Escreva algo…" : "Entre para conversar"}
             disabled={!socket.you || isClosed}
-            className="field flex-1 py-2 text-sm"
+            className="flex-1"
           />
           <button
             type="submit"

@@ -1,4 +1,5 @@
 import { useLocation } from "react-router";
+import { buttonClasses } from "./ui/index.js";
 
 // What the Aulas section renders INSIDE a Discord Activity: a link out
 // to the same route on the real site, and nothing else.
@@ -36,12 +37,7 @@ export default function OpenOnSite() {
         As aulas abrem no navegador, onde o compartilhamento de tela roda com qualidade total e som. O áudio da conversa
         continua aqui no canal de voz do Discord.
       </p>
-      <a
-        href={`${origin}${pathname}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="px-6 h-11 flex items-center rounded-lg font-heading font-semibold bg-buteco-amber text-buteco-dark hover:brightness-110 transition-all cursor-pointer"
-      >
+      <a href={`${origin}${pathname}`} target="_blank" rel="noopener noreferrer" className={buttonClasses({ size: "lg" })}>
         Abrir a aula
       </a>
     </div>
