@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -66,6 +67,50 @@ func (r *PostRepository) ListPublished(ctx context.Context) ([]domainpost.Post, 
 	}
 	defer rows.Close()
 
+	return scanPosts(rows)
+}
+
+// COALESCE(published_at, created_at) so drafts (published_at NULL)
+// sort by when they were written instead of all clumping at the top.
+func (r *PostRepository) ListByAuthor(ctx context.Context, authorID string) ([]domainpost.Post, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+postColumns+` FROM posts WHERE author_id = $1 AND deleted_at IS NULL ORDER BY COALESCE(published_at, created_at) DESC`,
+		authorID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list posts by author: %w", err)
+	}
+	defer rows.Close()
+
+	return scanPosts(rows)
+}
+
+// ILIKE wildcards in user input are escaped, not stripped: someone
+// searching for a literal "50% off" must be able to find it, and an
+// unescaped % from the query would just mean "match everything".
+func ilikePattern(query string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(query)
+	return "%" + escaped + "%"
+}
+
+func (r *PostRepository) SearchPublished(ctx context.Context, query string) ([]domainpost.Post, error) {
+	pattern := ilikePattern(query)
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+postColumns+` FROM posts
+		 WHERE status = 'published' AND deleted_at IS NULL
+		   AND (title ILIKE $1 OR excerpt ILIKE $1 OR body_markdown ILIKE $1)
+		 ORDER BY published_at DESC`,
+		pattern,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("search published posts: %w", err)
+	}
+	defer rows.Close()
+
+	return scanPosts(rows)
+}
+
+func scanPosts(rows pgx.Rows) ([]domainpost.Post, error) {
 	var posts []domainpost.Post
 	for rows.Next() {
 		p, err := scanPost(rows)

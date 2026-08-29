@@ -33,6 +33,7 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Post("/posts", p.CreatePost)
 		r.Get("/posts/slug/{slug}", p.GetPostBySlug)
 		r.Get("/posts/id/{id}", p.GetPostByID)
+		r.Get("/posts/author/{id}", p.ListPostsByAuthor)
 		r.Put("/posts/{id}", p.UpdatePost)
 		r.Delete("/posts/{id}", p.DeletePost)
 

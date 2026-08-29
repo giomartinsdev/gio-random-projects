@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -38,7 +39,32 @@ func NewPostHandlers(posts domainpost.Repository, commands application.CommandPu
 }
 
 func (h *PostHandlers) ListPosts(w http.ResponseWriter, r *http.Request) {
-	posts, err := h.posts.ListPublished(r.Context())
+	// ?q= narrows to a substring search without changing the shape --
+	// same PostResponse list either way, so callers that never send q
+	// are unaffected.
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	var posts []domainpost.Post
+	var err error
+	if query == "" {
+		posts, err = h.posts.ListPublished(r.Context())
+	} else {
+		posts, err = h.posts.SearchPublished(r.Context(), query)
+	}
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"posts": toPostResponses(posts)})
+}
+
+// ListPostsByAuthor backs post-api's by-author profile reads. It
+// returns the author's drafts too -- that's deliberate (the owner's
+// own profile needs them) and safe because this route requires the
+// API key like every route here; the browser never reaches this file.
+// post-api filters drafts out of responses the owner didn't request.
+func (h *PostHandlers) ListPostsByAuthor(w http.ResponseWriter, r *http.Request) {
+	posts, err := h.posts.ListByAuthor(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		h.internalError(r, w, err)
 		return

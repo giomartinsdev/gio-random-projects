@@ -113,6 +113,16 @@ paths:
   /posts:
     get:
       summary: List published posts
+      description: >
+        Optional ?q= narrows the list to published posts whose title,
+        excerpt or body contains the (case-insensitive, escaped,
+        substring) query. Shape is identical with or without q.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         "200":
           description: OK
@@ -202,6 +212,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /posts/author/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: List one author's posts (published AND drafts)
+      description: >
+        Trusted-caller read for post-api's profile views: returns the
+        author's drafts too, so post-api must filter them from any
+        response not addressed to the owner. Empty list for an author
+        with no posts (never 404).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  posts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Post"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "429":
           $ref: "#/components/responses/RateLimited"
   /posts/{id}:
