@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import Layout from "./components/Layout.js";
 import ProtectedRoute from "./components/ProtectedRoute.js";
@@ -7,11 +8,16 @@ import Profile from "./pages/Profile.js";
 import PostView from "./pages/PostView.js";
 import PostCreate from "./pages/PostCreate.js";
 import BookClubHome from "./pages/BookClubHome.js";
-import BookClubRoom from "./pages/BookClubRoom.js";
 import AulasHome from "./pages/AulasHome.js";
-import AulaRoom from "./pages/AulaRoom.js";
 import OpenOnSite from "./components/OpenOnSite.js";
+import { PageSkeleton } from "./components/ui/index.js";
 import { isDiscordActivity } from "./lib/discordActivity.js";
+
+// Only the two live rooms are lazy: they drag react-pdf + pdfjs
+// (~1MB) behind them, and pdfjs's worker already ships as its own
+// asset. The entry stays lean for the common reading/writing flow.
+const BookClubRoom = lazy(() => import("./pages/BookClubRoom.js"));
+const AulaRoom = lazy(() => import("./pages/AulaRoom.js"));
 
 // Data router (not <BrowserRouter>) so page-level flow interrupts can
 // use useBlocker -- PostCreate's unsaved-draft guard needs it.
@@ -65,7 +71,9 @@ const router = createBrowserRouter([
         path: "/clube-do-livro/:id",
         element: (
           <ProtectedRoute>
-            <BookClubRoom />
+            <Suspense fallback={<PageSkeleton />}>
+              <BookClubRoom />
+            </Suspense>
           </ProtectedRoute>
         ),
       },
@@ -81,7 +89,13 @@ const router = createBrowserRouter([
         path: "/aulas/:id",
         element: (
           <ProtectedRoute>
-            {inActivity ? <OpenOnSite /> : <AulaRoom />}
+            {inActivity ? (
+              <OpenOnSite />
+            ) : (
+              <Suspense fallback={<PageSkeleton />}>
+                <AulaRoom />
+              </Suspense>
+            )}
           </ProtectedRoute>
         ),
       },
