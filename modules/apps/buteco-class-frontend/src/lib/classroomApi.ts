@@ -1,3 +1,4 @@
+import { request as httpRequest } from "./http.js";
 import { getDiscordBearerToken } from "./discordAuthToken.js";
 
 const BASE_URL = import.meta.env.VITE_CLASSROOM_API_URL as string;
@@ -16,22 +17,7 @@ export type Room = {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const bearer = getDiscordBearerToken();
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: {
-      "content-type": "application/json",
-      ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
-      ...init?.headers,
-    },
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error ?? `request failed: ${res.status}`);
-  }
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  return httpRequest<T>(BASE_URL, path, { ...init, voidStatuses: [204] });
 }
 
 export const classroomApi = {

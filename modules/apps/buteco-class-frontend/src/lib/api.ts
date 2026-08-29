@@ -1,4 +1,4 @@
-import { getDiscordBearerToken } from "./discordAuthToken.js";
+import { request as httpRequest } from "./http.js";
 
 const BASE_URL = import.meta.env.VITE_POST_API_URL as string;
 
@@ -19,23 +19,11 @@ export type Post = {
   publishedAt: string | null;
 };
 
+// Thin shim over the shared http client with this API's contract:
+// 202/204 envelopes are discarded (the command was accepted, that's
+// all the caller cares about).
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const bearer = getDiscordBearerToken();
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: {
-      "content-type": "application/json",
-      ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
-      ...init?.headers,
-    },
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error ?? `request failed: ${res.status}`);
-  }
-  if (res.status === 202 || res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  return httpRequest<T>(BASE_URL, path, { ...init, voidStatuses: [202, 204] });
 }
 
 export const api = {
