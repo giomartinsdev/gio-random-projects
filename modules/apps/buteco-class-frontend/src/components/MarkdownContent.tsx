@@ -1,3 +1,4 @@
+import { useState, type ImgHTMLAttributes } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -72,13 +73,26 @@ function LinkChip({
   );
 }
 
+// An inline markdown image is whatever external host the author
+// pasted (unreachable from a Discord Activity's iframe without
+// post-api's /image-proxy). If even the proxy can't serve it, render
+// nothing -- no broken-image glyph breaking up the text.
+function MarkdownImage({ src, ...props }: { src?: string } & ImgHTMLAttributes<HTMLImageElement>) {
+  const [broken, setBroken] = useState(false);
+  if (broken || src === undefined) return null;
+  return (
+    <img
+      src={typeof src === "string" ? resolveImageUrl(src) : src}
+      loading="lazy"
+      {...props}
+      onError={() => setBroken(true)}
+    />
+  );
+}
+
 const components: Components = {
-  // Same reasoning as PostCard/PostView's cover image -- an inline
-  // markdown image is whatever external host the author pasted,
-  // unreachable from inside a Discord Activity's iframe sandbox
-  // without going through post-api's /image-proxy first.
   img({ src, ...props }) {
-    return <img src={typeof src === "string" ? resolveImageUrl(src) : src} {...props} />;
+    return <MarkdownImage src={src} {...props} />;
   },
   pre: CodeBlock,
   a({ href, children, ...props }) {
