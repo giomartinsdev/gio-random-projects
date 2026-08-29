@@ -106,6 +106,42 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "502":
           description: Upstream fetch failed, redirected, returned non-2xx, wasn't an image, or exceeded the size limit
+  /images/upload:
+    post:
+      summary: Upload an image to public object storage
+      description: >
+        Multipart upload for the editor's cover and inline-image
+        buttons. Stores the bytes in MinIO (bucket is public-read) and
+        returns the public URL the client pastes into coverImageUrl or
+        into the markdown body as an image reference -- nothing is
+        persisted post-side. jpeg/png/webp/gif only, 8 MB max.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image bytes; jpeg, png, webp or gif, up to 8 MB
+      responses:
+        "200":
+          description: Stored; url is the public URL to reference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadedImage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          description: Object storage rejected the upload -- try again
   /posts:
     get:
       summary: List published posts
@@ -490,6 +526,12 @@ components:
           type: string
           nullable: true
         originalUrl:
+          type: string
+    UploadedImage:
+      type: object
+      description: Public URL of a stored image -- reference it directly, nothing else tracks it.
+      properties:
+        url:
           type: string
     PostInput:
       type: object

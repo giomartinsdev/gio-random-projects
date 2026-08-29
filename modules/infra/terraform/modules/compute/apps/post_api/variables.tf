@@ -74,6 +74,39 @@ variable "discord_client_secret" {
   sensitive   = true
 }
 
+# --- post images (MinIO) ---
+
+variable "minio_endpoint" {
+  description = "MinIO's internal host:port (module.storage_minio's endpoint output, container-to-container on network_name) -- post-api uploads post images here (see lib/minioClient.ts). Empty disables the /images route entirely."
+  type        = string
+  default     = ""
+}
+
+variable "minio_access_key" {
+  description = "MinIO root user -- same value module.storage_minio got (its root user doubles as the S3 API key; there are no sub-users)."
+  type        = string
+  default     = ""
+}
+
+variable "minio_secret_key" {
+  description = "Matching MinIO root password."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "minio_bucket" {
+  description = "Bucket for post images -- buteco-media, pre-created public-read by static_sites.tf (ingress serves it at media.giomartins.dev)."
+  type        = string
+  default     = "buteco-media"
+}
+
+variable "media_base_url" {
+  description = "Public base URL image uploads are served from -- what gets baked into posts' markdown/coverImageUrl. Must match the static_sites hostname (media.giomartins.dev)."
+  type        = string
+  default     = "https://media.giomartins.dev"
+}
+
 variable "watchtower_enabled" {
   description = "Same reasoning as modules/compute/app's own variable of the same name: false by default, since go-ci-cd.yml's own terraform apply -replace=... is the actual redeploy mechanism."
   type        = bool

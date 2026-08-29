@@ -162,5 +162,17 @@ locals {
       hostname = "buteco-class.giomartins.dev"
       bucket   = "buteco-class-frontend"
     },
+    {
+      # Image bucket for the blog's posts (covers + inline pictures).
+      # Public-read on purpose and in excluded_hostnames like
+      # buteco-class above: a visitor's <img> tag must load without any
+      # login, and inside Discord's Activity iframe an Access redirect
+      # would render every picture broken. post-api uploads here (see
+      # modules/apps/post-api/src/lib/minioClient.ts); uploads stay
+      # auth-gated at the API, keys are <userId>/<uuid>.<ext> so
+      # nothing user-named ever lands in a public namespace.
+      hostname = "media.giomartins.dev"
+      bucket   = "buteco-media"
+    },
   ]
 }

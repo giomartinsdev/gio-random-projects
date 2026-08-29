@@ -10,7 +10,9 @@ import { createFeedRouter } from "./routes/feed.js";
 import { createUsersRouter } from "./routes/users.js";
 import { createDiscordRouter } from "./routes/discord.js";
 import { createImageProxyRouter } from "./routes/imageProxy.js";
+import { createImagesRouter } from "./routes/images.js";
 import { createRateLimiter } from "./lib/rateLimiter.js";
+import type { Uploader } from "./lib/minioClient.js";
 
 export function createApp(
   auth: Auth,
@@ -18,6 +20,7 @@ export function createApp(
   frontendOrigins: string[],
   db: Db,
   discord?: { clientId: string; clientSecret: string },
+  media?: Uploader,
 ) {
   const app = new Hono();
   // First configured origin is the canonical public site -- used to
@@ -49,6 +52,10 @@ export function createApp(
   // same budget protects it without making a read-heavy profile
   // session feel throttled.
   app.use("/users/*", createRateLimiter({ requestsPerMinute: 60, burst: 60 }));
+  // Uploads buffer the whole image into memory before MinIO takes it
+  // (see routes/images.ts), so this one gets the tightest budget on
+  // the app.
+  app.use("/images/*", createRateLimiter({ requestsPerMinute: 20, burst: 20 }));
 
   app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
@@ -63,6 +70,13 @@ export function createApp(
   // existing test.
   if (discord) {
     app.route("/discord", createDiscordRouter(discord.clientId, discord.clientSecret));
+  }
+
+  // Opt-in the same way: absent until the MINIO_* + MEDIA_BASE_URL
+  // envs are set (index.ts), so environments without object storage
+  // -- and every existing test -- never see /images at all.
+  if (media) {
+    app.route("/images", createImagesRouter(auth, media));
   }
 
   app.get("/health", (c) => c.json({ status: "ok" }));
