@@ -69,6 +69,15 @@ let listInFlight: Promise<{ posts: Post[] }> | null = null;
 
 export const api = {
   listPosts: () => request<{ posts: Post[] }>("/posts"),
+  // Server-side substring search (title/excerpt/body) over published
+  // posts; the server escapes wildcards, the UI passes the text raw.
+  searchPosts: (q: string) =>
+    request<{ posts: Post[] }>(`/posts?q=${encodeURIComponent(q)}`),
+  // One author's posts for profile pages. The server includes your
+  // drafts when the calling session is the same author and filters
+  // them out for everyone else -- nobody else ever sees a draft here.
+  listByAuthor: (id: string) =>
+    request<{ posts: Post[] }>(`/posts/by-author/${encodeURIComponent(id)}`),
   // 30s module cache + in-flight dedup. Only for the editor's prefill:
   // /posts/:slug returns published-only, so finding the author's own
   // draft needs the LIST -- re-fetching it per keystroke-free page

@@ -81,8 +81,25 @@ export function createPostsRouter(auth: Auth, domainApi: DomainApiClient, db: Db
   const router = new Hono();
 
   router.get("/", async (c) => {
-    const { posts } = await domainApi.listPublished();
+    // ?q= passes straight through to domain-api's substring search;
+    // no q means the plain published list, exactly as before.
+    const q = (c.req.query("q") ?? "").trim();
+    const { posts } = await domainApi.listPublished(q || undefined);
     return c.json({ posts: await withLikes(db, auth, c, posts.map(serialize)) });
+  });
+
+  // By-author read for the profile pages. Drafts ride along from
+  // domain-api (its endpoint always returns them); this is where the
+  // "who may see drafts" rule lives -- only a session identifying as
+  // the same author gets them, everyone else gets published only.
+  router.get("/by-author/:id", async (c) => {
+    const authorId = c.req.param("id");
+    const viewerId = await requireAuth(auth, c);
+    let posts = (await domainApi.listByAuthor(authorId)).posts.map(serialize);
+    if (viewerId !== authorId) {
+      posts = posts.filter((p) => p.status === "published");
+    }
+    return c.json({ posts: await withLikes(db, auth, c, posts) });
   });
 
   router.get("/liked/by-me", async (c) => {

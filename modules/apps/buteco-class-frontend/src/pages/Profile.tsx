@@ -158,9 +158,13 @@ function ProfileTabs({ targetId, isOwn }: { targetId: string | null; isOwn: bool
 
   useEffect(() => {
     if (!targetId) return;
+    // by-author list: the server hands the author themselves their
+    // drafts (PostCard shows the Rascunho badge) and published-only to
+    // everyone else -- the old client-side author filter is gone, this
+    // endpoint IS the correct filter.
     api
-      .listPosts()
-      .then((res) => setPosts(res.posts.filter((p) => p.authorId === targetId).sort(publishedSort)))
+      .listByAuthor(targetId)
+      .then((res) => setPosts(res.posts.sort(publishedSort)))
       .catch(() => setPosts([]));
   }, [targetId]);
 
@@ -204,12 +208,6 @@ function ProfileTabs({ targetId, isOwn }: { targetId: string | null; isOwn: bool
 
   return (
     <section>
-      {isOwn && (
-        <p className="text-buteco-cream/50 text-sm mb-5">
-          Rascunhos não aparecem aqui ainda — só o que já foi publicado.
-        </p>
-      )}
-
       <Tabs label="Seções do perfil" tabs={tabs} active={active} onChange={setActive} className="mb-6" />
 
       {active === "posts" && (
