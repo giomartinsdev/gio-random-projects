@@ -14,9 +14,21 @@
   ::selection {
     @apply bg-buteco-amber text-buteco-navy;
   }
+
+  /* One consistent focus treatment everywhere (kit controls, links,
+     the article body). outline instead of ring -- no extra element and
+     it respects border-radius on its own. */
+  :focus-visible {
+    outline: 2px solid rgba(245, 166, 35, 0.7);
+    outline-offset: 2px;
+  }
 }
 
 @layer components {
+  /* Corner-radius convention used across the UI: controls & inner
+     surfaces get rounded-lg, buttons/inputs rounded-xl, cards/panels
+     rounded-2xl. Keep new components on that ladder. */
+
   /* No backdrop-blur here on purpose: this card renders over the
      constantly-animating BinaryRain background, and Chrome's
      backdrop-filter compositing shows visible seam/tear artifacts on
@@ -26,18 +38,8 @@
     @apply bg-buteco-cream/[0.06] border border-white/10 rounded-2xl;
   }
 
-  .glow-amber {
-    box-shadow:
-      0 0 40px rgba(245, 166, 35, 0.15),
-      0 0 80px rgba(245, 166, 35, 0.05);
-  }
-
   .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-buteco-amber to-buteco-amber-light;
-  }
-
-  .field {
-    @apply bg-buteco-brown-light/50 border border-buteco-amber/20 rounded-lg px-4 py-3 text-buteco-cream placeholder:text-buteco-cream/40 focus:outline-none focus:border-buteco-amber transition-colors;
   }
 }
 
@@ -52,6 +54,24 @@
 
   .animate-fade-in-down {
     animation: fadeInDown 0.6s ease-out both;
+  }
+
+  /* Loading placeholders (ui/Skeleton): a soft light band sweeping
+     across a fixed translucent fill. */
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(245, 240, 232, 0.06) 25%,
+      rgba(245, 240, 232, 0.14) 50%,
+      rgba(245, 240, 232, 0.06) 75%
+    );
+    background-size: 400px 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+
+  /* The "live" badge dot (ui/Badge). */
+  .animate-live-pulse {
+    animation: livePulse 1.6s ease-in-out infinite;
   }
 
   @keyframes float {
@@ -86,11 +106,103 @@
     }
   }
 
+  @keyframes shimmer {
+    0% {
+      background-position: -400px 0;
+    }
+    100% {
+      background-position: 400px 0;
+    }
+  }
+
+  @keyframes livePulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .animate-float,
     .animate-fade-in-up,
-    .animate-fade-in-down {
+    .animate-fade-in-down,
+    .animate-shimmer,
+    .animate-live-pulse {
       animation: none;
     }
   }
+}
+
+/* Syntax highlighting (rehype-highlight -> lowlight classes) drawn in
+   the buteco palette: only tints of the existing tones, so code blocks
+   read as part of the page instead of a pasted-in editor theme. */
+.hljs {
+  color: #f5f0e8;
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: rgba(245, 240, 232, 0.4);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-section,
+.hljs-tag,
+.hljs-name {
+  color: #f8c15c;
+  font-weight: 600;
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-literal,
+.hljs-addition {
+  color: #f5a623;
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: #d4891a;
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-built_in,
+.hljs-class .hljs-title {
+  color: #f5f0e8;
+  font-weight: 600;
+}
+
+.hljs-type,
+.hljs-title.class_,
+.hljs-meta,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #e8dfd3;
+}
+
+.hljs-deletion {
+  color: rgba(245, 240, 232, 0.6);
+  text-decoration: line-through;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
 }

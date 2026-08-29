@@ -1,3 +1,4 @@
+import { request as httpRequest } from "./http.js";
 import { getDiscordBearerToken } from "./discordAuthToken.js";
 
 const BASE_URL = import.meta.env.VITE_BOOKCLUB_API_URL as string;
@@ -17,19 +18,10 @@ export type Room = {
   createdAt: string;
 };
 
+// json: false on every call -- the only POST is the multipart PDF
+// upload, and a canned content-type there would clobber the boundary.
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const bearer = getDiscordBearerToken();
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: { ...(bearer ? { authorization: `Bearer ${bearer}` } : {}), ...init?.headers },
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error ?? `request failed: ${res.status}`);
-  }
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  return httpRequest<T>(BASE_URL, path, { ...init, json: false, voidStatuses: [204] });
 }
 
 export const bookclubApi = {
