@@ -2,6 +2,12 @@ import { Hono } from "hono";
 import type { Auth } from "../lib/auth.js";
 import { DomainApiError, NotFoundError, type DomainApiClient, type DomainPost } from "../lib/domainApiClient.js";
 import { likeCountsFor, listLikedPostIds, setLike } from "../lib/engagement.js";
+import {
+  ImportTooLargeError,
+  ImportUpstreamError,
+  UnsupportedImportUrlError,
+  importFromUrl,
+} from "../lib/importAdapter.js";
 import type { Db } from "../db/index.js";
 
 async function requireAuth(auth: Auth, c: { req: { raw: Request } }) {
@@ -91,6 +97,38 @@ export function createPostsRouter(auth: Auth, domainApi: DomainApiClient, db: Db
     const byId = new Map(posts.map((p) => [p.id, p]));
     const liked = likedIds.map((id) => byId.get(id)).filter((p): p is DomainPost => Boolean(p));
     return c.json({ posts: await withLikes(db, auth, c, liked) });
+  });
+
+  // Import from a public Medium/dev.to/TabNews link. Returns the
+  // fetched material as a markdown draft -- it does NOT create the
+  // post; the author reviews it in the normal create form and
+  // publishes through the usual CQRS path. Attribution ("Retirado
+  // daqui do ...") is baked into the returned body, because the
+  // CreateInput the CQRS pipeline forwards has no source fields (see
+  // importAdapter.ts's header comment).
+  router.post("/import", async (c) => {
+    const userId = await requireAuth(auth, c);
+    if (!userId) return c.json({ error: "unauthorized" }, 401);
+
+    const body = await c.req.json<{ url?: string }>();
+    if (!body.url) return c.json({ error: "url is required" }, 400);
+
+    try {
+      const article = await importFromUrl(body.url);
+      return c.json({
+        provider: article.provider,
+        title: article.title,
+        bodyMarkdown: article.bodyMarkdown,
+        excerpt: article.excerpt,
+        coverImageUrl: article.coverImageUrl,
+        originalUrl: article.originalUrl,
+      });
+    } catch (err) {
+      if (err instanceof UnsupportedImportUrlError) return c.json({ error: err.message }, 400);
+      if (err instanceof ImportTooLargeError) return c.json({ error: err.message }, 400);
+      if (err instanceof ImportUpstreamError) return c.json({ error: err.message }, 502);
+      throw err;
+    }
   });
 
   router.post("/:id/like", async (c) => {
