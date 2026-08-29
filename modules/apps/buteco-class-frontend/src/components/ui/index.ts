@@ -16,3 +16,4 @@ export { default as Banner } from "./Banner.js";
 export { default as SkipLink } from "./SkipLink.js";
 export { default as ConfirmDialog } from "./ConfirmDialog.js";
 export { default as PageShell, type PageWidth } from "./PageShell.js";
+export { default as PageSkeleton } from "./PageSkeleton.js";

@@ -6,4 +6,9 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  build: {
+    // Everything the app ships is modern (2022 baseline); the default
+    // "modules" target would only add transpilation for nobody.
+    target: "es2022",
+  },
 });
