@@ -26,8 +26,32 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return httpRequest<T>(BASE_URL, path, { ...init, voidStatuses: [202, 204] });
 }
 
+// Module-level for listPostsCached -- survives route remounts so
+// re-entering the editor inside the TTL doesn't refetch.
+let listCache: { at: number; posts: Post[] } | null = null;
+let listInFlight: Promise<{ posts: Post[] }> | null = null;
+
 export const api = {
   listPosts: () => request<{ posts: Post[] }>("/posts"),
+  // 30s module cache + in-flight dedup. Only for the editor's prefill:
+  // /posts/:slug returns published-only, so finding the author's own
+  // draft needs the LIST -- re-fetching it per keystroke-free page
+  // load is what this avoids. Editing flow survives a stale entry
+  // (PATCH server-side is authoritative).
+  listPostsCached: (maxAgeMs = 30_000): Promise<{ posts: Post[] }> => {
+    if (listCache && Date.now() - listCache.at < maxAgeMs) return Promise.resolve({ posts: listCache.posts });
+    if (!listInFlight) {
+      listInFlight = request<{ posts: Post[] }>("/posts")
+        .then((res) => {
+          listCache = { at: Date.now(), posts: res.posts };
+          return res;
+        })
+        .finally(() => {
+          listInFlight = null;
+        });
+    }
+    return listInFlight;
+  },
   getPost: (slug: string) => request<Post>(`/posts/${encodeURIComponent(slug)}`),
   createPost: (input: {
     title: string;

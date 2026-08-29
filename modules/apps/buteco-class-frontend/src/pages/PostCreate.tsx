@@ -1,229 +1,356 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useBlocker, useNavigate, useParams } from "react-router";
+import { Trash2 } from "lucide-react";
 import { api } from "../lib/api.js";
-import { Button, Input, Textarea } from "../components/ui/index.js";
-import MarkdownContent from "../components/MarkdownContent.js";
+import { clearPostDraft, loadPostDraft, postDraftKey, usePostDraftAutosave, type PostDraft } from "../lib/useAutosave.js";
+import MarkdownEditor from "../components/editor/MarkdownEditor.js";
+import { Banner, Button, ConfirmDialog, EmptyState, Field, IconButton, Input, PageShell, Spinner, Textarea } from "../components/ui/index.js";
 import { resolveImageUrl } from "../lib/discordActivity.js";
+import { useSession } from "../lib/authClient.js";
 
-type ToolbarAction = {
-  label: string;
-  title: string;
-  before: string;
-  after: string;
-  placeholder: string;
-};
+function segmentedClasses(active: boolean): string {
+  return [
+    "px-3 h-9 inline-flex items-center rounded-lg font-heading font-semibold text-sm border transition-colors cursor-pointer",
+    active
+      ? "border-buteco-amber text-buteco-amber bg-buteco-amber/10"
+      : "border-white/15 text-buteco-cream/80 hover:border-buteco-amber/40",
+  ].join(" ");
+}
 
-const TOOLBAR: ToolbarAction[] = [
-  { label: "B", title: "Negrito", before: "**", after: "**", placeholder: "negrito" },
-  { label: "I", title: "Itálico", before: "*", after: "*", placeholder: "itálico" },
-  { label: "“”", title: "Citação", before: "\n> ", after: "", placeholder: "citação" },
-  { label: "</>", title: "Código", before: "`", after: "`", placeholder: "código" },
-  { label: "🔗", title: "Link", before: "[", after: "](https://)", placeholder: "texto do link" },
-  { label: "🖼️", title: "Imagem", before: "![", after: "](https://)", placeholder: "alt da imagem" },
-  {
-    label: "▶️",
-    title: "Link do YouTube",
-    before: "\n\n[Assista no YouTube](",
-    after: ")\n\n",
-    placeholder: "https://www.youtube.com/watch?v=...",
-  },
-  {
-    label: "🎧",
-    title: "Link do Spotify",
-    before: "\n\n[Ouça no Spotify](",
-    after: ")\n\n",
-    placeholder: "https://open.spotify.com/...",
-  },
-];
-
-// Also handles editing: /posts/:id/editar loads the existing post
-// (via a client-side lookup, since post-api's GET /posts/:slug only
-// returns published ones and this needs to work for the author's own
-// drafts too) and PATCHes instead of POSTing on submit.
+// Also handles editing: /posts/:id/editar finds the post in the
+// author's own list (post-api's GET /posts/:slug only returns
+// published ones and this must cover drafts too) and PATCHes instead
+// of POSTing. Both paths autosave a localStorage draft copy; "delete"
+// exists only in edit mode.
 export default function PostCreate() {
   const { id } = useParams<{ id?: string }>();
   const isEditing = Boolean(id);
   const navigate = useNavigate();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { data: session } = useSession();
 
   const [title, setTitle] = useState("");
   const [bodyMarkdown, setBodyMarkdown] = useState("");
   const [excerpt, setExcerpt] = useState("");
   const [coverImageUrl, setCoverImageUrl] = useState("");
-  const [type, setType] = useState<"article" | "course">("article");
-  const [loading, setLoading] = useState(false);
+  const [type, setType] = useState<PostDraft["type"]>("article");
+  const [coverBroken, setCoverBroken] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(isEditing);
+  const [lookupFailed, setLookupFailed] = useState<string | false>(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
+  const [restoreDraft, setRestoreDraft] = useState<ReturnType<typeof loadPostDraft>>(null);
 
+  const draftKey = postDraftKey(id);
+  const dirtyRef = useRef(false);
+  const submittedRef = useRef(false);
+
+  // Prefill from the author's own list; also flags a missing post
+  // (deleted, wrong URL) vs. a post someone else owns ≠ editable.
   useEffect(() => {
-    if (!id) return;
-    // Owner-only edit means we can't rely on the public slug lookup
-    // for drafts -- PATCH itself does the real ownership check
-    // server-side; this local list scan is just to prefill the form
-    // and works for both draft and published since it also covers
-    // this author's own unpublished posts once listed.
+    if (!id) {
+      setLoadingExisting(false);
+      setRestoreDraft(loadPostDraft(draftKey));
+      return;
+    }
+    setRestoreDraft(loadPostDraft(draftKey));
+    let cancelled = false;
     api
-      .listPosts()
+      .listPostsCached()
       .then((res) => {
+        if (cancelled) return;
         const existing = res.posts.find((p) => p.id === id);
-        if (existing) {
-          setTitle(existing.title);
-          setBodyMarkdown(existing.bodyMarkdown);
-          setExcerpt(existing.excerpt);
-          setCoverImageUrl(existing.coverImageUrl);
-          setType(existing.type);
+        if (!existing) {
+          setLookupFailed("Esse post não existe (ou foi apagado).");
+          return;
         }
+        if (session && existing.authorId !== session.user.id) {
+          setLookupFailed("Esse post não é seu -- só o autor pode editar.");
+          return;
+        }
+        setTitle(existing.title);
+        setBodyMarkdown(existing.bodyMarkdown);
+        setExcerpt(existing.excerpt);
+        setCoverImageUrl(existing.coverImageUrl);
+        setType(existing.type);
       })
-      .finally(() => setLoadingExisting(false));
-  }, [id]);
+      .catch(() => {
+        if (!cancelled) setLookupFailed("Não foi possível carregar o post pra editar.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingExisting(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, draftKey, session]);
 
-  function applyToolbarAction(action: ToolbarAction) {
-    const el = textareaRef.current;
-    if (!el) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const selected = bodyMarkdown.slice(start, end) || action.placeholder;
-    const next = bodyMarkdown.slice(0, start) + action.before + selected + action.after + bodyMarkdown.slice(end);
-    setBodyMarkdown(next);
-    requestAnimationFrame(() => {
-      el.focus();
-      const selStart = start + action.before.length;
-      el.setSelectionRange(selStart, selStart + selected.length);
-    });
+  const draft: PostDraft = useMemo(
+    () => ({ title, bodyMarkdown, excerpt, coverImageUrl, type }),
+    [title, bodyMarkdown, excerpt, coverImageUrl, type],
+  );
+  usePostDraftAutosave(draftKey, draft, { enabled: !loadingExisting });
+
+  // data-router guard (App.tsx uses createBrowserRouter): leaving the
+  // form with edits in it asks before losing them. Submitting the
+  // form flags itself as an intentional navigation first.
+  const blocker = useBlocker(() => Boolean(dirtyRef.current && !submittedRef.current));
+  useEffect(() => {
+    if (blocker.state === "blocked") setConfirmingLeave(true);
+  }, [blocker.state]);
+
+  function markDirty(): void {
+    dirtyRef.current = true;
   }
 
-  async function submit(status: "draft" | "published", e: FormEvent) {
-    e.preventDefault();
+  function restore(): void {
+    if (!restoreDraft) return;
+    setTitle(restoreDraft.title);
+    setBodyMarkdown(restoreDraft.bodyMarkdown);
+    setExcerpt(restoreDraft.excerpt);
+    setCoverImageUrl(restoreDraft.coverImageUrl);
+    setType(restoreDraft.type);
+    markDirty();
+    setRestoreDraft(null);
+  }
+
+  function discardDraft(): void {
+    clearPostDraft(draftKey);
+    setRestoreDraft(null);
+  }
+
+  async function submit(status: "draft" | "published") {
+    if (!title.trim() || !bodyMarkdown.trim()) {
+      setError("Título e corpo são obrigatórios.");
+      return;
+    }
     setError(null);
-    setLoading(true);
+    setSubmitting(true);
     try {
       if (isEditing && id) {
         await api.updatePost(id, { title, bodyMarkdown, excerpt, coverImageUrl, status });
       } else {
         await api.createPost({ title, bodyMarkdown, excerpt, coverImageUrl, type, status });
       }
+      clearPostDraft(draftKey);
+      // post-api answers 202 and processes async: navigate now, the
+      // profile list is the source of truth.
+      submittedRef.current = true;
+      dirtyRef.current = false;
       navigate("/perfil");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Algo deu errado.");
-    } finally {
-      setLoading(false);
+      setSubmitting(false);
+      submittedRef.current = false;
     }
   }
 
-  if (loadingExisting) return <p className="text-buteco-cream/60">Carregando…</p>;
+  async function remove(): Promise<void> {
+    if (!id || deleting) return;
+    setDeleting(true);
+    try {
+      // Same 202-as-command shape: the profile list removes it when
+      // the worker gets to it, this just navigates.
+      await api.deletePost(id);
+      clearPostDraft(draftKey);
+      submittedRef.current = true;
+      dirtyRef.current = false;
+      navigate("/perfil");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível apagar.");
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  }
+
+  if (loadingExisting) {
+    return (
+      <PageShell width="wide">
+        <div role="status" aria-label="Carregando post" className="flex items-center gap-3 text-buteco-cream/60 text-sm">
+          <Spinner size="sm" /> Carregando o post…
+        </div>
+      </PageShell>
+    );
+  }
+
+  if (lookupFailed) {
+    return (
+      <PageShell width="wide">
+        <EmptyState
+          title="Não dá pra editar este post"
+          description={lookupFailed}
+          action={
+            <Button variant="secondary" size="sm" onClick={() => navigate("/perfil")}>
+              Voltar ao perfil
+            </Button>
+          }
+        />
+      </PageShell>
+    );
+  }
 
   return (
-    <div>
+    <PageShell width="wide" className="pb-24">
       <h1 className="font-heading font-bold text-3xl mb-6">
-        {isEditing ? "Editar post" : "Escrever um "}
-        {!isEditing && <span className="text-gradient">post</span>}
+        {isEditing ? (
+          "Editar post"
+        ) : (
+          <>
+            Escrever um <span className="text-gradient">post</span>
+          </>
+        )}
       </h1>
 
-      <form className="flex flex-col gap-4">
-        <Input
-          type="text"
-          placeholder="Título"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-          className="text-lg font-heading"
-        />
-
-        <div className="flex flex-wrap gap-4">
-          {!isEditing && (
-            <div className="flex gap-4 font-body text-sm items-center">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" checked={type === "article"} onChange={() => setType("article")} />
-                Artigo
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" checked={type === "course"} onChange={() => setType("course")} />
-                Curso
-              </label>
+      <form
+        className="flex flex-col gap-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit("published");
+        }}
+      >
+        {restoreDraft && (
+          <Banner tone="info" title="Rascunho automático encontrado">
+            <p>
+              Salvo há {restoreDraft.savedAt ? Math.max(1, Math.round((Date.now() - restoreDraft.savedAt) / 60_000)) : 1} min.
+              Preenche o que estava digitado.
+            </p>
+            <div className="flex gap-2 mt-2">
+              <Button type="button" size="sm" onClick={restore}>
+                Restaurar
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={discardDraft}>
+                Descartar
+              </Button>
             </div>
-          )}
-        </div>
+          </Banner>
+        )}
 
-        <Input
-          type="text"
-          placeholder="Resumo curto (opcional)"
-          value={excerpt}
-          onChange={(e) => setExcerpt(e.target.value)}
-        />
-
-        <div className="flex gap-3 items-start">
+        <Field label="Título" counter={{ value: title.length, warnAt: 120 }}>
           <Input
-            type="text"
-            placeholder="URL da imagem de capa (opcional) — o fru-fru que deixa o post bonitão"
-            value={coverImageUrl}
-            onChange={(e) => setCoverImageUrl(e.target.value)}
-            className="flex-1"
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              markDirty();
+            }}
+            required
+            placeholder="De que se trata?"
+            className="text-lg font-heading"
           />
-          {coverImageUrl && (
-            <img
-              src={resolveImageUrl(coverImageUrl)}
-              alt="Prévia da capa"
-              className="w-14 h-14 rounded-lg object-cover border border-buteco-amber/20 shrink-0"
-              onError={(e) => (e.currentTarget.style.visibility = "hidden")}
-            />
-          )}
-        </div>
+        </Field>
 
-        {/* Formatting toolbar: inserts markdown at the cursor rather than
-            requiring the author to hand-write syntax -- YouTube/Spotify
-            buttons insert a placeholder link on its own line, which
-            MarkdownContent's <a> renderer then turns into a clickable
-            chip once the URL is filled in. */}
-        <div>
-          <div className="flex flex-wrap gap-1.5 mb-2 glass-card p-1.5 w-fit">
-            {TOOLBAR.map((action) => (
-              <button
-                key={action.title}
-                type="button"
-                title={action.title}
-                onClick={() => applyToolbarAction(action)}
-                className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-heading text-buteco-cream/80 hover:text-buteco-amber hover:bg-white/10 transition-colors cursor-pointer"
-              >
-                {action.label}
+        {!isEditing && (
+          <Field label="Tipo">
+            <div role="group" aria-label="Tipo do post" className="flex gap-2">
+              <button type="button" onClick={() => { setType("article"); markDirty(); }} aria-pressed={type === "article"} className={segmentedClasses(type === "article")}>
+                Artigo
               </button>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Textarea
-              ref={textareaRef}
-              placeholder="Escreva em markdown…"
-              value={bodyMarkdown}
-              onChange={(e) => setBodyMarkdown(e.target.value)}
-              required
-              rows={20}
-              className="font-mono resize-y"
-            />
-
-            <div className="glass-card p-6 overflow-y-auto max-h-[36rem]">
-              <p className="font-mono text-[0.65rem] uppercase tracking-wide text-buteco-cream/40 mb-4">
-                Prévia em tempo real
-              </p>
-              {bodyMarkdown ? (
-                <MarkdownContent content={bodyMarkdown} />
-              ) : (
-                <p className="text-buteco-cream/30 text-sm italic">O que você escrever aparece aqui…</p>
-              )}
+              <button type="button" onClick={() => { setType("course"); markDirty(); }} aria-pressed={type === "course"} className={segmentedClasses(type === "course")}>
+                Curso
+              </button>
             </div>
+          </Field>
+        )}
+
+        <Field label="Resumo" hint="Aparece nos cartões da home" counter={{ value: excerpt.length, warnAt: 200 }}>
+          <Textarea
+            value={excerpt}
+            onChange={(e) => {
+              setExcerpt(e.target.value);
+              markDirty();
+            }}
+            rows={2}
+            placeholder="Resumo curto (opcional)"
+            className="resize-y"
+          />
+        </Field>
+
+        <Field label="Imagem de capa" hint="URL externa -- passa pelo proxy de imagem na Activity" counter={undefined}>
+          <div className="flex gap-3 items-start">
+            <Input
+              value={coverImageUrl}
+              onChange={(e) => {
+                setCoverImageUrl(e.target.value);
+                setCoverBroken(false);
+                markDirty();
+              }}
+              type="url"
+              placeholder="https://…"
+              className="flex-1"
+            />
+            {coverImageUrl && !coverBroken && (
+              <img
+                src={resolveImageUrl(coverImageUrl)}
+                alt="Prévia da capa"
+                className="w-14 h-14 rounded-lg object-cover border border-buteco-amber/20 shrink-0"
+                onError={() => setCoverBroken(true)}
+              />
+            )}
           </div>
-        </div>
+          {coverImageUrl && coverBroken && (
+            <Banner tone="error" className="mt-2">
+              A imagem não carrega nessa URL. Confere o link -- ou publica assim mesmo (o leitor vê quebrado).
+            </Banner>
+          )}
+        </Field>
 
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+        <Field label="Conteúdo">
+          <MarkdownEditor value={bodyMarkdown} onChange={(next) => { setBodyMarkdown(next); markDirty(); }} />
+        </Field>
 
-        <div className="flex gap-3 mt-2">
-          <Button variant="secondary" disabled={loading} onClick={(e) => submit("draft", e)}>
-            Salvar rascunho
-          </Button>
-          <Button disabled={loading} onClick={(e) => submit("published", e)}>
-            Publicar
-          </Button>
+        {error && <Banner tone="error">{error}</Banner>}
+
+        {/* Sticky action bar: always reachable while the form scrolls,
+            the delete sits away from the two usual buttons. */}
+        <div className="sticky bottom-0 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 bg-buteco-brown/95 border-t border-white/10 flex items-center gap-3">
+          {isEditing && (
+            <IconButton
+              label="Apagar post"
+              tone="danger"
+              onClick={() => setConfirmingDelete(true)}
+              className="border border-red-400/30 hover:border-red-400/60"
+            >
+              <Trash2 size={16} />
+            </IconButton>
+          )}
+          <div className="ml-auto flex gap-3">
+            <Button type="button" variant="secondary" disabled={submitting} onClick={() => void submit("draft")}>
+              Salvar rascunho
+            </Button>
+            <Button type="submit" loading={submitting}>
+              Publicar
+            </Button>
+          </div>
         </div>
       </form>
-    </div>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        title="Apagar este post?"
+        description="O post sai do ar pra todo mundo. Não tem desfazer."
+        confirmLabel="Apagar"
+        danger
+        busy={deleting}
+        onConfirm={() => void remove()}
+        onCancel={() => setConfirmingDelete(false)}
+      />
+      <ConfirmDialog
+        open={confirmingLeave}
+        title="Sair sem publicar?"
+        description="Você alterou o post sem salvar. O rascunho automático do navegador guarda o que foi digitado, mas o servidor não."
+        confirmLabel="Sair mesmo assim"
+        danger
+        onConfirm={() => {
+          setConfirmingLeave(false);
+          dirtyRef.current = false;
+          blocker.proceed?.();
+        }}
+        onCancel={() => {
+          setConfirmingLeave(false);
+          blocker.reset?.();
+        }}
+      />
+    </PageShell>
   );
 }
