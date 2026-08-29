@@ -109,6 +109,16 @@ paths:
   /posts:
     get:
       summary: List published posts
+      description: >
+        Optional ?q= narrows to published posts whose title, excerpt or
+        body contain the query (case-insensitive substring, wildcards
+        escaped server-side); shape is the same with or without it.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         "200":
           description: OK
@@ -240,6 +250,30 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /posts/by-author/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: >
+        One author's posts for the profile pages — published only for
+        everyone except a session identifying as that author, who gets
+        their drafts too (status picks them out).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  posts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Post"
   /posts/liked/by-me:
     get:
       summary: Posts the current user liked, newest like first

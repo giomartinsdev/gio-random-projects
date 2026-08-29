@@ -53,7 +53,12 @@ export function createDomainApiClient(baseUrl: string, apiKey: string) {
   }
 
   return {
-    listPublished: () => request<{ posts: DomainPost[] }>("/posts"),
+    listPublished: (q?: string) =>
+      request<{ posts: DomainPost[] }>(q ? `/posts?q=${encodeURIComponent(q)}` : "/posts"),
+    // Returns the author's drafts too (see domain-api's handler) --
+    // every caller here must narrow to what THIS caller may see.
+    listByAuthor: (id: string) =>
+      request<{ posts: DomainPost[] }>(`/posts/author/${encodeURIComponent(id)}`),
     getBySlug: (slug: string) => request<DomainPost>(`/posts/slug/${encodeURIComponent(slug)}`),
     getById: (id: string) => request<DomainPost>(`/posts/id/${encodeURIComponent(id)}`),
     create: (input: {

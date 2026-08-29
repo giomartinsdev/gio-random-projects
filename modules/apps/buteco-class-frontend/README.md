@@ -75,12 +75,13 @@ List pages render `Skeleton`s while loading and surface failures with
 
 ## Known gap
 
-Profile only lists **published** posts. `post-api`'s `GET /posts` (and
-by extension this app) has no "list my drafts too" endpoint yet —
-domain-api would need one. Saving a draft still works (`PATCH`/`POST`
-with `status: "draft"`), the editor keeps a local autosaved copy per
-post, and the profile page shows a published-post list; drafts only
-resurface there through the editor's restored-draft banner.
+Drafts used to be invisible outside the editor — `GET /posts` only
+ever returned published ones. Now `GET /posts/by-author/:id` returns
+the author's drafts **to the author's own session** (PostCard flags
+them with the Rascunho badge; everyone else gets published-only), so
+the profile's Posts tab shows everything and the old client-side
+author filter is gone. domain-api likewise gained `?q=` substring
+search, which powers the home page's search box.
 
 Engagement edges worth knowing: the profile view counter only counts
 **logged-in distinct visitors** (anonymous visits are deliberately not

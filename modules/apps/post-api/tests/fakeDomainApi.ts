@@ -23,8 +23,29 @@ export function startFakeDomainApi(apiKey: string) {
   });
 
   app.get("/posts", (c) => {
-    const published = [...posts.values()].filter((p) => p.status === "published");
+    const q = (c.req.query("q") ?? "").trim();
+    let published = [...posts.values()].filter((p) => p.status === "published");
+    if (q) {
+      // Mirrors domain-api: case-insensitive substring over
+      // title/excerpt/body, wildcards in q escaped.
+      const needle = q.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+      const re = new RegExp(needle.replace(/[.*+?^${}()|[\]]/g, "\\$&"), "i");
+      published = published.filter((p) => re.test(p.title) || re.test(p.excerpt) || re.test(p.body_markdown));
+    }
     return c.json({ posts: published });
+  });
+
+  // Domain-api returns the author's drafts too -- post-api is the one
+  // that filters per viewer.
+  app.get("/posts/author/:id", (c) => {
+    const authorPosts = [...posts.values()]
+      .filter((p) => p.author_id === c.req.param("id"))
+      .sort((a, b) => {
+        const da = new Date(a.published_at ?? a.created_at).getTime();
+        const db = new Date(b.published_at ?? b.created_at).getTime();
+        return db - da;
+      });
+    return c.json({ posts: authorPosts });
   });
 
   app.post("/posts", async (c) => {
