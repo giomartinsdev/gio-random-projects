@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, useNavigate, useParams } from "react-router";
 import { Trash2 } from "lucide-react";
-import { api } from "../lib/api.js";
+import { api, type ImportedPost } from "../lib/api.js";
 import { clearPostDraft, loadPostDraft, postDraftKey, usePostDraftAutosave, type PostDraft } from "../lib/useAutosave.js";
 import MarkdownEditor from "../components/editor/MarkdownEditor.js";
 import { Banner, Button, ConfirmDialog, EmptyState, Field, IconButton, Input, PageShell, Spinner, Textarea } from "../components/ui/index.js";
@@ -16,6 +16,12 @@ function segmentedClasses(active: boolean): string {
       : "border-white/15 text-buteco-cream/80 hover:border-buteco-amber/40",
   ].join(" ");
 }
+
+const IMPORT_PROVIDER_LABEL: Record<ImportedPost["provider"], string> = {
+  "dev.to": "dev.to",
+  tabnews: "TabNews",
+  medium: "Medium",
+};
 
 // Also handles editing: /posts/:id/editar finds the post in the
 // author's own list (post-api's GET /posts/:slug only returns
@@ -42,6 +48,11 @@ export default function PostCreate() {
   const [deleting, setDeleting] = useState(false);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
   const [restoreDraft, setRestoreDraft] = useState<ReturnType<typeof loadPostDraft>>(null);
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importedFrom, setImportedFrom] = useState<ImportedPost["provider"] | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [confirmingImport, setConfirmingImport] = useState(false);
 
   const draftKey = postDraftKey(id);
   const dirtyRef = useRef(false);
@@ -119,6 +130,44 @@ export default function PostCreate() {
   function discardDraft(): void {
     clearPostDraft(draftKey);
     setRestoreDraft(null);
+  }
+
+  // Import fills the same fields the author would have typed; the
+  // material lands in the editor for review, never straight to
+  // published -- server-side the endpoint doesn't create the post at
+  // all (see importAdapter.ts on why attribution lives in the body).
+  function applyImport(article: ImportedPost): void {
+    setTitle(article.title);
+    setBodyMarkdown(article.bodyMarkdown);
+    setExcerpt(article.excerpt ?? "");
+    setCoverImageUrl(article.coverImageUrl ?? "");
+    markDirty();
+    setImportedFrom(article.provider);
+    setImportError(null);
+    setImportUrl("");
+  }
+
+  async function handleImport(): Promise<void> {
+    if (!importUrl.trim()) return;
+    setImportError(null);
+    setImporting(true);
+    try {
+      applyImport(await api.importPost(importUrl.trim()));
+    } catch (err) {
+      // The API's 400 messages name the problem (unsupported site, body
+      // too large) in English; keep them -- they're at least precise.
+      setImportError(err instanceof Error ? err.message : "Não foi possível importar esse link.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function requestImport(): void {
+    if (!importUrl.trim() || importing) return;
+    setImportedFrom(null);
+    // Never blow away typed content without an explicit yes.
+    if (title.trim() || bodyMarkdown.trim()) setConfirmingImport(true);
+    else void handleImport();
   }
 
   async function submit(status: "draft" | "published") {
@@ -202,6 +251,41 @@ export default function PostCreate() {
           </>
         )}
       </h1>
+
+      {!isEditing && (
+        <details className="glass-card p-4 group">
+          <summary className="flex items-center gap-1.5 text-sm font-semibold text-buteco-cream/80 hover:text-buteco-cream transition-colors cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            <span className="transition-transform duration-200 group-open:rotate-90" aria-hidden="true">
+              ›
+            </span>
+            Importar de um link (Medium, dev.to, TabNews)
+          </summary>
+          <div className="flex flex-col gap-3 pt-4">
+            <div className="flex gap-3 items-start">
+              <Input
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+                type="url"
+                placeholder="https://medium.com/@alguem/meu-artigo"
+                className="flex-1"
+              />
+              <Button type="button" variant="secondary" loading={importing} onClick={requestImport} className="shrink-0">
+                Importar
+              </Button>
+            </div>
+            <p className="text-xs text-buteco-cream/50">
+              O texto cai aqui no editor pra você revisar antes de publicar — e o crédito{" "}
+              <em>"Retirado daqui do …"</em> entra no fim do post automaticamente.
+            </p>
+            {importedFrom && (
+              <Banner tone="info">
+                Importado do {IMPORT_PROVIDER_LABEL[importedFrom]}. Dá uma lida e ajusta o que precisar antes de publicar.
+              </Banner>
+            )}
+            {importError && <Banner tone="error">{importError}</Banner>}
+          </div>
+        </details>
+      )}
 
       <form
         className="flex flex-col gap-6"
@@ -325,6 +409,18 @@ export default function PostCreate() {
         </div>
       </form>
 
+      <ConfirmDialog
+        open={confirmingImport}
+        title="Trocar o que está no editor?"
+        description="Importar substitui o título, o resumo, a capa e o conteúdo que estão preenchidos."
+        confirmLabel="Importar e substituir"
+        busy={importing}
+        onConfirm={() => {
+          setConfirmingImport(false);
+          void handleImport();
+        }}
+        onCancel={() => setConfirmingImport(false)}
+      />
       <ConfirmDialog
         open={confirmingDelete}
         title="Apagar este post?"

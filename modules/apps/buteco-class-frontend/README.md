@@ -42,7 +42,11 @@ same design tokens, reproduced here.
 
 `/` (home), `/login` (Discord first, email/senha collapsed below),
 `/posts/:slug` (read), `/posts/novo` and `/posts/:id/editar` (editor,
-protected), `/perfil` (own, protected) and `/perfil/:id` (public —
+protected — the create form has an "Importar de um link" section that
+pulls a public Medium/dev.to/TabNews article into the editor for
+review; the server appends the "Retirado daqui do …" attribution
+footer to the body itself),
+`/perfil` (own, protected) and `/perfil/:id` (public —
 anyone, even anonymous, can see a person's posts; own vs. other is
 decided per id) — the profile page has Posts \| Curtidas \| Aulas
 tabs (Curtidas only on your own profile; Aulas lists the rooms that
