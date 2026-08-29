@@ -19,12 +19,30 @@ Practical consequence: **writes are asynchronous**. `POST`/`PATCH`/
 immediate 200/201/204 — domain-worker applies the change afterward. A
 `GET` immediately after a write may not reflect it yet.
 
-This service's own Postgres connection (`DATABASE_URL`) is used
-**only** for Better Auth's tables (`user`/`session`/`account`/
-`verification`) — nothing content-related lives there.
+This service's own Postgres connection (`DATABASE_URL`) is used for
+Better Auth's tables (`user`/`session`/`account`/`verification`) plus
+**engagement** (`post_likes`, `profile_views`) — the one place content
+*interaction* (not content) lives here.
+
+**Why engagement is here and not in domain-api**: domain-api's write
+path is the CQRS pipeline (202 Accepted, applied later by
+domain-worker), but a like must respond synchronously with the new
+count or the button feels dead. So likes/profile-views are plain
+synchronous tables here, one Postgres round-trip, no queue. Two tables:
+
+- `post_likes` — `post_id` is an **opaque text id with no FK** (posts
+  belong to domain-api; a like referencing a since-deleted post is
+  harmless, reads join against the published list anyway); `user_id`
+  does FK the Better Auth `user` (cascade). The composite PK
+  `(post_id, user_id)` makes re-liking idempotent for free.
+- `profile_views` — one row per `(profile_user_id, viewer_user_id)`
+  pair; the PK *is* the distinctness constraint, and the view count is
+  just `COUNT(*)`. Self-views are never recorded (see
+  `src/lib/engagement.ts`); only logged-in viewers are ever counted —
+  the UI labels the number accordingly.
 
 - **Framework**: [Hono](https://hono.dev).
-- **Auth**: [Better Auth](https://www.better-auth.com), email+password for the normal site, plus a Discord social provider (`src/lib/auth.ts`) used only by the Discord Activity flow below. `bearer` plugin enabled (`Authorization: Bearer <token>`) — the Activity's session travels that way, not as a cookie, since cookies don't survive the discordsays.com proxy Activities load through.
+- **Auth**: [Better Auth](https://www.better-auth.com), email+password for the normal site, plus a Discord social provider (`src/lib/auth.ts`) used by **both** the web login button and the Discord Activity flow below. `bearer` plugin enabled (`Authorization: Bearer <token>`) — the Activity's session travels that way, not as a cookie, since cookies don't survive the discordsays.com proxy Activities load through.
 - **domain-api client**: plain `fetch`-based, authenticated with `X-API-Key` (one of the keys in domain-api's `DOMAIN_API_KEYS`).
 - **Tests**: Vitest. Better Auth is tested against real Postgres via testcontainers (`tests/testDb.ts`); domain-api is stood in for by a real HTTP server (`tests/fakeDomainApi.ts`) implementing its actual contract — not the real Go binary (that would need its own Postgres/Redis/domain-worker to exercise), but a genuine network hop, not an in-process mock.
 
@@ -32,15 +50,47 @@ This service's own Postgres connection (`DATABASE_URL`) is used
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| GET | `/posts` | none | Published posts only, proxied from domain-api |
+| GET | `/posts` | none | Published posts only, proxied from domain-api; enriched with `likeCount`/`likedByMe` for the caller |
 | POST | `/posts` | required | Forwards to domain-api, returns 202 |
-| GET | `/posts/:slug` | none | Published only; 404 for drafts/missing |
+| GET | `/posts/:slug` | none | Published only; 404 for drafts/missing; like fields like the list |
+| GET | `/posts/liked/by-me` | required | Current user's liked published posts, newest like first |
+| POST | `/posts/:id/like` | required | Like (idempotent) → `{ likeCount, likedByMe }`; 404 if domain-api doesn't know the post |
+| DELETE | `/posts/:id/like` | required | Unlike; 200 even if never liked or post is gone |
 | PATCH | `/posts/:id` | owner only | Looks up current author via domain-api first; 403 for non-owners, 404 if missing; 202 on forward |
 | DELETE | `/posts/:id` | owner only | Same ownership check; 202 on forward |
+| GET | `/users/:id` | none | Public profile identity (never the email) + distinct-visitor `viewCount` |
+| POST | `/users/:id/view` | required | Record one profile visit; one row per viewer, self-views ignored |
 | GET | `/feed.xml` | none | RSS 2.0, last 50 published posts |
 | GET | `/image-proxy?url=` | none | Re-fetches an external image URL, streaming it back — rejects private/loopback hosts and non-image responses |
 | POST | `/discord/token` | none | Discord Activity OAuth code → access_token exchange. Only mounted when `DISCORD_CLIENT_ID`/`DISCORD_CLIENT_SECRET` are set — see "Discord Activity" below |
 | * | `/api/auth/*` | — | Better Auth's own routes (sign-up, sign-in, etc.), including `/api/auth/sign-in/social` which the Activity flow below uses |
+
+## Discord login (web)
+
+Besides the Activity flow below, the same Discord OAuth app powers a
+plain "Entrar com o Discord" button on the normal web `front` login
+page — standard browser redirect through Better Auth:
+`POST /api/auth/sign-in/social` with `{ provider: "discord",
+callbackURL: "<front origin>/" }`, which 302s to Discord's consent
+screen and comes back to this service's
+`/api/auth/callback/discord`.
+
+Two non-defaults in `src/lib/auth.ts` matter for it:
+
+- `prompt: "consent"` on the provider — Better Auth's Discord provider
+  defaults to `prompt: "none"` (silent), which Discord answers with
+  `consent_required` for anyone who hasn't authorized the app yet,
+  i.e. every first-time login. Standard "Sign in with X" behavior is
+  to show the consent screen.
+- **The `callbackURL` from the front must be absolute**
+  (`${window.location.origin}/`). Better Auth re-redirects to it from
+  *this* server's host after the Discord callback, so a relative path
+  would land on post-api.giomartins.dev and 404.
+
+**Redirect URI registration**: the Discord application's OAuth2
+settings must include `https://post-api.giomartins.dev/api/auth/callback/discord`
+alongside the Activity's URL mappings below — Discord rejects
+unregistered redirect URIs outright.
 
 ## Discord Activity
 
@@ -69,7 +119,7 @@ To turn it on:
 ```
 cp .env.example .env   # set DATABASE_URL, BETTER_AUTH_SECRET, DOMAIN_API_URL, DOMAIN_API_KEY
 npm install
-npm run db:generate    # only after changing src/db/schema.ts (Better Auth tables only)
+npm run db:generate    # only after changing src/db/schema.ts (Better Auth + engagement tables)
 npm run db:migrate     # against the DATABASE_URL in .env
 npm run dev
 ```

@@ -204,6 +204,110 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /posts/liked/by-me:
+    get:
+      summary: Posts the current user liked, newest like first
+      description: >
+        Crosses the user's like history against the published list.
+        Likes on drafts/deleted posts silently drop out of the result.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  posts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Post"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /posts/{id}/like:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: Like a post (idempotent — re-liking returns the same state)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LikeState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Unlike a post (200 even if it was not liked)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LikeState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Public profile identity + distinct-visitor view count
+      description: >
+        Never returns email. viewCount only counts logged-in visitors;
+        anonymous visits are not tracked.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /users/{id}/view:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Record a profile visit by the authenticated viewer
+      description: >
+        One row per (profile, viewer) pair — repeat visits only bump
+        last_viewed_at. Viewing your own profile is never counted.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ViewAck"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   securitySchemes:
     bearerAuth:
@@ -253,6 +357,49 @@ components:
           type: string
           format: date-time
           nullable: true
+        likeCount:
+          type: integer
+          description: Number of distinct users who liked the post
+        likedByMe:
+          type: boolean
+          description: Whether the calling session's user liked it (false when anonymous)
+    LikeState:
+      type: object
+      properties:
+        likeCount:
+          type: integer
+        likedByMe:
+          type: boolean
+    PublicUser:
+      type: object
+      description: Profile identity -- never returns email
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        image:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    ProfileResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/PublicUser"
+        viewCount:
+          type: integer
+          description: Distinct logged-in visitors who have seen this profile
+    ViewAck:
+      type: object
+      properties:
+        viewCount:
+          type: integer
+        counted:
+          type: boolean
+          description: false when the viewer visited their own profile
     PostInput:
       type: object
       required: [title, bodyMarkdown]

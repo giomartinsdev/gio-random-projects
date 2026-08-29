@@ -32,7 +32,7 @@ beforeAll(async () => {
   stopDomainApi = fakeDomainApi.stop;
   const domainApi = createDomainApiClient(fakeDomainApi.url, DOMAIN_API_KEY);
 
-  app = createApp(auth, domainApi, ["https://buteco-class.giomartins.dev"]);
+  app = createApp(auth, domainApi, ["https://buteco-class.giomartins.dev"], dbStarted.db);
 }, 60_000);
 
 afterAll(async () => {

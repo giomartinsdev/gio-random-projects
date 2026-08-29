@@ -19,21 +19,25 @@ async function signUp(email: string, name = "Test Dev") {
     body: JSON.stringify({ email, password: "correct horse battery staple", name }),
   });
   expect(res.status).toBe(200);
+  const body = await res.json();
   const token = res.headers.get("set-auth-token");
   if (!token) throw new Error("sign-up did not return a bearer token");
-  return { authHeader: `Bearer ${token}` };
+  return { authHeader: `Bearer ${token}`, userId: body.user.id as string };
 }
+
+let testDbDb: Awaited<ReturnType<typeof startTestDb>>["db"];
 
 beforeAll(async () => {
   const dbStarted = await startTestDb();
   stopDb = dbStarted.stop;
+  testDbDb = dbStarted.db;
   auth = createAuth(dbStarted.db, "test-secret-do-not-use-in-production-min-32-chars");
 
   const fakeDomainApi = startFakeDomainApi(DOMAIN_API_KEY);
   stopDomainApi = fakeDomainApi.stop;
   const domainApi = createDomainApiClient(fakeDomainApi.url, DOMAIN_API_KEY);
 
-  app = createApp(auth, domainApi, ["http://localhost:5173"]);
+  app = createApp(auth, domainApi, ["http://localhost:5173"], dbStarted.db);
 }, 60_000);
 
 afterAll(async () => {
@@ -110,7 +114,7 @@ describe("GET /posts", () => {
   it("returns an empty list when nothing is published yet (edge)", async () => {
     const fakeDomainApi = startFakeDomainApi("another-key");
     const domainApi = createDomainApiClient(fakeDomainApi.url, "another-key");
-    const freshApp = createApp(auth, domainApi, ["http://localhost:5173"]);
+    const freshApp = createApp(auth, domainApi, ["http://localhost:5173"], testDbDb);
 
     const res = await freshApp.request("/posts");
     expect(res.status).toBe(200);
