@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { signIn, signUp } from "../lib/authClient.js";
-import Button from "../components/Button.js";
+import { Banner, Button, Field, Input } from "../components/ui/index.js";
 
 export default function Login() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
@@ -31,7 +31,7 @@ export default function Login() {
 
   return (
     <div className="max-w-sm mx-auto mt-6">
-      <div className="glass-card glow-amber p-8 animate-fade-in-up">
+      <div className="glass-card shadow-glow p-8 animate-fade-in-up">
         <div className="text-center mb-8">
           <span className="text-4xl" aria-hidden="true">
             🍺
@@ -44,37 +44,21 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {mode === "signup" && (
-            <input
-              type="text"
-              placeholder="Seu nome"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="field"
-            />
+            <Field label="Nome">
+              <Input type="text" placeholder="Seu nome" value={name} onChange={(e) => setName(e.target.value)} required />
+            </Field>
           )}
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="field"
-          />
-          <input
-            type="password"
-            placeholder="Senha"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={8}
-            className="field"
-          />
+          <Field label="Email">
+            <Input type="email" placeholder="voce@exemplo.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </Field>
+          <Field label="Senha" hint={mode === "signup" ? "Mínimo de 8 caracteres" : undefined}>
+            <Input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
+          </Field>
 
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && <Banner tone="error">{error}</Banner>}
 
-          <Button type="submit" disabled={loading} className="mt-2 w-full">
-            {loading ? "Aguarde…" : mode === "signin" ? "Entrar" : "Criar conta"}
+          <Button type="submit" loading={loading} className="mt-2 w-full">
+            {mode === "signin" ? "Entrar" : "Criar conta"}
           </Button>
         </form>
 

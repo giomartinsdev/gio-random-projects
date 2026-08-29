@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { bookclubApi, type Room } from "../lib/bookclubApi.js";
-import Button from "../components/Button.js";
+import { Button, Input } from "../components/ui/index.js";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
@@ -64,13 +64,13 @@ export default function BookClubHome() {
           <label className="block font-mono text-[0.65rem] uppercase tracking-wide text-buteco-cream/50 mb-1">
             Título da sala
           </label>
-          <input
+          <Input
             type="text"
             placeholder="Ex: Duna -- capítulo 1"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
-            className="field w-full"
+            className="w-full"
           />
         </div>
         <div>

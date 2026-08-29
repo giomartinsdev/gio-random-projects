@@ -3,7 +3,7 @@ import { useNavigate, useParams, Link } from "react-router";
 import { classroomApi, type Room } from "../lib/classroomApi.js";
 import { useClassSocket, type SignalPayload } from "../lib/useClassSocket.js";
 import { useWebRTCBroadcast } from "../lib/useWebRTCBroadcast.js";
-import ConfirmDialog from "../components/ConfirmDialog.js";
+import { ConfirmDialog, Input, Textarea } from "../components/ui/index.js";
 import { IconEnd } from "../components/RoomIcons.js";
 
 // Debounced broadcast: sending on every keystroke would flood the WS
@@ -196,12 +196,12 @@ export default function AulaRoom() {
           <h2 className="font-heading font-semibold text-sm text-buteco-cream/70 uppercase tracking-wide mb-2">
             Bloco de notas
           </h2>
-          <textarea
+          <Textarea
             value={notepadDraft}
             onChange={(e) => handleNotepadChange(e.target.value)}
             disabled={isClosed}
             placeholder={isClosed ? "aula encerrada" : "anote aqui -- todo mundo na aula vê em tempo real"}
-            className="field flex-1 resize-none font-mono text-sm leading-relaxed"
+            className="flex-1 resize-none font-mono leading-relaxed"
           />
         </div>
 
@@ -220,13 +220,13 @@ export default function AulaRoom() {
           </div>
 
           <form onSubmit={submitChat} className="p-3 border-t border-white/10 flex gap-2">
-            <input
+            <Input
               type="text"
               value={chatDraft}
               onChange={(e) => setChatDraft(e.target.value)}
               placeholder={isClosed ? "aula encerrada" : socket.you ? "Escreva algo…" : "Entre para conversar"}
               disabled={!socket.you || isClosed}
-              className="field flex-1 py-2 text-sm"
+              className="flex-1"
             />
             <button
               type="submit"

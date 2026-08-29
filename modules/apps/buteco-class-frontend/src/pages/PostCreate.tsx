@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router";
 import { api } from "../lib/api.js";
-import Button from "../components/Button.js";
+import { Button, Input, Textarea } from "../components/ui/index.js";
 import MarkdownContent from "../components/MarkdownContent.js";
 import { resolveImageUrl } from "../lib/discordActivity.js";
 
@@ -120,13 +120,13 @@ export default function PostCreate() {
       </h1>
 
       <form className="flex flex-col gap-4">
-        <input
+        <Input
           type="text"
           placeholder="Título"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           required
-          className="field text-lg font-heading"
+          className="text-lg font-heading"
         />
 
         <div className="flex flex-wrap gap-4">
@@ -144,21 +144,20 @@ export default function PostCreate() {
           )}
         </div>
 
-        <input
+        <Input
           type="text"
           placeholder="Resumo curto (opcional)"
           value={excerpt}
           onChange={(e) => setExcerpt(e.target.value)}
-          className="field"
         />
 
         <div className="flex gap-3 items-start">
-          <input
+          <Input
             type="text"
             placeholder="URL da imagem de capa (opcional) — o fru-fru que deixa o post bonitão"
             value={coverImageUrl}
             onChange={(e) => setCoverImageUrl(e.target.value)}
-            className="field flex-1"
+            className="flex-1"
           />
           {coverImageUrl && (
             <img
@@ -191,14 +190,14 @@ export default function PostCreate() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <textarea
+            <Textarea
               ref={textareaRef}
               placeholder="Escreva em markdown…"
               value={bodyMarkdown}
               onChange={(e) => setBodyMarkdown(e.target.value)}
               required
               rows={20}
-              className="field font-mono text-sm resize-y"
+              className="font-mono resize-y"
             />
 
             <div className="glass-card p-6 overflow-y-auto max-h-[36rem]">
