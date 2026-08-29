@@ -4,15 +4,16 @@ import { bearer } from "better-auth/plugins";
 import type { Db } from "../db/index.js";
 import * as schema from "../db/schema.js";
 
-// Email+password is the direct sign-up path; Discord below is
-// deliberately not a normal OAuth redirect flow -- it exists to let
-// the Discord Activity (front/src/lib/discordActivity.ts) turn an
-// already-Discord-verified user into a Better Auth session, using an
+// Email+password is the direct sign-up path. Discord serves BOTH the
+// front's normal "Entrar com o Discord" web button (standard OAuth
+// redirect through Better Auth's /api/auth/callback/discord) AND the
+// Discord Activity (front/src/lib/discordActivity.ts), which turns an
+// already-Discord-verified user into a Better Auth session using an
 // access_token that flow already obtained through a real server-side
-// code exchange (post-api's routes/discord.ts). bearer plugin: that
-// session travels as an Authorization header, not a cookie -- see
-// discordAuthToken.ts's own comment for why cookies can't cross the
-// discordsays.com proxy Activities load through.
+// code exchange (post-api's routes/discord.ts). bearer plugin: in the
+// Activity that session travels as an Authorization header, not a
+// cookie -- see discordAuthToken.ts's own comment for why cookies
+// can't cross the discordsays.com proxy Activities load through.
 export function createAuth(
   db: Db,
   secret: string,
@@ -54,6 +55,12 @@ export function createAuth(
             // to check against (it doesn't request the openid scope), so
             // without this the whole path 404s as ID_TOKEN_NOT_SUPPORTED.
             verifyIdToken: async () => true,
+            // Better Auth's provider default is prompt:"none" (silent
+            // re-auth), which Discord answers with consent_required for
+            // anyone who hasn't authorized the app yet -- i.e. every
+            // first-time web login would fail. Standard "Sign in with X"
+            // behavior: show the consent screen.
+            prompt: "consent",
           },
         }
       : undefined,
