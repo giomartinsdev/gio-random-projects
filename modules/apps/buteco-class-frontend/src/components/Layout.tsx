@@ -1,10 +1,22 @@
-import type { ReactNode } from "react";
-import NavBar from "./NavBar.js";
+import { Outlet } from "react-router";
+import Sidebar from "./Sidebar.js";
 import BinaryRain from "./BinaryRain.js";
+import { SkipLink } from "./ui/index.js";
+import { useRailState } from "../lib/useRailState.js";
+import { isDiscordActivity } from "../lib/discordActivity.js";
 
-export default function Layout({ children }: { children: ReactNode }) {
+// The page chrome: fixed background + rain, the sidebar rail, and a
+// bare content slot. Widths/paddings belong to the pages (PageShell);
+// the only layout-level rule is paying back the rail's 72px on
+// desktop -- absent when the rail is hidden or inside a Discord
+// Activity (forced compact there, see Sidebar).
+export default function Layout() {
+  const [railState, setRailState] = useRailState();
+  const inActivity = isDiscordActivity();
+  const reserveRail = !inActivity && railState !== "hidden";
+
   return (
-    <div className="min-h-screen flex flex-col relative overflow-x-hidden">
+    <div className="min-h-screen flex flex-col relative">
       {/* Background pattern + ambient glow, same visual language as
           website-butecodosdev's hero -- kept low-key here since this
           runs behind every page, not just a one-off landing section. */}
@@ -18,11 +30,15 @@ export default function Layout({ children }: { children: ReactNode }) {
         />
       </div>
 
-      <NavBar />
-      <main className="flex-1 max-w-4xl w-full mx-auto px-6 py-10">{children}</main>
+      <SkipLink />
+      <Sidebar state={railState} onState={setRailState} />
 
-      <footer className="border-t border-white/5 mt-10">
-        <div className="max-w-4xl mx-auto px-6 py-8 text-center text-buteco-cream/40 text-sm font-mono">
+      <main id="conteudo" tabIndex={-1} className={reserveRail ? "lg:pl-[72px] focus:outline-none" : "focus:outline-none"}>
+        <Outlet />
+      </main>
+
+      <footer className={reserveRail ? "lg:pl-[72px]" : ""}>
+        <div className="border-t border-white/5 py-8 text-center text-buteco-cream/40 text-sm font-mono">
           feito com <span className="text-buteco-amber">♥</span> pela Sala de aula do Buteco
         </div>
       </footer>

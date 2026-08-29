@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router";
+import { createBrowserRouter, RouterProvider } from "react-router";
 import Layout from "./components/Layout.js";
 import ProtectedRoute from "./components/ProtectedRoute.js";
 import Home from "./pages/Home.js";
@@ -13,29 +13,82 @@ import AulaRoom from "./pages/AulaRoom.js";
 import OpenOnSite from "./components/OpenOnSite.js";
 import { isDiscordActivity } from "./lib/discordActivity.js";
 
-export default function App() {
-  // Live classes need screen capture and WebRTC, neither of which
-  // exists inside a Discord Activity's iframe -- see OpenOnSite.tsx.
-  // Swapped at the route level so the room never mounts there at all
-  // (no pointless WebSocket, no peer connections that would throw).
-  const inActivity = isDiscordActivity();
+// Data router (not <BrowserRouter>) so page-level flow interrupts can
+// use useBlocker -- PostCreate's unsaved-draft guard needs it.
+//
+// Live classes need screen capture and WebRTC, neither of which exists
+// inside a Discord Activity's iframe -- see OpenOnSite.tsx. Swapped at
+// the route level so the room never mounts there at all (no pointless
+// WebSocket, no peer connections that would throw).
+const inActivity = isDiscordActivity();
 
-  return (
-    <BrowserRouter>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/posts/novo" element={<ProtectedRoute><PostCreate /></ProtectedRoute>} />
-          <Route path="/posts/:id/editar" element={<ProtectedRoute><PostCreate /></ProtectedRoute>} />
-          <Route path="/posts/:slug" element={<PostView />} />
-          <Route path="/perfil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-          <Route path="/clube-do-livro" element={<ProtectedRoute><BookClubHome /></ProtectedRoute>} />
-          <Route path="/clube-do-livro/:id" element={<ProtectedRoute><BookClubRoom /></ProtectedRoute>} />
-          <Route path="/aulas" element={<ProtectedRoute>{inActivity ? <OpenOnSite /> : <AulasHome />}</ProtectedRoute>} />
-          <Route path="/aulas/:id" element={<ProtectedRoute>{inActivity ? <OpenOnSite /> : <AulaRoom />}</ProtectedRoute>} />
-        </Routes>
-      </Layout>
-    </BrowserRouter>
-  );
+const router = createBrowserRouter([
+  {
+    element: <Layout />,
+    children: [
+      { path: "/", element: <Home /> },
+      { path: "/login", element: <Login /> },
+      {
+        path: "/posts/novo",
+        element: (
+          <ProtectedRoute>
+            <PostCreate />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/posts/:id/editar",
+        element: (
+          <ProtectedRoute>
+            <PostCreate />
+          </ProtectedRoute>
+        ),
+      },
+      { path: "/posts/:slug", element: <PostView /> },
+      {
+        path: "/perfil",
+        element: (
+          <ProtectedRoute>
+            <Profile />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/clube-do-livro",
+        element: (
+          <ProtectedRoute>
+            <BookClubHome />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/clube-do-livro/:id",
+        element: (
+          <ProtectedRoute>
+            <BookClubRoom />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/aulas",
+        element: (
+          <ProtectedRoute>
+            {inActivity ? <OpenOnSite /> : <AulasHome />}
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/aulas/:id",
+        element: (
+          <ProtectedRoute>
+            {inActivity ? <OpenOnSite /> : <AulaRoom />}
+          </ProtectedRoute>
+        ),
+      },
+    ],
+  },
+]);
+
+export default function App() {
+  return <RouterProvider router={router} />;
 }
