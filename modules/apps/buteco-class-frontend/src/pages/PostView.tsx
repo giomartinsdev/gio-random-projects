@@ -16,6 +16,7 @@ function formatDate(iso: string | null) {
 export default function PostView() {
   const { slug } = useParams<{ slug: string }>();
   const [post, setPost] = useState<Post | null | undefined>(undefined);
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
   const { data: session } = useSession();
 
   useEffect(() => {
@@ -65,11 +66,15 @@ export default function PostView() {
   return (
     <article className="animate-fade-in-up">
       <PageShell width="prose">
-        {post.coverImageUrl && (
+        {/* A cover the proxy can't serve disappears instead of rendering
+            the broken-image glyph. Keyed by URL so a later-good cover
+            self-heals when navigating between posts. */}
+        {post.coverImageUrl && brokenSrc !== post.coverImageUrl && (
           <div className="glass-card overflow-hidden mb-8">
             <img
               src={resolveImageUrl(post.coverImageUrl)}
               alt=""
+              onError={() => setBrokenSrc(post.coverImageUrl ?? null)}
               className="w-full aspect-[16/9] object-cover"
             />
           </div>
