@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
+import { BookOpen, FileText } from "lucide-react";
 import { bookclubApi, type Room } from "../lib/bookclubApi.js";
-import { Button, Input } from "../components/ui/index.js";
+import { Badge, Banner, Button, EmptyState, ErrorState, Field, Input, PageShell, Skeleton, buttonClasses } from "../components/ui/index.js";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
@@ -14,7 +15,12 @@ function formatDate(iso: string) {
 // experience would just fail silently at that point.
 export default function BookClubHome() {
   const [rooms, setRooms] = useState<Room[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  // bookclub-api answers createRoom with 202 and materializes the
+  // room (PDF upload included) async -- the honest status line beats
+  // pretending the room is instant.
+  const [materializing, setMaterializing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -23,47 +29,47 @@ export default function BookClubHome() {
     bookclubApi
       .listRooms()
       .then((res) => setRooms(res.rooms))
-      .catch((err) => setError(err.message));
+      .catch((err) => setListError(err.message));
   }
 
   useEffect(reload, []);
 
-  async function handleCreate(e: FormEvent) {
+  async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     const pdf = fileRef.current?.files?.[0];
     if (!title.trim() || !pdf) return;
 
     setCreating(true);
-    setError(null);
+    setCreateError(null);
     try {
       await bookclubApi.createRoom(title.trim(), pdf);
       setTitle("");
       if (fileRef.current) fileRef.current.value = "";
+      setMaterializing(true);
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Algo deu errado.");
+      setCreateError(err instanceof Error ? err.message : "Algo deu errado.");
     } finally {
       setCreating(false);
     }
   }
 
   return (
-    <div>
+    <PageShell width="wide">
       <h1 className="font-heading font-bold text-4xl mb-1 animate-fade-in-up">
         Clube do <span className="text-gradient">Livro</span>
       </h1>
-      <p className="text-buteco-cream/60 mb-10 animate-fade-in-up" style={{ animationDelay: "80ms" }}>
+      <p className="text-buteco-cream/60 mb-8 animate-fade-in-up" style={{ animationDelay: "80ms" }}>
         Suba um PDF, abra uma sala, chame a galera para ler junto -- página, anotações e chat em tempo real.
       </p>
 
       <form
+        id="criar-sala"
         onSubmit={handleCreate}
-        className="glass-card glow-amber p-6 mb-10 flex flex-col sm:flex-row gap-3 items-stretch sm:items-end animate-fade-in-up"
+        className="glass-card shadow-glow rounded-2xl p-6 mb-8 flex flex-col sm:flex-row gap-4 items-stretch sm:items-end animate-fade-in-up"
+        style={{ animationDelay: "120ms" }}
       >
-        <div className="flex-1">
-          <label className="block font-mono text-[0.65rem] uppercase tracking-wide text-buteco-cream/50 mb-1">
-            Título da sala
-          </label>
+        <Field label="Título da sala" className="flex-1">
           <Input
             type="text"
             placeholder="Ex: Duna -- capítulo 1"
@@ -72,11 +78,8 @@ export default function BookClubHome() {
             required
             className="w-full"
           />
-        </div>
-        <div>
-          <label className="block font-mono text-[0.65rem] uppercase tracking-wide text-buteco-cream/50 mb-1">
-            PDF
-          </label>
+        </Field>
+        <Field label="PDF do livro" hint="vai direto para o servidor da sala">
           <input
             ref={fileRef}
             type="file"
@@ -84,48 +87,78 @@ export default function BookClubHome() {
             required
             className="text-sm text-buteco-cream/80 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-buteco-amber file:text-buteco-navy file:font-heading file:font-semibold file:cursor-pointer cursor-pointer"
           />
-        </div>
-        <Button type="submit" disabled={creating}>
-          {creating ? "Enviando…" : "Abrir sala"}
+        </Field>
+        <Button type="submit" loading={creating}>
+          Abrir sala
         </Button>
       </form>
 
-      {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
-      {rooms === null && !error && <p className="text-buteco-cream/60">Carregando…</p>}
-      {rooms?.length === 0 && <p className="text-buteco-cream/60">Nenhuma sala aberta ainda -- seja o primeiro.</p>}
+      {materializing && (
+        <Banner tone="info" className="mb-6" title="Sala materializando">
+          O PDF está sendo processado -- a sala aparece na lista em instantes.
+        </Banner>
+      )}
+      {createError && (
+        <Banner tone="error" className="mb-6">
+          {createError}
+        </Banner>
+      )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        {rooms?.map((r, i) => {
-          const closed = r.status === "closed";
-          return (
-            <Link
-              key={r.id}
-              to={`/clube-do-livro/${r.id}`}
-              style={{ animationDelay: `${120 + i * 60}ms` }}
-              className={`group glass-card overflow-hidden animate-fade-in-up p-6 hover:bg-white/10 hover:-translate-y-0.5 transition-all ${
-                closed ? "opacity-60 hover:border-white/20" : "hover:border-buteco-amber/30"
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2 font-mono text-xs text-buteco-amber/70">
-                <span className="uppercase tracking-wide">Sala</span>
-                <span>·</span>
-                <span>{formatDate(r.createdAt)}</span>
-                {closed && (
-                  <span className="ml-auto px-2 py-0.5 rounded-full bg-white/10 text-buteco-cream/60 normal-case tracking-normal">
-                    Encerrada
-                  </span>
-                )}
-              </div>
-              <h3 className="font-heading font-semibold text-xl text-buteco-cream group-hover:text-buteco-amber transition-colors">
-                {r.title}
-              </h3>
-              <p className="text-buteco-cream/50 text-sm mt-1">
-                {closed ? "leitura do PDF e do histórico de chat" : `página ${r.currentPage}`}
-              </p>
-            </Link>
-          );
-        })}
-      </div>
-    </div>
+      {listError && rooms === null ? (
+        <ErrorState title="Não deu pra listar as salas" message={listError} onRetry={reload} />
+      ) : rooms === null ? (
+        <div role="status" aria-label="Carregando salas" className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-36 rounded-2xl" />
+          ))}
+        </div>
+      ) : rooms.length === 0 ? (
+        <EmptyState
+          icon={<BookOpen size={22} />}
+          title="Nenhuma sala aberta ainda"
+          description="Escolha um PDF e chame a galera para ler junto, página sincronizada."
+          action={
+            <a href="#criar-sala" className={buttonClasses({ variant: "secondary" })}>
+              Abrir uma sala
+            </a>
+          }
+        />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          {rooms.map((r, i) => {
+            const closed = r.status === "closed";
+            return (
+              <Link
+                key={r.id}
+                to={`/clube-do-livro/${r.id}`}
+                style={{ animationDelay: `${120 + i * 60}ms` }}
+                className={`group glass-card shadow-card animate-fade-in-up p-5 sm:p-6 hover:-translate-y-0.5 transition-all ${
+                  closed ? "opacity-60 hover:border-white/20" : "hover:border-buteco-amber/30"
+                }`}
+              >
+                <div className="flex items-center gap-2.5 mb-3">
+                  <Badge tone={closed ? "muted" : "live"}>{closed ? "Encerrada" : "Ao vivo"}</Badge>
+                  <span className="font-mono text-xs text-buteco-cream/40">{formatDate(r.createdAt)}</span>
+                </div>
+                <h3 className="font-heading font-semibold text-xl group-hover:text-buteco-amber transition-colors truncate">{r.title}</h3>
+                <p className="text-buteco-cream/50 text-sm mt-1.5 flex items-center gap-1.5 min-w-0">
+                  {closed ? (
+                    <>
+                      <BookOpen size={14} className="shrink-0" aria-hidden="true" />
+                      <span className="truncate">leitura do PDF e do histórico de chat</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileText size={14} className="shrink-0" aria-hidden="true" />
+                      <span className="truncate">lendo a página {r.currentPage}</span>
+                    </>
+                  )}
+                </p>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </PageShell>
   );
 }

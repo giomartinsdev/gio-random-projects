@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router";
+import { Mic, MicOff, MonitorPlay, ScreenShare, Video, VideoOff } from "lucide-react";
 import { classroomApi, type Room } from "../lib/classroomApi.js";
 import { useClassSocket, type SignalPayload } from "../lib/useClassSocket.js";
 import { useWebRTCBroadcast } from "../lib/useWebRTCBroadcast.js";
-import { ConfirmDialog, Input, Textarea } from "../components/ui/index.js";
-import { IconEnd } from "../components/RoomIcons.js";
+import { Button, ConfirmDialog, IconButton, PageShell, Spinner } from "../components/ui/index.js";
+import { IconEnd, IconMaximize, IconMinimize } from "../components/RoomIcons.js";
+import { ChatPanel, NotepadPanel, PanelTabs, ParticipantsStrip, RoomHeader, RoomShell, RoomStatusBadge, RtcErrorBanner } from "../components/room/index.js";
+import { cn } from "../lib/cn.js";
 
 // Debounced broadcast: sending on every keystroke would flood the WS
 // and (worse) fight every other participant's cursor position on
@@ -20,10 +23,17 @@ export default function AulaRoom() {
   const [endingRoom, setEndingRoom] = useState(false);
   const [chatDraft, setChatDraft] = useState("");
   const [notepadDraft, setNotepadDraft] = useState("");
+  const [asideTab, setAsideTab] = useState<"chat" | "notepad">("chat");
+  // Track.enabled mirrors for the UI-only mic/cam toggles -- the
+  // tracks themselves are the broadcast source of truth, these just
+  // keep the icons honest. Re-derived on every new share.
+  const [micMuted, setMicMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(false);
+  const [stageFullscreen, setStageFullscreen] = useState(false);
   const notepadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
 
   const signalHandlerRef = useRef<(from: string, payload: SignalPayload) => void>(() => {});
   const socket = useClassSocket(id ?? "", (from, payload) => signalHandlerRef.current(from, payload));
@@ -57,10 +67,6 @@ export default function AulaRoom() {
   }, [socket.notepad]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [socket.chatHistory.length]);
-
-  useEffect(() => {
     if (localVideoRef.current) localVideoRef.current.srcObject = rtc.localStream;
   }, [rtc.localStream]);
 
@@ -68,14 +74,40 @@ export default function AulaRoom() {
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = rtc.remoteStream;
   }, [rtc.remoteStream]);
 
+  useEffect(() => {
+    const audio = rtc.localStream?.getAudioTracks() ?? [];
+    const video = rtc.localStream?.getVideoTracks() ?? [];
+    setMicMuted(audio.length > 0 && !audio.some((t) => t.enabled));
+    setCameraOff(video.length > 0 && !video.some((t) => t.enabled));
+  }, [rtc.localStream]);
+
+  useEffect(() => {
+    const onFsChange = () => setStageFullscreen(document.fullscreenElement === stageRef.current);
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
   function handleNotepadChange(value: string) {
     setNotepadDraft(value);
     if (notepadTimerRef.current) clearTimeout(notepadTimerRef.current);
     notepadTimerRef.current = setTimeout(() => socket.updateNotepad(value), NOTEPAD_DEBOUNCE_MS);
   }
 
-  function submitChat(e: React.FormEvent) {
-    e.preventDefault();
+  function toggleMic() {
+    const track = rtc.localStream?.getAudioTracks()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setMicMuted(!track.enabled);
+  }
+
+  function toggleCamera() {
+    const track = rtc.localStream?.getVideoTracks()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setCameraOff(!track.enabled);
+  }
+
+  function sendChatDraft() {
     if (!chatDraft.trim()) return;
     socket.sendChat(chatDraft.trim());
     setChatDraft("");
@@ -93,150 +125,192 @@ export default function AulaRoom() {
     }
   }
 
-  if (room === undefined) return <p className="text-buteco-cream/60">Carregando…</p>;
+  function toggleStageFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      stageRef.current?.requestFullscreen();
+    }
+  }
+
+  if (room === undefined) {
+    return (
+      <PageShell width="full">
+        <div role="status" className="flex items-center gap-3 text-buteco-cream/60 text-sm">
+          <Spinner size="sm" /> Carregando a aula…
+        </div>
+      </PageShell>
+    );
+  }
   if (room === null) {
     return (
-      <div className="text-center py-20">
-        <p className="text-buteco-cream/60 mb-4">Essa aula não existe.</p>
-        <Link to="/aulas" className="text-buteco-amber hover:underline">
-          Voltar para Aulas
-        </Link>
-      </div>
+      <PageShell width="content">
+        <div className="text-center py-20">
+          <p className="text-buteco-cream/60 mb-4">Essa aula não existe.</p>
+          <Link to="/aulas" className="text-buteco-amber hover:underline">
+            Voltar para Aulas
+          </Link>
+        </div>
+      </PageShell>
     );
   }
 
+  const hasAudio = Boolean(rtc.localStream?.getAudioTracks()[0]);
+  const hasCameraVideo = rtc.sharing === "camera" && Boolean(rtc.localStream?.getVideoTracks()[0]);
+  const chatDisabled = !socket.you || isClosed;
+
   return (
-    <div className="flex flex-col animate-fade-in-up">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div>
-          <h1 className="font-heading font-bold text-2xl text-buteco-cream">{room.title}</h1>
-          <p className="text-buteco-cream/50 text-sm font-mono">
-            {isClosed
-              ? "aula encerrada · somente leitura"
-              : `${socket.connected ? "conectado" : "conectando…"} · ${socket.participants.length} ${
-                  socket.participants.length === 1 ? "pessoa" : "pessoas"
-                } na aula`}
-          </p>
-        </div>
+    <RoomShell
+      header={
+        <RoomHeader
+          title={room.title}
+          status={<RoomStatusBadge connected={socket.connected} closed={isClosed} liveLabel="aula ao vivo" />}
+          actions={
+            isHost &&
+            !isClosed && (
+              <button
+                onClick={() => setConfirmingEnd(true)}
+                disabled={endingRoom}
+                title="Encerrar a aula"
+                className="flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-heading font-semibold text-red-300/80 border border-red-400/30 hover:border-red-400/60 hover:text-red-300 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <IconEnd size={15} />
+                {endingRoom ? "Encerrando…" : "Encerrar aula"}
+              </button>
+            )
+          }
+        />
+      }
+      // Stage: live video (host's screen/camera share) or, waiting on
+      // it, one of the role-specific empty states. Fullscreen borrows
+      // the pattern already used by the book club's PDF viewport.
+      aside={
+        <div className="flex flex-col gap-3 flex-1 min-h-0">
+          <div className="glass-card rounded-2xl px-3 sm:px-4 py-2.5 shrink-0">
+            <ParticipantsStrip participants={socket.participants} hostId={socket.hostId} currentUserId={socket.you?.userId ?? null} />
+          </div>
 
-        {isHost && !isClosed && (
-          <button
-            onClick={() => setConfirmingEnd(true)}
-            disabled={endingRoom}
-            title="Encerrar a aula"
-            className="flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-heading font-semibold text-red-300/80 border border-red-400/30 hover:border-red-400/60 hover:text-red-300 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          <PanelTabs
+            tabs={[
+              { id: "chat", label: "Chat" },
+              { id: "notepad", label: "Bloco" },
+            ]}
+            active={asideTab}
+            onChange={setAsideTab}
+            label="Painéis da aula"
+            className="lg:hidden"
+          />
+
+          {/* One instance per panel; the tabs toggle them on mobile,
+              `lg:flex` puts both on screen at once on desktop. */}
+          <div
+            aria-label="Chat da aula"
+            className={cn(
+              "glass-card rounded-2xl overflow-hidden flex-col flex-1 min-h-0 lg:flex",
+              asideTab === "chat" ? "flex" : "hidden",
+            )}
           >
-            <IconEnd size={15} />
-            {endingRoom ? "Encerrando…" : "Encerrar aula"}
-          </button>
-        )}
-      </div>
+            <ChatPanel
+              messages={socket.chatHistory}
+              disabled={chatDisabled}
+              disabledPlaceholder={isClosed ? "aula encerrada" : "entre para conversar"}
+              placeholder={socket.you ? "Escreva algo…" : "Entre para conversar"}
+              draft={chatDraft}
+              onDraftChange={setChatDraft}
+              onSend={sendChatDraft}
+            />
+          </div>
 
-      {/* Three panels, left to right: live video (share da tela ou
-          câmera do host), bloco de notas compartilhado, chat -- matches
-          the product sketch for this feature 1:1. */}
-      <div className="flex flex-col lg:flex-row gap-4" style={{ height: "min(70vh, 640px)" }}>
-        <div className="flex-[3] min-w-0 glass-card p-4 flex flex-col">
+          <div
+            aria-label="Bloco de notas da aula"
+            className={cn(
+              "glass-card rounded-2xl overflow-hidden flex-col flex-1 min-h-0 lg:flex",
+              asideTab === "notepad" ? "flex" : "hidden",
+            )}
+          >
+            <NotepadPanel
+              value={notepadDraft}
+              onChange={handleNotepadChange}
+              disabled={isClosed}
+              disabledPlaceholder="aula encerrada"
+              placeholder="anote aqui -- todo mundo na aula vê em tempo real"
+              emptyNote="salvo no servidor, mas some quando a aula esvazia"
+            />
+          </div>
+        </div>
+      }
+    >
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div ref={stageRef} className="flex-1 min-h-0 relative glass-card rounded-2xl p-3 sm:p-4 flex flex-col">
           <div className="flex-1 min-h-0 rounded-lg bg-black/40 flex items-center justify-center overflow-hidden relative">
             {isHost ? (
               rtc.localStream ? (
                 <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-contain" />
               ) : (
-                <p className="text-buteco-cream/40 text-sm text-center px-6">
-                  {isClosed ? "aula encerrada" : "compartilhe sua tela ou câmera pra começar"}
-                </p>
+                <div className="flex flex-col items-center justify-center gap-2 text-center px-6">
+                  <ScreenShare size={28} className="text-buteco-amber/50" aria-hidden="true" />
+                  <p className="text-buteco-cream/45 text-sm max-w-xs">
+                    {isClosed ? "aula encerrada" : "compartilhe sua tela ou câmera pra começar"}
+                  </p>
+                </div>
               )
             ) : rtc.remoteStream ? (
               <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain" />
             ) : (
-              <p className="text-buteco-cream/40 text-sm text-center px-6">
-                {isClosed ? "aula encerrada" : "esperando o professor compartilhar a tela ou câmera…"}
-              </p>
+              <div className="flex flex-col items-center justify-center gap-2 text-center px-6">
+                <MonitorPlay size={28} className="text-buteco-amber/50" aria-hidden="true" />
+                <p className="text-buteco-cream/45 text-sm max-w-xs">
+                  {isClosed ? "aula encerrada" : "esperando o professor compartilhar a tela ou câmera…"}
+                </p>
+              </div>
             )}
           </div>
 
-          {isHost && !isClosed && (
-            <div className="flex items-center gap-2 mt-3">
-              <button
-                onClick={() => rtc.startSharing("screen")}
-                className={`px-3 h-9 rounded-lg text-xs font-heading font-semibold border transition-colors cursor-pointer ${
-                  rtc.sharing === "screen"
-                    ? "border-buteco-amber text-buteco-amber bg-buteco-amber/10"
-                    : "border-white/15 text-buteco-cream/80 hover:border-buteco-amber/40"
-                }`}
-              >
-                Compartilhar tela
-              </button>
-              <button
-                onClick={() => rtc.startSharing("camera")}
-                className={`px-3 h-9 rounded-lg text-xs font-heading font-semibold border transition-colors cursor-pointer ${
-                  rtc.sharing === "camera"
-                    ? "border-buteco-amber text-buteco-amber bg-buteco-amber/10"
-                    : "border-white/15 text-buteco-cream/80 hover:border-buteco-amber/40"
-                }`}
-              >
-                Câmera
-              </button>
-              {rtc.sharing && (
-                <button
-                  onClick={rtc.stopSharing}
-                  className="px-3 h-9 rounded-lg text-xs font-heading font-semibold border border-red-400/30 text-red-300/80 hover:border-red-400/60 hover:text-red-300 transition-colors cursor-pointer"
-                >
-                  Parar
-                </button>
-              )}
-              {rtc.shareError && (
-                <p className="text-red-300/80 text-xs font-mono ml-1">{rtc.shareError}</p>
-              )}
-            </div>
-          )}
+          {/* Fullscreen is genuinely useful on a classroom stage: the
+              viewer's browser chrome goes away for the class. */}
+          <IconButton
+            label={stageFullscreen ? "Sair da tela cheia" : "Tela cheia"}
+            onClick={toggleStageFullscreen}
+            className="absolute top-2.5 right-2.5 z-10 bg-black/40 hover:bg-black/60 border border-white/10"
+          >
+            {stageFullscreen ? <IconMinimize size={16} /> : <IconMaximize size={16} />}
+          </IconButton>
         </div>
 
-        <div className="flex-[2] min-w-0 glass-card p-4 flex flex-col">
-          <h2 className="font-heading font-semibold text-sm text-buteco-cream/70 uppercase tracking-wide mb-2">
-            Bloco de notas
-          </h2>
-          <Textarea
-            value={notepadDraft}
-            onChange={(e) => handleNotepadChange(e.target.value)}
-            disabled={isClosed}
-            placeholder={isClosed ? "aula encerrada" : "anote aqui -- todo mundo na aula vê em tempo real"}
-            className="flex-1 resize-none font-mono leading-relaxed"
-          />
-        </div>
-
-        <div className="flex-[2] min-w-0 glass-card flex flex-col overflow-hidden">
-          <h2 className="font-heading font-semibold text-sm text-buteco-cream/70 uppercase tracking-wide px-4 pt-4 pb-2">
-            Chat
-          </h2>
-          <div className="flex-1 overflow-y-auto px-4 space-y-3 min-h-0">
-            {socket.chatHistory.map((m) => (
-              <div key={m.id}>
-                <span className="font-heading text-sm text-buteco-amber">{m.userName}</span>
-                <p className="text-buteco-cream/90 text-sm break-words">{m.body}</p>
-              </div>
-            ))}
-            <div ref={chatEndRef} />
+        {isHost && !isClosed && (
+          <div className="shrink-0 mt-3 flex items-center flex-wrap gap-2">
+            <Button size="sm" variant={rtc.sharing === "screen" ? "primary" : "secondary"} onClick={() => rtc.startSharing("screen")}>
+              Compartilhar tela
+            </Button>
+            <Button size="sm" variant={rtc.sharing === "camera" ? "primary" : "secondary"} onClick={() => rtc.startSharing("camera")}>
+              Câmera
+            </Button>
+            {rtc.sharing && (
+              <Button size="sm" variant="danger" onClick={rtc.stopSharing}>
+                Parar
+              </Button>
+            )}
+            {/* Mute/cam flip track.enabled on the local stream only --
+                WebRTC propagates it; no server contract involved. The
+                camera toggle only exists for a camera share: killing
+                the single track of a screen share just freezes it. */}
+            {hasAudio && (
+              <IconButton label={micMuted ? "Ativar microfone" : "Silenciar microfone"} active={micMuted} onClick={toggleMic} className="border border-white/10">
+                {micMuted ? <MicOff size={16} /> : <Mic size={16} />}
+              </IconButton>
+            )}
+            {hasCameraVideo && (
+              <IconButton label={cameraOff ? "Ligar câmera" : "Desligar câmera"} active={cameraOff} onClick={toggleCamera} className="border border-white/10">
+                {cameraOff ? <VideoOff size={16} /> : <Video size={16} />}
+              </IconButton>
+            )}
           </div>
-
-          <form onSubmit={submitChat} className="p-3 border-t border-white/10 flex gap-2">
-            <Input
-              type="text"
-              value={chatDraft}
-              onChange={(e) => setChatDraft(e.target.value)}
-              placeholder={isClosed ? "aula encerrada" : socket.you ? "Escreva algo…" : "Entre para conversar"}
-              disabled={!socket.you || isClosed}
-              className="flex-1"
-            />
-            <button
-              type="submit"
-              disabled={!socket.you || isClosed}
-              className="px-3 rounded-lg bg-buteco-amber text-buteco-navy font-heading font-semibold disabled:opacity-40 cursor-pointer"
-            >
-              ↑
-            </button>
-          </form>
-        </div>
+        )}
+        {rtc.shareError && (
+          <div className="shrink-0 mt-2">
+            <RtcErrorBanner error={rtc.shareError} />
+          </div>
+        )}
       </div>
 
       <ConfirmDialog
@@ -249,6 +323,6 @@ export default function AulaRoom() {
         onConfirm={endRoom}
         onCancel={() => setConfirmingEnd(false)}
       />
-    </div>
+    </RoomShell>
   );
 }
