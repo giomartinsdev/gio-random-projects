@@ -8,6 +8,13 @@
       "when": 1787599502431,
       "tag": "0000_parallel_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787969641303,
+      "tag": "0001_nebulous_juggernaut",
+      "breakpoints": true
     }
   ]
 }

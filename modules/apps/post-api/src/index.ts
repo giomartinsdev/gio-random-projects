@@ -33,7 +33,7 @@ const discord = discordClientId && discordClientSecret ? { clientId: discordClie
 const { db } = createDb(databaseUrl);
 const auth = createAuth(db, authSecret, process.env.BETTER_AUTH_URL, frontendOrigins, discord);
 const domainApi = createDomainApiClient(domainApiUrl, domainApiKey);
-const app = createApp(auth, domainApi, frontendOrigins, discord);
+const app = createApp(auth, domainApi, frontendOrigins, db, discord);
 
 serve({ fetch: app.fetch, port }, (info) => {
   logger.info(`post-api listening on :${info.port}`);

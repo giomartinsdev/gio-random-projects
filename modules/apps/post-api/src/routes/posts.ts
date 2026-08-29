@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import type { Auth } from "../lib/auth.js";
 import { DomainApiError, NotFoundError, type DomainApiClient, type DomainPost } from "../lib/domainApiClient.js";
+import { likeCountsFor, listLikedPostIds, setLike } from "../lib/engagement.js";
+import type { Db } from "../db/index.js";
 
 async function requireAuth(auth: Auth, c: { req: { raw: Request } }) {
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
@@ -50,6 +52,16 @@ function serialize(p: DomainPost) {
   };
 }
 
+// Unlike the posts themselves (CQRS, 202), engagement state is
+// post-api-owned and synchronous -- see schema.ts for why. Every read
+// here enriches domain-api's payload with likeCount + likedByMe for
+// the current viewer (anonymous reads just get counts).
+async function withLikes<T extends { id: string }>(db: Db, auth: Auth, c: { req: { raw: Request } }, posts: T[]) {
+  const viewerId = await requireAuth(auth, c);
+  const state = await likeCountsFor(db, posts.map((p) => p.id), viewerId);
+  return posts.map((p) => ({ ...p, likeCount: state.get(p.id)?.likeCount ?? 0, likedByMe: state.get(p.id)?.likedByMe ?? false }));
+}
+
 // Every write here returns 202 Accepted, not 200/201/204: post-api
 // never touches Postgres for posts, it hands the request to domain-api
 // which publishes a command applied asynchronously by domain-worker
@@ -57,12 +69,58 @@ function serialize(p: DomainPost) {
 // immediately after a write may not reflect it yet -- that's the
 // trade-off of reusing this repo's existing CQRS pipeline instead of
 // post-api owning its own synchronous storage.
-export function createPostsRouter(auth: Auth, domainApi: DomainApiClient) {
+// /liked/by-me must be declared before /:slug -- both are single
+// segments and Hono matches in registration order.
+export function createPostsRouter(auth: Auth, domainApi: DomainApiClient, db: Db) {
   const router = new Hono();
 
   router.get("/", async (c) => {
     const { posts } = await domainApi.listPublished();
-    return c.json({ posts: posts.map(serialize) });
+    return c.json({ posts: await withLikes(db, auth, c, posts.map(serialize)) });
+  });
+
+  router.get("/liked/by-me", async (c) => {
+    const userId = await requireAuth(auth, c);
+    if (!userId) return c.json({ error: "unauthorized" }, 401);
+
+    // Newest like first. Joined against the published list so a like
+    // on a post that got deleted (or was a draft) simply disappears
+    // here -- see schema.ts's note on orphaned like rows.
+    const likedIds = await listLikedPostIds(db, userId);
+    const { posts } = await domainApi.listPublished();
+    const byId = new Map(posts.map((p) => [p.id, p]));
+    const liked = likedIds.map((id) => byId.get(id)).filter((p): p is DomainPost => Boolean(p));
+    return c.json({ posts: await withLikes(db, auth, c, liked) });
+  });
+
+  router.post("/:id/like", async (c) => {
+    const userId = await requireAuth(auth, c);
+    if (!userId) return c.json({ error: "unauthorized" }, 401);
+
+    const postId = c.req.param("id");
+    // Unlike the unlike below: liking a post that doesn't exist is a
+    // user-facing mistake, surface it.
+    try {
+      await domainApi.getById(postId);
+    } catch (err) {
+      if (err instanceof NotFoundError) return c.json({ error: "not found" }, 404);
+      throw err;
+    }
+    await setLike(db, postId, userId, true);
+    const state = await likeCountsFor(db, [postId], userId);
+    return c.json({ likeCount: state.get(postId)?.likeCount ?? 0, likedByMe: true });
+  });
+
+  router.delete("/:id/like", async (c) => {
+    const userId = await requireAuth(auth, c);
+    if (!userId) return c.json({ error: "unauthorized" }, 401);
+
+    const postId = c.req.param("id");
+    // No existence check on purpose: unliking a since-deleted post
+    // still un-cleans the user's own likes list.
+    await setLike(db, postId, userId, false);
+    const state = await likeCountsFor(db, [postId], userId);
+    return c.json({ likeCount: state.get(postId)?.likeCount ?? 0, likedByMe: false });
   });
 
   router.post("/", async (c) => {
@@ -106,7 +164,7 @@ export function createPostsRouter(auth: Auth, domainApi: DomainApiClient) {
   router.get("/:slug", async (c) => {
     try {
       const post = await domainApi.getBySlug(c.req.param("slug"));
-      return c.json(serialize(post));
+      return c.json((await withLikes(db, auth, c, [serialize(post)]))[0]);
     } catch (err) {
       if (err instanceof NotFoundError) return c.json({ error: "not found" }, 404);
       throw err;

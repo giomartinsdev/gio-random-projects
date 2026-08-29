@@ -3,9 +3,11 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import type { Auth } from "./lib/auth.js";
 import type { DomainApiClient } from "./lib/domainApiClient.js";
+import type { Db } from "./db/index.js";
 import { docsHtml, openApiYaml } from "./lib/openapi.js";
 import { createPostsRouter } from "./routes/posts.js";
 import { createFeedRouter } from "./routes/feed.js";
+import { createUsersRouter } from "./routes/users.js";
 import { createDiscordRouter } from "./routes/discord.js";
 import { createImageProxyRouter } from "./routes/imageProxy.js";
 import { createRateLimiter } from "./lib/rateLimiter.js";
@@ -14,6 +16,7 @@ export function createApp(
   auth: Auth,
   domainApi: DomainApiClient,
   frontendOrigins: string[],
+  db: Db,
   discord?: { clientId: string; clientSecret: string },
 ) {
   const app = new Hono();
@@ -42,10 +45,15 @@ export function createApp(
   app.use("/posts/*", createRateLimiter({ requestsPerMinute: 60, burst: 100 }));
   app.use("/discord/*", createRateLimiter({ requestsPerMinute: 20, burst: 20 }));
   app.use("/image-proxy", createRateLimiter({ requestsPerMinute: 60, burst: 60 }));
+  // /users/:id/view is the one POST an idle profile page fires; the
+  // same budget protects it without making a read-heavy profile
+  // session feel throttled.
+  app.use("/users/*", createRateLimiter({ requestsPerMinute: 60, burst: 60 }));
 
   app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
-  app.route("/posts", createPostsRouter(auth, domainApi));
+  app.route("/posts", createPostsRouter(auth, domainApi, db));
+  app.route("/users", createUsersRouter(auth, db));
   app.route("/", createFeedRouter(domainApi, siteUrl));
   app.route("/", createImageProxyRouter());
 

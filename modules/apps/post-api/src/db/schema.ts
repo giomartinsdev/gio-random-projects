@@ -1,4 +1,4 @@
-import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 
 // Better Auth's own tables -- field names/shape must match exactly
 // what its Drizzle adapter expects (see better-auth's schema docs).
@@ -55,3 +55,53 @@ export const verification = pgTable("verification", {
   createdAt: timestamp("createdAt"),
   updatedAt: timestamp("updatedAt"),
 });
+
+// Engagement lives here, not in domain-api: likes/profile-views need
+// an exact, immediate count back in the same response, which the
+// 202-accept CQRS pipeline (Redis command -> domain-worker) cannot
+// guarantee. These are post-api's first (and deliberately only)
+// content-adjacent tables: post ids / profile ids are opaque text
+// owned by domain-api's aggregate (posts author_id is a Better Auth
+// user.id string), while the user columns DO reference this db's own
+// Better Auth user table so account deletion cleans up after itself.
+//
+// No FK on post_id on purpose: posts belong to domain-api (see
+// domainApiClient's header) -- an orphaned like row is harmless since
+// every read joins against the published list, and referencing the
+// other service's table would couple this DB to its writes.
+export const postLikes = pgTable(
+  "post_likes",
+  {
+    postId: text("post_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Leading (post_id) already serves the per-post count query; the
+    // composite PK makes re-liking idempotent.
+    primaryKey({ columns: [t.postId, t.userId] }),
+    // "posts this user liked, newest first" (GET /posts/liked/by-me).
+    index("post_likes_user_id_created_at_idx").on(t.userId, t.createdAt),
+  ],
+);
+
+// One row per (viewed profile, viewer) pair -- distinctness IS the
+// constraint, so "how many people have seen this profile" is a plain
+// COUNT(*). Only logged-in viewers are ever recorded; anonymous
+// visitors are deliberately untracked (see routes/users.ts).
+export const profileViews = pgTable(
+  "profile_views",
+  {
+    profileUserId: text("profile_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    viewerUserId: text("viewer_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    firstViewedAt: timestamp("first_viewed_at").notNull().defaultNow(),
+    lastViewedAt: timestamp("last_viewed_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.profileUserId, t.viewerUserId] })],
+);
