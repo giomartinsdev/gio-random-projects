@@ -14,9 +14,10 @@ const toneClasses: Record<Tone, string> = {
 
 // Small mono pill used for statuses (Encerrada, Rascunho), post types
 // and "ao vivo". tone="live" renders the pulsing dot automatically.
-export function Badge({ tone = "neutral", children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
+export function Badge({ tone = "neutral", children, className, title }: { tone?: Tone; children: ReactNode; className?: string; title?: string }) {
   return (
     <span
+      {...(title ? { title } : {})}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[0.65rem] uppercase tracking-wide whitespace-nowrap",
         toneClasses[tone],
