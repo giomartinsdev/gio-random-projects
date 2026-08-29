@@ -211,7 +211,7 @@ export async function initDiscordActivity(): Promise<void> {
 
   // main.tsx fires this before the app even renders, so the app's
   // FIRST session fetch already happened (and came back logged-out --
-  // there was no token yet). NavBar/ProtectedRoute etc. all read
+  // there was no token yet). ProtectedRoute / pages all read
   // useSession(), which subscribes to Better Auth's internal
   // $sessionSignal atom -- that atom only flips on a handful of
   // hardcoded paths (/sign-out, /sign-in/email, /update-user, ...)
@@ -220,7 +220,7 @@ export async function initDiscordActivity(): Promise<void> {
   // getSession() call fetches fresh data but the hook never learns
   // about it. $store.notify flips the signal directly, which is what
   // actually makes the session-refresh manager refetch and every
-  // useSession() subscriber (NavBar, ProtectedRoute) re-render.
+  // useSession() subscriber (Sidebar, ProtectedRoute) re-render.
   try {
     authClient.$store.notify("$sessionSignal");
     console.log("[discord-activity] session signal notified, should be logged in now");
