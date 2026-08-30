@@ -19,6 +19,10 @@ func ErrRequired(name string) error {
 	return fmt.Errorf("%s is required", name)
 }
 
+func ErrParse(name string, err error) error {
+	return fmt.Errorf("%s is not parseable: %w", name, err)
+}
+
 type client struct {
 	baseURL string
 	apiKey  string

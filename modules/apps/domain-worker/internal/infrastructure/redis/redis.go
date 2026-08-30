@@ -11,4 +11,5 @@ const (
 	commandChannel   = "domain.commands"
 	commandQueueKey  = "domain.commands.queue"
 	processedChannel = "domain.events"
+	eventQueueKey    = "domain.events.queue"
 )

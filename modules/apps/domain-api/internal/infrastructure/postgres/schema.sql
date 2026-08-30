@@ -96,3 +96,25 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_room_id_created_at ON messages (room_id, created_at);
+
+-- Mirror of domain-worker's raw_deals DDL (byte-identical, index name
+-- included) — domain-api only READS this table (deal_repository.go,
+-- behind /deals), but its Migrate runs on boot like everything else
+-- here, and a from-scratch bring-up of just this API must not 500 its
+-- first /deals read because the worker never booted. domain-worker
+-- owns the table's writes.
+CREATE TABLE IF NOT EXISTS raw_deals (
+    source           text        NOT NULL,
+    source_deal_id   text        NOT NULL,
+    title            text        NOT NULL,
+    url              text        NOT NULL,
+    store            text,
+    price_cents      integer,
+    old_price_cents  integer,
+    posted_at        timestamptz,
+    scraped_at       timestamptz NOT NULL,
+    payload          jsonb       NOT NULL,
+    PRIMARY KEY (source, source_deal_id)
+);
+
+CREATE INDEX IF NOT EXISTS raw_deals_posted_at_idx ON raw_deals (posted_at DESC NULLS LAST);

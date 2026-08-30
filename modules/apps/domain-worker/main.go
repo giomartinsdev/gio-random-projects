@@ -26,10 +26,12 @@ import (
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
+	appdeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/deal"
 	appmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/message"
 	apppost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/post"
 	approom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/room"
 	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/user"
+	domaindeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/deal"
 	domainmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/message"
 	domainpost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/post"
 	domainroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/room"
@@ -61,6 +63,9 @@ func main() {
 		log.Error("telemetry init failed; continuing without it", "error", err)
 		shutdownTelemetry = func(context.Context) error { return nil }
 	}
+	if err := telemetry.InitMetrics(); err != nil {
+		log.Error("metric init failed; continuing without them", "error", err)
+	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -84,7 +89,7 @@ func main() {
 
 	relay := inredis.NewRelay(rdb)
 	commandQueue := inredis.NewCommandQueue(rdb)
-	eventBus := inredis.NewEventBus(rdb)
+	eventBus := inredis.NewEventBus(rdb, int64(cfg.EventsQueueMax))
 
 	userRepo := postgres.NewUserRepository(pool)
 	auditRepo := postgres.NewAuditRepository(pool)
@@ -102,6 +107,10 @@ func main() {
 	messageRepo := postgres.NewMessageRepository(pool)
 	messageService := appmessage.NewService(messageRepo)
 	messageHandler := appmessage.NewCommandHandler(messageService)
+
+	dealRepo := postgres.NewDealRepository(pool)
+	dealService := appdeal.NewService(dealRepo)
+	dealHandler := appdeal.NewCommandHandler(dealService)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -122,7 +131,7 @@ func main() {
 				log.Error("fetch command error", "error", err)
 				continue
 			}
-			process(ctx, log, userHandler, postHandler, roomHandler, messageHandler, auditRepo, eventBus, cmd)
+			process(ctx, log, userHandler, postHandler, roomHandler, messageHandler, dealHandler, auditRepo, eventBus, cmd)
 		}
 	}()
 
@@ -136,12 +145,12 @@ func main() {
 }
 
 // process routes cmd to the right aggregate's CommandHandler by its
-// Action prefix ("user." / "post."), then always records an audit
-// entry (success or failure) and, only on success, publishes the
+// Action prefix ("user." / "post." / "deal."), then always records an
+// audit entry (success or failure) and, only on success, publishes the
 // resulting domain event. One shared command queue serves every
 // aggregate; this is the one place that knows how to fan a Command
 // back out to its owning handler.
-func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
+func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, dealHandler *appdeal.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
 	// One span per command: the handler, the audit write and the event
 	// publish below are the whole story of that write, and the
 	// trace_id stamped into the log lines ties every one of them to it.
@@ -192,8 +201,30 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 			evt = mevt
 			id = messageEntityID(mevt)
 		}
+	case strings.HasPrefix(string(cmd.Action), "deal."):
+		// The deal handler returns the Deal even when this upsert was
+		// an update (which raises no event) — either way the audit row
+		// should name the exact source:source_deal_id it touched.
+		entityType = "deal"
+		var d domaindeal.Deal
+		var devt domaindeal.Event
+		d, devt, err = dealHandler.Handle(ctx, cmd)
+		if devt != nil {
+			evt = devt
+		}
+		if d.Source != "" {
+			id = d.EntityID()
+			telemetry.RecordDealUpsert(d.Source, map[bool]string{true: "inserted", false: "updated"}[devt != nil])
+		}
 	default:
 		err = fmt.Errorf("unknown action: %q", cmd.Action)
+	}
+
+	switch {
+	case err != nil:
+		telemetry.RecordCommand(string(cmd.Action), "error")
+	default:
+		telemetry.RecordCommand(string(cmd.Action), "ok")
 	}
 
 	entry := audit.Entry{

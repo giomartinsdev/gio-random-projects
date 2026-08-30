@@ -464,6 +464,97 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /deals:
+    get:
+      summary: List recently scraped deals
+      description: >
+        Newest first by posted_at (the source's own publish date),
+        falling back to scraped_at. ?source= narrows to one source;
+        ?limit= (1..200, default 50) caps the page.
+      parameters:
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deals:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Deal"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      summary: Ingest a scraped deal (async — returns 202, not the stored row)
+      description: >
+        Publishing a deal.upsert command; domain-worker decides insert
+        vs update (identity is source + source_deal_id) and only a
+        genuine insert ever raises deal.created downstream. Re-polls of
+        the same deal are updates and are free of announcements.
+        202 means "heard, queued", not "stored".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DealUpsertInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /deals/{source}/{sourceDealID}:
+    parameters:
+      - name: source
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: sourceDealID
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get one deal by its source identity
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deal"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Deal not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 components:
   securitySchemes:
     apiKeyAuth:
@@ -681,6 +772,70 @@ components:
           type: string
         requested_page:
           type: integer
+    Deal:
+      type: object
+      properties:
+        source:
+          type: string
+        source_deal_id:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+        store:
+          type: string
+          nullable: true
+        price_cents:
+          type: integer
+          nullable: true
+        old_price_cents:
+          type: integer
+          nullable: true
+        posted_at:
+          type: string
+          format: date-time
+          nullable: true
+        scraped_at:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          description: The source's own JSON, stored verbatim.
+          additionalProperties: true
+    DealUpsertInput:
+      type: object
+      required: [source, source_deal_id, title, url]
+      properties:
+        source:
+          type: string
+        source_deal_id:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+        store:
+          type: string
+          nullable: true
+        price_cents:
+          type: integer
+          nullable: true
+        old_price_cents:
+          type: integer
+          nullable: true
+        posted_at:
+          type: string
+          format: date-time
+          nullable: true
+        scraped_at:
+          type: string
+          format: date-time
+          nullable: true
+        payload:
+          type: object
+          nullable: true
+          additionalProperties: true
     Error:
       type: object
       properties:
