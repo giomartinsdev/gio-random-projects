@@ -190,6 +190,19 @@ def histogram(name: str, *, description: str | None = None):
         return _NoopInstrument()
 
 
+def gauge(name: str, *, description: str | None = None):
+    """Create a gauge instrument (set() per snapshot) — same
+    'call after init()' rule as counter/histogram."""
+    try:
+        from opentelemetry import metrics
+
+        meter = metrics.get_meter("deals")
+        kwargs = {"description": description} if description else {}
+        return meter.create_gauge(name, **kwargs)
+    except Exception:  # noqa: BLE001
+        return _NoopInstrument()
+
+
 class _NoopInstrument:
     """Stand-in when the SDK isn't available at all."""
 

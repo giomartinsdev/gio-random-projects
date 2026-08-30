@@ -282,6 +282,7 @@ jobs:
             case "$app" in
               pld-scraper) REPLACE_ARGS+=("-replace=module.compute_apps_pld_scraper.docker_container.scraper") ;;
               phb-scraper) REPLACE_ARGS+=("-replace=module.compute_apps_phb_scraper.docker_container.scraper") ;;
+              events-announcer) REPLACE_ARGS+=("-replace=module.compute_apps_events_announcer.docker_container.announcer") ;;
               *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
             esac
           done
