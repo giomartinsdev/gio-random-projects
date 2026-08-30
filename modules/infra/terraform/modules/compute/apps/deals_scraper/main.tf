@@ -1,16 +1,16 @@
 # deals-scraper: headless python poller -- one container per source
 # (the module is instantiated once per source, see root main.tf).
-# Deliberately leaner than the API app modules: no published ports, no
-# public hostname, no OTEL telemetry, and no migrate sidecar --
-# deals_common.db self-migrates raw_deals on boot. It only writes the
-# shared Postgres and (optionally) announces INSERTED deals on Discord.
+# No published ports, no public hostname, NO database connection: deals
+# are pushed through domain-api's POST /deals (command pipeline -> the
+# Go worker writes raw_deals and emits deal.created; the separate
+# events-announcer worker announces). An announce-sidecar used to live
+# in this container; announcing now happens in events-announcer.
+
 locals {
   watchtower_label = var.watchtower_enabled ? [{
     label = "com.centurylinklabs.watchtower.enable"
     value = "true"
   }] : []
-
-  database_url = "postgresql://${var.postgres_user}:${var.postgres_password}@${var.postgres_host}:5432/${var.postgres_user}"
 }
 
 resource "docker_container" "scraper" {
@@ -19,14 +19,20 @@ resource "docker_container" "scraper" {
   restart = "unless-stopped"
 
   env = [
-    "DATABASE_URL=${local.database_url}",
+    "DOMAIN_API_URL=${var.domain_api_url}",
+    # domain-api's own API-key list comes from secrets.tf's
+    # random_id.deals_domain_key (the ":deals-scrapers" entry) -- this
+    # key never touches Vaultwarden, it's generated and wired here.
+    "DOMAIN_API_KEY=${var.domain_api_key}",
     # The source's feed base URL -- a vault item, injected by CI as
     # TF_VAR_* at apply time; the repo ships no scraped-site hostnames
     # (see the scraper's client.py).
     "SOURCE_BASE_URL=${var.source_base_url}",
-    # Blank webhook = silent collection (announce disabled).
-    "DISCORD_DEALS_WEBHOOK_URL=${var.discord_webhook_url}",
     "POLL_SECONDS=${var.poll_seconds}",
+    # Traces + metrics only — logs flow via alloy's docker-socket scrape
+    # of this container's stdout JSON.
+    "OTEL_EXPORTER_OTLP_ENDPOINT=${var.otlp_endpoint}",
+    "OTEL_SERVICE_NAME=${var.app_name}",
   ]
 
   networks_advanced {

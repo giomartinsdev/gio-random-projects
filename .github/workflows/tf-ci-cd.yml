@@ -110,6 +110,13 @@ jobs:
       # keeps mirrored in Vaultwarden (secrets.tf's "registry" and
       # "discord" vault_seed groups), so CI reads them from there
       # instead of also holding its own GitHub-secret copy.
+      # The deals SOURCE_BASE_URLs and Discord webhook are here too:
+      # without TF_VAR_s at apply time, a tf-only apply would rewrite
+      # them to blank DEFAULTS -- SOURCE_BASE_URL blank leaves the
+      # scrapers crash-looping on purpose (a silent no-op poller would
+      # be worse). PLD/PHB_SOURCE_URL are therefore REQUIRED (no "?"),
+      # while the webhook is optional (blank = announcer stays silent
+      # but still drains the queue).
       - name: Fetch secrets from Vaultwarden
         env:
           DOCKER_HOST: ${{ env.TF_VAR_docker_host }}
@@ -117,7 +124,7 @@ jobs:
           VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
           VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
           VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "TF_VAR_registry_password=REGISTRY_PASSWORD TF_VAR_discord_client_id=DISCORD_CLIENT_ID TF_VAR_discord_client_secret=DISCORD_CLIENT_SECRET TF_VAR_discord_announce_webhook_url=DISCORD_ANNOUNCE_WEBHOOK_URL?"
+          ITEM_MAP: "TF_VAR_registry_password=REGISTRY_PASSWORD TF_VAR_discord_client_id=DISCORD_CLIENT_ID TF_VAR_discord_client_secret=DISCORD_CLIENT_SECRET TF_VAR_discord_announce_webhook_url=DISCORD_ANNOUNCE_WEBHOOK_URL? TF_VAR_pld_source_url=PLD_SOURCE_URL TF_VAR_phb_source_url=PHB_SOURCE_URL TF_VAR_deals_discord_webhook_url=DEALS_DISCORD_WEBHOOK_URL?"
         run: |
           set -o pipefail
           ./scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do

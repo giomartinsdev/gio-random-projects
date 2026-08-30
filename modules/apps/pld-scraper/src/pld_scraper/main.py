@@ -1,27 +1,29 @@
 """Entry point: env wire-up + the shared loop.
 
-Self-migrates raw_deals on boot; polls every POLL_SECONDS (terraform
-module passes 1800); announces INSERTED deals when
-DISCORD_DEALS_WEBHOOK_URL is set (blank = silent collection).
+Writes go through domain-api's POST /deals (command pipeline: the
+Go worker persists to raw_deals and emits deal.created; the
+events-announcer announces from there -- this worker has no database
+and no webhook). Polls every POLL_SECONDS (terraform module passes
+1800).
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from datetime import UTC, datetime
 
-from deals_common.db import utcnow
+from deals_common.deals_api import DealsClient
 from deals_common.fetch import HttpClient
+from deals_common import telemetry
 from deals_common.runner import run_worker
 
 from .client import fetch_recent, to_raw
 
 PAGES_PER_CYCLE = 1  # 20 deals/page; recency beats depth for a poller
 
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO"),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+REQUIRED = ("DOMAIN_API_URL", "DOMAIN_API_KEY", "SOURCE_BASE_URL")
+
 log = logging.getLogger("pld-scraper")
 
 
@@ -29,7 +31,7 @@ def load_deals() -> list:
     http = HttpClient()
     raw = []
     for deal in fetch_recent(http, pages=PAGES_PER_CYCLE):
-        mapped = to_raw(deal, utcnow())
+        mapped = to_raw(deal, datetime.now(tz=UTC))
         if mapped is not None:
             raw.append(mapped)
         else:
@@ -37,17 +39,23 @@ def load_deals() -> list:
     return raw
 
 
-def main() -> None:
-    for required in ("DATABASE_URL", "SOURCE_BASE_URL"):
-        if not os.environ.get(required):
-            raise SystemExit(f"{required} is required")
-    run_worker(
-        "pld-scraper",
-        load_deals=load_deals,
-        database_url=os.environ["DATABASE_URL"],
-        webhook_url=os.environ.get("DISCORD_DEALS_WEBHOOK_URL") or None,
-    )
+def main() -> int:
+    missing = [required for required in REQUIRED if not os.environ.get(required)]
+    if missing:
+        raise SystemExit(f"missing required env: {', '.join(missing)}")
+
+    shutdown = telemetry.init("pld-scraper")
+    try:
+        telemetry.configure_logging(getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO))
+        run_worker(
+            "pld-scraper",
+            load_deals=load_deals,
+            push=DealsClient.from_env().push_deals,
+        )
+    finally:
+        shutdown()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

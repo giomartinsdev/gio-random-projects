@@ -4,22 +4,18 @@ variable "app_name" {
 }
 
 variable "network_name" {
-  description = "Docker network (from module.network_docker_apps) to join for postgres DNS resolution."
+  description = "Docker network (from module.network_docker_apps) to join for domain-api DNS resolution."
   type        = string
 }
 
-variable "postgres_host" {
-  description = "Postgres hostname (from module.storage_postgres)."
+variable "domain_api_url" {
+  description = "domain-api base URL (docker env DOMAIN_API_URL) -- POST /deals is the scraper's only write path."
   type        = string
+  default     = "http://domain-api:8000"
 }
 
-variable "postgres_user" {
-  description = "Postgres user/database name -- every app shares the one shared database; raw_deals is the scraper worker's only table."
-  type        = string
-}
-
-variable "postgres_password" {
-  description = "Postgres password -- same value the other app modules got."
+variable "domain_api_key" {
+  description = "domain-api API key for the scrapers (docker env DOMAIN_API_KEY) -- from secrets.tf's random_id.deals_domain_key."
   type        = string
   sensitive   = true
 }
@@ -43,11 +39,10 @@ variable "poll_seconds" {
   default     = 1800
 }
 
-variable "discord_webhook_url" {
-  description = "Discord channel webhook INSERTED deals get announced to (deals_common.discord). Blank disables announcing -- raw_deals still fills up silently."
+variable "otlp_endpoint" {
+  description = "OTLP/HTTP collector base URL (from module.compute_services_observability). Empty disables telemetry entirely."
   type        = string
   default     = ""
-  sensitive   = true
 }
 
 variable "watchtower_enabled" {

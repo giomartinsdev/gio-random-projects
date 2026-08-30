@@ -193,7 +193,7 @@ variable "discord_client_secret" {
   sensitive   = true
 }
 
-# --- deals scrapers (pld-scraper / phb-scraper) ---
+# --- deals scrapers (pld-scraper / phb-scraper) + events-announcer ---
 
 variable "pld_source_url" {
   description = "Source feed API base URL the pld-scraper polls (docker env SOURCE_BASE_URL). The value lives in Vaultwarden -- CI injects TF_VAR_* at apply time; the repo deliberately ships no scraped-site hostnames. Blank leaves that container refusing to run."
@@ -210,7 +210,7 @@ variable "phb_source_url" {
 }
 
 variable "deals_discord_webhook_url" {
-  description = "Discord channel webhook the deals scrapers announce INSERTED deals to (deals_common.discord, oldest-first, max 10/cycle). Blank state is intentional: without it the workers still fill raw_deals, just never announce. Same shape as discord_announce_webhook_url above, separate item so deals announcing can live in its own channel."
+  description = "Discord channel webhook the events-announcer worker posts fresh deals to (one message per deal, oldest first, <=ANNOUNCE_MAX_PER_FLUSH/flush, drained off the durable domain.events.queue). The scrapers themselves never announce anymore. Blank state is intentional: without it announcements stay off, while the queue keeps draining and counting. Same shape as discord_announce_webhook_url above, separate item so deals announcing can live in its own channel."
   type        = string
   default     = ""
   sensitive   = true
