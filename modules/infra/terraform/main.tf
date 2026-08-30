@@ -98,6 +98,9 @@ module "compute_apps_post_api" {
   domain_api_key        = random_id.post_api_domain_key.hex
   discord_client_id     = var.discord_client_id
   discord_client_secret = var.discord_client_secret
+  minio_endpoint        = module.storage_minio.endpoint
+  minio_access_key      = module.storage_minio.root_user
+  minio_secret_key      = random_password.minio_root_password.result
   otlp_endpoint         = module.compute_services_observability.otlp_endpoint
 
   depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api]

@@ -62,6 +62,7 @@ synchronous tables here, one Postgres round-trip, no queue. Two tables:
 | GET | `/users/:id` | none | Public profile identity (never the email) + distinct-visitor `viewCount` |
 | POST | `/users/:id/view` | required | Record one profile visit; one row per viewer, self-views ignored |
 | GET | `/feed.xml` | none | RSS 2.0, last 50 published posts |
+| POST | `/images/upload` | required | Multipart image upload (the editor's cover/inline buttons) → stored in MinIO, returns the public URL to reference. jpeg/png/webp/gif, 8 MB max. Only mounted when the `MINIO_*` + `MEDIA_BASE_URL` envs are set — see "Post images (MinIO)" below |
 | GET | `/image-proxy?url=` | none | Re-fetches an external image URL, streaming it back — rejects private/loopback hosts and non-image responses |
 | POST | `/discord/token` | none | Discord Activity OAuth code → access_token exchange. Only mounted when `DISCORD_CLIENT_ID`/`DISCORD_CLIENT_SECRET` are set — see "Discord Activity" below |
 | * | `/api/auth/*` | — | Better Auth's own routes (sign-up, sign-in, etc.), including `/api/auth/sign-in/social` which the Activity flow below uses |
@@ -114,6 +115,28 @@ To turn it on:
 3. Under **OAuth2**, note the Client ID and Client Secret.
 4. Set `DISCORD_CLIENT_ID`/`DISCORD_CLIENT_SECRET` here (this service) and `VITE_DISCORD_CLIENT_ID` on `front` (build-time, same value as the client ID — Discord client IDs are public by design). In this repo's deploy, both come from the `DISCORD_CLIENT_ID`/`DISCORD_CLIENT_SECRET` GitHub Actions secrets via Terraform (`modules/infra/terraform/variables.tf`).
 5. Launch the Activity from Discord (Activities panel in a voice channel, or via the app's own invite/install flow) — `frame_id` in the URL is how the front app detects it's running inside Discord at all.
+
+## Post images (MinIO)
+
+Covers and inline pictures no longer need an external host: the
+editor/cover "Enviar imagem" buttons upload the file to
+`POST /images/upload` (routes/images.ts), which stores it in MinIO and
+returns a public URL — `media.giomartins.dev/<userId>/<uuid>.<ext>` —
+that the post references directly. The bucket is **public-read on
+purpose** (a visitor's `<img>` tag must load anonymously, including
+inside the Activity iframe) and pre-created by `static_sites.tf`
+alongside the frontend buckets; readers never touch this API when
+rendering an image. The allowlist (jpeg/png/webp/gif) + 8 MB cap at
+upload time is the only gate an object ever passes, so it's the
+security boundary — see routes/images.ts's header comment.
+
+The `/images` route mounts only when **all five** of
+`MINIO_ENDPOINT`/`MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`/`MINIO_BUCKET`/
+`MEDIA_BASE_URL` are set (index.ts) — same opt-in shape as Discord's.
+In this repo's deploy terraform wires them from module.storage_minio;
+Discord Activity users should add a `/media` → `media.giomartins.dev`
+URL Mapping in the Discord portal so uploaded images render inside the
+Activity.
 
 ## Running locally
 

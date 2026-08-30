@@ -49,6 +49,15 @@ resource "docker_container" "post_api" {
     "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
     "DISCORD_CLIENT_ID=${var.discord_client_id}",
     "DISCORD_CLIENT_SECRET=${var.discord_client_secret}",
+    # Post images (routes/images.ts): when MINIO_* is set the /images
+    # router mounts (index.ts's all-or-nothing env read), backed by
+    # module.storage_minio; MEDIA_BASE_URL is the public host ingress
+    # serves the bucket at (static_sites entry media.giomartins.dev).
+    "MINIO_ENDPOINT=${var.minio_endpoint}",
+    "MINIO_ACCESS_KEY=${var.minio_access_key}",
+    "MINIO_SECRET_KEY=${var.minio_secret_key}",
+    "MINIO_BUCKET=${var.minio_bucket}",
+    "MEDIA_BASE_URL=${var.media_base_url}",
     # Traces + metrics only — logs flow via alloy's docker-socket scrape
     # of this container's stdout (see otlp_endpoint's description).
     "OTEL_EXPORTER_OTLP_ENDPOINT=${var.otlp_endpoint}",

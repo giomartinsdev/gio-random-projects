@@ -40,6 +40,8 @@ export default function PostCreate() {
   const [coverImageUrl, setCoverImageUrl] = useState("");
   const [type, setType] = useState<PostDraft["type"]>("article");
   const [coverBroken, setCoverBroken] = useState(false);
+  const [coverUploading, setCoverUploading] = useState(false);
+  const [coverError, setCoverError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(isEditing);
   const [lookupFailed, setLookupFailed] = useState<string | false>(false);
@@ -57,6 +59,28 @@ export default function PostCreate() {
   const draftKey = postDraftKey(id);
   const dirtyRef = useRef(false);
   const submittedRef = useRef(false);
+  const coverFileRef = useRef<HTMLInputElement>(null);
+
+  // Cover upload: same endpoint as the editor's inline images (the
+  // returned URL lands straight in the same coverImageUrl the typed
+  // URL would have filled).
+  async function handleCoverPicked(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || coverUploading) return;
+    setCoverError(null);
+    setCoverUploading(true);
+    try {
+      const { url } = await api.uploadImage(file);
+      setCoverImageUrl(url);
+      setCoverBroken(false);
+      markDirty();
+    } catch (err) {
+      setCoverError(err instanceof Error ? err.message : "Não foi possível enviar a imagem.");
+    } finally {
+      setCoverUploading(false);
+    }
+  }
 
   // Prefill from the author's own list; also flags a missing post
   // (deleted, wrong URL) vs. a post someone else owns ≠ editable.
@@ -350,7 +374,7 @@ export default function PostCreate() {
           />
         </Field>
 
-        <Field label="Imagem de capa" hint="URL externa -- passa pelo proxy de imagem na Activity" counter={undefined}>
+        <Field label="Imagem de capa" hint="Envie um arquivo (fica no nosso MinIO) ou cole uma URL -- externa passa pelo proxy de imagem na Activity" counter={undefined}>
           <div className="flex gap-3 items-start">
             <Input
               value={coverImageUrl}
@@ -363,6 +387,16 @@ export default function PostCreate() {
               placeholder="https://…"
               className="flex-1"
             />
+            <Button type="button" variant="secondary" loading={coverUploading} onClick={() => coverFileRef.current?.click()} className="shrink-0">
+              Enviar imagem
+            </Button>
+            <input
+              ref={coverFileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => void handleCoverPicked(e)}
+            />
             {coverImageUrl && !coverBroken && (
               <img
                 src={resolveImageUrl(coverImageUrl)}
@@ -372,6 +406,11 @@ export default function PostCreate() {
               />
             )}
           </div>
+          {coverError && (
+            <Banner tone="error" className="mt-2">
+              {coverError}
+            </Banner>
+          )}
           {coverImageUrl && coverBroken && (
             <Banner tone="error" className="mt-2">
               A imagem não carrega nessa URL. Confere o link -- ou publica assim mesmo (o leitor vê quebrado).
