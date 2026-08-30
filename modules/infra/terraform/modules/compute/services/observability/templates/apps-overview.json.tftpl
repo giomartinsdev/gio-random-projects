@@ -535,11 +535,67 @@
     },
 
     {
+      "id": 111,
+      "type": "row",
+      "title": "Deals — ingest → announce",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 },
+      "panels": []
+    },
+    {
+      "id": 71,
+      "title": "raw_deals — upserts/s por fonte",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 51 },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal" } } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (source, result) (rate(deal_upserts_total[$__rate_interval]))", "legendFormat": "{{source}}/{{result}}" }
+      ]
+    },
+    {
+      "id": 72,
+      "title": "events-announcer — fila e anúncios",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 51 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "max_over_time(announcer_queue_depth[$__rate_interval])", "legendFormat": "fila (depth)" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (outcome) (rate(announcer_announcements_total[$__rate_interval]))", "legendFormat": "anúncios/s {{outcome}}" }
+      ]
+    },
+    {
+      "id": 73,
+      "title": "Scrapers — ciclos por resultado",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 51 },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 1, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (worker, outcome) (rate(deals_cycles_total[$__rate_interval]))", "legendFormat": "{{worker}} {{outcome}}" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (worker, outcome) (rate(deals_pushed_total[$__rate_interval]))", "legendFormat": "push {{worker}} {{outcome}}" }
+      ]
+    },
+
+    {
       "id": 110,
       "type": "row",
       "title": "Como debugar com este dashboard",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 58 },
       "panels": []
     },
     {
@@ -547,7 +603,7 @@
       "title": "Receitas de debug",
       "type": "text",
       "datasource": { "type": "datasource", "uid": "grafana" },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 51 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 59 },
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": {
         "mode": "markdown",
