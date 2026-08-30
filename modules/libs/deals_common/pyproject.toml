@@ -5,14 +5,16 @@ build-backend = "hatchling.build"
 [project]
 name = "deals-common"
 version = "0.1.0"
-description = "Shared bits for the deals scrapers: HTTP client, raw-deal model, price/URL normalization, Postgres upsert."
+description = "Shared bits for the deals workers: HTTP client, raw-deal model, normalization, telemetry, the worker loop."
 requires-python = ">=3.12"
 dependencies = [
     # NOT here on purpose: scrapling's own runtime deps. scrapling 0.4.15
     # marks them optional but its fetchers import them unconditionally --
     # the consuming app's pyproject lists them explicitly instead, so
     # this package stays installable on its own (e.g. inside test venvs).
-    "psycopg[binary]>=3.1",
+    "opentelemetry-api>=1.28",
+    "opentelemetry-sdk>=1.28",
+    "opentelemetry-exporter-otlp-proto-http>=1.28",
 ]
 
 [dev-dependencies]
