@@ -155,13 +155,22 @@ seeds the vault.
 The deals scrapers (python-ci-cd.yml) extend that pattern with inputs
 nobody generates: their per-source feed URLs, `TF_VAR_pld_source_url`
 and `TF_VAR_phb_source_url`, live in vault items **`PLD_SOURCE_URL`
-and `PHB_SOURCE_URL`** which have to be created by hand — the workflow
-hard-fails until they exist, by design (a blank `SOURCE_BASE_URL`
-makes the worker refuse to boot, which is worse than a red deploy).
-The repo itself ships no scraped-site hostnames anywhere on purpose;
-the workers only ever see the URL through that env. The optional
-**`DEALS_DISCORD_WEBHOOK_URL`** item (blank = collect silently, no
-announcing) bootstraps like `DISCORD_ANNOUNCE_WEBHOOK_URL` does.
+and `PHB_SOURCE_URL`** which have to be created by hand — both
+workflows (`tf-ci-cd.yml` too, which needs them at apply time or a
+tf-only apply would write blanks over the scrapers' env) hard-fail
+until they exist, by design (a blank `SOURCE_BASE_URL` makes the
+worker refuse to boot, which is worse than a red deploy). The repo
+itself ships no scraped-site hostnames anywhere on purpose; the
+workers only ever see the URL through that env. The optional
+**`DEALS_DISCORD_WEBHOOK_URL`** item (blank = the events-announcer
+keeps draining the event queue silently) bootstraps like
+`DISCORD_ANNOUNCE_WEBHOOK_URL` does.
+
+The deals stack itself is fully wired by Terraform: scrapers push
+through domain-api with `random_id.deals_domain_key` (secrets.tf,
+`:deals-scrapers` in the API-key list), and the whole data path is
+scraper → `POST /deals` → domain-worker (owner of the `raw_deals`
+table) → `domain.events.queue` → events-announcer → Discord.
 
 Everything else the containers need (postgres password, API keys,
 Better Auth secrets, vaultwarden admin token, 9router credentials, …)
