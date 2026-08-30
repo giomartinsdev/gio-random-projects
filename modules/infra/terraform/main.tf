@@ -202,6 +202,27 @@ module "compute_apps_phb_scraper" {
   depends_on = [null_resource.postgres_password_sync]
 }
 
+# events-announcer: the announcing half the scrapers are shedding --
+# drains the durable domain.events.queue (written by domain-worker's
+# EventBus on every event) and posts fresh deals to Discord. Depends on
+# domain-api being up, since it's the same Redis its command pipeline
+# runs through.
+module "compute_apps_events_announcer" {
+  source = "./modules/compute/apps/events_announcer"
+  providers = {
+    docker = docker
+  }
+
+  app_name            = "events-announcer"
+  network_name        = module.network_docker_apps.network_name
+  redis_host          = module.storage_redis.redis_host
+  registry_host       = var.registry_host
+  discord_webhook_url = var.deals_discord_webhook_url
+  otlp_endpoint       = module.compute_services_observability.otlp_endpoint
+
+  depends_on = [module.compute_apps_domain_api]
+}
+
 module "compute_services_registry" {
   source = "./modules/compute/services/registry"
   providers = {

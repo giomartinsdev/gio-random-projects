@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "events-announcer"
+version = "0.1.0"
+description = "Announce worker: domain.events.queue -> Discord webhook."
+requires-python = ">=3.12"
+# redis is this app's only runtime need besides deals_common (whose
+# telemetry travels along); no scrapling, no database driver.
+dependencies = [
+    "redis>=5",
+]
+
+[dev-dependencies]
+pytest = ">=8.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/events_announcer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
