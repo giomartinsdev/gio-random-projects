@@ -59,12 +59,33 @@ export BW_SESSION="$SESSION"
 for pair in $ITEM_MAP; do
   env_name="${pair%%=*}"
   item_name="${pair#*=}"
+  # A trailing "?" on the item name marks it optional: a not-yet-created
+  # item exports an EMPTY value instead of failing the whole fetch.
+  # Exists for the chicken-and-egg of items secrets.tf seeds on apply
+  # (e.g. DISCORD_ANNOUNCE_WEBHOOK_URL): the fetch runs BEFORE the
+  # apply that would seed the item, so the very first runs after adding
+  # one would always fail -- optional items bootstrap as "" and the
+  # feature they gate stays off (everything in this repo treats an
+  # empty value as "disabled", by design) until the real value is set
+  # in the vault. Items without the "?" still hard-fail: a missing
+  # REGISTRY_PASSWORD etc. is always a real breakage worth stopping
+  # the deploy for.
+  optional=""
+  if [ "${item_name%\?}" != "$item_name" ]; then
+    optional=1
+    item_name="${item_name%\?}"
+  fi
   # get item, not get password: distinguishes "item doesn't exist"
   # (hard failure below) from "item exists with a genuinely empty
   # password" (e.g. discord_client_id when the integration is
   # disabled -- a valid, expected state, not a fetch failure).
   item_json=$(bw get item "$item_name" 2>/dev/null || true)
   if [ -z "$item_json" ]; then
+    if [ -n "$optional" ]; then
+      echo "fetch_vault_secret: no such vault item: $item_name (optional -- exporting empty)" >&2
+      echo "${env_name}="
+      continue
+    fi
     echo "fetch_vault_secret: no such vault item: $item_name" >&2
     exit 1
   fi

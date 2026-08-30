@@ -212,12 +212,16 @@ locals {
     # description), but seeded here anyway so CI can fetch them from
     # the vault instead of keeping its own separate copy in GitHub
     # Secrets. Empty/empty is a valid state (Discord integration
-    # disabled) -- seeding two empty items is harmless.
+    # disabled) -- seeding two empty items is harmless. The announce
+    # webhook rides in the same group: also a portal-made value, also
+    # optional ("" disables the post announcer), also fetched by CI as
+    # TF_VAR_discord_announce_webhook_url.
     discord = {
-      trigger = "${var.discord_client_id}|${var.discord_client_secret}"
+      trigger = "${var.discord_client_id}|${var.discord_client_secret}|${var.discord_announce_webhook_url}"
       items = {
-        DISCORD_CLIENT_ID     = var.discord_client_id
-        DISCORD_CLIENT_SECRET = var.discord_client_secret
+        DISCORD_CLIENT_ID            = var.discord_client_id
+        DISCORD_CLIENT_SECRET        = var.discord_client_secret
+        DISCORD_ANNOUNCE_WEBHOOK_URL = var.discord_announce_webhook_url
       }
     }
     # Grouped (not 4 separate resources): these four all describe the

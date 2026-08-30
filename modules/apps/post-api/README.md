@@ -138,6 +138,21 @@ Discord Activity users should add a `/media` → `media.giomartins.dev`
 URL Mapping in the Discord portal so uploaded images render inside the
 Activity.
 
+## Post announcer (Discord webhook)
+
+When `DISCORD_ANNOUNCE_WEBHOOK_URL` is set, a background poller
+(`src/lib/announcer.ts`, started from index.ts — not a route) sweeps
+the published list every 30 minutes and posts `📰 **title** +
+link` to the webhook for posts published in the **last 24h** that
+haven't been announced yet — oldest first, **max 3 per sweep**, so a
+backlog drains over a few cycles instead of bursting the channel. Idempotency lives in the `announced_posts` table: a post is only
+marked announced *after* Discord accepted it, so a webhook outage
+self-heals on the next sweep instead of losing posts. In this repo
+the URL lives in Vaultwarden (like the Discord OAuth pair -- see
+`secrets.tf`'s discord group) rather than its own GitHub secret.
+Blank env = poller never starts (same opt-in rule as everything
+else here).
+
 ## Running locally
 
 ```

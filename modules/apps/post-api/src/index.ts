@@ -7,6 +7,7 @@ import { createAuth } from "./lib/auth.js";
 import { createDb } from "./db/index.js";
 import { createDomainApiClient } from "./lib/domainApiClient.js";
 import { createMediaClient } from "./lib/minioClient.js";
+import { createPostAnnouncer } from "./lib/announcer.js";
 import { logger } from "./logger.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -47,6 +48,17 @@ const { db } = createDb(databaseUrl);
 const auth = createAuth(db, authSecret, process.env.BETTER_AUTH_URL, frontendOrigins, discord);
 const domainApi = createDomainApiClient(domainApiUrl, domainApiKey);
 const app = createApp(auth, domainApi, frontendOrigins, db, discord, media);
+
+// Opt-in Discord announcing: the webhook URL IS the credential, so its
+// presence toggles the poller (see lib/announcer.ts). Started here
+// rather than app.ts because it's a background loop, not a route.
+const announceWebhookUrl = process.env.DISCORD_ANNOUNCE_WEBHOOK_URL;
+if (announceWebhookUrl) {
+  createPostAnnouncer({ db, domainApi, webhookUrl: announceWebhookUrl, siteUrl: frontendOrigins[0] }).start(
+    30 * 60 * 1000,
+  );
+  logger.info("discord post announcer enabled");
+}
 
 // Self-heal once at boot (terraform normally pre-creates the bucket;
 // see lib/minioClient.ts). Not awaited -- a slow MinIO must not delay
