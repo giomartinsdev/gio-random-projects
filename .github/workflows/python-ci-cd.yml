@@ -1,0 +1,288 @@
+name: Python deploy
+
+# CI/CD for the Python workers under modules/apps/*/ (has both a
+# Dockerfile and a pyproject.toml) — touch only modules/apps/pld-scraper/**
+# and only the pld-scraper image rebuilds, gets pushed, and redeploys.
+# Go apps go through go-ci-cd.yml, TypeScript ones through
+# ts-backend/ts-frontend-ci-cd.yml — each language keeps its own
+# pipeline because the test/build steps never generalize for free.
+#
+# Two differences from go-ci-cd.yml worth knowing:
+# - Build context is the REPO ROOT, not the app dir: the workers bake
+#   the shared lib (modules/libs/deals_common) into the image via COPY,
+#   and there's no private python registry to install it from on the
+#   VPS. Because of that, any change under modules/libs/** rebuilds
+#   every python worker (the lib's contract is what changed).
+# - Deploys pass TF_VAR_pld_source_url/TF_VAR_phb_source_url fetched
+#   from Vaultwarden (items PLD_SOURCE_URL / PHB_SOURCE_URL, required:
+#   a blank SOURCE_BASE_URL makes the worker refuse to boot, which is
+#   worse than a red deploy step). TF_VAR_deals_discord_webhook_url
+#   (item DEALS_DISCORD_WEBHOOK_URL, optional) toggles announcing.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "modules/apps/**"
+      - "modules/libs/**"
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Build only this app (blank = all python apps under modules/apps/)"
+        required: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.list.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: list
+        run: |
+          all_apps=$(find modules/apps -mindepth 2 -maxdepth 2 -name pyproject.toml \
+            -exec dirname {} \; | xargs -n1 basename | sort)
+
+          if [ -n "${{ inputs.app }}" ]; then
+            apps=$(echo "$all_apps" | grep -x "${{ inputs.app }}" || true)
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            apps="$all_apps"
+          else
+            changed=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
+            apps=""
+            # A shared-lib change (deals_common) is baked into every
+            # worker image at build time -- rebuild all of them.
+            if echo "$changed" | grep -q "^modules/libs/"; then
+              apps="$all_apps"
+            else
+              for a in $all_apps; do
+                if echo "$changed" | grep -q "^modules/apps/$a/"; then
+                  apps="$apps $a"
+                fi
+              done
+            fi
+          fi
+
+          json=$(echo "$apps" | xargs -n1 | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "Building: $json"
+          echo "apps=$json" >> "$GITHUB_OUTPUT"
+
+  build-and-push:
+    needs: discover
+    if: needs.discover.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: ${{ fromJson(needs.discover.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        if: hashFiles(format('modules/apps/{0}/pyproject.toml', matrix.app)) != ''
+        with:
+          python-version: "3.12"
+
+      # Same lib + app pair the Dockerfile bakes in -- tests import the
+      # worker's mapping code, whose imports reach into deals_common,
+      # so both editable installs are needed for collection.
+      - name: Test (Python apps only — skipped for anything without a pyproject.toml)
+        if: hashFiles(format('modules/apps/{0}/pyproject.toml', matrix.app)) != ''
+        working-directory: modules/apps/${{ matrix.app }}
+        # Absolute paths: cwd is the app dir and the shared lib lives
+        # up at the repo root, so relative pip args would dead-end.
+        run: |
+          pip install -q "${{ github.workspace }}/modules/libs/deals_common" "${{ github.workspace }}/modules/apps/${{ matrix.app }}" pytest
+          python -m pytest -q
+
+      # Same reasoning as go-ci-cd.yml: the VPS is arm64, this runner
+      # is amd64, and QEMU is what lets BuildKit produce an arm64 image
+      # at all (python:3.12-slim is multi-arch, so no base-image swap
+      # needed -- QEMU just runs the pip install layer arm-native).
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      # registry.giomartins.dev:5000 is plain HTTP (Phase 1 — see
+      # modules/infra/terraform/README.md); same daemon.json dance as
+      # go-ci-cd.yml, needed before docker/login-action works at all.
+      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
+        run: |
+          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
+          sudo systemctl restart docker
+
+      - uses: docker/setup-buildx-action@v3
+        with:
+          config-inline: |
+            [registry."registry.giomartins.dev:5000"]
+              http = true
+              insecure = true
+
+      # Same vault-backed credentials as go-ci-cd.yml's step of the
+      # same name -- no GitHub-secret copy of the registry password.
+      - name: Set up SSH access to the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          echo "DOCKER_HOST=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
+
+      - name: Fetch registry credentials from Vaultwarden
+        env:
+          NETWORK_NAME: apps
+          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
+          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
+          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
+          ITEM_MAP: "REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
+        run: |
+          set -o pipefail
+          modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
+            echo "::add-mask::$v"
+            echo "${k}=${v}" >> "$GITHUB_ENV"
+          done
+
+      - name: Log in to registry.giomartins.dev:5000
+        uses: docker/login-action@v3
+        with:
+          registry: registry.giomartins.dev:5000
+          username: ${{ env.REGISTRY_USERNAME }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+
+      # Repo-root context: the worker images also COPY
+      # modules/libs/deals_common (see each Dockerfile) -- building from
+      # modules/apps/<app> would dead-end on that COPY.
+      - name: Build and push ${{ matrix.app }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: modules/apps/${{ matrix.app }}/Dockerfile
+          push: true
+          platforms: linux/arm64
+          tags: |
+            registry.giomartins.dev:5000/${{ matrix.app }}:latest
+            registry.giomartins.dev:5000/${{ matrix.app }}:${{ github.sha }}
+
+  deploy:
+    needs: [discover, build-and-push]
+    if: needs.discover.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    # Shared across every workflow that runs `terraform apply` --
+    # same R2 state lock same story as go-ci-cd.yml's own comment.
+    concurrency:
+      group: terraform-apply
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: modules/infra/terraform
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}
+      TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+      TF_VAR_google_idp_identity_provider_id: ${{ secrets.CLOUDFLARE_GOOGLE_IDP_ID }}
+      TF_VAR_beszel_agent_key: ${{ secrets.TF_BESZEL_AGENT_KEY }}
+      TF_VAR_vaultwarden_account_email: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_EMAIL }}
+      TF_VAR_vaultwarden_account_master_password: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
+      TF_VAR_vaultwarden_api_client_id: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
+      TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
+      # TF_VAR_registry_password and the deals-scraper vars (source
+      # URLs + webhook) come from Vaultwarden below, not GitHub
+      # secrets -- see tf-ci-cd.yml's "Fetch secrets from Vaultwarden".
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH access to the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          echo "TF_VAR_docker_host=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
+
+      - name: Discover the VPS's public IP
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          SERVER_IP=$(ssh "ubuntu@$VPS_HOST" 'curl -4 -fsS --max-time 5 https://ifconfig.me || curl -4 -fsS --max-time 5 https://api.ipify.org')
+          if [ -z "$SERVER_IP" ]; then
+            echo "::error::could not determine the VPS's public IP"
+            exit 1
+          fi
+          echo "TF_VAR_server_ip=$SERVER_IP" >> "$GITHUB_ENV"
+
+      # PLD_SOURCE_URL / PHB_SOURCE_URL are REQUIRED (no "?" suffix):
+      # the fetch fails the deploy instead of shipping a worker that
+      # exits at boot on a blank SOURCE_BASE_URL.
+      # DEALS_DISCORD_WEBHOOK_URL is optional ("?") -- blank = the
+      # workers collect silently, no announcing.
+      - name: Fetch secrets from Vaultwarden
+        env:
+          DOCKER_HOST: ${{ env.TF_VAR_docker_host }}
+          NETWORK_NAME: apps
+          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
+          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
+          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
+          ITEM_MAP: "TF_VAR_registry_password=REGISTRY_PASSWORD TF_VAR_pld_source_url=PLD_SOURCE_URL TF_VAR_phb_source_url=PHB_SOURCE_URL TF_VAR_deals_discord_webhook_url=DEALS_DISCORD_WEBHOOK_URL? REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
+        run: |
+          set -o pipefail
+          ./scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
+            echo "::add-mask::$v"
+            echo "${k}=${v}" >> "$GITHUB_ENV"
+          done
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.10"
+
+      - name: Init
+        run: terraform init -backend-config="endpoints={s3=\"${{ secrets.TF_STATE_R2_ENDPOINT }}\"}"
+
+      # Same pull-before-apply story as go-ci-cd.yml: -replace alone
+      # silently redeploys a stale cached :latest unless the VPS's
+      # dockerd was explicitly told to pull what was just pushed.
+      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
+        run: |
+          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
+          sudo systemctl restart docker
+
+      - name: Log in to registry.giomartins.dev:5000
+        uses: docker/login-action@v3
+        with:
+          registry: registry.giomartins.dev:5000
+          username: ${{ env.REGISTRY_USERNAME }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+
+      - name: Pull the image(s) just pushed onto the VPS's own dockerd
+        env:
+          DOCKER_HOST: ${{ env.TF_VAR_docker_host }}
+        run: |
+          for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
+            docker pull "registry.giomartins.dev:5000/${app}:latest"
+          done
+
+      - name: Deploy the image(s) just pushed
+        run: |
+          REPLACE_ARGS=()
+          for app in $(echo '${{ needs.discover.outputs.apps }}' | jq -r '.[]'); do
+            # Same rule as go-ci-cd.yml's mapping: an app missing here
+            # deploys as a silent no-op (state always says :latest, so
+            # without -replace Terraform sees no diff). One container
+            # resource per module instance -- add a line per new
+            # source worker module in root main.tf.
+            case "$app" in
+              pld-scraper) REPLACE_ARGS+=("-replace=module.compute_apps_pld_scraper.docker_container.scraper") ;;
+              phb-scraper) REPLACE_ARGS+=("-replace=module.compute_apps_phb_scraper.docker_container.scraper") ;;
+              *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
+            esac
+          done
+          terraform apply -input=false -lock-timeout=300s -auto-approve "${REPLACE_ARGS[@]}"

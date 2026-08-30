@@ -161,6 +161,47 @@ module "compute_apps_tela_api" {
   otlp_endpoint = module.compute_services_observability.otlp_endpoint_loopback
 }
 
+# Deals scrapers: one headless poller container per source, both off
+# the same parametrized module (no ports, no hostname, no telemetry --
+# just the shared Postgres' raw_deals, see the deals_scraper module).
+# source_base_url/webhook values live in Vaultwarden; CI injects them
+# as TF_VAR_* at apply time, the repo ships none of it.
+module "compute_apps_pld_scraper" {
+  source = "./modules/compute/apps/deals_scraper"
+  providers = {
+    docker = docker
+  }
+
+  app_name            = "pld-scraper"
+  network_name        = module.network_docker_apps.network_name
+  postgres_host       = module.storage_postgres.postgres_host
+  postgres_user       = module.storage_postgres.postgres_user
+  postgres_password   = random_password.postgres.result
+  registry_host       = var.registry_host
+  source_base_url     = var.pld_source_url
+  discord_webhook_url = var.deals_discord_webhook_url
+
+  depends_on = [null_resource.postgres_password_sync]
+}
+
+module "compute_apps_phb_scraper" {
+  source = "./modules/compute/apps/deals_scraper"
+  providers = {
+    docker = docker
+  }
+
+  app_name            = "phb-scraper"
+  network_name        = module.network_docker_apps.network_name
+  postgres_host       = module.storage_postgres.postgres_host
+  postgres_user       = module.storage_postgres.postgres_user
+  postgres_password   = random_password.postgres.result
+  registry_host       = var.registry_host
+  source_base_url     = var.phb_source_url
+  discord_webhook_url = var.deals_discord_webhook_url
+
+  depends_on = [null_resource.postgres_password_sync]
+}
+
 module "compute_services_registry" {
   source = "./modules/compute/services/registry"
   providers = {
