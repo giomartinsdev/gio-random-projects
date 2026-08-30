@@ -13,6 +13,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/secretsbridge"
 )
@@ -21,6 +22,9 @@ type Config struct {
 	DatabaseURL string
 	RedisAddr   string
 	RedisPass   string
+	// EventsQueueMax caps the durable event queue's length from the
+	// tail (event_bus.go's LTRIM).
+	EventsQueueMax int
 }
 
 func Load() (Config, error) {
@@ -35,9 +39,20 @@ func Load() (Config, error) {
 	if redisAddr == "" {
 		return Config{}, secretsbridge.ErrRequired("REDIS_ADDR")
 	}
+
+	queueMax := 10000
+	if v := os.Getenv("DOMAIN_EVENTS_QUEUE_MAX"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil {
+			return Config{}, secretsbridge.ErrParse("DOMAIN_EVENTS_QUEUE_MAX", err)
+		}
+		queueMax = parsed
+	}
+
 	return Config{
-		DatabaseURL: databaseURL,
-		RedisAddr:   redisAddr,
-		RedisPass:   os.Getenv("REDIS_PASSWORD"),
+		DatabaseURL:    databaseURL,
+		RedisAddr:      redisAddr,
+		RedisPass:      os.Getenv("REDIS_PASSWORD"),
+		EventsQueueMax: queueMax,
 	}, nil
 }

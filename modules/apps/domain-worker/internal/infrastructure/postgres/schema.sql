@@ -126,3 +126,29 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_room_id_created_at ON messages (room_id, created_at);
+
+-- Stage table for scraped offers — the Deal aggregate's storage. The
+-- python scrapers created and owned this table first (same DDL, via
+-- deals_common.db); domain-worker now owns it: they hand rows over
+-- through domain-api's deal.upsert instead of touching Postgres
+-- directly anymore. This CREATE TABLE IF NOT EXISTS is a no-op against
+-- the table they already made and keeps a from-scratch bring-up
+-- working without them.
+CREATE TABLE IF NOT EXISTS raw_deals (
+    source           text        NOT NULL,
+    source_deal_id   text        NOT NULL,
+    title            text        NOT NULL,
+    url              text        NOT NULL,
+    store            text,
+    price_cents      integer,
+    old_price_cents  integer,
+    posted_at        timestamptz,
+    scraped_at       timestamptz NOT NULL,
+    payload          jsonb       NOT NULL,
+    PRIMARY KEY (source, source_deal_id)
+);
+
+-- Name kept identical to the index the python scrapers created (it
+-- already exists in production; IF NOT EXISTS only works because it
+-- matches).
+CREATE INDEX IF NOT EXISTS raw_deals_posted_at_idx ON raw_deals (posted_at DESC NULLS LAST);

@@ -81,6 +81,9 @@ func main() {
 	messages := postgres.NewMessageRepository(pool)
 	messageHandlers := httpapi.NewMessageHandlers(messages, commands, log)
 
+	deals := postgres.NewDealRepository(pool)
+	dealHandlers := httpapi.NewDealHandlers(deals, commands, log)
+
 	// A dedicated client for SSE's Redis SUBSCRIBE -- go-redis dedicates
 	// a connection per subscription for the life of that subscription,
 	// so this stays separate from rdb (which CommandPublisher uses for
@@ -89,7 +92,7 @@ func main() {
 	defer sseRDB.Close()
 	sseHandlers := httpapi.NewSSEHandlers(sseRDB, log)
 
-	router := httpapi.NewRouter(handlers, postHandlers, roomHandlers, messageHandlers, sseHandlers, apiKeys, rateLimiter, log)
+	router := httpapi.NewRouter(handlers, postHandlers, roomHandlers, messageHandlers, dealHandlers, sseHandlers, apiKeys, rateLimiter, log)
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: otelhttp.NewHandler(router, "domain-api",
 		// chi's route patterns aren't visible to otelhttp, so name the

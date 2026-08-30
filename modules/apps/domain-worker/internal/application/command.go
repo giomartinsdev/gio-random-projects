@@ -23,6 +23,8 @@ const (
 	ActionDeleteRoom Action = "room.delete"
 
 	ActionCreateMessage Action = "message.create"
+
+	ActionUpsertDeal Action = "deal.upsert"
 )
 
 type Command struct {
