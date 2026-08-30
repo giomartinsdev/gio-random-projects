@@ -16,7 +16,6 @@ dependencies = [
     "msgspec",
     "playwright",
     "patchright",
-    "psycopg[binary]>=3.1",
 ]
 
 [dev-dependencies]

@@ -1,28 +1,29 @@
 """Entry point: env wire-up + the shared loop.
 
 Same shape as the other scraper's main -- the only differences are the
-source client and the log name. Self-migrates raw_deals on boot; polls
-every POLL_SECONDS; announces INSERTED deals when
-DISCORD_DEALS_WEBHOOK_URL is set.
+source client and the log name. Writes go through domain-api's POST
+/deals (this worker has no database and no webhook; the Go worker
+persists raw_deals and the events-announcer announces). Polls every
+POLL_SECONDS.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from datetime import UTC, datetime
 
-from deals_common.db import utcnow
+from deals_common.deals_api import DealsClient
 from deals_common.fetch import HttpClient
+from deals_common import telemetry
 from deals_common.runner import run_worker
 
 from .client import fetch_recent, to_raw
 
 MAX_PAGES_PER_CYCLE = 3  # 10 offers/page
 
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO"),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+REQUIRED = ("DOMAIN_API_URL", "DOMAIN_API_KEY", "SOURCE_BASE_URL")
+
 log = logging.getLogger("phb-scraper")
 
 
@@ -30,7 +31,7 @@ def load_deals() -> list:
     http = HttpClient()
     raw = []
     for offer in fetch_recent(http, max_pages=MAX_PAGES_PER_CYCLE):
-        mapped = to_raw(offer, utcnow())
+        mapped = to_raw(offer, datetime.now(tz=UTC))
         if mapped is not None:
             raw.append(mapped)
         else:
@@ -38,17 +39,23 @@ def load_deals() -> list:
     return raw
 
 
-def main() -> None:
-    for required in ("DATABASE_URL", "SOURCE_BASE_URL"):
-        if not os.environ.get(required):
-            raise SystemExit(f"{required} is required")
-    run_worker(
-        "phb-scraper",
-        load_deals=load_deals,
-        database_url=os.environ["DATABASE_URL"],
-        webhook_url=os.environ.get("DISCORD_DEALS_WEBHOOK_URL") or None,
-    )
+def main() -> int:
+    missing = [required for required in REQUIRED if not os.environ.get(required)]
+    if missing:
+        raise SystemExit(f"missing required env: {', '.join(missing)}")
+
+    shutdown = telemetry.init("phb-scraper")
+    try:
+        telemetry.configure_logging(getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO))
+        run_worker(
+            "phb-scraper",
+            load_deals=load_deals,
+            push=DealsClient.from_env().push_deals,
+        )
+    finally:
+        shutdown()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

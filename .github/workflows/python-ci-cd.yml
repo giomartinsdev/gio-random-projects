@@ -17,7 +17,11 @@ name: Python deploy
 #   from Vaultwarden (items PLD_SOURCE_URL / PHB_SOURCE_URL, required:
 #   a blank SOURCE_BASE_URL makes the worker refuse to boot, which is
 #   worse than a red deploy step). TF_VAR_deals_discord_webhook_url
-#   (item DEALS_DISCORD_WEBHOOK_URL, optional) toggles announcing.
+#   (item DEALS_DISCORD_WEBHOOK_URL, optional) exists only for the
+#   events-announcer module -- the scrapers themselves never announce;
+#   they push through domain-api. DOMAIN_API_URL/DOMAIN_API_KEY for the
+#   scrapers come from terraform too (secrets.tf's random_id
+#   .deals_domain_key), so no vault items for them.
 
 on:
   push:

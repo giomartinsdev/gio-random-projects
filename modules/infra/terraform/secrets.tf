@@ -53,8 +53,16 @@ resource "random_id" "classroom_api_domain_key" {
   byte_length = 24
 }
 
+# the deals scrapers' own key (pld/phb-scraper's DOMAIN_API_KEY) --
+# both sources share one identity ("deals-scrapers") in the audit log;
+# no Vaultwarden item needed since terraform wires the key straight
+# into the scraper containers' env.
+resource "random_id" "deals_domain_key" {
+  byte_length = 24
+}
+
 locals {
-  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api"
+  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers"
 }
 
 resource "random_password" "vaultwarden_admin_token" {
