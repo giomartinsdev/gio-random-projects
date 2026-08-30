@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deals-common"
+version = "0.1.0"
+description = "Shared bits for the deals scrapers: HTTP client, raw-deal model, price/URL normalization, Postgres upsert."
+requires-python = ">=3.12"
+dependencies = [
+    # NOT here on purpose: scrapling's own runtime deps. scrapling 0.4.15
+    # marks them optional but its fetchers import them unconditionally --
+    # the consuming app's pyproject lists them explicitly instead, so
+    # this package stays installable on its own (e.g. inside test venvs).
+    "psycopg[binary]>=3.1",
+]
+
+[dev-dependencies]
+pytest = ">=8.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deals_common"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

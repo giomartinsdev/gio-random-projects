@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pld-scraper"
+version = "0.1.0"
+description = "Scraper worker: a source's public feed API -> raw_deals."
+requires-python = ">=3.12"
+# scrapling 0.4.15 declares several of its hard runtime deps as
+# optional while importing them unconditionally -- every module the
+# static Fetcher touches (scrapling/fetchers/requests.py ->
+# engines/static.py -> toolbelt) needs the trio below. Verified against
+# a minimal venv: exactly this set satisfies `from scrapling.fetchers
+# import Fetcher` (no browser/camoufox involved).
+dependencies = [
+    "scrapling==0.4.15",
+    "curl_cffi>=0.7",
+    "browserforge",
+    "msgspec",
+    "playwright",
+    "patchright",
+    "psycopg[binary]>=3.1",
+]
+
+[dev-dependencies]
+pytest = ">=8.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pld_scraper"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
