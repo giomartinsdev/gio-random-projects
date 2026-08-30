@@ -9,9 +9,22 @@ touches Postgres or Discord directly anymore.
 """
 
 from .deals_api import DealsClient, PushResult
-from .fetch import HttpClient
 from .model import RawDeal
 from .runner import run_worker
+
+
+def __getattr__(name):
+    # fetch.HttpClient drags in scrapling/curl_cffi — deps this package
+    # deliberately does not declare (see pyproject.toml: the consuming
+    # scrapers list them instead). Resolving it lazily keeps every other
+    # import path (the events-announcer's announce/telemetry among them)
+    # usable from an env that has only redis + this package.
+    if name == "HttpClient":
+        from .fetch import HttpClient
+
+        return HttpClient
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "RawDeal",
