@@ -27,22 +27,25 @@ REQUIRED = ("DOMAIN_API_URL", "DOMAIN_API_KEY", "SOURCE_BASE_URL")
 log = logging.getLogger("pld-scraper")
 
 
-def load_deals() -> list:
-    http = HttpClient()
-    raw = []
-    for deal in fetch_recent(http, pages=PAGES_PER_CYCLE):
-        mapped = to_raw(deal, datetime.now(tz=UTC))
-        if mapped is not None:
-            raw.append(mapped)
-        else:
-            log.debug("skipped non-active/incomplete deal id=%s", deal.get("id"))
-    return raw
-
-
 def main() -> int:
     missing = [required for required in REQUIRED if not os.environ.get(required)]
     if missing:
         raise SystemExit(f"missing required env: {', '.join(missing)}")
+
+    # One client for the process's lifetime: a cf_clearance won from a
+    # challenge must survive across cycles (each HttpClient would
+    # otherwise re-solve from scratch every poll).
+    http = HttpClient(flaresolverr_url=os.environ.get("FLARESOLVERR_URL", ""))
+
+    def load_deals() -> list:
+        raw = []
+        for deal in fetch_recent(http, pages=PAGES_PER_CYCLE):
+            mapped = to_raw(deal, datetime.now(tz=UTC))
+            if mapped is not None:
+                raw.append(mapped)
+            else:
+                log.debug("skipped non-active/incomplete deal id=%s", deal.get("id"))
+        return raw
 
     shutdown = telemetry.init("pld-scraper")
     try:

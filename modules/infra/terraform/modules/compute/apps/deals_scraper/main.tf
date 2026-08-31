@@ -28,6 +28,11 @@ resource "docker_container" "scraper" {
     # TF_VAR_* at apply time; the repo ships no scraped-site hostnames
     # (see the scraper's client.py).
     "SOURCE_BASE_URL=${var.source_base_url}",
+    # Challenge workaround: when the source's edge turns on a Cloudflare
+    # challenge, the fetch layer hands the URL to FlareSolverr (the
+    # module in root main.tf) and reuses its clearance. Empty = the
+    # challenge code path never activates.
+    "FLARESOLVERR_URL=${var.flaresolverr_url}",
     "POLL_SECONDS=${var.poll_seconds}",
     # Traces + metrics only — logs flow via alloy's docker-socket scrape
     # of this container's stdout JSON.

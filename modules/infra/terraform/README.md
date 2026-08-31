@@ -29,7 +29,10 @@ hostname/port pair gets declared — everything else derives from it:
   (+bridge), adminer,
   [`observability`](modules/compute/services/observability/README.md)
   (grafana + loki + prometheus + tempo + alloy: logs, metrics, traces
-  for everything else here), and
+  for everything else here),
+  [`flaresolverr`](modules/compute/services/flaresolverr/README.md)
+  (idle-until-needed Cloudflare-challenge solver for the deals
+  scrapers), and
   [`ingress`](modules/compute/services/ingress/README.md)
   — the single nginx front door everything else routes through.
 
@@ -170,7 +173,11 @@ The deals stack itself is fully wired by Terraform: scrapers push
 through domain-api with `random_id.deals_domain_key` (secrets.tf,
 `:deals-scrapers` in the API-key list), and the whole data path is
 scraper → `POST /deals` → domain-worker (owner of the `raw_deals`
-table) → `domain.events.queue` → events-announcer → Discord.
+table) → `domain.events.queue` → events-announcer → Discord. When a
+source's edge answers a poll with Cloudflare's JS challenge, the
+scraper's fetch layer hands that URL to the flaresolverr container
+(same root module, `flaresolverr_url`) once and reuses the clearance —
+no extra vault item or workflow input involved.
 
 Everything else the containers need (postgres password, API keys,
 Better Auth secrets, vaultwarden admin token, 9router credentials, …)

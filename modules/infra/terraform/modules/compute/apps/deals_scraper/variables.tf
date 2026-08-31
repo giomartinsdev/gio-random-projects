@@ -33,6 +33,12 @@ variable "source_base_url" {
   sensitive   = true
 }
 
+variable "flaresolverr_url" {
+  description = "In-network URL of the challenge solver (compute/services/flaresolverr). Empty = no challenge workaround."
+  type        = string
+  default     = ""
+}
+
 variable "poll_seconds" {
   description = "Polling cadence (docker env POLL_SECONDS) -- how often the worker fetches a page from its source."
   type        = number

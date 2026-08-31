@@ -172,14 +172,15 @@ module "compute_apps_pld_scraper" {
     docker = docker
   }
 
-  app_name        = "pld-scraper"
-  network_name    = module.network_docker_apps.network_name
-  domain_api_key  = random_id.deals_domain_key.hex
-  registry_host   = var.registry_host
-  source_base_url = var.pld_source_url
-  otlp_endpoint   = module.compute_services_observability.otlp_endpoint
+  app_name         = "pld-scraper"
+  network_name     = module.network_docker_apps.network_name
+  domain_api_key   = random_id.deals_domain_key.hex
+  registry_host    = var.registry_host
+  source_base_url  = var.pld_source_url
+  flaresolverr_url = module.compute_services_flaresolverr.url
+  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
 
-  depends_on = [module.compute_apps_domain_api]
+  depends_on = [module.compute_apps_domain_api, module.compute_services_flaresolverr]
 }
 
 module "compute_apps_phb_scraper" {
@@ -188,14 +189,28 @@ module "compute_apps_phb_scraper" {
     docker = docker
   }
 
-  app_name        = "phb-scraper"
-  network_name    = module.network_docker_apps.network_name
-  domain_api_key  = random_id.deals_domain_key.hex
-  registry_host   = var.registry_host
-  source_base_url = var.phb_source_url
-  otlp_endpoint   = module.compute_services_observability.otlp_endpoint
+  app_name         = "phb-scraper"
+  network_name     = module.network_docker_apps.network_name
+  domain_api_key   = random_id.deals_domain_key.hex
+  registry_host    = var.registry_host
+  source_base_url  = var.phb_source_url
+  flaresolverr_url = module.compute_services_flaresolverr.url
+  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
 
-  depends_on = [module.compute_apps_domain_api]
+  depends_on = [module.compute_apps_domain_api, module.compute_services_flaresolverr]
+}
+
+# FlareSolverr: challenge-solver for the deals scrapers — Cloudflare
+# Turnstile-walls ("Just a moment...") can't be passed by the scrapers'
+# static fetch; on such a 403 they hand the URL here and reuse the
+# cf_clearance it wins. Idle unless a challenge actually appears.
+module "compute_services_flaresolverr" {
+  source = "./modules/compute/services/flaresolverr"
+  providers = {
+    docker = docker
+  }
+
+  network_name = module.network_docker_apps.network_name
 }
 
 # events-announcer: the announcing half the scrapers are shedding --
