@@ -8,7 +8,9 @@
 // point of the game, but no slurs, nothing sexual involving minors,
 // and no real people by name -- groups and roles ("meu tio", "o
 // gerente") instead of individuals, so the joke always lands on the
-// situation, not on a specific person.
+// situation, not on a specific person. Nothing whose punchline targets
+// an ethnicity, religion or people either: heaviness comes from death,
+// bad luck, crime and absurdity, never from hate.
 package decks
 
 import (
