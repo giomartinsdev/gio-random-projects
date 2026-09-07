@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -38,6 +39,9 @@ type clientMessage struct {
 	CardID       string `json:"cardId,omitempty"`
 	SubmissionID string `json:"submissionId,omitempty"`
 	RequestID    string `json:"requestId,omitempty"`
+
+	// name:set
+	Name string `json:"name,omitempty"`
 }
 
 // The WebSocket carries the game itself: state snapshots per recipient,
@@ -248,6 +252,18 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 			}
 			w.room.BroadcastGameState()
 
+		case "name:set":
+			// A rename is broadcast even outside a game -- the lobby list
+			// and the knocks' name badges show it too. An empty result
+			// means nothing usable was sent; that's a rejected action,
+			// not a reset to a random name.
+			name := sanitizeName(msg.Name)
+			if name == "" {
+				w.fail(ErrEmptyName)
+				continue
+			}
+			w.room.RenamePeer(w.peer, name)
+
 		case "ping":
 			w.peer.Send(map[string]any{"type": "pong"})
 
@@ -271,6 +287,12 @@ func (w *wsSession) fail(err error) {
 }
 
 const maxNameLength = 30
+
+// ErrEmptyName is what a rename with nothing left after trimming gets
+// back. Renaming is always optional, so an empty field never means
+// "give me a random name" -- that reading would silently change
+// someone's label in a room where everyone already knows them.
+var ErrEmptyName = errors.New("digite um nome para salvar")
 
 // sanitizeName trims a client-supplied display name and bounds its
 // length -- someone typing a paragraph into the name field shouldn't

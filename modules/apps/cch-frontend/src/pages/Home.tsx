@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { cn } from "@/lib/utils";
 
 // How often the "salas rolando" list refreshes. Frequent enough that a
@@ -132,7 +133,8 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center px-4 py-10">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center px-4 py-10">
+      <ThemeToggle className="absolute right-3 top-3" />
       <div className="w-full max-w-md">
         <motion.div
           className="mb-8 text-center"
@@ -254,11 +256,12 @@ export default function Home() {
                         {decks.map((deck) => {
                           const selected = selectedDecks.has(deck.id);
                           return (
-                            <button
+                            <motion.button
                               key={deck.id}
                               type="button"
                               title={deck.description}
                               onClick={() => toggleDeck(deck.id)}
+                              whileTap={{ scale: 0.94 }}
                               className={cn(
                                 "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
                                 selected
@@ -277,7 +280,7 @@ export default function Home() {
                               <span className="text-xs text-muted-foreground">
                                 {deck.whites + deck.blacks}
                               </span>
-                            </button>
+                            </motion.button>
                           );
                         })}
                       </div>

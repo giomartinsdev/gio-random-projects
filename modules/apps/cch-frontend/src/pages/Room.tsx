@@ -1,15 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Crown, SkipForward, Sparkles, Trash2, Trophy, Users } from "lucide-react";
+import { Check, Crown, Pencil, SkipForward, Sparkles, Trash2, Trophy, Users } from "lucide-react";
 import { api, type DeckInfo } from "@/lib/api";
-import { useGame, type Card as GameCard, type Credential, type GameState } from "@/lib/useGame";
+import { useGame, type Card as GameCard, type Credential, type GameState, type Submission } from "@/lib/useGame";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import {
   arrowRightCircleIcon,
   checkmarkIcon,
@@ -130,7 +131,8 @@ function EntryGate({
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center px-4 py-10">
+    <div className="relative flex min-h-dvh items-center justify-center px-4 py-10">
+      <ThemeToggle className="absolute right-3 top-3" />
       <motion.div
         className="w-full max-w-sm"
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
@@ -336,6 +338,7 @@ function LiveRoom({
         <CopyableCode code={roomId} />
         {password && <CopyLinkWithPassword roomId={roomId} password={password} />}
         {game.state && <PeopleCount state={game.state} />}
+        {game.you && <NameChip game={game} />}
         {game.status !== "connected" && (
           <span className="text-sm text-muted-foreground">
             {game.status === "reconnecting"
@@ -363,6 +366,7 @@ function LiveRoom({
             Apagar sala
           </Button>
         )}
+        <ThemeToggle />
       </header>
 
       <main className="relative flex flex-1 flex-col">
@@ -479,10 +483,22 @@ function GameTable({
   return (
     <div className="mx-auto w-full max-w-4xl flex-1 space-y-4 px-4 py-6">
       <Scoreboard state={state} you={game.you?.peerId ?? ""} />
-      {state.phase === "playing" && <Playing game={game} />}
-      {state.phase === "judging" && <Judging game={game} />}
-      {state.phase === "roundEnd" && <RoundEnd game={game} />}
-      {state.phase === "gameOver" && <GameOver game={game} />}
+      {/* Phases cross-fade instead of hard-cutting: the table reads as
+          one continuous game rather than five separate screens. */}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={state.phase}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+        >
+          {state.phase === "playing" && <Playing game={game} />}
+          {state.phase === "judging" && <Judging game={game} />}
+          {state.phase === "roundEnd" && <RoundEnd game={game} />}
+          {state.phase === "gameOver" && <GameOver game={game} />}
+        </motion.div>
+      </AnimatePresence>
       {state.phase !== "gameOver" && <BlackCardBar game={game} />}
     </div>
   );
@@ -595,11 +611,12 @@ function Lobby({ roomId, game }: { roomId: string; game: ReturnType<typeof useGa
             {decks.map((deck) => {
               const on = selected.has(deck.id);
               return (
-                <button
+                <motion.button
                   key={deck.id}
                   type="button"
                   title={deck.description}
                   onClick={() => toggleDeck(deck.id)}
+                  whileTap={{ scale: 0.94 }}
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
                     on ? "border-primary bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-accent",
@@ -610,7 +627,7 @@ function Lobby({ roomId, game }: { roomId: string; game: ReturnType<typeof useGa
                     {deck.emoji} {deck.name}
                   </span>
                   <span className="text-xs text-muted-foreground">{deck.whites + deck.blacks}</span>
-                </button>
+                </motion.button>
               );
             })}
           </div>
@@ -619,13 +636,14 @@ function Lobby({ roomId, game }: { roomId: string; game: ReturnType<typeof useGa
             <Label>Pontos para ganhar</Label>
             <div className="flex gap-2">
               {[3, 5, 8, 10].map((score) => (
-                <button
+                <motion.button
                   key={score}
                   type="button"
                   onClick={() => {
                     setWinningScore(score);
                     setWinningScorePicked(true);
                   }}
+                  whileTap={{ scale: 0.94 }}
                   className={cn(
                     "flex-1 rounded-md border px-3 py-2 text-sm tabular-nums transition-colors",
                     winningScore === score
@@ -634,7 +652,7 @@ function Lobby({ roomId, game }: { roomId: string; game: ReturnType<typeof useGa
                   )}
                 >
                   {score}
-                </button>
+                </motion.button>
               ))}
             </div>
           </div>
@@ -659,7 +677,15 @@ function BlackCardBar({ game }: { game: ReturnType<typeof useGame> }) {
   if (!state.blackCard) return null;
   const amCzar = state.players.some((p) => p.peerId === game.you?.peerId && p.isCzar);
   return (
-    <div className="flex items-start justify-between gap-3 rounded-xl border bg-card px-4 py-3">
+    // Keyed by round so a fresh black card slides in instead of
+    // silently swapping text.
+    <motion.div
+      key={state.round}
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: "easeOut" }}
+      className="flex items-start justify-between gap-3 rounded-xl border bg-card px-4 py-3"
+    >
       <div className="min-w-0">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">Rodada {state.round}</p>
         <BlackText text={state.blackCard.text} />
@@ -672,7 +698,7 @@ function BlackCardBar({ game }: { game: ReturnType<typeof useGame> }) {
           </Button>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -716,7 +742,13 @@ function Playing({ game }: { game: ReturnType<typeof useGame> }) {
     return (
       <Card>
         <CardContent className="space-y-3 py-6 text-center">
-          <Crown className="mx-auto size-8 text-yellow-500" />
+          <motion.div
+            animate={{ y: [0, -5, 0] }}
+            transition={{ repeat: Infinity, duration: 2.2, ease: "easeInOut" }}
+            className="flex justify-center"
+          >
+            <Crown className="size-8 text-yellow-500" />
+          </motion.div>
           <p className="font-medium">Você é o czar desta rodada.</p>
           <p className="text-sm text-muted-foreground">
             Espere todo mundo jogar. Depois escolha a melhor resposta.
@@ -733,6 +765,17 @@ function Playing({ game }: { game: ReturnType<typeof useGame> }) {
         <CardContent className="space-y-3 py-6 text-center">
           <AnimatedIcon animation={checkmarkIcon} size={32} autoplay className="mx-auto text-green-500" />
           <p className="font-medium">Sua jogada está na mesa.</p>
+          {/* The played hand, exactly as the czar will read it. */}
+          {state.blackCard && state.myLines && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ type: "spring", stiffness: 300, damping: 24 }}
+              className="mx-auto max-w-md rounded-xl border-2 border-black/10 bg-white p-4 text-left text-black shadow-sm"
+            >
+              <span className="font-medium leading-snug">{fillBlank(state.blackCard.text, state.myLines)}</span>
+            </motion.div>
+          )}
           <p className="text-sm text-muted-foreground">Espere todo mundo jogar para o czar escolher.</p>
           <SubmissionTracker game={game} />
         </CardContent>
@@ -749,7 +792,14 @@ function Playing({ game }: { game: ReturnType<typeof useGame> }) {
         {state.myTraded && <span className="text-xs text-muted-foreground">você já trocou uma carta nesta rodada</span>}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+      {/* The deal: cards fan in with a stagger instead of popping as a
+          block. New cards (a trade, a refill) inherit the same entrance. */}
+      <motion.div
+        className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3"
+        initial="hidden"
+        animate="show"
+        variants={{ show: { transition: { staggerChildren: 0.035 } } }}
+      >
         {game.hand.map((card) => (
           <HandCard
             key={card.id}
@@ -768,7 +818,7 @@ function Playing({ game }: { game: ReturnType<typeof useGame> }) {
             onDiscard={state.myTraded ? undefined : () => game.discardCard(card.id)}
           />
         ))}
-      </div>
+      </motion.div>
 
       {blanks > 0 && (
         <motion.div whileHover={{ scale: readyToPlay ? 1.01 : 1 }} whileTap={{ scale: readyToPlay ? 0.98 : 1 }}>
@@ -817,15 +867,23 @@ function HandCard({
   onDiscard?: () => void;
 }) {
   const isBlank = card.text.includes("__");
+  const locked = disabled && !selected;
   return (
-    <div
+    <motion.div
+      layout
+      variants={{ hidden: { opacity: 0, y: 18, scale: 0.9 }, show: { opacity: 1, y: 0, scale: 1 } }}
+      transition={{ type: "spring", stiffness: 320, damping: 26 }}
+      whileHover={locked ? undefined : { y: -4 }}
+      // Blank cards carry an input -- a tap-scale there reads as the
+      // field jittering, so only printed cards get it.
+      whileTap={!isBlank && !locked ? { scale: 0.97 } : undefined}
       className={cn(
-        "relative rounded-xl border-2 p-3 pb-4 text-sm leading-snug shadow-sm transition-all",
+        "relative rounded-xl border-2 p-3 pb-4 text-sm leading-snug shadow-sm",
         // White card look regardless of theme: the physical card is
         // white, and keeping that makes hands readable at a glance.
         "bg-white text-black",
         selected ? "border-primary ring-2 ring-primary" : "border-black/10",
-        disabled && !selected && "opacity-50",
+        locked && "opacity-50",
       )}
     >
       <button
@@ -862,7 +920,7 @@ function HandCard({
           <Trash2 className="size-3.5" />
         </button>
       )}
-    </div>
+    </motion.div>
   );
 }
 
@@ -897,19 +955,21 @@ function Judging({ game }: { game: ReturnType<typeof useGame> }) {
   const amCzar = state.players.some((p) => p.peerId === game.you?.peerId && p.isCzar);
 
   if (!amCzar) {
+    // Watching the czar deliberate is a spectator sport now: every play
+    // is on the table (anonymous, read-only), not just your own.
     return (
-      <Card>
-        <CardContent className="space-y-3 py-6 text-center">
-          <AnimatedIcon animation={loadingIcon} size={32} autoplay loop className="mx-auto text-muted-foreground" />
-          <p className="font-medium">Todas as jogadas estão na mesa.</p>
-          <p className="text-sm text-muted-foreground">O czar está escolhendo o vencedor…</p>
-          {state.myLines && (
-            <p className="text-sm text-muted-foreground">
-              Sua resposta: <span className="font-medium text-foreground">{state.myLines.join(" · ")}</span>
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <div className="space-y-3">
+        <Card>
+          <CardContent className="space-y-1.5 py-5 text-center">
+            <div className="flex items-center justify-center gap-2">
+              <AnimatedIcon animation={loadingIcon} size={20} autoplay loop className="text-muted-foreground" />
+              <p className="font-medium">O czar está escolhendo o vencedor…</p>
+            </div>
+            <p className="text-sm text-muted-foreground">As respostas de todo mundo estão na mesa — leia em voz alta e ria.</p>
+          </CardContent>
+        </Card>
+        <SubmissionCards game={game} />
+      </div>
     );
   }
 
@@ -917,33 +977,12 @@ function Judging({ game }: { game: ReturnType<typeof useGame> }) {
 }
 
 function JudgeList({ game }: { game: ReturnType<typeof useGame> }) {
-  const state = game.state!;
-  const submissions = state.submissions ?? [];
   const [picked, setPicked] = useState<string | null>(null);
 
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">Toque na melhor resposta para coroar o vencedor.</p>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {submissions.map((sub, i) => (
-          <motion.button
-            key={sub.id}
-            type="button"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25, delay: i * 0.05, ease: "easeOut" }}
-            onClick={() => setPicked(picked === sub.id ? null : sub.id)}
-            className={cn(
-              "relative rounded-xl border-2 bg-white p-4 text-left text-black shadow-sm transition-all",
-              picked === sub.id ? "border-primary ring-2 ring-primary" : "border-black/10 hover:border-black/30",
-            )}
-          >
-            <span className="font-medium leading-snug">
-              {state.blackCard ? fillBlank(state.blackCard.text, sub.lines) : sub.lines.join(" · ")}
-            </span>
-          </motion.button>
-        ))}
-      </div>
+      <SubmissionCards game={game} picked={picked} onSelect={(id) => setPicked(picked === id ? null : id)} />
       <motion.div whileHover={{ scale: picked ? 1.01 : 1 }} whileTap={{ scale: picked ? 0.98 : 1 }}>
         <Button
           type="button"
@@ -969,13 +1008,21 @@ function RoundEnd({ game }: { game: ReturnType<typeof useGame> }) {
     <div className="space-y-4">
       {winner && (
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 8 }}
+          initial={{ opacity: 0, scale: 0.9, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ duration: 0.3, ease: "easeOut" }}
+          transition={{ type: "spring", stiffness: 260, damping: 20 }}
         >
-          <Card className="border-yellow-500/40 bg-yellow-500/5">
+          <Card className="relative overflow-hidden border-yellow-500/40 bg-yellow-500/5">
+            <Confetti />
             <CardContent className="flex items-center gap-4 py-5">
-              <Trophy className="size-8 shrink-0 text-yellow-500" />
+              <motion.div
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: "spring", stiffness: 300, damping: 12, delay: 0.1 }}
+                className="shrink-0"
+              >
+                <Trophy className="size-8 text-yellow-500" />
+              </motion.div>
               <div className="min-w-0">
                 <p className="font-semibold">
                   {winner.name} {winner.peerId === game.you?.peerId && "(você)"} ganhou a rodada
@@ -987,6 +1034,15 @@ function RoundEnd({ game }: { game: ReturnType<typeof useGame> }) {
             </CardContent>
           </Card>
         </motion.div>
+      )}
+
+      {/* The whole table, winner crowned -- the part everyone reads out
+          loud and laughs at. */}
+      {(state.submissions?.length ?? 0) > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">Todas as respostas da rodada:</p>
+          <SubmissionCards game={game} winnerId={state.winnerSubmissionId} />
+        </div>
       )}
 
       {amCzar ? (
@@ -1014,9 +1070,19 @@ function GameOver({ game }: { game: ReturnType<typeof useGame> }) {
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.35, ease: "easeOut" }}
-          className="text-center"
+          className="relative text-center"
         >
-          <Trophy className="mx-auto size-12 text-yellow-500" />
+          <Confetti count={40} />
+          <motion.div
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 260, damping: 12 }}
+            className="flex justify-center"
+          >
+            <motion.div animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}>
+              <Trophy className="size-12 text-yellow-500" />
+            </motion.div>
+          </motion.div>
           <p className="mt-2 text-2xl font-bold tracking-tight">
             {gw.name} {gw.peerId === game.you?.peerId && "(você)"} venceu o jogo!
           </p>
@@ -1040,8 +1106,12 @@ function Scoreboard({ state, you }: { state: GameState; you: string }) {
   return (
     <ul className="flex flex-wrap gap-1.5">
       {ranked.map((p) => (
-        <li
+        // layout: chips glide past each other as scores reorder the
+        // ranking instead of teleporting.
+        <motion.li
           key={p.peerId}
+          layout
+          transition={{ type: "spring", stiffness: 380, damping: 30 }}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs",
             p.peerId === you && "border-primary",
@@ -1050,10 +1120,217 @@ function Scoreboard({ state, you }: { state: GameState; you: string }) {
         >
           {p.isCzar && <Crown className="size-3 text-yellow-500" />}
           <span className="font-medium">{p.name}</span>
-          <span className="tabular-nums text-muted-foreground">{p.score}</span>
-        </li>
+          <span className="shrink-0 tabular-nums text-muted-foreground">
+            {/* The number itself pops in when it changes. */}
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.span
+                key={p.score}
+                initial={{ y: -10, opacity: 0, scale: 1.35 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
+                exit={{ y: 8, opacity: 0 }}
+                transition={{ type: "spring", stiffness: 420, damping: 24 }}
+                className="inline-block"
+              >
+                {p.score}
+              </motion.span>
+            </AnimatePresence>
+          </span>
+        </motion.li>
       ))}
     </ul>
+  );
+}
+
+// Your own name in the header -- tap to change it any time, mid-round
+// included. The server rebroadcasts it (scoreboard, knock badges, the
+// people list) and hands back a fresh resume token, which useGame
+// stores -- so the rename survives a reconnect too.
+function NameChip({ game }: { game: ReturnType<typeof useGame> }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function toggle() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setDraft(game.you?.name ?? "");
+    setOpen(true);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function save() {
+    const name = draft.trim();
+    if (name && name !== game.you?.name) game.setName(name);
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={toggle}
+        title="Mudar seu nome"
+        className="inline-flex max-w-32 items-center gap-1.5 rounded-md px-1.5 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      >
+        <Pencil className="size-3.5 shrink-0" />
+        <span className="truncate font-medium text-foreground">{game.you?.name}</span>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-0 top-full z-30 mt-2 w-64 origin-top-right rounded-md border bg-card p-3 text-card-foreground shadow-md"
+          >
+            <Label htmlFor="rename-input">Seu nome</Label>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                save();
+              }}
+              className="mt-1.5 flex gap-2"
+            >
+              <Input
+                ref={inputRef}
+                id="rename-input"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
+                maxLength={30}
+                placeholder="como quer ser chamado?"
+              />
+              <Button type="submit" size="icon" className="size-10 shrink-0" aria-label="Salvar nome">
+                <Check className="size-4" />
+              </Button>
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// The table of anonymous plays -- shown to everyone, in judging and at
+// the reveal. For the czar it's the picking surface (onSelect set, the
+// two-tap confirm lives in JudgeList); for everyone else it's
+// read-only, with their own play and the round's winner called out.
+function SubmissionCards({
+  game,
+  picked,
+  onSelect,
+  winnerId,
+}: {
+  game: ReturnType<typeof useGame>;
+  picked?: string | null;
+  onSelect?: (id: string) => void;
+  winnerId?: string;
+}) {
+  const state = game.state!;
+  const submissions = state.submissions ?? [];
+  // Authorship never leaves the server; MyLines is the one honest way
+  // to recognize your own entry. Joined with a separator that can't
+  // appear in card text so "a"+"bc" never equals "ab"+"c".
+  const mineKey = state.myLines?.join(" ") ?? null;
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {submissions.map((sub: Submission, i: number) => {
+        const isMine = mineKey != null && sub.lines.join(" ") === mineKey;
+        const isWinner = winnerId === sub.id;
+        const interactive = onSelect != null;
+        return (
+          <motion.div
+            key={sub.id}
+            layout
+            initial={{ opacity: 0, y: 14, scale: 0.95, rotate: i % 2 === 0 ? -1.2 : 1.2 }}
+            animate={{ opacity: 1, y: 0, scale: isWinner ? 1.02 : 1, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 320, damping: 26, delay: Math.min(i * 0.06, 0.4) }}
+            whileHover={interactive ? { y: -3, scale: 1.02 } : undefined}
+            whileTap={interactive ? { scale: 0.98 } : undefined}
+            onClick={onSelect ? () => onSelect(sub.id) : undefined}
+            role={interactive ? "button" : undefined}
+            className={cn(
+              "relative rounded-xl border-2 bg-white p-4 text-left text-black shadow-sm",
+              isWinner
+                ? "border-yellow-500 ring-2 ring-yellow-500"
+                : interactive && picked === sub.id
+                  ? "border-primary ring-2 ring-primary"
+                  : "border-black/10",
+              interactive && "cursor-pointer",
+            )}
+          >
+            <span className="font-medium leading-snug">
+              {state.blackCard ? fillBlank(state.blackCard.text, sub.lines) : sub.lines.join(" · ")}
+            </span>
+            {isMine && !isWinner && (
+              <span className="absolute right-2 top-2 rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-medium text-black/70">
+                sua
+              </span>
+            )}
+            {isWinner && (
+              <motion.span
+                initial={{ scale: 0, rotate: -30 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: "spring", stiffness: 400, damping: 15, delay: 0.15 }}
+                className="absolute -right-2 -top-2 flex size-7 items-center justify-center rounded-full bg-yellow-400 text-black shadow"
+                title="Resposta vencedora"
+              >
+                <Crown className="size-4" />
+              </motion.span>
+            )}
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+}
+
+// A one-shot burst of paper bits -- no library, gone after about a
+// second and a half. Render inside a relatively-positioned parent (the
+// winner card, the game-over banner).
+const CONFETTI_COLORS = ["#facc15", "#3b82f6", "#ec4899", "#22c55e", "#a855f7", "#f97316"];
+
+function Confetti({ count = 26 }: { count?: number }) {
+  // Generated once per mount: a re-render must not re-roll the pieces
+  // mid-flight.
+  const pieces = useMemo(
+    () =>
+      Array.from({ length: count }, (_, i) => ({
+        id: i,
+        x: (Math.random() - 0.5) * 220,
+        peak: -(60 + Math.random() * 110),
+        rotate: (Math.random() - 0.5) * 540,
+        delay: Math.random() * 0.25,
+        duration: 1.1 + Math.random() * 0.7,
+        size: 5 + Math.random() * 5,
+        color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      })),
+    [count],
+  );
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+      {pieces.map((p) => (
+        <motion.span
+          key={p.id}
+          initial={{ x: 0, y: 8, opacity: 1, rotate: 0 }}
+          animate={{ x: p.x, y: [8, p.peak, p.peak + 150], opacity: [1, 1, 0], rotate: p.rotate }}
+          transition={{ duration: p.duration, delay: p.delay, times: [0, 0.35, 1], ease: "easeOut" }}
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "45%",
+            width: p.size,
+            height: p.size * 0.6,
+            backgroundColor: p.color,
+            borderRadius: 1,
+          }}
+        />
+      ))}
+    </div>
   );
 }
 

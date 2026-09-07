@@ -2,8 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* shadcn's default token set, dark-only: this app is a single dark
-   surface with a video on it, so there's no theme toggle to support. */
+/* shadcn's token set in two themes. Dark is the default (the classic
+   night table) and the header's toggle flips <html data-theme> to
+   light; main.tsx applies the saved choice before first paint. */
 @layer base {
   :root {
     --background: 240 10% 4%;
@@ -26,6 +27,26 @@
     --radius: 0.75rem;
   }
 
+  :root[data-theme="light"] {
+    --background: 40 20% 97%;
+    --foreground: 240 10% 8%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 8%;
+    --primary: 217 91% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 6% 92%;
+    --secondary-foreground: 240 10% 8%;
+    --muted: 240 6% 92%;
+    --muted-foreground: 240 4% 42%;
+    --accent: 240 6% 92%;
+    --accent-foreground: 240 10% 8%;
+    --destructive: 0 74% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 6% 84%;
+    --input: 240 6% 84%;
+    --ring: 217 91% 55%;
+  }
+
   * {
     @apply border-border;
   }
@@ -34,7 +55,7 @@
     @apply bg-background text-foreground antialiased;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     /* The page is a fixed-height app shell, not a document -- letting it
-       rubber-band on iOS just reveals background behind the video. */
+       rubber-band on iOS just reveals background behind the app. */
     overscroll-behavior: none;
   }
 

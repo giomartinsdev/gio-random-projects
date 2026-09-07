@@ -34,7 +34,9 @@ export type Phase = "lobby" | "playing" | "judging" | "roundEnd" | "gameOver";
 
 // The per-viewer snapshot: other players' hands and submission
 // authorship while judging simply never arrive (see the Go side's
-// Snapshot).
+// Snapshot). Submissions themselves reach everyone -- judging and the
+// reveal are a spectator sport; winnerSubmissionId points at the
+// winning entry once the round is over.
 export type GameState = {
   phase: Phase;
   round: number;
@@ -46,6 +48,7 @@ export type GameState = {
   myLines?: string[];
   myTraded: boolean;
   submissions?: Submission[];
+  winnerSubmissionId?: string;
   winner?: Winner;
   gameWinner?: Winner;
 };
@@ -182,6 +185,28 @@ export function useGame(roomId: string, credential: Credential, displayName?: st
             break;
           }
 
+          // Someone changed their display name -- keep every list that
+          // shows names in sync. If it was us, the header chip follows.
+          case "peer:rename": {
+            const peerId = msg.peerId as string;
+            const name = msg.name as string;
+            setPeers((current) => current.map((p) => (p.peerId === peerId ? { ...p, name } : p)));
+            setYou((current) => (current?.peerId === peerId ? { ...current, name } : current));
+            break;
+          }
+
+          // Our own rename echoed back, with the fresh resume token that
+          // signs the new name -- without it, a reconnect would come
+          // back as a stranger (the old token stopped verifying the
+          // moment the name changed). Same persistence as a first join.
+          case "renamed": {
+            const peerId = msg.peerId as string;
+            const name = msg.name as string;
+            setYou({ peerId, name });
+            rememberIdentity(roomId, { peerId, name, resume: (msg.resume as string) ?? "" });
+            break;
+          }
+
           case "knock:request": {
             const req: KnockRequest = { requestId: msg.requestId as string, name: msg.name as string };
             setKnockRequests((current) => [...current.filter((k) => k.requestId !== req.requestId), req]);
@@ -244,6 +269,9 @@ export function useGame(roomId: string, credential: Credential, displayName?: st
   const nextRound = useCallback(() => sendCleared({ type: "round:next" }), [sendCleared]);
   const skipRound = useCallback(() => sendCleared({ type: "round:skip" }), [sendCleared]);
   const resetGame = useCallback(() => sendCleared({ type: "game:reset" }), [sendCleared]);
+  // Mid-game rename: the server updates the scoreboard and hands back
+  // a fresh resume token (see the "renamed" case above).
+  const setName = useCallback((name: string) => sendCleared({ type: "name:set", name }), [sendCleared]);
   const approveKnock = useCallback(
     (requestId: string) => sendCleared({ type: "knock:approve", requestId }),
     [sendCleared],
@@ -269,6 +297,7 @@ export function useGame(roomId: string, credential: Credential, displayName?: st
     nextRound,
     skipRound,
     resetGame,
+    setName,
     approveKnock,
     denyKnock,
   };

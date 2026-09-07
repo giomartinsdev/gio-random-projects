@@ -28,6 +28,25 @@ func mustStart(t *testing.T, g *Game, caller string) {
 	}
 }
 
+// Renaming updates the scoreboard everywhere it appears.
+func TestRenamePlayer(t *testing.T) {
+	g := New()
+	joinAll(t, g, "a", "b", "c")
+
+	g.RenamePlayer("b", "Zé")
+	for _, viewer := range []string{"a", "b", "c"} {
+		for _, p := range g.Snapshot(viewer).Players {
+			if p.PlayerID == "b" && p.Name != "Zé" {
+				t.Fatalf("viewer %s sees b as %q", viewer, p.Name)
+			}
+		}
+	}
+
+	// Renaming a stranger (or after a reset, which keeps the roster) is
+	// a no-op, not a panic.
+	g.RenamePlayer("ghost", "Fantasma")
+}
+
 func TestStartRequiresThreePlayers(t *testing.T) {
 	g := New()
 	g.Join("a", "A")
@@ -124,12 +143,25 @@ func TestFullRoundFlow(t *testing.T) {
 		t.Fatal("judging should open once everyone submitted")
 	}
 
-	// The Czar sees submissions; the players don't.
+	// Everyone sees every submission while judging -- reading the
+	// table's answers together is the point. Authorship stays hidden;
+	// MyLines is how a player recognizes their own entry.
 	if got := g.Snapshot("a").Submissions; len(got) != 2 {
 		t.Fatalf("czar submissions = %d, want 2", len(got))
 	}
-	if got := g.Snapshot("b").Submissions; got != nil {
-		t.Fatalf("non-czar should see no submissions, got %v", got)
+	if got := g.Snapshot("b").Submissions; len(got) != 2 {
+		t.Fatalf("non-czar submissions = %d, want 2", len(got))
+	}
+	if got := g.Snapshot("b").MyLines; got == nil || len(got) != st.BlackBlanks {
+		t.Fatalf("submitter's own lines = %v", got)
+	}
+	// And nobody's snapshot carries anyone else's authorship.
+	for _, id := range []string{"b", "c"} {
+		for _, sub := range g.Snapshot(id).Submissions {
+			if sub.Lines == nil {
+				t.Fatalf("submission %s has no lines", sub.ID)
+			}
+		}
 	}
 
 	// Only the Czar can pick.
@@ -149,6 +181,28 @@ func TestFullRoundFlow(t *testing.T) {
 	st = g.Snapshot("a")
 	if st.Winner == nil || st.Winner.Lines == nil || len(st.Winner.Lines) != st.BlackBlanks {
 		t.Fatalf("winner reveal = %+v", st.Winner)
+	}
+
+	// The whole table stays up through the reveal, with the winning
+	// entry pointed at by id -- and the id belongs to a submission whose
+	// lines match the winner's.
+	if got := g.Snapshot("b").Submissions; len(got) != 2 {
+		t.Fatalf("roundEnd submissions = %d, want 2", len(got))
+	}
+	if st.WinnerSubmissionID == "" {
+		t.Fatal("roundEnd should name the winning submission")
+	}
+	var winnerSub *SubmissionView
+	for i, sub := range st.Submissions {
+		if sub.ID == st.WinnerSubmissionID {
+			winnerSub = &st.Submissions[i]
+		}
+	}
+	if winnerSub == nil {
+		t.Fatalf("winnerSubmissionId %q not among submissions", st.WinnerSubmissionID)
+	}
+	if strings.Join(winnerSub.Lines, "|") != strings.Join(st.Winner.Lines, "|") {
+		t.Fatalf("winning submission %v != winner reveal %v", winnerSub.Lines, st.Winner.Lines)
 	}
 
 	// Only the Czar can advance.

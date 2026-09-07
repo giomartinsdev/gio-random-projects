@@ -147,6 +147,27 @@ func (room *Room) Leave(p *Peer) {
 	room.Broadcast(map[string]any{"type": "peer:leave", "peerId": p.ID}, p.ID)
 }
 
+// RenamePeer changes a peer's display name -- in the room's peer list,
+// in the game's scoreboard, and in their own resume token, which signs
+// the name and would stop verifying otherwise. So the fresh token goes
+// to the renamer privately (their reconnect depends on it) while the
+// rename itself is broadcast for everyone else's peer list; the state
+// broadcast right after carries the new name in the scoreboard.
+func (room *Room) RenamePeer(p *Peer, name string) {
+	room.mu.Lock()
+	if p.Name == name {
+		room.mu.Unlock()
+		return
+	}
+	p.Name = name
+	room.mu.Unlock()
+
+	room.game.RenamePlayer(p.ID, name)
+	room.Broadcast(map[string]any{"type": "peer:rename", "peerId": p.ID, "name": name}, p.ID)
+	p.Send(map[string]any{"type": "renamed", "peerId": p.ID, "name": name, "resume": room.ResumeToken(p.ID, name)})
+	room.BroadcastGameState()
+}
+
 // Broadcast sends to everyone except excludeID (pass "" to include
 // everyone).
 func (room *Room) Broadcast(v any, excludeID string) {

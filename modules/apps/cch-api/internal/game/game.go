@@ -181,6 +181,18 @@ func (g *Game) Join(playerID, name string) {
 	g.dealIfHandlessLocked(playerID)
 }
 
+// RenamePlayer updates a player's display name mid-game. The next
+// broadcast carries it to every scoreboard; hands, scores and the
+// round itself are untouched. A resume reconnect also carries a name
+// (see Join) -- this is the explicit-rename path only.
+func (g *Game) RenamePlayer(playerID, name string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if p, ok := g.players[playerID]; ok {
+		p.name = name
+	}
+}
+
 // dealIfHandlessLocked gives a (re)joiner cards for the round in
 // progress. Without this, someone arriving mid-round -- or resuming
 // after Leave set their hand aside -- would sit connected with nothing
@@ -747,8 +759,12 @@ type State struct {
 	MyLines      []string        `json:"myLines,omitempty"`
 	MyTraded     bool            `json:"myTraded"`
 	Submissions  []SubmissionView `json:"submissions,omitempty"`
-	Winner       *WinnerView     `json:"winner,omitempty"`
-	GameWinner   *WinnerView     `json:"gameWinner,omitempty"`
+	// When the round is over, which entry inside Submissions won. The
+	// client highlights it by id -- matching by text could collide when
+	// two write-your-own answers say the same thing.
+	WinnerSubmissionID string        `json:"winnerSubmissionId,omitempty"`
+	Winner             *WinnerView   `json:"winner,omitempty"`
+	GameWinner         *WinnerView   `json:"gameWinner,omitempty"`
 }
 
 // WinnerView is a revealed winner: who they are and what they played.
@@ -807,15 +823,26 @@ func (g *Game) Snapshot(viewerID string) State {
 			st.MyLines = me.submission.Lines
 		}
 	case PhaseJudging:
-		if viewerID == czar {
-			// Stable copy of the frozen judging view -- the shuffle
-			// happened once when judging opened, not here.
-			st.Submissions = append([]SubmissionView(nil), g.judgeViews...)
-		} else if me != nil && me.submission != nil {
+		// Everyone sees every play while the czar deliberates -- reading
+		// the table's answers together is half the fun. These are the
+		// anonymous frozen views (shuffled once when judging opened, not
+		// here); authorship still never leaves the server, so MyLines is
+		// how a player recognizes their own entry.
+		st.Submissions = append([]SubmissionView(nil), g.judgeViews...)
+		if me != nil && me.submission != nil {
 			st.MyLines = me.submission.Lines
 		}
 	case PhaseRoundEnd, PhaseGameOver:
+		// The full table stays up through the reveal so the room can
+		// relive every answer; the winner's entry is called out by id.
+		st.Submissions = append([]SubmissionView(nil), g.judgeViews...)
 		if g.winnerID != "" {
+			for i, author := range g.judgeOrder {
+				if author == g.winnerID && i < len(g.judgeViews) {
+					st.WinnerSubmissionID = g.judgeViews[i].ID
+					break
+				}
+			}
 			p := g.players[g.winnerID]
 			if p != nil && p.submission != nil {
 				lines := append([]string(nil), p.submission.Lines...)
