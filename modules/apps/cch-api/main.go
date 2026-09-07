@@ -17,10 +17,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/ai"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/customdecks"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/rooms"
 )
@@ -51,6 +54,29 @@ func main() {
 	registry.StartJanitor(stopJanitor)
 	defer close(stopJanitor)
 
+	// The deck marketplace lives next to the room registry: same volume,
+	// same "a JSON file survives redeploys" trade. CUSTOM_DECKS_FILE
+	// overrides it; otherwise it's derived from STATE_FILE's directory so
+	// production (which sets only STATE_FILE) persists both without a
+	// second env var to remember.
+	decksPath := env("CUSTOM_DECKS_FILE", "")
+	if decksPath == "" && statePath != "" {
+		decksPath = filepath.Join(filepath.Dir(statePath), "custom-decks.json")
+	}
+	forge := customdecks.New(decksPath)
+	if err := forge.Load(); err != nil {
+		log.Printf("could not restore custom decks from %q: %v", decksPath, err)
+	} else if len(forge.List()) > 0 {
+		log.Printf("custom decks restored from %q: %d", decksPath, len(forge.List()))
+	}
+
+	// The AI writer: unset CCH_AI_BASE_URL means the forge's generate
+	// button answers "IA não configurada" and everything else works.
+	aiClient := ai.NewFromEnv()
+	if aiClient.Enabled() {
+		log.Printf("deck forge enabled (ai base %s, model %q)", aiClient.BaseURL(), aiClient.Model())
+	}
+
 	// Host networking (see the container's own docs) means this binds
 	// straight onto the VPS's interfaces -- BIND_HOST lets the ingress
 	// deployment keep it off everything but loopback, since nginx is
@@ -58,7 +84,7 @@ func main() {
 	// dev) falls back to every interface, same as tela-api.
 	server := &http.Server{
 		Addr:    os.Getenv("BIND_HOST") + ":" + port,
-		Handler: httpapi.New(registry, allowedOrigins).Handler(),
+		Handler: httpapi.New(registry, allowedOrigins, aiClient, forge).Handler(),
 		// No WriteTimeout: a WebSocket connection is meant to stay open
 		// for as long as the game lasts, and WriteTimeout would cut it
 		// off. Per-write deadlines in the WS write loop cover the

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Users } from "lucide-react";
-import { api, type DeckInfo, type RoomSummary } from "@/lib/api";
+import { Check, Sparkles, Users, Wand2 } from "lucide-react";
+import { api, peekPresetDeck, type CustomDeckInfo, type DeckInfo, type RoomSummary } from "@/lib/api";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { arrowRightCircleIcon, loadingIcon, radioButtonIcon } from "@/lib/lottie-icons";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [activeRooms, setActiveRooms] = useState<RoomSummary[]>([]);
   const [decks, setDecks] = useState<DeckInfo[]>([]);
+  const [customDecks, setCustomDecks] = useState<CustomDeckInfo[]>([]);
   // All decks on by default -- "everything, shuffle it together" is
   // what most rooms want, and deselecting is one tap on a chip.
   const [selectedDecks, setSelectedDecks] = useState<Set<string>>(new Set());
@@ -71,12 +72,33 @@ export default function Home() {
       .then((list) => {
         if (cancelled) return;
         setDecks(list);
-        setSelectedDecks(new Set(list.map((d) => d.id)));
+        // A marketplace deck stashed by the forge's "jogar" button wins:
+        // that session is meant to be played with exactly that deck.
+        // Peek, don't take -- this effect re-runs (StrictMode in dev) and
+        // the preset is spent by the lobby when the game actually starts.
+        const preset = peekPresetDeck();
+        if (preset) setSelectedDecks(new Set([preset]));
+        else setSelectedDecks(new Set(list.map((d) => d.id)));
       })
       .catch(() => {
         // No decks listed just means the create form shows none to pick
         // -- joining still works, so this isn't worth an error banner.
       });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Marketplace decks are opt-in per room: they show up as chips, but
+  // never shuffle themselves silently into every game.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listCustomDecks()
+      .then((list) => {
+        if (!cancelled) setCustomDecks(list);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -251,38 +273,33 @@ export default function Home() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Decks</Label>
+                      <div className="flex items-center justify-between">
+                        <Label>Decks</Label>
+                        <Link
+                          to="/forja"
+                          className="inline-flex items-center gap-1 text-xs text-primary transition-colors hover:underline"
+                        >
+                          <Wand2 className="size-3" /> criar novo com IA
+                        </Link>
+                      </div>
                       <div className="flex flex-wrap gap-2">
-                        {decks.map((deck) => {
-                          const selected = selectedDecks.has(deck.id);
-                          return (
-                            <motion.button
-                              key={deck.id}
-                              type="button"
-                              title={deck.description}
-                              onClick={() => toggleDeck(deck.id)}
-                              whileTap={{ scale: 0.94 }}
-                              className={cn(
-                                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
-                                selected
-                                  ? "border-primary bg-primary/15 text-foreground"
-                                  : "text-muted-foreground hover:bg-accent",
-                              )}
-                            >
-                              {selected ? (
-                                <Check className="size-3.5 text-primary" />
-                              ) : (
-                                <span className="size-3.5" />
-                              )}
-                              <span>
-                                {deck.emoji} {deck.name}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                {deck.whites + deck.blacks}
-                              </span>
-                            </motion.button>
-                          );
-                        })}
+                        {decks.map((deck) => (
+                          <DeckChip
+                            key={deck.id}
+                            deck={deck}
+                            selected={selectedDecks.has(deck.id)}
+                            onToggle={() => toggleDeck(deck.id)}
+                          />
+                        ))}
+                        {customDecks.map((deck) => (
+                          <DeckChip
+                            key={deck.id}
+                            deck={deck}
+                            custom
+                            selected={selectedDecks.has(deck.id)}
+                            onToggle={() => toggleDeck(deck.id)}
+                          />
+                        ))}
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Todas as cartas dos decks escolhidos são embaralhadas juntas.
@@ -378,10 +395,70 @@ export default function Home() {
           </Card>
         </motion.div>
 
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.15, ease: "easeOut" }}
+          className="mt-4"
+        >
+          <Link to="/forja" className="group block">
+            <div className="flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:bg-accent">
+              <motion.span
+                className="text-2xl"
+                animate={{ rotate: [0, -10, 10, 0] }}
+                transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+              >
+                ✨
+              </motion.span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium">Forja de decks</div>
+                <div className="text-xs text-muted-foreground">
+                  Gere um deck novo com IA sobre qualquer tema, refine à mão e publique.
+                </div>
+              </div>
+              <Sparkles className="size-4 shrink-0 text-primary transition-transform group-hover:scale-110" />
+            </div>
+          </Link>
+        </motion.div>
+
         <p className="mt-6 text-center text-xs text-muted-foreground">
           18+. Humor pesado, sem censura — as cartas são de mentira, a vergonha é real.
         </p>
       </div>
     </div>
+  );
+}
+
+// One deck chip, shared by the built-in decks and the marketplace's
+// (which carry the sparkle so nobody mistakes them for stock content).
+function DeckChip({
+  deck,
+  custom,
+  selected,
+  onToggle,
+}: {
+  deck: Pick<DeckInfo, "id" | "emoji" | "name" | "description" | "whites" | "blacks">;
+  custom?: boolean;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <motion.button
+      type="button"
+      title={deck.description}
+      onClick={onToggle}
+      whileTap={{ scale: 0.94 }}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
+        selected ? "border-primary bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-accent",
+      )}
+    >
+      {selected ? <Check className="size-3.5 text-primary" /> : <span className="size-3.5" />}
+      <span>
+        {deck.emoji} {deck.name}
+      </span>
+      {custom && <Sparkles className="size-3 shrink-0 text-primary" />}
+      <span className="text-xs text-muted-foreground">{deck.whites + deck.blacks}</span>
+    </motion.button>
   );
 }

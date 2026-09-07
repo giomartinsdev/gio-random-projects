@@ -10,6 +10,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/customdecks"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/game"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/rooms"
 )
@@ -203,6 +204,14 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 			if err := w.room.Game().Start(w.peer.ID, msg.Decks, msg.WinningScore); err != nil {
 				w.fail(err)
 				continue
+			}
+			// Marketplace decks get a play counted per game started with
+			// them -- the one signal the listing shows. Purely cosmetic
+			// bookkeeping: a failure here must never fail the start.
+			for _, deckID := range msg.Decks {
+				if strings.HasPrefix(deckID, customdecks.IDPrefix) {
+					w.server.custom.IncPlays(deckID)
+				}
 			}
 			w.room.BroadcastGameState()
 

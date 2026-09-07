@@ -38,6 +38,14 @@ resource "docker_container" "cch_api" {
     # Cross-origin caller (cch-frontend's MinIO-served origin) -- see
     # internal/httpapi's AllowedOrigins.
     "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
+    # The deck forge's AI writer: 9router runs on this same host
+    # (compute/services/ai_proxy), loopback-published on 20128 with
+    # REQUIRE_API_KEY=false -- so the loopback call needs no key and no
+    # public hop. This container is network_mode=host, so its own
+    # localhost IS the VPS's. Model comes from the proxy's own list
+    # (internal/ai picks a small one); override with CCH_AI_MODEL if a
+    # specific one is wanted.
+    "CCH_AI_BASE_URL=http://127.0.0.1:20128/v1",
   ]
 
   # Rooms live in memory, but the room registry itself (code, password

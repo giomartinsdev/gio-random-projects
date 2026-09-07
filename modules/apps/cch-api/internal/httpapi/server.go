@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/ai"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/customdecks"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/decks"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/rooms"
 )
@@ -29,14 +31,28 @@ type Server struct {
 	// cch-frontend's own origin(s) -- the only ones the REST API sends
 	// CORS headers for and the WebSocket accepts a connection from.
 	AllowedOrigins []string
+
+	// The deck forge (see forge.go): AI generation is nil when the
+	// server has no CCH_AI_BASE_URL, and the custom-deck marketplace is
+	// always present (memory-only without a persistence path).
+	ai     *ai.Client
+	custom *customdecks.Store
+	// genLimiter bounds generations per IP; generationSlot admits one
+	// in-flight generation process-wide.
+	genLimiter      *generationLimiter
+	generationSlot  chan struct{}
 }
 
-func New(registry *rooms.Registry, allowedOrigins []string) *Server {
+func New(registry *rooms.Registry, allowedOrigins []string, aiClient *ai.Client, custom *customdecks.Store) *Server {
 	s := &Server{
 		registry:       registry,
 		limiter:        newAttemptLimiter(),
 		mux:            http.NewServeMux(),
 		AllowedOrigins: allowedOrigins,
+		ai:             aiClient,
+		custom:         custom,
+		genLimiter:     newGenerationLimiter(),
+		generationSlot: make(chan struct{}, 1),
 	}
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -48,6 +64,11 @@ func New(registry *rooms.Registry, allowedOrigins []string) *Server {
 	s.mux.HandleFunc("POST /api/rooms/{id}/knock", s.handleKnock)
 	s.mux.HandleFunc("GET /api/rooms/{id}/knock/{requestId}", s.handleKnockStatus)
 	s.mux.HandleFunc("GET /api/decks", s.handleDecks)
+	s.mux.HandleFunc("GET /api/ai/status", s.handleAIStatus)
+	s.mux.HandleFunc("POST /api/decks/generate", s.handleGenerateDeck)
+	s.mux.HandleFunc("POST /api/decks/custom", s.handlePublishCustomDeck)
+	s.mux.HandleFunc("GET /api/decks/custom", s.handleListCustomDecks)
+	s.mux.HandleFunc("GET /api/decks/custom/{id}", s.handleGetCustomDeck)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	return s
@@ -264,9 +285,19 @@ func (s *Server) handleKnockStatus(w http.ResponseWriter, r *http.Request) {
 
 // handleDecks lists the themed decks for the room setup screen:
 // names, sizes and descriptions -- never the cards themselves, which
-// only reach a player through the deal.
+// only reach a player through the deal. Marketplace decks resolve here
+// too (the game engine plays them straight from the registry) but are
+// excluded: they are listed separately by handleListCustomDecks, which
+// carries author/plays metadata, and showing them twice reads as a bug.
 func (s *Server) handleDecks(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, decks.Infos())
+	infos := make([]decks.DeckInfo, 0, len(decks.Infos()))
+	for _, info := range decks.Infos() {
+		if strings.HasPrefix(info.ID, customdecks.IDPrefix) {
+			continue
+		}
+		infos = append(infos, info)
+	}
+	writeJSON(w, http.StatusOK, infos)
 }
 
 func decodeJSON(r *http.Request, dst any) error {

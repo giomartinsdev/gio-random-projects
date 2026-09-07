@@ -15,6 +15,8 @@ package decks
 
 import (
 	"crypto/rand"
+	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,6 +54,54 @@ type Deck struct {
 
 	whites []string
 	blacks []string
+}
+
+// New builds a deck from raw card texts. It exists for decks created at
+// runtime -- the marketplace's custom decks (see internal/customdecks) --
+// since everything here keeps its card texts unexported on purpose: the
+// only way in is through this constructor, which validates the same
+// invariants the built-in decks' test enforces. Every black card needs at
+// least one blank mark (and at most three -- a sentence with more is not
+// a joke, it's homework), and duplicate white texts are rejected.
+func New(id, name, emoji, description string, whites, blacks []string) (Deck, error) {
+	if id == "" {
+		return Deck{}, errors.New("deck sem id")
+	}
+	if len(whites) == 0 || len(blacks) == 0 {
+		return Deck{}, errors.New("deck precisa de cartas brancas e pretas")
+	}
+	for i, w := range whites {
+		if strings.TrimSpace(w) == "" {
+			return Deck{}, fmt.Errorf("carta branca %d vazia", i+1)
+		}
+	}
+	for i, b := range blacks {
+		n := strings.Count(b, BlankBlackMark)
+		if n < 1 {
+			return Deck{}, fmt.Errorf("carta preta %d sem lacuna \"_\"", i+1)
+		}
+		if n > 3 {
+			return Deck{}, fmt.Errorf("carta preta %d com lacunas demais", i+1)
+		}
+	}
+	seen := make(map[string]bool, len(whites))
+	for _, w := range whites {
+		if w == BlankWhiteText {
+			continue // write-your-own cards may repeat
+		}
+		if seen[w] {
+			return Deck{}, fmt.Errorf("carta branca duplicada: %q", w)
+		}
+		seen[w] = true
+	}
+	return Deck{
+		ID:          id,
+		Name:        name,
+		Emoji:       emoji,
+		Description: description,
+		whites:      append([]string(nil), whites...),
+		blacks:      append([]string(nil), blacks...),
+	}, nil
 }
 
 // Whites returns this deck's white cards with stable, unique IDs.

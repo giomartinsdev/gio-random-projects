@@ -20,6 +20,45 @@ export type DeckInfo = {
   blacks: number;
 };
 
+// ---- Forja de Decks (AI generation + marketplace) ----
+
+// A marketplace listing: same shape as a built-in deck's info plus who
+// forged it and how much it's been played.
+export type CustomDeckInfo = {
+  id: string;
+  name: string;
+  emoji: string;
+  description: string;
+  parentId?: string;
+  author?: string;
+  whites: number;
+  blacks: number;
+  createdAt: string;
+  plays: number;
+};
+
+// The full deck, cards included -- only for the forge's editor/fork
+// flow, never for browsing.
+export type CustomDeck = CustomDeckInfo & {
+  whites: string[];
+  blacks: string[];
+};
+
+// What the AI returns: a draft the editor takes as a starting point.
+export type DeckDraft = {
+  name: string;
+  emoji: string;
+  description: string;
+  whites: string[];
+  blacks: string[];
+};
+
+export type AIStatus = { configured: boolean; model: string };
+
+// The same "custom" marker the lobby chips use: custom decks live in
+// the same picker as built-ins, just badged.
+export const CUSTOM_DECK_PREFIX = "cx";
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -72,7 +111,70 @@ export const api = {
     }),
 
   listDecks: () => request<DeckInfo[]>("/api/decks"),
+
+  // ---- Forja ----
+
+  // Whether this server has an AI writer behind the forge.
+  aiStatus: () => request<AIStatus>("/api/ai/status"),
+
+  // Drafts a themed deck from an existing one. Not saved anywhere --
+  // the editor refines it before publishing. Generations take tens of
+  // seconds; the server holds the request until the writer answers.
+  generateDeck: (parentDeckId: string, theme: string) =>
+    request<{ draft: DeckDraft }>("/api/decks/generate", {
+      method: "POST",
+      body: JSON.stringify({ parentDeckId, theme }),
+    }),
+
+  // Publishes the refined deck to the marketplace. The server mints
+  // the id; the response carries it.
+  publishDeck: (deck: {
+    name: string;
+    emoji: string;
+    description: string;
+    parentId?: string;
+    author?: string;
+    whites: string[];
+    blacks: string[];
+  }) => request<CustomDeck>("/api/decks/custom", { method: "POST", body: JSON.stringify(deck) }),
+
+  // Marketplace: metadata only.
+  listCustomDecks: () => request<CustomDeckInfo[]>("/api/decks/custom"),
+
+  // Full deck with cards -- the "open in the forge and fork it" flow.
+  getCustomDeck: (id: string) => request<CustomDeck>(`/api/decks/custom/${encodeURIComponent(id)}`),
 };
+
+// A marketplace deck chosen to play with next: stashed here by the
+// marketplace's "jogar" button and consumed by the room lobby's
+// initial deck selection (and Home's create form).
+const presetDeckKey = "cch:presetDeck";
+
+export function rememberPresetDeck(deckId: string) {
+  try {
+    sessionStorage.setItem(presetDeckKey, deckId);
+  } catch {
+    // Storage disabled: the preset just doesn't carry over.
+  }
+}
+
+export function takePresetDeck(): string | null {
+  try {
+    const v = sessionStorage.getItem(presetDeckKey);
+    sessionStorage.removeItem(presetDeckKey);
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+export function peekPresetDeck(): string | null {
+  try {
+    return sessionStorage.getItem(presetDeckKey);
+  } catch {
+    return null;
+  }
+}
 
 export function wsUrl(params: Record<string, string>): string {
   const qs = new URLSearchParams(params).toString();

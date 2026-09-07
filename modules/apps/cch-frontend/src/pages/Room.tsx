@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, Crown, Pencil, SkipForward, Sparkles, Trash2, Trophy, Users } from "lucide-react";
-import { api, type DeckInfo } from "@/lib/api";
+import { api, peekPresetDeck, takePresetDeck, type CustomDeckInfo, type DeckInfo } from "@/lib/api";
 import { useGame, type Card as GameCard, type Credential, type GameState, type Submission } from "@/lib/useGame";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
+import { Confetti } from "@/components/ui/confetti";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import {
   arrowRightCircleIcon,
@@ -508,6 +509,7 @@ function Lobby({ roomId, game }: { roomId: string; game: ReturnType<typeof useGa
   const state = game.state!;
   const location = useLocation();
   const [decks, setDecks] = useState<DeckInfo[]>([]);
+  const [customDecks, setCustomDecks] = useState<CustomDeckInfo[]>([]);
   // Pre-selected from what the creator chose on the home page -- the
   // navigation state carries it (see Home's handleCreate). Anyone else
   // in the lobby picks their own chips before starting; whoever presses
@@ -519,18 +521,26 @@ function Lobby({ roomId, game }: { roomId: string; game: ReturnType<typeof useGa
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .listDecks()
-      .then((list) => {
+    Promise.all([
+      api.listDecks(),
+      api.listCustomDecks().catch(() => [] as CustomDeckInfo[]),
+    ])
+      .then(([list, customList]) => {
         if (cancelled) return;
         setDecks(list);
+        setCustomDecks(customList);
         // First load: seed from the creator's choices (navigation
-        // state), else everything on. Later loads keep whatever this
+        // state), else the marketplace deck this session came here to
+        // play with, else everything on. Later loads keep whatever this
         // player already toggled.
         setSelected((current) => {
           if (current.size > 0) return current;
           const pre = (location.state as { decks?: string[] } | null)?.decks;
-          return new Set(pre && pre.length > 0 ? pre : list.map((d) => d.id));
+          if (pre && pre.length > 0) return new Set(pre);
+          // Peek, not take: StrictMode re-runs this effect, and the
+          // preset is spent in start() once the game actually begins.
+          const preset = peekPresetDeck();
+          return new Set(preset ? [preset] : list.map((d) => d.id));
         });
         const preScore = (location.state as { winningScore?: number } | null)?.winningScore;
         if (preScore && !winningScorePicked) {
@@ -560,6 +570,9 @@ function Lobby({ roomId, game }: { roomId: string; game: ReturnType<typeof useGa
     if (starting) return;
     setStarting(true);
     game.startGame([...selected], winningScore);
+    // The marketplace preset was just played -- spend it so a later
+    // room in this tab doesn't silently re-select it.
+    takePresetDeck();
     // The broadcast comes back as new state; if nothing changed (a
     // rejection), re-enable after a moment.
     setTimeout(() => setStarting(false), 1500);
@@ -626,6 +639,29 @@ function Lobby({ roomId, game }: { roomId: string; game: ReturnType<typeof useGa
                   <span>
                     {deck.emoji} {deck.name}
                   </span>
+                  <span className="text-xs text-muted-foreground">{deck.whites + deck.blacks}</span>
+                </motion.button>
+              );
+            })}
+            {customDecks.map((deck) => {
+              const on = selected.has(deck.id);
+              return (
+                <motion.button
+                  key={deck.id}
+                  type="button"
+                  title={deck.description}
+                  onClick={() => toggleDeck(deck.id)}
+                  whileTap={{ scale: 0.94 }}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
+                    on ? "border-primary bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-accent",
+                  )}
+                >
+                  {on ? <Check className="size-3.5 text-primary" /> : <span className="size-3.5" />}
+                  <span>
+                    {deck.emoji} {deck.name}
+                  </span>
+                  <Sparkles className="size-3 shrink-0 text-primary" />
                   <span className="text-xs text-muted-foreground">{deck.whites + deck.blacks}</span>
                 </motion.button>
               );
@@ -1292,47 +1328,6 @@ function SubmissionCards({
 // A one-shot burst of paper bits -- no library, gone after about a
 // second and a half. Render inside a relatively-positioned parent (the
 // winner card, the game-over banner).
-const CONFETTI_COLORS = ["#facc15", "#3b82f6", "#ec4899", "#22c55e", "#a855f7", "#f97316"];
-
-function Confetti({ count = 26 }: { count?: number }) {
-  // Generated once per mount: a re-render must not re-roll the pieces
-  // mid-flight.
-  const pieces = useMemo(
-    () =>
-      Array.from({ length: count }, (_, i) => ({
-        id: i,
-        x: (Math.random() - 0.5) * 220,
-        peak: -(60 + Math.random() * 110),
-        rotate: (Math.random() - 0.5) * 540,
-        delay: Math.random() * 0.25,
-        duration: 1.1 + Math.random() * 0.7,
-        size: 5 + Math.random() * 5,
-        color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-      })),
-    [count],
-  );
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-      {pieces.map((p) => (
-        <motion.span
-          key={p.id}
-          initial={{ x: 0, y: 8, opacity: 1, rotate: 0 }}
-          animate={{ x: p.x, y: [8, p.peak, p.peak + 150], opacity: [1, 1, 0], rotate: p.rotate }}
-          transition={{ duration: p.duration, delay: p.delay, times: [0, 0.35, 1], ease: "easeOut" }}
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: "45%",
-            width: p.size,
-            height: p.size * 0.6,
-            backgroundColor: p.color,
-            borderRadius: 1,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
 
 function CopyLinkWithPassword({
   roomId,
