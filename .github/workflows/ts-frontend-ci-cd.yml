@@ -1,8 +1,9 @@
 name: TypeScript frontend deploy
 
 # CI/CD for the TypeScript frontend apps under modules/apps/*/ --
-# buteco-class-frontend (the Buteco dos Devs SPA) and tela-frontend
-# (screen sharing's own page, split from tela-api). Split from the
+# buteco-class-frontend (the Buteco dos Devs SPA), tela-frontend
+# (screen sharing's own page, split from tela-api) and cch-frontend
+# (the cards-against-humanity page). Split from the
 # backend pipeline (ts-backend-ci-cd.yml) because the two build
 # differently in a way that's easy to get wrong sharing one workflow:
 # only a frontend needs VITE_* env vars baked into the bundle at build
@@ -30,6 +31,7 @@ on:
     paths:
       - "modules/apps/buteco-class-frontend/**"
       - "modules/apps/tela-frontend/**"
+      - "modules/apps/cch-frontend/**"
   workflow_dispatch:
     inputs:
       app:
@@ -48,7 +50,7 @@ jobs:
 
       - id: list
         env:
-          ALLOWED_APPS: "buteco-class-frontend tela-frontend"
+          ALLOWED_APPS: "buteco-class-frontend tela-frontend cch-frontend"
         run: |
           all_apps=$(echo "$ALLOWED_APPS" | tr ' ' '\n')
 
@@ -101,9 +103,10 @@ jobs:
       # references (import.meta.env.VITE_X), so an unused one here is
       # a harmless no-op, same convention the old Docker build-args
       # followed. buteco-class-frontend uses VITE_POST_API_URL/etc;
-      # tela-frontend uses only VITE_TELA_API_URL. Both also get
-      # VITE_OTEL_EXPORTER_OTLP_ENDPOINT (the browser telemetry in each
-      # app's src/telemetry.ts).
+      # tela-frontend uses only VITE_TELA_API_URL; cch-frontend only
+      # VITE_CCH_API_URL. The SPAs with browser telemetry also get
+      # VITE_OTEL_EXPORTER_OTLP_ENDPOINT (unused here is a no-op --
+      # see src/telemetry.ts in each app).
       - name: Build ${{ matrix.app }}
         working-directory: modules/apps/${{ matrix.app }}
         env:
@@ -113,6 +116,7 @@ jobs:
           VITE_PUBLIC_APP_URL: https://buteco-class.giomartins.dev
           VITE_TELA_API_URL: https://tela-api.giomartins.dev
           VITE_OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
+          VITE_CCH_API_URL: https://cch-api.giomartins.dev
         run: npm run build
 
       # scp (not the docker provider/API) because the files have to

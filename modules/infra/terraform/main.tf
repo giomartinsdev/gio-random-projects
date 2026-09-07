@@ -234,6 +234,18 @@ module "compute_apps_events_announcer" {
   depends_on = [module.compute_apps_domain_api]
 }
 
+# Standalone like tela_api: no database, no shared auth -- the room
+# password IS the access control, same model as tela.
+module "compute_apps_cch_api" {
+  source = "./modules/compute/apps/cch_api"
+  providers = {
+    docker = docker
+  }
+
+  registry_host    = var.registry_host
+  frontend_origins = ["https://cch.giomartins.dev"]
+}
+
 module "compute_services_registry" {
   source = "./modules/compute/services/registry"
   providers = {
@@ -266,6 +278,7 @@ module "compute_services_ingress" {
     module.compute_apps_bookclub_api,
     module.compute_apps_classroom_api,
     module.compute_apps_tela_api,
+    module.compute_apps_cch_api,
     module.compute_services_registry,
     module.compute_services_monitoring,
     module.compute_services_ai_proxy,

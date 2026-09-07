@@ -314,6 +314,7 @@ jobs:
               domain-api) REPLACE_ARGS+=("-replace=module.compute_apps_domain_api.docker_container.domain_api") ;;
               domain-worker) REPLACE_ARGS+=("-replace=module.compute_apps_domain_api.docker_container.domain_worker") ;;
               tela-api) REPLACE_ARGS+=("-replace=module.compute_apps_tela_api.docker_container.tela_api") ;;
+              cch-api) REPLACE_ARGS+=("-replace=module.compute_apps_cch_api.docker_container.cch_api") ;;
               *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
             esac
           done

@@ -77,6 +77,16 @@ locals {
       port     = 8007
     },
     {
+      # cch-api: the same cch-frontend page calls this cross-origin for
+      # the game's REST + WebSocket (see modules/apps/cch-api's own
+      # README) -- same reasoning as tela-api.giomartins.dev above for
+      # staying out of Access, a Google SSO redirect would break every
+      # fetch/WebSocket call from the browser. Port must match
+      # module.compute_apps_cch_api's external_port.
+      hostname = "cch-api.giomartins.dev"
+      port     = 8008
+    },
+    {
       # 9router: OpenAI-compatible AI proxy with auto-fallback across
       # 40+ providers (Claude, GPT, Gemini, …). Dashboard at /dashboard,
       # API at /v1. Excluded from Cloudflare Access (Google SSO) so CLI/
@@ -173,6 +183,14 @@ locals {
       # nothing user-named ever lands in a public namespace.
       hostname = "media.giomartins.dev"
       bucket   = "buteco-media"
+    },
+    {
+      # Cards Against Humanity clone, played with a room code plus the
+      # room's password -- same reasoning as tela.giomartins.dev above
+      # for staying out of excluded_hostnames/Access: the room password
+      # is the access control, and guests never have an account here.
+      hostname = "cch.giomartins.dev"
+      bucket   = "cch-frontend"
     },
   ]
 }
