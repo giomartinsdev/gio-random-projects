@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
-import { Dices } from "lucide-react";
+import { motion } from "framer-motion";
 import { probeMe, type Me } from "@/lib/api";
-import { initHubThemeSync } from "@/lib/hubTheme";
-import { cn } from "@/lib/utils";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BetPage } from "@/pages/BetPage";
 import { HistoryPage } from "@/pages/HistoryPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { LoginGate } from "@/components/LoginGate";
 
-// Hash routing, like the other micro apps: #/ (apostar), #/historico,
-// #/ajustes. No router dependency -- three tabs don't need one.
+// Hash routing stays (this is a hub micro app -- three tabs don't need
+// a router dependency), but the tab switch itself is Radix Tabs, the
+// same way tela does it: the Tabs value IS the hash, one source of
+// truth.
 const TABS = [
   { hash: "#/", label: "Apostar" },
   { hash: "#/historico", label: "Histórico" },
@@ -46,9 +46,6 @@ export default function App() {
     };
   }, []);
 
-  // The hub's theme follows along while embedded (lib/hubTheme.ts).
-  useEffect(() => initHubThemeSync(), []);
-
   useEffect(() => {
     const onHash = () => setTab(currentTab());
     window.addEventListener("hashchange", onHash);
@@ -56,45 +53,61 @@ export default function App() {
   }, []);
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-xl flex-col px-4 pb-10">
-      <header className="flex items-center justify-between gap-3 py-4">
-        <h1 className="flex items-center gap-2 font-display text-2xl font-bold tracking-tight">
-          <Dices className="size-6 text-primary" />
-          bet
-        </h1>
-        <ThemeToggle />
-      </header>
+    <div className="flex min-h-dvh flex-col items-center justify-center px-4 py-10">
+      <div className="w-full max-w-md">
+        <motion.div
+          className="mb-8 text-center"
+          initial={{ opacity: 0, y: -12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+        >
+          <h1 className="text-4xl font-bold tracking-tight">bet</h1>
+          <p className="mt-2 text-muted-foreground">
+            Cole o link da casa — o runner loga e coloca a aposta por você.
+          </p>
+        </motion.div>
 
-      {probing ? null : me === null ? (
-        <LoginGate />
-      ) : (
-        <>
-          <nav className="mb-6 grid grid-cols-3 gap-1 rounded-2xl border-2 bg-card p-1">
-            {TABS.map((entry) => (
-              <button
-                key={entry.hash}
-                type="button"
-                onClick={() => {
-                  window.location.hash = entry.hash;
-                  setTab(entry.hash);
-                }}
-                className={cn(
-                  "rounded-xl px-2 py-2 text-sm font-semibold transition-colors",
-                  tab === entry.hash ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent",
-                )}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </nav>
+        {probing ? (
+          <p className="text-center text-sm text-muted-foreground">carregando…</p>
+        ) : me === null ? (
+          <LoginGate />
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
+          >
+            <Tabs
+              value={tab}
+              onValueChange={(value) => {
+                window.location.hash = value;
+                setTab(value as TabHash);
+              }}
+            >
+              <TabsList className="grid w-full grid-cols-3">
+                {TABS.map((entry) => (
+                  <TabsTrigger key={entry.hash} value={entry.hash}>
+                    {entry.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              <TabsContent value="#/">
+                <BetPage me={me} />
+              </TabsContent>
+              <TabsContent value="#/historico">
+                <HistoryPage />
+              </TabsContent>
+              <TabsContent value="#/ajustes">
+                <SettingsPage me={me} />
+              </TabsContent>
+            </Tabs>
+          </motion.div>
+        )}
 
-          <main className="flex-1">
-            {tab === "#/" && <BetPage me={me} />}
-            {tab === "#/historico" && <HistoryPage />}
-            {tab === "#/ajustes" && <SettingsPage me={me} />}
-          </main>
-        </>
-      )}
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          O Chrome headless roda no servidor; o recibo chega com screenshot.
+        </p>
+      </div>
     </div>
   );
 }

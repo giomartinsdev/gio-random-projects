@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { Link2, Loader2 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { ApiError, placeBet, type Me } from "@/lib/api";
 import { formatBRL } from "@/lib/format";
+import { AnimatedIcon } from "@/components/ui/animated-icon";
+import { arrowRightCircleIcon, loadingIcon } from "@/lib/lottie-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,77 +48,92 @@ export function BetPage({ me }: { me: Me }) {
   }
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>colocar aposta</CardTitle>
-          <CardDescription>
-            Cole o link da betano e quantas unidades apostar — o runner faz o resto.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={submit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="url">link da bet</Label>
-              <div className="relative">
-                <Link2 className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="url"
-                  className="pl-10"
-                  placeholder="https://www.betano.com.br/..."
-                  value={url}
-                  onChange={(event) => setUrl(event.target.value)}
-                  inputMode="url"
-                  required
-                />
-              </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-xl">Colocar aposta</CardTitle>
+        <CardDescription>
+          Cole o link da betano e quantas unidades apostar — o runner faz o resto.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="url">Link da aposta</Label>
+            <Input
+              id="url"
+              placeholder="https://www.betano.com.br/..."
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="font-mono tracking-wide"
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="units">Unidades</Label>
+            <Input
+              id="units"
+              type="number"
+              min={1}
+              max={100}
+              step={1}
+              value={units}
+              onChange={(event) => setUnits(event.target.value)}
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              1 unidade = {formatBRL(me.unitValueCents)} — o valor da unidade muda nos ajustes.
+            </p>
+          </div>
+
+          {stakeCents !== null && (
+            <div className="rounded-md border bg-secondary/50 px-3 py-2 text-sm">
+              {unitsNumber} {unitsNumber === 1 ? "unidade" : "unidades"} × {formatBRL(me.unitValueCents)} ={" "}
+              <span className="font-semibold">{formatBRL(stakeCents)}</span>
             </div>
+          )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="units">unidades</Label>
-              <Input
-                id="units"
-                type="number"
-                min={1}
-                max={100}
-                step={1}
-                value={units}
-                onChange={(event) => setUnits(event.target.value)}
-                required
-              />
-            </div>
-
-            {stakeCents !== null && (
-              <div className="rounded-2xl border-2 bg-secondary/60 px-4 py-3 text-sm">
-                <span className="text-muted-foreground">
-                  {unitsNumber} {unitsNumber === 1 ? "unidade" : "unidades"} × {formatBRL(me.unitValueCents)} ={" "}
-                </span>
-                <span className="font-display text-lg font-bold">{formatBRL(stakeCents)}</span>
-              </div>
-            )}
-
+          <AnimatePresence>
             {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+              >
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              </motion.div>
             )}
             {queued && (
-              <Alert>
-                <AlertDescription>{queued}</AlertDescription>
-              </Alert>
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+              >
+                <Alert>
+                  <AlertDescription>{queued}</AlertDescription>
+                </Alert>
+              </motion.div>
             )}
+          </AnimatePresence>
 
-            <Button type="submit" size="lg" className="w-full" disabled={!validUnits || !validUrl || sending}>
-              {sending ? <Loader2 className="animate-spin" /> : null}
+          <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}>
+            <Button type="submit" className="w-full" disabled={!validUnits || !validUrl || sending}>
+              <AnimatedIcon
+                animation={sending ? loadingIcon : arrowRightCircleIcon}
+                autoplay={sending}
+                loop={sending}
+              />
               {sending ? "enviando…" : "Enviar aposta"}
             </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      <p className="text-center text-xs text-muted-foreground">
-        valor da unidade atual: {formatBRL(me.unitValueCents)} (altere nos ajustes)
-      </p>
-    </div>
+          </motion.div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

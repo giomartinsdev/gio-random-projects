@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Loader2, LogOut, Trash2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { LogOut, Trash2 } from "lucide-react";
 import {
   deleteCredential,
   getMe,
@@ -11,6 +12,8 @@ import {
   type SavedCredential,
 } from "@/lib/api";
 import { formatBRL, formatDateTime, parseBRLToCents } from "@/lib/format";
+import { AnimatedIcon } from "@/components/ui/animated-icon";
+import { loadingIcon } from "@/lib/lottie-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,23 +53,20 @@ export function SettingsPage({ me }: { me: Me }) {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="mb-4 font-display text-xl font-bold">ajustes</h2>
-        <p className="text-sm text-muted-foreground">logado como {currentMe.email}</p>
-      </div>
+    <div className="space-y-4">
+      <p className="text-center text-xs text-muted-foreground">logado como {currentMe.email}</p>
 
       <Card>
         <CardHeader>
-          <CardTitle>valor da unidade</CardTitle>
+          <CardTitle className="text-xl">Valor da unidade</CardTitle>
           <CardDescription>
-            cada link aposta N unidades × este valor. Apostas já na fila mantêm o valor antigo.
+            Cada link aposta N unidades × este valor. Apostas já na fila mantêm o valor antigo.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={saveUnit} className="flex items-end gap-3">
-            <div className="flex-1 space-y-1.5">
-              <Label htmlFor="unit">valor (R$)</Label>
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="unit">Valor (R$)</Label>
               <Input
                 id="unit"
                 inputMode="decimal"
@@ -76,10 +76,12 @@ export function SettingsPage({ me }: { me: Me }) {
                 required
               />
             </div>
-            <Button type="submit" disabled={savingUnit}>
-              {savingUnit ? <Loader2 className="animate-spin" /> : null}
-              Salvar
-            </Button>
+            <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}>
+              <Button type="submit" disabled={savingUnit}>
+                {savingUnit ? <AnimatedIcon animation={loadingIcon} autoplay loop /> : null}
+                Salvar
+              </Button>
+            </motion.div>
           </form>
           {unitError && <p className="mt-2 text-sm text-destructive">{unitError}</p>}
           {saved && (
@@ -131,9 +133,9 @@ function CredentialsCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>credenciais</CardTitle>
+        <CardTitle className="text-xl">Credenciais</CardTitle>
         <CardDescription>
-          login das casas de aposta — a senha é cifrada e só o runner a usa.
+          Login das casas de aposta — a senha é cifrada e só o runner a usa.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -203,11 +205,11 @@ function VendorCredentialForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-2xl border-2 p-4">
+    <form onSubmit={submit} className="space-y-3 rounded-md border p-4">
       <div className="flex items-center justify-between">
-        <Label className="font-display text-base">{vendorLabel}</Label>
+        <Label className="text-base">{vendorLabel}</Label>
         {savedAt && (
-          <span className="text-xs text-success">salvo em {formatDateTime(savedAt)}</span>
+          <span className="text-xs text-green-500">salvo em {formatDateTime(savedAt)}</span>
         )}
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
@@ -230,7 +232,7 @@ function VendorCredentialForm({
       {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={busy}>
-          {busy ? <Loader2 className="animate-spin" /> : null}
+          {busy ? <AnimatedIcon animation={loadingIcon} autoplay loop /> : null}
           Salvar credenciais
         </Button>
         {saved && (

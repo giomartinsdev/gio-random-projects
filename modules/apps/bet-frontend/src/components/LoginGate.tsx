@@ -1,5 +1,7 @@
-import { Dices } from "lucide-react";
+import { motion } from "framer-motion";
 import { goToSso } from "@/lib/api";
+import { AnimatedIcon } from "@/components/ui/animated-icon";
+import { arrowRightCircleIcon } from "@/lib/lottie-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -7,22 +9,31 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 // failed, which is also what the very first visit after a hub login
 // looks like (Access still has to mint this app's cookie) -- so this
 // button is always the right answer, never an inline login form:
-// Google's own page can't run inside a frame or a fetch.
+// Google's own page can't run inside a frame or a fetch. Rendered
+// inside App's centered column, so no page shell of its own.
 export function LoginGate() {
   return (
-    <Card className="mt-10">
-      <CardHeader className="items-center text-center">
-        <Dices className="mb-2 size-10 text-primary" />
-        <CardTitle>entre para apostar</CardTitle>
-        <CardDescription>
-          Login com Google pelo Cloudflare Access — o mesmo do hub, uma vez só.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex justify-center">
-        <Button size="lg" onClick={goToSso}>
-          Entrar com Google
-        </Button>
-      </CardContent>
-    </Card>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
+    >
+      <Card>
+        <CardHeader className="text-center">
+          <CardTitle className="text-xl">entre para apostar</CardTitle>
+          <CardDescription>
+            Login com Google pelo Cloudflare Access — o mesmo do hub, uma vez só.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}>
+            <Button className="w-full" onClick={goToSso}>
+              <AnimatedIcon animation={arrowRightCircleIcon} />
+              Entrar com Google
+            </Button>
+          </motion.div>
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }
