@@ -46,9 +46,12 @@ atualizar depois de um push no main: `git pull` e repita o comando (ou
 - `/api/*` e `/auth/*` continuam atrás do Cloudflare Access
   (path-protected, precedentes: `hub.giomartins.dev/sso`) — nada mudou
   para o bet-frontend.
-- Perfis do Chromium em volume nomeado (`bet-runner-profiles`): o login
-  na casa de aposta sobrevive a restart. Apagar o volume = novo login
-  na próxima aposta.
+- Perfis do Chromium bind-mountados do host
+  (`~/.config/bet-runner-home/profiles`): o login na casa de aposta
+  sobrevive a restart, e o container corre com o MESMO perfil que
+  qualquer teste local usou — cookies de confiança incluídos (um perfil
+  virgem no container levou a parede de compliance da Betano de novo,
+  mesmo headed). Apagar o diretório = novo login na próxima aposta.
 - `DRY_RUN=1` percorre o fluxo inteiro mas nunca clica no confirm
   final. Virar para `0` é a única chave entre ensaio e dinheiro real —
   só depois de os receipts provarem os seletores contra o site de

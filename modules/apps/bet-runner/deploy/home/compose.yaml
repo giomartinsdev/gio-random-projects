@@ -9,8 +9,9 @@
 # Dockerfile, built here instead of pulled from the registry), pointed
 # at bet-api over its public hostname: /internal/* is guarded only by
 # RUNNER_API_KEY -- the same shared secret it used on the apps network.
-# One bet at a time, browser profiles in a named volume so the
-# bookmaker login survives restarts.
+# One bet at a time, browser profiles bind-mounted from the host so the
+# bookmaker login survives restarts — and so the container and any
+# local debugging run share the same profile.
 #
 # Secrets live in ~/.config/bet-runner-home/.env (OUTSIDE this repo --
 # nothing credential-shaped belongs in the working tree):
@@ -32,7 +33,11 @@ services:
       # Absolute path on purpose: the .env must not live inside the repo.
       - /Users/gio/.config/bet-runner-home/.env
     volumes:
-      - bet-runner-profiles:/data
+      # The HOST profiles directory, not a docker volume: the login
+      # session and the bookmaker's trust cookies live there — the
+      # container browses with the exact profile the site already
+      # knows (same machine, same IP, same session).
+      - /Users/gio/.config/bet-runner-home/profiles:/data
     # Chromium's demands, same as the terraform module set for the VPS:
     # real memory headroom and a /dev/shm the default 64MB would crush.
     mem_limit: 2g
@@ -42,6 +47,3 @@ services:
       options:
         max-size: 10m
         max-file: "3"
-
-volumes:
-  bet-runner-profiles:

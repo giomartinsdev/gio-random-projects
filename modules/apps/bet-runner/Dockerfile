@@ -21,15 +21,19 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 # patched (Betano answers every headless visit with its compliance
 # block page; a headed browser on the same IP sails through) -- so the
 # container always runs headed against a virtual display (HEADED=1 in
-# the env), and xvfb-run provides that display. --with-deps stays one
+# the env), and entrypoint.sh runs Xvfb for that display. --with-deps stays one
 # root step before the USER line.
-RUN apt-get update && apt-get install -y --no-install-recommends xvfb && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends xvfb xauth && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 RUN npx patchright install --with-deps chromium
 COPY --from=build /src/dist ./dist
+COPY entrypoint.sh ./
+RUN chmod +x entrypoint.sh
 RUN mkdir -p /data && chown -R node:node /data /ms-playwright
 USER node
 VOLUME /data
-# --auto-servernum: parallel-ish restarts shouldn't fight over :99.
-CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1920x1080x24", "node", "dist/index.js"]
+# --auto-servernum was nice for restarts, but xvfb-run itself races
+# Xvfb's startup signal and can hang before node ever starts (seen
+# live); entrypoint.sh starts Xvfb directly and waits on the socket.
+CMD ["./entrypoint.sh"]
