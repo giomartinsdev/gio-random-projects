@@ -45,9 +45,10 @@ resource "docker_container" "bet_api" {
   env = [
     "DATABASE_URL=${local.database_url}",
     # Access JWT validation (lib/accessAuth.ts): the team's JWKS and
-    # the audience tag of THIS app's Access application.
+    # the audience tags of this app's Access applications -- one per
+    # path (/api, /auth), comma-joined; the middleware pins the set.
     "BET_ACCESS_TEAM_DOMAIN=${var.access_team_domain}",
-    "BET_ACCESS_AUD=${var.access_aud}",
+    "BET_ACCESS_AUD=${join(",", var.access_aud)}",
     # Defense-in-depth email allowlist after the JWT verifies (the edge
     # policy enforces the same list).
     "BET_ALLOWED_EMAILS=${join(",", var.allowed_emails)}",

@@ -10,7 +10,13 @@ import { logger } from "./logger.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const teamDomain = process.env.BET_ACCESS_TEAM_DOMAIN;
-const accessAud = process.env.BET_ACCESS_AUD;
+// Comma-separated: bet-api sits behind two Access path apps (/api and
+// /auth) and each stamps its JWTs with its own aud — terraform passes
+// both (see lib/accessAuth.ts's aud comment).
+const accessAud = (process.env.BET_ACCESS_AUD ?? "")
+  .split(",")
+  .map((a) => a.trim())
+  .filter(Boolean);
 const credentialsKey = process.env.BET_CREDENTIALS_KEY;
 const runnerApiKey = process.env.RUNNER_API_KEY;
 const port = Number(process.env.PORT ?? 8009);
@@ -32,7 +38,7 @@ const devEmail = process.env.BET_DEV_AUTH_EMAIL || null;
 
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 if (!teamDomain) throw new Error("BET_ACCESS_TEAM_DOMAIN is required");
-if (!accessAud) throw new Error("BET_ACCESS_AUD is required");
+if (accessAud.length === 0) throw new Error("BET_ACCESS_AUD is required");
 if (!credentialsKey) throw new Error("BET_CREDENTIALS_KEY is required");
 if (!runnerApiKey) throw new Error("RUNNER_API_KEY is required");
 

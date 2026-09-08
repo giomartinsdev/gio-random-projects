@@ -1,5 +1,5 @@
 variable "network_name" {
-  description = "Docker network (from module.network_docker_apps) to join for postgres DNS resolution -- and to reach the bet-runner by container name."
+  description = "Docker network (from module.network_docker_apps) to join for postgres DNS resolution."
   type        = string
 }
 
@@ -44,8 +44,8 @@ variable "access_team_domain" {
 }
 
 variable "access_aud" {
-  description = "The `aud` tag of the bet-api.giomartins.dev Access application (module.cloud_cloudflare.access_app_auds output) -- every Access JWT minted for this app carries it, and it's what bet-api pins as the token audience."
-  type        = string
+  description = "The `aud` tags of the bet-api Access applications (module.cloud_cloudflare.access_app_auds output, one per path app: /api and /auth) -- every Access JWT minted for one of those apps carries its app's aud, and bet-api pins the whole set as acceptable token audiences (comma-joined into BET_ACCESS_AUD)."
+  type        = list(string)
 }
 
 variable "allowed_emails" {
@@ -61,7 +61,7 @@ variable "credentials_key" {
 }
 
 variable "runner_api_key" {
-  description = "Shared secret bet-runner presents on /internal/* (X-Runner-Key) -- bet-runner calls this API container-to-container on network_name, bypassing ingress/Access by design."
+  description = "Shared secret bet-runner presents on /internal/* (X-Runner-Key) -- the runner lives on the home network now and calls this API over the public hostname, so this header is /internal's only auth."
   type        = string
   sensitive   = true
 }

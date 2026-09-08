@@ -18,11 +18,13 @@ module "cloud_cloudflare" {
   path_protected_hostnames = local.path_protected_hostnames
   allowed_emails           = var.allowed_emails
   session_duration         = var.session_duration
-  # bet-api is the one browser-facing cross-origin API behind Access:
-  # its SPA (bet.giomartins.dev) preflights every content-type:json
-  # call, and a preflight 403s at the edge without this bypass no
-  # matter how logged-in the user is (preflights carry no cookies).
-  preflight_bypass_hostnames = ["bet-api.giomartins.dev"]
+  # bet-api's /api path app is the one browser-facing cross-origin API
+  # behind Access: its SPA (bet.giomartins.dev) preflights every
+  # content-type:json call, and a preflight 403s at the edge without
+  # this bypass no matter how logged-in the user is (preflights carry
+  # no cookies). The key is the path app's own domain string, not the
+  # bare hostname -- that's what the contains() check compares against.
+  preflight_bypass_hostnames = ["bet-api.giomartins.dev/api"]
 
   # Email Routing lives on the zone's DNS (MX/SPF/DKIM) plus account
   # state, not on any hostname's ingress — so it slots into this
@@ -258,11 +260,13 @@ module "compute_apps_cch_api" {
   depends_on = [module.compute_apps_domain_api]
 }
 
-# bet-api: the betting BFF -- Access-protected hostname (bet-api
-# is deliberately NOT in excluded_hostnames), Access-JWT auth in-app,
-# Postgres via the one-shot migrate container, /internal/* guarded by
-# the shared runner key. The aud tag comes from the Access application
-# this apply (or an earlier one) creates for bet-api.giomartins.dev.
+# bet-api: the betting BFF -- path-protected behind Access (/api and
+# /auth have their own Access applications; the bare hostname is in
+# excluded_hostnames for bet-runner, which polls /internal/* from the
+# home network with the shared runner key), Access-JWT auth in-app,
+# Postgres via the one-shot migrate container. Each path app carries
+# its own aud tag, so the app accepts both (BET_ACCESS_AUD is a
+# comma-separated list -- lib/accessAuth.ts verifies against the set).
 module "compute_apps_bet_api" {
   source = "./modules/compute/apps/bet_api"
   providers = {
@@ -274,34 +278,27 @@ module "compute_apps_bet_api" {
   postgres_user     = module.storage_postgres.postgres_user
   postgres_password = random_password.postgres.result
   registry_host     = var.registry_host
-  access_aud        = module.cloud_cloudflare.access_app_auds["bet-api.giomartins.dev"]
-  allowed_emails    = var.allowed_emails
-  credentials_key   = random_id.bet_credentials_key.hex
-  runner_api_key    = random_password.runner_api_key.result
-  frontend_origins  = ["https://bet.giomartins.dev", "http://localhost:5173"]
-  otlp_endpoint     = module.compute_services_observability.otlp_endpoint
+  access_aud = [
+    module.cloud_cloudflare.access_app_auds["bet-api.giomartins.dev/api"],
+    module.cloud_cloudflare.access_app_auds["bet-api.giomartins.dev/auth"],
+  ]
+  allowed_emails   = var.allowed_emails
+  credentials_key  = random_id.bet_credentials_key.hex
+  runner_api_key   = random_password.runner_api_key.result
+  frontend_origins = ["https://bet.giomartins.dev", "http://localhost:5173"]
+  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
 
   depends_on = [null_resource.postgres_password_sync, module.cloud_cloudflare]
 }
 
-# bet-runner: the headless-Chrome worker. dry_run stays true (terraform
-# default) until selectors are verified against the real site -- flip
-# it deliberately, once, with receipts in hand.
-module "compute_apps_bet_runner" {
-  source = "./modules/compute/apps/bet_runner"
-  providers = {
-    docker = docker
-  }
-
-  network_name   = module.network_docker_apps.network_name
-  registry_host  = var.registry_host
-  bet_api_url    = "http://bet-api:8009"
-  runner_api_key = random_password.runner_api_key.result
-  dry_run        = true
-  otlp_endpoint  = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [module.compute_apps_bet_api]
-}
+# bet-runner used to live here as a Docker container on the apps
+# network -- Betano's compliance wall blocks the VPS's datacenter ASN
+# ("Access to this page is restricted due to security and compliance
+# measures"), which no selector fixes. It now runs on the home network
+# (residential IP) instead: see modules/apps/bet-runner/deploy/home's
+# compose file. Nothing on the VPS represents it anymore; dry_run lives
+# in that .env now, and stays 1 until selectors are verified against
+# the real site with receipts in hand.
 
 module "compute_services_registry" {
   source = "./modules/compute/services/registry"

@@ -7,6 +7,13 @@ login se a sessão expirou, preenche o valor e confirma. A casa de
 aposta é um **driver** — este serviço não sabe nada específico de
 nenhuma delas.
 
+**Roda na rede de casa, não no VPS** — as casas de aposta bloqueiam o
+ASN de datacenter do VPS por compliance (a Betano responde com a página
+"Access to this page is restricted..."); um IP residencial passa. Deploy:
+[`deploy/home/`](./deploy/home/README.md). No VPS não sobra nada deste
+serviço (o módulo terraform foi removido); `/internal/*` do bet-api
+continua autenticado só pelo `RUNNER_API_KEY`.
+
 ## Arquitetura
 
 ```
@@ -36,7 +43,7 @@ Fluxo de um job (todos os passos viram `receipt.steps` no histórico):
 
 | Variável | Padrão | Descrição |
 |---|---|---|
-| `BET_API_URL` | — | obrigatória. Base do bet-api (`http://bet-api:8009` na rede docker). |
+| `BET_API_URL` | — | obrigatória. Base do bet-api — hostname público de casa (`https://bet-api.giomartins.dev`), interno na rede docker (`http://bet-api:8009`). |
 | `RUNNER_API_KEY` | — | obrigatória. Mesmo valor do bet-api (header `X-Runner-Key`). |
 | `PROFILES_DIR` | `/data/profiles` | raiz dos perfis de navegador persistentes. |
 | `POLL_INTERVAL_MS` | `5000` | intervalo de polling quando a fila está vazia. |
@@ -73,7 +80,8 @@ parou.
 
 - Um job por vez, sequencial — o mesmo perfil nunca abre em paralelo
   (lock do Chrome) e o comportamento parece humano.
-- `shm_size` no Terraform: Chrome em container precisa de /dev/shm.
+- Chrome em container precisa de /dev/shm real (`shm_size: 512m` no
+  compose de casa; era var do módulo terraform).
 - Se um report falhar 5 vezes o bet fica "running" no BFF — corrija na
   mão com `UPDATE bet_bets SET status='failed', error='runner perdeu o
   report' WHERE id=...;` (o BFF só aceita resultado de bet running).

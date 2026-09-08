@@ -306,7 +306,10 @@ jobs:
                 REPLACE_ARGS+=("-replace=module.compute_apps_bet_api.docker_container.bet_api_migrate")
                 REPLACE_ARGS+=("-replace=module.compute_apps_bet_api.docker_container.bet_api")
                 ;;
-              bet-runner) REPLACE_ARGS+=("-replace=module.compute_apps_bet_runner.docker_container.bet_runner") ;;
+              # bet-runner no longer deploys here -- it runs on the home
+              # network (see modules/apps/bet-runner/deploy/home); its
+              # image still builds (ALLOWED_APPS) so the home compose can
+              # pull it, but there's no container resource to -replace.
               *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
             esac
           done

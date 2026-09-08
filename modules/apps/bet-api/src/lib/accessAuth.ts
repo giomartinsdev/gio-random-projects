@@ -1,12 +1,12 @@
-// Identity = Cloudflare Access. bet-api's hostname is behind an Access
-// application (Google SSO, allowed_emails — see the cloudflare module),
-// and the edge stamps every request it passes through with the
-// Cf-Access-Jwt-Assertion header, a JWT signed with the team's public
-// keys. This middleware verifies it properly — signature against the
-// team JWKS, issuer against the team domain, audience against this
-// app's own `aud` tag — because the same nginx also routes direct
-// (non-edge) traffic here; anyone bypassing Cloudflare still needs a
-// valid JWT.
+// Identity = Cloudflare Access. bet-api's /api and /auth paths sit
+// behind Access applications (Google SSO, allowed_emails — see the
+// cloudflare module), and the edge stamps every request it passes
+// through with the Cf-Access-Jwt-Assertion header, a JWT signed with
+// the team's public keys. This middleware verifies it properly —
+// signature against the team JWKS, issuer against the team domain,
+// audience against this app's `aud` set — because the same nginx also
+// routes direct (non-edge) traffic here; anyone bypassing Cloudflare
+// still needs a valid JWT.
 //
 // The email claim becomes the bet system's user id (bet_users.email),
 // which is exactly what makes the session "shared with the hub": same
@@ -30,7 +30,11 @@ export type AccessAuth = ReturnType<typeof createAccessAuth>;
 
 export function createAccessAuth(opts: {
   teamDomain: string;
-  aud: string;
+  // One aud per Access application in front of this API. bet-api sits
+  // behind TWO path apps (/api and /auth) and each mints JWTs with its
+  // own aud, so prod passes both and the middleware pins the set
+  // (jose accepts a list). A single string still works for one app.
+  aud: string | string[];
   // The emails terraform's Access policy allows — defense in depth
   // behind Access's own decision, checked again here.
   allowedEmails?: string[];

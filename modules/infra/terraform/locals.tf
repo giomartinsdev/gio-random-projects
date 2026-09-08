@@ -87,14 +87,18 @@ locals {
       port     = 8008
     },
     {
-      # bet-api: the betting BFF. Access-protected ON PURPOSE (NOT in
-      # excluded_hostnames, unlike every other API here): the browser's
-      # fetch carries the edge-injected Cf-Access-Jwt-Assertion header
-      # and the app validates that JWT itself (lib/accessAuth.ts) --
-      # login IS the Access/Google session, shared with the hub's via
-      # the team-domain cookie. bet-runner calls http://bet-api:8009
-      # over the apps network, bypassing ingress/Access entirely,
-      # authenticated by RUNNER_API_KEY. Port must match
+      # bet-api: the betting BFF. Path-protected (hub pattern -- bare
+      # hostname in excluded_hostnames): the browser's fetch to /api/*
+      # carries the edge-injected Cf-Access-Jwt-Assertion header and the
+      # app validates that JWT itself (lib/accessAuth.ts) -- login IS
+      # the Access/Google session, shared with the hub's via the
+      # team-domain cookie. The bare hostname stays public because
+      # bet-runner runs OUTSIDE the VPS now (home network, residential
+      # IP -- the whole point after Betano's compliance wall blocked the
+      # datacenter ASN): it polls /internal/* over the public hostname,
+      # whose only auth is RUNNER_API_KEY (48 random chars) -- the same
+      # shared secret it always used on the apps network. /health stays
+      # public like every other service's. Port must match
       # module.compute_apps_bet_api's external_port.
       hostname = "bet-api.giomartins.dev"
       port     = 8009
@@ -239,5 +243,19 @@ locals {
   # it to decide whether the admin shortcuts are shown. Enforcement of
   # the shortcut targets themselves stays on each target's own Access
   # application -- this path is the UI gate, not the security one.
-  path_protected_hostnames = ["hub.giomartins.dev/sso"]
+  #
+  # bet-api's /api and /auth are the same shape as the hub's /sso: the
+  # betting SPA fetches /api/* cross-origin (the edge stamps the
+  # Cf-Access-Jwt-Assertion the app verifies) and hops through /auth/sso
+  # for the Google login. The REST of bet-api's hostname stays public
+  # on purpose: /internal/* is bet-runner's surface, and the runner
+  # runs on the home network now -- a machine-to-machine client that
+  # can't pass a Google SSO redirect, whose auth is the RUNNER_API_KEY
+  # header the app itself checks (same secret as when it lived on the
+  # apps network).
+  path_protected_hostnames = [
+    "hub.giomartins.dev/sso",
+    "bet-api.giomartins.dev/api",
+    "bet-api.giomartins.dev/auth",
+  ]
 }
