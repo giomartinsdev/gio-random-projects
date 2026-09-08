@@ -2,8 +2,9 @@ name: TypeScript frontend deploy
 
 # CI/CD for the TypeScript frontend apps under modules/apps/*/ --
 # buteco-class-frontend (the Buteco dos Devs SPA), tela-frontend
-# (screen sharing's own page, split from tela-api) and cch-frontend
-# (the cards-against-humanity page). Split from the
+# (screen sharing's own page, split from tela-api), cch-frontend
+# (the cards-against-humanity page) and hub-frontend (the shell that
+# renders the others). Split from the
 # backend pipeline (ts-backend-ci-cd.yml) because the two build
 # differently in a way that's easy to get wrong sharing one workflow:
 # only a frontend needs VITE_* env vars baked into the bundle at build
@@ -32,6 +33,7 @@ on:
       - "modules/apps/buteco-class-frontend/**"
       - "modules/apps/tela-frontend/**"
       - "modules/apps/cch-frontend/**"
+      - "modules/apps/hub-frontend/**"
   workflow_dispatch:
     inputs:
       app:
@@ -50,7 +52,7 @@ jobs:
 
       - id: list
         env:
-          ALLOWED_APPS: "buteco-class-frontend tela-frontend cch-frontend"
+          ALLOWED_APPS: "buteco-class-frontend tela-frontend cch-frontend hub-frontend"
         run: |
           all_apps=$(echo "$ALLOWED_APPS" | tr ' ' '\n')
 

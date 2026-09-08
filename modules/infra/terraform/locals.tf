@@ -192,5 +192,17 @@ locals {
       hostname = "cch.giomartins.dev"
       bucket   = "cch-frontend"
     },
+    {
+      # The hub: chrome around every other frontend -- a sidebar plus a
+      # renderer that iframes the SPAs above, plus new-tab shortcuts to
+      # the Access-protected dashboards. It stays OUT of
+      # excluded_hostnames on purpose (like beszel/vault/grafana): this
+      # one is gio's private dashboard, so the Google-SSO Access layer
+      # is its login. The embedded SPAs are all public, so embedding
+      # them from behind Access works for both sides -- guests keep
+      # their direct links, the hub just needs its own session.
+      hostname = "hub.giomartins.dev"
+      bucket   = "hub-frontend"
+    },
   ]
 }

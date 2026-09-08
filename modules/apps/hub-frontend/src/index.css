@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Same token set the other SPAs use, so every app on the domain reads
+   as one family. Dark is the default; the sidebar's toggle flips
+   <html data-theme>, applied by main.tsx before the first paint. */
+@layer base {
+  :root {
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+    --card: 240 6% 8%;
+    --card-foreground: 0 0% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 240 4% 16%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 4% 18%;
+    --input: 240 4% 18%;
+    --ring: 217 91% 60%;
+    --radius: 0.75rem;
+  }
+
+  :root[data-theme="light"] {
+    --background: 40 20% 97%;
+    --foreground: 240 10% 8%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 8%;
+    --primary: 217 91% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 6% 92%;
+    --secondary-foreground: 240 10% 8%;
+    --muted: 240 6% 92%;
+    --muted-foreground: 240 4% 42%;
+    --accent: 240 6% 92%;
+    --accent-foreground: 240 10% 8%;
+    --destructive: 0 74% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 6% 84%;
+    --input: 240 6% 84%;
+    --ring: 217 91% 55%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    /* A fixed-height app shell, not a document -- rubber-banding on iOS
+       would reveal background behind the chrome. */
+    overscroll-behavior: none;
+  }
+
+  /* The iframe of the opened app paints its own background; without
+     this the element itself flashes white in dark mode on slow loads. */
+  iframe {
+    background: var(--background);
+  }
+}
