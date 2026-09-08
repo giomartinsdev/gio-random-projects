@@ -38,12 +38,21 @@ export const CONFIRM_BUTTON = [
 ];
 // Odds buttons on a market page, for links that open a page instead of
 // a pre-filled slip ("não sei / varia" — both shapes are handled).
+// Betano BR renders them as DIVs whose text glues the selection name to
+// the decimal ("1" + "1.83") — no data-testid, no "@" prefix.
 export const ODDS_BUTTON = [
+  ".selection-horizontal-button",
   'button[data-testid*="odds"]',
   'button[data-testid*="odd"]',
   '[data-testid="prebet-item"] button',
   'button:has-text("@")',
 ];
+// The collapsed slip bar: bookingcode links add the selection and leave
+// the slip folded at the bottom of the page ("1 · 1.83" com chevron) —
+// the stake field only comes into existence once its header expands it
+// (probe-live: button.floating-betslip-header dentro de
+// .bet-slip-container).
+export const SLIP_EXPANDER = ["button.floating-betslip-header", ".bet-slip-container button"];
 // Balance, for the receipt's balanceCents (best-effort).
 export const BALANCE = ['[data-testid*="balance"]', '[class*="balance"]'];
 // Logged-out tells: header CTAs that only exist without a session.
@@ -305,9 +314,20 @@ export const betanoDriver = {
     // and the slip below. Clear whatever popped before looking.
     await dismissModals(page, step);
 
-    // Case 1: the link pre-filled the slip. Case 2: the link opens a
-    // market page — click the first odd so a slip exists at all.
+    // Case 1: the link pre-filled the slip. Case 1.5: the link added the
+    // selection but left the slip COLLAPSED as the bottom bar (booking
+    // codes do this) — expand it and the stake field appears. Case 2:
+    // the link opens a market page — click the first odd so a slip
+    // exists at all.
     let stake = await firstVisible(page, STAKE_INPUT, 8_000);
+    if (!stake) {
+      const bar = await firstVisible(page, SLIP_EXPANDER, 2_000);
+      if (bar) {
+        step("slip colapsado na barra inferior — expandindo");
+        await bar.click();
+        stake = await firstVisible(page, STAKE_INPUT, 8_000);
+      }
+    }
     if (stake) {
       step("slip já veio preenchido pelo link");
     } else {

@@ -10,6 +10,7 @@ import {
   LOGGED_OUT_SIGNAL,
   MODAL_DISMISS,
   ODDS_BUTTON,
+  SLIP_EXPANDER,
   STAKE_INPUT,
 } from "../src/vendors/betano.js";
 import { FakePage } from "./fakePage.js";
@@ -232,6 +233,28 @@ describe("betanoDriver", () => {
 
     expect(outcome.status).toBe("succeeded");
     expect(page.clicks).toContainEqual(bookingButton);
+    expect(page.fills).toContainEqual({ selector: STAKE_INPUT[0], value: "10,50" });
+  });
+
+  it("expands the collapsed slip bar that booking codes leave behind", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    // The link added the selection but the slip sits folded as the
+    // bottom bar; the stake field only exists after its header expands.
+    page.visible.add(SLIP_EXPANDER[0]);
+    page.onClick = (selector) => {
+      if (selector === SLIP_EXPANDER[0]) {
+        page.visible.delete(SLIP_EXPANDER[0]);
+        page.visible.add(STAKE_INPUT[0]);
+        page.visible.add(CONFIRM_BUTTON[0]);
+        page.visible.add(CONFIRMED_TEXT);
+      }
+    };
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("succeeded");
+    expect(page.clicks).toContainEqual(SLIP_EXPANDER[0]);
     expect(page.fills).toContainEqual({ selector: STAKE_INPUT[0], value: "10,50" });
   });
 
