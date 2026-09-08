@@ -27,3 +27,25 @@ export function saveTheme(theme: Theme) {
 export function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
 }
+
+// Who reacts to theme changes once the app is up: the toggle (keeps
+// its icon honest) and the hub bridge (which forwards changes to the
+// hub while embedded). setTheme() below is the only mutator any
+// interactive path may call.
+const listeners = new Set<(theme: Theme) => void>();
+
+export function onThemeChange(listener: (theme: Theme) => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+// Save, paint, and tell everyone -- used by the toggle click and by a
+// theme arriving from the hub over postMessage, so the page, the
+// toggle icon, and the hub can never drift apart.
+export function setTheme(theme: Theme) {
+  saveTheme(theme);
+  applyTheme(theme);
+  for (const listener of listeners) listener(theme);
+}

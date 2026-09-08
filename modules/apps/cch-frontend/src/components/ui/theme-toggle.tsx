@@ -1,24 +1,27 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Moon, Sun } from "lucide-react";
-import { applyTheme, saveTheme, type Theme } from "@/lib/theme";
+import { onThemeChange, setTheme, type Theme } from "@/lib/theme";
 import { broadcastTheme } from "@/lib/hubTheme";
 import { cn } from "@/lib/utils";
 
 // The sun/moon switch. The icon swaps with a spin, the choice takes
 // effect immediately on <html data-theme> and sticks in localStorage.
+// While embedded in the hub, a theme can also arrive from outside
+// (the hub's own toggle) -- onThemeChange keeps this icon honest, and
+// our click reports back to the hub via broadcastTheme.
 export function ThemeToggle({ className }: { className?: string }) {
   // Seeded from whatever main.tsx already applied, so first render
   // matches what's on screen.
-  const [theme, setTheme] = useState<Theme>(() =>
+  const [theme, setLocalTheme] = useState<Theme>(() =>
     document.documentElement.dataset.theme === "light" ? "light" : "dark",
   );
+
+  useEffect(() => onThemeChange(setLocalTheme), []);
 
   function toggle() {
     const next = theme === "light" ? "dark" : "light";
     setTheme(next);
-    saveTheme(next);
-    applyTheme(next);
     // Embedded in the hub? It follows along (lib/hubTheme.ts).
     broadcastTheme(next);
   }

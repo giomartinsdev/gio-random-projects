@@ -13,7 +13,7 @@
 // messages from the production hub or a localhost dev server -- the
 // worst a forged message could do is flip the palette anyway, but
 // there's no reason to accept them from strangers.
-import { applyTheme, saveTheme, type Theme } from "@/lib/theme";
+import { setTheme, type Theme } from "@/lib/theme";
 
 function trustedParent(origin: string): boolean {
   return (
@@ -32,9 +32,9 @@ export function initHubThemeSync(): () => void {
     const data = event.data as { type?: string; theme?: string } | null;
     if (data?.type !== "hub:theme") return;
     if (data.theme !== "light" && data.theme !== "dark") return;
-    const theme: Theme = data.theme;
-    saveTheme(theme);
-    applyTheme(theme);
+    // setTheme, not a bare applyTheme: the toggle has to hear about
+    // this too, or its icon goes stale and its next click is a no-op.
+    setTheme(data.theme as Theme);
   }
 
   window.addEventListener("message", onMessage);
