@@ -71,6 +71,23 @@ variable "allowed_emails" {
   type        = list(string)
 }
 
+variable "preflight_bypass_hostnames" {
+  description = <<-EOT
+    Protected hostnames whose Access application gets
+    options_preflight_bypass: the browser never sends cookies on a CORS
+    preflight (OPTIONS), so Access 403s every preflighted cross-origin
+    fetch regardless of login and the preflighted API call never
+    happens. With the bypass the preflight reaches the origin, which
+    must answer CORS itself (hono's cors middleware here) — the real
+    request still carries CF_Authorization and gets the
+    edge-injected Cf-Access-Jwt-Assertion as always. Only for
+    browser-facing APIs whose SPA lives on another hostname; console
+    UIs behind Access never need it.
+  EOT
+  type        = set(string)
+  default     = []
+}
+
 variable "session_duration" {
   description = "How long a Google SSO Access session stays valid before re-authenticating."
   type        = string

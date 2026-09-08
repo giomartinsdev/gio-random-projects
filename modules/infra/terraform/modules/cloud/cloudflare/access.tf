@@ -53,6 +53,14 @@ resource "cloudflare_zero_trust_access_application" "protected" {
   type             = "self_hosted"
   session_duration = var.session_duration
 
+  # Browsers never send cookies on a CORS preflight (OPTIONS), so
+  # without this Access 403s every preflighted cross-origin fetch even
+  # for a logged-in user and the browser never gets to the real
+  # request. With the bypass the preflight hits the origin's own CORS
+  # middleware; the actual API call still goes through Access exactly
+  # as before.
+  options_preflight_bypass = contains(var.preflight_bypass_hostnames, each.value)
+
   policies = [
     {
       id         = cloudflare_zero_trust_access_policy.google_sso[each.key].id

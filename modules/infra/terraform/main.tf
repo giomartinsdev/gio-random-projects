@@ -18,6 +18,11 @@ module "cloud_cloudflare" {
   path_protected_hostnames = local.path_protected_hostnames
   allowed_emails           = var.allowed_emails
   session_duration         = var.session_duration
+  # bet-api is the one browser-facing cross-origin API behind Access:
+  # its SPA (bet.giomartins.dev) preflights every content-type:json
+  # call, and a preflight 403s at the edge without this bypass no
+  # matter how logged-in the user is (preflights carry no cookies).
+  preflight_bypass_hostnames = ["bet-api.giomartins.dev"]
 
   # Email Routing lives on the zone's DNS (MX/SPF/DKIM) plus account
   # state, not on any hostname's ingress — so it slots into this
