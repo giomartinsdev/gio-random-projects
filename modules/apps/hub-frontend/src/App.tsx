@@ -1,7 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ExternalLink, Loader2, Maximize2, Menu, RotateCw, ShieldCheck, X } from "lucide-react";
-import { MICROFRONTENDS, SHORTCUTS, appIdFromHash, findApp, type Microfrontend } from "@/lib/apps";
+import {
+  ExternalLink,
+  Loader2,
+  LogIn,
+  LogOut,
+  Maximize2,
+  Menu,
+  RotateCw,
+  ShieldCheck,
+  X,
+} from "lucide-react";
+import {
+  MICROFRONTENDS,
+  SHORTCUTS,
+  appIdFromHash,
+  findApp,
+  microfrontendOrigins,
+  type Microfrontend,
+} from "@/lib/apps";
+import { LOGIN_URL, LOGOUT_URL, probeGoogleLogin } from "@/lib/auth";
+import { onThemeChange, setTheme, type Theme } from "@/lib/theme";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
@@ -11,11 +30,35 @@ export default function App() {
   // hub.giomartins.dev/#/cch opens CCH straight away. No hash is home.
   const [appId, setAppId] = useState<string | null>(() => appIdFromHash(window.location.hash));
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // null = still probing /sso; until it resolves the shortcuts tier
+  // just doesn't render, so a logged-out visitor never sees it flash.
+  const [authed, setAuthed] = useState<boolean | null>(null);
 
   useEffect(() => {
     const onHash = () => setAppId(appIdFromHash(window.location.hash));
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  useEffect(() => {
+    probeGoogleLogin().then(setAuthed);
+  }, []);
+
+  // The other half of the theme bridge (Renderer is the first half):
+  // an embedded app whose own toggle was used reports its new theme
+  // back, and the hub adopts it. Only frames from the registry's
+  // origins are believed, and the payload has to be exactly a theme.
+  useEffect(() => {
+    const trusted = new Set(microfrontendOrigins());
+    function onMessage(event: MessageEvent) {
+      if (!trusted.has(event.origin)) return;
+      const data = event.data as { type?: string; theme?: string } | null;
+      if (data?.type !== "app:theme") return;
+      if (data.theme !== "light" && data.theme !== "dark") return;
+      setTheme(data.theme as Theme);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
   }, []);
 
   const app = findApp(appId);
@@ -37,9 +80,9 @@ export default function App() {
       <aside className="hidden w-64 shrink-0 flex-col border-r bg-card md:flex">
         <SidebarHeader />
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <NavList appId={appId} onOpen={openApp} />
+          <NavList appId={appId} authed={authed} onOpen={openApp} />
         </div>
-        <SidebarFooter />
+        <SidebarFooter authed={authed} />
       </aside>
 
       {/* One content column for every breakpoint: on mobile a top bar
@@ -64,7 +107,7 @@ export default function App() {
         </header>
 
         <main className="flex min-w-0 flex-1 flex-col">
-          {app ? <Renderer key={app.id} app={app} /> : <HomePane onOpen={openApp} />}
+          {app ? <Renderer key={app.id} app={app} /> : <HomePane authed={authed} onOpen={openApp} />}
         </main>
       </div>
 
@@ -90,9 +133,9 @@ export default function App() {
             >
               <SidebarHeader onClose={() => setDrawerOpen(false)} />
               <div className="min-h-0 flex-1 overflow-y-auto">
-                <NavList appId={appId} onOpen={openApp} />
+                <NavList appId={appId} authed={authed} onOpen={openApp} />
               </div>
-              <SidebarFooter />
+              <SidebarFooter authed={authed} />
             </motion.aside>
           </>
         )}
@@ -121,7 +164,15 @@ function SidebarHeader({ onClose }: { onClose?: () => void }) {
   );
 }
 
-function NavList({ appId, onOpen }: { appId: string | null; onOpen: (id: string) => void }) {
+function NavList({
+  appId,
+  authed,
+  onOpen,
+}: {
+  appId: string | null;
+  authed: boolean | null;
+  onOpen: (id: string) => void;
+}) {
   return (
     <nav className="flex flex-col gap-1 p-2">
       <SectionLabel>apps</SectionLabel>
@@ -135,21 +186,27 @@ function NavList({ appId, onOpen }: { appId: string | null; onOpen: (id: string)
           description={app.description}
         />
       ))}
-      <SectionLabel className="mt-3">atalhos</SectionLabel>
-      {SHORTCUTS.map((s) => (
-        <a
-          key={s.id}
-          href={s.url}
-          target="_blank"
-          rel="noreferrer"
-          title={`${s.description} — abre em nova aba`}
-          className="group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          <span className="text-base leading-none">{s.emoji}</span>
-          <span className="min-w-0 flex-1 truncate">{s.name}</span>
-          <ExternalLink className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
-        </a>
-      ))}
+      {/* The admin tier: only for a visitor who logged in with Google
+          (see lib/auth.ts). Not rendered at all while probing. */}
+      {authed && (
+        <>
+          <SectionLabel className="mt-3">atalhos</SectionLabel>
+          {SHORTCUTS.map((s) => (
+            <a
+              key={s.id}
+              href={s.url}
+              target="_blank"
+              rel="noreferrer"
+              title={`${s.description} — abre em nova aba`}
+              className="group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <span className="text-base leading-none">{s.emoji}</span>
+              <span className="min-w-0 flex-1 truncate">{s.name}</span>
+              <ExternalLink className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+            </a>
+          ))}
+        </>
+      )}
     </nav>
   );
 }
@@ -210,30 +267,48 @@ function NavItem({
   );
 }
 
-// The sketch's "login - darkmode" footer. The login half is real but it
-// lives at the edge: this whole site is behind Cloudflare Access (Google
-// SSO, not in excluded_hostnames), so a rendered page *is* a logged-in
-// session -- the chip just says so, and the same session already covers
-// every shortcut (grafana, minio, ...). Darkmode is the hub's own theme;
-// each embedded app keeps its own toggle (iframes can't share a DOM
-// across origins).
-function SidebarFooter() {
+// The sketch's "login - darkmode" footer. The hub itself is public --
+// the Google login here is opt-in (via the /sso Access endpoint, see
+// lib/auth.ts) and only reveals the shortcuts tier; each shortcut
+// target still confirms Google on its own domain the first time.
+// Darkmode is the hub's theme, and it propagates into whatever app is
+// embedded (Renderer's half of the bridge).
+function SidebarFooter({ authed }: { authed: boolean | null }) {
   return (
     <div className="flex items-center gap-2 border-t px-3 py-2.5">
-      <span
-        className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
-        title="Este site fica atrás do Cloudflare Access (Google SSO). O mesmo login vale para os atalhos."
-      >
-        <ShieldCheck className="size-3.5 shrink-0 text-green-500" />
-        <span className="truncate">Google SSO</span>
-      </span>
+      {authed === null ? null : authed ? (
+        <span
+          className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+          title="Logado com o Google. Os atalhos aparecem; cada painel confirma o login na primeira visita (sessão de 24h)."
+        >
+          <ShieldCheck className="size-3.5 shrink-0 text-green-500" />
+          <span className="truncate">Google conectado</span>
+          <a
+            href={LOGOUT_URL}
+            aria-label="Sair"
+            title="Sair da sessão do Google"
+            className="shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground"
+          >
+            <LogOut className="size-3" />
+          </a>
+        </span>
+      ) : (
+        <a
+          href={LOGIN_URL}
+          title="Fazer login com o Google para revelar os atalhos dos painéis"
+          className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          <LogIn className="size-3.5 shrink-0" />
+          Entrar com Google
+        </a>
+      )}
       <span className="ml-auto" />
       <ThemeToggle />
     </div>
   );
 }
 
-function HomePane({ onOpen }: { onOpen: (id: string) => void }) {
+function HomePane({ authed, onOpen }: { authed: boolean | null; onOpen: (id: string) => void }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-2xl px-5 py-10">
@@ -273,32 +348,52 @@ function HomePane({ onOpen }: { onOpen: (id: string) => void }) {
           ))}
         </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.2, ease: "easeOut" }}
-          className="mt-8"
-        >
-          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-            atalhos — abrem em nova aba
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {SHORTCUTS.map((s) => (
+        {authed ? (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.2, ease: "easeOut" }}
+            className="mt-8"
+          >
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+              atalhos — abrem em nova aba
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {SHORTCUTS.map((s) => (
+                <a
+                  key={s.id}
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={s.description}
+                  className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  <span>{s.emoji}</span>
+                  {s.name}
+                  <ExternalLink className="size-3" />
+                </a>
+              ))}
+            </div>
+          </motion.div>
+        ) : (
+          authed === false && (
+            <motion.p
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.2, ease: "easeOut" }}
+              className="mt-8 text-sm text-muted-foreground"
+            >
+              Os atalhos dos painéis aparecem{" "}
               <a
-                key={s.id}
-                href={s.url}
-                target="_blank"
-                rel="noreferrer"
-                title={s.description}
-                className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                href={LOGIN_URL}
+                className="underline decoration-dotted underline-offset-2 hover:text-foreground"
               >
-                <span>{s.emoji}</span>
-                {s.name}
-                <ExternalLink className="size-3" />
+                depois de entrar com o Google
               </a>
-            ))}
-          </div>
-        </motion.div>
+              .
+            </motion.p>
+          )
+        )}
       </div>
     </div>
   );
@@ -313,6 +408,7 @@ function Renderer({ app }: { app: Microfrontend }) {
   const [nonce, setNonce] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // A reload (or switching apps, via the parent's key) remounts the
   // iframe; the spinner shows until the new frame reports its load.
@@ -322,6 +418,25 @@ function Renderer({ app }: { app: Microfrontend }) {
   }, []);
 
   useEffect(() => setLoaded(false), [app.id, nonce]);
+
+  // Hub → app half of the theme bridge: the hub's theme is the
+  // embedded app's theme. Sent on every theme change and once more on
+  // each iframe load (a frame that mounts after the last change would
+  // otherwise boot with its own saved choice until the next toggle).
+  // The app's listener is its lib/hubTheme.ts; tela has no theme
+  // system (dark-only by design) and simply ignores the message. The
+  // app echoing the value back is absorbed by App's "app:theme"
+  // listener -- applying the same theme again is a no-op, so no loop.
+  const pushTheme = useCallback(() => {
+    const theme: Theme =
+      document.documentElement.dataset.theme === "light" ? "light" : "dark";
+    iframeRef.current?.contentWindow?.postMessage({ type: "hub:theme", theme }, app.url);
+  }, [app.url]);
+
+  useEffect(() => {
+    pushTheme();
+    return onThemeChange(pushTheme);
+  }, [pushTheme, nonce]);
 
   function fullscreen() {
     if (!document.fullscreenElement) {
@@ -383,7 +498,11 @@ function Renderer({ app }: { app: Microfrontend }) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.25, ease: "easeOut" }}
-          onLoad={() => setLoaded(true)}
+          onLoad={() => {
+            setLoaded(true);
+            pushTheme();
+          }}
+          ref={iframeRef}
           // display-capture: tela's screen sharing inside the frame;
           // fullscreen: children that go fullscreen themselves.
           allow="display-capture; fullscreen; camera; microphone; clipboard-write"

@@ -27,3 +27,25 @@ export function saveTheme(theme: Theme) {
 export function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
 }
+
+// Who reacts to theme changes once the app is up: the toggle (keeps
+// its icon honest) and the renderer (forwards the change into the
+// embedded app's iframe). setTheme() below is the only mutator any
+// interactive path may call.
+const listeners = new Set<(theme: Theme) => void>();
+
+export function onThemeChange(listener: (theme: Theme) => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+// Save, paint, and tell everyone -- used by the toggle click and by a
+// theme arriving from an embedded app over postMessage, so all three
+// surfaces (toggle icon, chrome, iframes) can never drift apart.
+export function setTheme(theme: Theme) {
+  saveTheme(theme);
+  applyTheme(theme);
+  for (const listener of listeners) listener(theme);
+}

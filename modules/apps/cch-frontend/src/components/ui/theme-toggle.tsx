@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Moon, Sun } from "lucide-react";
 import { applyTheme, saveTheme, type Theme } from "@/lib/theme";
+import { broadcastTheme } from "@/lib/hubTheme";
 import { cn } from "@/lib/utils";
 
 // The sun/moon switch. The icon swaps with a spin, the choice takes
@@ -18,6 +19,8 @@ export function ThemeToggle({ className }: { className?: string }) {
     setTheme(next);
     saveTheme(next);
     applyTheme(next);
+    // Embedded in the hub? It follows along (lib/hubTheme.ts).
+    broadcastTheme(next);
   }
 
   return (

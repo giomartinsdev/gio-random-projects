@@ -13,8 +13,13 @@ locals {
     "registry.giomartins.dev",
   ])
 
-  protected_hostnames = toset([
-    for h in var.hostnames : h
-    if !contains(var.excluded_hostnames, h)
-  ])
+  # Everything Access-protected: full hostnames minus the excluded
+  # ones, plus any single paths that are protected even though their
+  # bare hostname is public (path_protected_hostnames -- same
+  # policies/service tokens/applications, keyed by the host+path
+  # string; DNS only ever keys on the bare hostnames above).
+  protected_hostnames = toset(concat(
+    [for h in var.hostnames : h if !contains(var.excluded_hostnames, h)],
+    var.path_protected_hostnames,
+  ))
 }

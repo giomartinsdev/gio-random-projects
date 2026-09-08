@@ -195,14 +195,24 @@ locals {
     {
       # The hub: chrome around every other frontend -- a sidebar plus a
       # renderer that iframes the SPAs above, plus new-tab shortcuts to
-      # the Access-protected dashboards. It stays OUT of
-      # excluded_hostnames on purpose (like beszel/vault/grafana): this
-      # one is gio's private dashboard, so the Google-SSO Access layer
-      # is its login. The embedded SPAs are all public, so embedding
-      # them from behind Access works for both sides -- guests keep
-      # their direct links, the hub just needs its own session.
+      # the Access-protected dashboards. Public on purpose (in
+      # excluded_hostnames like the SPAs it renders): a visitor can
+      # open the hub and every public app without an account. The
+      # opt-in Google login lives on the /sso path (see
+      # path_protected_hostnames below) -- the hub's frontend probes
+      # it (200 = logged in, redirect = not) and only then renders the
+      # shortcuts tier.
       hostname = "hub.giomartins.dev"
       bucket   = "hub-frontend"
     },
   ]
+
+  # Paths that get a Cloudflare Access application of their own even
+  # though their bare hostname is public (in excluded_hostnames). The
+  # hub's /sso is its opt-in Google login: "Entrar com Google"
+  # navigates there (which starts the Access flow), and the SPA probes
+  # it to decide whether the admin shortcuts are shown. Enforcement of
+  # the shortcut targets themselves stays on each target's own Access
+  # application -- this path is the UI gate, not the security one.
+  path_protected_hostnames = ["hub.giomartins.dev/sso"]
 }

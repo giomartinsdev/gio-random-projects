@@ -1,25 +1,26 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Moon, Sun } from "lucide-react";
-import { applyTheme, saveTheme, type Theme } from "@/lib/theme";
+import { onThemeChange, setTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 // The sun/moon switch. The icon swaps with a spin, the choice takes
 // effect immediately on <html data-theme> and sticks in localStorage.
-// Only styles the hub's own chrome -- each embedded app keeps its own
-// toggle (iframes can't share a DOM across origins).
+// While an app is embedded the change also propagates into its iframe
+// (the Renderer forwards it) -- and a change coming the other way,
+// from the embedded app's own toggle, arrives through onThemeChange,
+// so this icon always mirrors what's on screen.
 export function ThemeToggle({ className }: { className?: string }) {
   // Seeded from whatever main.tsx already applied, so first render
   // matches what's on screen.
-  const [theme, setTheme] = useState<Theme>(() =>
+  const [theme, setLocalTheme] = useState<Theme>(() =>
     document.documentElement.dataset.theme === "light" ? "light" : "dark",
   );
 
+  useEffect(() => onThemeChange(setLocalTheme), []);
+
   function toggle() {
-    const next = theme === "light" ? "dark" : "light";
-    setTheme(next);
-    saveTheme(next);
-    applyTheme(next);
+    setTheme(theme === "light" ? "dark" : "light");
   }
 
   return (

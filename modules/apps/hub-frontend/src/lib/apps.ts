@@ -2,13 +2,17 @@
 //
 // - MICROFRONTENDS are the SPAs the renderer opens in its iframe. They
 //   stay untouched, standalone apps on their own subdomains -- the hub
-//   is only chrome around them (a "renderer"), so adding one here needs
-//   zero changes on the app's side.
-// - SHORTCUTS are admin surfaces that must NOT be iframed: they're
-//   behind Cloudflare Access (which iframes would handle fine, actually)
-//   but several set their own X-Frame-Options/CSP -- and a dashboard is
-//   better in its own tab anyway. They open in a new tab; the SSO
-//   session is shared, so no second login.
+//   is only chrome around them (a "renderer"), so adding one here
+//   needs zero changes on the app's side. The one thing they can opt
+//   into is the theme bridge (their lib/hubTheme.ts, our Renderer):
+//   while embedded, whatever theme the hub is in, the app follows.
+// - SHORTCUTS are admin surfaces that must NOT be iframed: several
+//   set their own X-Frame-Options/CSP, and a dashboard is better in
+//   its own tab anyway. They only render once the visitor logged in
+//   with Google (lib/auth.ts probes the /sso Access endpoint) -- and
+//   logging in here doesn't pre-auth those hostnames either: each is
+//   its own Cloudflare Access application, so the first click still
+//   runs a one-click Google confirmation on their domain.
 
 export type Microfrontend = {
   id: string; // also the deep-link hash: hub.giomartins.dev/#/cch
@@ -40,13 +44,6 @@ export const MICROFRONTENDS: Microfrontend[] = [
     emoji: "🎴",
     description: "cartas contra a humanidade, sem cadastro",
     url: "https://cch.giomartins.dev",
-  },
-  {
-    id: "buteco-class",
-    name: "Buteco Class",
-    emoji: "🌭",
-    description: "o blog do Buteco dos Devs",
-    url: "https://buteco-class.giomartins.dev",
   },
 ];
 
@@ -99,4 +96,10 @@ export function appIdFromHash(hash: string): string | null {
 export function findApp(id: string | null): Microfrontend | null {
   if (!id) return null;
   return MICROFRONTENDS.find((app) => app.id === id) ?? null;
+}
+
+// The origins the renderer trusts theme messages from (a frame
+// reporting its own toggle change back to us).
+export function microfrontendOrigins(): string[] {
+  return MICROFRONTENDS.map((app) => new URL(app.url).origin);
 }

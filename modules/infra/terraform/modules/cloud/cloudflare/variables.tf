@@ -52,6 +52,20 @@ variable "excluded_hostnames" {
   default     = []
 }
 
+variable "path_protected_hostnames" {
+  description = <<-EOT
+    Hostname paths ("host/path") that get the same Google-SSO Access
+    application as every protected hostname even though their bare
+    hostname is public (listed in excluded_hostnames). Access matches
+    on domain + path, so one of these gates exactly that path while
+    the rest of the site stays open -- the pattern for giving a public
+    page an opt-in SSO login: the frontend probes the path and reads
+    200 (session valid) vs a redirect (not logged in).
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "allowed_emails" {
   description = "Emails allowed to log in via Google SSO to every protected hostname."
   type        = list(string)

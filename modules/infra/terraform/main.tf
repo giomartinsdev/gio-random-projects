@@ -13,10 +13,11 @@ module "cloud_cloudflare" {
   # handling same as everything in services -- they're a different
   # ingress route (MinIO, not a container port), not a different DNS
   # or Access story.
-  hostnames          = concat([for s in local.services : s.hostname], [for s in local.static_sites : s.hostname])
-  excluded_hostnames = var.excluded_hostnames
-  allowed_emails     = var.allowed_emails
-  session_duration   = var.session_duration
+  hostnames                = concat([for s in local.services : s.hostname], [for s in local.static_sites : s.hostname])
+  excluded_hostnames       = var.excluded_hostnames
+  path_protected_hostnames = local.path_protected_hostnames
+  allowed_emails           = var.allowed_emails
+  session_duration         = var.session_duration
 
   # Email Routing lives on the zone's DNS (MX/SPF/DKIM) plus account
   # state, not on any hostname's ingress — so it slots into this
