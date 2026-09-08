@@ -271,7 +271,7 @@ module "compute_apps_bet_api" {
   registry_host     = var.registry_host
   access_aud        = module.cloud_cloudflare.access_app_auds["bet-api.giomartins.dev"]
   allowed_emails    = var.allowed_emails
-  credentials_key   = random_password.bet_credentials_key.result
+  credentials_key   = random_id.bet_credentials_key.hex
   runner_api_key    = random_password.runner_api_key.result
   frontend_origins  = ["https://bet.giomartins.dev", "http://localhost:5173"]
   otlp_endpoint     = module.compute_services_observability.otlp_endpoint

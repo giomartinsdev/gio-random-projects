@@ -116,13 +116,14 @@ resource "random_password" "grafana_admin_password" {
 }
 
 # bet-api's AES-256-GCM key for the bookmaker credentials at rest
-# (modules/apps/bet-api's lib/crypto.ts) -- 64 hex-compatible chars = 32
-# raw bytes, no specials so it survives being a bare env var. Rotating
+# (modules/apps/bet-api's lib/crypto.ts) -- exactly 32 raw bytes as 64
+# hex chars. random_id (not random_password: alphanumeric chars like
+# g-z are not hex, and Buffer.from(s, "hex") TRUNCATES at the first
+# non-hex char -- the crash-loop that shipped this comment). Rotating
 # it bricks every saved password (AES-GCM has no re-key), so re-save
 # credentials in the bet app after a rotation.
-resource "random_password" "bet_credentials_key" {
-  length  = 64
-  special = false
+resource "random_id" "bet_credentials_key" {
+  byte_length = 32
 }
 
 # Shared secret between bet-api and bet-runner for /internal/* over the
@@ -327,9 +328,9 @@ locals {
     # fetch needed); the vault items exist so a human can read the
     # values out of the vault for local dev.
     bet = {
-      trigger = "${random_password.bet_credentials_key.result}|${random_password.runner_api_key.result}"
+      trigger = "${random_id.bet_credentials_key.hex}|${random_password.runner_api_key.result}"
       items = {
-        BET_CREDENTIALS_KEY = random_password.bet_credentials_key.result
+        BET_CREDENTIALS_KEY = random_id.bet_credentials_key.hex
         RUNNER_API_KEY      = random_password.runner_api_key.result
       }
     }
