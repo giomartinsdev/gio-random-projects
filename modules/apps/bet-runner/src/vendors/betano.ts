@@ -197,12 +197,16 @@ async function login(page: Page, req: BetRequest, loginUrl: string): Promise<voi
     if (tab) await tab.click().catch(() => undefined);
   }
 
-  const email = await firstVisible(page, LOGIN_USERNAME, 10_000);
+  // 20s: under Xvfb the container's SPA is markedly slower than the
+  // Mac's — 10s saw the form never render (networkidle had already
+  // burned its own cap).
+  const email = await firstVisible(page, LOGIN_USERNAME, 20_000);
   if (!email) {
     // The logged-out signal fired but no form showed up — most likely
     // we were actually logged in after all. Keep going instead of
-    // failing a bet the site would still have accepted.
-    req.log("formulário de login não apareceu — seguindo como logado");
+    // failing a bet the site would still have accepted. The URL in the
+    // log tells a compliance wall (a betano error page) from a slow SPA.
+    req.log(`formulário de login não apareceu (${page.url()}) — seguindo como logado`);
     return;
   }
   const password = await firstVisible(page, LOGIN_PASSWORD, 10_000);
