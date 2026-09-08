@@ -34,6 +34,7 @@ on:
       - "modules/apps/tela-frontend/**"
       - "modules/apps/cch-frontend/**"
       - "modules/apps/hub-frontend/**"
+      - "modules/apps/bet-frontend/**"
   workflow_dispatch:
     inputs:
       app:
@@ -52,7 +53,7 @@ jobs:
 
       - id: list
         env:
-          ALLOWED_APPS: "buteco-class-frontend tela-frontend cch-frontend hub-frontend"
+          ALLOWED_APPS: "buteco-class-frontend tela-frontend cch-frontend hub-frontend bet-frontend"
         run: |
           all_apps=$(echo "$ALLOWED_APPS" | tr ' ' '\n')
 
@@ -119,6 +120,7 @@ jobs:
           VITE_TELA_API_URL: https://tela-api.giomartins.dev
           VITE_OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
           VITE_CCH_API_URL: https://cch-api.giomartins.dev
+          VITE_BET_API_URL: https://bet-api.giomartins.dev
         run: npm run build
 
       # scp (not the docker provider/API) because the files have to

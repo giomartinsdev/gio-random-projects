@@ -253,6 +253,51 @@ module "compute_apps_cch_api" {
   depends_on = [module.compute_apps_domain_api]
 }
 
+# bet-api: the betting BFF -- Access-protected hostname (bet-api
+# is deliberately NOT in excluded_hostnames), Access-JWT auth in-app,
+# Postgres via the one-shot migrate container, /internal/* guarded by
+# the shared runner key. The aud tag comes from the Access application
+# this apply (or an earlier one) creates for bet-api.giomartins.dev.
+module "compute_apps_bet_api" {
+  source = "./modules/compute/apps/bet_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name      = module.network_docker_apps.network_name
+  postgres_host     = module.storage_postgres.postgres_host
+  postgres_user     = module.storage_postgres.postgres_user
+  postgres_password = random_password.postgres.result
+  registry_host     = var.registry_host
+  access_aud        = module.cloud_cloudflare.access_app_auds["bet-api.giomartins.dev"]
+  allowed_emails    = var.allowed_emails
+  credentials_key   = random_password.bet_credentials_key.result
+  runner_api_key    = random_password.runner_api_key.result
+  frontend_origins  = ["https://bet.giomartins.dev", "http://localhost:5173"]
+  otlp_endpoint     = module.compute_services_observability.otlp_endpoint
+
+  depends_on = [null_resource.postgres_password_sync, module.cloud_cloudflare]
+}
+
+# bet-runner: the headless-Chrome worker. dry_run stays true (terraform
+# default) until selectors are verified against the real site -- flip
+# it deliberately, once, with receipts in hand.
+module "compute_apps_bet_runner" {
+  source = "./modules/compute/apps/bet_runner"
+  providers = {
+    docker = docker
+  }
+
+  network_name   = module.network_docker_apps.network_name
+  registry_host  = var.registry_host
+  bet_api_url    = "http://bet-api:8009"
+  runner_api_key = random_password.runner_api_key.result
+  dry_run        = true
+  otlp_endpoint  = module.compute_services_observability.otlp_endpoint
+
+  depends_on = [module.compute_apps_bet_api]
+}
+
 module "compute_services_registry" {
   source = "./modules/compute/services/registry"
   providers = {
@@ -286,6 +331,7 @@ module "compute_services_ingress" {
     module.compute_apps_classroom_api,
     module.compute_apps_tela_api,
     module.compute_apps_cch_api,
+    module.compute_apps_bet_api,
     module.compute_services_registry,
     module.compute_services_monitoring,
     module.compute_services_ai_proxy,

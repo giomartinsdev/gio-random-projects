@@ -1,0 +1,83 @@
+@import url("https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Same family as the other micro apps in the hub (cch's palette), hue
+   215 anchoring dark/light so "primary" reads as one brand color
+   everywhere; dark is the default and main.tsx applies the saved
+   choice before first paint. */
+@layer base {
+  :root {
+    --background: 222 45% 7%;
+    --foreground: 216 45% 96%;
+    --card: 220 32% 12%;
+    --card-foreground: 216 45% 96%;
+    --primary: 213 92% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 24% 18%;
+    --secondary-foreground: 216 45% 96%;
+    --muted: 220 22% 16%;
+    --muted-foreground: 216 15% 68%;
+    --accent: 220 26% 20%;
+    --accent-foreground: 216 45% 96%;
+    --accent2: 152 60% 45%;
+    --accent2-foreground: 0 0% 100%;
+    --success: 152 60% 45%;
+    --success-foreground: 0 0% 100%;
+    --destructive: 356 80% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 22% 22%;
+    --input: 220 22% 22%;
+    --ring: 213 92% 58%;
+    --radius: 1.25rem;
+  }
+
+  :root[data-theme="light"] {
+    --background: 213 60% 96%;
+    --foreground: 220 45% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 45% 14%;
+    --primary: 213 88% 52%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 213 40% 92%;
+    --secondary-foreground: 220 45% 14%;
+    --muted: 213 35% 93%;
+    --muted-foreground: 220 20% 42%;
+    --accent: 213 40% 90%;
+    --accent-foreground: 220 45% 14%;
+    --accent2: 152 55% 38%;
+    --accent2-foreground: 0 0% 100%;
+    --success: 152 55% 38%;
+    --success-foreground: 0 0% 100%;
+    --destructive: 356 75% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 213 30% 85%;
+    --input: 213 30% 85%;
+    --ring: 213 88% 52%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Nunito", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    overscroll-behavior: none;
+    background-image:
+      radial-gradient(ellipse 900px 500px at 15% -10%, hsl(var(--primary) / 0.28), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 110% 10%, hsl(var(--success) / 0.18), transparent 55%);
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: "Baloo 2", "Nunito", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  header {
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+  }
+}

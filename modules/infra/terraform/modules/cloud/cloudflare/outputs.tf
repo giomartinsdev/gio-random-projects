@@ -30,6 +30,11 @@ output "protected_hosts_service_token_client_secrets" {
   sensitive   = true
 }
 
+output "access_app_auds" {
+  description = "Access application AUD tags, keyed by hostname — the `aud` claim every Access JWT minted for that app carries. bet-api's lib/accessAuth.ts pins its BET_ACCESS_AUD to this, so a token minted for any OTHER app is rejected here."
+  value       = { for k, v in cloudflare_zero_trust_access_application.protected : k => v.aud }
+}
+
 output "registry_client_cert_pem" {
   description = "mTLS client certificate for registry.giomartins.dev, for a future Phase 2 (proxied) reactivation — dormant and unused while Phase 1's grey-cloud records mean this WAF rule never fires. See registry_mtls.tf."
   value       = tls_locally_signed_cert.registry_client.cert_pem

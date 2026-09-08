@@ -20,6 +20,8 @@ on:
       - "modules/apps/post-api/**"
       - "modules/apps/bookclub-api/**"
       - "modules/apps/classroom-api/**"
+      - "modules/apps/bet-api/**"
+      - "modules/apps/bet-runner/**"
   workflow_dispatch:
     inputs:
       app:
@@ -38,7 +40,7 @@ jobs:
 
       - id: list
         env:
-          ALLOWED_APPS: "post-api bookclub-api classroom-api"
+          ALLOWED_APPS: "post-api bookclub-api classroom-api bet-api bet-runner"
         run: |
           all_apps=$(echo "$ALLOWED_APPS" | tr ' ' '\n')
 
@@ -300,6 +302,11 @@ jobs:
                 REPLACE_ARGS+=("-replace=module.compute_apps_bookclub_api.docker_container.bookclub_api")
                 ;;
               classroom-api) REPLACE_ARGS+=("-replace=module.compute_apps_classroom_api.docker_container.classroom_api") ;;
+              bet-api)
+                REPLACE_ARGS+=("-replace=module.compute_apps_bet_api.docker_container.bet_api_migrate")
+                REPLACE_ARGS+=("-replace=module.compute_apps_bet_api.docker_container.bet_api")
+                ;;
+              bet-runner) REPLACE_ARGS+=("-replace=module.compute_apps_bet_runner.docker_container.bet_runner") ;;
               *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
             esac
           done

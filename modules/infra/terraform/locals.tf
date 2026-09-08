@@ -87,6 +87,19 @@ locals {
       port     = 8008
     },
     {
+      # bet-api: the betting BFF. Access-protected ON PURPOSE (NOT in
+      # excluded_hostnames, unlike every other API here): the browser's
+      # fetch carries the edge-injected Cf-Access-Jwt-Assertion header
+      # and the app validates that JWT itself (lib/accessAuth.ts) --
+      # login IS the Access/Google session, shared with the hub's via
+      # the team-domain cookie. bet-runner calls http://bet-api:8009
+      # over the apps network, bypassing ingress/Access entirely,
+      # authenticated by RUNNER_API_KEY. Port must match
+      # module.compute_apps_bet_api's external_port.
+      hostname = "bet-api.giomartins.dev"
+      port     = 8009
+    },
+    {
       # 9router: OpenAI-compatible AI proxy with auto-fallback across
       # 40+ providers (Claude, GPT, Gemini, …). Dashboard at /dashboard,
       # API at /v1. Excluded from Cloudflare Access (Google SSO) so CLI/
@@ -204,6 +217,18 @@ locals {
       # shortcuts tier.
       hostname = "hub.giomartins.dev"
       bucket   = "hub-frontend"
+    },
+    {
+      # The betting micro frontend -- public chrome around the real
+      # gate, which is the Access application on
+      # bet-api.giomartins.dev. Same shape as the hub's /sso probe: the
+      # SPA fetches /api/me on bet-api (200 = logged in, opaque
+      # redirect = not) and hops through bet-api's /auth/sso for the
+      # Google login. It must be iframe-embeddable in the hub like
+      # cch/tela (a Google SSO redirect inside the hub's renderer frame
+      # cannot be completed), hence excluded_hostnames below.
+      hostname = "bet.giomartins.dev"
+      bucket   = "bet-frontend"
     },
   ]
 

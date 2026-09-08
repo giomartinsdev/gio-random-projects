@@ -45,6 +45,13 @@ export const MICROFRONTENDS: Microfrontend[] = [
     description: "cartas contra a humanidade, sem cadastro",
     url: "https://cch.giomartins.dev",
   },
+  {
+    id: "bet",
+    name: "Bet",
+    emoji: "🎯",
+    description: "apostas automatizadas a partir de um link",
+    url: "https://bet.giomartins.dev",
+  },
 ];
 
 export const SHORTCUTS: Shortcut[] = [

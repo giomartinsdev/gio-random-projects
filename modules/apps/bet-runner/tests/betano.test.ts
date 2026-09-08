@@ -1,0 +1,158 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { betanoDriver } from "../src/vendors/betano.js";
+import {
+  BALANCE,
+  CONFIRMED_TEXT,
+  CONFIRM_BUTTON,
+  LOGIN_EMAIL,
+  LOGIN_PASSWORD,
+  LOGIN_SUBMIT,
+  ODDS_BUTTON,
+  STAKE_INPUT,
+} from "../src/vendors/betano.js";
+import { FakePage } from "./fakePage.js";
+import type { BetRequest } from "../src/vendors/types.js";
+
+const BET_URL = "https://www.betano.com.br/aposta/abc";
+
+function request(overrides: Partial<BetRequest> = {}): BetRequest {
+  return {
+    betId: "bet-1",
+    url: BET_URL,
+    stakeCents: 10_50,
+    username: "gio@betano.com",
+    password: "hunter2",
+    dryRun: false,
+    log: () => undefined,
+    ...overrides,
+  };
+}
+
+// The driver's selector waits are wall-clock (Date.now) deadlines; the
+// fake page advances its own virtual clock on every waitForTimeout, so
+// pinning Date.now to it makes those waits virtual too — a test that
+// exercises a 15s timeout finishes instantly.
+function freezeClockOn(page: FakePage) {
+  vi.spyOn(Date, "now").mockImplementation(() => page.now);
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("betanoDriver", () => {
+  it("places a bet on a link that pre-filled the slip", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    page.visible.add(STAKE_INPUT[0]);
+    page.visible.add(CONFIRM_BUTTON[0]);
+    page.visible.add(CONFIRMED_TEXT);
+    page.visible.add(BALANCE[0]); // the receipt's balanceCents source
+    page.textContent = "Saldo: R$ 87,50";
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("succeeded");
+    if (outcome.status !== "succeeded") return;
+    expect(page.fills).toContainEqual({ selector: STAKE_INPUT[0], value: "10,50" });
+    expect(page.clicks).toContainEqual(CONFIRM_BUTTON[0]);
+    expect(outcome.receipt.steps.length).toBeGreaterThan(0);
+    expect(outcome.receipt.screenshotJpeg).toBeTruthy();
+    expect(outcome.receipt.balanceCents).toBe(8_750);
+    expect(outcome.receipt.dryRun).toBeUndefined();
+  });
+
+  it("never clicks confirm in dry-run", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    page.visible.add(STAKE_INPUT[0]);
+    page.visible.add(CONFIRM_BUTTON[0]);
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request({ dryRun: true }));
+
+    expect(outcome.status).toBe("succeeded");
+    if (outcome.status !== "succeeded") return;
+    expect(outcome.receipt.dryRun).toBe(true);
+    expect(page.clicks).not.toContainEqual(CONFIRM_BUTTON[0]);
+  });
+
+  it("clicks the first odd when the link opens a market page instead of a slip", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    page.onClick = (selector) => {
+      // Clicking the odd opens the slip: the stake input appears.
+      if (ODDS_BUTTON.includes(selector)) page.visible.add(STAKE_INPUT[0]);
+    };
+    page.visible.add(ODDS_BUTTON[0]);
+    page.visible.add(CONFIRM_BUTTON[0]);
+    page.visible.add(CONFIRMED_TEXT);
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("succeeded");
+    expect(page.clicks).toContainEqual(ODDS_BUTTON[0]);
+    expect(page.fills).toContainEqual({ selector: STAKE_INPUT[0], value: "10,50" });
+  });
+
+  it("logs in when the session expired, then places the bet", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    page.visible.add(LOGIN_EMAIL[0]);
+    page.visible.add(LOGIN_PASSWORD[0]);
+    page.visible.add(LOGIN_SUBMIT[0]);
+    page.onClick = (selector) => {
+      if (LOGIN_SUBMIT.includes(selector)) {
+        page.visible.delete(LOGIN_EMAIL[0]);
+        page.visible.delete(LOGIN_PASSWORD[0]);
+        page.visible.add(STAKE_INPUT[0]);
+        page.visible.add(CONFIRM_BUTTON[0]);
+        page.visible.add(CONFIRMED_TEXT);
+      }
+    };
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("succeeded");
+    expect(page.fills).toContainEqual({ selector: LOGIN_EMAIL[0], value: "gio@betano.com" });
+    expect(page.fills).toContainEqual({ selector: LOGIN_PASSWORD[0], value: "hunter2" });
+    expect(page.clicks).toContainEqual(LOGIN_SUBMIT[0]);
+    expect(page.clicks).toContainEqual(CONFIRM_BUTTON[0]);
+  });
+
+  it("fails clearly on a persistent Cloudflare challenge", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    page.challenge = true;
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("failed");
+    if (outcome.status !== "failed") return;
+    expect(outcome.error).toMatch(/cloudflare/i);
+    expect(outcome.receipt?.screenshotJpeg).toBeTruthy();
+  });
+
+  it("fails with a screenshot when neither a slip nor an odd exists", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("failed");
+    if (outcome.status !== "failed") return;
+    expect(outcome.error).toMatch(/slip/i);
+    expect(outcome.receipt?.screenshotJpeg).toBeTruthy();
+  });
+
+  it("fails when clicking the odd does not open a slip", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    page.visible.add(ODDS_BUTTON[0]);
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("failed");
+    if (outcome.status !== "failed") return;
+    expect(outcome.error).toMatch(/slip não abriu/i);
+  });
+});

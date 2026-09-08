@@ -115,6 +115,24 @@ resource "random_password" "grafana_admin_password" {
   special = false
 }
 
+# bet-api's AES-256-GCM key for the bookmaker credentials at rest
+# (modules/apps/bet-api's lib/crypto.ts) -- 64 hex-compatible chars = 32
+# raw bytes, no specials so it survives being a bare env var. Rotating
+# it bricks every saved password (AES-GCM has no re-key), so re-save
+# credentials in the bet app after a rotation.
+resource "random_password" "bet_credentials_key" {
+  length  = 64
+  special = false
+}
+
+# Shared secret between bet-api and bet-runner for /internal/* over the
+# apps network -- the runner bypasses ingress/Access by design, this is
+# its only auth.
+resource "random_password" "runner_api_key" {
+  length  = 48
+  special = false
+}
+
 # Postgres only applies POSTGRES_PASSWORD on first init of an empty
 # data volume -- changing the env var alone does nothing once the
 # volume already has data, and would leave domain-api/domain-worker
@@ -302,6 +320,17 @@ locals {
       trigger = random_password.grafana_admin_password.result
       items = {
         GRAFANA_ADMIN_PASSWORD = random_password.grafana_admin_password.result
+      }
+    }
+    # Grouped (not 2 separate resources): both are the bet stack's
+    # secrets. Terraform wires both straight into the containers (no CI
+    # fetch needed); the vault items exist so a human can read the
+    # values out of the vault for local dev.
+    bet = {
+      trigger = "${random_password.bet_credentials_key.result}|${random_password.runner_api_key.result}"
+      items = {
+        BET_CREDENTIALS_KEY = random_password.bet_credentials_key.result
+        RUNNER_API_KEY      = random_password.runner_api_key.result
       }
     }
   }
