@@ -51,7 +51,7 @@ func TestStartRequiresThreePlayers(t *testing.T) {
 	g := New()
 	g.Join("a", "A")
 	g.Join("b", "B")
-	ids := []string{"classico"}
+	ids := []string{"cah"}
 	if err := g.Start("a", ids, 5); err != ErrNotEnoughPlayers {
 		t.Fatalf("Start with 2 players: got %v, want ErrNotEnoughPlayers", err)
 	}
@@ -106,7 +106,13 @@ func TestFullRoundFlow(t *testing.T) {
 	}
 
 	// Playing a card you don't hold fails without touching the hand.
-	if err := g.Submit("b", []Play{{CardID: "nope-w-999"}}); err != ErrCardNotInHand {
+	// The play count has to match the black card first, so send as many
+	// fake card IDs as blanks are asked for.
+	nope := make([]Play, st.BlackBlanks)
+	for i := range nope {
+		nope[i] = Play{CardID: "nope-w-999"}
+	}
+	if err := g.Submit("b", nope); err != ErrCardNotInHand {
 		t.Fatalf("got %v, want ErrCardNotInHand", err)
 	}
 
@@ -283,7 +289,7 @@ func TestCzarRotatesInJoinOrder(t *testing.T) {
 func TestGameEndsAtWinningScore(t *testing.T) {
 	g := New()
 	joinAll(t, g, "a", "b", "c")
-	if err := g.Start("a", []string{"classico"}, 1); err != nil {
+	if err := g.Start("a", []string{"cah"}, 1); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
@@ -548,12 +554,12 @@ func riggedBlankGame(t *testing.T) *Game {
 	t.Helper()
 	g := New()
 	joinAll(t, g, "a", "b", "c")
-	if err := g.Start("a", []string{"classico"}, 99); err != nil {
+	if err := g.Start("a", []string{"cah"}, 99); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	g.blackCard = decks.Card{ID: "classico-b-test", Text: "Aqui jaz quem morreu de _."}
+	g.blackCard = decks.Card{ID: "cah-b-test", Text: "Aqui jaz quem morreu de _."}
 	g.blackBlanks = 1
-	blank := decks.Card{ID: "classico-w-blank-test", Text: decks.BlankWhiteText}
+	blank := decks.Card{ID: "cah-w-blank-test", Text: decks.BlankWhiteText}
 	g.hands["b"] = append([]decks.Card{blank}, g.hands["b"]...)
 	return g
 }
@@ -581,7 +587,7 @@ func TestDiscardOncePerRound(t *testing.T) {
 		t.Fatalf("second trade: got %v", err)
 	}
 	// The Czar cannot trade -- and holds no hand to trade from anyway.
-	if err := g.Discard("a", "classico-w-0"); err != ErrNotYourTurn {
+	if err := g.Discard("a", "cah-w-0"); err != ErrNotYourTurn {
 		t.Fatalf("czar trade: got %v", err)
 	}
 }

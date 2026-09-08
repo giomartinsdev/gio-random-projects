@@ -41,7 +41,7 @@ func getJSON(t *testing.T, s *Server, path string) *httptest.ResponseRecorder {
 
 func TestGenerateEndpointDisabled(t *testing.T) {
 	s := New(rooms.NewRegistry(""), nil, nil, customdecks.New(""))
-	res := postJSON(t, s, "/api/decks/generate", `{"parentDeckId":"classico"}`)
+	res := postJSON(t, s, "/api/decks/generate", `{"parentDeckId":"cah"}`)
 	if res.Code != http.StatusServiceUnavailable {
 		t.Fatalf("disabled forge should 503, got %d", res.Code)
 	}
@@ -57,7 +57,7 @@ func TestGenerateEndpointFlow(t *testing.T) {
 	defer srv.Close()
 	s := forgeServer(t, srv.URL)
 
-	res := postJSON(t, s, "/api/decks/generate", `{"parentDeckId":"classico","theme":"teste"}`)
+	res := postJSON(t, s, "/api/decks/generate", `{"parentDeckId":"cah","theme":"teste"}`)
 	if res.Code != http.StatusOK {
 		t.Fatalf("generate should succeed, got %d: %s", res.Code, res.Body.String())
 	}
@@ -78,11 +78,11 @@ func TestGenerateEndpointFlow(t *testing.T) {
 
 	// The per-IP quota: generationsPerHour succeed, the next one is a 429.
 	for i := 1; i < generationsPerHour; i++ {
-		if res := postJSON(t, s, "/api/decks/generate", `{"parentDeckId":"classico"}`); res.Code != http.StatusOK {
+		if res := postJSON(t, s, "/api/decks/generate", `{"parentDeckId":"cah"}`); res.Code != http.StatusOK {
 			t.Fatalf("generation %d should pass, got %d", i, res.Code)
 		}
 	}
-	if res := postJSON(t, s, "/api/decks/generate", `{"parentDeckId":"classico"}`); res.Code != http.StatusTooManyRequests {
+	if res := postJSON(t, s, "/api/decks/generate", `{"parentDeckId":"cah"}`); res.Code != http.StatusTooManyRequests {
 		t.Fatalf("generation past quota should 429, got %d", res.Code)
 	}
 }
@@ -101,7 +101,7 @@ func TestGenerateEndpointBusy(t *testing.T) {
 	// cancelled so the fake provider would return anyway -- the busy
 	// check happens before the call).
 	s.generationSlot <- struct{}{}
-	res := postJSON(t, s, "/api/decks/generate", `{"parentDeckId":"classico"}`)
+	res := postJSON(t, s, "/api/decks/generate", `{"parentDeckId":"cah"}`)
 	if res.Code != http.StatusTooManyRequests {
 		t.Fatalf("busy forge should 429, got %d", res.Code)
 	}
