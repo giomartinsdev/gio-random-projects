@@ -399,31 +399,37 @@ const chars = [
       eye(112, 62, 11, 13, 75),
       smile(90, 80, 76, 6, 4),
       group("ridge", [path([{ p: [76, 94] }, { p: [124, 94] }], false), stroke("#c2664f", 4)]),
+      group("ball-l", [ellipse(82, 178, 32, 26), fill("#eb9074")]),
+      group("ball-r", [ellipse(118, 178, 32, 26), fill("#eb9074")]),
       group("shaft", [rect(100, 132, 56, 108, 27), fill("#f4a988")]),
       group("head", [ellipse(100, 66, 66, 58), fill("#eb9074")]),
     ], { amp: 3, mid: 90 }),
 
   // Saco: dois lóbulos enrugados -- cara de quem não tem pressa
-  // nenhuma pra lugar nenhum.
+  // nenhuma pra lugar nenhum. A vinca do meio fica CURTA e ATRÁS dos
+  // lóbulos de propósito: uma linha reta esticada até a beirada de uma
+  // elipse passa da silhueta (a elipse afina perto da borda, a linha
+  // não) e sai parecendo um vazamento em vez de uma dobra de pele.
   () =>
     doc("saco", [
       eye(84, 104, 13, 15, 100),
       eye(116, 104, 13, 15, 100),
       smile(88, 122, 122, 5, 4),
-      group("crease", [path([{ p: [100, 88] }, { p: [100, 152] }], false), stroke("#c2664f", 3)]),
       group("lobe-l", [ellipse(76, 122, 62, 68), fill("#f4a988")]),
       group("lobe-r", [ellipse(124, 122, 62, 68), fill("#f4a988")]),
+      group("crease", [path([{ p: [100, 106] }, { p: [100, 138] }], false), stroke("#d68563", 3)]),
     ], { amp: 3.5, mid: 95 }),
 
   // Bunda: duas bochechas e uma fenda -- olhinhos no topo pra ficar
-  // ainda mais sem noção.
+  // ainda mais sem noção. Mesma lição do saco: a fenda fica curta e
+  // atrás das bochechas, bem dentro da silhueta.
   () =>
     doc("bunda", [
       happyEye(64, 84, 96, 5),
       happyEye(116, 136, 96, 5),
-      group("crack", [path([{ p: [100, 82] }, { p: [100, 168] }], false), stroke("#c2664f", 4)]),
       group("cheek-l", [ellipse(78, 122, 74, 92), fill("#f4a988")]),
       group("cheek-r", [ellipse(122, 122, 74, 92), fill("#f4a988")]),
+      group("crack", [path([{ p: [100, 92] }, { p: [100, 152] }], false), stroke("#d68563", 4)]),
     ], { amp: 2.5, mid: 100 }),
 ];
 
