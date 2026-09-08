@@ -10,9 +10,10 @@ import { logger } from "./logger.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const teamDomain = process.env.BET_ACCESS_TEAM_DOMAIN;
-// Comma-separated: bet-api sits behind two Access path apps (/api and
-// /auth) and each stamps its JWTs with its own aud — terraform passes
-// both (see lib/accessAuth.ts's aud comment).
+// Comma-separated: bet-api sits behind a single Access path app (/api,
+// login hop included) — terraform passes its aud (see
+// lib/accessAuth.ts's aud comment); extra auds would belong to OTHER
+// apps whose cookies must NOT authenticate this API.
 const accessAud = (process.env.BET_ACCESS_AUD ?? "")
   .split(",")
   .map((a) => a.trim())
@@ -21,7 +22,7 @@ const credentialsKey = process.env.BET_CREDENTIALS_KEY;
 const runnerApiKey = process.env.RUNNER_API_KEY;
 const port = Number(process.env.PORT ?? 8009);
 // Comma-separated origins the frontend is served from — CORS (app.ts)
-// and the /auth/sso redirect allowlist (routes/auth.ts) both use this.
+// and the /api/sso redirect allowlist (routes/auth.ts) both use this.
 const frontendOrigins = (process.env.FRONTEND_ORIGINS ?? "http://localhost:5173")
   .split(",")
   .map((o) => o.trim())

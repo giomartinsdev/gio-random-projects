@@ -1,5 +1,5 @@
-// Identity = Cloudflare Access. bet-api's /api and /auth paths sit
-// behind Access applications (Google SSO, allowed_emails — see the
+// Identity = Cloudflare Access. bet-api's /api path sits
+// behind a single Access application (Google SSO, allowed_emails — see the
 // cloudflare module), and the edge stamps every request it passes
 // through with the Cf-Access-Jwt-Assertion header, a JWT signed with
 // the team's public keys. This middleware verifies it properly —
@@ -31,9 +31,10 @@ export type AccessAuth = ReturnType<typeof createAccessAuth>;
 export function createAccessAuth(opts: {
   teamDomain: string;
   // One aud per Access application in front of this API. bet-api sits
-  // behind TWO path apps (/api and /auth) and each mints JWTs with its
-  // own aud, so prod passes both and the middleware pins the set
-  // (jose accepts a list). A single string still works for one app.
+  // behind a single path app (/api — the login hop lives under it, at
+  // /api/sso, because a second app's cookie would carry the other
+  // app's aud and be rejected here) — jose accepts a list or a
+  // single string either way.
   aud: string | string[];
   // The emails terraform's Access policy allows — defense in depth
   // behind Access's own decision, checked again here.

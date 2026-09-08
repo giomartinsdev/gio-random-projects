@@ -292,4 +292,25 @@ describe("bet-api routes", () => {
     expect(detail.status).toBe("failed");
     expect(detail.error).toContain("removidas");
   });
+
+  it("bounces the /api/sso login hop back to an allowed origin", async () => {
+    const app = buildApp();
+    const res = await app.request(
+      "/api/sso?return=https%3A%2F%2Fbet.giomartins.dev%2Fdeep%2Flink",
+    );
+    // The handler normalizes to the ORIGIN (never echoes a raw
+    // return param) — the SPA re-derives its own tab from the hash.
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://bet.giomartins.dev");
+  });
+
+  it("drops a foreign /api/sso return param to the default origin", async () => {
+    const app = buildApp();
+    const evil = await app.request("/api/sso?return=https%3A%2F%2Fevil.example%2Fphish");
+    expect(evil.status).toBe(302);
+    expect(evil.headers.get("location")).toBe("http://localhost:5173");
+
+    const garbage = await app.request("/api/sso?return=%00");
+    expect(garbage.headers.get("location")).toBe("http://localhost:5173");
+  });
 });

@@ -1,13 +1,19 @@
 import { Hono } from "hono";
 import type { BetEnv } from "../lib/accessAuth.js";
 
-// GET /auth/sso — the login hop. The frontend navigates here (never
+// GET /api/sso — the login hop. The frontend navigates here (never
 // fetches: Google's own login can't run inside a fetch/iframe). The
 // Cloudflare Access application in front of bet-api intercepts this
 // navigation when there's no session yet — Google one-click, allowed
 // emails, 24h team session, exactly the hub's own /sso flow. What the
 // browser lands on after passing is THIS route, which just bounces
 // back to the SPA.
+//
+// Under /api — the SAME Access application the probe fetches hit — on
+// purpose: Access cookies are domain-scoped but the JWT's aud is per
+// application, so a cookie minted by a second /auth path app was
+// always rejected by the /api app (opaque 302 that redirect:"manual"
+// never follows) and login could never survive the probe.
 //
 // The `return` param is checked against the same origin allowlist CORS
 // uses, so the redirect can't be pointed anywhere else.

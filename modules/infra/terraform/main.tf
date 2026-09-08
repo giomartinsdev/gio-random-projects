@@ -260,13 +260,13 @@ module "compute_apps_cch_api" {
   depends_on = [module.compute_apps_domain_api]
 }
 
-# bet-api: the betting BFF -- path-protected behind Access (/api and
-# /auth have their own Access applications; the bare hostname is in
-# excluded_hostnames for bet-runner, which polls /internal/* from the
-# home network with the shared runner key), Access-JWT auth in-app,
-# Postgres via the one-shot migrate container. Each path app carries
-# its own aud tag, so the app accepts both (BET_ACCESS_AUD is a
-# comma-separated list -- lib/accessAuth.ts verifies against the set).
+# bet-api: the betting BFF -- path-protected behind Access (/api has
+# its own Access application, login hop /api/sso included; the bare
+# hostname is in excluded_hostnames for bet-runner, which polls
+# /internal/* from the home network with the shared runner key),
+# Access-JWT auth in-app, Postgres via the one-shot migrate container.
+# The app's aud tag is passed through (BET_ACCESS_AUD --
+# lib/accessAuth.ts verifies against it).
 module "compute_apps_bet_api" {
   source = "./modules/compute/apps/bet_api"
   providers = {
@@ -280,7 +280,6 @@ module "compute_apps_bet_api" {
   registry_host     = var.registry_host
   access_aud = [
     module.cloud_cloudflare.access_app_auds["bet-api.giomartins.dev/api"],
-    module.cloud_cloudflare.access_app_auds["bet-api.giomartins.dev/auth"],
   ]
   allowed_emails   = var.allowed_emails
   credentials_key  = random_id.bet_credentials_key.hex

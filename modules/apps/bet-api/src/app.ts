@@ -46,11 +46,10 @@ export function createApp(opts: {
   // /api/* request too.
   app.route("/internal", createInternalRouter(opts.db, opts.credentialCrypto, opts.runnerApiKey));
 
-  // Everything under /api/* and /auth/sso is Access-gated.
+  // Everything under /api/* (sso hop included) is Access-gated.
   app.use("/api/*", opts.accessAuth);
-  app.use("/auth/*", opts.accessAuth);
 
-  app.route("/auth", createAuthRouter(opts.frontendOrigins));
+  app.route("/api", createAuthRouter(opts.frontendOrigins));
   app.route("/api", createMeRouter(opts.db));
   app.route("/api/credentials", createCredentialsRouter(opts.db, opts.credentialCrypto));
   app.route("/api/bets", createBetsRouter(opts.db));

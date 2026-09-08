@@ -227,7 +227,7 @@ locals {
       # gate, which is the Access application on
       # bet-api.giomartins.dev. Same shape as the hub's /sso probe: the
       # SPA fetches /api/me on bet-api (200 = logged in, opaque
-      # redirect = not) and hops through bet-api's /auth/sso for the
+      # redirect = not) and hops through bet-api's /api/sso for the
       # Google login. It must be iframe-embeddable in the hub like
       # cch/tela (a Google SSO redirect inside the hub's renderer frame
       # cannot be completed), hence excluded_hostnames below.
@@ -244,18 +244,26 @@ locals {
   # the shortcut targets themselves stays on each target's own Access
   # application -- this path is the UI gate, not the security one.
   #
-  # bet-api's /api and /auth are the same shape as the hub's /sso: the
-  # betting SPA fetches /api/* cross-origin (the edge stamps the
-  # Cf-Access-Jwt-Assertion the app verifies) and hops through /auth/sso
+  # bet-api's /api is the same shape as the hub's /sso: the betting SPA
+  # fetches /api/* cross-origin (the edge stamps the
+  # Cf-Access-Jwt-Assertion the app verifies) and hops through /api/sso
   # for the Google login. The REST of bet-api's hostname stays public
   # on purpose: /internal/* is bet-runner's surface, and the runner
   # runs on the home network now -- a machine-to-machine client that
   # can't pass a Google SSO redirect, whose auth is the RUNNER_API_KEY
   # header the app itself checks (same secret as when it lived on the
   # apps network).
+  #
+  # ONE app, not two: Access cookies are domain-scoped (one
+  # CF_Authorization for bet-api.giomartins.dev) but the aud claim in
+  # the JWT is PER APPLICATION -- a cookie minted by an /auth app was
+  # always rejected by the /api app (aud mismatch -> opaque 302 the
+  # SPA's redirect:"manual" fetch can't follow), so the login hop and
+  # the probe could never share a session. The SSO hop now lives UNDER
+  # the /api app (bet-api route /api/sso), so one app mints and
+  # consumes the cookie.
   path_protected_hostnames = [
     "hub.giomartins.dev/sso",
     "bet-api.giomartins.dev/api",
-    "bet-api.giomartins.dev/auth",
   ]
 }

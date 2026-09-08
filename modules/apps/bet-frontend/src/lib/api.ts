@@ -85,13 +85,13 @@ export async function probeMe(): Promise<Me | null> {
 }
 
 /**
- * The login hop: a top-level navigation through bet-api's /auth/sso,
+ * The login hop: a top-level navigation through bet-api's /api/sso,
  * which Cloudflare Access intercepts (Google one-click, 24h team
  * session). Google's login page can't complete inside the hub's
  * iframe, so when embedded we break out to the top window.
  */
 export function goToSso() {
-  const target = `${API_BASE}/auth/sso?return=${encodeURIComponent(window.location.href)}`;
+  const target = `${API_BASE}/api/sso?return=${encodeURIComponent(window.location.href)}`;
   if (window.top && window.top !== window.self) {
     window.top.location.href = target;
   } else {

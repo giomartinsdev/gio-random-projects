@@ -32,7 +32,7 @@ variable "external_port" {
 }
 
 variable "frontend_origins" {
-  description = "Origins allowed to call bet-api cross-origin (CORS) and accepted by /auth/sso's return-parameter allowlist -- the SPA's origin and the local dev server."
+  description = "Origins allowed to call bet-api cross-origin (CORS) and accepted by /api/sso's return-parameter allowlist -- the SPA's origin and the local dev server."
   type        = list(string)
   default     = ["https://bet.giomartins.dev", "http://localhost:5173"]
 }
@@ -44,7 +44,7 @@ variable "access_team_domain" {
 }
 
 variable "access_aud" {
-  description = "The `aud` tags of the bet-api Access applications (module.cloud_cloudflare.access_app_auds output, one per path app: /api and /auth) -- every Access JWT minted for one of those apps carries its app's aud, and bet-api pins the whole set as acceptable token audiences (comma-joined into BET_ACCESS_AUD)."
+  description = "The `aud` tags of the bet-api Access applications (module.cloud_cloudflare.access_app_auds output; a single app today: /api, login hop included) -- every Access JWT minted for one of those apps carries its app's aud, and bet-api pins the whole set as acceptable token audiences (comma-joined into BET_ACCESS_AUD)."
   type        = list(string)
 }
 

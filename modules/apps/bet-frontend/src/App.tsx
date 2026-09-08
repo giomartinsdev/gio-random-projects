@@ -33,7 +33,7 @@ export default function App() {
   // The auth probe happens exactly once on load: a clean 200 = logged
   // in (Access injected the JWT and the BFF answered); an opaque
   // redirect (status 0) = not logged in -- LoginGate offers the hop
-  // through bet-api's /auth/sso, which is what mints the session.
+  // through bet-api's /api/sso, which is what mints the session.
   useEffect(() => {
     let cancelled = false;
     void probeMe().then((result) => {
