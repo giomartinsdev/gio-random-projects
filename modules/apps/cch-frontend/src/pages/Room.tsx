@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
+import { Avatar } from "@/components/ui/lottie-avatar";
 import { Confetti } from "@/components/ui/confetti";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import {
@@ -455,6 +456,7 @@ function PeopleCount({ state }: { state: GameState }) {
               {state.players.map((p) => (
                 <li key={p.peerId} className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-sm">
                   <span className="flex min-w-0 items-center gap-1.5">
+                    <Avatar index={p.avatar} size={20} />
                     {p.isCzar && <Crown className="size-3.5 shrink-0 text-yellow-500" aria-label="Czar" />}
                     <span className={cn("truncate", !p.connected && "text-muted-foreground line-through")}>{p.name}</span>
                   </span>
@@ -602,10 +604,11 @@ function Lobby({ roomId, game }: { roomId: string; game: ReturnType<typeof useGa
               <li
                 key={p.peerId}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm",
+                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 pr-3 text-sm",
                   p.connected ? "bg-secondary/50" : "text-muted-foreground line-through",
                 )}
               >
+                <Avatar index={p.avatar} size={22} />
                 {p.name}
                 {p.peerId === game.you?.peerId && <span className="text-xs text-muted-foreground">(você)</span>}
               </li>
@@ -961,7 +964,8 @@ function HandCard({
 }
 
 // Who's in and who already played -- the round's pulse, shown to
-// everyone in every phase of a round.
+// everyone in every phase of a round. Each chip wears the player's
+// bonequinho, matching what their card will wear on the table.
 function SubmissionTracker({ game }: { game: ReturnType<typeof useGame> }) {
   const state = game.state!;
   const entries = state.players.filter((p) => p.connected && !p.isCzar);
@@ -976,6 +980,7 @@ function SubmissionTracker({ game }: { game: ReturnType<typeof useGame> }) {
             p.submitted && "border-green-500/40 text-green-600 dark:text-green-400",
           )}
         >
+          <Avatar index={p.avatar} size={18} />
           {p.submitted ? <Check className="size-3" /> : <span className="size-3 rounded-full border" />}
           {p.name}
         </li>
@@ -991,17 +996,18 @@ function Judging({ game }: { game: ReturnType<typeof useGame> }) {
   const amCzar = state.players.some((p) => p.peerId === game.you?.peerId && p.isCzar);
 
   if (!amCzar) {
-    // Watching the czar deliberate is a spectator sport now: every play
-    // is on the table (anonymous, read-only), not just your own.
+    // Watching the czar work the table is a spectator sport: every
+    // play is face down until they turn it, and each turn lands here
+    // at the same moment it does for them.
     return (
       <div className="space-y-3">
         <Card>
           <CardContent className="space-y-1.5 py-5 text-center">
             <div className="flex items-center justify-center gap-2">
               <AnimatedIcon animation={loadingIcon} size={20} autoplay loop className="text-muted-foreground" />
-              <p className="font-medium">O czar está escolhendo o vencedor…</p>
+              <p className="font-medium">O czar está virando as cartas…</p>
             </div>
-            <p className="text-sm text-muted-foreground">As respostas de todo mundo estão na mesa — leia em voz alta e ria.</p>
+            <p className="text-sm text-muted-foreground">As respostas estão na mesa, viradas para baixo — leia junto quando ele virar.</p>
           </CardContent>
         </Card>
         <SubmissionCards game={game} />
@@ -1017,7 +1023,9 @@ function JudgeList({ game }: { game: ReturnType<typeof useGame> }) {
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">Toque na melhor resposta para coroar o vencedor.</p>
+      <p className="text-sm text-muted-foreground">
+        Toque nas cartas para virar e ler. Depois toque na melhor resposta para coroar o vencedor.
+      </p>
       <SubmissionCards game={game} picked={picked} onSelect={(id) => setPicked(picked === id ? null : id)} />
       <motion.div whileHover={{ scale: picked ? 1.01 : 1 }} whileTap={{ scale: picked ? 0.98 : 1 }}>
         <Button
@@ -1059,6 +1067,17 @@ function RoundEnd({ game }: { game: ReturnType<typeof useGame> }) {
               >
                 <Trophy className="size-8 text-yellow-500" />
               </motion.div>
+              {/* The winner's own bonequinho takes the stage too. */}
+              {winner.avatar != null && (
+                <motion.div
+                  initial={{ y: 8, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.25, type: "spring", stiffness: 260, damping: 18 }}
+                  className="shrink-0"
+                >
+                  <Avatar index={winner.avatar} size={40} />
+                </motion.div>
+              )}
               <div className="min-w-0">
                 <p className="font-semibold">
                   {winner.name} {winner.peerId === game.you?.peerId && "(você)"} ganhou a rodada
@@ -1113,10 +1132,17 @@ function GameOver({ game }: { game: ReturnType<typeof useGame> }) {
             initial={{ scale: 0, rotate: -180 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: "spring", stiffness: 260, damping: 12 }}
-            className="flex justify-center"
+            className="flex items-end justify-center gap-3"
           >
             <motion.div animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}>
               <Trophy className="size-12 text-yellow-500" />
+            </motion.div>
+            {/* The champion's bonequinho, mid-victory-bounce of its own. */}
+            <motion.div
+              animate={{ y: [0, -10, 0] }}
+              transition={{ repeat: Infinity, duration: 1.2, ease: "easeInOut", delay: 0.3 }}
+            >
+              <Avatar index={gw.avatar} size={52} />
             </motion.div>
           </motion.div>
           <p className="mt-2 text-2xl font-bold tracking-tight">
@@ -1149,11 +1175,12 @@ function Scoreboard({ state, you }: { state: GameState; you: string }) {
           layout
           transition={{ type: "spring", stiffness: 380, damping: 30 }}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs",
+            "inline-flex items-center gap-1.5 rounded-full border bg-card px-2 py-1 pr-2.5 text-xs",
             p.peerId === you && "border-primary",
             !p.connected && "opacity-50",
           )}
         >
+          <Avatar index={p.avatar} size={18} />
           {p.isCzar && <Crown className="size-3 text-yellow-500" />}
           <span className="font-medium">{p.name}</span>
           <span className="shrink-0 tabular-nums text-muted-foreground">
@@ -1250,10 +1277,14 @@ function NameChip({ game }: { game: ReturnType<typeof useGame> }) {
   );
 }
 
-// The table of anonymous plays -- shown to everyone, in judging and at
-// the reveal. For the czar it's the picking surface (onSelect set, the
-// two-tap confirm lives in JudgeList); for everyone else it's
-// read-only, with their own play and the round's winner called out.
+// The table of plays -- shown to everyone, in judging and at the
+// reveal. Cards land face down; the czar turns them one by one and
+// every client spins the same card at the same moment (the flip rides
+// the state broadcast). For the czar, tapping a face-down card flips
+// it and tapping a face-up one selects it (the two-tap confirm lives
+// in JudgeList); for everyone else it's a read-along. Each card
+// carries its owner's bonequinho -- the avatar IS the authorship
+// marker now -- and MyLines still marks your own entry once it's open.
 function SubmissionCards({
   game,
   picked,
@@ -1267,17 +1298,21 @@ function SubmissionCards({
 }) {
   const state = game.state!;
   const submissions = state.submissions ?? [];
-  // Authorship never leaves the server; MyLines is the one honest way
-  // to recognize your own entry. Joined with a separator that can't
-  // appear in card text so "a"+"bc" never equals "ab"+"c".
-  const mineKey = state.myLines?.join(" ") ?? null;
+  const judging = state.phase === "judging";
+  const amCzar = state.players.some((p) => p.peerId === game.you?.peerId && p.isCzar);
+  // Own-entry check: joined with a NUL, a byte that can't appear in
+  // card text, so "a"+"bc" never equals "ab"+"c". Only meaningful on
+  // a revealed card -- face-down ones carry no lines to compare.
+  const mineKey = state.myLines?.join("\0") ?? null;
 
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
+    <div className="grid gap-3 pt-5 sm:grid-cols-2 sm:gap-4">
       {submissions.map((sub: Submission, i: number) => {
-        const isMine = mineKey != null && sub.lines.join(" ") === mineKey;
+        const isMine = sub.revealed && mineKey != null && sub.lines.join("\0") === mineKey;
         const isWinner = winnerId === sub.id;
-        const interactive = onSelect != null;
+        const canFlip = judging && amCzar && !sub.revealed;
+        const selectable = onSelect != null && sub.revealed;
+        const interactive = canFlip || selectable;
         return (
           <motion.div
             key={sub.id}
@@ -1285,34 +1320,74 @@ function SubmissionCards({
             initial={{ opacity: 0, y: 14, scale: 0.95, rotate: i % 2 === 0 ? -1.2 : 1.2 }}
             animate={{ opacity: 1, y: 0, scale: isWinner ? 1.02 : 1, rotate: 0 }}
             transition={{ type: "spring", stiffness: 320, damping: 26, delay: Math.min(i * 0.06, 0.4) }}
-            whileHover={interactive ? { y: -3, scale: 1.02 } : undefined}
-            whileTap={interactive ? { scale: 0.98 } : undefined}
-            onClick={onSelect ? () => onSelect(sub.id) : undefined}
-            role={interactive ? "button" : undefined}
-            className={cn(
-              "relative rounded-xl border-2 bg-white p-4 text-left text-black shadow-sm",
-              isWinner
-                ? "border-yellow-500 ring-2 ring-yellow-500"
-                : interactive && picked === sub.id
-                  ? "border-primary ring-2 ring-primary"
-                  : "border-black/10",
-              interactive && "cursor-pointer",
-            )}
+            className="relative"
           >
-            <span className="font-medium leading-snug">
-              {state.blackCard ? fillBlank(state.blackCard.text, sub.lines) : sub.lines.join(" · ")}
-            </span>
-            {isMine && !isWinner && (
-              <span className="absolute right-2 top-2 rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-medium text-black/70">
-                sua
-              </span>
-            )}
+            {/* The bonequinho stays put while the card spins: standing
+                behind the top edge, holding their card into the table. */}
+            <div className="absolute -top-5 left-3 z-10">
+              <Avatar index={sub.avatar} size={38} />
+            </div>
+
+            {/* The 3D flip. perspective on the wrapper, both faces
+                gridded into one cell so the card keeps the taller
+                face's height -- a face-down card must not telegraph
+                its text's length by collapsing. */}
+            <div className="[perspective:900px]">
+              <motion.div
+                animate={{ rotateY: sub.revealed ? 180 : 0 }}
+                transition={{ duration: 0.55, ease: [0.45, 0.05, 0.25, 1] }}
+                style={{ transformStyle: "preserve-3d" }}
+                onClick={canFlip ? () => game.flipCard(sub.id) : selectable ? () => onSelect!(sub.id) : undefined}
+                role={interactive ? "button" : undefined}
+                aria-label={
+                  !sub.revealed
+                    ? "Carta virada para baixo" + (canFlip ? " -- toque para virar" : "")
+                    : "Resposta na mesa"
+                }
+                className={cn("relative grid text-left", interactive && "cursor-pointer")}
+              >
+                {/* Face-down: the house's black card back, "?" up. */}
+                <div
+                  className={cn(
+                    "relative row-start-1 col-start-1 flex min-h-36 items-center justify-center rounded-xl border-2 border-white/10 bg-zinc-900 p-4 shadow-sm [backface-visibility:hidden]",
+                    canFlip && "hover:border-white/25",
+                  )}
+                >
+                  <span className="select-none text-6xl font-black text-white/20">?</span>
+                  <span className="absolute bottom-2 right-3 text-[10px] font-bold uppercase tracking-widest text-white/30">
+                    cch
+                  </span>
+                </div>
+                {/* Face-up: the answer, pre-rotated 180° so it lands
+                    facing the reader exactly when the card does. */}
+                <div
+                  className={cn(
+                    "relative row-start-1 col-start-1 rounded-xl border-2 bg-white p-4 pt-5 text-black shadow-sm [backface-visibility:hidden] [transform:rotateY(180deg)]",
+                    isWinner
+                      ? "border-yellow-500 ring-2 ring-yellow-500"
+                      : selectable && picked === sub.id
+                        ? "border-primary ring-2 ring-primary"
+                        : "border-black/10",
+                  )}
+                >
+                  <span className="font-medium leading-snug">
+                    {state.blackCard ? fillBlank(state.blackCard.text, sub.lines) : sub.lines.join(" · ")}
+                  </span>
+                  {isMine && !isWinner && (
+                    <span className="absolute right-2 top-2 rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-medium text-black/70">
+                      sua
+                    </span>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+
             {isWinner && (
               <motion.span
                 initial={{ scale: 0, rotate: -30 }}
                 animate={{ scale: 1, rotate: 0 }}
                 transition={{ type: "spring", stiffness: 400, damping: 15, delay: 0.15 }}
-                className="absolute -right-2 -top-2 flex size-7 items-center justify-center rounded-full bg-yellow-400 text-black shadow"
+                className="absolute -right-2 -top-2 z-10 flex size-7 items-center justify-center rounded-full bg-yellow-400 text-black shadow"
                 title="Resposta vencedora"
               >
                 <Crown className="size-4" />
@@ -1324,7 +1399,6 @@ function SubmissionCards({
     </div>
   );
 }
-
 // A one-shot burst of paper bits -- no library, gone after about a
 // second and a half. Render inside a relatively-positioned parent (the
 // winner card, the game-over banner).

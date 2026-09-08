@@ -28,6 +28,19 @@ func mustStart(t *testing.T, g *Game, caller string) {
 	}
 }
 
+// flipAll turns every card on the judging table face up, as the czar
+// does between the last submit and the pick. Tests that aren't about
+// the flip itself call this so they keep exercising the pick path
+// unchanged -- only a face-up card can be crowned now.
+func flipAll(t *testing.T, g *Game, czar string) {
+	t.Helper()
+	for _, sub := range g.Snapshot(czar).Submissions {
+		if _, err := g.Flip(czar, sub.ID); err != nil {
+			t.Fatalf("Flip %s: %v", sub.ID, err)
+		}
+	}
+}
+
 // Renaming updates the scoreboard everywhere it appears.
 func TestRenamePlayer(t *testing.T) {
 	g := New()
@@ -149,9 +162,9 @@ func TestFullRoundFlow(t *testing.T) {
 		t.Fatal("judging should open once everyone submitted")
 	}
 
-	// Everyone sees every submission while judging -- reading the
-	// table's answers together is the point. Authorship stays hidden;
-	// MyLines is how a player recognizes their own entry.
+	// Everyone sees the table while judging -- face down. The czar turns
+	// the cards one by one; until then lines travel empty to everybody,
+	// while each card already carries its owner's avatar.
 	if got := g.Snapshot("a").Submissions; len(got) != 2 {
 		t.Fatalf("czar submissions = %d, want 2", len(got))
 	}
@@ -161,18 +174,61 @@ func TestFullRoundFlow(t *testing.T) {
 	if got := g.Snapshot("b").MyLines; got == nil || len(got) != st.BlackBlanks {
 		t.Fatalf("submitter's own lines = %v", got)
 	}
-	// And nobody's snapshot carries anyone else's authorship.
-	for _, id := range []string{"b", "c"} {
+	playerAvatars := map[int]bool{}
+	for _, p := range g.Snapshot("a").Players {
+		playerAvatars[p.Avatar] = true
+	}
+	for _, id := range []string{"a", "b", "c"} {
 		for _, sub := range g.Snapshot(id).Submissions {
-			if sub.Lines == nil {
-				t.Fatalf("submission %s has no lines", sub.ID)
+			if sub.Lines != nil || sub.Revealed {
+				t.Fatalf("submission %s should start face down for %s", sub.ID, id)
+			}
+			if !playerAvatars[sub.Avatar] {
+				t.Fatalf("submission %s carries avatar %d, nobody's", sub.ID, sub.Avatar)
 			}
 		}
 	}
 
-	// Only the Czar can pick.
+	// Only the Czar can flip, and only an existing view.
+	if _, err := g.Flip("b", g.Snapshot("a").Submissions[0].ID); err != ErrNotYourTurn {
+		t.Fatalf("non-czar flip: got %v", err)
+	}
+	if _, err := g.Flip("a", "s999"); err != ErrNoSubmissions {
+		t.Fatalf("flip of unknown view: got %v", err)
+	}
+	// The czar turns the first card; every viewer now reads it.
+	if changed, err := g.Flip("a", g.Snapshot("a").Submissions[0].ID); err != nil || !changed {
+		t.Fatalf("czar flip: changed=%v err=%v", changed, err)
+	}
+	// Turning it again changes nothing -- no re-broadcast to re-spin.
+	if changed, err := g.Flip("a", g.Snapshot("a").Submissions[0].ID); err != nil || changed {
+		t.Fatalf("double flip: changed=%v err=%v", changed, err)
+	}
+	for _, id := range []string{"b", "c"} {
+		open := 0
+		for _, sub := range g.Snapshot(id).Submissions {
+			if sub.Revealed {
+				if sub.Lines == nil {
+					t.Fatalf("revealed submission %s has no lines for %s", sub.ID, id)
+				}
+				open++
+			} else if sub.Lines != nil {
+				t.Fatalf("face-down submission %s leaked lines to %s", sub.ID, id)
+			}
+		}
+		if open != 1 {
+			t.Fatalf("%s sees %d revealed submissions, want 1", id, open)
+		}
+	}
+
+	// Only the Czar can pick -- and only a card that's face up. Crowning
+	// a still-closed card would skip the whole reading.
 	if err := g.Pick("b", g.Snapshot("a").Submissions[0].ID); err != ErrNotYourTurn {
 		t.Fatalf("non-czar pick: got %v", err)
+	}
+	second := g.Snapshot("a").Submissions[1]
+	if err := g.Pick("a", second.ID); err != ErrNotRevealed {
+		t.Fatalf("pick of a face-down card: got %v, want ErrNotRevealed", err)
 	}
 	first := g.Snapshot("a").Submissions[0]
 	if err := g.Pick("a", first.ID); err != nil {
@@ -231,6 +287,55 @@ func TestFullRoundFlow(t *testing.T) {
 	}
 }
 
+// avatarOf digs one player's bonequinho index out of a snapshot.
+func avatarOf(t *testing.T, g *Game, viewer, id string) int {
+	t.Helper()
+	for _, p := range g.Snapshot(viewer).Players {
+		if p.PlayerID == id {
+			return p.Avatar
+		}
+	}
+	t.Fatalf("%s not in %s's snapshot", id, viewer)
+	return -1
+}
+
+// Every player gets their own bonequinho, and it sticks for the room's
+// whole life: across renames, a disconnect, and a resume reconnect.
+// The avatar is what marks authorship on the table, so it may never
+// drift to a different person mid-room.
+func TestAvatarAssignment(t *testing.T) {
+	g := New()
+	joinAll(t, g, "a", "b", "c")
+
+	seen := map[int]bool{}
+	for _, id := range []string{"a", "b", "c"} {
+		av := avatarOf(t, g, "a", id)
+		if seen[av] {
+			t.Fatalf("avatar %d handed out twice", av)
+		}
+		seen[av] = true
+	}
+
+	// A rename doesn't change the character; a leave+resume rejoins as
+	// the same little guy.
+	g.RenamePlayer("b", "Zé")
+	if av := avatarOf(t, g, "a", "b"); !seen[av] {
+		t.Fatalf("rename moved b's avatar to %d", av)
+	}
+	avB := avatarOf(t, g, "a", "b")
+	g.Leave("b")
+	g.Join("b", "Zé")
+	if av := avatarOf(t, g, "a", "b"); av != avB {
+		t.Fatalf("resume changed b's avatar %d -> %d", avB, av)
+	}
+
+	// A brand-new arrival gets a fresh, distinct one.
+	g.Join("d", "Duda")
+	if av := avatarOf(t, g, "a", "d"); seen[av] {
+		t.Fatalf("new player d reused avatar %d", av)
+	}
+}
+
 // The Czar must rotate through join order, and a reconnecting czar
 // keeps their identity.
 func TestCzarRotatesInJoinOrder(t *testing.T) {
@@ -267,6 +372,7 @@ func TestCzarRotatesInJoinOrder(t *testing.T) {
 			}
 		}
 		pick := g.Snapshot(czar).Submissions[0].ID
+		flipAll(t, g, czar)
 		if err := g.Pick(czar, pick); err != nil {
 			t.Fatalf("round %d Pick: %v", round, err)
 		}
@@ -295,6 +401,7 @@ func TestGameEndsAtWinningScore(t *testing.T) {
 
 	submitAll(t, g)
 	pick := g.Snapshot("a").Submissions[0].ID
+	flipAll(t, g, "a")
 	if err := g.Pick("a", pick); err != nil {
 		t.Fatalf("Pick: %v", err)
 	}
@@ -393,6 +500,7 @@ func TestCzarLeavesMidJudging(t *testing.T) {
 	if len(st.Submissions) != 1 {
 		t.Fatalf("submissions = %d, want 1 (c's; b's own play was recycled)", len(st.Submissions))
 	}
+	flipAll(t, g, "b")
 	if err := g.Pick("b", st.Submissions[0].ID); err != nil {
 		t.Fatalf("Pick by new czar: %v", err)
 	}
@@ -530,6 +638,7 @@ func TestBlankWhiteCards(t *testing.T) {
 		t.Fatalf("Submit c: %v", err)
 	}
 	found := false
+	flipAll(t, g, "a") // submissions read face down until the czar turns them
 	for _, v := range g.Snapshot("a").Submissions {
 		if len(v.Lines) == 1 && v.Lines[0] == "um gato sem vergonha" {
 			found = true

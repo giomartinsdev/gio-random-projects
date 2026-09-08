@@ -9,7 +9,11 @@
 //   - three or more connected players to start;
 //   - one Card Czar per round, rotating through join order;
 //   - everyone but the Czar plays as many white cards as the black
-//     card's "_" marks demand; submissions stay anonymous until judged;
+//     card's "_" marks demand; submissions land face down and the Czar
+//     turns them face up one by one, each turn broadcast so the whole
+//     room reads along -- every card carries its owner's avatar, so
+//     authorship is public knowledge via the bonequinho, not a secret;
+//   - only face-up submissions can be crowned;
 //   - the Czar picks a winner, who scores a point;
 //   - first to the room's winning score wins the game;
 //   - each player may trade one white card per round, before playing.
@@ -35,6 +39,7 @@ var (
 	ErrWrongPlayCount   = errors.New("essa carta preta pede um número diferente de cartas")
 	ErrNoSuchPlayer     = errors.New("você não está no jogo")
 	ErrNoSubmissions    = errors.New("jogada não encontrada")
+	ErrNotRevealed      = errors.New("vire a carta antes de escolher")
 	ErrDeckNotFound     = errors.New("deck desconhecido")
 	ErrEmptyText        = errors.New("a carta escrita não pode ficar vazia")
 )
@@ -89,10 +94,14 @@ type Submission struct {
 
 // PlayerState is a player's standing in the game -- what every other
 // player is told about them. A disconnected player keeps their score
-// and slot; a resume reconnect lights Connected back up.
+// and slot; a resume reconnect lights Connected back up. Avatar is the
+// player's bonequinho index: handed out once at join and kept for the
+// room's whole life, so the same little character always means the
+// same person -- on the scoreboard, on their submissions, everywhere.
 type PlayerState struct {
 	PlayerID  string `json:"peerId"`
 	Name      string `json:"name"`
+	Avatar    int    `json:"avatar"`
 	Score     int    `json:"score"`
 	IsCzar    bool   `json:"isCzar"`
 	Connected bool   `json:"connected"`
@@ -102,6 +111,7 @@ type PlayerState struct {
 // player is the internal record behind PlayerState.
 type player struct {
 	name       string
+	avatar     int
 	score      int
 	connected  bool
 	czar       bool
@@ -143,12 +153,26 @@ type Game struct {
 	judgeViews  []SubmissionView
 	judgeOrder  []string
 	winnerID    string
+
+	// Which judge views the Czar has turned face up so far, keyed by
+	// view id. Every submission starts face down when judging opens;
+	// each Flip is broadcast, so the room reads the table together.
+	// Ephemeral by design: judging itself lives only in memory.
+	revealed map[string]bool
 }
 
-// SubmissionView is one anonymous submission as the Czar sees it.
+// SubmissionView is one submission on the judging table, as everyone
+// sees it. While judging, Lines arrive empty until the Czar has turned
+// that card face up (Revealed) -- the id still travels, so every client
+// can render the right card back and animate the same turn. Avatar is
+// the owner's bonequinho: deliberately visible even face down, since
+// the little character standing beside a card IS the authorship signal
+// now (names stay off the cards; the scoreboard keeps them).
 type SubmissionView struct {
-	ID    string   `json:"id"`
-	Lines []string `json:"lines"`
+	ID       string   `json:"id"`
+	Lines    []string `json:"lines"`
+	Avatar   int      `json:"avatar"`
+	Revealed bool     `json:"revealed"`
 }
 
 // New returns a fresh game in the lobby phase.
@@ -176,9 +200,27 @@ func (g *Game) Join(playerID, name string) {
 		g.dealIfHandlessLocked(playerID)
 		return
 	}
-	g.players[playerID] = &player{name: name, connected: true}
+	g.players[playerID] = &player{name: name, connected: true, avatar: g.nextAvatarLocked()}
 	g.order = append(g.order, playerID)
 	g.dealIfHandlessLocked(playerID)
+}
+
+// nextAvatarLocked hands out the lowest avatar index nobody in the
+// room holds -- disconnected players included, so a resume reconnect
+// (and the scoreboard chip that outlived them) keeps the same
+// character. The client renders `avatar % len(roster)`, so indices may
+// wrap on absurdly churny rooms; within any normal table everyone gets
+// a distinct bonequinho. Caller must hold g.mu.
+func (g *Game) nextAvatarLocked() int {
+	used := make(map[int]bool, len(g.players))
+	for _, p := range g.players {
+		used[p.avatar] = true
+	}
+	for i := 0; ; i++ {
+		if !used[i] {
+			return i
+		}
+	}
 }
 
 // RenamePlayer updates a player's display name mid-game. The next
@@ -420,8 +462,43 @@ func (g *Game) Discard(playerID, cardID string) error {
 	return nil
 }
 
+// Flip turns one judging-table card face up -- the Czar reading the
+// table out loud, one card at a time. The boolean says the flip was a
+// change; flipping an already-open card is a no-op (the caller then
+// skips the broadcast, so a double-tap doesn't re-spin everyone's
+// animation). The turn itself is not the reveal of authorship -- every
+// card already carries its owner's avatar face down; this is about
+// pacing the reading.
+func (g *Game) Flip(callerID, submissionID string) (bool, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.phase != PhaseJudging {
+		return false, ErrWrongPhase
+	}
+	if callerID != g.czarIDLocked() {
+		return false, ErrNotYourTurn
+	}
+	found := false
+	for _, view := range g.judgeViews {
+		if view.ID == submissionID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return false, ErrNoSubmissions
+	}
+	if g.revealed[submissionID] {
+		return false, nil
+	}
+	g.revealed[submissionID] = true
+	return true, nil
+}
+
 // Pick awards the round to the submission the Czar chose, identified
-// by the id the judging view handed out.
+// by the id the judging view handed out. Only face-up submissions can
+// be crowned: the flip-first flow is the point of the feature, and a
+// crafted message shouldn't shortcut past the room reading together.
 func (g *Game) Pick(callerID, submissionID string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -434,6 +511,9 @@ func (g *Game) Pick(callerID, submissionID string) error {
 	for i, view := range g.judgeViews {
 		if view.ID != submissionID {
 			continue
+		}
+		if !g.revealed[submissionID] {
+			return ErrNotRevealed
 		}
 		g.winnerID = g.judgeOrder[i]
 		winner := g.players[g.winnerID]
@@ -524,6 +604,7 @@ func (g *Game) toLobbyLocked() {
 		p.czar = false
 	}
 	g.hands = make(map[string][]Card)
+	g.revealed = nil
 }
 
 // startRoundLocked deals a fresh round: rotate the Czar, draw a black
@@ -536,6 +617,7 @@ func (g *Game) startRoundLocked(czarID string) error {
 	g.judgeViews = nil
 	g.judgeOrder = nil
 	g.winnerID = ""
+	g.revealed = nil
 
 	if czarID != "" {
 		if p := g.players[czarID]; p == nil || !p.connected {
@@ -585,10 +667,11 @@ func (g *Game) startRoundLocked(czarID string) error {
 	return nil
 }
 
-// openJudgingLocked freezes the round's anonymous judging view: stable
-// ids, shuffled once. Views and authors travel together -- the shuffle
-// must not decouple a submission from whoever played it. Caller must
-// hold g.mu.
+// openJudgingLocked freezes the round's judging view: stable ids,
+// shuffled once. Views and authors travel together -- the shuffle must
+// not decouple a submission from whoever played it. Every view opens
+// face down (fresh revealed set): the Czar turns them one by one from
+// here. Caller must hold g.mu.
 func (g *Game) openJudgingLocked() {
 	pairs := make([]struct {
 		view   SubmissionView
@@ -616,6 +699,7 @@ func (g *Game) openJudgingLocked() {
 		g.judgeViews[i] = s.view
 		g.judgeOrder[i] = s.author
 	}
+	g.revealed = make(map[string]bool, len(shuffled))
 	g.phase = PhaseJudging
 }
 
@@ -745,9 +829,34 @@ func indexOf(items []string, want string) int {
 	return -1
 }
 
+// judgeViewsForLocked copies the frozen judging table for the wire,
+// stamping each view with its author's avatar (the copy, never the
+// stored view -- the stored Lines must survive for the reveal). While
+// judging (`hideUnrevealed`) a card the czar hasn't turned yet travels
+// without its lines; at the reveal everything goes out open. Caller
+// must hold g.mu.
+func (g *Game) judgeViewsForLocked(hideUnrevealed bool) []SubmissionView {
+	out := make([]SubmissionView, len(g.judgeViews))
+	for i, view := range g.judgeViews {
+		out[i] = view
+		if author := g.players[g.judgeOrder[i]]; author != nil {
+			out[i].Avatar = author.avatar
+		}
+		if hideUnrevealed && !g.revealed[view.ID] {
+			out[i].Lines = nil
+			out[i].Revealed = false
+		} else {
+			out[i].Revealed = true
+		}
+	}
+	return out
+}
+
 // State is the per-viewer snapshot the WebSocket sends on every change.
-// Fields the viewer shouldn't see -- other players' hands, submission
-// authorship while judging -- are simply absent from their copy.
+// Fields the viewer shouldn't see -- other players' hands -- are simply
+// absent from their copy. Authorship is deliberately NOT hidden: every
+// submission carries its owner's avatar, and cards reach the table face
+// down with that badge already showing (see SubmissionView).
 type State struct {
 	Phase        Phase           `json:"phase"`
 	Round        int             `json:"round"`
@@ -768,9 +877,12 @@ type State struct {
 }
 
 // WinnerView is a revealed winner: who they are and what they played.
+// Avatar rides along so the client can put the winner's bonequinho on
+// stage without joining against the players list.
 type WinnerView struct {
 	PlayerID string   `json:"peerId"`
 	Name     string   `json:"name"`
+	Avatar   int      `json:"avatar"`
 	Lines    []string `json:"lines"`
 }
 
@@ -798,6 +910,7 @@ func (g *Game) Snapshot(viewerID string) State {
 		players = append(players, PlayerState{
 			PlayerID:  id,
 			Name:      p.name,
+			Avatar:    p.avatar,
 			Score:     p.score,
 			IsCzar:    id == czar,
 			Connected: p.connected,
@@ -823,19 +936,20 @@ func (g *Game) Snapshot(viewerID string) State {
 			st.MyLines = me.submission.Lines
 		}
 	case PhaseJudging:
-		// Everyone sees every play while the czar deliberates -- reading
-		// the table's answers together is half the fun. These are the
-		// anonymous frozen views (shuffled once when judging opened, not
-		// here); authorship still never leaves the server, so MyLines is
-		// how a player recognizes their own entry.
-		st.Submissions = append([]SubmissionView(nil), g.judgeViews...)
+		// Everyone sees the table while the czar works through it: cards
+		// start face down, and each turn the czar makes is broadcast so
+		// the room reads along together. Authorship travels as the
+		// owner's avatar -- the bonequinho standing beside the card IS
+		// the ownership marker now -- so MyLines is only how a player
+		// double-checks which face-up entry is theirs.
+		st.Submissions = g.judgeViewsForLocked(true)
 		if me != nil && me.submission != nil {
 			st.MyLines = me.submission.Lines
 		}
 	case PhaseRoundEnd, PhaseGameOver:
 		// The full table stays up through the reveal so the room can
 		// relive every answer; the winner's entry is called out by id.
-		st.Submissions = append([]SubmissionView(nil), g.judgeViews...)
+		st.Submissions = g.judgeViewsForLocked(false)
 		if g.winnerID != "" {
 			for i, author := range g.judgeOrder {
 				if author == g.winnerID && i < len(g.judgeViews) {
@@ -846,12 +960,12 @@ func (g *Game) Snapshot(viewerID string) State {
 			p := g.players[g.winnerID]
 			if p != nil && p.submission != nil {
 				lines := append([]string(nil), p.submission.Lines...)
-				st.Winner = &WinnerView{PlayerID: g.winnerID, Name: p.name, Lines: lines}
+				st.Winner = &WinnerView{PlayerID: g.winnerID, Name: p.name, Avatar: p.avatar, Lines: lines}
 			}
 		}
 		if g.phase == PhaseGameOver && g.winnerID != "" {
 			p := g.players[g.winnerID]
-			st.GameWinner = &WinnerView{PlayerID: g.winnerID, Name: p.name}
+			st.GameWinner = &WinnerView{PlayerID: g.winnerID, Name: p.name, Avatar: p.avatar}
 		}
 	}
 	return st

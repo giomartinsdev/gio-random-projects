@@ -18,25 +18,31 @@ export type Card = { id: string; text: string };
 export type Player = {
   peerId: string;
   name: string;
+  // Which bonequinho is theirs -- fixed for the room's whole life, the
+  // same character on the scoreboard and beside every card they play.
+  avatar: number;
   score: number;
   isCzar: boolean;
   connected: boolean;
   submitted: boolean;
 };
 
-// One anonymous submission as the czar sees it -- stable id, stable
-// order for the whole judging phase (see the Go side's openJudging).
-export type Submission = { id: string; lines: string[] };
+// One submission on the judging table -- stable id, stable order for
+// the whole judging phase (see the Go side's openJudging). Cards start
+// face down: lines arrive empty until the czar has flipped that card
+// (card:flip), while the owner's avatar rides along from the start --
+// authorship on the table is the bonequinho's job now.
+export type Submission = { id: string; lines: string[]; avatar: number; revealed: boolean };
 
-export type Winner = { peerId: string; name: string; lines?: string[] };
+export type Winner = { peerId: string; name: string; avatar: number; lines?: string[] };
 
 export type Phase = "lobby" | "playing" | "judging" | "roundEnd" | "gameOver";
 
-// The per-viewer snapshot: other players' hands and submission
-// authorship while judging simply never arrive (see the Go side's
-// Snapshot). Submissions themselves reach everyone -- judging and the
-// reveal are a spectator sport; winnerSubmissionId points at the
-// winning entry once the round is over.
+// The per-viewer snapshot: other players' hands simply never arrive
+// (see the Go side's Snapshot). Submissions reach everyone -- the
+// face-down table, each flip and the reveal are all a spectator sport;
+// winnerSubmissionId points at the winning entry once the round is
+// over.
 export type GameState = {
   phase: Phase;
   round: number;
@@ -266,6 +272,12 @@ export function useGame(roomId: string, credential: Credential, displayName?: st
     (submissionId: string) => sendCleared({ type: "card:pick", submissionId }),
     [sendCleared],
   );
+  // The czar turning a table card face up. The flip is broadcast, so
+  // everyone's copy animates the same turn at the same moment.
+  const flipCard = useCallback(
+    (submissionId: string) => sendCleared({ type: "card:flip", submissionId }),
+    [sendCleared],
+  );
   const nextRound = useCallback(() => sendCleared({ type: "round:next" }), [sendCleared]);
   const skipRound = useCallback(() => sendCleared({ type: "round:skip" }), [sendCleared]);
   const resetGame = useCallback(() => sendCleared({ type: "game:reset" }), [sendCleared]);
@@ -294,6 +306,7 @@ export function useGame(roomId: string, credential: Credential, displayName?: st
     submitCards,
     discardCard,
     pickSubmission,
+    flipCard,
     nextRound,
     skipRound,
     resetGame,

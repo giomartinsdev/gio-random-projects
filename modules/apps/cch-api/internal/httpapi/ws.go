@@ -36,7 +36,7 @@ type clientMessage struct {
 		Text   string `json:"text,omitempty"`
 	} `json:"plays,omitempty"`
 
-	// card:discard / card:pick / knock:approve / knock:deny
+	// card:discard / card:pick / card:flip / knock:approve / knock:deny
 	CardID       string `json:"cardId,omitempty"`
 	SubmissionID string `json:"submissionId,omitempty"`
 	RequestID    string `json:"requestId,omitempty"`
@@ -239,6 +239,20 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 				continue
 			}
 			w.room.BroadcastGameState()
+
+		case "card:flip":
+			// The czar turning a table card face up. Broadcast only when
+			// the flip actually changed something -- a double-tap on an
+			// already-open card re-sends the same state and would re-spin
+			// everyone's flip animation for nothing.
+			changed, err := w.room.Game().Flip(w.peer.ID, msg.SubmissionID)
+			if err != nil {
+				w.fail(err)
+				continue
+			}
+			if changed {
+				w.room.BroadcastGameState()
+			}
 
 		case "round:next":
 			if err := w.room.Game().Next(w.peer.ID); err != nil {
