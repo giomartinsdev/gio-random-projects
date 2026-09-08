@@ -102,7 +102,10 @@ export function createInternalRouter(db: Db, crypto: CredentialCrypto, runnerApi
       .set({
         status: parsed.status,
         error: parsed.status === "failed" ? parsed.error : null,
-        receipt: parsed.status === "succeeded" ? parsed.receipt ?? null : null,
+        // The receipt survives failures too — its screenshot is how a
+        // failed run gets debugged (the driver's errors say "veja o
+        // screenshot"; discarding it made that a dead reference).
+        receipt: parsed.receipt ?? null,
         finishedAt: new Date(),
       })
       // Only a still-running bet accepts a result: a duplicate report

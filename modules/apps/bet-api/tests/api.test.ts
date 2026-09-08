@@ -220,6 +220,38 @@ describe("bet-api routes", () => {
     expect(dup.status).toBe(409);
   });
 
+  it("keeps a failed bet's receipt — the screenshot is how failures get debugged", async () => {
+    const app = buildApp();
+
+    await publicRequest(app, "/api/credentials/betano", {
+      method: "PUT",
+      body: JSON.stringify({ username: "gio@betano.com", password: "pw1" }),
+    });
+    const created = await queueBet(app, "https://betano.com.br/market/broken", 1);
+    const claim = await runnerRequest(app, "/internal/jobs/claim", { method: "POST", body: "{}" });
+    expect(claim.status).toBe(200);
+
+    const result = await runnerRequest(app, `/internal/jobs/${created.id}/result`, {
+      method: "POST",
+      body: JSON.stringify({
+        status: "failed",
+        error: "nem slip preenchido nem odd clicável no link",
+        receipt: { steps: ["abrindo o link", "slip vazio"], screenshotJpeg: "anNvbg==" },
+      }),
+    });
+    expect(result.status).toBe(200);
+
+    const detail = (await (await publicRequest(app, `/api/bets/${created.id}`)).json()) as {
+      status: string;
+      error: string | null;
+      receipt: { steps: string[]; screenshotJpeg: string } | null;
+    };
+    expect(detail.status).toBe("failed");
+    expect(detail.error).toMatch(/nem slip/i);
+    expect(detail.receipt?.steps).toEqual(["abrindo o link", "slip vazio"]);
+    expect(detail.receipt?.screenshotJpeg).toBe("anNvbg==");
+  });
+
   it("fails a queued bet whose credentials disappeared, then claims the next one", async () => {
     const app = buildApp();
 

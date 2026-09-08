@@ -98,6 +98,7 @@ function StatusGlyph({ status }: { status: Bet["status"] }) {
 
 function BetRow({ bet }: { bet: Bet }) {
   const [open, setOpen] = useState(false);
+  const [shot, setShot] = useState(false);
   const hostname = (() => {
     try {
       return new URL(bet.url).hostname;
@@ -129,6 +130,26 @@ function BetRow({ bet }: { bet: Bet }) {
         <p className="text-xs font-medium text-green-500">ensaio — nada foi apostado de verdade</p>
       )}
       {bet.error && <p className="text-xs text-destructive">{bet.error}</p>}
+      {bet.receipt?.screenshotJpeg && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShot(!shot)}
+            className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronDown className={cn("size-3.5 transition-transform", shot && "rotate-180")} />
+            {shot ? "esconder screenshot" : "ver screenshot"}
+          </button>
+          {shot && (
+            <img
+              src={`data:image/jpeg;base64,${bet.receipt.screenshotJpeg}`}
+              alt={`screenshot do recibo da aposta ${bet.id}`}
+              loading="lazy"
+              className="mt-1 w-full rounded-md border"
+            />
+          )}
+        </div>
+      )}
       {bet.receipt?.steps && bet.receipt.steps.length > 0 && (
         <div>
           <button

@@ -7,6 +7,7 @@ import {
   LOGIN_EMAIL,
   LOGIN_PASSWORD,
   LOGIN_SUBMIT,
+  LOGGED_OUT_SIGNAL,
   ODDS_BUTTON,
   STAKE_INPUT,
 } from "../src/vendors/betano.js";
@@ -116,6 +117,50 @@ describe("betanoDriver", () => {
     expect(page.fills).toContainEqual({ selector: LOGIN_EMAIL[0], value: "gio@betano.com" });
     expect(page.fills).toContainEqual({ selector: LOGIN_PASSWORD[0], value: "hunter2" });
     expect(page.clicks).toContainEqual(LOGIN_SUBMIT[0]);
+    expect(page.clicks).toContainEqual(CONFIRM_BUTTON[0]);
+  });
+
+  it("logs in when the page shows a logged-out CTA even without a login form", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    // The bookingcode/market page while logged out: header CTA visible,
+    // no login form anywhere on it.
+    page.visible.add(LOGGED_OUT_SIGNAL[2]); // a:has-text("Entrar")
+    page.visible.add(LOGIN_EMAIL[0]);
+    page.visible.add(LOGIN_PASSWORD[0]);
+    page.visible.add(LOGIN_SUBMIT[0]);
+    page.onClick = (selector) => {
+      if (LOGIN_SUBMIT.includes(selector)) {
+        page.visible.delete(LOGIN_EMAIL[0]);
+        page.visible.delete(LOGIN_PASSWORD[0]);
+        page.visible.delete(LOGGED_OUT_SIGNAL[2]);
+        page.visible.add(STAKE_INPUT[0]);
+        page.visible.add(CONFIRM_BUTTON[0]);
+        page.visible.add(CONFIRMED_TEXT);
+      }
+    };
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("succeeded");
+    expect(page.fills).toContainEqual({ selector: LOGIN_EMAIL[0], value: "gio@betano.com" });
+    expect(page.fills).toContainEqual({ selector: LOGIN_PASSWORD[0], value: "hunter2" });
+    expect(page.clicks).toContainEqual(LOGIN_SUBMIT[0]);
+    expect(page.clicks).toContainEqual(CONFIRM_BUTTON[0]);
+  });
+
+  it("keeps going when the logged-out CTA is a false positive and no login form appears", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    // A stray "Entrar" on an otherwise logged-in page.
+    page.visible.add(LOGGED_OUT_SIGNAL[2]);
+    page.visible.add(STAKE_INPUT[0]);
+    page.visible.add(CONFIRM_BUTTON[0]);
+    page.visible.add(CONFIRMED_TEXT);
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("succeeded");
     expect(page.clicks).toContainEqual(CONFIRM_BUTTON[0]);
   });
 

@@ -36,6 +36,24 @@ export const ODDS_BUTTON = [
 ];
 // Balance, for the receipt's balanceCents (best-effort).
 export const BALANCE = ['[data-testid*="balance"]', '[class*="balance"]'];
+// Logged-out tells: header CTAs that only exist without a session.
+// The isOnLoginPage heuristic alone can't catch these — a logged-out
+// market/bookingcode page has no login form on it, so the old flow
+// sailed through as "sessão válida" and drowned in selector misses.
+// Checked defensively: if these appear but no login form materializes,
+// we treat it as logged in and keep going (see login()).
+export const LOGGED_OUT_SIGNAL = [
+  '[data-testid*="login-button" i]',
+  '[data-testid*="loginButton" i]',
+  'a:has-text("Entrar")',
+  'button:has-text("Entrar")',
+  'a:has-text("Criar conta")',
+  'button:has-text("Criar conta")',
+  'a:has-text("Cadastre-se")',
+  'button:has-text("Cadastre-se")',
+  'a:has-text("Registre-se")',
+  'button:has-text("Registre-se")',
+];
 // Confirmation states that mean the bet went through: the site's own
 // success toast/copy, in either language.
 export const CONFIRMED_TEXT =
@@ -92,7 +110,13 @@ async function login(page: Page, req: BetRequest, loginUrl: string): Promise<voi
   await page.waitForLoadState("networkidle").catch(() => undefined);
 
   const email = await firstVisible(page, LOGIN_EMAIL, 10_000);
-  if (!email) throw new BetError("formulário de login não apareceu (campo de email)");
+  if (!email) {
+    // The logged-out signal fired but no form showed up — most likely
+    // we were actually logged in after all. Keep going instead of
+    // failing a bet the site would still have accepted.
+    req.log("formulário de login não apareceu — seguindo como logado");
+    return;
+  }
   const password = await firstVisible(page, LOGIN_PASSWORD, 10_000);
   if (!password) throw new BetError("formulário de login não apareceu (campo de senha)");
 
@@ -149,10 +173,22 @@ export const betanoDriver = {
 
     // Login, only when the session actually expired — the persistent
     // profile (browser.ts) keeps cookies across runs, so this is the
-    // exception, not the rule.
+    // exception, not the rule. Two ways to detect it: the login PAGE
+    // itself, or a logged-out header CTA on the bet's page (the
+    // bookingcode/market pages show no login form when logged out —
+    // the second check is what catches a never-logged-in profile).
+    // The login URL comes from the bet link's own origin, so a betano
+    // regional domain (.bet.br) logs in on itself, not .com.br.
+    const originUrl = `${new URL(req.url).origin}/`;
     if (await isOnLoginPage(page)) {
       step("sessão expirou — fazendo login");
-      await login(page, req, "https://www.betano.com.br/");
+      await login(page, req, originUrl);
+      step("voltando ao link da aposta");
+      await page.goto(req.url, { waitUntil: "domcontentloaded" });
+      await page.waitForLoadState("networkidle").catch(() => undefined);
+    } else if (await firstVisible(page, LOGGED_OUT_SIGNAL, 2_000)) {
+      step("sessão não estava logada (CTA de entrar/cadastrar visível) — entrando com as credenciais salvas");
+      await login(page, req, originUrl);
       step("voltando ao link da aposta");
       await page.goto(req.url, { waitUntil: "domcontentloaded" });
       await page.waitForLoadState("networkidle").catch(() => undefined);
