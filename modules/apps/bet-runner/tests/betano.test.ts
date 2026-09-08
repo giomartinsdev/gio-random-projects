@@ -188,10 +188,35 @@ describe("betanoDriver", () => {
     expect(page.fills).toContainEqual({ selector: STAKE_INPUT[0], value: "10,50" });
   });
 
+  it("dismisses the post-login geolocation wall", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    const [, , geoModal] = MODAL_DISMISS;
+    const geoButton = `${geoModal.modal} ${geoModal.buttons[0]}`;
+    // The loose :has-text container matches the outermost ancestor and
+    // is always "visible"; the button inside is what decides the click.
+    page.visible.add(geoModal.modal);
+    page.visible.add(geoButton);
+    page.onClick = (selector) => {
+      if (selector === geoButton) {
+        page.visible.delete(geoButton);
+        page.visible.add(STAKE_INPUT[0]);
+        page.visible.add(CONFIRM_BUTTON[0]);
+        page.visible.add(CONFIRMED_TEXT);
+      }
+    };
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("succeeded");
+    expect(page.clicks).toContainEqual(geoButton);
+    expect(page.fills).toContainEqual({ selector: STAKE_INPUT[0], value: "10,50" });
+  });
+
   it("dismisses the booking-code confirmation dialog over the slip", async () => {
     const page = new FakePage();
     freezeClockOn(page);
-    const [, bookingModal] = MODAL_DISMISS;
+    const [, , , bookingModal] = MODAL_DISMISS;
     const bookingButton = `${bookingModal.modal} ${bookingModal.buttons[0]}`;
     page.visible.add(STAKE_INPUT[0]);
     page.visible.add(bookingModal.modal);

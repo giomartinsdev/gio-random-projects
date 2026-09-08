@@ -91,6 +91,15 @@ export const MODAL_DISMISS: { modal: string; buttons: string[] }[] = [
     buttons: ['[aria-label*="close" i]', 'button:has-text("Continuar")'],
   },
   {
+    // Regulatory geofence (pós-login): "Habilite o compartilhamento de
+    // localização para continuar" com um botão Entendi. A permissão em
+    // si já vem concedida pelo contexto (browser.ts) — aqui só fecha o
+    // aviso. O seletor é solto de propósito: :has-text casa com até o
+    // ancestral mais externo, quem decide o clique é o botão de dentro.
+    modal: 'div:has-text("Habilite o compartilhamento de localização")',
+    buttons: ['button:has-text("Entendi")', '[aria-label*="close" i]'],
+  },
+  {
     // Bookingcode links: a "add these selections to the slip?" dialog
     // pops over the slip it just filled (labels ainda não vistos ao
     // vivo — o dialog só existe logado; candidatos por convenção
@@ -286,6 +295,11 @@ export const betanoDriver = {
     } else {
       step("sessão válida (sem formulário de login)");
     }
+
+    // The geolocation and landing walls like to appear right after the
+    // SPA finishes applying the session — between the login check above
+    // and the slip below. Clear whatever popped before looking.
+    await dismissModals(page, step);
 
     // Case 1: the link pre-filled the slip. Case 2: the link opens a
     // market page — click the first odd so a slip exists at all.

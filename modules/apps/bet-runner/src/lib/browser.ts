@@ -60,6 +60,14 @@ export class BrowserPool {
         headless: !this.options.headed,
         locale: "pt-BR",
         timezoneId: "America/Sao_Paulo",
+        // Regulatory geofence: right after login the site demands the
+        // browser's position ("Habilite o compartilhamento de
+        // localização para continuar") and stalls without it. Granting
+        // up front skips the native permission bubble — browser chrome,
+        // unclickable by Playwright — and the coords only need to sit
+        // inside Brazil, which São Paulo does.
+        geolocation: { latitude: -23.55, longitude: -46.63 },
+        permissions: ["geolocation"],
         // No fixed viewport: a natural window size is one fewer
         // automation tell than the default 1280x720.
         viewport: null,
