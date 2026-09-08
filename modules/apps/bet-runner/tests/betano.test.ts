@@ -4,7 +4,7 @@ import {
   BALANCE,
   CONFIRMED_TEXT,
   CONFIRM_BUTTON,
-  LOGIN_EMAIL,
+  LOGIN_USERNAME,
   LOGIN_PASSWORD,
   LOGIN_SUBMIT,
   LOGGED_OUT_SIGNAL,
@@ -99,12 +99,12 @@ describe("betanoDriver", () => {
   it("logs in when the session expired, then places the bet", async () => {
     const page = new FakePage();
     freezeClockOn(page);
-    page.visible.add(LOGIN_EMAIL[0]);
+    page.visible.add(LOGIN_USERNAME[0]);
     page.visible.add(LOGIN_PASSWORD[0]);
     page.visible.add(LOGIN_SUBMIT[0]);
     page.onClick = (selector) => {
       if (LOGIN_SUBMIT.includes(selector)) {
-        page.visible.delete(LOGIN_EMAIL[0]);
+        page.visible.delete(LOGIN_USERNAME[0]);
         page.visible.delete(LOGIN_PASSWORD[0]);
         page.visible.add(STAKE_INPUT[0]);
         page.visible.add(CONFIRM_BUTTON[0]);
@@ -115,7 +115,7 @@ describe("betanoDriver", () => {
     const outcome = await betanoDriver.placeBet(page.asPage(), request());
 
     expect(outcome.status).toBe("succeeded");
-    expect(page.fills).toContainEqual({ selector: LOGIN_EMAIL[0], value: "gio@betano.com" });
+    expect(page.fills).toContainEqual({ selector: LOGIN_USERNAME[0], value: "gio@betano.com" });
     expect(page.fills).toContainEqual({ selector: LOGIN_PASSWORD[0], value: "hunter2" });
     expect(page.clicks).toContainEqual(LOGIN_SUBMIT[0]);
     expect(page.clicks).toContainEqual(CONFIRM_BUTTON[0]);
@@ -127,12 +127,12 @@ describe("betanoDriver", () => {
     // The bookingcode/market page while logged out: header CTA visible,
     // no login form anywhere on it.
     page.visible.add(LOGGED_OUT_SIGNAL[2]); // a:has-text("Entrar")
-    page.visible.add(LOGIN_EMAIL[0]);
+    page.visible.add(LOGIN_USERNAME[0]);
     page.visible.add(LOGIN_PASSWORD[0]);
     page.visible.add(LOGIN_SUBMIT[0]);
     page.onClick = (selector) => {
       if (LOGIN_SUBMIT.includes(selector)) {
-        page.visible.delete(LOGIN_EMAIL[0]);
+        page.visible.delete(LOGIN_USERNAME[0]);
         page.visible.delete(LOGIN_PASSWORD[0]);
         page.visible.delete(LOGGED_OUT_SIGNAL[2]);
         page.visible.add(STAKE_INPUT[0]);
@@ -144,7 +144,7 @@ describe("betanoDriver", () => {
     const outcome = await betanoDriver.placeBet(page.asPage(), request());
 
     expect(outcome.status).toBe("succeeded");
-    expect(page.fills).toContainEqual({ selector: LOGIN_EMAIL[0], value: "gio@betano.com" });
+    expect(page.fills).toContainEqual({ selector: LOGIN_USERNAME[0], value: "gio@betano.com" });
     expect(page.fills).toContainEqual({ selector: LOGIN_PASSWORD[0], value: "hunter2" });
     expect(page.clicks).toContainEqual(LOGIN_SUBMIT[0]);
     expect(page.clicks).toContainEqual(CONFIRM_BUTTON[0]);

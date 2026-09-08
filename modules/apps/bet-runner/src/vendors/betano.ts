@@ -10,9 +10,16 @@ import { centsToStakeString, parseBalanceToCents } from "../lib/stake.js";
 // Betano (Kaizen Gaming platform) ships pt-BR UI; data-testid
 // candidates first, then text/placeholder fallbacks. Re-verify against
 // a live session whenever the site redesigns — see README.
-export const LOGIN_EMAIL = ['input[name="username"]', 'input[type="email"]', 'input[autocomplete="username"]'];
+// The login form renders top-level only at /myaccount/login; on the
+// other pages it hides inside an iframe behind the header CTA. The
+// identifier is tabbed (CPF default — Brazil; e-mail and username are
+// one click away) and each tab swaps the first input's name.
+export const LOGIN_PATH = "/myaccount/login";
+export const LOGIN_USERNAME = ['input[name="email"]', 'input[name="username"]', 'input[name="taxid"]'];
+export const LOGIN_EMAIL_TAB = ['[data-qa="email"]'];
+export const LOGIN_USERNAME_TAB = ['[data-qa="username"]'];
 export const LOGIN_PASSWORD = ['input[type="password"]'];
-export const LOGIN_SUBMIT = ['button[type="submit"]', 'button:has-text("Entrar")', 'button:has-text("Login")'];
+export const LOGIN_SUBMIT = ['[data-qa="submit"]', 'button[type="submit"]', 'button:has-text("Entrar")'];
 // The slip's stake field: betano names it in pt-BR ("Valor da aposta").
 export const STAKE_INPUT = [
   '[data-testid="stake-input"]',
@@ -78,6 +85,12 @@ export const MODAL_DISMISS: { modal: string; buttons: string[] }[] = [
     buttons: ['button:has-text("Sim")', 'button:has-text("Confirmar")'],
   },
   {
+    // The "welcome landing" overlay (REGISTRE-SE / INICIAR SESSÃO) —
+    // covers the header CTAs too, so close it instead of choosing.
+    modal: '[data-testid="landing-modal"]',
+    buttons: ['[aria-label*="close" i]', 'button:has-text("Continuar")'],
+  },
+  {
     // Bookingcode links: a "add these selections to the slip?" dialog
     // pops over the slip it just filled (labels ainda não vistos ao
     // vivo — o dialog só existe logado; candidatos por convenção
@@ -134,7 +147,7 @@ async function isOnLoginPage(page: Page): Promise<boolean> {
   if (/\/(login|entrar|sign-?in)/i.test(new URL(page.url()).pathname)) return true;
   const password = await firstVisible(page, LOGIN_PASSWORD, 500);
   if (!password) return false;
-  return (await firstVisible(page, LOGIN_EMAIL, 500)) !== null;
+  return (await firstVisible(page, LOGIN_USERNAME, 500)) !== null;
 }
 
 // Clears every known modal currently on the page. Best-effort and
@@ -160,12 +173,22 @@ async function dismissModals(page: Page, log: (line: string) => void): Promise<v
 async function login(page: Page, req: BetRequest, loginUrl: string): Promise<void> {
   req.log(`abrindo a página de login (${loginUrl})`);
   await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
-  await page.waitForLoadState("networkidle").catch(() => undefined);
+  await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
   // The age wall also covers the login page — clear it or the form
   // never becomes reachable.
   await dismissModals(page, req.log);
 
-  const email = await firstVisible(page, LOGIN_EMAIL, 10_000);
+  // The identifier is tabbed: CPF is the page's default, e-mail and
+  // username need a click. The username's own shape picks the tab.
+  if (req.username.includes("@")) {
+    const tab = await firstVisible(page, LOGIN_EMAIL_TAB, 3_000);
+    if (tab) await tab.click().catch(() => undefined);
+  } else if (!/^\d+$/.test(req.username)) {
+    const tab = await firstVisible(page, LOGIN_USERNAME_TAB, 3_000);
+    if (tab) await tab.click().catch(() => undefined);
+  }
+
+  const email = await firstVisible(page, LOGIN_USERNAME, 10_000);
   if (!email) {
     // The logged-out signal fired but no form showed up — most likely
     // we were actually logged in after all. Keep going instead of
@@ -183,11 +206,15 @@ async function login(page: Page, req: BetRequest, loginUrl: string): Promise<voi
   if (!submit) throw new BetError("botão de login não encontrado");
   await submit.click();
 
-  // Logged in = we land somewhere the login form isn't. 20s because
-  // the site's SPA is slow after submit.
+  // Logged in = the form is gone (or the SPA navigated away from the
+  // login path). The password field is the anchor: a wrong password
+  // keeps it on screen with an inline error, a success takes the whole
+  // form away — often before the URL itself moves. 20s because the
+  // site's SPA is slow after submit.
   for (let waited = 0; waited < 20_000; waited += 1_000) {
     await page.waitForTimeout(1_000);
-    if (!(await isOnLoginPage(page))) {
+    const formGone = !(await firstVisible(page, LOGIN_PASSWORD, 500));
+    if (formGone || !(await isOnLoginPage(page))) {
       req.log("login concluído (sessão salva no perfil persistente)");
       return;
     }
@@ -208,7 +235,10 @@ export const betanoDriver = {
 
     step(`abrindo o link da betano (${req.url})`);
     await page.goto(req.url, { waitUntil: "domcontentloaded" });
-    await page.waitForLoadState("networkidle").catch(() => undefined);
+    // Timeout everywhere: the SPA keeps polling live data and
+    // "networkidle" may never settle — better to proceed on a busy
+    // page (selectors wait their own turns) than hang forever.
+    await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
 
     // Cloudflare in front: wait out a soft challenge once, then give up
     // with a clear message (the receipt's screenshot shows the stuck
@@ -240,19 +270,19 @@ export const betanoDriver = {
     // the second check is what catches a never-logged-in profile).
     // The login URL comes from the bet link's own origin, so a betano
     // regional domain (.bet.br) logs in on itself, not .com.br.
-    const originUrl = `${new URL(req.url).origin}/`;
+    const loginUrl = `${new URL(req.url).origin}${LOGIN_PATH}`;
     if (await isOnLoginPage(page)) {
       step("sessão expirou — fazendo login");
-      await login(page, req, originUrl);
+      await login(page, req, loginUrl);
       step("voltando ao link da aposta");
       await page.goto(req.url, { waitUntil: "domcontentloaded" });
-      await page.waitForLoadState("networkidle").catch(() => undefined);
+      await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
     } else if (await firstVisible(page, LOGGED_OUT_SIGNAL, 2_000)) {
       step("sessão não estava logada (CTA de entrar/cadastrar visível) — entrando com as credenciais salvas");
-      await login(page, req, originUrl);
+      await login(page, req, loginUrl);
       step("voltando ao link da aposta");
       await page.goto(req.url, { waitUntil: "domcontentloaded" });
-      await page.waitForLoadState("networkidle").catch(() => undefined);
+      await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
     } else {
       step("sessão válida (sem formulário de login)");
     }
