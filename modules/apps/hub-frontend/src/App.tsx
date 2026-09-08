@@ -420,23 +420,30 @@ function Renderer({ app }: { app: Microfrontend }) {
   useEffect(() => setLoaded(false), [app.id, nonce]);
 
   // Hub → app half of the theme bridge: the hub's theme is the
-  // embedded app's theme. Sent on every theme change and once more on
-  // each iframe load (a frame that mounts after the last change would
-  // otherwise boot with its own saved choice until the next toggle).
-  // The app's listener is its lib/hubTheme.ts; tela has no theme
-  // system (dark-only by design) and simply ignores the message. The
-  // app echoing the value back is absorbed by App's "app:theme"
-  // listener -- applying the same theme again is a no-op, so no loop.
+  // embedded app's theme. Sent on every theme change (while a frame
+  // is loaded) and once on each iframe load (a frame that mounts
+  // after the last change would otherwise boot with its own saved
+  // choice until the next toggle). Pushing before the frame has
+  // navigated would throw a target-origin mismatch -- its initial
+  // about:blank window still has the hub's origin -- so while
+  // `loaded` is false the send is skipped; onLoad picks up the current
+  // theme anyway, so nothing is lost. The app's listener is its
+  // lib/hubTheme.ts; tela has no theme system (dark-only by design)
+  // and simply ignores the message. The app echoing the value back is
+  // absorbed by App's "app:theme" listener -- applying the same theme
+  // again is a no-op, so no loop.
   const pushTheme = useCallback(() => {
+    if (!loaded) return;
     const theme: Theme =
       document.documentElement.dataset.theme === "light" ? "light" : "dark";
     iframeRef.current?.contentWindow?.postMessage({ type: "hub:theme", theme }, app.url);
-  }, [app.url]);
+  }, [app.url, loaded]);
 
   useEffect(() => {
+    if (!loaded) return;
     pushTheme();
     return onThemeChange(pushTheme);
-  }, [pushTheme, nonce]);
+  }, [pushTheme, loaded]);
 
   function fullscreen() {
     if (!document.fullscreenElement) {
