@@ -39,7 +39,10 @@ Fluxo de um job (todos os passos viram `receipt.steps` no histórico):
    de idade, confirmação de booking code, cookies — lista `MODAL_DISMISS`
    no driver);
 5. login só se o formulário ou o CTA de "entrar" estiverem na tela;
-6. slip pré-preenchido? senão, clica na primeira odd;
+6. slip pré-preenchido? booking code deixa o slip colapsado na barra
+   inferior — o driver o expande (`SLIP_EXPANDER`); página de mercado?
+   clica na primeira odd (`ODDS_BUTTON` — na Betano BR são DIVs
+   `.selection-horizontal-button`, sem testid);
 7. preenche o valor (pt-BR, `10,50`), screenshot **antes** do clique final;
 8. `DRY_RUN=1` → para aqui (receipt marca `dryRun: true`);
 9. clique de confirmação → espera texto de confirmação do site →
