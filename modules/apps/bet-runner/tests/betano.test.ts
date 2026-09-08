@@ -8,6 +8,7 @@ import {
   LOGIN_PASSWORD,
   LOGIN_SUBMIT,
   LOGGED_OUT_SIGNAL,
+  MODAL_DISMISS,
   ODDS_BUTTON,
   STAKE_INPUT,
 } from "../src/vendors/betano.js";
@@ -162,6 +163,67 @@ describe("betanoDriver", () => {
 
     expect(outcome.status).toBe("succeeded");
     expect(page.clicks).toContainEqual(CONFIRM_BUTTON[0]);
+  });
+
+  it("dismisses the age-verification wall before touching the page", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    const [ageModal] = MODAL_DISMISS;
+    const ageButton = `${ageModal.modal} ${ageModal.buttons[0]}`;
+    page.visible.add(ageModal.modal);
+    page.visible.add(ageButton);
+    page.onClick = (selector) => {
+      if (selector === ageButton) {
+        page.visible.delete(ageModal.modal);
+        page.visible.add(STAKE_INPUT[0]);
+        page.visible.add(CONFIRM_BUTTON[0]);
+        page.visible.add(CONFIRMED_TEXT);
+      }
+    };
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("succeeded");
+    expect(page.clicks).toContainEqual(ageButton);
+    expect(page.fills).toContainEqual({ selector: STAKE_INPUT[0], value: "10,50" });
+  });
+
+  it("dismisses the booking-code confirmation dialog over the slip", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    const [, bookingModal] = MODAL_DISMISS;
+    const bookingButton = `${bookingModal.modal} ${bookingModal.buttons[0]}`;
+    page.visible.add(STAKE_INPUT[0]);
+    page.visible.add(bookingModal.modal);
+    page.visible.add(bookingButton);
+    page.onClick = (selector) => {
+      if (selector === bookingButton) page.visible.delete(bookingModal.modal);
+      // The real slip is still clickable behind the dialog once it's gone.
+    };
+    page.visible.add(CONFIRM_BUTTON[0]);
+    page.visible.add(CONFIRMED_TEXT);
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("succeeded");
+    expect(page.clicks).toContainEqual(bookingButton);
+    expect(page.fills).toContainEqual({ selector: STAKE_INPUT[0], value: "10,50" });
+  });
+
+  it("never fills the bet-mentor quick-bet widget as the slip stake", async () => {
+    const page = new FakePage();
+    freezeClockOn(page);
+    // The widget the site renders outside the slip also matches
+    // inputmode=decimal — the driver's candidate list excludes it by
+    // class, so a page with only the widget counts as "no slip".
+    page.visible.add('input[inputmode="decimal"]');
+
+    const outcome = await betanoDriver.placeBet(page.asPage(), request());
+
+    expect(outcome.status).toBe("failed");
+    if (outcome.status !== "failed") return;
+    expect(outcome.error).toMatch(/slip/i);
+    expect(page.fills).toHaveLength(0);
   });
 
   it("fails clearly on a persistent Cloudflare challenge", async () => {

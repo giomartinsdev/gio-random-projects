@@ -1,11 +1,13 @@
 # bet-runner em casa
 
-O Chrome que aposta roda na rede de casa (IP residencial), não no VPS:
-a Betano responde qualquer acesso do ASN de datacenter do VPS com a
-página "Access to this page is restricted due to security and
-compliance measures" — bloqueio de compliance, imune a ajuste de
-seletor. Este diretório é o deploy substituto do que era o módulo
-terraform `compute_apps_bet_runner`.
+O Chrome que aposta roda na rede de casa (IP residencial), não no VPS —
+e sempre headed sob Xvfb: a página "Access to this page is restricted
+due to security and compliance measures" da Betano responde ao
+**browser headless** (apareceu de IP residencial também, em modo
+headless), não ao ASN de datacenter como se suspeitou primeiro; headed,
+o mesmo IP passa. O container roda com `HEADED=1` e o CMD do Dockerfile
+já sobe o `xvfb-run` — nada a configurar. Este diretório é o deploy
+substituto do que era o módulo terraform `compute_apps_bet_runner`.
 
 ## Setup (uma vez)
 
@@ -16,6 +18,7 @@ cat > ~/.config/bet-runner-home/.env <<EOF
 RUNNER_API_KEY=<do vault>
 BET_API_URL=https://bet-api.giomartins.dev
 POLL_INTERVAL_MS=5000
+HEADED=1
 DRY_RUN=1
 EOF
 ```

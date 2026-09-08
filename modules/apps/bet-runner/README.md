@@ -7,12 +7,15 @@ login se a sessão expirou, preenche o valor e confirma. A casa de
 aposta é um **driver** — este serviço não sabe nada específico de
 nenhuma delas.
 
-**Roda na rede de casa, não no VPS** — as casas de aposta bloqueiam o
-ASN de datacenter do VPS por compliance (a Betano responde com a página
-"Access to this page is restricted..."); um IP residencial passa. Deploy:
-[`deploy/home/`](./deploy/home/README.md). No VPS não sobra nada deste
-serviço (o módulo terraform foi removido); `/internal/*` do bet-api
-continua autenticado só pelo `RUNNER_API_KEY`.
+**Roda na rede de casa, não no VPS, e sempre em modo headed sob Xvfb** —
+a página de compliance da Betano ("Access to this page is restricted...")
+responde ao **browser headless**, não ao IP: ela apareceu tanto do VPS
+quanto de um IP residencial em modo headless, e uma corrida headed no
+mesmo IP residencial passou limpa. O container por isso roda o Chromium
+headed dentro de um display virtual (`xvfb-run` no Dockerfile, `HEADED=1`
+no env). Deploy: [`deploy/home/`](./deploy/home/README.md). No VPS não
+sobra nada deste serviço (o módulo terraform foi removido); `/internal/*`
+do bet-api continua autenticado só pelo `RUNNER_API_KEY`.
 
 ## Arquitetura
 
@@ -29,14 +32,17 @@ src/lib/stake.ts       centavos ↔ string "10,50" pt-BR
 Fluxo de um job (todos os passos viram `receipt.steps` no histórico):
 
 1. claim no BFF (bet + credenciais decriptadas, só em memória);
-2. Chrome com `userDataDir=/data/profiles/<vendor>/<userId>` — login
-   sobrevive entre execuções;
+2. Chrome headed (Xvfb) com `userDataDir=/data/profiles/<vendor>/<userId>`
+   — login sobrevive entre execuções;
 3. abre o link → espera challenge do Cloudflare se aparecer;
-4. login só se o formulário estiver na tela;
-5. slip pré-preenchido? senão, clica na primeira odd;
-6. preenche o valor (pt-BR, `10,50`), screenshot **antes** do clique final;
-7. `DRY_RUN=1` → para aqui (receipt marca `dryRun: true`);
-8. clique de confirmação → espera texto de confirmação do site →
+4. fecha os modais interceptores de clique que a casa soltar (verificação
+   de idade, confirmação de booking code, cookies — lista `MODAL_DISMISS`
+   no driver);
+5. login só se o formulário ou o CTA de "entrar" estiverem na tela;
+6. slip pré-preenchido? senão, clica na primeira odd;
+7. preenche o valor (pt-BR, `10,50`), screenshot **antes** do clique final;
+8. `DRY_RUN=1` → para aqui (receipt marca `dryRun: true`);
+9. clique de confirmação → espera texto de confirmação do site →
    screenshot final + saldo, se legível.
 
 ## Variáveis de ambiente
@@ -49,7 +55,7 @@ Fluxo de um job (todos os passos viram `receipt.steps` no histórico):
 | `POLL_INTERVAL_MS` | `5000` | intervalo de polling quando a fila está vazia. |
 | `BET_TIMEOUT_MS` | `180000` | teto de tempo por aposta (o driver tem timeouts internos). |
 | `DRY_RUN` | `1` | **`1` = nunca clica no botão final** (padrão seguro). Produção seta `0` explicitamente. |
-| `HEADED` | `0` | `1` = browser visível (só pra depurar local; container prod não tem X). |
+| `HEADED` | `0` | `1` = browser headed — **obrigatório contra a Betano** (a parede de compliance responde a headless; o container de casa roda com `HEADED=1` sob Xvfb, ver Dockerfile). Local sem display só com `0`. |
 | `LOG_LEVEL` | `info` | `debug` mostra cada tentativa de seletor. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | vazio | sem valor = telemetria desligada. |
 

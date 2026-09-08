@@ -19,7 +19,10 @@ export const STAKE_INPUT = [
   'input[placeholder*="Valor"]',
   'input[placeholder*="valor"]',
   'input[name="stake"]',
-  'input[inputmode="decimal"]',
+  // Last candidate on purpose, and with the bet-mentor quick-bet widget
+  // excluded: that widget also ships inputmode=decimal (seen live on
+  // homepage/bookingcode links) and filling it is not filling the slip.
+  'input[inputmode="decimal"]:not(.bet-mentor-widget__input)',
 ];
 export const CONFIRM_BUTTON = [
   '[data-testid="bet-button"]',
@@ -58,6 +61,36 @@ export const LOGGED_OUT_SIGNAL = [
 // success toast/copy, in either language.
 export const CONFIRMED_TEXT =
   "text=/aposta (registrada|realizada|colocada|feita)/i, text=/bet (placed|registered)/i, text=/sucesso/i";
+
+// Betano's interstitial modals — each one sits on top of the page and
+// intercepts pointer events, so any click aimed behind it times out
+// with "... intercepts pointer events" in the call log (seen live: the
+// age-verification wall on a fresh profile, the booking-code
+// confirmation dialog over the slip it just filled). Each entry pairs
+// the modal container with acceptance buttons to try inside it (first
+// visible wins); unknown modals are left alone and show up in the
+// receipt's screenshot for the next tuning pass.
+export const MODAL_DISMISS: { modal: string; buttons: string[] }[] = [
+  {
+    // Fresh profile: "VOCÊ TEM MAIS DE 18 ANOS?" with NÃO/SIM buttons
+    // (read live off the modal; :has-text é case-insensitive).
+    modal: "#age-verification-modal",
+    buttons: ['button:has-text("Sim")', 'button:has-text("Confirmar")'],
+  },
+  {
+    // Bookingcode links: a "add these selections to the slip?" dialog
+    // pops over the slip it just filled (labels ainda não vistos ao
+    // vivo — o dialog só existe logado; candidatos por convenção
+    // pt-BR da plataforma).
+    modal: 'dialog[data-qa="booking-code-confirmation-modal"]',
+    buttons: ['button:has-text("Adicionar")', 'button:has-text("Confirmar")', 'button:has-text("Sim")'],
+  },
+  {
+    // Cookie consent (OneTrust): same story on a cold first visit.
+    modal: "#onetrust-banner-sdk",
+    buttons: ["#onetrust-accept-btn-handler", 'button:has-text("Aceitar")'],
+  },
+];
 
 async function firstVisible(page: Page, selectors: string[], timeout = 8_000): Promise<Locator | null> {
   const deadline = Date.now() + timeout;
@@ -104,10 +137,33 @@ async function isOnLoginPage(page: Page): Promise<boolean> {
   return (await firstVisible(page, LOGIN_EMAIL, 500)) !== null;
 }
 
+// Clears every known modal currently on the page. Best-effort and
+// idempotent — a modal-free page costs a handful of isVisible checks,
+// a page with several gets one click per modal.
+async function dismissModals(page: Page, log: (line: string) => void): Promise<void> {
+  for (const { modal, buttons } of MODAL_DISMISS) {
+    if (!(await page.locator(modal).first().isVisible().catch(() => false))) continue;
+    for (const buttonSelector of buttons) {
+      // Compound selector on the page itself, not container.locator():
+      // keeps the queries flat and lets the tests script them as plain
+      // selector strings.
+      const button = page.locator(`${modal} ${buttonSelector}`).first();
+      if (!(await button.isVisible().catch(() => false))) continue;
+      log(`modal interceptando a página (${modal}) — clicando em ${buttonSelector}`);
+      await button.click({ timeout: 5_000 }).catch(() => undefined);
+      await page.waitForTimeout(500); // the SPA needs a beat to close it
+      break;
+    }
+  }
+}
+
 async function login(page: Page, req: BetRequest, loginUrl: string): Promise<void> {
   req.log(`abrindo a página de login (${loginUrl})`);
   await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
   await page.waitForLoadState("networkidle").catch(() => undefined);
+  // The age wall also covers the login page — clear it or the form
+  // never becomes reachable.
+  await dismissModals(page, req.log);
 
   const email = await firstVisible(page, LOGIN_EMAIL, 10_000);
   if (!email) {
@@ -171,6 +227,11 @@ export const betanoDriver = {
       step("challenge passou");
     }
 
+    // Interstitials before anything else: the age wall on a fresh
+    // profile and cookie consent cover the whole page, login CTAs
+    // included.
+    await dismissModals(page, step);
+
     // Login, only when the session actually expired — the persistent
     // profile (browser.ts) keeps cookies across runs, so this is the
     // exception, not the rule. Two ways to detect it: the login PAGE
@@ -223,6 +284,9 @@ export const betanoDriver = {
     }
 
     step(`preenchendo o valor da aposta (${stakeStr})`);
+    // The booking-code dialog pops after the slip loads — clear it
+    // right before touching the field it covers.
+    await dismissModals(page, step);
     await stake.click();
     await stake.fill(stakeStr);
 
