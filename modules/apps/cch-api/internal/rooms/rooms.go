@@ -173,16 +173,22 @@ func (r *Registry) Get(id string) (*Room, error) {
 // Delete removes a room after verifying the password. Only the room
 // creator (who knows the password) can delete it.
 func (r *Registry) Delete(id, password string) error {
+	// Same dance as Create: persist() takes r.mu itself, so the
+	// registry lock has to be released before the file write. Holding
+	// it across persist() deadlocks the whole registry.
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	room, ok := r.rooms[id]
 	if !ok {
+		r.mu.Unlock()
 		return ErrNotFound
 	}
 	if !room.CheckPassword(password) {
+		r.mu.Unlock()
 		return ErrWrongSecret
 	}
 	delete(r.rooms, id)
+	r.mu.Unlock()
+
 	r.persist()
 	return nil
 }
