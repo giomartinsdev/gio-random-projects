@@ -4,13 +4,19 @@
 // Go data -- there's no admin UI, no database; a new deck is a new file
 // in this package, exactly like tela's wordlist in internal/rooms.
 //
-// Content policy for everything here: dark, crude and absurd is the
-// point of the game, but no slurs, nothing sexual involving minors,
-// and no real people by name -- groups and roles ("meu tio", "o
-// gerente") instead of individuals, so the joke always lands on the
-// situation, not on a specific person. Nothing whose punchline targets
-// an ethnicity, religion or people either: heaviness comes from death,
-// bad luck, crime and absurdity, never from hate.
+// Content policy: dark, crude and absurd is the point of the game, but
+// no slurs, nothing sexual involving minors, and nothing whose punchline
+// is contempt for an ethnicity, religion or people -- heaviness comes
+// from death, bad luck, crime and absurdity, never from hate. For the
+// decks written here that meant groups and roles ("meu tio", "o
+// gerente") instead of individuals, so the joke lands on the situation.
+//
+// The real-CAH imports (cah.go, cah_exp1.go) are the one carve-out to
+// "no real people by name": the Brazilian edition's flavor is putting
+// public figures (Faustão, Silvio Santos, politicians) in absurd
+// situations -- satire of the famous, not targeting the vulnerable.
+// Cards from the source material that crossed the other lines were
+// dropped during import, as noted in each file's header.
 package decks
 
 import (

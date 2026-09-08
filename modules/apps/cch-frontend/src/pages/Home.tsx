@@ -424,6 +424,18 @@ export default function Home() {
         <p className="mt-6 text-center text-xs text-muted-foreground">
           18+. Humor pesado, sem censura — as cartas são de mentira, a vergonha é real.
         </p>
+        <p className="mt-2 text-center text-[11px] text-muted-foreground/60">
+          Conteúdo de decks baseado em{" "}
+          <a
+            href="https://cardsagainsthumanity.com"
+            target="_blank"
+            rel="noreferrer"
+            className="underline decoration-dotted hover:text-foreground"
+          >
+            Cards Against Humanity
+          </a>{" "}
+          (CC BY-NC-SA 4.0) e na adaptação brasileira fan-made. Projeto pessoal, sem fins comerciais.
+        </p>
       </div>
     </div>
   );
