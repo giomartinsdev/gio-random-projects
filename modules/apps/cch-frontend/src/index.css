@@ -1,50 +1,69 @@
+@import url("https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* shadcn's token set in two themes. Dark is the default (the classic
-   night table) and the header's toggle flips <html data-theme> to
-   light; main.tsx applies the saved choice before first paint. */
+/* A party-game palette, not a dashboard's. Dark is the default -- a
+   moody game-room table lit by neon, not shadcn's flat gray-on-black
+   -- and the header's toggle flips <html data-theme> to a bright
+   candy-colored light mode; main.tsx applies the saved choice before
+   first paint. Hue 215 (blue) anchors both themes so "primary" reads
+   as one brand color everywhere; --accent2/--accent3 exist for spots
+   that want a second/third pop of color (deck chips, phase banners)
+   without every screen leaning on the same blue. */
 @layer base {
   :root {
-    --background: 240 10% 4%;
-    --foreground: 0 0% 98%;
-    --card: 240 6% 8%;
-    --card-foreground: 0 0% 98%;
-    --primary: 217 91% 60%;
+    --background: 222 45% 7%;
+    --foreground: 216 45% 96%;
+    --card: 220 32% 12%;
+    --card-foreground: 216 45% 96%;
+    --primary: 213 92% 58%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 4% 16%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 4% 16%;
-    --muted-foreground: 240 5% 65%;
-    --accent: 240 4% 16%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 4% 18%;
-    --input: 240 4% 18%;
-    --ring: 217 91% 60%;
-    --radius: 0.75rem;
+    --secondary: 220 24% 18%;
+    --secondary-foreground: 216 45% 96%;
+    --muted: 220 22% 16%;
+    --muted-foreground: 216 15% 68%;
+    --accent: 220 26% 20%;
+    --accent-foreground: 216 45% 96%;
+    --accent2: 190 85% 55%;
+    --accent2-foreground: 200 60% 8%;
+    --accent3: 45 95% 58%;
+    --accent3-foreground: 30 40% 12%;
+    --success: 152 60% 45%;
+    --success-foreground: 0 0% 100%;
+    --destructive: 356 80% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 22% 22%;
+    --input: 220 22% 22%;
+    --ring: 213 92% 58%;
+    --radius: 1.25rem;
   }
 
   :root[data-theme="light"] {
-    --background: 40 20% 97%;
-    --foreground: 240 10% 8%;
+    --background: 213 60% 96%;
+    --foreground: 220 45% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 8%;
-    --primary: 217 91% 55%;
+    --card-foreground: 220 45% 14%;
+    --primary: 213 88% 52%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 6% 92%;
-    --secondary-foreground: 240 10% 8%;
-    --muted: 240 6% 92%;
-    --muted-foreground: 240 4% 42%;
-    --accent: 240 6% 92%;
-    --accent-foreground: 240 10% 8%;
-    --destructive: 0 74% 46%;
+    --secondary: 213 40% 92%;
+    --secondary-foreground: 220 45% 14%;
+    --muted: 213 35% 93%;
+    --muted-foreground: 220 20% 42%;
+    --accent: 213 40% 90%;
+    --accent-foreground: 220 45% 14%;
+    --accent2: 190 80% 42%;
+    --accent2-foreground: 0 0% 100%;
+    --accent3: 38 92% 52%;
+    --accent3-foreground: 30 45% 14%;
+    --success: 152 55% 38%;
+    --success-foreground: 0 0% 100%;
+    --destructive: 356 75% 50%;
     --destructive-foreground: 0 0% 100%;
-    --border: 240 6% 84%;
-    --input: 240 6% 84%;
-    --ring: 217 91% 55%;
+    --border: 213 30% 85%;
+    --input: 213 30% 85%;
+    --ring: 213 88% 52%;
   }
 
   * {
@@ -53,10 +72,22 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family: "Nunito", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     /* The page is a fixed-height app shell, not a document -- letting it
        rubber-band on iOS just reveals background behind the app. */
     overscroll-behavior: none;
+    /* A soft glow field instead of a flat void -- fixed so it doesn't
+       scroll away, way behind everything (z-index left alone; painted
+       before any content via the pseudo-less body background layer). */
+    background-image:
+      radial-gradient(ellipse 900px 500px at 15% -10%, hsl(var(--primary) / 0.28), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 110% 10%, hsl(var(--accent2) / 0.22), transparent 55%),
+      radial-gradient(ellipse 800px 600px at 50% 120%, hsl(var(--accent3) / 0.12), transparent 55%);
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: "Baloo 2", "Nunito", ui-sans-serif, system-ui, sans-serif;
   }
 
   /* With viewport-fit=cover the header would otherwise sit under a

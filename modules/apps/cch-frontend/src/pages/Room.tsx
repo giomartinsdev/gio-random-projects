@@ -581,128 +581,133 @@ function Lobby({ roomId, game }: { roomId: string; game: ReturnType<typeof useGa
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl flex-1 space-y-4 px-4 py-8">
+    <div className="mx-auto w-full max-w-4xl flex-1 space-y-4 px-4 py-8">
       <div className="text-center">
-        <h2 className="text-2xl font-bold tracking-tight">Sala pronta</h2>
+        <h2 className="font-display text-2xl font-bold tracking-tight">Sala pronta</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Chame o pessoal: <Code>{roomId}</Code> — mínimo 3 pessoas para começar.
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Jogando agora ({connected})
-          </CardTitle>
-          <CardDescription>
-            {connected < 3 ? "Faltam " + (3 - connected) + " pessoas conectadas." : "Todo mundo conectado pode dar o start."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="flex flex-wrap gap-2">
-            {state.players.map((p) => (
-              <li
-                key={p.peerId}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 pr-3 text-sm",
-                  p.connected ? "bg-secondary/50" : "text-muted-foreground line-through",
-                )}
-              >
-                <Avatar index={p.avatar} size={22} />
-                {p.name}
-                {p.peerId === game.you?.peerId && <span className="text-xs text-muted-foreground">(você)</span>}
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Decks</CardTitle>
-          <CardDescription>As cartas de todos os decks marcados são embaralhadas juntas.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {decks.map((deck) => {
-              const on = selected.has(deck.id);
-              return (
-                <motion.button
-                  key={deck.id}
-                  type="button"
-                  title={deck.description}
-                  onClick={() => toggleDeck(deck.id)}
-                  whileTap={{ scale: 0.94 }}
+      {/* Side by side on wide screens: who's here doesn't need the same
+          vertical real estate as the decks list, so stacking both full
+          width just made everyone scroll past a mostly-empty card. */}
+      <Card className="overflow-hidden md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+        <div className="md:border-r-2">
+          <CardHeader>
+            <CardTitle className="text-base">
+              Jogando agora ({connected})
+            </CardTitle>
+            <CardDescription>
+              {connected < 3 ? "Faltam " + (3 - connected) + " pessoas conectadas." : "Todo mundo conectado pode dar o start."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="flex flex-wrap gap-2">
+              {state.players.map((p) => (
+                <li
+                  key={p.peerId}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
-                    on ? "border-primary bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-accent",
+                    "inline-flex items-center gap-1.5 rounded-full border-2 px-2.5 py-1 pr-3 text-sm",
+                    p.connected ? "bg-secondary/50" : "text-muted-foreground line-through",
                   )}
                 >
-                  {on ? <Check className="size-3.5 text-primary" /> : <span className="size-3.5" />}
-                  <span>
-                    {deck.emoji} {deck.name}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{deck.whites + deck.blacks}</span>
-                </motion.button>
-              );
-            })}
-            {customDecks.map((deck) => {
-              const on = selected.has(deck.id);
-              return (
-                <motion.button
-                  key={deck.id}
-                  type="button"
-                  title={deck.description}
-                  onClick={() => toggleDeck(deck.id)}
-                  whileTap={{ scale: 0.94 }}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
-                    on ? "border-primary bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-accent",
-                  )}
-                >
-                  {on ? <Check className="size-3.5 text-primary" /> : <span className="size-3.5" />}
-                  <span>
-                    {deck.emoji} {deck.name}
-                  </span>
-                  <Sparkles className="size-3 shrink-0 text-primary" />
-                  <span className="text-xs text-muted-foreground">{deck.whites + deck.blacks}</span>
-                </motion.button>
-              );
-            })}
-          </div>
-
-          <div className="space-y-2">
-            <Label>Pontos para ganhar</Label>
-            <div className="flex gap-2">
-              {[3, 5, 8, 10].map((score) => (
-                <motion.button
-                  key={score}
-                  type="button"
-                  onClick={() => {
-                    setWinningScore(score);
-                    setWinningScorePicked(true);
-                  }}
-                  whileTap={{ scale: 0.94 }}
-                  className={cn(
-                    "flex-1 rounded-md border px-3 py-2 text-sm tabular-nums transition-colors",
-                    winningScore === score
-                      ? "border-primary bg-primary/15 font-medium text-foreground"
-                      : "text-muted-foreground hover:bg-accent",
-                  )}
-                >
-                  {score}
-                </motion.button>
+                  <Avatar index={p.avatar} size={22} />
+                  {p.name}
+                  {p.peerId === game.you?.peerId && <span className="text-xs text-muted-foreground">(você)</span>}
+                </li>
               ))}
-            </div>
-          </div>
+            </ul>
+          </CardContent>
+        </div>
 
-          <motion.div whileHover={{ scale: canStart ? 1.01 : 1 }} whileTap={{ scale: canStart ? 0.98 : 1 }}>
-            <Button type="button" className="w-full" disabled={!canStart || starting} onClick={start}>
-              <AnimatedIcon animation={starting ? loadingIcon : checkmarkIcon} autoplay={starting} loop={starting} />
-              Começar o jogo
-            </Button>
-          </motion.div>
-        </CardContent>
+        <div>
+          <CardHeader>
+            <CardTitle className="text-base">Decks</CardTitle>
+            <CardDescription>As cartas de todos os decks marcados são embaralhadas juntas.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {decks.map((deck) => {
+                const on = selected.has(deck.id);
+                return (
+                  <motion.button
+                    key={deck.id}
+                    type="button"
+                    title={deck.description}
+                    onClick={() => toggleDeck(deck.id)}
+                    whileTap={{ scale: 0.94 }}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full border-2 px-3 py-1.5 text-sm transition-colors",
+                      on ? "border-primary bg-primary/15 text-foreground" : "border-border text-muted-foreground hover:bg-accent",
+                    )}
+                  >
+                    {on ? <Check className="size-3.5 text-primary" /> : <span className="size-3.5" />}
+                    <span>
+                      {deck.emoji} {deck.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{deck.whites + deck.blacks}</span>
+                  </motion.button>
+                );
+              })}
+              {customDecks.map((deck) => {
+                const on = selected.has(deck.id);
+                return (
+                  <motion.button
+                    key={deck.id}
+                    type="button"
+                    title={deck.description}
+                    onClick={() => toggleDeck(deck.id)}
+                    whileTap={{ scale: 0.94 }}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full border-2 px-3 py-1.5 text-sm transition-colors",
+                      on ? "border-primary bg-primary/15 text-foreground" : "border-border text-muted-foreground hover:bg-accent",
+                    )}
+                  >
+                    {on ? <Check className="size-3.5 text-primary" /> : <span className="size-3.5" />}
+                    <span>
+                      {deck.emoji} {deck.name}
+                    </span>
+                    <Sparkles className="size-3 shrink-0 text-primary" />
+                    <span className="text-xs text-muted-foreground">{deck.whites + deck.blacks}</span>
+                  </motion.button>
+                );
+              })}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Pontos para ganhar</Label>
+              <div className="flex gap-2">
+                {[3, 5, 8, 10].map((score) => (
+                  <motion.button
+                    key={score}
+                    type="button"
+                    onClick={() => {
+                      setWinningScore(score);
+                      setWinningScorePicked(true);
+                    }}
+                    whileTap={{ scale: 0.94 }}
+                    className={cn(
+                      "flex-1 rounded-xl border-2 px-3 py-2 font-display text-sm font-semibold tabular-nums transition-colors",
+                      winningScore === score
+                        ? "border-primary bg-primary/15 text-foreground"
+                        : "border-border text-muted-foreground hover:bg-accent",
+                    )}
+                  >
+                    {score}
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+
+            <motion.div whileHover={{ scale: canStart ? 1.01 : 1 }} whileTap={{ scale: canStart ? 0.98 : 1 }}>
+              <Button type="button" className="w-full" disabled={!canStart || starting} onClick={start}>
+                <AnimatedIcon animation={starting ? loadingIcon : checkmarkIcon} autoplay={starting} loop={starting} />
+                Começar o jogo
+              </Button>
+            </motion.div>
+          </CardContent>
+        </div>
       </Card>
     </div>
   );
@@ -723,15 +728,21 @@ function BlackCardBar({ game }: { game: ReturnType<typeof useGame> }) {
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
-      className="flex items-start justify-between gap-3 rounded-xl border bg-card px-4 py-3"
+      className="flex items-start justify-between gap-3 rounded-2xl border-2 border-white/10 bg-zinc-900 px-4 py-3 text-white shadow-md"
     >
       <div className="min-w-0">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">Rodada {state.round}</p>
-        <BlackText text={state.blackCard.text} />
+        <p className="text-xs font-display font-semibold uppercase tracking-wide text-white/50">Rodada {state.round}</p>
+        <BlackText text={state.blackCard.text} dark />
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {amCzar && (state.phase === "playing" || state.phase === "judging") && (
-          <Button variant="ghost" size="sm" onClick={game.skipRound} title="Pular esta rodada (ninguém pontua)">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={game.skipRound}
+            title="Pular esta rodada (ninguém pontua)"
+            className="text-white/70 hover:bg-white/10 hover:text-white"
+          >
             <SkipForward className="size-4" />
             <span className="hidden sm:inline">Pular</span>
           </Button>
@@ -741,13 +752,21 @@ function BlackCardBar({ game }: { game: ReturnType<typeof useGame> }) {
   );
 }
 
-function BlackText({ text }: { text: string }) {
-  // Underscores render as proper blanks, not raw characters.
+function BlackText({ text, dark }: { text: string; dark?: boolean }) {
+  // Underscores render as proper blanks, not raw characters. `dark`
+  // is for the actual black card (always-white text on bg-zinc-900,
+  // so the blank needs a fixed white underline); everywhere else this
+  // sits on a normal themed surface, where the underline should track
+  // the theme's own foreground instead of going invisible in light mode.
   return (
     <p className="mt-0.5 text-lg font-semibold leading-snug">
       {text.split(/(_{1,})/).map((part, i) =>
         part.startsWith("_") ? (
-          <span key={i} className="mx-1 inline-block w-16 border-b-2 border-foreground/60" aria-label="espaço em branco" />
+          <span
+            key={i}
+            className={cn("mx-1 inline-block w-16 border-b-2", dark ? "border-white/50" : "border-foreground/60")}
+            aria-label="espaço em branco"
+          />
         ) : (
           <span key={i}>{part}</span>
         ),

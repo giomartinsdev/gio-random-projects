@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Check, Sparkles, Users, Wand2 } from "lucide-react";
 import { api, peekPresetDeck, type CustomDeckInfo, type DeckInfo, type RoomSummary } from "@/lib/api";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
+import { Avatar } from "@/components/ui/lottie-avatar";
 import { arrowRightCircleIcon, loadingIcon, radioButtonIcon } from "@/lib/lottie-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -157,14 +158,14 @@ export default function Home() {
   return (
     <div className="relative flex min-h-dvh flex-col items-center justify-center px-4 py-10">
       <ThemeToggle className="absolute right-3 top-3" />
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-3xl">
         <motion.div
           className="mb-8 text-center"
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: "easeOut" }}
         >
-          <h1 className="text-4xl font-bold tracking-tight">
+          <h1 className="font-display text-4xl font-bold tracking-tight">
             cch<span className="text-muted-foreground">.giomartins.dev</span>
           </h1>
           <p className="mt-2 text-muted-foreground">
@@ -202,7 +203,7 @@ export default function Home() {
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => pickRoom(room.roomId)}
-                        className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
+                        className="flex w-full items-center justify-between rounded-xl border-2 px-3 py-2 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent"
                       >
                         <span className="font-mono tracking-wide">{room.roomId}</span>
                         <span className="inline-flex items-center gap-2 text-muted-foreground">
@@ -224,12 +225,33 @@ export default function Home() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
         >
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-xl">Começar</CardTitle>
-              <CardDescription>Crie uma sala, ou entre numa que te passaram.</CardDescription>
-            </CardHeader>
-            <CardContent>
+          <Card className="flex overflow-hidden">
+            {/* The cast leaning against the wall of the card -- bonequinhos
+                waiting for the room to fill, the same characters that'll
+                stand beside everyone's cards once a round starts. A side
+                rail reads as "these are the players" without competing
+                with the form for the eye the way a hero banner would. */}
+            <div className="hidden w-20 shrink-0 flex-col items-center justify-center gap-5 border-r-2 bg-secondary/40 py-6 sm:flex">
+              {/* gato/robô/alien -- ears, antenna, antennae give them a
+                  silhouette that still reads at a glance this small;
+                  the plain round bodies (blob/tangerina/fantasma) turn
+                  into an unreadable blob at this size. */}
+              {[3, 4, 5].map((i) => (
+                <motion.div
+                  key={i}
+                  animate={{ y: [0, -6, 0] }}
+                  transition={{ duration: 2 + i * 0.2, repeat: Infinity, ease: "easeInOut", delay: i * 0.25 }}
+                >
+                  <Avatar index={i} size={48} />
+                </motion.div>
+              ))}
+            </div>
+            <div className="min-w-0 flex-1">
+              <CardHeader>
+                <CardTitle className="text-xl">Começar</CardTitle>
+                <CardDescription>Crie uma sala, ou entre numa que te passaram.</CardDescription>
+              </CardHeader>
+              <CardContent>
               <div className="mb-4 space-y-2">
                 <Label htmlFor="display-name">Seu nome (opcional)</Label>
                 <Input
@@ -254,22 +276,52 @@ export default function Home() {
                 </TabsList>
 
                 <TabsContent value="create">
-                  <form onSubmit={handleCreate} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="create-password">Senha da sala</Label>
-                      <Input
-                        id="create-password"
-                        type="password"
-                        autoComplete="new-password"
-                        placeholder="mínimo 4 caracteres"
-                        value={createPassword}
-                        onChange={(e) => setCreatePassword(e.target.value)}
-                        required
-                        minLength={4}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Quem entrar vai precisar dela junto com o código da sala.
-                      </p>
+                  <form onSubmit={handleCreate} className="grid gap-6 sm:grid-cols-2">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="create-password">Senha da sala</Label>
+                        <Input
+                          id="create-password"
+                          type="password"
+                          autoComplete="new-password"
+                          placeholder="mínimo 4 caracteres"
+                          value={createPassword}
+                          onChange={(e) => setCreatePassword(e.target.value)}
+                          required
+                          minLength={4}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Quem entrar vai precisar dela junto com o código da sala.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Pontos para ganhar</Label>
+                        <div className="flex gap-2">
+                          {WINNING_SCORES.map((score) => (
+                            <button
+                              key={score}
+                              type="button"
+                              onClick={() => setWinningScore(score)}
+                              className={cn(
+                                "flex-1 rounded-xl border-2 px-3 py-2 font-display text-sm font-semibold tabular-nums transition-colors",
+                                winningScore === score
+                                  ? "border-primary bg-primary/15 text-foreground"
+                                  : "border-border text-muted-foreground hover:bg-accent",
+                              )}
+                            >
+                              {score}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} className="hidden sm:block">
+                        <Button type="submit" className="w-full" disabled={creating}>
+                          <AnimatedIcon animation={creating ? loadingIcon : arrowRightCircleIcon} autoplay={creating} loop={creating} />
+                          Criar sala
+                        </Button>
+                      </motion.div>
                     </div>
 
                     <div className="space-y-2">
@@ -282,7 +334,7 @@ export default function Home() {
                           <Wand2 className="size-3" /> criar novo com IA
                         </Link>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="grid max-h-64 gap-2 overflow-y-auto pr-1">
                         {decks.map((deck) => (
                           <DeckChip
                             key={deck.id}
@@ -306,28 +358,7 @@ export default function Home() {
                       </p>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label>Pontos para ganhar</Label>
-                      <div className="flex gap-2">
-                        {WINNING_SCORES.map((score) => (
-                          <button
-                            key={score}
-                            type="button"
-                            onClick={() => setWinningScore(score)}
-                            className={cn(
-                              "flex-1 rounded-md border px-3 py-2 text-sm tabular-nums transition-colors",
-                              winningScore === score
-                                ? "border-primary bg-primary/15 font-medium text-foreground"
-                                : "text-muted-foreground hover:bg-accent",
-                            )}
-                          >
-                            {score}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}>
+                    <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} className="sm:hidden">
                       <Button type="submit" className="w-full" disabled={creating}>
                         <AnimatedIcon animation={creating ? loadingIcon : arrowRightCircleIcon} autoplay={creating} loop={creating} />
                         Criar sala
@@ -391,7 +422,8 @@ export default function Home() {
                   </motion.div>
                 )}
               </AnimatePresence>
-            </CardContent>
+              </CardContent>
+            </div>
           </Card>
         </motion.div>
 
@@ -402,7 +434,7 @@ export default function Home() {
           className="mt-4"
         >
           <Link to="/forja" className="group block">
-            <div className="flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:bg-accent">
+            <div className="flex items-center gap-3 rounded-2xl border-2 border-accent2/30 bg-accent2/10 px-4 py-3 transition-colors hover:border-accent2/60 hover:bg-accent2/15">
               <motion.span
                 className="text-2xl"
                 animate={{ rotate: [0, -10, 10, 0] }}
@@ -411,12 +443,12 @@ export default function Home() {
                 ✨
               </motion.span>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium">Forja de decks</div>
+                <div className="font-display font-semibold">Forja de decks</div>
                 <div className="text-xs text-muted-foreground">
                   Gere um deck novo com IA sobre qualquer tema, refine à mão e publique.
                 </div>
               </div>
-              <Sparkles className="size-4 shrink-0 text-primary transition-transform group-hover:scale-110" />
+              <Sparkles className="size-4 shrink-0 text-accent2 transition-transform group-hover:scale-110" />
             </div>
           </Link>
         </motion.div>
@@ -459,18 +491,31 @@ function DeckChip({
       type="button"
       title={deck.description}
       onClick={onToggle}
-      whileTap={{ scale: 0.94 }}
+      whileTap={{ scale: 0.96 }}
+      whileHover={{ y: -2 }}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
-        selected ? "border-primary bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-accent",
+        "relative flex items-center gap-2.5 rounded-2xl border-2 px-3 py-2.5 text-left text-sm transition-colors",
+        selected
+          ? "border-primary bg-primary/10 text-foreground"
+          : "border-border text-muted-foreground hover:border-primary/40 hover:bg-accent",
       )}
     >
-      {selected ? <Check className="size-3.5 text-primary" /> : <span className="size-3.5" />}
-      <span>
-        {deck.emoji} {deck.name}
+      <span className="text-2xl leading-none">{deck.emoji}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1 truncate font-display font-semibold text-foreground">
+          {deck.name}
+          {custom && <Sparkles className="size-3 shrink-0 text-primary" />}
+        </span>
+        <span className="text-xs text-muted-foreground">{deck.whites + deck.blacks} cartas</span>
       </span>
-      {custom && <Sparkles className="size-3 shrink-0 text-primary" />}
-      <span className="text-xs text-muted-foreground">{deck.whites + deck.blacks}</span>
+      <span
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+          selected ? "border-primary bg-primary text-primary-foreground" : "border-border",
+        )}
+      >
+        {selected && <Check className="size-3" strokeWidth={3} />}
+      </span>
     </motion.button>
   );
 }

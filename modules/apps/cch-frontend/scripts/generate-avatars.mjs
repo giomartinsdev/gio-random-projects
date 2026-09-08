@@ -109,15 +109,23 @@ const happyEye = (x1, x2, y, w) =>
   ]);
 
 // Respiração da camada inteira: 3 keyframes com tangentes espaciais
-// (to/ti) para uma senoide macia em vez de um vai-e-vem mecânico.
+// (to/ti) para uma senoide macia em vez de um vai-e-vem mecânico. The
+// layer's anchor is (0,0) (see layer(), below) and every shape is
+// already drawn in absolute canvas coordinates -- so this position
+// must baseline at (0,0) too. A (100,100) baseline here (this
+// function's original bug) doesn't nudge the character, it TRANSLATES
+// the whole body by (100,100) on top of its own already-absolute
+// coordinates, shoving nearly the entire character outside the 200x200
+// clip and leaving only a stray corner sliver on screen -- which is
+// exactly the "bugged icon" every avatar rendered as until this fix.
 const bobKeyframes = (amp, midT) => {
   const ease = { i: { x: [0.45, 0.45], y: [1, 1] }, o: { x: [0.55, 0.55], y: [0, 0] } };
   return {
     a: 1,
     k: [
-      { t: 0, s: [100, 100 + amp, 0], to: [0, -amp * 0.55, 0], ti: [0, amp * 0.55, 0], ...ease },
-      { t: midT, s: [100, 100 - amp, 0], to: [0, amp * 0.55, 0], ti: [0, -amp * 0.55, 0], ...ease },
-      { t: 180, s: [100, 100 + amp, 0] },
+      { t: 0, s: [0, amp, 0], to: [0, -amp * 0.55, 0], ti: [0, amp * 0.55, 0], ...ease },
+      { t: midT, s: [0, -amp, 0], to: [0, amp * 0.55, 0], ti: [0, -amp * 0.55, 0], ...ease },
+      { t: 180, s: [0, amp, 0] },
     ],
   };
 };
