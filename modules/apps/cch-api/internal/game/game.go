@@ -205,22 +205,42 @@ func (g *Game) Join(playerID, name string) {
 	g.dealIfHandlessLocked(playerID)
 }
 
-// nextAvatarLocked hands out the lowest avatar index nobody in the
-// room holds -- disconnected players included, so a resume reconnect
-// (and the scoreboard chip that outlived them) keeps the same
-// character. The client renders `avatar % len(roster)`, so indices may
-// wrap on absurdly churny rooms; within any normal table everyone gets
-// a distinct bonequinho. Caller must hold g.mu.
+// avatarRosterSize must match the client's AVATARS array (see
+// cch-frontend's lib/avatars.ts) -- it's how many distinct bonequinhos
+// exist to hand out.
+const avatarRosterSize = 18
+
+// nextAvatarLocked hands out a random avatar index nobody currently in
+// the room holds -- disconnected players included, so a resume
+// reconnect (and the scoreboard chip that outlived them) keeps the
+// same character. Random, not lowest-first: with the roster this size
+// a fixed order would mean the first three people through the door
+// always see the same three faces. The client renders
+// `avatar % len(roster)`, so indices still wrap gracefully if a room
+// somehow outgrows the whole cast. Caller must hold g.mu.
 func (g *Game) nextAvatarLocked() int {
 	used := make(map[int]bool, len(g.players))
 	for _, p := range g.players {
 		used[p.avatar] = true
 	}
-	for i := 0; ; i++ {
+	candidates := make([]int, 0, avatarRosterSize)
+	for i := 0; i < avatarRosterSize; i++ {
 		if !used[i] {
-			return i
+			candidates = append(candidates, i)
 		}
 	}
+	if len(candidates) == 0 {
+		// The whole cast is already on stage (a room bigger than the
+		// roster) -- share one at random rather than refuse to seat
+		// anyone; avatars.ts's wraparound is exactly for this.
+		for i := 0; i < avatarRosterSize; i++ {
+			candidates = append(candidates, i)
+		}
+	}
+	if shuffled, err := decks.Shuffle(candidates); err == nil && len(shuffled) > 0 {
+		return shuffled[0]
+	}
+	return candidates[0]
 }
 
 // RenamePlayer updates a player's display name mid-game. The next
