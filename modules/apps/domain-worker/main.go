@@ -26,11 +26,15 @@ import (
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
+	appcchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchdeck"
+	appcchroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchroom"
 	appdeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/deal"
 	appmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/message"
 	apppost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/post"
 	approom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/room"
 	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/user"
+	domaincchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchdeck"
+	domaincchroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchroom"
 	domaindeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/deal"
 	domainmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/message"
 	domainpost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/post"
@@ -112,6 +116,14 @@ func main() {
 	dealService := appdeal.NewService(dealRepo)
 	dealHandler := appdeal.NewCommandHandler(dealService)
 
+	cchRoomRepo := postgres.NewCCHRoomRepository(pool)
+	cchRoomService := appcchroom.NewService(cchRoomRepo)
+	cchRoomHandler := appcchroom.NewCommandHandler(cchRoomService)
+
+	cchDeckRepo := postgres.NewCCHDeckRepository(pool)
+	cchDeckService := appcchdeck.NewService(cchDeckRepo)
+	cchDeckHandler := appcchdeck.NewCommandHandler(cchDeckService)
+
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info("relay started")
@@ -131,7 +143,7 @@ func main() {
 				log.Error("fetch command error", "error", err)
 				continue
 			}
-			process(ctx, log, userHandler, postHandler, roomHandler, messageHandler, dealHandler, auditRepo, eventBus, cmd)
+			process(ctx, log, userHandler, postHandler, roomHandler, messageHandler, dealHandler, cchRoomHandler, cchDeckHandler, auditRepo, eventBus, cmd)
 		}
 	}()
 
@@ -150,7 +162,7 @@ func main() {
 // resulting domain event. One shared command queue serves every
 // aggregate; this is the one place that knows how to fan a Command
 // back out to its owning handler.
-func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, dealHandler *appdeal.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
+func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, dealHandler *appdeal.CommandHandler, cchRoomHandler *appcchroom.CommandHandler, cchDeckHandler *appcchdeck.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
 	// One span per command: the handler, the audit write and the event
 	// publish below are the whole story of that write, and the
 	// trace_id stamped into the log lines ties every one of them to it.
@@ -215,6 +227,22 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 		if d.Source != "" {
 			id = d.EntityID()
 			telemetry.RecordDealUpsert(d.Source, map[bool]string{true: "inserted", false: "updated"}[devt != nil])
+		}
+	case strings.HasPrefix(string(cmd.Action), "cchroom."):
+		entityType = "cchroom"
+		var cevt domaincchroom.Event
+		cevt, err = cchRoomHandler.Handle(ctx, cmd)
+		if cevt != nil {
+			evt = cevt
+			id = cchRoomEntityID(cevt)
+		}
+	case strings.HasPrefix(string(cmd.Action), "cchdeck."):
+		entityType = "cchdeck"
+		var cevt domaincchdeck.Event
+		cevt, err = cchDeckHandler.Handle(ctx, cmd)
+		if cevt != nil {
+			evt = cevt
+			id = cchDeckEntityID(cevt)
 		}
 	default:
 		err = fmt.Errorf("unknown action: %q", cmd.Action)
@@ -299,6 +327,28 @@ func messageEntityID(evt domainmessage.Event) string {
 	switch e := evt.(type) {
 	case domainmessage.Created:
 		return e.MessageID
+	default:
+		return ""
+	}
+}
+
+func cchRoomEntityID(evt domaincchroom.Event) string {
+	switch e := evt.(type) {
+	case domaincchroom.Created:
+		return e.RoomID
+	case domaincchroom.Deleted:
+		return e.RoomID
+	default:
+		return ""
+	}
+}
+
+func cchDeckEntityID(evt domaincchdeck.Event) string {
+	switch e := evt.(type) {
+	case domaincchdeck.Upserted:
+		return e.DeckID
+	case domaincchdeck.Played:
+		return e.DeckID
 	default:
 		return ""
 	}

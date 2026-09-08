@@ -61,8 +61,17 @@ resource "random_id" "deals_domain_key" {
   byte_length = 24
 }
 
+# cch-api's own key, same reasoning as post_api_domain_key -- its rooms
+# and decks go through domain-api's command pipeline (cch_rooms /
+# cch_custom_decks), so the audit log needs a caller identity for it.
+# No Vaultwarden item: terraform wires the key straight into the
+# container's env, same as the scrapers' key.
+resource "random_id" "cch_api_domain_key" {
+  byte_length = 24
+}
+
 locals {
-  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers"
+  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers,${random_id.cch_api_domain_key.hex}:cch-api"
 }
 
 resource "random_password" "vaultwarden_admin_token" {

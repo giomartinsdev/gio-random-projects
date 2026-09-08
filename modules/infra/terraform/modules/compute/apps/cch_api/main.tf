@@ -1,11 +1,14 @@
 # cch-api: the game backend for cch-frontend (cch.giomartins.dev).
-# Standalone like tela-api: no database, no shared auth, no domain-api
-# -- room state is in memory (the registry of room codes/passwords on
-# disk), and access control is the room password itself. Host
-# networking for the same reason the other websocket backends here use
-# it: nothing to advertise (unlike tela's SFU), but it keeps the
-# container's port reachable by the host-network ingress without a
-# published-port dance, matching the pattern tela-api already set.
+# Standalone like tela-api in that it has no database driver of its own
+# and no shared auth -- access control is the room password itself --
+# but its durable state (room registry, deck marketplace) lives in
+# domain-api's cch_rooms/cch_custom_decks tables via the command
+# pipeline, not in local files. Host networking for the same reason the
+# other websocket backends here use it: nothing to advertise (unlike
+# tela's SFU), but it keeps the container's port reachable by the
+# host-network ingress without a published-port dance, matching the
+# pattern tela-api already set -- and it's what makes the loopback
+# DOMAIN_API_URL work.
 locals {
   watchtower_label = var.watchtower_enabled ? [{
     label = "com.centurylinklabs.watchtower.enable"
@@ -46,6 +49,16 @@ resource "docker_container" "cch_api" {
     # (internal/ai picks a small one); override with CCH_AI_MODEL if a
     # specific one is wanted.
     "CCH_AI_BASE_URL=http://127.0.0.1:20128/v1",
+    # Persistence: rooms and decks go through domain-api's command
+    # pipeline (cch_rooms / cch_custom_decks) instead of the JSON files
+    # this volume used to hold. Same loopback reasoning as
+    # CCH_AI_BASE_URL: host-net container, domain-api publishes
+    # 127.0.0.1:8000. Structural writes ride its POST /sync (the
+    # documented sync-confirmation exception); play counts the normal
+    # async 202. STATE_FILE stays only as the one-time import source
+    # for the pre-cutover JSON -- see modules/apps/cch-api/import_legacy.go.
+    "DOMAIN_API_URL=${var.domain_api_url}",
+    "DOMAIN_API_KEY=${var.domain_api_key}",
   ]
 
   # Rooms live in memory, but the room registry itself (code, password

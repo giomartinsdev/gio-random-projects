@@ -1,13 +1,12 @@
 // Package rooms holds every bit of live state this app has: the room
 // registry (codes, password hashes, resume keys) and who is connected
-// to each room right now. The registry itself persists to disk when
-// the caller configures a path -- see store.go -- so a redeploy
-// doesn't end sessions in progress. Who is connected is never
-// persisted: those are live WebSockets that die with the process
-// anyway, and every client reconnects and re-announces itself. The
-// game in progress (scores, hands, the round) is likewise in-memory
-// only: a restart puts rooms back in the lobby, which for a party
-// game is a feature, not a loss.
+// to each room right now. The registry itself persists through a
+// Persister (see store.go) so a redeploy doesn't end sessions in
+// progress. Who is connected is never persisted: those are live
+// WebSockets that die with the process anyway, and every client
+// reconnects and re-announces itself. The game in progress (scores,
+// hands, the round) is likewise in-memory only: a restart puts rooms
+// back in the lobby, which for a party game is a feature, not a loss.
 //
 // The rules engine itself lives in internal/game and knows nothing
 // about rooms or WebSockets; this package wires player ids (peer ids)
@@ -92,13 +91,13 @@ type Registry struct {
 	mu    sync.Mutex
 	rooms map[string]*Room
 	now   func() time.Time
-	// Where rooms are persisted. Empty means memory only -- which is
-	// what the tests use, and what a deploy without a volume gets.
-	path string
+	// The registry's durable home. Nil means memory only -- which is
+	// what the tests use, and what local dev gets.
+	persist Persister
 }
 
-func NewRegistry(path string) *Registry {
-	return &Registry{rooms: make(map[string]*Room), now: time.Now, path: path}
+func NewRegistry(persist Persister) *Registry {
+	return &Registry{rooms: make(map[string]*Room), now: time.Now, persist: persist}
 }
 
 // Create makes a room whose password is `password`. The password is
@@ -156,7 +155,10 @@ func (r *Registry) Create(password string) (*Room, error) {
 	r.rooms[id] = room
 	r.mu.Unlock()
 
-	r.persist()
+	// Persisted outside the lock, and its error swallowed inside
+	// persistOne: a slow or down domain-api must not stall this join,
+	// and the room already works in memory.
+	r.persistOne(StoredRoom{ID: id, CreatedAt: now, Salt: salt, Hash: hash, ResumeKey: resumeKey})
 	return room, nil
 }
 
@@ -173,9 +175,10 @@ func (r *Registry) Get(id string) (*Room, error) {
 // Delete removes a room after verifying the password. Only the room
 // creator (who knows the password) can delete it.
 func (r *Registry) Delete(id, password string) error {
-	// Same dance as Create: persist() takes r.mu itself, so the
-	// registry lock has to be released before the file write. Holding
-	// it across persist() deadlocks the whole registry.
+	// Same dance as Create: the persister is slow (a synchronous HTTP
+	// round-trip), so the registry lock has to be released before it
+	// runs. Holding it across the persist deadlocked the whole registry
+	// once already -- see TestDeleteDoesNotDeadlock.
 	r.mu.Lock()
 	room, ok := r.rooms[id]
 	if !ok {
@@ -189,7 +192,7 @@ func (r *Registry) Delete(id, password string) error {
 	delete(r.rooms, id)
 	r.mu.Unlock()
 
-	r.persist()
+	r.deletePersisted(id)
 	return nil
 }
 
@@ -198,7 +201,7 @@ func (r *Registry) Delete(id, password string) error {
 // StartJanitor.
 func (r *Registry) Sweep() {
 	now := r.now()
-	removed := false
+	var expiredIDs []string
 	r.mu.Lock()
 	for id, room := range r.rooms {
 		room.mu.Lock()
@@ -209,13 +212,16 @@ func (r *Registry) Sweep() {
 		room.mu.Unlock()
 		if expired {
 			delete(r.rooms, id)
-			removed = true
+			expiredIDs = append(expiredIDs, id)
 		}
 	}
 	r.mu.Unlock()
 
-	if removed {
-		r.persist()
+	// One durable delete per expired room, lock released. Sweeps come
+	// in bursts after idle periods; each delete is its own command so
+	// one slow round-trip doesn't block the rest of the sweep.
+	for _, id := range expiredIDs {
+		r.deletePersisted(id)
 	}
 }
 

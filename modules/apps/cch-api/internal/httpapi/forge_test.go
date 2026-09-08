@@ -18,7 +18,7 @@ import (
 func forgeServer(t *testing.T, providerURL string) *Server {
 	t.Helper()
 	aiClient := ai.New(providerURL, "", []string{"test/model"})
-	s := New(rooms.NewRegistry(""), []string{"https://cch.test"}, aiClient, customdecks.New(""))
+	s := New(rooms.NewRegistry(nil), []string{"https://cch.test"}, aiClient, customdecks.New(nil))
 	return s
 }
 
@@ -40,7 +40,7 @@ func getJSON(t *testing.T, s *Server, path string) *httptest.ResponseRecorder {
 }
 
 func TestGenerateEndpointDisabled(t *testing.T) {
-	s := New(rooms.NewRegistry(""), nil, nil, customdecks.New(""))
+	s := New(rooms.NewRegistry(nil), nil, nil, customdecks.New(nil))
 	res := postJSON(t, s, "/api/decks/generate", `{"parentDeckId":"cah"}`)
 	if res.Code != http.StatusServiceUnavailable {
 		t.Fatalf("disabled forge should 503, got %d", res.Code)
@@ -176,7 +176,7 @@ func TestAIStatusEndpoint(t *testing.T) {
 		t.Fatal("forge with a provider URL should report configured")
 	}
 
-	s2 := New(rooms.NewRegistry(""), nil, nil, customdecks.New(""))
+	s2 := New(rooms.NewRegistry(nil), nil, nil, customdecks.New(nil))
 	res = getJSON(t, s2, "/api/ai/status")
 	if err := json.Unmarshal(res.Body.Bytes(), &status); err != nil {
 		t.Fatalf("bad status: %v", err)

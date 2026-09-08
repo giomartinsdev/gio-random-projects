@@ -66,6 +66,10 @@ func newDealServer(t *testing.T, deals domaindeal.Repository, publisher *spyPubl
 		NewMessageHandlers(nil, publisher, log),
 		NewDealHandlers(deals, publisher, log),
 		NewSSEHandlers(nil, log),
+		// nil repos/handlers: these tests never touch the cch reads or
+		// /sync, they only need the routes registered.
+		NewCCHHandlers(nil, nil, publisher, log),
+		NewSyncHandlers(nil, nil, log),
 		APIKeys{"k1": "test"},
 		NewIPRateLimiter(1000, 1000),
 		log,

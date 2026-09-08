@@ -9,10 +9,12 @@ import (
 
 // NewRouter wires every route. /healthz and the API docs stay public
 // (no key, no rate limit) — everything under /users, /posts, /rooms,
-// /messages, and /deals requires the apiKey security scheme (see
-// openapi.yaml and Secure in middleware.go). /posts/id/{id} is not for
-// public browsing -- see PostHandlers.GetPostByID's own doc comment.
-func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandlers, dl *DealHandlers, sse *SSEHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
+// /messages, /deals, /cch, and /sync requires the apiKey security
+// scheme (see openapi.yaml and Secure in middleware.go). /posts/id/{id}
+// is not for public browsing -- see PostHandlers.GetPostByID's own doc
+// comment. /sync is the synchronous-write exception -- see
+// SyncHandlers.Sync's doc comment before reaching for it.
+func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandlers, dl *DealHandlers, sse *SSEHandlers, cch *CCHHandlers, sync *SyncHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Get("/healthz", h.Healthz)
@@ -50,6 +52,14 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Post("/deals", dl.CreateDeal)
 		r.Get("/deals", dl.ListDeals)
 		r.Get("/deals/{source}/{sourceDealID}", dl.GetDeal)
+
+		// cch-api's boot load + its write doors: structural writes go
+		// through /sync (the documented exception), the cosmetic play
+		// count through the normal async 202 pattern.
+		r.Get("/cch/rooms", cch.ListCCHRooms)
+		r.Get("/cch/decks", cch.ListCCHDecks)
+		r.Post("/cch/decks/{id}/plays", cch.PlayCCHDeck)
+		r.Post("/sync", sync.Sync)
 	})
 
 	return r

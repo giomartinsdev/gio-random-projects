@@ -245,6 +245,12 @@ module "compute_apps_cch_api" {
 
   registry_host    = var.registry_host
   frontend_origins = ["https://cch.giomartins.dev"]
+  domain_api_key   = random_id.cch_api_domain_key.hex
+
+  # The client's first calls (boot load, legacy JSON import) need
+  # domain-api up -- same ordering guarantee the other domain-api
+  # consumers declare.
+  depends_on = [module.compute_apps_domain_api]
 }
 
 module "compute_services_registry" {

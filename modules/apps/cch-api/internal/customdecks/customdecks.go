@@ -1,9 +1,10 @@
 // Package customdecks is the deck marketplace: decks forged with AI
 // (or by hand), refined and published, then selectable in any room like
-// a built-in deck. Persistence is a single JSON file on the same volume
-// as the room registry -- a marketplace is a few hundred small decks at
-// most, and rewriting it whole on the rare write is the same trade the
-// rooms store already made (see internal/rooms/store.go).
+// a built-in deck. Persistence goes through a Backend -- domain-api's
+// cch_custom_decks table in production (see backend_domain.go), nothing
+// at all in dev and tests. The marketplace is a few hundred small
+// decks at most and lives entirely in memory after Load, same as the
+// room registry.
 //
 // The interesting move is that a published deck registers itself in the
 // decks package at boot (Load) and at publish time, so internal/game's
@@ -12,14 +13,12 @@
 package customdecks
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -115,43 +114,49 @@ func (d Deck) Info() Info {
 	}
 }
 
+// Backend is the marketplace's durable slice: load everything at boot,
+// save one deck on publish, bump one play count per game started.
+//
+// Implementations are allowed to be slow (Save is a synchronous HTTP
+// round-trip through domain-api's /sync route), which is why Publish
+// runs its Save with the store lock released -- the b433528 deadlock
+// contract, marketplace edition.
+type Backend interface {
+	Load(ctx context.Context) ([]Deck, error)
+	Save(ctx context.Context, deck Deck) error
+	// PlayCounted is the fire-and-forget bump; it never blocks a game
+	// start and its errors are only logged.
+	PlayCounted(ctx context.Context, id string) error
+}
+
 // Store holds every published deck. Safe for concurrent use; nil-safe
 // handlers check via Enabled.
 type Store struct {
-	mu    sync.RWMutex
-	path  string
-	decks map[string]*Deck
+	mu      sync.RWMutex
+	backend Backend
+	decks   map[string]*Deck
 }
 
-// New builds a store. An empty path keeps everything in memory (local
-// dev without the state volume).
-func New(path string) *Store {
-	return &Store{path: path, decks: map[string]*Deck{}}
+// New builds a store. A nil backend keeps everything in memory (local
+// dev and tests -- decks just don't survive a restart, same as the old
+// empty-state-path behavior).
+func New(backend Backend) *Store {
+	return &Store{backend: backend, decks: map[string]*Deck{}}
 }
 
-// Enabled reports whether the store has a persistence path. Handlers
-// still work without it (decks just don't survive a restart).
-func (s *Store) Enabled() bool { return s != nil && s.path != "" }
-
-// Load reads the marketplace file and registers every deck in it into
-// the decks package so games can deal from them. A deck that fails
-// validation (a hand-edited file, an older schema) is skipped with a
-// log line -- one bad deck must not take the marketplace down.
+// Load pulls the whole marketplace from the durable store and
+// registers every deck into the decks package so games can deal from
+// them. A deck that fails validation (an older schema, a hand-edited
+// row) is skipped with a log line -- one bad deck must not take the
+// marketplace down.
 func (s *Store) Load() error {
-	if s.path == "" {
+	if s.backend == nil {
 		return nil
 	}
-	data, err := os.ReadFile(s.path)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	stored, err := s.backend.Load(ctx)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil // first boot on a fresh volume
-		}
-		return err
-	}
-	var stored []*Deck
-	if err := json.Unmarshal(data, &stored); err != nil {
-		// Corrupt marketplace is bad; refusing to boot is worse. Same
-		// trade as the rooms store.
 		return err
 	}
 
@@ -167,7 +172,8 @@ func (s *Store) Load() error {
 			continue
 		}
 		decks.Register(registered)
-		s.decks[d.ID] = d
+		deck := d
+		s.decks[d.ID] = &deck
 	}
 	return nil
 }
@@ -226,7 +232,13 @@ func publishable(in *PublishInput) string {
 	return ""
 }
 
-// Publish validates, stores, registers and persists a new deck.
+// Publish validates, persists, then stores and registers a new deck.
+// The order is deliberate: the durable write happens BEFORE the deck
+// enters memory, so by the time the Forja hears "publicado" the deck
+// survives a restart — and a failed publish leaves the marketplace
+// exactly as it was instead of listing a deck that will vanish on the
+// next boot. (Strictly better than the old file store, which swallowed
+// write errors and reported success anyway.)
 func (s *Store) Publish(in PublishInput) (Deck, error) {
 	if reason := publishable(&in); reason != "" {
 		return Deck{}, errors.New(reason)
@@ -236,13 +248,13 @@ func (s *Store) Publish(in PublishInput) (Deck, error) {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if len(s.decks) >= maxDecks {
+		s.mu.Unlock()
 		return Deck{}, errors.New("mercado cheio -- apaguem decks velhos primeiro")
 	}
-
 	id, err := randomID()
 	if err != nil {
+		s.mu.Unlock()
 		return Deck{}, err
 	}
 	deck := Deck{
@@ -256,14 +268,28 @@ func (s *Store) Publish(in PublishInput) (Deck, error) {
 		Blacks:      in.Blacks,
 		CreatedAt:   time.Now().UTC(),
 	}
-
 	registered, err := deck.toDecksDeck()
 	if err != nil {
+		s.mu.Unlock()
 		return Deck{}, err
 	}
+	s.mu.Unlock()
+
+	// The Save runs with the lock released: it's a synchronous HTTP
+	// round-trip, and holding s.mu across it would freeze the
+	// marketplace listing, every Get and every IncPlays behind it.
+	if s.backend != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := s.backend.Save(ctx, deck); err != nil {
+			return Deck{}, err
+		}
+	}
+
+	s.mu.Lock()
 	decks.Register(registered)
 	s.decks[deck.ID] = &deck
-	s.persistLocked()
+	s.mu.Unlock()
 	return deck, nil
 }
 
@@ -299,41 +325,30 @@ func (s *Store) Get(id string) (Deck, bool) {
 }
 
 // IncPlays counts a game started with this deck. Called from the
-// WebSocket's game:start, once per custom deck involved.
+// WebSocket's game:start, once per custom deck involved. The in-memory
+// bump is immediate; the durable one is fire-and-forget on the async
+// path — the count is cosmetic and must never delay (let alone fail) a
+// game start, so a lost bump only leaves a badge a digit behind.
 func (s *Store) IncPlays(id string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	d, ok := s.decks[id]
 	if !ok {
+		s.mu.Unlock()
 		return
 	}
 	d.Plays++
-	s.persistLocked()
-}
+	s.mu.Unlock()
 
-// persistLocked rewrites the marketplace file. Caller must hold s.mu.
-// Write-then-rename so a crash mid-write keeps the previous file
-// parseable (same reasoning as the rooms store).
-func (s *Store) persistLocked() {
-	if s.path == "" {
+	if s.backend == nil {
 		return
 	}
-	stored := make([]*Deck, 0, len(s.decks))
-	for _, d := range s.decks {
-		stored = append(stored, d)
-	}
-	data, err := json.Marshal(stored)
-	if err != nil {
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
-		return
-	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return
-	}
-	_ = os.Rename(tmp, s.path)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		if err := s.backend.PlayCounted(ctx, id); err != nil {
+			log.Printf("[cch] contagem de plays de %s não persistida: %v", id, err)
+		}
+	}()
 }
 
 // sanitizeLines trims, drops empties, dedupes and rune-caps a card

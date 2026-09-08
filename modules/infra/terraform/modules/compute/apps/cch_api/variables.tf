@@ -21,3 +21,16 @@ variable "watchtower_enabled" {
   type        = bool
   default     = false
 }
+
+variable "domain_api_url" {
+  description = "Internal URL cch-api's domain-api client talks to. Loopback, not the container DNS name post-api uses: this container is network_mode=host, so its localhost IS the VPS's, and domain-api publishes 127.0.0.1:8000 there (same wiring as CCH_AI_BASE_URL)."
+  type        = string
+  default     = "http://127.0.0.1:8000"
+}
+
+variable "domain_api_key" {
+  description = "cch-api's own entry in domain-api's DOMAIN_API_KEYS (the \"cch-api\" label) -- rooms and decks go through the command pipeline now, so the audit log can name this caller."
+  type        = string
+  sensitive   = true
+  default     = ""
+}

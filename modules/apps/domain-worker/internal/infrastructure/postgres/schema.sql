@@ -22,6 +22,12 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log (entity_type, entity_id);
 
+-- domain-api's POST /sync polls audit_log by command_id until the
+-- worker's row for that command lands (see its sync handler) — every
+-- poll is this exact lookup, and the table grows unbounded, so it
+-- needs an index of its own rather than a seq scan per tick.
+CREATE INDEX IF NOT EXISTS idx_audit_log_command_id ON audit_log (command_id);
+
 -- author_id is an opaque identifier from whatever identity system the
 -- calling client uses (post-api's Better Auth user id today) — not
 -- a foreign key to the `users` table above, a different aggregate
@@ -152,3 +158,36 @@ CREATE TABLE IF NOT EXISTS raw_deals (
 -- already exists in production; IF NOT EXISTS only works because it
 -- matches).
 CREATE INDEX IF NOT EXISTS raw_deals_posted_at_idx ON raw_deals (posted_at DESC NULLS LAST);
+
+-- cch.giomartins.dev's persistent half, reached through domain-api
+-- instead of the two JSON files on its container volume where it used
+-- to live (cch-api/internal/rooms/store.go + internal/customdecks).
+-- Storage-shaped on purpose: the caller owns the real invariants
+-- (scrypt hashing, card bounds, field caps) and validated everything
+-- before sending — these tables only have to hold complete records.
+-- cch_rooms is the room registry: code, creation timestamp, the scrypt
+-- salt+hash pair that IS the room password, and the HMAC key that
+-- keeps resume tokens verifiable across a restart.
+CREATE TABLE IF NOT EXISTS cch_rooms (
+    id         text        PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    salt       bytea       NOT NULL,
+    hash       bytea       NOT NULL,
+    resume_key bytea       NOT NULL
+);
+
+-- cch_custom_decks is the Forja's marketplace: decks forged with AI or
+-- by hand, published, then playable in any room like a built-in deck.
+-- ids carry the caller's "cx" prefix; plays is cosmetic bookkeeping.
+CREATE TABLE IF NOT EXISTS cch_custom_decks (
+    id          text        PRIMARY KEY,
+    name        text        NOT NULL,
+    emoji       text        NOT NULL DEFAULT '',
+    description text        NOT NULL DEFAULT '',
+    parent_id   text        NOT NULL DEFAULT '',
+    author      text        NOT NULL DEFAULT '',
+    whites      text[]      NOT NULL,
+    blacks      text[]      NOT NULL,
+    created_at  timestamptz NOT NULL,
+    plays       integer     NOT NULL DEFAULT 0
+);

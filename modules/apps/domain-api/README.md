@@ -24,6 +24,28 @@ caller gets its own identity so the audit log can name them):
 | users, posts, rooms, messages | `POST/GET/PUT/DELETE` — see `openapi.yaml` |
 | deals | `POST /deals` (ingest, action `deal.upsert`), `GET /deals?source=&limit=`, `GET /deals/{source}/{source_deal_id}` |
 
+## POST /sync — the exception, not the pattern
+
+`POST /sync` takes the same `{"action", "payload"}` envelope, publishes
+it on the **same async broker as everything else**, then holds the HTTP
+request open, polling `audit_log` by `command_id` (the worker writes
+that row unconditionally — success or failure — so the row, not the
+Redis publish, is the proof of "applied") until it lands or 10s pass:
+
+| outcome | response |
+|---|---|
+| applied | `200 {command_id, status: "written", entity_id}` |
+| rejected by the worker (validation, unknown action, ...) | `422 {command_id, status: "failed", error}` |
+| no audit row within 10s | `504 {command_id, status: "queued"}` — **timeout ≠ not written**: the command stays queued behind a busy/down worker and may still land. Only `written` is a confirmation. |
+
+Use the plain `202` path unless your caller literally cannot proceed
+until the write is durable. Today the only such caller is **cch-api**
+(its room registry must survive a restart that happens seconds after a
+room is created); its structural writes (`cchroom.*`, `cchdeck.upsert`)
+go through `/sync`, while its fire-and-forget play counts use the normal
+async `202`. New services: default to async — reach for `/sync` only
+when the caller needs the confirmation, and say so in your own docs.
+
 ## The deals contract specifically
 
 `POST /deals` is the scrapers' ingest path (`deal.upsert`): upsert by

@@ -1,12 +1,58 @@
 package customdecks
 
 import (
+	"context"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/decks"
 )
+
+// fakeBackend is the in-memory stand-in for the durable store: it
+// records saves and play bumps so tests can assert on them, and can be
+// told to fail.
+type fakeBackend struct {
+	mu      sync.Mutex
+	decks   map[string]Deck
+	saves   int
+	played  []string
+	saveErr error
+}
+
+func newFakeBackend() *fakeBackend {
+	return &fakeBackend{decks: map[string]Deck{}}
+}
+
+func (b *fakeBackend) Load(context.Context) ([]Deck, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]Deck, 0, len(b.decks))
+	for _, d := range b.decks {
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+func (b *fakeBackend) Save(_ context.Context, deck Deck) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.saveErr != nil {
+		return b.saveErr
+	}
+	b.saves++
+	b.decks[deck.ID] = deck
+	return nil
+}
+
+func (b *fakeBackend) PlayCounted(_ context.Context, id string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.played = append(b.played, id)
+	return nil
+}
 
 // A publishable deck: 12 whites, 5 blacks, every black with a blank.
 func goodInput(name string) PublishInput {
@@ -19,8 +65,8 @@ func goodInput(name string) PublishInput {
 }
 
 func TestPublishRegistersAndPersists(t *testing.T) {
-	path := t.TempDir() + "/decks.json"
-	s := New(path)
+	backend := newFakeBackend()
+	s := New(backend)
 
 	d, err := s.Publish(goodInput("Deck de Teste"))
 	if err != nil {
@@ -43,8 +89,12 @@ func TestPublishRegistersAndPersists(t *testing.T) {
 		t.Fatalf("unexpected black card id %q", registered.Blacks()[0].ID)
 	}
 
-	// A fresh store from disk sees the same deck, registered too.
-	s2 := New(path)
+	// The durable copy exists, and a fresh store loading from the same
+	// backend sees the deck, registered too.
+	if _, ok := backend.decks[d.ID]; !ok {
+		t.Fatal("deck was not written to the backend before Publish returned")
+	}
+	s2 := New(backend)
 	if err := s2.Load(); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -56,8 +106,30 @@ func TestPublishRegistersAndPersists(t *testing.T) {
 	}
 }
 
+// A failed durable write must leave the marketplace untouched: no
+// memory copy, no registration, error reported to the caller.
+func TestPublishFailsWhenSaveFails(t *testing.T) {
+	backend := newFakeBackend()
+	backend.saveErr = errors.New("domain down")
+	s := New(backend)
+
+	d, err := s.Publish(goodInput("Fantasma"))
+	if err == nil {
+		t.Fatal("Publish should surface the backend error")
+	}
+	if d.ID != "" {
+		t.Fatalf("no deck should be returned on failure, got %+v", d)
+	}
+	if len(s.List()) != 0 {
+		t.Fatal("failed publish left a deck in the marketplace")
+	}
+	if _, ok := decks.Get(strings.TrimPrefix(d.ID, IDPrefix)); ok {
+		t.Fatal("failed publish registered the deck for the game engine")
+	}
+}
+
 func TestPublishValidation(t *testing.T) {
-	s := New("")
+	s := New(nil)
 
 	cases := []struct {
 		name   string
@@ -83,7 +155,7 @@ func TestPublishValidation(t *testing.T) {
 }
 
 func TestPublishSanitizesAndDedupes(t *testing.T) {
-	s := New("")
+	s := New(nil)
 	in := goodInput("  Deck com sujeira  ")
 	// Whitespace-only lines vanish, dups collapse, and the name is
 	// trimmed -- the counts still hold afterwards.
@@ -108,7 +180,8 @@ func TestPublishSanitizesAndDedupes(t *testing.T) {
 }
 
 func TestIncPlaysAndList(t *testing.T) {
-	s := New("")
+	backend := newFakeBackend()
+	s := New(backend)
 	d1, err := s.Publish(goodInput("Um"))
 	if err != nil {
 		t.Fatalf("Publish 1: %v", err)
@@ -142,22 +215,32 @@ func TestIncPlaysAndList(t *testing.T) {
 			t.Fatalf("listing should carry counts, got %+v", info)
 		}
 	}
+
+	// The bumps went out on the async path — both for the real deck,
+	// none for the unknown id.
+	deadline := time.Now().Add(1 * time.Second)
+	for len(backend.played) < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(backend.played) != 2 {
+		t.Fatalf("expected 2 async play bumps, got %v", backend.played)
+	}
 }
 
 func TestLoadSkipsInvalidDeck(t *testing.T) {
-	path := t.TempDir() + "/decks.json"
-	s := New(path)
+	backend := newFakeBackend()
+	// One good deck, one with no blank in its blacks (what an older,
+	// looser validation would have let through). Load must keep the
+	// good one and skip the bad one.
+	s := New(backend)
 	if _, err := s.Publish(goodInput("Bom")); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	// Hand-corrupt the file: one good deck, one with no blank in its
-	// blacks. Load must keep the good one and skip the bad one.
-	s.mu.Lock()
-	s.decks["cx-bad"] = &Deck{ID: "cx-bad", Name: "Ruim", Whites: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}, Blacks: []string{"sem lacuna"}}
-	s.persistLocked()
-	s.mu.Unlock()
+	backend.mu.Lock()
+	backend.decks["cx-bad"] = Deck{ID: "cx-bad", Name: "Ruim", Whites: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}, Blacks: []string{"sem lacuna"}}
+	backend.mu.Unlock()
 
-	s2 := New(path)
+	s2 := New(backend)
 	if err := s2.Load(); err != nil {
 		t.Fatalf("Load: %v", err)
 	}

@@ -24,6 +24,7 @@ import (
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/ai"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/customdecks"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/domainapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/cch-api/internal/rooms"
 )
@@ -38,36 +39,62 @@ func main() {
 	if v := os.Getenv("FRONTEND_ORIGINS"); v != "" {
 		allowedOrigins = strings.Split(v, ",")
 	}
-	// Rooms outlive a restart so a deploy doesn't end sessions that are
-	// in progress. Unset means memory only -- fine for local dev, but in
-	// production this should point at a volume.
+	// Rooms and decks outlive a restart so a deploy doesn't end sessions
+	// that are in progress. The durable home is domain-api (DOMAIN_API_URL
+	// + DOMAIN_API_KEY): rooms go to its cch_rooms table, decks to
+	// cch_custom_decks. Unset means memory only -- fine for local dev.
+	//
+	// STATE_FILE is the legacy JSON store from before the cutover; it's
+	// now only an import source: if the domain table is empty and the
+	// file is there, its contents are pushed through the sync route once
+	// and the file renamed to *.imported (see import_legacy.go).
 	statePath := env("STATE_FILE", "")
+	client := domainapi.NewFromEnv()
+	if client.Enabled() {
+		log.Printf("persistência via domain-api (%s)", os.Getenv("DOMAIN_API_URL"))
+	} else if statePath != "" {
+		log.Printf("STATE_FILE set but DOMAIN_API_URL missing: the legacy JSON store is ignored, rooms are memory-only")
+	}
 
-	registry := rooms.NewRegistry(statePath)
+	// Import BEFORE loading: the load pulls from domain, so anything the
+	// import just pushed must already be there to be seen this boot.
+	importLegacyRooms(client, statePath)
+
+	var roomPersister rooms.Persister
+	if client.Enabled() {
+		roomPersister = rooms.NewDomainPersister(client)
+	}
+	registry := rooms.NewRegistry(roomPersister)
 	if err := registry.Load(); err != nil {
 		// Losing rooms is bad; refusing to boot is worse.
-		log.Printf("could not restore rooms from %q: %v", statePath, err)
-	} else if statePath != "" {
-		log.Printf("rooms restored from %q: %d", statePath, registry.Count())
+		log.Printf("could not restore rooms: %v", err)
+	} else if roomPersister != nil {
+		log.Printf("rooms restored: %d", registry.Count())
 	}
 	stopJanitor := make(chan struct{})
 	registry.StartJanitor(stopJanitor)
 	defer close(stopJanitor)
 
-	// The deck marketplace lives next to the room registry: same volume,
-	// same "a JSON file survives redeploys" trade. CUSTOM_DECKS_FILE
-	// overrides it; otherwise it's derived from STATE_FILE's directory so
-	// production (which sets only STATE_FILE) persists both without a
-	// second env var to remember.
+	// The deck marketplace lives next to the room registry. Same
+	// cutover: CUSTOM_DECKS_FILE (or STATE_FILE's directory, the old
+	// default) is an import source only.
 	decksPath := env("CUSTOM_DECKS_FILE", "")
 	if decksPath == "" && statePath != "" {
 		decksPath = filepath.Join(filepath.Dir(statePath), "custom-decks.json")
 	}
-	forge := customdecks.New(decksPath)
+	importLegacyDecks(client, decksPath)
+
+	var deckBackend customdecks.Backend
+	if client.Enabled() {
+		deckBackend = customdecks.NewDomainBackend(client)
+	}
+	forge := customdecks.New(deckBackend)
 	if err := forge.Load(); err != nil {
-		log.Printf("could not restore custom decks from %q: %v", decksPath, err)
-	} else if len(forge.List()) > 0 {
-		log.Printf("custom decks restored from %q: %d", decksPath, len(forge.List()))
+		log.Printf("could not restore custom decks: %v", err)
+	} else if deckBackend != nil {
+		if n := len(forge.List()); n > 0 {
+			log.Printf("custom decks restored: %d", n)
+		}
 	}
 
 	// The AI writer: unset CCH_AI_BASE_URL means the forge's generate
