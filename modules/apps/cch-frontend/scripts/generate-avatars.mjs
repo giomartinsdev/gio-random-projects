@@ -38,17 +38,23 @@ const stroke = (color, w) => ({
 });
 
 // Tamanho do shape: estático, ou piscando (encolhe e volta) quando
-// blinkAt é passado. Keyframes lineares -- um piscar é rápido demais
-// para precisar de easing.
+// blinkAt é passado. Toda keyframe (menos a última, que não abre
+// segmento nenhum) PRECISA do easing temporal i/o -- sem eles o
+// lottie-web interpola o raio da elipse para algo próximo de infinito
+// (o "olho" vira um bloco sólido cobrindo o personagem inteiro). Vimos
+// isso quebrado em produção antes desta função ganhar i/o; o bob da
+// camada (bobKeyframes, abaixo) sempre teve isso certo -- é por que só
+// os olhos, não o corpo todo, saíam quebrados.
+const LINEAR = { i: { x: [0.33, 0.33], y: [1, 1] }, o: { x: [0.67, 0.67], y: [0, 0] } };
 const sizeProp = (w, h, blinkAt) => {
   if (blinkAt == null) return { a: 0, k: [w, h] };
   return {
     a: 1,
     k: [
-      { t: 0, s: [w, h] },
-      { t: blinkAt, s: [w, h] },
-      { t: blinkAt + 6, s: [Math.max(w * 0.3, 2), Math.max(h * 0.1, 2)] },
-      { t: blinkAt + 12, s: [w, h] },
+      { t: 0, s: [w, h], ...LINEAR },
+      { t: blinkAt, s: [w, h], ...LINEAR },
+      { t: blinkAt + 6, s: [Math.max(w * 0.3, 2), Math.max(h * 0.1, 2)], ...LINEAR },
+      { t: blinkAt + 12, s: [w, h], ...LINEAR },
       { t: 180, s: [w, h] },
     ],
   };

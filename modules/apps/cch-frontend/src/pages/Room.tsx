@@ -1371,7 +1371,15 @@ function SubmissionCards({
                   )}
                 >
                   <span className="font-medium leading-snug">
-                    {state.blackCard ? fillBlank(state.blackCard.text, sub.lines) : sub.lines.join(" · ")}
+                    {/* sub.lines only arrives once the czar has flipped this
+                        card (see the Go side's judgeViewsForLocked) -- a
+                        face-down card must not crash rendering the face it
+                        isn't even showing yet. */}
+                    {sub.revealed && sub.lines
+                      ? state.blackCard
+                        ? fillBlank(state.blackCard.text, sub.lines)
+                        : sub.lines.join(" · ")
+                      : ""}
                   </span>
                   {isMine && !isWinner && (
                     <span className="absolute right-2 top-2 rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-medium text-black/70">
