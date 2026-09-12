@@ -22,6 +22,20 @@ import (
 
 const dataLayout = "2006-01-02"
 
+// dataParaDominio converts the contract's date-only "YYYY-MM-DD" into
+// the RFC3339 timestamp domain-api's time.Time fields decode; ok=false
+// means the date is not a valid YYYY-MM-DD. Midnight UTC carries no
+// meaning of its own -- the domain-worker's aggregate normalizes the
+// stored value back to the calendar date (transacao.dateOnly), so the
+// day the person picked is what lands.
+func dataParaDominio(raw string) (string, bool) {
+	t, err := time.Parse(dataLayout, raw)
+	if err != nil {
+		return "", false
+	}
+	return t.Format(time.RFC3339), true
+}
+
 // apiErr is a validation/domain failure with the HTTP status and error
 // code it should be answered with.
 type apiErr struct {
@@ -139,8 +153,8 @@ func (s *Server) handleCriarTransacao(w http.ResponseWriter, r *http.Request) {
 		writeAPIErr(w, errValorInvalido())
 		return
 	}
-	data := stringOrEmpty(req.Data)
-	if _, err := time.Parse(dataLayout, data); err != nil {
+	data, ok := dataParaDominio(stringOrEmpty(req.Data))
+	if !ok {
 		writeAPIErr(w, errDataInvalida())
 		return
 	}
@@ -218,11 +232,12 @@ func (s *Server) handleEditarTransacao(w http.ResponseWriter, r *http.Request) {
 		in.Valor = &valorStr
 	}
 	if req.Data != nil {
-		if _, err := time.Parse(dataLayout, *req.Data); err != nil {
+		data, ok := dataParaDominio(*req.Data)
+		if !ok {
 			writeAPIErr(w, errDataInvalida())
 			return
 		}
-		in.Data = req.Data
+		in.Data = &data
 	}
 	if req.Categoria != nil {
 		in.Categoria = req.Categoria

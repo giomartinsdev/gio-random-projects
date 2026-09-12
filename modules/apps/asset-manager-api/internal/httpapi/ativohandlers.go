@@ -163,6 +163,23 @@ func (s *Server) somarProventos(ctx context.Context, ativoID string) float64 {
 
 // --- POST /api/ativos ---------------------------------------------------
 
+// dataLayout is the date-only shape the frontend contract speaks; the
+// RFC3339 conversion is what domain-api's time.Time fields decode.
+const dataLayout = "2006-01-02"
+
+// dataParaDominio converts "YYYY-MM-DD" into the RFC3339 timestamp the
+// domain-worker's command payloads decode; ok=false means invalid.
+// Midnight UTC carries no meaning of its own -- the worker's domain
+// layer treats movement dates as calendar dates, so the day the person
+// picked is what lands.
+func dataParaDominio(raw string) (string, bool) {
+	t, err := time.Parse(dataLayout, raw)
+	if err != nil {
+		return "", false
+	}
+	return t.Format(time.RFC3339), true
+}
+
 type criarAtivoRequest struct {
 	ContaID       string  `json:"contaId"`
 	Ticker        string  `json:"ticker"`
@@ -193,8 +210,12 @@ func (s *Server) handleCreateAtivo(w http.ResponseWriter, r *http.Request) {
 	if req.PrecoUnitario <= 0 {
 		detalhes = append(detalhes, erroCampo{Campo: "precoUnitario", Problema: "deve ser maior que zero"})
 	}
-	if strings.TrimSpace(req.Data) == "" {
+	data := strings.TrimSpace(req.Data)
+	dataDominio, dataValida := dataParaDominio(data)
+	if data == "" {
 		detalhes = append(detalhes, erroCampo{Campo: "data", Problema: "obrigatório"})
+	} else if !dataValida {
+		detalhes = append(detalhes, erroCampo{Campo: "data", Problema: "deve estar no formato YYYY-MM-DD"})
 	}
 	if len(detalhes) > 0 {
 		writeValidacao(w, "dados do ativo inválidos", detalhes)
@@ -207,7 +228,7 @@ func (s *Server) handleCreateAtivo(w http.ResponseWriter, r *http.Request) {
 		Ticker:        strings.ToUpper(strings.TrimSpace(req.Ticker)),
 		Quantidade:    req.Quantidade,
 		PrecoUnitario: req.PrecoUnitario,
-		Data:          req.Data,
+		Data:          dataDominio,
 	})
 	if err != nil {
 		s.writeDomainWriteError(w, err)
@@ -252,8 +273,12 @@ func (s *Server) handleRegisterMovimento(w http.ResponseWriter, r *http.Request)
 	default:
 		detalhes = append(detalhes, erroCampo{Campo: "tipo", Problema: "deve ser compra, venda ou provento"})
 	}
-	if strings.TrimSpace(req.Data) == "" {
+	movData := strings.TrimSpace(req.Data)
+	movDataDominio, movDataValida := dataParaDominio(movData)
+	if movData == "" {
 		detalhes = append(detalhes, erroCampo{Campo: "data", Problema: "obrigatório"})
+	} else if !movDataValida {
+		detalhes = append(detalhes, erroCampo{Campo: "data", Problema: "deve estar no formato YYYY-MM-DD"})
 	}
 	if len(detalhes) > 0 {
 		writeValidacao(w, "dados do movimento inválidos", detalhes)
@@ -267,7 +292,7 @@ func (s *Server) handleRegisterMovimento(w http.ResponseWriter, r *http.Request)
 		Quantidade:    req.Quantidade,
 		PrecoUnitario: req.PrecoUnitario,
 		ValorProvento: req.ValorProvento,
-		Data:          req.Data,
+		Data:          movDataDominio,
 	})
 	if err != nil {
 		s.writeDomainWriteError(w, err)

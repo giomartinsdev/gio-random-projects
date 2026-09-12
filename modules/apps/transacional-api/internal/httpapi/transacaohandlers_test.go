@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -200,5 +201,82 @@ func TestCriarTransacao_AnexoFormatoInvalido(t *testing.T) {
 
 	if w.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("expected 415, got %d (body %s)", w.Code, w.Body.String())
+	}
+}
+
+// TestCriarTransacao_DataEnviadaRFC3339 pins the wire format: the
+// date-only "data" the frontend contract speaks used to reach
+// domain-api raw, whose time.Time decode answered 400 -- surfaced to
+// the frontend as a 502. The payload must leave as RFC3339.
+func TestCriarTransacao_DataEnviadaRFC3339(t *testing.T) {
+	var got domainapi.CriarInput
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /contas/{id}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(domainapi.Conta{ID: r.PathValue("id"), Status: "ativa"})
+	})
+	mux.HandleFunc("POST /transacoes", func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode POST /transacoes body: %v", err)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
+	fake := httptest.NewServer(mux)
+	defer fake.Close()
+
+	s := newTestServer(fake.URL)
+	body := []byte(`{"contaId":"c1","tipo":"entrada","valor":10,"data":"2026-09-12","categoria":"x"}`)
+	req := authedRequest(http.MethodPost, "/api/transacoes", body)
+	w := httptest.NewRecorder()
+
+	s.handleCriarTransacao(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d (body %s)", w.Code, w.Body.String())
+	}
+	if got.Data != "2026-09-12T00:00:00Z" {
+		t.Fatalf("expected RFC3339 data on the wire, got %q", got.Data)
+	}
+}
+
+// Same contract for the edit path, which forwards a pointer. Served
+// through a mux because r.PathValue("id") only resolves on a route
+// match -- calling the handler directly leaves it empty.
+func TestEditarTransacao_DataEnviadaRFC3339(t *testing.T) {
+	var got domainapi.EditarInput
+	mux := http.NewServeMux()
+	mux.HandleFunc("PATCH /transacoes/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode PATCH /transacoes body: %v", err)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
+	fake := httptest.NewServer(mux)
+	defer fake.Close()
+
+	s := newTestServer(fake.URL)
+	srvMux := http.NewServeMux()
+	srvMux.HandleFunc("PATCH /api/transacoes/{id}", s.handleEditarTransacao)
+	srv := httptest.NewServer(srvMux)
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPatch, srv.URL+"/api/transacoes/t1",
+		bytes.NewReader([]byte(`{"data":"2026-09-12"}`)))
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusAccepted {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("expected 202, got %d (body %s)", res.StatusCode, b)
+	}
+	if got.Data == nil || *got.Data != "2026-09-12T00:00:00Z" {
+		t.Fatalf("expected RFC3339 data on the wire, got %v", got.Data)
 	}
 }
