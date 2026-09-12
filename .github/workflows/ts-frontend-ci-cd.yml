@@ -122,6 +122,10 @@ jobs:
           VITE_OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
           VITE_CCH_API_URL: https://cch-api.giomartins.dev
           VITE_BET_API_URL: https://bet-api.giomartins.dev
+          VITE_CONTAS_API_URL: https://contas-api.giomartins.dev
+          VITE_TRANSACIONAL_API_URL: https://transacional-api.giomartins.dev
+          VITE_ASSET_MANAGER_API_URL: https://asset-manager-api.giomartins.dev
+          VITE_DASHBOARD_API_URL: https://dashboard-api.giomartins.dev
         run: npm run build
 
       # scp (not the docker provider/API) because the files have to
