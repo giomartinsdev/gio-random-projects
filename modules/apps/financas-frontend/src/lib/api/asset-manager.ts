@@ -92,7 +92,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function listarAtivos(conta?: string): Promise<Ativo[]> {
   const qs = conta ? `?conta=${conta}` : "";
-  return request<Ativo[]>(`/api/ativos${qs}`);
+  return request<{ ativos: Ativo[] }>(`/api/ativos${qs}`).then((r) => r.ativos);
 }
 
 export function cadastrarAtivo(input: NovoAtivo): Promise<Ativo> {
@@ -113,9 +113,13 @@ export function registrarMovimento(
 }
 
 export function listarMovimentos(ativoId: string): Promise<AtivoMovimento[]> {
-  return request<AtivoMovimento[]>(`/api/ativos/${ativoId}/movimentos`);
+  return request<{ movimentos: AtivoMovimento[] }>(`/api/ativos/${ativoId}/movimentos`).then(
+    (r) => r.movimentos,
+  );
 }
 
 export function buscarCotacoes(tickers: string[]): Promise<Cotacao[]> {
-  return request<Cotacao[]>(`/api/cotacoes?tickers=${tickers.join(",")}`);
+  return request<{ cotacoes: Cotacao[] }>(`/api/cotacoes?tickers=${tickers.join(",")}`).then(
+    (r) => r.cotacoes,
+  );
 }

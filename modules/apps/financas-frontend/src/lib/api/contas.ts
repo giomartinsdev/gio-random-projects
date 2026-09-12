@@ -54,7 +54,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function listarContas(status?: StatusConta): Promise<Conta[]> {
   const qs = status ? `?status=${status}` : "";
-  return request<Conta[]>(`/api/contas${qs}`);
+  return request<{ contas: Conta[] }>(`/api/contas${qs}`).then((r) => r.contas);
 }
 
 export function criarConta(input: { nome: string; tipo: TipoConta }): Promise<Conta> {
