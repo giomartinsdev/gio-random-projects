@@ -72,7 +72,9 @@ export function listarTransacoes(filtro: FiltroTransacoes = {}): Promise<Transac
   if (filtro.ate) params.set("ate", filtro.ate);
   if (filtro.categoria) params.set("categoria", filtro.categoria);
   const qs = params.toString();
-  return request<Transacao[]>(`/api/transacoes${qs ? `?${qs}` : ""}`);
+  return request<{ transacoes: Transacao[] }>(`/api/transacoes${qs ? `?${qs}` : ""}`).then(
+    (r) => r.transacoes,
+  );
 }
 
 export function criarTransacao(input: NovaTransacao): Promise<Transacao> {
