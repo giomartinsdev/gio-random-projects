@@ -104,6 +104,46 @@ locals {
       port     = 8009
     },
     {
+      # contas-api: one of the 4 backends behind financas-frontend (the
+      # personal-finance feature). Path-protected exactly like
+      # harness-api (bet-api pattern -- bare hostname in
+      # excluded_hostnames, /api has its own Access application, login
+      # hop /api/sso included). No database of its own: persistence
+      # rides domain-api's shared Postgres via the command pipeline, so
+      # this container is stateless like cch-api/bet-api's callers. Port
+      # must match module.compute_apps_contas_api's external_port.
+      hostname = "contas-api.giomartins.dev"
+      port     = 8011
+    },
+    {
+      # transacional-api: same shape as contas-api above -- one of the 4
+      # financas-frontend backends, path-protected the harness-api way,
+      # no database of its own (domain-api is the persistence layer).
+      # Port must match module.compute_apps_transacional_api's
+      # external_port.
+      hostname = "transacional-api.giomartins.dev"
+      port     = 8012
+    },
+    {
+      # asset-manager-api: same shape as contas-api above -- one of the
+      # 4 financas-frontend backends, path-protected the harness-api
+      # way, no database of its own (domain-api is the persistence
+      # layer). Also talks to brapi.dev for market data (ASSET_MANAGER_
+      # BRAPI_TOKEN). Port must match
+      # module.compute_apps_asset_manager_api's external_port.
+      hostname = "asset-manager-api.giomartins.dev"
+      port     = 8013
+    },
+    {
+      # dashboard-api: same shape as contas-api above -- one of the 4
+      # financas-frontend backends, path-protected the harness-api way,
+      # no database of its own (domain-api is the persistence layer).
+      # Port must match module.compute_apps_dashboard_api's
+      # external_port.
+      hostname = "dashboard-api.giomartins.dev"
+      port     = 8014
+    },
+    {
       # 9router: OpenAI-compatible AI proxy with auto-fallback across
       # 40+ providers (Claude, GPT, Gemini, …). Dashboard at /dashboard,
       # API at /v1. Excluded from Cloudflare Access (Google SSO) so CLI/
@@ -234,6 +274,21 @@ locals {
       hostname = "bet.giomartins.dev"
       bucket   = "bet-frontend"
     },
+    {
+      # financas-frontend: the single SPA for the personal-finance
+      # feature's 4 modules (contas, transações, ativos/investimentos,
+      # dashboard) -- one frontend, not four, calling all 4 backends
+      # cross-origin. It enters the hub as a microfrontend like bet
+      # above; the real gate is each of the 4 APIs' own Access
+      # application on /api, and the SPA probes one of them
+      # (contas-api.giomartins.dev/api/me, same shape as the hub's
+      # /sso probe) to decide whether the visitor is logged in. Must be
+      # iframe-embeddable in the hub like cch/tela/bet (a Google SSO
+      # redirect inside the hub's renderer frame cannot be completed),
+      # hence excluded_hostnames below.
+      hostname = "financas.giomartins.dev"
+      bucket   = "financas-frontend"
+    },
   ]
 
   # Paths that get a Cloudflare Access application of their own even
@@ -262,8 +317,17 @@ locals {
   # the probe could never share a session. The SSO hop now lives UNDER
   # the /api app (bet-api route /api/sso), so one app mints and
   # consumes the cookie.
+  # contas-api/transacional-api/asset-manager-api/dashboard-api's /api
+  # are the same shape as bet-api's above -- 4 new Access apps, one per
+  # hostname/api, each fronting one of financas-frontend's 4 backends.
+  # Same ONE-app-per-domain reasoning: each API's bare hostname stays
+  # in excluded_hostnames so only the /api app exists there.
   path_protected_hostnames = [
     "hub.giomartins.dev/sso",
     "bet-api.giomartins.dev/api",
+    "contas-api.giomartins.dev/api",
+    "transacional-api.giomartins.dev/api",
+    "asset-manager-api.giomartins.dev/api",
+    "dashboard-api.giomartins.dev/api",
   ]
 }

@@ -70,8 +70,33 @@ resource "random_id" "cch_api_domain_key" {
   byte_length = 24
 }
 
+# contas-api's own key, same reasoning as post_api_domain_key -- its
+# accounts go through domain-api's command pipeline, so the audit log
+# needs a caller identity for it.
+resource "random_id" "contas_api_domain_key" {
+  byte_length = 24
+}
+
+# transacional-api's own key, same reasoning as contas_api_domain_key
+# -- its transactions go through domain-api's command pipeline.
+resource "random_id" "transacional_api_domain_key" {
+  byte_length = 24
+}
+
+# asset-manager-api's own key, same reasoning as contas_api_domain_key
+# -- its assets/movements go through domain-api's command pipeline.
+resource "random_id" "asset_manager_api_domain_key" {
+  byte_length = 24
+}
+
+# dashboard-api's own key, same reasoning as contas_api_domain_key --
+# its dashboard layouts go through domain-api's command pipeline.
+resource "random_id" "dashboard_api_domain_key" {
+  byte_length = 24
+}
+
 locals {
-  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers,${random_id.cch_api_domain_key.hex}:cch-api"
+  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers,${random_id.cch_api_domain_key.hex}:cch-api,${random_id.contas_api_domain_key.hex}:contas-api,${random_id.transacional_api_domain_key.hex}:transacional-api,${random_id.asset_manager_api_domain_key.hex}:asset-manager-api,${random_id.dashboard_api_domain_key.hex}:dashboard-api"
 }
 
 resource "random_password" "vaultwarden_admin_token" {
@@ -229,6 +254,31 @@ locals {
     classroom_api_domain_key = {
       trigger = random_id.classroom_api_domain_key.hex
       items   = { CLASSROOM_API_DOMAIN_KEY = random_id.classroom_api_domain_key.hex }
+    }
+    contas_api_domain_key = {
+      trigger = random_id.contas_api_domain_key.hex
+      items   = { CONTAS_API_DOMAIN_KEY = random_id.contas_api_domain_key.hex }
+    }
+    transacional_api_domain_key = {
+      trigger = random_id.transacional_api_domain_key.hex
+      items   = { TRANSACIONAL_API_DOMAIN_KEY = random_id.transacional_api_domain_key.hex }
+    }
+    asset_manager_api_domain_key = {
+      trigger = random_id.asset_manager_api_domain_key.hex
+      items   = { ASSET_MANAGER_API_DOMAIN_KEY = random_id.asset_manager_api_domain_key.hex }
+    }
+    dashboard_api_domain_key = {
+      trigger = random_id.dashboard_api_domain_key.hex
+      items   = { DASHBOARD_API_DOMAIN_KEY = random_id.dashboard_api_domain_key.hex }
+    }
+    # Not Terraform-generated (a brapi.dev token comes from that
+    # service's own dashboard), but seeded here anyway so CI/a human
+    # can fetch it from the vault -- same reasoning as the discord
+    # group above. Empty is a valid state (asset-manager-api's quote
+    # lookups just fail/no-op without it).
+    asset_manager_brapi_token = {
+      trigger = var.asset_manager_brapi_token
+      items   = { ASSET_MANAGER_BRAPI_TOKEN = var.asset_manager_brapi_token }
     }
     post_api_better_auth_secret = {
       trigger = random_password.post_api_better_auth_secret.result

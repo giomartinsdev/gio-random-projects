@@ -26,6 +26,26 @@ const (
 	ActionCreateMessage Action = "message.create"
 
 	ActionUpsertDeal Action = "deal.upsert"
+
+	// Gestão financeira modular (specs/002). conta/dashboardlayout
+	// writes and ativo.create/ativo.registerMovement all go through the
+	// generic /sync route by the caller directly -- these constants exist
+	// for type-safety wherever a comment or future caller builds those
+	// commands from this package, not because domain-api has dedicated
+	// handlers for them.
+	ActionCreateConta Action = "conta.create"
+	ActionUpdateConta Action = "conta.update"
+
+	ActionCreateTransacao Action = "transacao.create"
+	ActionUpdateTransacao Action = "transacao.update"
+	ActionDeleteTransacao Action = "transacao.delete"
+
+	ActionCreateAtivo           Action = "ativo.create"
+	ActionRegisterAtivoMovement Action = "ativo.registerMovement"
+	ActionUpdateAtivoQuote      Action = "ativo.updateQuote"
+
+	ActionSaveDashboardLayout   Action = "dashboardlayout.save"
+	ActionDeleteDashboardLayout Action = "dashboardlayout.delete"
 )
 
 type Command struct {

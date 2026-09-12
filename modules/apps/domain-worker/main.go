@@ -25,20 +25,28 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
+	appativo "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/ativo"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
 	appcchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchdeck"
 	appcchroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchroom"
+	appconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/conta"
+	appdashboardlayout "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/dashboardlayout"
 	appdeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/deal"
 	appmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/message"
 	apppost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/post"
 	approom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/room"
+	apptransacao "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/transacao"
 	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/user"
+	domainativo "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/ativo"
 	domaincchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchdeck"
 	domaincchroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchroom"
+	domainconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/conta"
+	domaindashboardlayout "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/dashboardlayout"
 	domaindeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/deal"
 	domainmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/message"
 	domainpost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/post"
 	domainroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/room"
+	domaintransacao "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/transacao"
 	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/config"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/postgres"
@@ -124,6 +132,22 @@ func main() {
 	cchDeckService := appcchdeck.NewService(cchDeckRepo)
 	cchDeckHandler := appcchdeck.NewCommandHandler(cchDeckService)
 
+	contaRepo := postgres.NewContaRepository(pool)
+	contaService := appconta.NewService(contaRepo)
+	contaHandler := appconta.NewCommandHandler(contaService)
+
+	transacaoRepo := postgres.NewTransacaoRepository(pool)
+	transacaoService := apptransacao.NewService(transacaoRepo)
+	transacaoHandler := apptransacao.NewCommandHandler(transacaoService)
+
+	ativoRepo := postgres.NewAtivoRepository(pool)
+	ativoService := appativo.NewService(ativoRepo)
+	ativoHandler := appativo.NewCommandHandler(ativoService)
+
+	dashboardLayoutRepo := postgres.NewDashboardLayoutRepository(pool)
+	dashboardLayoutService := appdashboardlayout.NewService(dashboardLayoutRepo)
+	dashboardLayoutHandler := appdashboardlayout.NewCommandHandler(dashboardLayoutService)
+
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info("relay started")
@@ -143,7 +167,7 @@ func main() {
 				log.Error("fetch command error", "error", err)
 				continue
 			}
-			process(ctx, log, userHandler, postHandler, roomHandler, messageHandler, dealHandler, cchRoomHandler, cchDeckHandler, auditRepo, eventBus, cmd)
+			process(ctx, log, userHandler, postHandler, roomHandler, messageHandler, dealHandler, cchRoomHandler, cchDeckHandler, contaHandler, transacaoHandler, ativoHandler, dashboardLayoutHandler, auditRepo, eventBus, cmd)
 		}
 	}()
 
@@ -162,7 +186,7 @@ func main() {
 // resulting domain event. One shared command queue serves every
 // aggregate; this is the one place that knows how to fan a Command
 // back out to its owning handler.
-func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, dealHandler *appdeal.CommandHandler, cchRoomHandler *appcchroom.CommandHandler, cchDeckHandler *appcchdeck.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
+func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, dealHandler *appdeal.CommandHandler, cchRoomHandler *appcchroom.CommandHandler, cchDeckHandler *appcchdeck.CommandHandler, contaHandler *appconta.CommandHandler, transacaoHandler *apptransacao.CommandHandler, ativoHandler *appativo.CommandHandler, dashboardLayoutHandler *appdashboardlayout.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
 	// One span per command: the handler, the audit write and the event
 	// publish below are the whole story of that write, and the
 	// trace_id stamped into the log lines ties every one of them to it.
@@ -243,6 +267,38 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 		if cevt != nil {
 			evt = cevt
 			id = cchDeckEntityID(cevt)
+		}
+	case strings.HasPrefix(string(cmd.Action), "conta."):
+		entityType = "conta"
+		var cevt domainconta.Event
+		cevt, err = contaHandler.Handle(ctx, cmd)
+		if cevt != nil {
+			evt = cevt
+			id = contaEntityID(cevt)
+		}
+	case strings.HasPrefix(string(cmd.Action), "transacao."):
+		entityType = "transacao"
+		var tevt domaintransacao.Event
+		tevt, err = transacaoHandler.Handle(ctx, cmd)
+		if tevt != nil {
+			evt = tevt
+			id = transacaoEntityID(tevt)
+		}
+	case strings.HasPrefix(string(cmd.Action), "ativo."):
+		entityType = "ativo"
+		var aevt domainativo.Event
+		aevt, err = ativoHandler.Handle(ctx, cmd)
+		if aevt != nil {
+			evt = aevt
+			id = ativoEntityID(aevt)
+		}
+	case strings.HasPrefix(string(cmd.Action), "dashboardlayout."):
+		entityType = "dashboardlayout"
+		var devt domaindashboardlayout.Event
+		devt, err = dashboardLayoutHandler.Handle(ctx, cmd)
+		if devt != nil {
+			evt = devt
+			id = dashboardLayoutEntityID(devt)
 		}
 	default:
 		err = fmt.Errorf("unknown action: %q", cmd.Action)
@@ -349,6 +405,54 @@ func cchDeckEntityID(evt domaincchdeck.Event) string {
 		return e.DeckID
 	case domaincchdeck.Played:
 		return e.DeckID
+	default:
+		return ""
+	}
+}
+
+func contaEntityID(evt domainconta.Event) string {
+	switch e := evt.(type) {
+	case domainconta.Created:
+		return e.ContaID
+	case domainconta.Updated:
+		return e.ContaID
+	default:
+		return ""
+	}
+}
+
+func transacaoEntityID(evt domaintransacao.Event) string {
+	switch e := evt.(type) {
+	case domaintransacao.Created:
+		return e.TransacaoID
+	case domaintransacao.Updated:
+		return e.TransacaoID
+	case domaintransacao.Deleted:
+		return e.TransacaoID
+	default:
+		return ""
+	}
+}
+
+func ativoEntityID(evt domainativo.Event) string {
+	switch e := evt.(type) {
+	case domainativo.Created:
+		return e.AtivoID
+	case domainativo.MovimentoRegistrado:
+		return e.AtivoID
+	case domainativo.CotacaoAtualizada:
+		return e.AtivoID
+	default:
+		return ""
+	}
+}
+
+func dashboardLayoutEntityID(evt domaindashboardlayout.Event) string {
+	switch e := evt.(type) {
+	case domaindashboardlayout.Saved:
+		return e.UsuarioEmail
+	case domaindashboardlayout.Deleted:
+		return e.UsuarioEmail
 	default:
 		return ""
 	}

@@ -24,7 +24,17 @@ module "cloud_cloudflare" {
   # this bypass no matter how logged-in the user is (preflights carry
   # no cookies). The key is the path app's own domain string, not the
   # bare hostname -- that's what the contains() check compares against.
-  preflight_bypass_hostnames = ["bet-api.giomartins.dev/api"]
+  # contas-api/transacional-api/asset-manager-api/dashboard-api are the
+  # same shape as bet-api above: financas-frontend preflights every
+  # content-type:json call to each of them cross-origin, so each needs
+  # the same bypass.
+  preflight_bypass_hostnames = [
+    "bet-api.giomartins.dev/api",
+    "contas-api.giomartins.dev/api",
+    "transacional-api.giomartins.dev/api",
+    "asset-manager-api.giomartins.dev/api",
+    "dashboard-api.giomartins.dev/api",
+  ]
 
   # Email Routing lives on the zone's DNS (MX/SPF/DKIM) plus account
   # state, not on any hostname's ingress — so it slots into this
@@ -290,6 +300,94 @@ module "compute_apps_bet_api" {
   depends_on = [null_resource.postgres_password_sync, module.cloud_cloudflare]
 }
 
+# contas-api: one of the 4 financas-frontend backends -- path-protected
+# behind Access exactly like bet-api (the /api path has its own
+# Access application, login hop /api/sso included; the bare hostname
+# is in excluded_hostnames). No database of its own: persistence rides
+# domain-api's shared Postgres via the command pipeline.
+module "compute_apps_contas_api" {
+  source = "./modules/compute/apps/contas_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name  = module.network_docker_apps.network_name
+  registry_host = var.registry_host
+  access_aud = [
+    module.cloud_cloudflare.access_app_auds["contas-api.giomartins.dev/api"],
+  ]
+  allowed_emails   = var.allowed_emails
+  domain_api_key   = random_id.contas_api_domain_key.hex
+  frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
+  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
+
+  depends_on = [module.cloud_cloudflare, module.compute_apps_domain_api]
+}
+
+# transacional-api: one of the 4 financas-frontend backends -- same
+# shape as contas-api above.
+module "compute_apps_transacional_api" {
+  source = "./modules/compute/apps/transacional_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name  = module.network_docker_apps.network_name
+  registry_host = var.registry_host
+  access_aud = [
+    module.cloud_cloudflare.access_app_auds["transacional-api.giomartins.dev/api"],
+  ]
+  allowed_emails   = var.allowed_emails
+  domain_api_key   = random_id.transacional_api_domain_key.hex
+  frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
+  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
+
+  depends_on = [module.cloud_cloudflare, module.compute_apps_domain_api]
+}
+
+# asset-manager-api: one of the 4 financas-frontend backends -- same
+# shape as contas-api above, plus a brapi.dev token for market quotes.
+module "compute_apps_asset_manager_api" {
+  source = "./modules/compute/apps/asset_manager_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name  = module.network_docker_apps.network_name
+  registry_host = var.registry_host
+  access_aud = [
+    module.cloud_cloudflare.access_app_auds["asset-manager-api.giomartins.dev/api"],
+  ]
+  allowed_emails   = var.allowed_emails
+  domain_api_key   = random_id.asset_manager_api_domain_key.hex
+  brapi_token      = var.asset_manager_brapi_token
+  frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
+  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
+
+  depends_on = [module.cloud_cloudflare, module.compute_apps_domain_api]
+}
+
+# dashboard-api: one of the 4 financas-frontend backends -- same shape
+# as contas-api above.
+module "compute_apps_dashboard_api" {
+  source = "./modules/compute/apps/dashboard_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name  = module.network_docker_apps.network_name
+  registry_host = var.registry_host
+  access_aud = [
+    module.cloud_cloudflare.access_app_auds["dashboard-api.giomartins.dev/api"],
+  ]
+  allowed_emails   = var.allowed_emails
+  domain_api_key   = random_id.dashboard_api_domain_key.hex
+  frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
+  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
+
+  depends_on = [module.cloud_cloudflare, module.compute_apps_domain_api]
+}
+
 # bet-runner used to live here as a Docker container on the apps
 # network -- Betano's compliance wall blocks the VPS's datacenter ASN
 # ("Access to this page is restricted due to security and compliance
@@ -333,6 +431,10 @@ module "compute_services_ingress" {
     module.compute_apps_tela_api,
     module.compute_apps_cch_api,
     module.compute_apps_bet_api,
+    module.compute_apps_contas_api,
+    module.compute_apps_transacional_api,
+    module.compute_apps_asset_manager_api,
+    module.compute_apps_dashboard_api,
     module.compute_services_registry,
     module.compute_services_monitoring,
     module.compute_services_ai_proxy,

@@ -200,6 +200,7 @@ jobs:
       TF_VAR_vaultwarden_account_master_password: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
       TF_VAR_vaultwarden_api_client_id: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
       TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
+      TF_VAR_asset_manager_brapi_token: ${{ secrets.TF_ASSET_MANAGER_BRAPI_TOKEN }}
       AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
       # TF_VAR_registry_password/TF_VAR_discord_client_id/
@@ -315,6 +316,10 @@ jobs:
               domain-worker) REPLACE_ARGS+=("-replace=module.compute_apps_domain_api.docker_container.domain_worker") ;;
               tela-api) REPLACE_ARGS+=("-replace=module.compute_apps_tela_api.docker_container.tela_api") ;;
               cch-api) REPLACE_ARGS+=("-replace=module.compute_apps_cch_api.docker_container.cch_api") ;;
+              contas-api) REPLACE_ARGS+=("-replace=module.compute_apps_contas_api.docker_container.contas_api") ;;
+              transacional-api) REPLACE_ARGS+=("-replace=module.compute_apps_transacional_api.docker_container.transacional_api") ;;
+              asset-manager-api) REPLACE_ARGS+=("-replace=module.compute_apps_asset_manager_api.docker_container.asset_manager_api") ;;
+              dashboard-api) REPLACE_ARGS+=("-replace=module.compute_apps_dashboard_api.docker_container.dashboard_api") ;;
               *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
             esac
           done

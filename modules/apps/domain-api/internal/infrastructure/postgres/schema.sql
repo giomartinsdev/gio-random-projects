@@ -118,3 +118,67 @@ CREATE TABLE IF NOT EXISTS raw_deals (
 );
 
 CREATE INDEX IF NOT EXISTS raw_deals_posted_at_idx ON raw_deals (posted_at DESC NULLS LAST);
+
+-- Gestão financeira modular (specs/002) -- domain-api only reads these
+-- four aggregates; domain-worker (separate module) is the sole writer,
+-- carrying a byte-identical copy of this DDL.
+CREATE TABLE IF NOT EXISTS contas (
+    id UUID PRIMARY KEY,
+    usuario_email TEXT NOT NULL,
+    nome TEXT NOT NULL,
+    tipo TEXT NOT NULL CHECK (tipo IN ('corrente','investimento')),
+    status TEXT NOT NULL DEFAULT 'ativa' CHECK (status IN ('ativa','arquivada')),
+    criado_em TIMESTAMPTZ NOT NULL,
+    atualizado_em TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_contas_usuario_email ON contas(usuario_email);
+
+CREATE TABLE IF NOT EXISTS transacoes (
+    id UUID PRIMARY KEY,
+    usuario_email TEXT NOT NULL,
+    conta_id UUID NOT NULL,
+    tipo TEXT NOT NULL CHECK (tipo IN ('entrada','saida')),
+    valor NUMERIC(14,2) NOT NULL CHECK (valor > 0),
+    data DATE NOT NULL,
+    categoria TEXT NOT NULL,
+    descricao TEXT,
+    anexo_imagem TEXT,
+    criado_em TIMESTAMPTZ NOT NULL,
+    atualizado_em TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_transacoes_usuario_conta ON transacoes(usuario_email, conta_id);
+CREATE INDEX IF NOT EXISTS idx_transacoes_data ON transacoes(data);
+
+CREATE TABLE IF NOT EXISTS ativos (
+    id UUID PRIMARY KEY,
+    usuario_email TEXT NOT NULL,
+    conta_id UUID NOT NULL,
+    ticker TEXT NOT NULL,
+    quantidade_atual NUMERIC(18,6) NOT NULL DEFAULT 0,
+    custo_medio NUMERIC(14,4) NOT NULL DEFAULT 0,
+    ultima_cotacao NUMERIC(14,4),
+    ultima_cotacao_em TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'aberta' CHECK (status IN ('aberta','encerrada')),
+    criado_em TIMESTAMPTZ NOT NULL,
+    atualizado_em TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ativos_usuario_conta ON ativos(usuario_email, conta_id);
+
+CREATE TABLE IF NOT EXISTS ativo_movimentos (
+    id UUID PRIMARY KEY,
+    ativo_id UUID NOT NULL REFERENCES ativos(id),
+    tipo TEXT NOT NULL CHECK (tipo IN ('compra','venda','provento')),
+    quantidade NUMERIC(18,6),
+    preco_unitario NUMERIC(14,4),
+    valor_provento NUMERIC(14,2),
+    data DATE NOT NULL,
+    resultado_realizado NUMERIC(14,2),
+    criado_em TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ativo_movimentos_ativo ON ativo_movimentos(ativo_id);
+
+CREATE TABLE IF NOT EXISTS dashboard_layouts (
+    usuario_email TEXT PRIMARY KEY,
+    blocos JSONB NOT NULL DEFAULT '[]',
+    atualizado_em TIMESTAMPTZ NOT NULL
+);

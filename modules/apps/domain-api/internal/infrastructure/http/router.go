@@ -14,7 +14,7 @@ import (
 // is not for public browsing -- see PostHandlers.GetPostByID's own doc
 // comment. /sync is the synchronous-write exception -- see
 // SyncHandlers.Sync's doc comment before reaching for it.
-func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandlers, dl *DealHandlers, sse *SSEHandlers, cch *CCHHandlers, sync *SyncHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
+func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandlers, dl *DealHandlers, sse *SSEHandlers, cch *CCHHandlers, sync *SyncHandlers, ct *ContaHandlers, tr *TransacaoHandlers, at *AtivoHandlers, dash *DashboardLayoutHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Get("/healthz", h.Healthz)
@@ -60,6 +60,24 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Get("/cch/decks", cch.ListCCHDecks)
 		r.Post("/cch/decks/{id}/plays", cch.PlayCCHDeck)
 		r.Post("/sync", sync.Sync)
+
+		// Gestão financeira modular (specs/002) -- conta and
+		// dashboardlayout are read-only here (writes go through /sync
+		// above); transacao and ativo's quote update get dedicated async
+		// 202 routes, same pattern as /rooms.
+		r.Get("/contas", ct.ListContas)
+		r.Get("/contas/{id}", ct.GetConta)
+
+		r.Get("/transacoes", tr.ListTransacoes)
+		r.Post("/transacoes", tr.CreateTransacao)
+		r.Patch("/transacoes/{id}", tr.UpdateTransacao)
+		r.Delete("/transacoes/{id}", tr.DeleteTransacao)
+
+		r.Get("/ativos", at.ListAtivos)
+		r.Get("/ativos/{id}/movimentos", at.GetAtivoMovimentos)
+		r.Post("/ativos/{id}/cotacao", at.UpdateAtivoQuote)
+
+		r.Get("/dashboardlayouts/{usuario}", dash.GetDashboardLayout)
 	})
 
 	return r

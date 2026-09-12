@@ -52,6 +52,13 @@ export const MICROFRONTENDS: Microfrontend[] = [
     description: "apostas automatizadas a partir de um link",
     url: "https://bet.giomartins.dev",
   },
+  {
+    id: "financas",
+    name: "Finanças",
+    emoji: "💰",
+    description: "contas, transações, investimentos e dashboard num só lugar",
+    url: "https://financas.giomartins.dev",
+  },
 ];
 
 export const SHORTCUTS: Shortcut[] = [
