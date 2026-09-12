@@ -41,7 +41,12 @@ export function useFonteDados(bloco: Bloco, contas: Conta[] | null): ResultadoFo
             const saldos = await Promise.all(
               ativas.map((c) => saldoConta(c.id).catch(() => ({ saldo: 0 }))),
             );
-            const total = saldos.reduce((acc, s) => acc + s.saldo, 0);
+            // contas-api's /saldo é hoje um placeholder documentado
+            // (devolve {contaId, observacao}, sem o campo saldo, até
+            // transacional-api/asset-manager-api estarem integrados) --
+            // Number(undefined) é NaN, então blindamos com || 0 para
+            // não propagar "R$ NaN" pra tela enquanto isso não existe.
+            const total = saldos.reduce((acc, s) => acc + (Number(s.saldo) || 0), 0);
             return { total, contas: ativas.length };
           }
           case "gastos-por-categoria": {
