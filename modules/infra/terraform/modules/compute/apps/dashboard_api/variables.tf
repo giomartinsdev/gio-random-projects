@@ -39,9 +39,9 @@ variable "frontend_origins" {
 }
 
 variable "domain_api_url" {
-  description = "Internal URL dashboard-api's domain-api client talks to. Loopback: domain-api publishes 127.0.0.1:8000 on the same VPS."
+  description = "Internal URL dashboard-api's domain-api client talks to -- container-to-container on network_name (bridge, not host networking), never the public *.giomartins.dev hostname."
   type        = string
-  default     = "http://127.0.0.1:8000"
+  default     = "http://domain-api:8000"
 }
 
 variable "domain_api_key" {
