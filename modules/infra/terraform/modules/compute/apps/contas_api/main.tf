@@ -36,9 +36,10 @@ resource "docker_container" "contas_api" {
     # allowlist, plus localhost dev like bet-api/harness-api's.
     "CONTAS_FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
     # Persistence: accounts go through domain-api's command pipeline
-    # instead of any local store. Loopback since this container
-    # publishes a port rather than running network_mode=host --
-    # domain-api publishes 127.0.0.1:8000 on the same VPS.
+    # instead of any local store. Container-to-container on
+    # network_name (both join the same bridge network) -- same
+    # pattern as post-api/bookclub-api/classroom-api, not the
+    # network_mode=host loopback trick cch-api uses.
     "CONTAS_DOMAIN_API_URL=${var.domain_api_url}",
     "CONTAS_DOMAIN_API_KEY=${var.domain_api_key}",
     # Traces + metrics only -- logs flow via alloy's docker-socket
