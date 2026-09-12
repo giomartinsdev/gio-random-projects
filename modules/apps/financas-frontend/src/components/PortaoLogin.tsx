@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { probeLogin, LOGIN_URL } from "@/lib/auth";
+import { probeLogin, loginNavigationUrl } from "@/lib/auth";
 import { Botao } from "@/components/Botao";
 
 type Estado = "checando" | "logada" | "deslogada";
@@ -36,7 +36,7 @@ export function PortaoLogin({ children }: { children: ReactNode }) {
           Sua sessão não foi encontrada. Entre com a conta autorizada para ver seus dados
           financeiros.
         </p>
-        <Botao onClick={() => (window.location.href = LOGIN_URL)}>Entrar</Botao>
+        <Botao onClick={() => (window.location.href = loginNavigationUrl())}>Entrar</Botao>
       </div>
     );
   }

@@ -13,6 +13,17 @@ import { CONTAS_API_URL } from "./api/contas";
 
 export const LOGIN_URL = `${CONTAS_API_URL}/api/sso`;
 
+// A navegação real de login precisa de ?return= -- contas-api's
+// handleSSO recusa com 422 "origem de retorno não permitida" sem um
+// return cuja ORIGEM esteja em CONTAS_FRONTEND_ORIGINS (allowlist do
+// Terraform). O probe acima não passa por essa checagem porque nunca
+// segue o redirect (redirect:"manual"), mas a navegação top-level do
+// botão "Entrar" precisa mandar a URL atual para voltar depois do
+// login do Google.
+export function loginNavigationUrl(): string {
+  return `${LOGIN_URL}?return=${encodeURIComponent(window.location.href)}`;
+}
+
 export const LOGOUT_URL =
   "https://workwithgiomartinsdev.cloudflareaccess.com/cdn-cgi/access/logout";
 
