@@ -40,6 +40,25 @@ const (
 	// travels the platform's default path: POST /cch/decks/{id}/plays →
 	// 202 → this action.
 	ActionPlayCCHDeck Action = "cchdeck.play"
+
+	// Gestao financeira modular (specs/002): usuario_email (from the
+	// Cloudflare Access JWT) partitions every one of these aggregates
+	// between people the same way host_id partitions rooms.
+	ActionCreateConta Action = "conta.create"
+	ActionUpdateConta Action = "conta.update"
+
+	ActionCreateTransacao Action = "transacao.create"
+	ActionUpdateTransacao Action = "transacao.update"
+	ActionDeleteTransacao Action = "transacao.delete"
+
+	ActionCreateAtivo            Action = "ativo.create"
+	ActionRegisterAtivoMovimento Action = "ativo.registerMovement"
+	// ActionUpdateAtivoQuote skips the domain aggregate -- see
+	// application/ativo.Service.UpdateQuote.
+	ActionUpdateAtivoQuote Action = "ativo.updateQuote"
+
+	ActionSaveDashboardLayout   Action = "dashboardlayout.save"
+	ActionDeleteDashboardLayout Action = "dashboardlayout.delete"
 )
 
 type Command struct {

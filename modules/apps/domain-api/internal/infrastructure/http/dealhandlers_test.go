@@ -70,6 +70,12 @@ func newDealServer(t *testing.T, deals domaindeal.Repository, publisher *spyPubl
 		// /sync, they only need the routes registered.
 		NewCCHHandlers(nil, nil, publisher, log),
 		NewSyncHandlers(nil, nil, log),
+		// nil repos/handlers: these tests never touch the new gestão
+		// financeira routes, they only need them registered.
+		NewContaHandlers(nil, log),
+		NewTransacaoHandlers(nil, publisher, log),
+		NewAtivoHandlers(nil, nil, publisher, log),
+		NewDashboardLayoutHandlers(nil, log),
 		APIKeys{"k1": "test"},
 		NewIPRateLimiter(1000, 1000),
 		log,

@@ -41,22 +41,27 @@ variable "excluded_hostnames" {
   EOT
   type        = list(string)
   default = [
-    "registry.giomartins.dev",      # docker login/push — own htpasswd auth + mTLS (modules/cloudflare/registry_mtls.tf); Docker tooling can't do a browser SSO redirect or send custom Access headers
-    "domain.giomartins.dev",        # REST API clients — own X-API-Key auth + a service-token Access application (modules/cloudflare/service_token_access.tf)
-    "post-api.giomartins.dev",      # own Better Auth — a browser SSO redirect would break API/bot clients, same reasoning as domain.giomartins.dev
-    "bookclub-api.giomartins.dev",  # own Better Auth session check — same reasoning, plus a redirect would break the front's WebSocket upgrade
-    "classroom-api.giomartins.dev", # own Better Auth session check — same reasoning as bookclub-api.giomartins.dev
-    "buteco-class.giomartins.dev",  # meant to be publicly readable by anyone, not gated behind Google SSO
-    "media.giomartins.dev",         # the blog's image bucket — every visitor's <img> tag must load anonymously, same reasoning as buteco-class
-    "tela.giomartins.dev",          # rooms are shared with people who have no account here; the room password is the access control
-    "tela-api.giomartins.dev",      # same tela-frontend page calls this cross-origin for signalling/SFU — a browser SSO redirect would break every fetch/WebSocket call
-    "cch.giomartins.dev",           # rooms are shared with guests who have no account here; the room password is the access control, same as tela
-    "cch-api.giomartins.dev",       # the cch-frontend page calls this cross-origin for game REST/WebSocket — a browser SSO redirect would break every fetch/WebSocket call, same as tela-api
-    "hub.giomartins.dev",           # the hub is chrome around the public SPAs, so it's public too — its opt-in Google login lives on the /sso path instead (see path_protected_hostnames in locals.tf), which gates only the admin shortcuts tier
-    "bet-api.giomartins.dev",       # path-protected like the hub (its /api and /auth have Access apps of their own, see path_protected_hostnames in locals.tf) — the bare hostname must stay reachable for bet-runner, which polls /internal/* from the home network with RUNNER_API_KEY (a machine-to-machine client can't pass a Google SSO redirect)
-    "bet.giomartins.dev",           # the bet micro frontend — public chrome around the real gate (the Access app on bet-api.giomartins.dev, which the SPA probes like the hub's /sso); it must be iframe-embeddable in the hub like cch/tela, and a Google SSO redirect inside the hub's renderer frame cannot be completed
-    "ai.giomartins.dev",            # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
-    "otel.giomartins.dev",          # public visitors' browsers send SPA telemetry here — a Google SSO redirect would break every one of them; alloy's OTLP receiver CORS allowlist (the two SPA origins only) is the access control (modules/compute/services/observability)
+    "registry.giomartins.dev",          # docker login/push — own htpasswd auth + mTLS (modules/cloudflare/registry_mtls.tf); Docker tooling can't do a browser SSO redirect or send custom Access headers
+    "domain.giomartins.dev",            # REST API clients — own X-API-Key auth + a service-token Access application (modules/cloudflare/service_token_access.tf)
+    "post-api.giomartins.dev",          # own Better Auth — a browser SSO redirect would break API/bot clients, same reasoning as domain.giomartins.dev
+    "bookclub-api.giomartins.dev",      # own Better Auth session check — same reasoning, plus a redirect would break the front's WebSocket upgrade
+    "classroom-api.giomartins.dev",     # own Better Auth session check — same reasoning as bookclub-api.giomartins.dev
+    "buteco-class.giomartins.dev",      # meant to be publicly readable by anyone, not gated behind Google SSO
+    "media.giomartins.dev",             # the blog's image bucket — every visitor's <img> tag must load anonymously, same reasoning as buteco-class
+    "tela.giomartins.dev",              # rooms are shared with people who have no account here; the room password is the access control
+    "tela-api.giomartins.dev",          # same tela-frontend page calls this cross-origin for signalling/SFU — a browser SSO redirect would break every fetch/WebSocket call
+    "cch.giomartins.dev",               # rooms are shared with guests who have no account here; the room password is the access control, same as tela
+    "cch-api.giomartins.dev",           # the cch-frontend page calls this cross-origin for game REST/WebSocket — a browser SSO redirect would break every fetch/WebSocket call, same as tela-api
+    "hub.giomartins.dev",               # the hub is chrome around the public SPAs, so it's public too — its opt-in Google login lives on the /sso path instead (see path_protected_hostnames in locals.tf), which gates only the admin shortcuts tier
+    "bet-api.giomartins.dev",           # path-protected like the hub (its /api and /auth have Access apps of their own, see path_protected_hostnames in locals.tf) — the bare hostname must stay reachable for bet-runner, which polls /internal/* from the home network with RUNNER_API_KEY (a machine-to-machine client can't pass a Google SSO redirect)
+    "bet.giomartins.dev",               # the bet micro frontend — public chrome around the real gate (the Access app on bet-api.giomartins.dev, which the SPA probes like the hub's /sso); it must be iframe-embeddable in the hub like cch/tela, and a Google SSO redirect inside the hub's renderer frame cannot be completed
+    "contas-api.giomartins.dev",        # path-protected like the hub (its /api has an Access app of its own, see path_protected_hostnames in locals.tf) — the bare hostname stays out so exactly ONE Access app exists for the domain
+    "transacional-api.giomartins.dev",  # same reasoning as contas-api.giomartins.dev above
+    "asset-manager-api.giomartins.dev", # same reasoning as contas-api.giomartins.dev above
+    "dashboard-api.giomartins.dev",     # same reasoning as contas-api.giomartins.dev above
+    "financas.giomartins.dev",          # chrome público em volta do gate real nas 4 Access apps das APIs, precisa ser iframe-embeddable no hub
+    "ai.giomartins.dev",                # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
+    "otel.giomartins.dev",              # public visitors' browsers send SPA telemetry here — a Google SSO redirect would break every one of them; alloy's OTLP receiver CORS allowlist (the two SPA origins only) is the access control (modules/compute/services/observability)
   ]
 }
 
@@ -218,5 +223,13 @@ variable "deals_discord_webhook_url" {
   description = "Discord channel webhook the events-announcer worker posts fresh deals to (one message per deal, oldest first, <=ANNOUNCE_MAX_PER_FLUSH/flush, drained off the durable domain.events.queue). The scrapers themselves never announce anymore. Blank state is intentional: without it announcements stay off, while the queue keeps draining and counting. Same shape as discord_announce_webhook_url above, separate item so deals announcing can live in its own channel."
   type        = string
   default     = ""
+  sensitive   = true
+}
+
+# --- financas (personal finance feature: contas/transacional/asset-manager/dashboard-api) ---
+
+variable "asset_manager_brapi_token" {
+  description = "brapi.dev API token asset-manager-api uses to fetch market data (stocks/funds quotes) -- no default, the real value is passed in from outside (terraform.tfvars or a CI secret as TF_VAR_asset_manager_brapi_token), never committed here."
+  type        = string
   sensitive   = true
 }

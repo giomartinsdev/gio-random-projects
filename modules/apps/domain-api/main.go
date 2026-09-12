@@ -93,6 +93,22 @@ func main() {
 	audits := postgres.NewAuditRepository(pool)
 	syncHandlers := httpapi.NewSyncHandlers(commands, audits, log)
 
+	// Gestão financeira modular (specs/002): conta/dashboardlayout are
+	// read-only here (writes go through /sync); transacao and ativo's
+	// quote update get their own dedicated async handlers.
+	contas := postgres.NewContaRepository(pool)
+	contaHandlers := httpapi.NewContaHandlers(contas, log)
+
+	transacoes := postgres.NewTransacaoRepository(pool)
+	transacaoHandlers := httpapi.NewTransacaoHandlers(transacoes, commands, log)
+
+	ativos := postgres.NewAtivoRepository(pool)
+	ativoMovimentos := postgres.NewAtivoMovimentoRepository(pool)
+	ativoHandlers := httpapi.NewAtivoHandlers(ativos, ativoMovimentos, commands, log)
+
+	dashboardLayouts := postgres.NewDashboardLayoutRepository(pool)
+	dashboardLayoutHandlers := httpapi.NewDashboardLayoutHandlers(dashboardLayouts, log)
+
 	// A dedicated client for SSE's Redis SUBSCRIBE -- go-redis dedicates
 	// a connection per subscription for the life of that subscription,
 	// so this stays separate from rdb (which CommandPublisher uses for
@@ -101,7 +117,7 @@ func main() {
 	defer sseRDB.Close()
 	sseHandlers := httpapi.NewSSEHandlers(sseRDB, log)
 
-	router := httpapi.NewRouter(handlers, postHandlers, roomHandlers, messageHandlers, dealHandlers, sseHandlers, cchHandlers, syncHandlers, apiKeys, rateLimiter, log)
+	router := httpapi.NewRouter(handlers, postHandlers, roomHandlers, messageHandlers, dealHandlers, sseHandlers, cchHandlers, syncHandlers, contaHandlers, transacaoHandlers, ativoHandlers, dashboardLayoutHandlers, apiKeys, rateLimiter, log)
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: otelhttp.NewHandler(router, "domain-api",
 		// chi's route patterns aren't visible to otelhttp, so name the

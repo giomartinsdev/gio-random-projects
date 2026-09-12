@@ -35,6 +35,7 @@ on:
       - "modules/apps/cch-frontend/**"
       - "modules/apps/hub-frontend/**"
       - "modules/apps/bet-frontend/**"
+      - "modules/apps/financas-frontend/**"
   workflow_dispatch:
     inputs:
       app:
@@ -53,7 +54,7 @@ jobs:
 
       - id: list
         env:
-          ALLOWED_APPS: "buteco-class-frontend tela-frontend cch-frontend hub-frontend bet-frontend"
+          ALLOWED_APPS: "buteco-class-frontend tela-frontend cch-frontend hub-frontend bet-frontend financas-frontend"
         run: |
           all_apps=$(echo "$ALLOWED_APPS" | tr ' ' '\n')
 

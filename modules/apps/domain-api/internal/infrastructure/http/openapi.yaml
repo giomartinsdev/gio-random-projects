@@ -555,6 +555,311 @@ paths:
                 $ref: "#/components/schemas/Error"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /contas:
+    get:
+      summary: List a usuario's contas
+      description: >
+        Read-only -- creation/update (conta.create, conta.update) go
+        through the generic POST /sync route.
+      parameters:
+        - name: usuario
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ativa, arquivada]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contas:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Conta"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /contas/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a conta by id
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conta"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Conta not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /transacoes:
+    get:
+      summary: List transacoes by filter
+      parameters:
+        - name: usuario
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: conta
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: categoria
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: de
+          in: query
+          required: false
+          description: Inclusive lower bound, YYYY-MM-DD.
+          schema:
+            type: string
+            format: date
+        - name: ate
+          in: query
+          required: false
+          description: Inclusive upper bound, YYYY-MM-DD.
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transacoes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Transacao"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      summary: Create a transacao (async — returns 202, not the created row)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransacaoCreateInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /transacoes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      summary: Update a transacao (async — returns 202)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransacaoUpdateInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      summary: >
+        Delete a transacao (async — returns 202). Takes a JSON body,
+        same reasoning as DELETE /rooms/{id}.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransacaoDeleteInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /ativos:
+    get:
+      summary: List a usuario's ativos
+      description: >
+        Read-only -- ativo.create and ativo.registerMovement go through
+        the generic POST /sync route. Each item includes
+        valor_mercado_atual (quantidade_atual x ultima_cotacao);
+        rentabilidade completa is left to asset-manager-api / the BFF.
+      parameters:
+        - name: usuario
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: conta
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ativos:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Ativo"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /ativos/{id}/movimentos:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List an ativo's movimentos (compra/venda/provento)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  movimentos:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AtivoMovimento"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Ativo not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /ativos/{id}/cotacao:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: >
+        Update an ativo's quote (async — returns 202). Called in the
+        background by asset-manager-api, not by a person waiting on the
+        response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AtivoQuoteInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /dashboardlayouts/{usuario}:
+    parameters:
+      - name: usuario
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: >
+        Get a usuario's saved dashboard layout. Writes
+        (dashboardlayout.save, dashboardlayout.delete) go through the
+        generic POST /sync route.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardLayout"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: >
+            No layout saved for this usuario -- the frontend falls back
+            to its own embedded default in this case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 components:
   securitySchemes:
     apiKeyAuth:
@@ -836,6 +1141,206 @@ components:
           type: object
           nullable: true
           additionalProperties: true
+    Conta:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        usuario_email:
+          type: string
+        nome:
+          type: string
+        tipo:
+          type: string
+          enum: [corrente, investimento]
+        status:
+          type: string
+          enum: [ativa, arquivada]
+        criado_em:
+          type: string
+          format: date-time
+        atualizado_em:
+          type: string
+          format: date-time
+    Transacao:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        usuario_email:
+          type: string
+        conta_id:
+          type: string
+          format: uuid
+        tipo:
+          type: string
+          enum: [entrada, saida]
+        categoria:
+          type: string
+        descricao:
+          type: string
+        anexo_imagem:
+          type: string
+        valor:
+          type: number
+          format: double
+        data:
+          type: string
+          format: date
+        criado_em:
+          type: string
+          format: date-time
+        atualizado_em:
+          type: string
+          format: date-time
+    TransacaoCreateInput:
+      type: object
+      required: [usuario_email, conta_id, tipo, categoria, valor, data]
+      properties:
+        usuario_email:
+          type: string
+        conta_id:
+          type: string
+          format: uuid
+        tipo:
+          type: string
+          enum: [entrada, saida]
+        categoria:
+          type: string
+        descricao:
+          type: string
+        anexo_imagem:
+          type: string
+        valor:
+          type: number
+          format: double
+          description: Must be greater than zero.
+        data:
+          type: string
+          format: date
+    TransacaoUpdateInput:
+      type: object
+      required: [usuario_email]
+      properties:
+        usuario_email:
+          type: string
+        conta_id:
+          type: string
+          format: uuid
+        tipo:
+          type: string
+          enum: [entrada, saida]
+        categoria:
+          type: string
+        descricao:
+          type: string
+        anexo_imagem:
+          type: string
+        valor:
+          type: number
+          format: double
+        data:
+          type: string
+          format: date
+    TransacaoDeleteInput:
+      type: object
+      required: [usuario_email]
+      properties:
+        usuario_email:
+          type: string
+    Ativo:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        usuario_email:
+          type: string
+        conta_id:
+          type: string
+          format: uuid
+        ticker:
+          type: string
+        status:
+          type: string
+          enum: [aberta, encerrada]
+        quantidade_atual:
+          type: number
+          format: double
+        custo_medio:
+          type: number
+          format: double
+        ultima_cotacao:
+          type: number
+          format: double
+        ultima_cotacao_em:
+          type: string
+          format: date-time
+        valor_mercado_atual:
+          type: number
+          format: double
+          description: Computed as quantidade_atual x ultima_cotacao.
+        criado_em:
+          type: string
+          format: date-time
+        atualizado_em:
+          type: string
+          format: date-time
+    AtivoMovimento:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ativo_id:
+          type: string
+          format: uuid
+        tipo:
+          type: string
+          enum: [compra, venda, provento]
+        quantidade:
+          type: number
+          format: double
+        preco_unitario:
+          type: number
+          format: double
+        valor_provento:
+          type: number
+          format: double
+        resultado_realizado:
+          type: number
+          format: double
+        data:
+          type: string
+          format: date
+        criado_em:
+          type: string
+          format: date-time
+    AtivoQuoteInput:
+      type: object
+      required: [cotacao, obtida_em]
+      properties:
+        cotacao:
+          type: number
+          format: double
+          description: Must be greater than zero.
+        obtida_em:
+          type: string
+          format: date-time
+    DashboardLayout:
+      type: object
+      properties:
+        usuario_email:
+          type: string
+        blocos:
+          type: array
+          items: {}
+          description: Opaque JSON, shaped and owned by the frontend.
+        atualizado_em:
+          type: string
+          format: date-time
     Error:
       type: object
       properties:
