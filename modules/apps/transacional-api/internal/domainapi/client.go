@@ -69,43 +69,47 @@ type Conta struct {
 }
 
 // Transacao mirrors one lançamento on the wire, both for the list
-// response and for round-tripping create/update payloads.
+// response and for round-tripping create/update payloads. Valor is a
+// JSON number on domain-api (float64 in its DTO) -- sending/expecting a
+// string here used to break both the write (400 invalid request body)
+// and the read (decode error).
 type Transacao struct {
-	ID           string `json:"id"`
-	UsuarioEmail string `json:"usuario_email"`
-	ContaID      string `json:"conta_id"`
-	Tipo         string `json:"tipo"`
-	Valor        string `json:"valor"`
-	Data         string `json:"data"`
-	Categoria    string `json:"categoria"`
-	Descricao    string `json:"descricao,omitempty"`
-	AnexoImagem  string `json:"anexo_imagem,omitempty"`
+	ID           string  `json:"id"`
+	UsuarioEmail string  `json:"usuario_email"`
+	ContaID      string  `json:"conta_id"`
+	Tipo         string  `json:"tipo"`
+	Valor        float64 `json:"valor"`
+	Data         string  `json:"data"`
+	Categoria    string  `json:"categoria"`
+	Descricao    string  `json:"descricao,omitempty"`
+	AnexoImagem  string  `json:"anexo_imagem,omitempty"`
 }
 
-// CriarInput is the POST /transacoes body.
+// CriarInput is the POST /transacoes body. Data must be RFC3339
+// (domain-api decodes time.Time); Valor must be a JSON number.
 type CriarInput struct {
-	UsuarioEmail string `json:"usuario_email"`
-	ContaID      string `json:"conta_id"`
-	Tipo         string `json:"tipo"`
-	Valor        string `json:"valor"`
-	Data         string `json:"data"`
-	Categoria    string `json:"categoria"`
-	Descricao    string `json:"descricao,omitempty"`
-	AnexoImagem  string `json:"anexo_imagem,omitempty"`
+	UsuarioEmail string  `json:"usuario_email"`
+	ContaID      string  `json:"conta_id"`
+	Tipo         string  `json:"tipo"`
+	Valor        float64 `json:"valor"`
+	Data         string  `json:"data"`
+	Categoria    string  `json:"categoria"`
+	Descricao    string  `json:"descricao,omitempty"`
+	AnexoImagem  string  `json:"anexo_imagem,omitempty"`
 }
 
 // EditarInput is the PATCH /transacoes/{id} body -- everything but
 // UsuarioEmail is optional, so pointers distinguish "not sent" from
 // "sent as zero value".
 type EditarInput struct {
-	UsuarioEmail string  `json:"usuario_email"`
-	ContaID      *string `json:"conta_id,omitempty"`
-	Tipo         *string `json:"tipo,omitempty"`
-	Valor        *string `json:"valor,omitempty"`
-	Data         *string `json:"data,omitempty"`
-	Categoria    *string `json:"categoria,omitempty"`
-	Descricao    *string `json:"descricao,omitempty"`
-	AnexoImagem  *string `json:"anexo_imagem,omitempty"`
+	UsuarioEmail string   `json:"usuario_email"`
+	ContaID      *string  `json:"conta_id,omitempty"`
+	Tipo         *string  `json:"tipo,omitempty"`
+	Valor        *float64 `json:"valor,omitempty"`
+	Data         *string  `json:"data,omitempty"`
+	Categoria    *string  `json:"categoria,omitempty"`
+	Descricao    *string  `json:"descricao,omitempty"`
+	AnexoImagem  *string  `json:"anexo_imagem,omitempty"`
 }
 
 // ErrNotFound is GetConta's answer for a 404 -- the caller turns this

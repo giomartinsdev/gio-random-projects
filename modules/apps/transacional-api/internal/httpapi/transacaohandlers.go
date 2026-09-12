@@ -176,7 +176,7 @@ func (s *Server) handleCriarTransacao(w http.ResponseWriter, r *http.Request) {
 		UsuarioEmail: id.Email,
 		ContaID:      contaID,
 		Tipo:         tipo,
-		Valor:        strconv.FormatFloat(valor, 'f', -1, 64),
+		Valor:        valor,
 		Data:         data,
 		Categoria:    stringOrEmpty(req.Categoria),
 		Descricao:    stringOrEmpty(req.Descricao),
@@ -228,8 +228,7 @@ func (s *Server) handleEditarTransacao(w http.ResponseWriter, r *http.Request) {
 			writeAPIErr(w, errValorInvalido())
 			return
 		}
-		valorStr := strconv.FormatFloat(f, 'f', -1, 64)
-		in.Valor = &valorStr
+		in.Valor = &f
 	}
 	if req.Data != nil {
 		data, ok := dataParaDominio(*req.Data)

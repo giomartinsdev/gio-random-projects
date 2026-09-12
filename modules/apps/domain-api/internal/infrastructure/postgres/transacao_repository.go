@@ -26,10 +26,20 @@ const transacaoColumns = `id, usuario_email, conta_id, tipo, categoria, descrica
 
 func scanTransacao(row pgx.Row) (domaintransacao.Transacao, error) {
 	var t domaintransacao.Transacao
+	// descricao/anexo_imagem are nullable in the table (domain-worker
+	// writes NULL for the empty string) -- scan through pointers like
+	// scanAtivo/scanAtivoMovimento do for their nullable columns.
+	var descricao, anexoImagem *string
 	err := row.Scan(
-		&t.ID, &t.UsuarioEmail, &t.ContaID, &t.Tipo, &t.Categoria, &t.Descricao, &t.AnexoImagem,
+		&t.ID, &t.UsuarioEmail, &t.ContaID, &t.Tipo, &t.Categoria, &descricao, &anexoImagem,
 		&t.Valor, &t.Data, &t.CriadoEm, &t.AtualizadoEm,
 	)
+	if descricao != nil {
+		t.Descricao = *descricao
+	}
+	if anexoImagem != nil {
+		t.AnexoImagem = *anexoImagem
+	}
 	return t, err
 }
 

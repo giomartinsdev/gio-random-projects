@@ -76,10 +76,16 @@ func TestCriarAtivo_DataEnviadaRFC3339(t *testing.T) {
 		t.Fatalf("expected action ativo.create, got %q", (*captured)[0].Action)
 	}
 	var payload struct {
-		Data string `json:"data"`
+		Quantidade float64 `json:"quantidade_inicial"`
+		Data       string  `json:"data"`
 	}
 	if err := json.Unmarshal((*captured)[0].Payload, &payload); err != nil {
 		t.Fatalf("decode captured payload: %v", err)
+	}
+	// The worker's command field is quantidade_inicial; a "quantidade"
+	// tag here decoded as zero and the create was rejected.
+	if payload.Quantidade != 10 {
+		t.Fatalf("expected quantidade_inicial 10 on the wire, got %v", payload.Quantidade)
 	}
 	if payload.Data != "2026-09-12T00:00:00Z" {
 		t.Fatalf("expected RFC3339 data on the wire, got %q", payload.Data)

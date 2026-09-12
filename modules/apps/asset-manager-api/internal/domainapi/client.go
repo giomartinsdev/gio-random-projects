@@ -116,12 +116,15 @@ type Movimento struct {
 	CriadoEm           time.Time `json:"criado_em"`
 }
 
-// CreateAtivoInput is the ativo.create /sync payload.
+// CreateAtivoInput is the ativo.create /sync payload. The worker's
+// command shape names the opening position quantidade_inicial -- a
+// "quantidade" tag here used to decode as zero and the worker rejected
+// the create with "quantidade must be greater than zero".
 type CreateAtivoInput struct {
 	UsuarioEmail  string  `json:"usuario_email"`
 	ContaID       string  `json:"conta_id"`
 	Ticker        string  `json:"ticker"`
-	Quantidade    float64 `json:"quantidade"`
+	Quantidade    float64 `json:"quantidade_inicial"`
 	PrecoUnitario float64 `json:"preco_unitario"`
 	Data          string  `json:"data"`
 }

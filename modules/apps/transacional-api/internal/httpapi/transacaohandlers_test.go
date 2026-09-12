@@ -207,7 +207,9 @@ func TestCriarTransacao_AnexoFormatoInvalido(t *testing.T) {
 // TestCriarTransacao_DataEnviadaRFC3339 pins the wire format: the
 // date-only "data" the frontend contract speaks used to reach
 // domain-api raw, whose time.Time decode answered 400 -- surfaced to
-// the frontend as a 502. The payload must leave as RFC3339.
+// the frontend as a 502. valor has the same story: a JSON string where
+// domain-api's float64 decode expects a number. The payload must leave
+// as RFC3339 + numeric valor.
 func TestCriarTransacao_DataEnviadaRFC3339(t *testing.T) {
 	var got domainapi.CriarInput
 	mux := http.NewServeMux()
@@ -225,7 +227,7 @@ func TestCriarTransacao_DataEnviadaRFC3339(t *testing.T) {
 	defer fake.Close()
 
 	s := newTestServer(fake.URL)
-	body := []byte(`{"contaId":"c1","tipo":"entrada","valor":10,"data":"2026-09-12","categoria":"x"}`)
+	body := []byte(`{"contaId":"c1","tipo":"entrada","valor":123.45,"data":"2026-09-12","categoria":"x"}`)
 	req := authedRequest(http.MethodPost, "/api/transacoes", body)
 	w := httptest.NewRecorder()
 
@@ -233,6 +235,9 @@ func TestCriarTransacao_DataEnviadaRFC3339(t *testing.T) {
 
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d (body %s)", w.Code, w.Body.String())
+	}
+	if got.Valor != 123.45 {
+		t.Fatalf("expected numeric valor 123.45 on the wire, got %v", got.Valor)
 	}
 	if got.Data != "2026-09-12T00:00:00Z" {
 		t.Fatalf("expected RFC3339 data on the wire, got %q", got.Data)
