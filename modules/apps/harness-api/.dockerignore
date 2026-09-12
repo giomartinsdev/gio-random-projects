@@ -1,0 +1,8 @@
+bin/
+data/
+*.db
+*.db-shm
+*.db-wal
+*.test
+.git
+README.md
