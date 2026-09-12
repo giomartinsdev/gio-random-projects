@@ -22,9 +22,11 @@ module "cloud_cloudflare" {
   # behind Access: its SPA (bet.giomartins.dev) preflights every
   # content-type:json call, and a preflight 403s at the edge without
   # this bypass no matter how logged-in the user is (preflights carry
-  # no cookies). The key is the path app's own domain string, not the
-  # bare hostname -- that's what the contains() check compares against.
-  preflight_bypass_hostnames = ["bet-api.giomartins.dev/api"]
+  # no cookies). harness-api is the same shape (harness-frontend SPA
+  # talks to harness-api.giomartins.dev/api cross-origin). The key is
+  # the path app's own domain string, not the bare hostname -- that's
+  # what the contains() check compares against.
+  preflight_bypass_hostnames = ["bet-api.giomartins.dev/api", "harness-api.giomartins.dev/api"]
 
   # Email Routing lives on the zone's DNS (MX/SPF/DKIM) plus account
   # state, not on any hostname's ingress — so it slots into this
@@ -288,6 +290,30 @@ module "compute_apps_bet_api" {
   otlp_endpoint    = module.compute_services_observability.otlp_endpoint
 
   depends_on = [null_resource.postgres_password_sync, module.cloud_cloudflare]
+}
+
+# harness-api: the corporate handoff harness -- path-protected behind
+# Access exactly like bet-api (the /api path has its own Access
+# application, login hop /api/sso included; the bare hostname is in
+# excluded_hostnames so that one app is the domain's only one), with
+# Access-JWT auth in-app (HARNESS_ACCESS_AUD -- internal/httpapi/auth.go
+# verifies the edge-injected JWT). No shared database: the state is
+# pure-Go SQLite on the module's own docker volume.
+module "compute_apps_harness_api" {
+  source = "./modules/compute/apps/harness_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name  = module.network_docker_apps.network_name
+  registry_host = var.registry_host
+  access_aud = [
+    module.cloud_cloudflare.access_app_auds["harness-api.giomartins.dev/api"],
+  ]
+  allowed_emails   = var.allowed_emails
+  frontend_origins = ["https://harness-frontend.giomartins.dev", "http://localhost:5173"]
+
+  depends_on = [module.cloud_cloudflare]
 }
 
 # bet-runner used to live here as a Docker container on the apps

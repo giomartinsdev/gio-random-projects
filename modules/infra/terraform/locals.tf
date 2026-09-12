@@ -104,6 +104,20 @@ locals {
       port     = 8009
     },
     {
+      # harness-api: the corporate handoff harness's backend (Go + SQLite
+      # on a docker volume -- see modules/apps/harness-api's own README).
+      # Path-protected (bet-api pattern -- bare hostname in
+      # excluded_hostnames): the harness SPA fetches /api/* cross-origin,
+      # the edge stamps the Cf-Access-Jwt-Assertion and the app verifies
+      # that JWT itself (internal/httpapi/auth.go), and the login hop
+      # /api/sso lives UNDER the /api app so one Access app mints and
+      # consumes the cookie (see the ONE-app note under
+      # path_protected_hostnames below). Port must match
+      # module.compute_apps_harness_api's external_port.
+      hostname = "harness-api.giomartins.dev"
+      port     = 8010
+    },
+    {
       # 9router: OpenAI-compatible AI proxy with auto-fallback across
       # 40+ providers (Claude, GPT, Gemini, …). Dashboard at /dashboard,
       # API at /v1. Excluded from Cloudflare Access (Google SSO) so CLI/
@@ -234,6 +248,18 @@ locals {
       hostname = "bet.giomartins.dev"
       bucket   = "bet-frontend"
     },
+    {
+      # The corporate handoff harness's SPA -- public chrome around the
+      # real gate, which is the Access application on
+      # harness-api.giomartins.dev/api. Same shape as the bet SPA: it
+      # fetches /api/me on the API cross-origin (200 = logged in, opaque
+      # redirect = not) and hops through the API's /api/sso for the
+      # Google login. It must be iframe-embeddable in the hub like
+      # cch/tela/bet (a Google SSO redirect inside the hub's renderer
+      # frame cannot be completed), hence excluded_hostnames below.
+      hostname = "harness-frontend.giomartins.dev"
+      bucket   = "harness-frontend"
+    },
   ]
 
   # Paths that get a Cloudflare Access application of their own even
@@ -254,6 +280,16 @@ locals {
   # header the app itself checks (same secret as when it lived on the
   # apps network).
   #
+  # harness-api's /api is the same shape as bet-api's: the harness SPA
+  # fetches /api/* cross-origin (the edge stamps the
+  # Cf-Access-Jwt-Assertion the Go app verifies -- see
+  # internal/httpapi/auth.go) and hops through /api/sso for the Google
+  # login. The REST of harness-api's hostname carries nothing a browser
+  # or a machine client needs (the bare hostname is in
+  # excluded_hostnames purely so ONE app exists for the domain -- same
+  # cookie-vs-aud reasoning as bet-api above), so /api is the only
+  # thing an Access application protects there.
+  #
   # ONE app, not two: Access cookies are domain-scoped (one
   # CF_Authorization for bet-api.giomartins.dev) but the aud claim in
   # the JWT is PER APPLICATION -- a cookie minted by an /auth app was
@@ -265,5 +301,6 @@ locals {
   path_protected_hostnames = [
     "hub.giomartins.dev/sso",
     "bet-api.giomartins.dev/api",
+    "harness-api.giomartins.dev/api",
   ]
 }

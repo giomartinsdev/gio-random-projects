@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Paleta corporativa clara, em tokens HSL -- o tailwind.config.js expõe
+   cada um como cor utilitária (bg-card, text-muted-foreground, ...).
+   Mobile-first (FR-014): o shell inteiro é uma coluna fluida com uma
+   calha lateral mínima; grids aparecem só a partir de sm/md. */
+@layer base {
+  :root {
+    --background: 220 20% 97%;
+    --foreground: 224 25% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 25% 12%;
+    --primary: 221 83% 45%;
+    --primary-foreground: 0 0% 100%;
+    --muted: 220 16% 94%;
+    --muted-foreground: 220 10% 42%;
+    --accent: 220 30% 93%;
+    --accent-foreground: 224 25% 12%;
+    --success: 152 55% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 35 90% 40%;
+    --warning-foreground: 0 0% 100%;
+    --destructive: 0 70% 44%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 14% 87%;
+    --input: 220 14% 80%;
+    --ring: 221 83% 45%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    /* Com viewport-fit=cover, o conteúdo não pode encostar na borda
+       bruta: safe areas entram como calha mínima em telas com notch. */
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
+  }
+
+  /* Markdown do contexto/próximos passos (MarkdownView, FR-011): o
+     react-markdown entrega elementos React soltos, então a estilização
+     desce de um contêiner .prose-md -- sem depender de plugin.
+     break-words é herdado: URL longa em texto/código inline quebra em
+     vez de empurrar a página além da tela (FR-014); <pre> já tem
+     overflow-x-auto próprio. */
+  .prose-md {
+    @apply break-words text-sm leading-relaxed;
+  }
+  .prose-md > * + * {
+    @apply mt-3;
+  }
+  .prose-md h1,
+  .prose-md h2,
+  .prose-md h3 {
+    @apply text-base font-semibold;
+  }
+  .prose-md ul {
+    @apply list-disc pl-5;
+  }
+  .prose-md ol {
+    @apply list-decimal pl-5;
+  }
+  .prose-md code {
+    @apply rounded bg-muted px-1 py-0.5 text-[0.85em];
+  }
+  .prose-md pre {
+    @apply overflow-x-auto rounded-md bg-muted p-3;
+  }
+  .prose-md pre code {
+    @apply bg-transparent p-0;
+  }
+  .prose-md blockquote {
+    @apply border-l-2 border-border pl-3 text-muted-foreground;
+  }
+  .prose-md a {
+    @apply text-primary underline underline-offset-2;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 py-2 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-primario {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+  .btn-secundario {
+    @apply border border-border bg-card text-foreground hover:bg-muted;
+  }
+  .btn-perigoso {
+    @apply bg-destructive text-destructive-foreground hover:bg-destructive/90;
+  }
+  .card {
+    @apply rounded-lg border border-border bg-card;
+  }
+  .campo {
+    @apply w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring;
+  }
+}
