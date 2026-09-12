@@ -27,13 +27,18 @@ export function loginNavigationUrl(): string {
 export const LOGOUT_URL =
   "https://workwithgiomartinsdev.cloudflareaccess.com/cdn-cgi/access/logout";
 
-// redirect:"manual" faz o redirect de login do Access chegar como uma
-// resposta opaca (status 0); uma requisição que já passa pelo Access
-// chega 200. Qualquer outra coisa (opaco, erro de rede) é tratada como
-// "não logada" -- errar nesse sentido só esconde a UI, nunca vaza dado.
+// A sonda tem que bater em /api/me, não em /api/sso: /api/sso é só o
+// alvo do hop de login (exige ?return= e SEMPRE responde 422 sem ele,
+// esteja a pessoa logada ou não -- não é um sinal de sessão). /api/me
+// é uma rota comum, protegida pelo Access como qualquer outra: sem
+// sessão válida o próprio Access intercepta antes de chegar no app e
+// devolve um redirect (opaco com redirect:"manual", status 0); com
+// sessão válida a requisição chega no handler e responde 200 com a
+// identidade. Mesmo padrão de hub-frontend's /sso probe e do
+// bet-frontend's /api/me probe.
 export async function probeLogin(): Promise<boolean> {
   try {
-    const res = await fetch(LOGIN_URL, {
+    const res = await fetch(`${CONTAS_API_URL}/api/me`, {
       redirect: "manual",
       cache: "no-store",
       credentials: "include",
