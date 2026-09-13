@@ -326,17 +326,14 @@ locals {
   # the probe could never share a session. The SSO hop now lives UNDER
   # the /api app (bet-api route /api/sso), so one app mints and
   # consumes the cookie.
-  # contas-api/transacional-api/asset-manager-api/dashboard-api's /api
-  # are the same shape as bet-api's above -- 4 new Access apps, one per
-  # hostname/api, each fronting one of financas-frontend's 4 backends.
-  # Same ONE-app-per-domain reasoning: each API's bare hostname stays
-  # in excluded_hostnames so only the /api app exists there.
+  # contas-api/transacional-api/asset-manager-api/dashboard-api used to
+  # be path-protected here too (4 Access apps, one per API's /api),
+  # but financas dropped Cloudflare Access entirely in favor of its own
+  # Google Sign-In + session cookie (contas-api issues it, the other 3
+  # only verify it) -- see FINANCAS_SESSION_SECRET/GOOGLE_OAUTH_CLIENT_ID
+  # wiring below. No Access app fronts these 4 hostnames anymore.
   path_protected_hostnames = [
     "hub.giomartins.dev/sso",
     "bet-api.giomartins.dev/api",
-    "contas-api.giomartins.dev/api",
-    "transacional-api.giomartins.dev/api",
-    "asset-manager-api.giomartins.dev/api",
-    "dashboard-api.giomartins.dev/api",
   ]
 }

@@ -1,20 +1,17 @@
 // Package httpapi is the whole transport layer for dashboard-api: a
 // small JSON BFF over domain-api's dashboardlayout aggregate. The React
 // bundle is a separate app (its own origin), so every route speaks CORS
-// to it -- cookies included, because the caller is authenticated by the
-// Cloudflare Access session cookie, not by a token of ours. Error
-// bodies, status codes and route shapes follow
+// to it -- cookies included, because the caller is authenticated by
+// financas' own session cookie (see session.go), not Cloudflare Access
+// anymore. Error bodies, status codes and route shapes follow
 // specs/002-gestao-financeira-modular/contracts/dashboard-api.md.
 package httpapi
 
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/dashboard-api/internal/domainapi"
 )
@@ -22,25 +19,19 @@ import (
 // Config carries what main.go read from the environment.
 type Config struct {
 	// The frontend's own origin(s), comma-separated in the env -- the
-	// only ones CORS is answered for and /api/sso redirects back to.
+	// only ones CORS is answered for.
 	AllowedOrigins []string
-	// Cloudflare Access verification: issuer is the team domain URL,
-	// audience this app's aud. Empty issuer means no JWKS exists to
-	// verify tokens with.
-	AccessIssuer string
-	AccessAud    string
-	// The emails terraform's Access policy allows -- defense in depth
-	// behind Access's own decision. Empty means everyone who passed
-	// Access is in.
+	// SessionSecret verifies the financas_session cookie (HS256) --
+	// contas-api is the one service that also issues it.
+	SessionSecret string
+	// The emails an operator wants to still restrict to, if ever --
+	// empty by default now that financas is open signup.
 	AllowedEmails []string
-	// Dev bypass: when set and no JWT header is present, requests run as
-	// the dev user. Must stay unset in prod.
+	// Dev bypass: when set and no session cookie is present, requests
+	// run as the dev user. Must stay unset in prod.
 	DevBypassAuth bool
 	DevUserEmail  string
 	DevUserNome   string
-	// JWTKeyfunc resolves signing keys from the Access team JWKS; built
-	// by main.go from AccessIssuer. Nil disables the token path (dev).
-	JWTKeyfunc jwt.Keyfunc
 }
 
 type Server struct {
@@ -57,7 +48,6 @@ func New(domain *domainapi.Client, cfg Config) *Server {
 	// Foundational routes.
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/me", s.handleMe)
-	s.mux.HandleFunc("GET /api/sso", s.handleSSO)
 	// Layout routes (this module's whole reason to exist).
 	s.mux.HandleFunc("GET /api/layout", s.handleGetLayout)
 	s.mux.HandleFunc("PUT /api/layout", s.handlePutLayout)
@@ -67,12 +57,12 @@ func New(domain *domainapi.Client, cfg Config) *Server {
 }
 
 // Handler wraps the mux with the auth middleware and CORS. Only
-// /api/health (probe) and /api/sso (the login hop itself) are public;
-// everything else requires a verified Access identity.
+// /api/health is public; everything else requires a verified financas
+// session.
 func (s *Server) Handler() http.Handler {
 	authed := s.requireAuth(s.mux)
 	return s.cors(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/health" || r.URL.Path == "/api/sso" {
+		if r.URL.Path == "/api/health" {
 			s.mux.ServeHTTP(w, r)
 			return
 		}
@@ -111,41 +101,12 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"email": id.Email, "nome": id.Nome})
 }
 
-// handleSSO is the login hop: the frontend NAVIGATES here top-level --
-// never fetches, Google's own login can't run inside a fetch/iframe.
-// The Access application in front of this API intercepts the
-// navigation when there's no session yet; what the browser lands on
-// after passing is this route, which bounces back to the SPA. The
-// redirect target is the caller's ?return= as long as its ORIGIN is
-// allowlisted -- so the hop can't be pointed anywhere else. An unknown
-// origin is a 422, not a silent fallback: the frontend always sends a
-// real return URL, so landing here without one is a bug worth seeing.
-func (s *Server) handleSSO(w http.ResponseWriter, r *http.Request) {
-	if origin, full, ok := originOf(r.URL.Query().Get("return")); ok && slices.Contains(s.cfg.AllowedOrigins, origin) {
-		http.Redirect(w, r, full, http.StatusFound)
-		return
-	}
-	writeError(w, http.StatusUnprocessableEntity, "validacao", "origem de retorno não permitida")
-}
-
-// originOf extracts the origin of an absolute URL ("https://x.dev/a?b"
-// -> origin "https://x.dev", full URL as given). The full URL goes back
-// in the redirect so deep links survive the login hop.
-func originOf(raw string) (origin, full string, ok bool) {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return "", "", false
-	}
-	return u.Scheme + "://" + u.Host, raw, true
-}
-
-// normalizeOrigins trims and canonicalizes the allowlist so "https://x.dev/"
-// and "https://x.dev" match the same redirect target.
+// normalizeOrigins trims and canonicalizes the CORS allowlist.
 func normalizeOrigins(origins []string) []string {
 	out := make([]string, 0, len(origins))
 	for _, o := range origins {
-		if origin, _, ok := originOf(strings.TrimSpace(o)); ok {
-			out = append(out, origin)
+		if o = strings.TrimRight(strings.TrimSpace(o), "/"); o != "" {
+			out = append(out, o)
 		}
 	}
 	return out

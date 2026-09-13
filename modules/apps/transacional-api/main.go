@@ -19,8 +19,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/MicahParks/keyfunc/v3"
-
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/transacional-api/internal/domainapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/transacional-api/internal/httpapi"
 )
@@ -38,33 +36,18 @@ func main() {
 		log.Printf("TRANSACIONAL_DOMAIN_API_URL/TRANSACIONAL_DOMAIN_API_KEY unset: rotas de transações vão falhar com 502")
 	}
 
+	sessionSecret := os.Getenv("FINANCAS_SESSION_SECRET")
 	cfg := httpapi.Config{
 		AllowedOrigins: splitCSV(os.Getenv("TRANSACIONAL_FRONTEND_ORIGINS")),
-		AccessIssuer:   os.Getenv("TRANSACIONAL_ACCESS_ISSUER"),
-		AccessAud:      os.Getenv("TRANSACIONAL_ACCESS_AUD"),
+		SessionSecret:  sessionSecret,
 		AllowedEmails:  splitCSV(os.Getenv("TRANSACIONAL_ALLOWED_EMAILS")),
 		DevBypassAuth:  os.Getenv("TRANSACIONAL_DEV_BYPASS_AUTH") == "1",
 		DevUserEmail:   os.Getenv("TRANSACIONAL_DEV_USER_EMAIL"),
 		DevUserNome:    os.Getenv("TRANSACIONAL_DEV_USER_NOME"),
 		MaxAnexoBytes:  envInt64("TRANSACIONAL_MAX_ANEXO_BYTES", 5*1024*1024),
 	}
-	// The Access team JWKS is what makes the token path work at all. In
-	// prod a failure to load it means every authenticated request would
-	// 401, so refuse to boot; in dev (bypass on) the API is still usable
-	// without it, tokens just keep failing.
-	if cfg.AccessIssuer != "" {
-		jwksURL := strings.TrimRight(cfg.AccessIssuer, "/") + "/cdn-cgi/access/certs"
-		kf, kfErr := keyfunc.NewDefault([]string{jwksURL})
-		switch {
-		case kfErr == nil:
-			cfg.JWTKeyfunc = kf.Keyfunc
-		case cfg.DevBypassAuth:
-			log.Printf("JWKS do Access indisponível no boot (%v): requests com token vão falhar", kfErr)
-		default:
-			log.Fatalf("JWKS do Access (%s): %v", jwksURL, kfErr)
-		}
-	} else if !cfg.DevBypassAuth {
-		log.Printf("TRANSACIONAL_ACCESS_ISSUER unset e sem bypass dev: nenhuma rota autenticada vai aceitar token")
+	if sessionSecret == "" && !cfg.DevBypassAuth {
+		log.Printf("FINANCAS_SESSION_SECRET unset e sem bypass dev: nenhuma sessão vai validar")
 	}
 
 	server := &http.Server{

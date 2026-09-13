@@ -3,9 +3,8 @@
 // database of its own -- positions and movements persist through the
 // shared domain-api; the only state kept in this process is an
 // in-memory, non-durable cache of brapi.dev quotes (internal/quotes).
-// Identity comes from the Cloudflare Access JWT the edge stamps on
-// every request (see internal/httpapi/auth.go), same pattern as every
-// other module here.
+// Identity comes from financas' own session cookie (see
+// internal/httpapi/session.go), not Cloudflare Access anymore.
 package main
 
 import (
@@ -18,8 +17,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/MicahParks/keyfunc/v3"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/asset-manager-api/internal/domainapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/asset-manager-api/internal/httpapi"
@@ -40,32 +37,17 @@ func main() {
 	}
 	quoteClient := quotes.NewFromEnv()
 
+	sessionSecret := os.Getenv("FINANCAS_SESSION_SECRET")
 	cfg := httpapi.Config{
 		AllowedOrigins: splitCSV(os.Getenv("ASSET_MANAGER_FRONTEND_ORIGINS")),
-		AccessIssuer:   os.Getenv("ASSET_MANAGER_ACCESS_ISSUER"),
-		AccessAud:      os.Getenv("ASSET_MANAGER_ACCESS_AUD"),
+		SessionSecret:  sessionSecret,
 		AllowedEmails:  splitCSV(os.Getenv("ASSET_MANAGER_ALLOWED_EMAILS")),
 		DevBypassAuth:  os.Getenv("ASSET_MANAGER_DEV_BYPASS_AUTH") == "1",
 		DevUserEmail:   os.Getenv("ASSET_MANAGER_DEV_USER_EMAIL"),
 		DevUserNome:    os.Getenv("ASSET_MANAGER_DEV_USER_NOME"),
 	}
-	// The Access team JWKS is what makes the token path work at all. In
-	// prod a failure to load it means every authenticated request would
-	// 401, so refuse to boot; in dev (bypass on) the API is still usable
-	// without it, tokens just keep failing.
-	if cfg.AccessIssuer != "" {
-		jwksURL := strings.TrimRight(cfg.AccessIssuer, "/") + "/cdn-cgi/access/certs"
-		kf, kfErr := keyfunc.NewDefault([]string{jwksURL})
-		switch {
-		case kfErr == nil:
-			cfg.JWTKeyfunc = kf.Keyfunc
-		case cfg.DevBypassAuth:
-			log.Printf("JWKS do Access indisponível no boot (%v): requests com token vão falhar", kfErr)
-		default:
-			log.Fatalf("JWKS do Access (%s): %v", jwksURL, kfErr)
-		}
-	} else if !cfg.DevBypassAuth {
-		log.Printf("ASSET_MANAGER_ACCESS_ISSUER unset e sem bypass dev: nenhuma rota autenticada vai aceitar token")
+	if sessionSecret == "" && !cfg.DevBypassAuth {
+		log.Printf("FINANCAS_SESSION_SECRET unset e sem bypass dev: nenhuma sessão vai validar")
 	}
 
 	// BIND_HOST lets an ingress deployment keep this off everything but

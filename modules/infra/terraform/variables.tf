@@ -55,10 +55,10 @@ variable "excluded_hostnames" {
     "hub.giomartins.dev",               # the hub is chrome around the public SPAs, so it's public too — its opt-in Google login lives on the /sso path instead (see path_protected_hostnames in locals.tf), which gates only the admin shortcuts tier
     "bet-api.giomartins.dev",           # path-protected like the hub (its /api and /auth have Access apps of their own, see path_protected_hostnames in locals.tf) — the bare hostname must stay reachable for bet-runner, which polls /internal/* from the home network with RUNNER_API_KEY (a machine-to-machine client can't pass a Google SSO redirect)
     "bet.giomartins.dev",               # the bet micro frontend — public chrome around the real gate (the Access app on bet-api.giomartins.dev, which the SPA probes like the hub's /sso); it must be iframe-embeddable in the hub like cch/tela, and a Google SSO redirect inside the hub's renderer frame cannot be completed
-    "contas-api.giomartins.dev",        # path-protected like the hub (its /api has an Access app of its own, see path_protected_hostnames in locals.tf) — the bare hostname stays out so exactly ONE Access app exists for the domain
-    "transacional-api.giomartins.dev",  # same reasoning as contas-api.giomartins.dev above
-    "asset-manager-api.giomartins.dev", # same reasoning as contas-api.giomartins.dev above
-    "dashboard-api.giomartins.dev",     # same reasoning as contas-api.giomartins.dev above
+    "contas-api.giomartins.dev",        # no Cloudflare Access at all — financas' own Google Sign-In + session cookie is the gate now (contas-api issues it, see modules/apps/contas-api)
+    "transacional-api.giomartins.dev",  # same reasoning as contas-api.giomartins.dev above — verifies the session cookie, never issues it
+    "asset-manager-api.giomartins.dev", # same reasoning as contas-api.giomartins.dev above — verifies the session cookie, never issues it
+    "dashboard-api.giomartins.dev",     # same reasoning as contas-api.giomartins.dev above — verifies the session cookie, never issues it
     "financas.giomartins.dev",          # chrome público em volta do gate real nas 4 Access apps das APIs, precisa ser iframe-embeddable no hub
     "leads-api.giomartins.dev",         # captura de e-mail na landing page pública, sem sessão de Access nenhuma para exigir de um visitante anônimo — mesma razão de ai.giomartins.dev abaixo
     "ai.giomartins.dev",                # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
@@ -233,4 +233,9 @@ variable "asset_manager_brapi_token" {
   description = "brapi.dev API token asset-manager-api uses to fetch market data (stocks/funds quotes) -- no default, the real value is passed in from outside (terraform.tfvars or a CI secret as TF_VAR_asset_manager_brapi_token), never committed here."
   type        = string
   sensitive   = true
+}
+
+variable "google_oauth_client_id" {
+  description = "The Google OAuth 2.0 Web application Client ID financas' Google Identity Services sign-in button and contas-api's ID-token verification both use -- not secret (it's public in every ID token's aud claim and in the frontend bundle), but still passed in from outside (terraform.tfvars or TF_VAR_google_oauth_client_id) rather than hardcoded, so rotating it never means editing this repo."
+  type        = string
 }

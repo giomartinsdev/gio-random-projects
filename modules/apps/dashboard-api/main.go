@@ -2,9 +2,10 @@
 // 002-gestao-financeira-modular) -- composes the personal finance
 // dashboard layout. No database of its own: the layout is persisted
 // through the shared domain-api's dashboardlayout aggregate over HTTP.
-// Identity comes from the Cloudflare Access JWT the edge stamps on
-// every request (see internal/httpapi/auth.go). The React frontend is a
-// separate app, its own origin, talking to this one over CORS.
+// Identity comes from financas' own session cookie (see
+// internal/httpapi/session.go), not Cloudflare Access anymore. The
+// React frontend is a separate app, its own origin, talking to this one
+// over CORS.
 package main
 
 import (
@@ -17,8 +18,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/MicahParks/keyfunc/v3"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/dashboard-api/internal/domainapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/dashboard-api/internal/httpapi"
@@ -36,36 +35,17 @@ func main() {
 		log.Printf("DASHBOARD_DOMAIN_API_URL/DASHBOARD_DOMAIN_API_KEY unset: /api/layout vai falhar em toda chamada")
 	}
 
+	sessionSecret := os.Getenv("FINANCAS_SESSION_SECRET")
 	cfg := httpapi.Config{
 		AllowedOrigins: splitCSV(os.Getenv("DASHBOARD_FRONTEND_ORIGINS")),
-		AccessIssuer:   os.Getenv("DASHBOARD_ACCESS_ISSUER"),
-		AccessAud:      os.Getenv("DASHBOARD_ACCESS_AUD"),
+		SessionSecret:  sessionSecret,
 		AllowedEmails:  splitCSV(os.Getenv("DASHBOARD_ALLOWED_EMAILS")),
 		DevBypassAuth:  os.Getenv("DASHBOARD_DEV_BYPASS_AUTH") == "1",
 		DevUserEmail:   os.Getenv("DASHBOARD_DEV_USER_EMAIL"),
 		DevUserNome:    os.Getenv("DASHBOARD_DEV_USER_NOME"),
 	}
-	// The Access team JWKS is what makes the token path work at all.
-	// keyfunc refreshes it in the background. In prod a failure to load
-	// it means every authenticated request would 401, so refuse to
-	// boot; in dev (bypass on) the API is still usable without it,
-	// tokens just keep failing.
-	if cfg.AccessIssuer != "" {
-		jwksURL := strings.TrimRight(cfg.AccessIssuer, "/") + "/cdn-cgi/access/certs"
-		kf, kfErr := keyfunc.NewDefault([]string{jwksURL})
-		switch {
-		case kfErr == nil:
-			cfg.JWTKeyfunc = kf.Keyfunc
-		case cfg.DevBypassAuth:
-			log.Printf("JWKS do Access indisponível no boot (%v): requests com token vão falhar", kfErr)
-		default:
-			log.Fatalf("JWKS do Access (%s): %v", jwksURL, kfErr)
-		}
-	} else if !cfg.DevBypassAuth {
-		// Sem issuer não existe JWKS para checar nada: a API sobe, mas só
-		// o health responde. Quase sempre é esquecer de plugar o env do
-		// Terraform -- vale gritar no boot.
-		log.Printf("DASHBOARD_ACCESS_ISSUER unset e sem bypass dev: nenhuma rota autenticada vai aceitar token")
+	if sessionSecret == "" && !cfg.DevBypassAuth {
+		log.Printf("FINANCAS_SESSION_SECRET unset e sem bypass dev: nenhuma sessão vai validar")
 	}
 
 	// BIND_HOST lets the ingress deployment keep this off everything but

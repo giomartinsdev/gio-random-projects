@@ -15,21 +15,33 @@ variable "external_port" {
   default     = 8011
 }
 
-variable "access_team_domain" {
-  description = "The Cloudflare Access team domain this zone belongs to -- the app composes CONTAS_ACCESS_ISSUER from it and fetches the team's JWKS from <issuer>/cdn-cgi/access/certs to verify the edge-injected Cf-Access-Jwt-Assertion."
+variable "session_secret" {
+  description = "The HS256 secret contas-api signs the financas_session cookie with, after verifying the caller's Google ID token -- shared with the other 3 financas backends (they only verify), see random_password.financas_session_secret in the root module."
   type        = string
-  default     = "workwithgiomartinsdev.cloudflareaccess.com"
+  sensitive   = true
 }
 
-variable "access_aud" {
-  description = "The `aud` tag of the contas-api Access application (module.cloud_cloudflare.access_app_auds output; the single /api app, login hop included) -- every Access JWT minted for it carries this aud, and contas-api pins it as the acceptable token audience."
-  type        = list(string)
+variable "session_cookie_domain" {
+  description = "Domain attribute of the financas_session cookie -- .giomartins.dev so it's readable by all 4 financas backend subdomains, not just contas-api's own."
+  type        = string
+  default     = ".giomartins.dev"
+}
+
+variable "session_duration_seconds" {
+  description = "How long a financas session lasts, in seconds, before the cookie expires and the person has to sign in again -- FINANCAS_SESSION_DURATION is read as a plain second count, not a Go duration string."
+  type        = number
+  default     = 30 * 24 * 60 * 60 # 30 days
+}
+
+variable "google_oauth_client_id" {
+  description = "The Google OAuth 2.0 Web application Client ID contas-api verifies every Google ID token's audience against -- see var.google_oauth_client_id in the root module."
+  type        = string
 }
 
 variable "allowed_emails" {
-  description = "Defense-in-depth email allowlist checked after the Access JWT verifies (the edge's Google-SSO policy already enforces the same list)."
+  description = "Optional restriction to a specific set of accounts, checked after the Google ID token verifies -- empty means anyone with a Google account can sign up (financas is open signup by design)."
   type        = list(string)
-  default     = ["giovannidealmeidamartins@gmail.com", "workwithgiomartinsdev@gmail.com"]
+  default     = []
 }
 
 variable "frontend_origins" {

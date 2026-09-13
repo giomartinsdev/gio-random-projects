@@ -1,13 +1,14 @@
 # contas-api: one of the 4 backends behind financas-frontend (the
 # personal-finance feature -- see modules/apps/contas-api's own
-# README). Auth is Cloudflare Access on the public hostname's /api
-# path, exactly like harness-api: the edge injects
-# Cf-Access-Jwt-Assertion and the app verifies the JWT itself. Unlike
-# harness-api there is no local database at all -- accounts and their
-# balances persist through domain-api's shared Postgres via its
-# command pipeline, so this container is stateless (no docker_volume).
-# The published loopback port is what ingress routes
-# contas-api.giomartins.dev to (locals.tf's services).
+# README). Auth is financas' own Google Sign-In + session cookie, not
+# Cloudflare Access: contas-api verifies the Google ID token the
+# frontend's Identity Services button hands it, then mints the
+# financas_session cookie the other 3 backends only verify. There is
+# no local database at all -- accounts and their balances persist
+# through domain-api's shared Postgres via its command pipeline, so
+# this container is stateless (no docker_volume). The published
+# loopback port is what ingress routes contas-api.giomartins.dev to
+# (locals.tf's services).
 locals {
   watchtower_label = var.watchtower_enabled ? [{
     label = "com.centurylinklabs.watchtower.enable"
@@ -21,15 +22,17 @@ resource "docker_container" "contas_api" {
   restart = "unless-stopped"
 
   env = [
-    # Access JWT validation: the issuer every Access JWT must carry
-    # (the app fetches the team's JWKS from
-    # <issuer>/cdn-cgi/access/certs) and the audience tag of this
-    # app's Access application (/api, login hop included) -- a token
-    # minted for any OTHER Access app is rejected here.
-    "CONTAS_ACCESS_ISSUER=https://${var.access_team_domain}",
-    "CONTAS_ACCESS_AUD=${join(",", var.access_aud)}",
-    # Defense-in-depth email allowlist checked after the JWT verifies
-    # (the edge's Google-SSO policy already enforces the same list).
+    # Session issuing: contas-api verifies the Google ID token
+    # (audience must match google_oauth_client_id) and mints the
+    # financas_session cookie other backends only verify, signed with
+    # this shared secret and scoped to session_cookie_domain so all 4
+    # subdomains can read it.
+    "FINANCAS_SESSION_SECRET=${var.session_secret}",
+    "FINANCAS_SESSION_COOKIE_DOMAIN=${var.session_cookie_domain}",
+    "FINANCAS_SESSION_DURATION=${var.session_duration_seconds}",
+    "GOOGLE_OAUTH_CLIENT_ID=${var.google_oauth_client_id}",
+    # Optional restriction beyond "any Google account" -- empty by
+    # default, financas is open signup.
     "CONTAS_ALLOWED_EMAILS=${join(",", var.allowed_emails)}",
     # Cross-origin caller (the financas-frontend SPA's MinIO-served
     # origin) -- the CORS allowlist and /api/sso's return-parameter
