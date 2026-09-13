@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -101,6 +102,7 @@ func (c *Client) LerAposta(ctx context.Context, imagem []byte, mimeType string) 
 	if len(models) == 0 {
 		return Extracao{}, errors.New("nenhum modelo de IA disponível -- defina APOSTAS_AI_MODEL")
 	}
+	log.Printf("apostas-api: internal/ai tentando modelos %v", models)
 
 	dataURL := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(imagem)
 	content := []map[string]any{
@@ -124,9 +126,11 @@ func (c *Client) LerAposta(ctx context.Context, imagem []byte, mimeType string) 
 	for _, model := range models {
 		extracao, err := c.chat(ctx, buildPayload(model))
 		if err == nil {
+			log.Printf("apostas-api: internal/ai modelo %q respondeu: %+v", model, extracao)
 			c.rememberModel(model)
 			return extracao, nil
 		}
+		log.Printf("apostas-api: internal/ai modelo %q falhou: %v", model, err)
 		if !isModelErr(err) {
 			return Extracao{}, err
 		}

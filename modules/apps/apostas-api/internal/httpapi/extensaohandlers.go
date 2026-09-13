@@ -11,6 +11,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -71,7 +72,17 @@ func (s *Server) handleImportarPrint(w http.ResponseWriter, r *http.Request) {
 
 	usuarioEmail := s.cfg.ExtensionUsuarioEmail
 	extracao, err := s.ai.LerAposta(r.Context(), imagem, mimeType)
-	if err != nil || extracao.Casa == "" || extracao.Descricao == "" || extracao.ValorApostado <= 0 {
+	if err != nil {
+		// Logged, never returned to the extension -- the real error
+		// (model rejected the request, 9router unreachable, bad JSON
+		// shape) is only useful server-side; the person just sees "não
+		// consegui ler".
+		log.Printf("apostas-api: extração de print falhou: %v", err)
+		writeError(w, http.StatusUnprocessableEntity, "extracao_falhou", "não consegui ler os dados da aposta no print")
+		return
+	}
+	if extracao.Casa == "" || extracao.Descricao == "" || extracao.ValorApostado <= 0 {
+		log.Printf("apostas-api: extração incompleta: %+v", extracao)
 		writeError(w, http.StatusUnprocessableEntity, "extracao_falhou", "não consegui ler os dados da aposta no print")
 		return
 	}
