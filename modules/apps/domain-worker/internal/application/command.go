@@ -64,6 +64,14 @@ const (
 	// on financas-frontend's public landing page, before that person
 	// ever authenticates.
 	ActionCaptureLead Action = "lead.create"
+
+	// Aposta (specs' betting-house wallet module): a single event with
+	// its own lifecycle, not an accumulating position like Ativo. The
+	// stake debit / payout credit are separate transacao.create
+	// commands apostas-api publishes around these -- domain-worker
+	// never crosses aggregates itself, same as everywhere else.
+	ActionRegistrarAposta Action = "aposta.registrar"
+	ActionResolverAposta  Action = "aposta.resolver"
 )
 
 type Command struct {

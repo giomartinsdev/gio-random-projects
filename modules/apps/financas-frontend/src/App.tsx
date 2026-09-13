@@ -8,6 +8,7 @@ import { TermosPage } from "@/modules/legal/TermosPage";
 import { ContasPage } from "@/modules/contas/ContasPage";
 import { TransacionalPage } from "@/modules/transacional/TransacionalPage";
 import { AssetManagerPage } from "@/modules/asset-manager/AssetManagerPage";
+import { ApostasPage } from "@/modules/apostas/ApostasPage";
 import { DashboardPage } from "@/modules/dashboard/DashboardPage";
 
 // "/" é a landing pública -- captura de lead, sem nenhuma checagem de
@@ -33,6 +34,7 @@ export default function App() {
                   <Route path="contas" element={<ContasPage />} />
                   <Route path="transacional" element={<TransacionalPage />} />
                   <Route path="investimentos" element={<AssetManagerPage />} />
+                  <Route path="apostas" element={<ApostasPage />} />
                   <Route path="*" element={<Navigate to="dashboard" replace />} />
                 </Routes>
               </Shell>

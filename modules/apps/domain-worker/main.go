@@ -25,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
+	appaposta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/aposta"
 	appativo "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/ativo"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
 	appcchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchdeck"
@@ -38,6 +39,7 @@ import (
 	approom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/room"
 	apptransacao "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/transacao"
 	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/user"
+	domainaposta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/aposta"
 	domainativo "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/ativo"
 	domaincchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchdeck"
 	domaincchroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchroom"
@@ -146,6 +148,10 @@ func main() {
 	ativoService := appativo.NewService(ativoRepo)
 	ativoHandler := appativo.NewCommandHandler(ativoService)
 
+	apostaRepo := postgres.NewApostaRepository(pool)
+	apostaService := appaposta.NewService(apostaRepo)
+	apostaHandler := appaposta.NewCommandHandler(apostaService)
+
 	dashboardLayoutRepo := postgres.NewDashboardLayoutRepository(pool)
 	dashboardLayoutService := appdashboardlayout.NewService(dashboardLayoutRepo)
 	dashboardLayoutHandler := appdashboardlayout.NewCommandHandler(dashboardLayoutService)
@@ -173,7 +179,7 @@ func main() {
 				log.Error("fetch command error", "error", err)
 				continue
 			}
-			process(ctx, log, userHandler, postHandler, roomHandler, messageHandler, dealHandler, cchRoomHandler, cchDeckHandler, contaHandler, transacaoHandler, ativoHandler, dashboardLayoutHandler, leadHandler, auditRepo, eventBus, cmd)
+			process(ctx, log, userHandler, postHandler, roomHandler, messageHandler, dealHandler, cchRoomHandler, cchDeckHandler, contaHandler, transacaoHandler, ativoHandler, apostaHandler, dashboardLayoutHandler, leadHandler, auditRepo, eventBus, cmd)
 		}
 	}()
 
@@ -192,7 +198,7 @@ func main() {
 // resulting domain event. One shared command queue serves every
 // aggregate; this is the one place that knows how to fan a Command
 // back out to its owning handler.
-func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, dealHandler *appdeal.CommandHandler, cchRoomHandler *appcchroom.CommandHandler, cchDeckHandler *appcchdeck.CommandHandler, contaHandler *appconta.CommandHandler, transacaoHandler *apptransacao.CommandHandler, ativoHandler *appativo.CommandHandler, dashboardLayoutHandler *appdashboardlayout.CommandHandler, leadHandler *applead.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
+func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, dealHandler *appdeal.CommandHandler, cchRoomHandler *appcchroom.CommandHandler, cchDeckHandler *appcchdeck.CommandHandler, contaHandler *appconta.CommandHandler, transacaoHandler *apptransacao.CommandHandler, ativoHandler *appativo.CommandHandler, apostaHandler *appaposta.CommandHandler, dashboardLayoutHandler *appdashboardlayout.CommandHandler, leadHandler *applead.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
 	// One span per command: the handler, the audit write and the event
 	// publish below are the whole story of that write, and the
 	// trace_id stamped into the log lines ties every one of them to it.
@@ -297,6 +303,14 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 		if aevt != nil {
 			evt = aevt
 			id = ativoEntityID(aevt)
+		}
+	case strings.HasPrefix(string(cmd.Action), "aposta."):
+		entityType = "aposta"
+		var apevt domainaposta.Event
+		apevt, err = apostaHandler.Handle(ctx, cmd)
+		if apevt != nil {
+			evt = apevt
+			id = apostaEntityID(apevt)
 		}
 	case strings.HasPrefix(string(cmd.Action), "dashboardlayout."):
 		entityType = "dashboardlayout"
@@ -443,6 +457,17 @@ func transacaoEntityID(evt domaintransacao.Event) string {
 		return e.TransacaoID
 	case domaintransacao.Deleted:
 		return e.TransacaoID
+	default:
+		return ""
+	}
+}
+
+func apostaEntityID(evt domainaposta.Event) string {
+	switch e := evt.(type) {
+	case domainaposta.Registrada:
+		return e.ApostaID
+	case domainaposta.Resolvida:
+		return e.ApostaID
 	default:
 		return ""
 	}

@@ -393,6 +393,28 @@ module "compute_apps_dashboard_api" {
   depends_on = [module.compute_apps_domain_api]
 }
 
+# apostas-api: the BFF for the Apostas module (betting-house wallet
+# reconciliation) -- same verify-only session shape as the other 3
+# non-issuing financas backends above.
+module "compute_apps_apostas_api" {
+  source = "./modules/compute/apps/apostas_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name   = module.network_docker_apps.network_name
+  registry_host  = var.registry_host
+  session_secret = random_password.financas_session_secret.result
+  # Empty on purpose -- see the same note on compute_apps_contas_api
+  # above.
+  allowed_emails   = []
+  domain_api_key   = random_id.apostas_api_domain_key.hex
+  frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
+  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
+
+  depends_on = [module.compute_apps_domain_api]
+}
+
 # leads-api: the one PUBLIC financas backend -- no access_aud/Access
 # app at all (its hostname is in excluded_hostnames instead), since an
 # anonymous landing-page visitor can't complete a Google SSO redirect.
@@ -476,6 +498,7 @@ module "compute_services_ingress" {
     module.compute_apps_transacional_api,
     module.compute_apps_asset_manager_api,
     module.compute_apps_dashboard_api,
+    module.compute_apps_apostas_api,
     module.compute_apps_leads_api,
     module.compute_services_registry,
     module.compute_services_monitoring,

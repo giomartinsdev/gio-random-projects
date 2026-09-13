@@ -16,9 +16,10 @@ import (
 )
 
 // tiposValidos are the only account kinds this module knows about today
-// (FR-010). Anything else is a 422 -- validated here, before ever
-// reaching domain-api, so a bad request never costs a round-trip.
-var tiposValidos = []string{"corrente", "investimento"}
+// (FR-010, plus "aposta" for the betting-house wallet module). Anything
+// else is a 422 -- validated here, before ever reaching domain-api, so
+// a bad request never costs a round-trip.
+var tiposValidos = []string{"corrente", "investimento", "aposta"}
 
 const (
 	statusAtiva     = "ativa"
@@ -66,7 +67,7 @@ func (s *Server) handleCriarConta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !slices.Contains(tiposValidos, req.Tipo) {
-		writeError(w, http.StatusUnprocessableEntity, "validacao", "tipo deve ser 'corrente' ou 'investimento'")
+		writeError(w, http.StatusUnprocessableEntity, "validacao", "tipo deve ser 'corrente', 'investimento' ou 'aposta'")
 		return
 	}
 
@@ -159,7 +160,11 @@ func (s *Server) handleSaldoConta(w http.ResponseWriter, r *http.Request) {
 
 	var saldo float64
 	switch conta.Tipo {
-	case "corrente":
+	case "corrente", "aposta":
+		// A betting-house wallet settles exactly like a corrente: sum
+		// of entradas/saídas, no position to value -- see
+		// apostas-api's registrar/resolver, which post those
+		// transações the same way any other saída/entrada is posted.
 		saldo, err = s.saldoCorrente(r.Context(), id.Email, contaID)
 	case "investimento":
 		saldo, err = s.saldoInvestimento(r.Context(), id.Email, contaID)

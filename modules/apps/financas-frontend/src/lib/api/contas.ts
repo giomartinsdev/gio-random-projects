@@ -5,7 +5,7 @@
 export const CONTAS_API_URL =
   import.meta.env.VITE_CONTAS_API_URL || "http://localhost:8020";
 
-export type TipoConta = "corrente" | "investimento";
+export type TipoConta = "corrente" | "investimento" | "aposta";
 export type StatusConta = "ativa" | "arquivada";
 
 export interface Conta {
