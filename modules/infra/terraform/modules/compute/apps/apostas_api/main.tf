@@ -33,6 +33,16 @@ resource "docker_container" "apostas_api" {
     # network_name (bridge, not host networking).
     "APOSTAS_DOMAIN_API_URL=${var.domain_api_url}",
     "APOSTAS_DOMAIN_API_KEY=${var.domain_api_key}",
+    # The betting-slip Chrome extension's own auth -- a static shared
+    # secret (no session cookie exists in a service worker) mapped to
+    # one fixed identity, since financas is a single-person product.
+    # Empty token disables that route entirely.
+    "APOSTAS_EXTENSION_TOKEN=${var.extension_token}",
+    "APOSTAS_EXTENSION_USUARIO_EMAIL=${var.extension_usuario_email}",
+    # Vision AI for reading a betting-slip screenshot -- 9router on the
+    # internal docker network, REQUIRE_API_KEY=false there.
+    "APOSTAS_AI_BASE_URL=${var.ai_base_url}",
+    "APOSTAS_AI_MODEL=${var.ai_model}",
     # Traces + metrics only -- logs flow via alloy's docker-socket
     # scrape of this container's stdout.
     "OTEL_EXPORTER_OTLP_ENDPOINT=${var.otlp_endpoint}",

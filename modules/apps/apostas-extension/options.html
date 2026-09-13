@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>financas — captura de apostas</title>
+    <style>
+      body {
+        font-family: -apple-system, system-ui, sans-serif;
+        max-width: 28rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        color: #2a2420;
+        background: #f7f2e9;
+      }
+      h1 {
+        font-size: 1.1rem;
+      }
+      label {
+        display: block;
+        margin-top: 1rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+      input {
+        width: 100%;
+        margin-top: 0.25rem;
+        padding: 0.5rem;
+        border: 1px solid #d8cfc0;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        box-sizing: border-box;
+      }
+      button {
+        margin-top: 1.25rem;
+        padding: 0.5rem 1rem;
+        border: none;
+        border-radius: 999px;
+        background: #c45d3e;
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #status {
+        margin-top: 0.75rem;
+        font-size: 0.85rem;
+        color: #6b6258;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>◆ financas — captura de apostas</h1>
+    <p>Cole aqui o token gerado pelo Terraform (<code>terraform output -raw apostas_extension_token</code>).</p>
+
+    <label for="apiUrl">URL do apostas-api</label>
+    <input id="apiUrl" type="text" placeholder="https://apostas-api.giomartins.dev" />
+
+    <label for="token">Token da extensão</label>
+    <input id="token" type="password" placeholder="cole o token aqui" />
+
+    <button id="salvar">Salvar</button>
+    <div id="status"></div>
+
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -60,6 +60,7 @@ env:
   TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
   TF_VAR_asset_manager_brapi_token: ${{ secrets.TF_ASSET_MANAGER_BRAPI_TOKEN }}
   TF_VAR_google_oauth_client_id: ${{ secrets.FINANCAS_GOOGLE_OAUTH_CLIENT_ID }}
+  TF_VAR_apostas_extension_usuario_email: ${{ secrets.FINANCAS_APOSTAS_EXTENSION_USUARIO_EMAIL }}
   AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
   # TF_VAR_registry_password/TF_VAR_discord_client_id/TF_VAR_discord_client_secret

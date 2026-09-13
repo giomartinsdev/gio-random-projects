@@ -240,3 +240,8 @@ variable "google_oauth_client_id" {
   description = "The Google OAuth 2.0 Web application Client ID financas' Google Identity Services sign-in button and contas-api's ID-token verification both use -- not secret (it's public in every ID token's aud claim and in the frontend bundle), but still passed in from outside (terraform.tfvars or TF_VAR_google_oauth_client_id) rather than hardcoded, so rotating it never means editing this repo."
   type        = string
 }
+
+variable "apostas_extension_usuario_email" {
+  description = "The one financas account the betting-slip Chrome extension registers bets as -- financas is a single-person product, so apostas-api's extension route (see its Config) maps every request bearing a valid X-Extension-Token straight to this fixed identity instead of running a real per-user auth flow. Never hardcoded; comes from terraform.tfvars or TF_VAR_apostas_extension_usuario_email."
+  type        = string
+}

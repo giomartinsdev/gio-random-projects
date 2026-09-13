@@ -45,6 +45,29 @@ variable "domain_api_key" {
   sensitive   = true
 }
 
+variable "extension_token" {
+  description = "The static shared secret the betting-slip Chrome extension sends as X-Extension-Token -- see random_password.apostas_extension_token in the root module. Empty disables the extension's route entirely."
+  type        = string
+  sensitive   = true
+}
+
+variable "extension_usuario_email" {
+  description = "The one financas account the extension registers bets as -- see var.apostas_extension_usuario_email in the root module."
+  type        = string
+}
+
+variable "ai_base_url" {
+  description = "The OpenAI-compatible endpoint apostas-api's vision client posts to -- defaults to 9router's internal docker-network address (module.compute_services_ai_proxy, REQUIRE_API_KEY=false there)."
+  type        = string
+  default     = "http://9router:20128/v1"
+}
+
+variable "ai_model" {
+  description = "Comma-separated cascade of model names to try for reading a betting-slip screenshot -- MUST name a vision-capable model (empty falls back to auto-discovery, which cannot tell a vision model from a text-only one; verify against the live 9router model list before relying on this)."
+  type        = string
+  default     = ""
+}
+
 variable "otlp_endpoint" {
   description = <<-EOT
     module.compute_services_observability's otlp_endpoint output -- where

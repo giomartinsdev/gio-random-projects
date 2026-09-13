@@ -134,24 +134,39 @@ func (s *Server) handleRegistrarAposta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apostaID, err := s.domain.RegistrarAposta(r.Context(), domainapi.RegistrarInput{
-		UsuarioEmail: id.Email, ContaID: req.ContaID, Descricao: req.Descricao,
-		ValorApostado: req.ValorApostado, Odd: req.Odd, Data: data,
-	})
-	if err != nil {
-		s.writeDomainWriteError(w, err)
-		return
-	}
-
-	if err := s.domain.CriarTransacao(r.Context(), domainapi.CriarTransacaoInput{
-		UsuarioEmail: id.Email, ContaID: req.ContaID, Tipo: "saida", Valor: req.ValorApostado,
-		Data: data.Format(time.RFC3339), Categoria: "aposta", Descricao: req.Descricao,
-	}); err != nil {
-		writeError(w, http.StatusBadGateway, "domain_api_indisponivel",
-			"aposta registrada, mas o débito na conta falhou: "+err.Error())
+	apostaID, apiErr := s.registrar(r.Context(), id.Email, req.ContaID, req.Descricao, req.ValorApostado, req.Odd, data)
+	if apiErr != nil {
+		writeError(w, apiErr.status, apiErr.codigo, apiErr.mensagem)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"id": apostaID})
+}
+
+// registrar is the shared core of handleRegistrarAposta and the
+// extension's handleImportarPrint: publish aposta.registrar (sync,
+// confirmed), then debit the stake from the conta -- in that order, so
+// a failed debit never leaves an aposta with no trace of what went
+// wrong (it still exists as pendente, visible in the list).
+func (s *Server) registrar(ctx context.Context, usuarioEmail, contaID, descricao string, valorApostado, odd float64, data time.Time) (string, *apiErr) {
+	apostaID, err := s.domain.RegistrarAposta(ctx, domainapi.RegistrarInput{
+		UsuarioEmail: usuarioEmail, ContaID: contaID, Descricao: descricao,
+		ValorApostado: valorApostado, Odd: odd, Data: data,
+	})
+	if err != nil {
+		if errors.Is(err, domainapi.ErrRejected) {
+			return "", &apiErr{http.StatusUnprocessableEntity, "validacao", err.Error()}
+		}
+		return "", &apiErr{http.StatusBadGateway, "domain_api_indisponivel", err.Error()}
+	}
+
+	if err := s.domain.CriarTransacao(ctx, domainapi.CriarTransacaoInput{
+		UsuarioEmail: usuarioEmail, ContaID: contaID, Tipo: "saida", Valor: valorApostado,
+		Data: data.Format(time.RFC3339), Categoria: "aposta", Descricao: descricao,
+	}); err != nil {
+		return "", &apiErr{http.StatusBadGateway, "domain_api_indisponivel",
+			"aposta registrada, mas o débito na conta falhou: " + err.Error()}
+	}
+	return apostaID, nil
 }
 
 type resolverApostaRequest struct {

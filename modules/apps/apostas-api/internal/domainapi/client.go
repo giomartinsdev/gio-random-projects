@@ -77,10 +77,11 @@ func (c *Client) Enabled() bool { return c != nil }
 
 // Conta mirrors just the fields apostas-api needs to validate a bet's
 // conta (exists, belongs to the caller, is "ativa", is a "aposta"
-// wallet).
+// wallet) and, for the extension's casa-matching, its Nome.
 type Conta struct {
 	ID           string `json:"id"`
 	UsuarioEmail string `json:"usuario_email"`
+	Nome         string `json:"nome"`
 	Tipo         string `json:"tipo"`
 	Status       string `json:"status"`
 }
@@ -263,6 +264,26 @@ func (c *Client) GetAposta(ctx context.Context, id string) (Aposta, error) {
 		return Aposta{}, fmt.Errorf("domain: decode GET /apostas/%s: %w", id, err)
 	}
 	return a, nil
+}
+
+// ListContas is GET /contas?usuario=&status=ativa -- direct against
+// domain-api's conta aggregate (not through contas-api), same pattern
+// transacional-api's GetConta already uses to read a conta this
+// service doesn't own. Used only by the extension's casa-matching.
+func (c *Client) ListContas(ctx context.Context, usuarioEmail string) ([]Conta, error) {
+	if c == nil {
+		return nil, errors.New("domain: client not configured")
+	}
+	q := url.Values{}
+	q.Set("usuario", usuarioEmail)
+	q.Set("status", "ativa")
+	var out struct {
+		Contas []Conta `json:"contas"`
+	}
+	if err := c.get(ctx, "/contas?"+q.Encode(), &out); err != nil {
+		return nil, err
+	}
+	return out.Contas, nil
 }
 
 // ListApostas is GET /apostas?usuario=&conta= -- the person's own bets,
