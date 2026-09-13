@@ -63,8 +63,15 @@ variable "ai_base_url" {
 }
 
 variable "ai_model" {
-  description = "Comma-separated cascade of model names to try for reading a betting-slip screenshot -- MUST name a vision-capable model (empty falls back to auto-discovery, which cannot tell a vision model from a text-only one; verify against the live 9router model list before relying on this)."
+  description = "Comma-separated cascade of model names to try for reading a betting-slip screenshot -- MUST name a vision-capable model (empty falls back to auto-discovery, which cannot tell a vision model from a text-only one; verify against the live 9router model list before relying on this). Default is 9router's own \"vision\" combo (Combo & Vision Adapter in its dashboard), a fallback pool of vision-capable models."
   type        = string
+  default     = "vision"
+}
+
+variable "ai_api_key" {
+  description = "9router's own API key -- the ai_proxy module's REQUIRE_API_KEY=false only ever applied to the boot-time default; the dashboard's \"Require API key\" toggle can (and here does) override that live, so a real key is needed regardless of network trust. See modules/compute/services/ai_proxy's own dashboard for the current key."
+  type        = string
+  sensitive   = true
   default     = ""
 }
 

@@ -411,6 +411,7 @@ module "compute_apps_apostas_api" {
   domain_api_key          = random_id.apostas_api_domain_key.hex
   extension_token         = random_password.apostas_extension_token.result
   extension_usuario_email = var.apostas_extension_usuario_email
+  ai_api_key              = var.apostas_ai_api_key
   frontend_origins        = ["https://financas.giomartins.dev", "http://localhost:5173"]
   otlp_endpoint           = module.compute_services_observability.otlp_endpoint
 

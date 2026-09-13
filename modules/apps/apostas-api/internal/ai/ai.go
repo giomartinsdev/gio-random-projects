@@ -2,14 +2,17 @@
 // shape (casa, descrição, valor apostado, odd) via a vision-capable
 // model -- the same OpenAI-compatible chat-completions shape
 // cch-api's own internal/ai uses for its deck-forge writer, talking to
-// the homelab's own 9router (REQUIRE_API_KEY=false on the internal
-// network, so no provider key lives in this codebase). The one real
-// difference from cch-api's client: the user message carries a
-// multimodal content array (text + image_url) instead of a plain
-// string, and APOSTAS_AI_MODEL must name a model that actually accepts
-// images -- auto-discovery here has no way to tell a vision model from
-// a text-only one, so an operator who leaves this unset is trusting
-// whatever 9router picks first.
+// the homelab's own 9router. Unlike cch-api's internal-network-only
+// usage, 9router's dashboard "Require API key" toggle applies here too
+// (confirmed live: an empty key made every request fail), so
+// APOSTAS_AI_API_KEY is real, not a formality -- see 9router's own
+// dashboard for the current key. The one real difference from
+// cch-api's client otherwise: the user message carries a multimodal
+// content array (text + image_url) instead of a plain string, and
+// APOSTAS_AI_MODEL must name a model (or 9router combo) that actually
+// accepts images -- auto-discovery here has no way to tell a vision
+// model from a text-only one, so an operator who leaves this unset is
+// trusting whatever 9router picks first.
 package ai
 
 import (

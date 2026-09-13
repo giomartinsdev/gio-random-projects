@@ -245,3 +245,10 @@ variable "apostas_extension_usuario_email" {
   description = "The one financas account the betting-slip Chrome extension registers bets as -- financas is a single-person product, so apostas-api's extension route (see its Config) maps every request bearing a valid X-Extension-Token straight to this fixed identity instead of running a real per-user auth flow. Never hardcoded; comes from terraform.tfvars or TF_VAR_apostas_extension_usuario_email."
   type        = string
 }
+
+variable "apostas_ai_api_key" {
+  description = "9router's own API key -- its dashboard \"Require API key\" toggle applies even to internal-network callers (confirmed live), so apostas-api's vision client needs a real key, not just network trust. Never hardcoded; comes from terraform.tfvars or TF_VAR_apostas_ai_api_key. See 9router's own dashboard (ai.giomartins.dev) for the current key."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
