@@ -3,7 +3,7 @@
   "name": "financas — captura de apostas",
   "version": "1.0.0",
   "description": "Tira um print da tela de confirmação de uma aposta e registra automaticamente no financas.",
-  "permissions": ["activeTab", "notifications", "storage"],
+  "permissions": ["activeTab", "notifications", "storage", "scripting"],
   "host_permissions": ["https://apostas-api.giomartins.dev/*", "http://localhost:8016/*"],
   "background": {
     "service_worker": "background.js"
