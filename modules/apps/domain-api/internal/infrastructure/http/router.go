@@ -14,7 +14,7 @@ import (
 // is not for public browsing -- see PostHandlers.GetPostByID's own doc
 // comment. /sync is the synchronous-write exception -- see
 // SyncHandlers.Sync's doc comment before reaching for it.
-func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandlers, dl *DealHandlers, sse *SSEHandlers, cch *CCHHandlers, sync *SyncHandlers, ct *ContaHandlers, tr *TransacaoHandlers, at *AtivoHandlers, dash *DashboardLayoutHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
+func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandlers, dl *DealHandlers, sse *SSEHandlers, cch *CCHHandlers, sync *SyncHandlers, ct *ContaHandlers, tr *TransacaoHandlers, at *AtivoHandlers, ap *ApostaHandlers, dash *DashboardLayoutHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Get("/healthz", h.Healthz)
@@ -77,6 +77,9 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Get("/ativos/todos", at.ListTodosAtivos)
 		r.Get("/ativos/{id}/movimentos", at.GetAtivoMovimentos)
 		r.Post("/ativos/{id}/cotacao", at.UpdateAtivoQuote)
+
+		r.Get("/apostas", ap.ListApostas)
+		r.Get("/apostas/{id}", ap.GetAposta)
 
 		r.Get("/dashboardlayouts/{usuario}", dash.GetDashboardLayout)
 	})

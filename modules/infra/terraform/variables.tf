@@ -59,6 +59,7 @@ variable "excluded_hostnames" {
     "transacional-api.giomartins.dev",  # same reasoning as contas-api.giomartins.dev above — verifies the session cookie, never issues it
     "asset-manager-api.giomartins.dev", # same reasoning as contas-api.giomartins.dev above — verifies the session cookie, never issues it
     "dashboard-api.giomartins.dev",     # same reasoning as contas-api.giomartins.dev above — verifies the session cookie, never issues it
+    "apostas-api.giomartins.dev",       # same reasoning as contas-api.giomartins.dev above — verifies the session cookie, never issues it
     "financas.giomartins.dev",          # chrome público em volta do gate real nas 4 Access apps das APIs, precisa ser iframe-embeddable no hub
     "leads-api.giomartins.dev",         # captura de e-mail na landing page pública, sem sessão de Access nenhuma para exigir de um visitante anônimo — mesma razão de ai.giomartins.dev abaixo
     "ai.giomartins.dev",                # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients

@@ -14,14 +14,18 @@ import (
 const (
 	TipoCorrente     = "corrente"
 	TipoInvestimento = "investimento"
-	StatusAtiva      = "ativa"
-	StatusArquivada  = "arquivada"
+	// TipoAposta is a betting-house wallet: money in, money out, no
+	// position to track -- it settles its saldo the same way a corrente
+	// does (sum of entradas/saidas), see contas-api's own saldo switch.
+	TipoAposta      = "aposta"
+	StatusAtiva     = "ativa"
+	StatusArquivada = "arquivada"
 )
 
 var (
 	ErrUsuarioRequired = errors.New("usuario_email is required")
 	ErrNomeRequired    = errors.New("nome is required")
-	ErrTipoInvalido    = errors.New("tipo must be \"corrente\" or \"investimento\"")
+	ErrTipoInvalido    = errors.New("tipo must be \"corrente\", \"investimento\" or \"aposta\"")
 	ErrStatusInvalido  = errors.New("status must be \"ativa\" or \"arquivada\"")
 	ErrForbidden       = errors.New("only the owning usuario may modify this conta")
 )
@@ -38,7 +42,9 @@ type Conta struct {
 	AtualizadoEm time.Time
 }
 
-func validTipo(t string) bool   { return t == TipoCorrente || t == TipoInvestimento }
+func validTipo(t string) bool {
+	return t == TipoCorrente || t == TipoInvestimento || t == TipoAposta
+}
 func validStatus(s string) bool { return s == StatusAtiva || s == StatusArquivada }
 
 // New constructs a Conta, always starting it "ativa" -- there's no way

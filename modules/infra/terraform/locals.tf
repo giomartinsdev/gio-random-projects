@@ -153,6 +153,16 @@ locals {
       port     = 8015
     },
     {
+      # apostas-api: the BFF for the Apostas module (betting-house
+      # wallet reconciliation) -- same shape as contas-api/
+      # transacional-api/asset-manager-api/dashboard-api: financas' own
+      # session cookie (verify-only), no Cloudflare Access, no database
+      # of its own. Port must match module.compute_apps_apostas_api's
+      # external_port.
+      hostname = "apostas-api.giomartins.dev"
+      port     = 8016
+    },
+    {
       # 9router: OpenAI-compatible AI proxy with auto-fallback across
       # 40+ providers (Claude, GPT, Gemini, …). Dashboard at /dashboard,
       # API at /v1. Excluded from Cloudflare Access (Google SSO) so CLI/

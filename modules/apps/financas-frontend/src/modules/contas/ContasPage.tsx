@@ -16,6 +16,12 @@ import { Selecao } from "@/components/Selecao";
 import { Selo } from "@/components/Selo";
 import { ValorMonetario } from "@/components/ValorMonetario";
 
+const rotuloTipo: Record<TipoConta, string> = {
+  corrente: "Conta corrente",
+  investimento: "Investimento",
+  aposta: "Aposta",
+};
+
 export function ContasPage() {
   const [contas, setContas] = useState<Conta[]>([]);
   const [saldos, setSaldos] = useState<Record<string, number>>({});
@@ -135,7 +141,7 @@ export function ContasPage() {
                     <div>
                       <h2 className="font-display text-lg font-medium">{conta.nome}</h2>
                       <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                        {conta.tipo === "corrente" ? "Conta corrente" : "Investimento"}
+                        {rotuloTipo[conta.tipo]}
                       </span>
                     </div>
                     <div className="flex gap-1">
@@ -226,6 +232,7 @@ function FormularioConta({
         <Selecao rotulo="Tipo" value={tipo} onChange={(e) => setTipo(e.target.value as TipoConta)}>
           <option value="corrente">Corrente</option>
           <option value="investimento">Investimento</option>
+          <option value="aposta">Aposta</option>
         </Selecao>
         <div className="flex gap-2">
           <Botao type="submit" disabled={salvando}>

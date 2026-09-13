@@ -201,11 +201,20 @@ CREATE TABLE IF NOT EXISTS contas (
     id UUID PRIMARY KEY,
     usuario_email TEXT NOT NULL,
     nome TEXT NOT NULL,
-    tipo TEXT NOT NULL CHECK (tipo IN ('corrente','investimento')),
+    tipo TEXT NOT NULL CHECK (tipo IN ('corrente','investimento','aposta')),
     status TEXT NOT NULL DEFAULT 'ativa' CHECK (status IN ('ativa','arquivada')),
     criado_em TIMESTAMPTZ NOT NULL,
     atualizado_em TIMESTAMPTZ NOT NULL
 );
+
+-- "aposta" (betting-house wallet) is a tipo added after this table
+-- already existed in production -- CREATE TABLE IF NOT EXISTS above is
+-- a no-op against it, so the CHECK constraint needs widening
+-- explicitly, same treatment as rooms'/posts' ALTER TABLE below.
+-- contas_tipo_check is Postgres's default auto-generated name for an
+-- inline column CHECK (<table>_<column>_check).
+ALTER TABLE contas DROP CONSTRAINT IF EXISTS contas_tipo_check;
+ALTER TABLE contas ADD CONSTRAINT contas_tipo_check CHECK (tipo IN ('corrente','investimento','aposta'));
 
 CREATE INDEX IF NOT EXISTS idx_contas_usuario_email ON contas(usuario_email);
 
@@ -265,6 +274,27 @@ CREATE TABLE IF NOT EXISTS ativo_movimentos (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ativo_movimentos_ativo ON ativo_movimentos(ativo_id);
+
+-- One row per aposta -- a single event with its own lifecycle
+-- (pendente -> green/red/cancelada), not an accumulating position like
+-- Ativo. conta_id points at a conta with tipo 'aposta' (a betting-house
+-- wallet), opaque FK like every other conta_id in this schema.
+CREATE TABLE IF NOT EXISTS apostas (
+    id UUID PRIMARY KEY,
+    usuario_email TEXT NOT NULL,
+    conta_id UUID NOT NULL,
+    descricao TEXT NOT NULL,
+    valor_apostado NUMERIC(14,2) NOT NULL CHECK (valor_apostado > 0),
+    odd NUMERIC(10,3),
+    status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','green','red','cancelada')),
+    retorno_obtido NUMERIC(14,2),
+    data_aposta DATE NOT NULL,
+    data_resultado DATE,
+    criado_em TIMESTAMPTZ NOT NULL,
+    atualizado_em TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_apostas_usuario_conta ON apostas(usuario_email, conta_id);
 
 -- One row per usuario -- dashboard-api's frontend saves its whole
 -- "blocos" array wholesale on every layout edit, so a plain upsertable

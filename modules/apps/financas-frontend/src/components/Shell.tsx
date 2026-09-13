@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { motion } from "framer-motion";
-import { LayoutGrid, Wallet, ArrowLeftRight, LineChart, Sun, Moon, LogOut } from "lucide-react";
+import { LayoutGrid, Wallet, ArrowLeftRight, LineChart, Dices, Sun, Moon, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadTheme, toggleTheme, type Theme } from "@/lib/theme";
 import { logout } from "@/lib/auth";
@@ -12,6 +12,7 @@ const itens = [
   { to: "/app/contas", label: "Contas", icone: Wallet },
   { to: "/app/transacional", label: "Transações", icone: ArrowLeftRight },
   { to: "/app/investimentos", label: "Investimentos", icone: LineChart },
+  { to: "/app/apostas", label: "Apostas", icone: Dices },
 ];
 
 export function Shell({ children }: { children: ReactNode }) {

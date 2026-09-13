@@ -41,6 +41,7 @@ func newSyncServer(t *testing.T, publisher *spyPublisher, audits *stubAudits) ht
 		NewContaHandlers(nil, log),
 		NewTransacaoHandlers(nil, publisher, log),
 		NewAtivoHandlers(nil, nil, publisher, log),
+		NewApostaHandlers(nil, log),
 		NewDashboardLayoutHandlers(nil, log),
 		APIKeys{"k1": "test"},
 		NewIPRateLimiter(1000, 1000),

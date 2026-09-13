@@ -321,6 +321,7 @@ jobs:
               transacional-api) REPLACE_ARGS+=("-replace=module.compute_apps_transacional_api.docker_container.transacional_api") ;;
               asset-manager-api) REPLACE_ARGS+=("-replace=module.compute_apps_asset_manager_api.docker_container.asset_manager_api") ;;
               dashboard-api) REPLACE_ARGS+=("-replace=module.compute_apps_dashboard_api.docker_container.dashboard_api") ;;
+              apostas-api) REPLACE_ARGS+=("-replace=module.compute_apps_apostas_api.docker_container.apostas_api") ;;
               leads-api) REPLACE_ARGS+=("-replace=module.compute_apps_leads_api.docker_container.leads_api") ;;
               proventos-worker) REPLACE_ARGS+=("-replace=module.compute_apps_proventos_worker.docker_container.proventos_worker") ;;
               *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
