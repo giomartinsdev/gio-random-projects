@@ -7,6 +7,7 @@ import {
   type Ativo,
 } from "@/lib/api/asset-manager";
 import { useContas, nomeConta } from "@/lib/useContas";
+import { dataHojeCalendario } from "@/lib/datas";
 import { Cartao } from "@/components/Cartao";
 import { Botao } from "@/components/Botao";
 import { CampoTexto } from "@/components/CampoTexto";
@@ -233,7 +234,7 @@ function FormularioAtivo({
   const [ticker, setTicker] = useState("");
   const [quantidade, setQuantidade] = useState("");
   const [precoUnitario, setPrecoUnitario] = useState("");
-  const [data, setData] = useState(new Date().toISOString().slice(0, 10));
+  const [data, setData] = useState(dataHojeCalendario());
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -334,7 +335,7 @@ function FormularioMovimento({
   const [quantidade, setQuantidade] = useState("");
   const [precoUnitario, setPrecoUnitario] = useState("");
   const [valorProvento, setValorProvento] = useState("");
-  const [data, setData] = useState(new Date().toISOString().slice(0, 10));
+  const [data, setData] = useState(dataHojeCalendario());
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 

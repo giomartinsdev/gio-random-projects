@@ -1,4 +1,5 @@
 import { ValorMonetario } from "@/components/ValorMonetario";
+import { formatarDataCalendario } from "@/lib/datas";
 import type { Transacao } from "@/lib/api/transacional";
 import type { Ativo } from "@/lib/api/asset-manager";
 
@@ -39,7 +40,7 @@ export function Tabela({ dados }: { dados: unknown }) {
             ehTransacao ? (
               <tr key={(item as Transacao).id}>
                 <td className="py-1.5 font-mono">
-                  {new Date((item as Transacao).data).toLocaleDateString("pt-BR")}
+                  {formatarDataCalendario((item as Transacao).data)}
                 </td>
                 <td className="py-1.5">{(item as Transacao).categoria}</td>
                 <td className="py-1.5 pr-2 text-right">

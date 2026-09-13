@@ -10,6 +10,7 @@ import {
   type TipoTransacao,
 } from "@/lib/api/transacional";
 import { useContas, nomeConta } from "@/lib/useContas";
+import { formatarDataCalendario, dataHojeCalendario } from "@/lib/datas";
 import { Cartao } from "@/components/Cartao";
 import { Botao } from "@/components/Botao";
 import { CampoTexto } from "@/components/CampoTexto";
@@ -175,7 +176,7 @@ export function TransacionalPage() {
               </div>
               <span className="text-xs text-muted-foreground">
                 {nomeConta(contas, t.contaId)} · {t.categoria} ·{" "}
-                {new Date(t.data).toLocaleDateString("pt-BR")}
+                {formatarDataCalendario(t.data)}
               </span>
             </div>
             <ValorMonetario
@@ -232,7 +233,8 @@ function FormularioTransacao({
   const [contaId, setContaId] = useState(transacao?.contaId ?? contasAtivas[0]?.id ?? "");
   const [tipo, setTipo] = useState<TipoTransacao>(transacao?.tipo ?? "saida");
   const [valor, setValor] = useState(transacao?.valor?.toString() ?? "");
-  const [data, setData] = useState(transacao?.data ?? new Date().toISOString().slice(0, 10));
+  // <input type="date"> só aceita YYYY-MM-DD; a API devolve RFC3339.
+  const [data, setData] = useState(transacao?.data?.slice(0, 10) ?? dataHojeCalendario());
   const [categoria, setCategoria] = useState(transacao?.categoria ?? CATEGORIAS[0]);
   const [descricao, setDescricao] = useState(transacao?.descricao ?? "");
   const [anexoImagem, setAnexoImagem] = useState<string | undefined>(transacao?.anexoImagem);

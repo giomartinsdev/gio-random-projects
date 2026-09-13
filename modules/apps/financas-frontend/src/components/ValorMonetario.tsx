@@ -43,6 +43,25 @@ export function ValorMonetario({
 
   const exibido = semSinal ? Math.abs(valor) : valor;
 
+  // Última linha de defesa contra NaN atravessar a tela: qualquer
+  // valor não-finite (um dado fora do contrato, um campo faltando)
+  // rende um traço em vez de "R$ NaN". O traço honesto vale mais que
+  // um zero mentiroso -- se apareceu, tem bug de fonte atrás.
+  if (!Number.isFinite(exibido)) {
+    return (
+      <span
+        className={cn(
+          "font-display font-semibold tabular tracking-tight",
+          tamanhos[tamanho],
+          "text-muted-foreground",
+          className,
+        )}
+      >
+        —
+      </span>
+    );
+  }
+
   return (
     <span
       className={cn(

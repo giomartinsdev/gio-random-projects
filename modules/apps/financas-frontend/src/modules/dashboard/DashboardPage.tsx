@@ -10,6 +10,12 @@ import {
   type TipoVisualizacao,
 } from "@/lib/api/dashboard";
 import { LAYOUT_PADRAO } from "./defaultLayout";
+import {
+  normalizarLayout,
+  VISUALIZACAO_PADRAO,
+  visualizacoesValidas,
+  ROTULO_VISUALIZACAO,
+} from "./visualizacoes";
 import { BlocoContainer } from "./BlocoContainer";
 import { useContas } from "@/lib/useContas";
 import { Botao } from "@/components/Botao";
@@ -28,7 +34,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     buscarLayout()
-      .then((l) => setLayout(l ?? LAYOUT_PADRAO))
+      .then((l) => setLayout(normalizarLayout(l ?? LAYOUT_PADRAO)))
       .catch(() => setLayout(LAYOUT_PADRAO))
       .finally(() => setCarregando(false));
   }, []);
@@ -208,7 +214,13 @@ function FormularioBloco({
           <Selecao
             rotulo="Fonte de dados"
             value={tipoFonte}
-            onChange={(e) => setTipoFonte(e.target.value as typeof tipoFonte)}
+            onChange={(e) => {
+              const nova = e.target.value as typeof tipoFonte;
+              setTipoFonte(nova);
+              // A visualização acompanha a fonte: dados de forma
+              // diferente pedem render diferente (visualizacoes.ts).
+              setTipoVisualizacao(VISUALIZACAO_PADRAO[nova]);
+            }}
           >
             {TIPOS_FONTE.map((f) => (
               <option key={f.valor} value={f.valor}>
@@ -221,11 +233,11 @@ function FormularioBloco({
             value={tipoVisualizacao}
             onChange={(e) => setTipoVisualizacao(e.target.value as TipoVisualizacao)}
           >
-            <option value="indicador">Indicador</option>
-            <option value="linha">Linha</option>
-            <option value="barra">Barra</option>
-            <option value="pizza">Pizza</option>
-            <option value="tabela">Tabela</option>
+            {visualizacoesValidas(tipoFonte).map((v) => (
+              <option key={v} value={v}>
+                {ROTULO_VISUALIZACAO[v]}
+              </option>
+            ))}
           </Selecao>
           {(precisaConta || tipoFonte === "carteira-ativos" || tipoFonte === "gastos-por-categoria") && (
             <Selecao

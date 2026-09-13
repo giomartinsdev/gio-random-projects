@@ -1,4 +1,5 @@
 import { tokens } from "@/lib/theme";
+import { formatarDataCalendario } from "@/lib/datas";
 
 interface Ponto {
   data: string;
@@ -41,8 +42,8 @@ export function Linha({ dados }: { dados: unknown }) {
         <polyline points={linha} fill="none" stroke={cor} strokeWidth="2.5" strokeLinejoin="round" />
       </svg>
       <div className="flex justify-between text-[10px] text-muted-foreground">
-        <span>{new Date(pontos[0].data).toLocaleDateString("pt-BR")}</span>
-        <span>{new Date(pontos[pontos.length - 1].data).toLocaleDateString("pt-BR")}</span>
+        <span>{formatarDataCalendario(pontos[0].data)}</span>
+        <span>{formatarDataCalendario(pontos[pontos.length - 1].data)}</span>
       </div>
     </div>
   );
