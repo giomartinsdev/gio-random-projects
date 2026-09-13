@@ -102,6 +102,14 @@ resource "random_id" "leads_api_domain_key" {
   byte_length = 24
 }
 
+# proventos-worker's own key -- it reads GET /ativos/todos (the one
+# cross-user ativo read) and publishes ativo.registerMovement/
+# transacao.create via /sync, so the audit log needs a caller identity
+# for it like every other module.
+resource "random_id" "proventos_worker_domain_key" {
+  byte_length = 24
+}
+
 # The HS256 secret financas' own session cookie is signed/verified
 # with -- contas-api mints the cookie (after verifying the Google ID
 # token), the other 3 backends only verify it. One secret shared by
@@ -113,7 +121,7 @@ resource "random_password" "financas_session_secret" {
 }
 
 locals {
-  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers,${random_id.cch_api_domain_key.hex}:cch-api,${random_id.contas_api_domain_key.hex}:contas-api,${random_id.transacional_api_domain_key.hex}:transacional-api,${random_id.asset_manager_api_domain_key.hex}:asset-manager-api,${random_id.dashboard_api_domain_key.hex}:dashboard-api,${random_id.leads_api_domain_key.hex}:leads-api"
+  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers,${random_id.cch_api_domain_key.hex}:cch-api,${random_id.contas_api_domain_key.hex}:contas-api,${random_id.transacional_api_domain_key.hex}:transacional-api,${random_id.asset_manager_api_domain_key.hex}:asset-manager-api,${random_id.dashboard_api_domain_key.hex}:dashboard-api,${random_id.leads_api_domain_key.hex}:leads-api,${random_id.proventos_worker_domain_key.hex}:proventos-worker"
 }
 
 resource "random_password" "vaultwarden_admin_token" {

@@ -7,6 +7,10 @@ import "context"
 type Repository interface {
 	FindByID(ctx context.Context, id string) (Ativo, error)
 	ListByUsuario(ctx context.Context, usuarioEmail, contaID string) ([]Ativo, error)
+	// ListAtivosComPosicao is cross-user -- the one read here not scoped
+	// to a single person's session, for the proventos-worker's daily
+	// sweep of every position that could still be owed a dividend.
+	ListAtivosComPosicao(ctx context.Context) ([]Ativo, error)
 }
 
 var ErrNotFound = notFoundError{}

@@ -115,7 +115,7 @@ func TestCriarAtivo_DataInvalida(t *testing.T) {
 }
 
 // TestRegistrarMovimento_DataEnviadaRFC3339: same contract for the
-// movement path (compra/venda/provento). Served through a mux because
+// movement path (compra/venda). Served through a mux because
 // r.PathValue("id") only resolves on a route match.
 func TestRegistrarMovimento_DataEnviadaRFC3339(t *testing.T) {
 	fake, captured := fakeDomainSync(t)

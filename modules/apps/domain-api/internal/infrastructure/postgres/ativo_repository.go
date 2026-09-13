@@ -53,6 +53,32 @@ func (r *AtivoRepository) FindByID(ctx context.Context, id string) (domainativo.
 	return a, nil
 }
 
+// ListAtivosComPosicao is the one cross-user read on this repository:
+// every "aberta" ativo with a live position, for the proventos-worker's
+// daily sweep -- it has no session to scope by, unlike every other
+// caller of this aggregate.
+func (r *AtivoRepository) ListAtivosComPosicao(ctx context.Context) ([]domainativo.Ativo, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+ativoColumns+` FROM ativos
+		 WHERE status = 'aberta' AND quantidade_atual > 0
+		 ORDER BY ticker`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list ativos com posicao: %w", err)
+	}
+	defer rows.Close()
+
+	var ativos []domainativo.Ativo
+	for rows.Next() {
+		a, err := scanAtivo(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan ativo: %w", err)
+		}
+		ativos = append(ativos, a)
+	}
+	return ativos, rows.Err()
+}
+
 // An empty contaID means "every conta of this usuario".
 func (r *AtivoRepository) ListByUsuario(ctx context.Context, usuarioEmail, contaID string) ([]domainativo.Ativo, error) {
 	rows, err := r.pool.Query(ctx,

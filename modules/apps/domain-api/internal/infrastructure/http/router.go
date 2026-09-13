@@ -74,6 +74,7 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Delete("/transacoes/{id}", tr.DeleteTransacao)
 
 		r.Get("/ativos", at.ListAtivos)
+		r.Get("/ativos/todos", at.ListTodosAtivos)
 		r.Get("/ativos/{id}/movimentos", at.GetAtivoMovimentos)
 		r.Post("/ativos/{id}/cotacao", at.UpdateAtivoQuote)
 
