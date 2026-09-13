@@ -67,8 +67,25 @@ variable "path_protected_hostnames" {
 }
 
 variable "allowed_emails" {
-  description = "Emails allowed to log in via Google SSO to every protected hostname."
+  description = "Emails allowed to log in via Google SSO to every protected hostname NOT listed in public_signup_hostnames."
   type        = list(string)
+}
+
+variable "public_signup_hostnames" {
+  description = <<-EOT
+    Protected hostnames (host+path, same keying as path_protected_hostnames)
+    where the Google-SSO policy allows ANY authenticated Google account
+    instead of only var.allowed_emails -- the "sign up, don't just log
+    in" case (financas' 4 backends: a new visitor's own Google login IS
+    their account creation, no separate signup form or password
+    anywhere). Still requires the same specific Google identity
+    provider as every other protected hostname; this only drops the
+    email allowlist, not the login method check. Everything not listed
+    here keeps the private allowed_emails behavior -- opt IN to public
+    signup per hostname, never the other way around.
+  EOT
+  type        = set(string)
+  default     = []
 }
 
 variable "preflight_bypass_hostnames" {

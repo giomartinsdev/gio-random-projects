@@ -1,10 +1,10 @@
 import { type FormEvent, useState } from "react";
+import { Link } from "react-router";
 import { motion } from "framer-motion";
 import { ArrowRight, LayoutGrid, Wallet, ArrowLeftRight, LineChart } from "lucide-react";
 import { Botao } from "@/components/Botao";
 import { CampoTexto } from "@/components/CampoTexto";
 import { Selo } from "@/components/Selo";
-import { loginNavigationUrl } from "@/lib/auth";
 import { capturarLead } from "@/lib/api/leads";
 import { MockContas, MockTransacional, MockInvestimentos, MockDashboard } from "./mockups";
 
@@ -141,18 +141,18 @@ export function LandingPage() {
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6 md:px-10">
         <span className="font-display text-lg font-semibold tracking-tight">◆ finanças</span>
         <nav className="flex items-center gap-2">
-          <a
-            href={loginNavigationUrl()}
+          <Link
+            to="/entrar"
             className="rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             Entrar
-          </a>
-          <Botao
-            variante="pill"
-            onClick={() => (window.location.href = loginNavigationUrl())}
+          </Link>
+          <Link
+            to="/entrar"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-foreground px-4 text-sm font-medium text-background shadow-lift transition-colors hover:bg-foreground/85"
           >
             Começar
-          </Botao>
+          </Link>
         </nav>
       </header>
 
@@ -194,13 +194,12 @@ export function LandingPage() {
             transition={{ duration: 0.6, delay: 0.3 }}
             className="mt-8 flex flex-col items-center gap-4 sm:flex-row"
           >
-            <Botao
-              variante="pill"
-              tamanho="lg"
-              onClick={() => (window.location.href = loginNavigationUrl())}
+            <Link
+              to="/entrar"
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-foreground px-6 text-base font-medium text-background shadow-lift transition-colors hover:bg-foreground/85"
             >
               Começar agora <ArrowRight size={18} />
-            </Botao>
+            </Link>
             <a
               href="#modulos"
               className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
