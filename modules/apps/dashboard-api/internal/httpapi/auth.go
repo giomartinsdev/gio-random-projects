@@ -1,34 +1,22 @@
-// Identity = Cloudflare Access, the same pattern every other module in
-// this ecosystem runs (harness-api, bet-api, cch-api). The edge stamps
-// every request that passes the Access application with the
-// Cf-Access-Jwt-Assertion header -- a JWT signed with the team's public
-// keys. This middleware verifies it properly: signature against the
-// team JWKS, issuer against the team domain, audience against this
-// app's DASHBOARD_ACCESS_AUD -- because the same nginx also routes
-// direct (non-edge) traffic here; anyone bypassing Cloudflare still
-// needs a valid JWT.
-//
-// The verified email+name claims become an Identity in the request
-// context (WithIdentity/IdentityFrom). DASHBOARD_DEV_BYPASS_AUTH=1 is
-// the local-dev escape hatch: with no JWT header present, requests run
-// as the DASHBOARD_DEV_USER_* user. Tests skip the middleware entirely
-// by injecting an Identity straight into the request context.
+// Identity = financas' own session (see session.go), not Cloudflare
+// Access anymore. The first "Sign in with Google" (on contas-api,
+// which mints the cookie) IS account creation -- any Google account
+// works, no allowlist. DASHBOARD_DEV_BYPASS_AUTH=1 is the local-dev
+// escape hatch: with no session cookie present, requests run as the
+// DASHBOARD_DEV_USER_* user. Tests skip the middleware entirely by
+// injecting an Identity straight into the request context.
 package httpapi
 
 import (
 	"context"
-	"errors"
 	"net/http"
-	"slices"
 	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
 // Identity is who is calling. Email is the stable key everywhere (it is
 // what usuario_email columns and the domain-api dashboardlayout
-// aggregate key on); Nome is display only, from the Access "name"
-// claim.
+// aggregate key on); Nome is display only, from the Google account's
+// "name" claim.
 type Identity struct {
 	Email string
 	Nome  string
@@ -50,8 +38,8 @@ func IdentityFrom(ctx context.Context) (Identity, bool) {
 }
 
 // requireAuth resolves the caller's identity before the request reaches
-// a handler. Routes that are public by design (/api/health, /api/sso)
-// are exempted in Handler().
+// a handler. Routes that are public by design (/api/health) are
+// exempted in Handler().
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := IdentityFrom(r.Context())
@@ -67,52 +55,17 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 	})
 }
 
-// identidade verifies the Access JWT or, in dev bypass mode with no
-// token at all, returns the configured dev user.
+// identidade verifies the financas_session cookie or, in dev bypass
+// mode with none present, returns the configured dev user.
 func (s *Server) identidade(r *http.Request) (Identity, error) {
-	token := r.Header.Get("Cf-Access-Jwt-Assertion")
-	if token == "" {
-		if s.cfg.DevBypassAuth {
-			return s.cfg.devIdentity(), nil
-		}
-		return Identity{}, errors.New("sessão do Cloudflare Access ausente")
+	id, err := s.identidadeFromSession(r)
+	if err == nil {
+		return id, nil
 	}
-	if s.cfg.JWTKeyfunc == nil {
-		return Identity{}, errors.New("validação de token indisponível (JWKS do Access não configurado)")
+	if s.cfg.DevBypassAuth {
+		return s.cfg.devIdentity(), nil
 	}
-
-	opts := []jwt.ParserOption{jwt.WithValidMethods([]string{"RS256"})}
-	// Issuer/aud are what actually scopes a token to THIS app; only
-	// require them when configured, so a half-configured boot fails on
-	// the keyfunc instead of on an impossible "" comparison.
-	if s.cfg.AccessIssuer != "" {
-		opts = append(opts, jwt.WithIssuer(s.cfg.AccessIssuer))
-	}
-	if s.cfg.AccessAud != "" {
-		opts = append(opts, jwt.WithAudience(s.cfg.AccessAud))
-	}
-	parsed, err := jwt.Parse(token, s.cfg.JWTKeyfunc, opts...)
-	if err != nil || !parsed.Valid {
-		return Identity{}, errors.New("token do Cloudflare Access inválido ou expirado")
-	}
-
-	claims, _ := parsed.Claims.(jwt.MapClaims)
-	email, _ := claims["email"].(string)
-	if email == "" {
-		return Identity{}, errors.New("token sem claim de e-mail")
-	}
-	email = strings.ToLower(email)
-	// Defense in depth behind Access's own allowed_emails decision,
-	// checked again here like every other module does.
-	if len(s.cfg.AllowedEmails) > 0 && !slices.Contains(s.cfg.AllowedEmails, email) {
-		return Identity{}, errors.New("e-mail não autorizado")
-	}
-
-	nome, _ := claims["name"].(string)
-	if nome == "" {
-		nome = emailLocal(email)
-	}
-	return Identity{Email: email, Nome: nome}, nil
+	return Identity{}, err
 }
 
 // devIdentity is the user DASHBOARD_DEV_BYPASS_AUTH=1 runs as.

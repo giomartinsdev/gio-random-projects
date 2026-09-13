@@ -15,21 +15,16 @@ variable "external_port" {
   default     = 8013
 }
 
-variable "access_team_domain" {
-  description = "The Cloudflare Access team domain this zone belongs to -- the app composes ASSET_MANAGER_ACCESS_ISSUER from it and fetches the team's JWKS from <issuer>/cdn-cgi/access/certs to verify the edge-injected Cf-Access-Jwt-Assertion."
+variable "session_secret" {
+  description = "The HS256 secret asset-manager-api verifies the financas_session cookie with -- contas-api is the one service that mints it, see random_password.financas_session_secret in the root module."
   type        = string
-  default     = "workwithgiomartinsdev.cloudflareaccess.com"
-}
-
-variable "access_aud" {
-  description = "The `aud` tag of the asset-manager-api Access application (module.cloud_cloudflare.access_app_auds output; the single /api app, login hop included) -- every Access JWT minted for it carries this aud, and asset-manager-api pins it as the acceptable token audience."
-  type        = list(string)
+  sensitive   = true
 }
 
 variable "allowed_emails" {
-  description = "Defense-in-depth email allowlist checked after the Access JWT verifies (the edge's Google-SSO policy already enforces the same list)."
+  description = "Optional restriction to a specific set of accounts, checked after the session cookie verifies -- empty means anyone with a Google account can sign up (financas is open signup by design)."
   type        = list(string)
-  default     = ["giovannidealmeidamartins@gmail.com", "workwithgiomartinsdev@gmail.com"]
+  default     = []
 }
 
 variable "frontend_origins" {

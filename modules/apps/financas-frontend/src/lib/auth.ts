@@ -1,50 +1,74 @@
-// Cada um dos 4 BFFs tem seu próprio Cloudflare Access + /sso (mesmo
-// padrão de hub-frontend/bet-api: GET /sso responde 200 quando já existe
-// sessão de Access válida para aquela origem, ou devolve um redirect
-// para o login quando não existe). Como os 4 módulos vivem atrás do
-// MESMO time de Access (mesma allowlist de e-mail, mesma zona), uma
-// sessão de Access é compartilhada entre eles na prática -- não
-// precisamos probar os 4. Escolhemos contas-api como "âncora" de login
-// porque é o módulo raiz de todo o resto (US1: sem conta não existe onde
-// lançar transação nem ativo) e é o primeiro contrato listado na spec.
-// Um 401 de qualquer outro módulo durante o uso normal é tratado no
-// próprio cliente daquele módulo (ver src/lib/api/*.ts), não aqui.
+// financas' own auth: no Cloudflare Access anymore. contas-api verifies
+// the Google ID token Identity Services hands us and mints a
+// financas_session cookie (Domain=.giomartins.dev) the other 3 backends
+// only verify. A visitor's first Google login IS their account creation
+// -- there's no separate signup form, no allowlist.
 import { CONTAS_API_URL } from "./api/contas";
 
-export const LOGIN_URL = `${CONTAS_API_URL}/api/sso`;
+export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
-// A navegação real de login precisa de ?return= -- contas-api's
-// handleSSO recusa com 422 "origem de retorno não permitida" sem um
-// return cuja ORIGEM esteja em CONTAS_FRONTEND_ORIGINS (allowlist do
-// Terraform). O probe acima não passa por essa checagem porque nunca
-// segue o redirect (redirect:"manual"). O destino é sempre /app (não
-// window.location.href): a landing pública em "/" não tem PortaoLogin
-// nenhum, então voltar pra lá depois do login deixaria a pessoa presa
-// na landing sem perceber que já entrou -- /app é o que de fato monta
-// o gate e renderiza o produto assim que a sessão é confirmada.
-export function loginNavigationUrl(): string {
-  const destino = `${window.location.origin}/app`;
-  return `${LOGIN_URL}?return=${encodeURIComponent(destino)}`;
+const GIS_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
+
+let gisScriptPromise: Promise<void> | null = null;
+
+// loadGoogleIdentityScript loads accounts.google.com/gsi/client exactly
+// once per page, however many times callers ask for it (StrictMode
+// double-mount included).
+export function loadGoogleIdentityScript(): Promise<void> {
+  if (gisScriptPromise) return gisScriptPromise;
+  gisScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${GIS_SCRIPT_SRC}"]`);
+    if (existing) {
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = GIS_SCRIPT_SRC;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("falha ao carregar o script do Google"));
+    document.head.appendChild(script);
+  });
+  return gisScriptPromise;
 }
 
-export const LOGOUT_URL =
-  "https://workwithgiomartinsdev.cloudflareaccess.com/cdn-cgi/access/logout";
+// signInWithGoogle hands contas-api the ID token Identity Services just
+// produced; contas-api verifies it server-side (signature, issuer,
+// audience) and, if valid, sets the financas_session cookie via
+// Set-Cookie on this very response -- credentials:"include" is what
+// lets the browser keep it.
+export async function signInWithGoogle(credential: string): Promise<{ email: string; nome: string }> {
+  const res = await fetch(`${CONTAS_API_URL}/api/auth/google`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential }),
+  });
+  if (!res.ok) {
+    throw new Error("login com Google falhou");
+  }
+  return res.json();
+}
 
-// A sonda tem que bater em /api/me, não em /api/sso: /api/sso é só o
-// alvo do hop de login (exige ?return= e SEMPRE responde 422 sem ele,
-// esteja a pessoa logada ou não -- não é um sinal de sessão). /api/me
-// é uma rota comum, protegida pelo Access como qualquer outra: sem
-// sessão válida o próprio Access intercepta antes de chegar no app e
-// devolve um redirect (opaco com redirect:"manual", status 0); com
-// sessão válida a requisição chega no handler e responde 200 com a
-// identidade. Mesmo padrão de hub-frontend's /sso probe e do
-// bet-frontend's /api/me probe.
+// logout clears the financas_session cookie via contas-api -- the only
+// service that issues it, so the only one that needs to answer this.
+export async function logout(): Promise<void> {
+  await fetch(`${CONTAS_API_URL}/api/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  });
+}
+
+// probeLogin is the identity check the SPA's gate (PortaoLogin) uses:
+// no session cookie means a plain 401 now (there's no Access edge to
+// intercept the request first), so a simple fetch is enough -- no
+// redirect:"manual" trick needed anymore.
 export async function probeLogin(): Promise<boolean> {
   try {
     const res = await fetch(`${CONTAS_API_URL}/api/me`, {
-      redirect: "manual",
-      cache: "no-store",
       credentials: "include",
+      cache: "no-store",
     });
     return res.status === 200;
   } catch {

@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router";
+import { NavLink, useNavigate } from "react-router";
 import { motion } from "framer-motion";
-import { LayoutGrid, Wallet, ArrowLeftRight, LineChart, Sun, Moon } from "lucide-react";
+import { LayoutGrid, Wallet, ArrowLeftRight, LineChart, Sun, Moon, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadTheme, toggleTheme, type Theme } from "@/lib/theme";
+import { logout } from "@/lib/auth";
 import { useState } from "react";
 
 const itens = [
@@ -15,6 +16,12 @@ const itens = [
 
 export function Shell({ children }: { children: ReactNode }) {
   const [tema, setTema] = useState<Theme>(loadTheme());
+  const navigate = useNavigate();
+
+  async function sair() {
+    await logout();
+    navigate("/", { replace: true });
+  }
 
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
@@ -65,6 +72,15 @@ export function Shell({ children }: { children: ReactNode }) {
         >
           {tema === "dark" ? <Sun size={17} /> : <Moon size={17} />}
           <span className="hidden md:inline">{tema === "dark" ? "Claro" : "Escuro"}</span>
+        </button>
+
+        <button
+          onClick={sair}
+          className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          aria-label="Sair"
+        >
+          <LogOut size={17} />
+          <span className="hidden md:inline">Sair</span>
         </button>
       </aside>
 

@@ -1,10 +1,11 @@
 // contas-api: the BFF for the "Contas" module of the personal-finance
 // feature (specs/002-gestao-financeira-modular). No database of its
 // own -- every read and write goes through HTTP to the shared
-// domain-api (internal/domainapi). Identity comes from the Cloudflare
-// Access JWT the edge stamps on every request (see
-// internal/httpapi/auth.go). The frontend is a separate app (its own
-// origin) that talks to this one over CORS.
+// domain-api (internal/domainapi). Identity comes from financas' own
+// session (see internal/httpapi/session.go): this is the one backend
+// that verifies a Google Sign-In credential and mints the session
+// cookie the other 3 financas backends verify. The frontend is a
+// separate app (its own origin) that talks to this one over CORS.
 package main
 
 import (
@@ -14,11 +15,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/MicahParks/keyfunc/v3"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/contas-api/internal/domainapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/contas-api/internal/httpapi"
@@ -32,35 +32,23 @@ func main() {
 		log.Printf("CONTAS_DOMAIN_API_URL/CONTAS_DOMAIN_API_KEY não configurados: nenhuma rota de contas vai funcionar")
 	}
 
+	sessionSecret := os.Getenv("FINANCAS_SESSION_SECRET")
 	cfg := httpapi.Config{
-		AllowedOrigins: splitCSV(os.Getenv("CONTAS_FRONTEND_ORIGINS")),
-		AccessIssuer:   os.Getenv("CONTAS_ACCESS_ISSUER"),
-		AccessAud:      os.Getenv("CONTAS_ACCESS_AUD"),
-		AllowedEmails:  splitCSV(os.Getenv("CONTAS_ALLOWED_EMAILS")),
-		DevBypassAuth:  os.Getenv("CONTAS_DEV_BYPASS_AUTH") == "1",
-		DevUserEmail:   os.Getenv("CONTAS_DEV_USER_EMAIL"),
-		DevUserNome:    os.Getenv("CONTAS_DEV_USER_NOME"),
+		AllowedOrigins:      splitCSV(os.Getenv("CONTAS_FRONTEND_ORIGINS")),
+		SessionSecret:       sessionSecret,
+		SessionCookieDomain: os.Getenv("FINANCAS_SESSION_COOKIE_DOMAIN"),
+		SessionDuration:     envDuration("FINANCAS_SESSION_DURATION", 24*time.Hour),
+		GoogleClientID:      os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		AllowedEmails:       splitCSV(os.Getenv("CONTAS_ALLOWED_EMAILS")),
+		DevBypassAuth:       os.Getenv("CONTAS_DEV_BYPASS_AUTH") == "1",
+		DevUserEmail:        os.Getenv("CONTAS_DEV_USER_EMAIL"),
+		DevUserNome:         os.Getenv("CONTAS_DEV_USER_NOME"),
 	}
-	// The Access team JWKS is what makes the token path work at all. In
-	// prod a failure to load it means every authenticated request would
-	// 401, so refuse to boot; in dev (bypass on) the API is still usable
-	// without it, tokens just keep failing.
-	if cfg.AccessIssuer != "" {
-		jwksURL := strings.TrimRight(cfg.AccessIssuer, "/") + "/cdn-cgi/access/certs"
-		kf, kfErr := keyfunc.NewDefault([]string{jwksURL})
-		switch {
-		case kfErr == nil:
-			cfg.JWTKeyfunc = kf.Keyfunc
-		case cfg.DevBypassAuth:
-			log.Printf("JWKS do Access indisponível no boot (%v): requests com token vão falhar", kfErr)
-		default:
-			log.Fatalf("JWKS do Access (%s): %v", jwksURL, kfErr)
-		}
-	} else if !cfg.DevBypassAuth {
-		// Sem issuer não existe JWKS para checar nada: a API sobe, mas só
-		// o health responde. Quase sempre é esquecer de plugar o env do
-		// Terraform -- vale gritar no boot.
-		log.Printf("CONTAS_ACCESS_ISSUER unset e sem bypass dev: nenhuma rota autenticada vai aceitar token")
+	if sessionSecret == "" && !cfg.DevBypassAuth {
+		log.Printf("FINANCAS_SESSION_SECRET unset e sem bypass dev: nenhuma sessão vai validar, e /api/auth/google não vai conseguir logar ninguém")
+	}
+	if cfg.GoogleClientID == "" && !cfg.DevBypassAuth {
+		log.Printf("GOOGLE_OAUTH_CLIENT_ID unset: /api/auth/google vai recusar todo login")
 	}
 
 	// Host networking means this binds straight onto the VPS's
@@ -101,6 +89,21 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// envDuration reads an env var as a count of seconds (kept a plain
+// integer, not Go duration syntax, so it's the same shape Terraform's
+// var.session_duration-style inputs already use elsewhere in this repo).
+func envDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	secs, err := strconv.Atoi(v)
+	if err != nil || secs <= 0 {
+		return fallback
+	}
+	return time.Duration(secs) * time.Second
 }
 
 // splitCSV reads a comma-separated env value into a slice, dropping

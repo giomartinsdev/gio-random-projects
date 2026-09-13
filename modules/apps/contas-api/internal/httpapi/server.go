@@ -3,9 +3,9 @@
 // personal-finance feature. This service has no database of its own --
 // every read and write goes through internal/domainapi. The frontend is
 // a separate app on its own origin, so every route speaks CORS to it --
-// cookies included, because the caller is authenticated by the
-// Cloudflare Access session cookie, not by a token of ours. Error bodies
-// follow the same shape as harness-api/bet-api:
+// cookies included, because the caller is authenticated by financas'
+// own session cookie (see session.go), not Cloudflare Access anymore.
+// Error bodies follow the same shape as harness-api/bet-api:
 // {"erro":{"codigo","mensagem"}}. Contract:
 // specs/002-gestao-financeira-modular/contracts/contas-api.md.
 package httpapi
@@ -13,37 +13,43 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
+	"time"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/contas-api/internal/domainapi"
 )
 
 // Config carries what main.go read from the environment.
 type Config struct {
-	// contas-frontend's own origin(s), comma-separated in the env -- the
-	// only ones CORS is answered for and /api/sso redirects back to.
+	// financas-frontend's own origin(s), comma-separated in the env --
+	// the only ones CORS is answered for.
 	AllowedOrigins []string
-	// Cloudflare Access verification: issuer is the team domain URL,
-	// audience this app's aud. Empty issuer means no JWKS exists to
-	// verify tokens with.
-	AccessIssuer string
-	AccessAud    string
-	// The emails terraform's Access policy allows -- defense in depth
-	// behind Access's own decision. Empty means everyone who passed
-	// Access is in.
+	// SessionSecret signs/verifies the financas_session cookie (HS256)
+	// -- shared with the other 3 financas backends, which only ever
+	// verify it (this is the one service that also issues it).
+	SessionSecret string
+	// SessionCookieDomain is set to ".giomartins.dev" in production so
+	// the cookie rides to every financas subdomain; empty (host-only
+	// cookie) in local dev.
+	SessionCookieDomain string
+	// SessionDuration is how long a session lasts before requiring a
+	// fresh Google login.
+	SessionDuration time.Duration
+	// GoogleClientID is this app's OAuth 2.0 client ID (Google Cloud
+	// Console) -- idtoken.Validate checks every credential against it,
+	// so a token minted for some unrelated Google app can't be replayed
+	// here.
+	GoogleClientID string
+	// The emails an operator wants to still restrict to, if ever --
+	// empty by default now that financas is open signup (any Google
+	// account creates its own account on first login).
 	AllowedEmails []string
-	// Dev bypass: when set and no JWT header is present, requests run as
-	// the dev user. Must stay unset in prod.
+	// Dev bypass: when set and no session cookie is present, requests
+	// run as the dev user. Must stay unset in prod.
 	DevBypassAuth bool
 	DevUserEmail  string
 	DevUserNome   string
-	// JWTKeyfunc resolves signing keys from the Access team JWKS; built
-	// by main.go from AccessIssuer. Nil disables the token path (dev).
-	JWTKeyfunc jwt.Keyfunc
 }
 
 type Server struct {
@@ -60,7 +66,8 @@ func New(domain *domainapi.Client, cfg Config) *Server {
 	// Foundational routes.
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/me", s.handleMe)
-	s.mux.HandleFunc("GET /api/sso", s.handleSSO)
+	// Auth routes register themselves from authhandlers.go.
+	s.registrarRotasAuth()
 	// Conta routes register themselves from contahandlers.go.
 	s.registrarRotasContas()
 
@@ -68,13 +75,13 @@ func New(domain *domainapi.Client, cfg Config) *Server {
 }
 
 // Handler wraps the mux with the auth middleware and CORS. Only
-// /api/health (watchtower/compose probe) and /api/sso (the login hop
-// itself) are public; everything else requires a verified Access
-// identity.
+// /api/health (watchtower/compose probe) and the two /api/auth/* routes
+// (sign-in itself, and logout) are public; everything else requires a
+// verified financas session.
 func (s *Server) Handler() http.Handler {
 	authed := s.requireAuth(s.mux)
 	return s.cors(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/health" || r.URL.Path == "/api/sso" {
+		if r.URL.Path == "/api/health" || strings.HasPrefix(r.URL.Path, "/api/auth/") {
 			s.mux.ServeHTTP(w, r)
 			return
 		}
@@ -84,7 +91,7 @@ func (s *Server) Handler() http.Handler {
 
 // cors mirrors harness-api/cch-api's single middleware, with credentials
 // allowed: the SPA calls cross-origin with credentials:"include" so the
-// Access cookie rides along.
+// financas_session cookie rides along.
 func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
@@ -106,46 +113,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// handleMe is the identity probe the SPA uses to decide between
-// rendering and bouncing to the /api/sso login hop.
+// handleMe is the identity probe the SPA uses to decide whether to
+// render the app or show the sign-in screen.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	id, _ := IdentityFrom(r.Context())
 	writeJSON(w, http.StatusOK, map[string]string{"email": id.Email, "nome": id.Nome})
 }
 
-// handleSSO is the login hop: the frontend NAVIGATES here top-level --
-// never fetches, Google's own login can't run inside a fetch/iframe. The
-// Access application in front of this API intercepts the navigation
-// when there's no session yet; what the browser lands on after passing
-// is this route, which bounces back to the SPA. The redirect target is
-// the caller's ?return= as long as its ORIGIN is allowlisted -- so the
-// hop can't be pointed anywhere else.
-func (s *Server) handleSSO(w http.ResponseWriter, r *http.Request) {
-	if origin, full, ok := originOf(r.URL.Query().Get("return")); ok && slices.Contains(s.cfg.AllowedOrigins, origin) {
-		http.Redirect(w, r, full, http.StatusFound)
-		return
-	}
-	writeError(w, http.StatusUnprocessableEntity, "validacao", "origem de retorno não permitida")
-}
-
-// originOf extracts the origin of an absolute URL ("https://x.dev/a?b"
-// -> origin "https://x.dev", full URL as given). The full URL goes back
-// in the redirect so deep links survive the login hop.
-func originOf(raw string) (origin, full string, ok bool) {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return "", "", false
-	}
-	return u.Scheme + "://" + u.Host, raw, true
-}
-
-// normalizeOrigins trims and canonicalizes the allowlist so "https://x.dev/"
-// and "https://x.dev" match the same redirect target.
+// normalizeOrigins trims and canonicalizes the CORS allowlist.
 func normalizeOrigins(origins []string) []string {
 	out := make([]string, 0, len(origins))
 	for _, o := range origins {
-		if origin, _, ok := originOf(strings.TrimSpace(o)); ok {
-			out = append(out, origin)
+		if o = strings.TrimRight(strings.TrimSpace(o), "/"); o != "" {
+			out = append(out, o)
 		}
 	}
 	return out

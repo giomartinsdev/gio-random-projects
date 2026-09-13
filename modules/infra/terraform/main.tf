@@ -17,34 +17,23 @@ module "cloud_cloudflare" {
   excluded_hostnames       = var.excluded_hostnames
   path_protected_hostnames = local.path_protected_hostnames
   allowed_emails           = var.allowed_emails
-  # The financas product is open signup: any Google account can log in
-  # (that first login IS the account creation, no separate form). Every
-  # other protected hostname -- hub, bet-api, harness-api-shaped things
-  # -- stays on the allowed_emails allowlist above; opt-in per hostname
-  # only, see the variable's own doc comment.
-  public_signup_hostnames = [
-    "contas-api.giomartins.dev/api",
-    "transacional-api.giomartins.dev/api",
-    "asset-manager-api.giomartins.dev/api",
-    "dashboard-api.giomartins.dev/api",
-  ]
+  # financas dropped public_signup_hostnames -- its 4 backends have no
+  # Cloudflare Access application at all anymore (own Google Sign-In +
+  # session cookie instead, see contas-api's session.go). Every other
+  # protected hostname -- hub, bet-api, harness-api-shaped things --
+  # stays on the allowed_emails allowlist above.
   session_duration = var.session_duration
   # bet-api's /api path app is the one browser-facing cross-origin API
-  # behind Access: its SPA (bet.giomartins.dev) preflights every
+  # still behind Access: its SPA (bet.giomartins.dev) preflights every
   # content-type:json call, and a preflight 403s at the edge without
   # this bypass no matter how logged-in the user is (preflights carry
   # no cookies). The key is the path app's own domain string, not the
   # bare hostname -- that's what the contains() check compares against.
-  # contas-api/transacional-api/asset-manager-api/dashboard-api are the
-  # same shape as bet-api above: financas-frontend preflights every
-  # content-type:json call to each of them cross-origin, so each needs
-  # the same bypass.
+  # financas' 4 backends no longer need an entry here: with no Access
+  # app in front of them, there's no edge-level preflight to bypass --
+  # each service's own cors() middleware answers OPTIONS directly.
   preflight_bypass_hostnames = [
     "bet-api.giomartins.dev/api",
-    "contas-api.giomartins.dev/api",
-    "transacional-api.giomartins.dev/api",
-    "asset-manager-api.giomartins.dev/api",
-    "dashboard-api.giomartins.dev/api",
   ]
 
   # Email Routing lives on the zone's DNS (MX/SPF/DKIM) plus account
@@ -311,58 +300,54 @@ module "compute_apps_bet_api" {
   depends_on = [null_resource.postgres_password_sync, module.cloud_cloudflare]
 }
 
-# contas-api: one of the 4 financas-frontend backends -- path-protected
-# behind Access exactly like bet-api (the /api path has its own
-# Access application, login hop /api/sso included; the bare hostname
-# is in excluded_hostnames). No database of its own: persistence rides
-# domain-api's shared Postgres via the command pipeline.
+# contas-api: one of the 4 financas-frontend backends. No Cloudflare
+# Access in front of it anymore -- it verifies the Google ID token
+# financas-frontend's Identity Services button hands it, then mints
+# the financas_session cookie the other 3 backends only verify. No
+# database of its own: persistence rides domain-api's shared Postgres
+# via the command pipeline.
 module "compute_apps_contas_api" {
   source = "./modules/compute/apps/contas_api"
   providers = {
     docker = docker
   }
 
-  network_name  = module.network_docker_apps.network_name
-  registry_host = var.registry_host
-  access_aud = [
-    module.cloud_cloudflare.access_app_auds["contas-api.giomartins.dev/api"],
-  ]
-  # Empty on purpose: this app-level allowlist is the SAME
-  # defense-in-depth check every other -api does after the JWT
-  # verifies, but contas-api.giomartins.dev/api is in
-  # public_signup_hostnames now (see module.cloud_cloudflare above) --
-  # anyone who clears Google login is meant to get in, so there is no
-  # second list to also keep in sync. Empty here means "everyone who
-  # passed Access is in" (see internal/httpapi/auth.go's own comment).
+  network_name           = module.network_docker_apps.network_name
+  registry_host          = var.registry_host
+  session_secret         = random_password.financas_session_secret.result
+  google_oauth_client_id = var.google_oauth_client_id
+  # Empty on purpose: this app-level allowlist is a restriction on TOP
+  # of "any Google account" (financas is open signup) -- there is no
+  # second list to also keep in sync anymore, unlike the old
+  # Access-allowlist days.
   allowed_emails   = []
   domain_api_key   = random_id.contas_api_domain_key.hex
   frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
   otlp_endpoint    = module.compute_services_observability.otlp_endpoint
 
-  depends_on = [module.cloud_cloudflare, module.compute_apps_domain_api]
+  depends_on = [module.compute_apps_domain_api]
 }
 
 # transacional-api: one of the 4 financas-frontend backends -- same
-# shape as contas-api above.
+# shape as contas-api above, minus issuing the session (it only
+# verifies).
 module "compute_apps_transacional_api" {
   source = "./modules/compute/apps/transacional_api"
   providers = {
     docker = docker
   }
 
-  network_name  = module.network_docker_apps.network_name
-  registry_host = var.registry_host
-  access_aud = [
-    module.cloud_cloudflare.access_app_auds["transacional-api.giomartins.dev/api"],
-  ]
+  network_name   = module.network_docker_apps.network_name
+  registry_host  = var.registry_host
+  session_secret = random_password.financas_session_secret.result
   # Empty on purpose -- see the same note on compute_apps_contas_api
-  # above: this hostname is in public_signup_hostnames now.
+  # above.
   allowed_emails   = []
   domain_api_key   = random_id.transacional_api_domain_key.hex
   frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
   otlp_endpoint    = module.compute_services_observability.otlp_endpoint
 
-  depends_on = [module.cloud_cloudflare, module.compute_apps_domain_api]
+  depends_on = [module.compute_apps_domain_api]
 }
 
 # asset-manager-api: one of the 4 financas-frontend backends -- same
@@ -373,43 +358,39 @@ module "compute_apps_asset_manager_api" {
     docker = docker
   }
 
-  network_name  = module.network_docker_apps.network_name
-  registry_host = var.registry_host
-  access_aud = [
-    module.cloud_cloudflare.access_app_auds["asset-manager-api.giomartins.dev/api"],
-  ]
+  network_name   = module.network_docker_apps.network_name
+  registry_host  = var.registry_host
+  session_secret = random_password.financas_session_secret.result
   # Empty on purpose -- see the same note on compute_apps_contas_api
-  # above: this hostname is in public_signup_hostnames now.
+  # above.
   allowed_emails   = []
   domain_api_key   = random_id.asset_manager_api_domain_key.hex
   brapi_token      = var.asset_manager_brapi_token
   frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
   otlp_endpoint    = module.compute_services_observability.otlp_endpoint
 
-  depends_on = [module.cloud_cloudflare, module.compute_apps_domain_api]
+  depends_on = [module.compute_apps_domain_api]
 }
 
 # dashboard-api: one of the 4 financas-frontend backends -- same shape
-# as contas-api above.
+# as contas-api above, minus issuing the session (it only verifies).
 module "compute_apps_dashboard_api" {
   source = "./modules/compute/apps/dashboard_api"
   providers = {
     docker = docker
   }
 
-  network_name  = module.network_docker_apps.network_name
-  registry_host = var.registry_host
-  access_aud = [
-    module.cloud_cloudflare.access_app_auds["dashboard-api.giomartins.dev/api"],
-  ]
+  network_name   = module.network_docker_apps.network_name
+  registry_host  = var.registry_host
+  session_secret = random_password.financas_session_secret.result
   # Empty on purpose -- see the same note on compute_apps_contas_api
-  # above: this hostname is in public_signup_hostnames now.
+  # above.
   allowed_emails   = []
   domain_api_key   = random_id.dashboard_api_domain_key.hex
   frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
   otlp_endpoint    = module.compute_services_observability.otlp_endpoint
 
-  depends_on = [module.cloud_cloudflare, module.compute_apps_domain_api]
+  depends_on = [module.compute_apps_domain_api]
 }
 
 # leads-api: the one PUBLIC financas backend -- no access_aud/Access
