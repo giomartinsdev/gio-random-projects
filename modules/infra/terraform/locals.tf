@@ -144,6 +144,15 @@ locals {
       port     = 8014
     },
     {
+      # leads-api: the one PUBLIC financas backend -- captures e-mails
+      # on the landing page before a visitor ever authenticates, so
+      # unlike the 4 above it carries NO Access application at all (see
+      # excluded_hostnames in root variables.tf). Port must match
+      # module.compute_apps_leads_api's external_port.
+      hostname = "leads-api.giomartins.dev"
+      port     = 8015
+    },
+    {
       # 9router: OpenAI-compatible AI proxy with auto-fallback across
       # 40+ providers (Claude, GPT, Gemini, …). Dashboard at /dashboard,
       # API at /v1. Excluded from Cloudflare Access (Google SSO) so CLI/

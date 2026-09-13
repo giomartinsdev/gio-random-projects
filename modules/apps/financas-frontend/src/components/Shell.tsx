@@ -7,10 +7,10 @@ import { loadTheme, toggleTheme, type Theme } from "@/lib/theme";
 import { useState } from "react";
 
 const itens = [
-  { to: "/dashboard", label: "Visão geral", icone: LayoutGrid },
-  { to: "/contas", label: "Contas", icone: Wallet },
-  { to: "/transacional", label: "Transações", icone: ArrowLeftRight },
-  { to: "/investimentos", label: "Investimentos", icone: LineChart },
+  { to: "/app/dashboard", label: "Visão geral", icone: LayoutGrid },
+  { to: "/app/contas", label: "Contas", icone: Wallet },
+  { to: "/app/transacional", label: "Transações", icone: ArrowLeftRight },
+  { to: "/app/investimentos", label: "Investimentos", icone: LineChart },
 ];
 
 export function Shell({ children }: { children: ReactNode }) {

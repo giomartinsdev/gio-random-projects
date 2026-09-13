@@ -1,7 +1,8 @@
-// Alterna <html data-theme>. Escuro é o padrão (persona "cofre à noite");
-// claro ("papel") fica disponível para quem prefere. Mesmo padrão de
-// aplicar antes do primeiro paint que hub-frontend/tela-frontend usam,
-// para não piscar a paleta errada.
+// Alterna <html data-theme>. Papel (claro) é o padrão agora -- a
+// identidade editorial pedida (referência: orchid.ai) é essencialmente
+// clara; escuro fica disponível como alternativa para quem preferir.
+// Mesmo padrão de aplicar antes do primeiro paint que hub-frontend/
+// tela-frontend usam, para não piscar a paleta errada.
 export type Theme = "dark" | "light";
 
 const STORAGE_KEY = "financas.theme";
@@ -13,13 +14,13 @@ export function loadTheme(): Theme {
   } catch {
     // localStorage indisponível (modo privado etc.) -- cai no padrão.
   }
-  return "dark";
+  return "light";
 }
 
 export function applyTheme(theme: Theme) {
   const root = document.documentElement;
-  if (theme === "light") {
-    root.dataset.theme = "light";
+  if (theme === "dark") {
+    root.dataset.theme = "dark";
   } else {
     delete root.dataset.theme;
   }
@@ -31,7 +32,7 @@ export function applyTheme(theme: Theme) {
 }
 
 export function toggleTheme(current: Theme): Theme {
-  const next: Theme = current === "dark" ? "light" : "dark";
+  const next: Theme = current === "light" ? "dark" : "light";
   applyTheme(next);
   return next;
 }

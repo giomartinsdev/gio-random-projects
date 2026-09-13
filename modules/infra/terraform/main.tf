@@ -388,6 +388,24 @@ module "compute_apps_dashboard_api" {
   depends_on = [module.cloud_cloudflare, module.compute_apps_domain_api]
 }
 
+# leads-api: the one PUBLIC financas backend -- no access_aud/Access
+# app at all (its hostname is in excluded_hostnames instead), since an
+# anonymous landing-page visitor can't complete a Google SSO redirect.
+module "compute_apps_leads_api" {
+  source = "./modules/compute/apps/leads_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name     = module.network_docker_apps.network_name
+  registry_host    = var.registry_host
+  domain_api_key   = random_id.leads_api_domain_key.hex
+  frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
+  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
+
+  depends_on = [module.compute_apps_domain_api]
+}
+
 # bet-runner used to live here as a Docker container on the apps
 # network -- Betano's compliance wall blocks the VPS's datacenter ASN
 # ("Access to this page is restricted due to security and compliance
@@ -435,6 +453,7 @@ module "compute_services_ingress" {
     module.compute_apps_transacional_api,
     module.compute_apps_asset_manager_api,
     module.compute_apps_dashboard_api,
+    module.compute_apps_leads_api,
     module.compute_services_registry,
     module.compute_services_monitoring,
     module.compute_services_ai_proxy,

@@ -126,6 +126,7 @@ jobs:
           VITE_TRANSACIONAL_API_URL: https://transacional-api.giomartins.dev
           VITE_ASSET_MANAGER_API_URL: https://asset-manager-api.giomartins.dev
           VITE_DASHBOARD_API_URL: https://dashboard-api.giomartins.dev
+          VITE_LEADS_API_URL: https://leads-api.giomartins.dev
         run: npm run build
 
       # scp (not the docker provider/API) because the files have to

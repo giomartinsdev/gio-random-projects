@@ -59,6 +59,11 @@ const (
 
 	ActionSaveDashboardLayout   Action = "dashboardlayout.save"
 	ActionDeleteDashboardLayout Action = "dashboardlayout.delete"
+
+	// ActionCaptureLead is leads-api's only write -- an e-mail captured
+	// on financas-frontend's public landing page, before that person
+	// ever authenticates.
+	ActionCaptureLead Action = "lead.create"
 )
 
 type Command struct {
