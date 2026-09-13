@@ -79,6 +79,7 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Post("/ativos/{id}/cotacao", at.UpdateAtivoQuote)
 
 		r.Get("/apostas", ap.ListApostas)
+		r.Get("/apostas/pendentes", ap.ListApostasPendentes)
 		r.Get("/apostas/{id}", ap.GetAposta)
 
 		r.Get("/dashboardlayouts/{usuario}", dash.GetDashboardLayout)

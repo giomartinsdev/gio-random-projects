@@ -79,3 +79,26 @@ func (r *ApostaRepository) ListByUsuario(ctx context.Context, usuarioEmail, cont
 	}
 	return apostas, rows.Err()
 }
+
+// ListPendentes is the cross-user read: every aposta still awaiting a
+// result, across every usuario_email, for the resolver worker's daily
+// sweep -- it has no session to scope a usuario by.
+func (r *ApostaRepository) ListPendentes(ctx context.Context) ([]domainaposta.Aposta, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+apostaColumns+` FROM apostas WHERE status = 'pendente' ORDER BY data_aposta`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list apostas pendentes: %w", err)
+	}
+	defer rows.Close()
+
+	var apostas []domainaposta.Aposta
+	for rows.Next() {
+		a, err := scanAposta(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan aposta: %w", err)
+		}
+		apostas = append(apostas, a)
+	}
+	return apostas, rows.Err()
+}

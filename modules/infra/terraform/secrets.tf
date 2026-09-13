@@ -118,6 +118,14 @@ resource "random_id" "apostas_api_domain_key" {
   byte_length = 24
 }
 
+# apostas-resultado-worker's own key -- reads GET /apostas/pendentes
+# (the one cross-user aposta read) and publishes aposta.resolver/
+# transacao.create via /sync, same identity-for-audit reasoning as
+# every other module here.
+resource "random_id" "apostas_resultado_worker_domain_key" {
+  byte_length = 24
+}
+
 # The HS256 secret financas' own session cookie is signed/verified
 # with -- contas-api mints the cookie (after verifying the Google ID
 # token), the other 3 backends only verify it. One secret shared by
@@ -141,7 +149,7 @@ resource "random_password" "apostas_extension_token" {
 }
 
 locals {
-  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers,${random_id.cch_api_domain_key.hex}:cch-api,${random_id.contas_api_domain_key.hex}:contas-api,${random_id.transacional_api_domain_key.hex}:transacional-api,${random_id.asset_manager_api_domain_key.hex}:asset-manager-api,${random_id.dashboard_api_domain_key.hex}:dashboard-api,${random_id.leads_api_domain_key.hex}:leads-api,${random_id.proventos_worker_domain_key.hex}:proventos-worker,${random_id.apostas_api_domain_key.hex}:apostas-api"
+  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers,${random_id.cch_api_domain_key.hex}:cch-api,${random_id.contas_api_domain_key.hex}:contas-api,${random_id.transacional_api_domain_key.hex}:transacional-api,${random_id.asset_manager_api_domain_key.hex}:asset-manager-api,${random_id.dashboard_api_domain_key.hex}:dashboard-api,${random_id.leads_api_domain_key.hex}:leads-api,${random_id.proventos_worker_domain_key.hex}:proventos-worker,${random_id.apostas_api_domain_key.hex}:apostas-api,${random_id.apostas_resultado_worker_domain_key.hex}:apostas-resultado-worker"
 }
 
 resource "random_password" "vaultwarden_admin_token" {
@@ -346,6 +354,14 @@ locals {
     apostas_ai_api_key = {
       trigger = var.apostas_ai_api_key
       items   = { APOSTAS_AI_API_KEY = var.apostas_ai_api_key }
+    }
+    # apostas-resultado-worker's own domain-api key, individually
+    # retrievable (unlike proventos-worker's, which only lives in the
+    # merged DOMAIN_API_KEYS item above -- a gap noted when this was
+    # added, worth mirroring back onto proventos-worker later).
+    apostas_resultado_worker_domain_key = {
+      trigger = random_id.apostas_resultado_worker_domain_key.hex
+      items   = { APOSTAS_RESULTADO_WORKER_DOMAIN_KEY = random_id.apostas_resultado_worker_domain_key.hex }
     }
     vaultwarden_admin_token = {
       trigger = random_password.vaultwarden_admin_token.result

@@ -454,6 +454,26 @@ module "compute_apps_proventos_worker" {
   depends_on = [module.compute_apps_domain_api]
 }
 
+# apostas-resultado-worker: same "daily background sweep, no
+# person-facing surface" shape as proventos-worker above -- it's the
+# automatic writer of aposta.resolver + the matching conta credit, so
+# green/red gets decided without anyone opening the financas app. See
+# this module's own doc comment (main.tf) for what it actually does
+# each cycle.
+module "compute_apps_apostas_resultado_worker" {
+  source = "./modules/compute/apps/apostas_resultado_worker"
+  providers = {
+    docker = docker
+  }
+
+  network_name   = module.network_docker_apps.network_name
+  registry_host  = var.registry_host
+  domain_api_key = random_id.apostas_resultado_worker_domain_key.hex
+  ai_api_key     = var.apostas_ai_api_key
+
+  depends_on = [module.compute_apps_domain_api]
+}
+
 # bet-runner used to live here as a Docker container on the apps
 # network -- Betano's compliance wall blocks the VPS's datacenter ASN
 # ("Access to this page is restricted due to security and compliance
