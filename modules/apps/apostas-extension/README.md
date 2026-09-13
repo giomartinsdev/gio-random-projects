@@ -17,9 +17,14 @@ Extensão de Chrome pessoal (não publicada na Web Store): tira um print da aba 
 
 ## Usar
 
-Na tela de confirmação de uma aposta (Bet365, Betano, etc.), clique no ícone da extensão. Uma
-notificação do Chrome confirma se a aposta foi registrada, ou explica por que não (casa não
-reconhecida, print ilegível, etc.) -- não há tela de revisão, a aposta é registrada direto.
+Com o bilhete da aposta visível na tela (algumas casas, como a Betano, mostram o bilhete numa
+barra lateral direto na página principal -- não precisa navegar pra outra tela, só selecionar um
+mercado), clique no ícone da extensão. A tela escurece com uma seleção de área: arraste um
+retângulo em volta do bilhete (casa, seleção, valor apostado, odd) e solte. Esc cancela.
+
+Depois de soltar, uma notificação do Chrome confirma se a aposta foi registrada, ou explica por
+que não (casa não reconhecida, print ilegível, etc.) -- não há tela de revisão, a aposta é
+registrada direto a partir da área selecionada.
 
 ## Se a casa nunca é reconhecida
 
