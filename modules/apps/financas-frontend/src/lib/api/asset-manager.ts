@@ -44,11 +44,13 @@ export interface NovoAtivo {
   data: string;
 }
 
+// "provento" não é aceito aqui -- o proventos-worker é o único jeito
+// de registrar um provento agora (e credita a conta junto), ver
+// modules/apps/proventos-worker.
 export interface NovoMovimento {
-  tipo: TipoMovimento;
-  quantidade?: number;
-  precoUnitario?: number;
-  valorProvento?: number;
+  tipo: "compra" | "venda";
+  quantidade: number;
+  precoUnitario: number;
   data: string;
 }
 

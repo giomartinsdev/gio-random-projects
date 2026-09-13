@@ -323,18 +323,16 @@ function FormularioMovimento({
 }: {
   ativo: Ativo;
   onSalvar: (dados: {
-    tipo: "compra" | "venda" | "provento";
-    quantidade?: number;
-    precoUnitario?: number;
-    valorProvento?: number;
+    tipo: "compra" | "venda";
+    quantidade: number;
+    precoUnitario: number;
     data: string;
   }) => Promise<void>;
   onCancelar: () => void;
 }) {
-  const [tipo, setTipo] = useState<"compra" | "venda" | "provento">("provento");
+  const [tipo, setTipo] = useState<"compra" | "venda">("compra");
   const [quantidade, setQuantidade] = useState("");
   const [precoUnitario, setPrecoUnitario] = useState("");
-  const [valorProvento, setValorProvento] = useState("");
   const [data, setData] = useState(dataHojeCalendario());
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -344,19 +342,13 @@ function FormularioMovimento({
     setSalvando(true);
     setErro(null);
     try {
-      if (tipo === "provento") {
-        const valor = Number(valorProvento);
-        if (!valor || valor <= 0) throw new Error("valor invalido");
-        await onSalvar({ tipo, valorProvento: valor, data });
-      } else {
-        const qtd = Number(quantidade);
-        const preco = Number(precoUnitario);
-        if (!qtd || qtd <= 0 || !preco || preco <= 0) throw new Error("valores invalidos");
-        if (tipo === "venda" && qtd > ativo.quantidadeAtual) {
-          throw new Error("quantidade maior que a posicao atual");
-        }
-        await onSalvar({ tipo, quantidade: qtd, precoUnitario: preco, data });
+      const qtd = Number(quantidade);
+      const preco = Number(precoUnitario);
+      if (!qtd || qtd <= 0 || !preco || preco <= 0) throw new Error("valores invalidos");
+      if (tipo === "venda" && qtd > ativo.quantidadeAtual) {
+        throw new Error("quantidade maior que a posicao atual");
       }
+      await onSalvar({ tipo, quantidade: qtd, precoUnitario: preco, data });
     } catch {
       setErro("Verifique os valores informados.");
     } finally {
@@ -373,42 +365,27 @@ function FormularioMovimento({
             value={tipo}
             onChange={(e) => setTipo(e.target.value as typeof tipo)}
           >
-            <option value="provento">Provento recebido</option>
             <option value="compra">Compra adicional</option>
             <option value="venda">Venda / encerrar posição</option>
           </Selecao>
-          {tipo === "provento" ? (
-            <CampoTexto
-              rotulo="Valor recebido (R$)"
-              type="number"
-              step="0.01"
-              min="0.01"
-              value={valorProvento}
-              onChange={(e) => setValorProvento(e.target.value)}
-              required
-            />
-          ) : (
-            <>
-              <CampoTexto
-                rotulo="Quantidade"
-                type="number"
-                step="1"
-                min="1"
-                value={quantidade}
-                onChange={(e) => setQuantidade(e.target.value)}
-                required
-              />
-              <CampoTexto
-                rotulo="Preço unitário (R$)"
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={precoUnitario}
-                onChange={(e) => setPrecoUnitario(e.target.value)}
-                required
-              />
-            </>
-          )}
+          <CampoTexto
+            rotulo="Quantidade"
+            type="number"
+            step="1"
+            min="1"
+            value={quantidade}
+            onChange={(e) => setQuantidade(e.target.value)}
+            required
+          />
+          <CampoTexto
+            rotulo="Preço unitário (R$)"
+            type="number"
+            step="0.01"
+            min="0.01"
+            value={precoUnitario}
+            onChange={(e) => setPrecoUnitario(e.target.value)}
+            required
+          />
           <CampoTexto rotulo="Data" type="date" value={data} onChange={(e) => setData(e.target.value)} required />
         </div>
         {erro && <p className="text-sm text-destructive">{erro}</p>}

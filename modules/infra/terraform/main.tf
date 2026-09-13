@@ -411,6 +411,24 @@ module "compute_apps_leads_api" {
   depends_on = [module.compute_apps_domain_api]
 }
 
+# proventos-worker: a daily background sweep, not a person-facing
+# backend -- no hostname, no Access, no ingress route at all. It's the
+# one automatic writer of ativo "provento" movimentos and their
+# matching conta credit now that the manual entry is gone (see
+# asset-manager-api's own registrarMovimento validation).
+module "compute_apps_proventos_worker" {
+  source = "./modules/compute/apps/proventos_worker"
+  providers = {
+    docker = docker
+  }
+
+  network_name   = module.network_docker_apps.network_name
+  registry_host  = var.registry_host
+  domain_api_key = random_id.proventos_worker_domain_key.hex
+
+  depends_on = [module.compute_apps_domain_api]
+}
+
 # bet-runner used to live here as a Docker container on the apps
 # network -- Betano's compliance wall blocks the VPS's datacenter ASN
 # ("Access to this page is restricted due to security and compliance

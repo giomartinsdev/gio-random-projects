@@ -257,6 +257,10 @@ func (s *Server) handleRegisterMovimento(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// "provento" is no longer accepted here -- the proventos-worker is
+	// the only writer of that movimento type now (it credits the conta
+	// too, which a person hitting this route directly never would), see
+	// modules/apps/proventos-worker.
 	var detalhes []erroCampo
 	switch req.Tipo {
 	case "compra", "venda":
@@ -266,12 +270,8 @@ func (s *Server) handleRegisterMovimento(w http.ResponseWriter, r *http.Request)
 		if req.PrecoUnitario == nil || *req.PrecoUnitario <= 0 {
 			detalhes = append(detalhes, erroCampo{Campo: "precoUnitario", Problema: "obrigatório e maior que zero para compra/venda"})
 		}
-	case "provento":
-		if req.ValorProvento == nil || *req.ValorProvento <= 0 {
-			detalhes = append(detalhes, erroCampo{Campo: "valorProvento", Problema: "obrigatório e maior que zero para provento"})
-		}
 	default:
-		detalhes = append(detalhes, erroCampo{Campo: "tipo", Problema: "deve ser compra, venda ou provento"})
+		detalhes = append(detalhes, erroCampo{Campo: "tipo", Problema: "deve ser compra ou venda"})
 	}
 	movData := strings.TrimSpace(req.Data)
 	movDataDominio, movDataValida := dataParaDominio(movData)

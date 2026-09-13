@@ -47,6 +47,20 @@ func (h *AtivoHandlers) ListAtivos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ativos": toAtivoResponses(ativos)})
 }
 
+// ListTodosAtivos is the one cross-user ativo read: the
+// proventos-worker's daily sweep has no session to scope by, unlike
+// every other caller of ListAtivos above. Same auth as any other
+// domain-api route (a valid API key, no extra permission scoping) --
+// see this repo's usual "trusted service callers only" model.
+func (h *AtivoHandlers) ListTodosAtivos(w http.ResponseWriter, r *http.Request) {
+	ativos, err := h.ativos.ListAtivosComPosicao(r.Context())
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ativos": toAtivoResponses(ativos)})
+}
+
 func (h *AtivoHandlers) GetAtivoMovimentos(w http.ResponseWriter, r *http.Request) {
 	ativoID := chi.URLParam(r, "id")
 	// Confirm the ativo itself exists so a bad id 404s instead of
