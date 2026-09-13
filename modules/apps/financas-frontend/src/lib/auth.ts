@@ -17,11 +17,14 @@ export const LOGIN_URL = `${CONTAS_API_URL}/api/sso`;
 // handleSSO recusa com 422 "origem de retorno não permitida" sem um
 // return cuja ORIGEM esteja em CONTAS_FRONTEND_ORIGINS (allowlist do
 // Terraform). O probe acima não passa por essa checagem porque nunca
-// segue o redirect (redirect:"manual"), mas a navegação top-level do
-// botão "Entrar" precisa mandar a URL atual para voltar depois do
-// login do Google.
+// segue o redirect (redirect:"manual"). O destino é sempre /app (não
+// window.location.href): a landing pública em "/" não tem PortaoLogin
+// nenhum, então voltar pra lá depois do login deixaria a pessoa presa
+// na landing sem perceber que já entrou -- /app é o que de fato monta
+// o gate e renderiza o produto assim que a sessão é confirmada.
 export function loginNavigationUrl(): string {
-  return `${LOGIN_URL}?return=${encodeURIComponent(window.location.href)}`;
+  const destino = `${window.location.origin}/app`;
+  return `${LOGIN_URL}?return=${encodeURIComponent(destino)}`;
 }
 
 export const LOGOUT_URL =

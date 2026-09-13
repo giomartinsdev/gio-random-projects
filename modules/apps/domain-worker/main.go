@@ -32,6 +32,7 @@ import (
 	appconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/conta"
 	appdashboardlayout "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/dashboardlayout"
 	appdeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/deal"
+	applead "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/lead"
 	appmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/message"
 	apppost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/post"
 	approom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/room"
@@ -43,6 +44,7 @@ import (
 	domainconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/conta"
 	domaindashboardlayout "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/dashboardlayout"
 	domaindeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/deal"
+	domainlead "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/lead"
 	domainmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/message"
 	domainpost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/post"
 	domainroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/room"
@@ -148,6 +150,10 @@ func main() {
 	dashboardLayoutService := appdashboardlayout.NewService(dashboardLayoutRepo)
 	dashboardLayoutHandler := appdashboardlayout.NewCommandHandler(dashboardLayoutService)
 
+	leadRepo := postgres.NewLeadRepository(pool)
+	leadService := applead.NewService(leadRepo)
+	leadHandler := applead.NewCommandHandler(leadService)
+
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info("relay started")
@@ -167,7 +173,7 @@ func main() {
 				log.Error("fetch command error", "error", err)
 				continue
 			}
-			process(ctx, log, userHandler, postHandler, roomHandler, messageHandler, dealHandler, cchRoomHandler, cchDeckHandler, contaHandler, transacaoHandler, ativoHandler, dashboardLayoutHandler, auditRepo, eventBus, cmd)
+			process(ctx, log, userHandler, postHandler, roomHandler, messageHandler, dealHandler, cchRoomHandler, cchDeckHandler, contaHandler, transacaoHandler, ativoHandler, dashboardLayoutHandler, leadHandler, auditRepo, eventBus, cmd)
 		}
 	}()
 
@@ -186,7 +192,7 @@ func main() {
 // resulting domain event. One shared command queue serves every
 // aggregate; this is the one place that knows how to fan a Command
 // back out to its owning handler.
-func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, dealHandler *appdeal.CommandHandler, cchRoomHandler *appcchroom.CommandHandler, cchDeckHandler *appcchdeck.CommandHandler, contaHandler *appconta.CommandHandler, transacaoHandler *apptransacao.CommandHandler, ativoHandler *appativo.CommandHandler, dashboardLayoutHandler *appdashboardlayout.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
+func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, dealHandler *appdeal.CommandHandler, cchRoomHandler *appcchroom.CommandHandler, cchDeckHandler *appcchdeck.CommandHandler, contaHandler *appconta.CommandHandler, transacaoHandler *apptransacao.CommandHandler, ativoHandler *appativo.CommandHandler, dashboardLayoutHandler *appdashboardlayout.CommandHandler, leadHandler *applead.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
 	// One span per command: the handler, the audit write and the event
 	// publish below are the whole story of that write, and the
 	// trace_id stamped into the log lines ties every one of them to it.
@@ -299,6 +305,14 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 		if devt != nil {
 			evt = devt
 			id = dashboardLayoutEntityID(devt)
+		}
+	case strings.HasPrefix(string(cmd.Action), "lead."):
+		entityType = "lead"
+		var levt domainlead.Event
+		levt, err = leadHandler.Handle(ctx, cmd)
+		if levt != nil {
+			evt = levt
+			id = leadEntityID(levt)
 		}
 	default:
 		err = fmt.Errorf("unknown action: %q", cmd.Action)
@@ -453,6 +467,15 @@ func dashboardLayoutEntityID(evt domaindashboardlayout.Event) string {
 		return e.UsuarioEmail
 	case domaindashboardlayout.Deleted:
 		return e.UsuarioEmail
+	default:
+		return ""
+	}
+}
+
+func leadEntityID(evt domainlead.Event) string {
+	switch e := evt.(type) {
+	case domainlead.Captured:
+		return e.LeadID
 	default:
 		return ""
 	}

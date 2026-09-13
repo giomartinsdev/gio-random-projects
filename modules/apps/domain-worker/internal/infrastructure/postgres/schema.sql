@@ -275,3 +275,13 @@ CREATE TABLE IF NOT EXISTS dashboard_layouts (
     blocos JSONB NOT NULL DEFAULT '[]',
     atualizado_em TIMESTAMPTZ NOT NULL
 );
+
+-- E-mails capturados na landing page pública do financas-frontend,
+-- antes de qualquer autenticação -- unique em email (não usuario_email)
+-- porque quem envia ainda não é uma pessoa usuária, e um duplo submit
+-- (retry de rede, duplo clique) não deve virar dois leads.
+CREATE TABLE IF NOT EXISTS leads (
+    id UUID PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    criado_em TIMESTAMPTZ NOT NULL
+);

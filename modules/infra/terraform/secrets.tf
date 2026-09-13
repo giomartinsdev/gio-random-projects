@@ -95,8 +95,15 @@ resource "random_id" "dashboard_api_domain_key" {
   byte_length = 24
 }
 
+# leads-api's own key -- it never reads anything, only ever publishes
+# lead.create via POST /sync, but still needs its own identity so the
+# audit log can name it like every other caller.
+resource "random_id" "leads_api_domain_key" {
+  byte_length = 24
+}
+
 locals {
-  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers,${random_id.cch_api_domain_key.hex}:cch-api,${random_id.contas_api_domain_key.hex}:contas-api,${random_id.transacional_api_domain_key.hex}:transacional-api,${random_id.asset_manager_api_domain_key.hex}:asset-manager-api,${random_id.dashboard_api_domain_key.hex}:dashboard-api"
+  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers,${random_id.cch_api_domain_key.hex}:cch-api,${random_id.contas_api_domain_key.hex}:contas-api,${random_id.transacional_api_domain_key.hex}:transacional-api,${random_id.asset_manager_api_domain_key.hex}:asset-manager-api,${random_id.dashboard_api_domain_key.hex}:dashboard-api,${random_id.leads_api_domain_key.hex}:leads-api"
 }
 
 resource "random_password" "vaultwarden_admin_token" {
@@ -270,6 +277,10 @@ locals {
     dashboard_api_domain_key = {
       trigger = random_id.dashboard_api_domain_key.hex
       items   = { DASHBOARD_API_DOMAIN_KEY = random_id.dashboard_api_domain_key.hex }
+    }
+    leads_api_domain_key = {
+      trigger = random_id.leads_api_domain_key.hex
+      items   = { LEADS_API_DOMAIN_KEY = random_id.leads_api_domain_key.hex }
     }
     # Not Terraform-generated (a brapi.dev token comes from that
     # service's own dashboard), but seeded here anyway so CI/a human

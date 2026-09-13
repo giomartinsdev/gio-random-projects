@@ -60,6 +60,7 @@ variable "excluded_hostnames" {
     "asset-manager-api.giomartins.dev", # same reasoning as contas-api.giomartins.dev above
     "dashboard-api.giomartins.dev",     # same reasoning as contas-api.giomartins.dev above
     "financas.giomartins.dev",          # chrome público em volta do gate real nas 4 Access apps das APIs, precisa ser iframe-embeddable no hub
+    "leads-api.giomartins.dev",         # captura de e-mail na landing page pública, sem sessão de Access nenhuma para exigir de um visitante anônimo — mesma razão de ai.giomartins.dev abaixo
     "ai.giomartins.dev",                # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
     "otel.giomartins.dev",              # public visitors' browsers send SPA telemetry here — a Google SSO redirect would break every one of them; alloy's OTLP receiver CORS allowlist (the two SPA origins only) is the access control (modules/compute/services/observability)
   ]
