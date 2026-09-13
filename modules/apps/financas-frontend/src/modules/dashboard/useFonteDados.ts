@@ -41,11 +41,11 @@ export function useFonteDados(bloco: Bloco, contas: Conta[] | null): ResultadoFo
             const saldos = await Promise.all(
               ativas.map((c) => saldoConta(c.id).catch(() => ({ saldo: 0 }))),
             );
-            // contas-api's /saldo é hoje um placeholder documentado
-            // (devolve {contaId, observacao}, sem o campo saldo, até
-            // transacional-api/asset-manager-api estarem integrados) --
-            // Number(undefined) é NaN, então blindamos com || 0 para
-            // não propagar "R$ NaN" pra tela enquanto isso não existe.
+            // contas-api calcula o saldo de verdade (FR-013): corrente
+            // soma entradas − saídas das transações, investimento soma
+            // o valor de mercado das posições (custo médio enquanto não
+            // há cotação). O || 0 fica como blindagem contra NaN vazar
+            // pra tela caso um backend responda fora do contrato.
             const total = saldos.reduce((acc, s) => acc + (Number(s.saldo) || 0), 0);
             return { total, contas: ativas.length };
           }

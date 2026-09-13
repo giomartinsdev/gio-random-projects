@@ -29,6 +29,11 @@ import (
 // command was published and may still land -- it is not a rejection.
 var ErrQueued = errors.New("domain: command still queued (worker did not confirm in time)")
 
+// ErrNotFound is domain-api's 404 on a single-entity GET -- the
+// referenced entity doesn't exist. (A conta that exists but belongs to
+// someone else comes back as data; ownership is the caller's check.)
+var ErrNotFound = errors.New("domain: not found")
+
 // ErrRejected is Sync's 422: the worker looked at the command and
 // refused it (validation, unknown action). Retrying unchanged will fail
 // the same way -- this is permanent, unlike ErrQueued.
@@ -157,7 +162,7 @@ func (c *Client) ListContas(ctx context.Context, usuarioEmail, status string) ([
 	return out.Contas, nil
 }
 
-// GetConta is GET /contas/{id}.
+// GetConta is GET /contas/{id}. A 404 comes back as ErrNotFound.
 func (c *Client) GetConta(ctx context.Context, id string) (Conta, error) {
 	var out Conta
 	if c == nil {
@@ -167,6 +172,53 @@ func (c *Client) GetConta(ctx context.Context, id string) (Conta, error) {
 		return out, err
 	}
 	return out, nil
+}
+
+// Transacao mirrors one transacoes row for the saldo aggregation --
+// only the fields the math needs (the wire shape is domain-api's
+// snake_case DTO).
+type Transacao struct {
+	Tipo  string  `json:"tipo"`
+	Valor float64 `json:"valor"`
+}
+
+// Ativo mirrors one position for the saldo aggregation.
+type Ativo struct {
+	QuantidadeAtual float64 `json:"quantidade_atual"`
+	CustoMedio      float64 `json:"custo_medio"`
+	UltimaCotacao   float64 `json:"ultima_cotacao"`
+}
+
+// ListTransacoes is GET /transacoes?usuario=&conta= -- the lançamentos
+// of one conta, what the saldo of a corrente account sums over.
+func (c *Client) ListTransacoes(ctx context.Context, usuarioEmail, contaID string) ([]Transacao, error) {
+	if c == nil {
+		return nil, nil
+	}
+	q := url.Values{"usuario": {usuarioEmail}, "conta": {contaID}}
+	var out struct {
+		Transacoes []Transacao `json:"transacoes"`
+	}
+	if err := c.get(ctx, "/transacoes?"+q.Encode(), &out); err != nil {
+		return nil, err
+	}
+	return out.Transacoes, nil
+}
+
+// ListAtivos is GET /ativos?usuario=&conta= -- the posições of one
+// conta, what the saldo of an investimento account sums over.
+func (c *Client) ListAtivos(ctx context.Context, usuarioEmail, contaID string) ([]Ativo, error) {
+	if c == nil {
+		return nil, nil
+	}
+	q := url.Values{"usuario": {usuarioEmail}, "conta": {contaID}}
+	var out struct {
+		Ativos []Ativo `json:"ativos"`
+	}
+	if err := c.get(ctx, "/ativos?"+q.Encode(), &out); err != nil {
+		return nil, err
+	}
+	return out.Ativos, nil
 }
 
 // post sends one JSON body to path and returns the body + status. A
@@ -209,6 +261,9 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w: GET %s", ErrNotFound, path)
+		}
 		return fmt.Errorf("domain: GET %s: status %d", path, resp.StatusCode)
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(out); err != nil {

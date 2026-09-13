@@ -134,3 +134,163 @@ func TestHandleHealth_SemAuth(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 }
+
+// saldoFake is what a /saldo request's reads return: the conta itself,
+// its transações (corrente branch) and/or its posições (investimento).
+type saldoFake struct {
+	conta      domainapi.Conta
+	transacoes []domainapi.Transacao
+	ativos     []domainapi.Ativo
+	notFound   bool
+}
+
+// fakeDomainSaldo serves the three GETs handleSaldoConta reads, pinning
+// the query params (usuario/conta must scope every read) and the
+// X-API-Key header along the way.
+func fakeDomainSaldo(t *testing.T, f saldoFake) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /contas/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") != "test-key" {
+			t.Fatalf("expected X-API-Key header, got %q", r.Header.Get("X-API-Key"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if f.notFound {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(f.conta)
+	})
+	mux.HandleFunc("GET /transacoes", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("usuario") == "" || r.URL.Query().Get("conta") == "" {
+			t.Fatalf("expected usuario and conta query params, got %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"transacoes": f.transacoes})
+	})
+	mux.HandleFunc("GET /ativos", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("usuario") == "" || r.URL.Query().Get("conta") == "" {
+			t.Fatalf("expected usuario and conta query params, got %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ativos": f.ativos})
+	})
+	return httptest.NewServer(mux)
+}
+
+func saldoDe(t *testing.T, f saldoFake, email string) *httptest.ResponseRecorder {
+	t.Helper()
+	fake := fakeDomainSaldo(t, f)
+	defer fake.Close()
+	s := newTestServer(t, fake.URL)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/contas/c1/saldo", nil)
+	req = withIdentity(req, email)
+	rec := httptest.NewRecorder()
+
+	s.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+// TestSaldoConta_Corrente: entradas − saídas over the conta's
+// transações, read straight from domain-api. This is the number both
+// the dashboard's saldo-consolidado and the Contas page render --
+// before this, /saldo was a placeholder with no saldo field, so every
+// conta rendered R$ 0.
+func TestSaldoConta_Corrente(t *testing.T) {
+	rec := saldoDe(t, saldoFake{
+		conta: domainapi.Conta{ID: "c1", Tipo: "corrente", Usuario: "gio@corp"},
+		transacoes: []domainapi.Transacao{
+			{Tipo: "entrada", Valor: 150},
+			{Tipo: "entrada", Valor: 30},
+			{Tipo: "saida", Valor: 80},
+		},
+	}, "gio@corp")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		ContaID string  `json:"contaId"`
+		Saldo   float64 `json:"saldo"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.ContaID != "c1" {
+		t.Fatalf("expected contaId c1, got %q", resp.ContaID)
+	}
+	if resp.Saldo != 100 {
+		t.Fatalf("expected saldo 100 (150+30-80), got %v", resp.Saldo)
+	}
+}
+
+// TestSaldoConta_Investimento: Σ quantidade × cotação, with the custo
+// médio fallback for a position whose quote was never fetched
+// (ultima_cotacao zero) -- otherwise a freshly created ativo would
+// count as zero until brapi.dev answered once.
+func TestSaldoConta_Investimento(t *testing.T) {
+	rec := saldoDe(t, saldoFake{
+		conta: domainapi.Conta{ID: "c1", Tipo: "investimento", Usuario: "gio@corp"},
+		ativos: []domainapi.Ativo{
+			{QuantidadeAtual: 10, CustoMedio: 30, UltimaCotacao: 45},
+			{QuantidadeAtual: 2, CustoMedio: 100, UltimaCotacao: 0},
+		},
+	}, "gio@corp")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Saldo float64 `json:"saldo"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Saldo != 650 { // 10*45 + 2*100 (custo médio fallback)
+		t.Fatalf("expected saldo 650, got %v", resp.Saldo)
+	}
+}
+
+// TestSaldoConta_ContadeOutraPessoa: a stranger's contaId must answer
+// exactly like a nonexistent one -- no existence oracle.
+func TestSaldoConta_ContadeOutraPessoa(t *testing.T) {
+	rec := saldoDe(t, saldoFake{
+		conta: domainapi.Conta{ID: "c1", Tipo: "corrente", Usuario: "outra@corp"},
+	}, "gio@corp")
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSaldoConta_Inexistente(t *testing.T) {
+	rec := saldoDe(t, saldoFake{
+		conta:    domainapi.Conta{ID: "c1", Tipo: "corrente", Usuario: "gio@corp"},
+		notFound: true,
+	}, "gio@corp")
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestSaldoConta_DomainFora: a domain-api transport failure is a 502,
+// not a 404 -- the caller didn't do anything wrong.
+func TestSaldoConta_DomainFora(t *testing.T) {
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer fake.Close()
+	s := newTestServer(t, fake.URL)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/contas/c1/saldo", nil)
+	req = withIdentity(req, "gio@corp")
+	rec := httptest.NewRecorder()
+
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", rec.Code, rec.Body.String())
+	}
+}

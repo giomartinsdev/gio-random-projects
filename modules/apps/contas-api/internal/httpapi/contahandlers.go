@@ -6,6 +6,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -124,17 +125,90 @@ func (s *Server) handleArquivarConta(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": contaID, "status": statusArquivada})
 }
 
-// handleSaldoConta: a real consolidated balance needs transacional-api
-// and asset-manager-api wired up, which is out of scope here (see the
-// task's own instruction not to invent cross-service aggregation logic
-// yet). This is a placeholder shape the frontend can already call
-// against.
+// handleSaldoConta computes FR-013's consolidated balance by reading
+// the shared domain-api directly (the contract explicitly allows this
+// instead of fanning out to the other BFFs). The math follows each
+// conta tipo's own module: a corrente account is what transacional-api
+// tracks, so its saldo is entradas − saídas over the conta's
+// transações; an investimento account is what asset-manager-api
+// tracks, so its saldo is Σ quantidade_atual × cotação over the
+// posições. A position whose quote was never fetched counts at its
+// custo médio -- the best-known value, the same tolerance FR-035 gives
+// the carteira when brapi.dev is unavailable.
+//
+// Both reads are scoped to the caller's own email, and the conta itself
+// is fetched first so a stranger's contaId answers 404 like a
+// nonexistent one -- no existence oracle.
 func (s *Server) handleSaldoConta(w http.ResponseWriter, r *http.Request) {
+	id, _ := IdentityFrom(r.Context())
 	contaID := r.PathValue("id")
-	writeJSON(w, http.StatusOK, map[string]any{
-		"contaId":    contaID,
-		"observacao": "cálculo de saldo consolidado será refinado quando transacional-api/asset-manager-api estiverem integrados",
-	})
+
+	conta, err := s.domain.GetConta(r.Context(), contaID)
+	if err != nil {
+		if errors.Is(err, domainapi.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "conta_nao_encontrada", "conta não encontrada")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "domain_indisponivel", err.Error())
+		return
+	}
+	if conta.Usuario != id.Email {
+		writeError(w, http.StatusNotFound, "conta_nao_encontrada", "conta não encontrada")
+		return
+	}
+
+	var saldo float64
+	switch conta.Tipo {
+	case "corrente":
+		saldo, err = s.saldoCorrente(r.Context(), id.Email, contaID)
+	case "investimento":
+		saldo, err = s.saldoInvestimento(r.Context(), id.Email, contaID)
+	default:
+		writeError(w, http.StatusBadGateway, "domain_indisponivel", "conta com tipo desconhecido: "+conta.Tipo)
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "domain_indisponivel", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"contaId": contaID, "saldo": saldo})
+}
+
+// saldoCorrente sums the conta's transações: entradas in, saídas out.
+func (s *Server) saldoCorrente(ctx context.Context, usuarioEmail, contaID string) (float64, error) {
+	transacoes, err := s.domain.ListTransacoes(ctx, usuarioEmail, contaID)
+	if err != nil {
+		return 0, err
+	}
+	var saldo float64
+	for _, t := range transacoes {
+		switch t.Tipo {
+		case "entrada":
+			saldo += t.Valor
+		case "saida":
+			saldo -= t.Valor
+		}
+	}
+	return saldo, nil
+}
+
+// saldoInvestimento sums the posições' market value: quantidade_atual ×
+// última cotação conhecida, falling back to custo médio for a position
+// never quoted (see handleSaldoConta).
+func (s *Server) saldoInvestimento(ctx context.Context, usuarioEmail, contaID string) (float64, error) {
+	ativos, err := s.domain.ListAtivos(ctx, usuarioEmail, contaID)
+	if err != nil {
+		return 0, err
+	}
+	var saldo float64
+	for _, a := range ativos {
+		cotacao := a.UltimaCotacao
+		if cotacao == 0 {
+			cotacao = a.CustoMedio
+		}
+		saldo += a.QuantidadeAtual * cotacao
+	}
+	return saldo, nil
 }
 
 // respondSyncErr classifies a domainapi.Sync error into the response the
