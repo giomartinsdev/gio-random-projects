@@ -26,6 +26,7 @@ resource "docker_container" "apostas_resultado_worker" {
     "APOSTAS_RESULTADO_WORKER_AI_API_KEY=${var.ai_api_key}",
     "APOSTAS_RESULTADO_WORKER_AI_MODEL=${var.ai_model}",
     "APOSTAS_RESULTADO_WORKER_SPORTSDATA_BASE_URL=${var.sportsdata_base_url}",
+    "APOSTAS_RESULTADO_WORKER_SPORTSDATA_API_KEY=${var.sportsdata_api_key}",
   ]
 
   networks_advanced {

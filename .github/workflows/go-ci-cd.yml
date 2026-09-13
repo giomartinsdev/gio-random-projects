@@ -204,6 +204,7 @@ jobs:
       TF_VAR_google_oauth_client_id: ${{ secrets.FINANCAS_GOOGLE_OAUTH_CLIENT_ID }}
       TF_VAR_apostas_extension_usuario_email: ${{ secrets.FINANCAS_APOSTAS_EXTENSION_USUARIO_EMAIL }}
       TF_VAR_apostas_ai_api_key: ${{ secrets.FINANCAS_APOSTAS_AI_API_KEY }}
+      TF_VAR_apostas_sportsdata_api_key: ${{ secrets.FINANCAS_APOSTAS_SPORTSDATA_API_KEY }}
       AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
       # TF_VAR_registry_password/TF_VAR_discord_client_id/

@@ -252,3 +252,10 @@ variable "apostas_ai_api_key" {
   sensitive   = true
   default     = ""
 }
+
+variable "apostas_sportsdata_api_key" {
+  description = "BSD Sports Data API's own token (sports.bzzoiro.com/dashboard/) -- the resolver worker's free football tier still requires a registered token. Never hardcoded; comes from terraform.tfvars or TF_VAR_apostas_sportsdata_api_key."
+  type        = string
+  sensitive   = true
+  default     = ""
+}

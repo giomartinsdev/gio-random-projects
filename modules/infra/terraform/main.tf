@@ -466,10 +466,11 @@ module "compute_apps_apostas_resultado_worker" {
     docker = docker
   }
 
-  network_name   = module.network_docker_apps.network_name
-  registry_host  = var.registry_host
-  domain_api_key = random_id.apostas_resultado_worker_domain_key.hex
-  ai_api_key     = var.apostas_ai_api_key
+  network_name       = module.network_docker_apps.network_name
+  registry_host      = var.registry_host
+  domain_api_key     = random_id.apostas_resultado_worker_domain_key.hex
+  ai_api_key         = var.apostas_ai_api_key
+  sportsdata_api_key = var.apostas_sportsdata_api_key
 
   depends_on = [module.compute_apps_domain_api]
 }

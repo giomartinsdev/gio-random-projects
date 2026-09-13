@@ -47,9 +47,16 @@ variable "ai_api_key" {
 }
 
 variable "sportsdata_base_url" {
-  description = "TheSportsDB-compatible root the worker looks up real match results against -- defaults to the free public tier (test key \"3\", no signup). Override if this ever moves to a paid tier/key."
+  description = "BSD Sports Data API root (sports.bzzoiro.com) the worker looks up real match results against -- the football tier is free but still requires a registered token, see sportsdata_api_key."
   type        = string
-  default     = "https://www.thesportsdb.com/api/v1/json/3"
+  default     = "https://sports.bzzoiro.com/api/v2"
+}
+
+variable "sportsdata_api_key" {
+  description = "BSD's own API token (sports.bzzoiro.com/dashboard/) -- not Terraform-generated, that dashboard mints it, same pattern as apostas_ai_api_key."
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 variable "watchtower_enabled" {
