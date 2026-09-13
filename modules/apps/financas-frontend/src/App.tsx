@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router";
 import { Shell } from "@/components/Shell";
 import { PortaoLogin } from "@/components/PortaoLogin";
 import { LandingPage } from "@/modules/landing/LandingPage";
+import { EntrarPage } from "@/modules/auth/EntrarPage";
 import { ContasPage } from "@/modules/contas/ContasPage";
 import { TransacionalPage } from "@/modules/transacional/TransacionalPage";
 import { AssetManagerPage } from "@/modules/asset-manager/AssetManagerPage";
@@ -16,6 +17,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/entrar" element={<EntrarPage />} />
         <Route
           path="/app/*"
           element={

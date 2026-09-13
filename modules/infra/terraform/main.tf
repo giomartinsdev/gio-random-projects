@@ -17,7 +17,18 @@ module "cloud_cloudflare" {
   excluded_hostnames       = var.excluded_hostnames
   path_protected_hostnames = local.path_protected_hostnames
   allowed_emails           = var.allowed_emails
-  session_duration         = var.session_duration
+  # The financas product is open signup: any Google account can log in
+  # (that first login IS the account creation, no separate form). Every
+  # other protected hostname -- hub, bet-api, harness-api-shaped things
+  # -- stays on the allowed_emails allowlist above; opt-in per hostname
+  # only, see the variable's own doc comment.
+  public_signup_hostnames = [
+    "contas-api.giomartins.dev/api",
+    "transacional-api.giomartins.dev/api",
+    "asset-manager-api.giomartins.dev/api",
+    "dashboard-api.giomartins.dev/api",
+  ]
+  session_duration = var.session_duration
   # bet-api's /api path app is the one browser-facing cross-origin API
   # behind Access: its SPA (bet.giomartins.dev) preflights every
   # content-type:json call, and a preflight 403s at the edge without
@@ -316,7 +327,14 @@ module "compute_apps_contas_api" {
   access_aud = [
     module.cloud_cloudflare.access_app_auds["contas-api.giomartins.dev/api"],
   ]
-  allowed_emails   = var.allowed_emails
+  # Empty on purpose: this app-level allowlist is the SAME
+  # defense-in-depth check every other -api does after the JWT
+  # verifies, but contas-api.giomartins.dev/api is in
+  # public_signup_hostnames now (see module.cloud_cloudflare above) --
+  # anyone who clears Google login is meant to get in, so there is no
+  # second list to also keep in sync. Empty here means "everyone who
+  # passed Access is in" (see internal/httpapi/auth.go's own comment).
+  allowed_emails   = []
   domain_api_key   = random_id.contas_api_domain_key.hex
   frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
   otlp_endpoint    = module.compute_services_observability.otlp_endpoint
@@ -337,7 +355,9 @@ module "compute_apps_transacional_api" {
   access_aud = [
     module.cloud_cloudflare.access_app_auds["transacional-api.giomartins.dev/api"],
   ]
-  allowed_emails   = var.allowed_emails
+  # Empty on purpose -- see the same note on compute_apps_contas_api
+  # above: this hostname is in public_signup_hostnames now.
+  allowed_emails   = []
   domain_api_key   = random_id.transacional_api_domain_key.hex
   frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
   otlp_endpoint    = module.compute_services_observability.otlp_endpoint
@@ -358,7 +378,9 @@ module "compute_apps_asset_manager_api" {
   access_aud = [
     module.cloud_cloudflare.access_app_auds["asset-manager-api.giomartins.dev/api"],
   ]
-  allowed_emails   = var.allowed_emails
+  # Empty on purpose -- see the same note on compute_apps_contas_api
+  # above: this hostname is in public_signup_hostnames now.
+  allowed_emails   = []
   domain_api_key   = random_id.asset_manager_api_domain_key.hex
   brapi_token      = var.asset_manager_brapi_token
   frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
@@ -380,7 +402,9 @@ module "compute_apps_dashboard_api" {
   access_aud = [
     module.cloud_cloudflare.access_app_auds["dashboard-api.giomartins.dev/api"],
   ]
-  allowed_emails   = var.allowed_emails
+  # Empty on purpose -- see the same note on compute_apps_contas_api
+  # above: this hostname is in public_signup_hostnames now.
+  allowed_emails   = []
   domain_api_key   = random_id.dashboard_api_domain_key.hex
   frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
   otlp_endpoint    = module.compute_services_observability.otlp_endpoint

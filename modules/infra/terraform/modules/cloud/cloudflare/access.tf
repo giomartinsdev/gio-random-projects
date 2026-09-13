@@ -1,6 +1,8 @@
-# Reusable policy, one per hostname: allow any of var.allowed_emails,
-# but only if they authenticated via the specific Google IdP (not
-# "logged in via literally any configured provider").
+# Reusable policy, one per hostname: allow any of var.allowed_emails
+# (or literally anyone, for hostnames opted into var.public_signup_hostnames
+# -- financas' "create your account by just logging in with Google"
+# flow), but only if they authenticated via the specific Google IdP
+# (not "logged in via literally any configured provider").
 resource "cloudflare_zero_trust_access_policy" "google_sso" {
   for_each = local.protected_hostnames
 
@@ -8,14 +10,20 @@ resource "cloudflare_zero_trust_access_policy" "google_sso" {
   name       = "google-sso-${each.key}"
   decision   = "allow"
 
-  # A set of OR'd condition groups — one per allowed email, since the
-  # `email` condition itself only takes a single address.
-  include = [
+  # Public-signup hostnames: everyone who clears the require below
+  # (this specific Google IdP) gets in, full stop -- no email
+  # allowlist. Every other hostname: a set of OR'd condition groups,
+  # one per allowed email, since the `email` condition itself only
+  # takes a single address.
+  include = contains(var.public_signup_hostnames, each.key) ? [
+    { everyone = {} }
+    ] : [
     for email in var.allowed_emails : { email = { email = email } }
   ]
 
   # AND'd against every include match: must also have used this
-  # specific Google identity provider.
+  # specific Google identity provider. Unchanged for public-signup
+  # hostnames -- this is the ONLY gate left there, so it still matters.
   require = [
     { login_method = { id = var.google_idp_identity_provider_id } }
   ]
