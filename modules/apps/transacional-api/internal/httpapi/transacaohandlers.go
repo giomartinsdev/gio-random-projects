@@ -110,6 +110,36 @@ func (v *valorJSON) float() (float64, bool) {
 	return f, true
 }
 
+// transacaoResponse is the wire shape of one GET /api/transacoes item --
+// camelCase per this module's frontend contract. It is built from
+// domainapi.Transacao, which speaks domain-api's snake_case; passing
+// that through raw made the frontend read t.contaId as undefined --
+// "Conta desconhecida" on every row, edit forms opening on the wrong
+// conta and anexos never showing.
+type transacaoResponse struct {
+	ID          string  `json:"id"`
+	ContaID     string  `json:"contaId"`
+	Tipo        string  `json:"tipo"`
+	Valor       float64 `json:"valor"`
+	Data        string  `json:"data"`
+	Categoria   string  `json:"categoria"`
+	Descricao   string  `json:"descricao,omitempty"`
+	AnexoImagem string  `json:"anexoImagem,omitempty"`
+}
+
+func paraTransacaoResponse(t domainapi.Transacao) transacaoResponse {
+	return transacaoResponse{
+		ID:          t.ID,
+		ContaID:     t.ContaID,
+		Tipo:        t.Tipo,
+		Valor:       t.Valor,
+		Data:        t.Data,
+		Categoria:   t.Categoria,
+		Descricao:   t.Descricao,
+		AnexoImagem: t.AnexoImagem,
+	}
+}
+
 // handleListarTransacoes lists the logged-in person's transações,
 // forwarding every optional filter as-is to domain-api.
 func (s *Server) handleListarTransacoes(w http.ResponseWriter, r *http.Request) {
@@ -121,10 +151,11 @@ func (s *Server) handleListarTransacoes(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadGateway, "domain_api_indisponivel", err.Error())
 		return
 	}
-	if transacoes == nil {
-		transacoes = []domainapi.Transacao{}
+	out := make([]transacaoResponse, 0, len(transacoes))
+	for _, t := range transacoes {
+		out = append(out, paraTransacaoResponse(t))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"transacoes": transacoes})
+	writeJSON(w, http.StatusOK, map[string]any{"transacoes": out})
 }
 
 // handleCriarTransacao validates the body, confirms the conta is ativa,

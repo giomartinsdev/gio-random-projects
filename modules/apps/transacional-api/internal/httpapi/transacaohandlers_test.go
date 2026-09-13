@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/transacional-api/internal/domainapi"
@@ -241,6 +242,47 @@ func TestCriarTransacao_DataEnviadaRFC3339(t *testing.T) {
 	}
 	if got.Data != "2026-09-12T00:00:00Z" {
 		t.Fatalf("expected RFC3339 data on the wire, got %q", got.Data)
+	}
+}
+
+// TestListarTransacoes_CamelCase pins the wire shape of the list: the
+// items must leave in the frontend contract's camelCase (contaId,
+// anexoImagem), not domain-api's snake_case the BFF reads internally --
+// a raw pass-through made every row render "Conta desconhecida" and
+// hid anexos.
+func TestListarTransacoes_CamelCase(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /transacoes", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"transacoes": []map[string]any{{
+				"id": "t1", "usuario_email": "ana@example.com", "conta_id": "c1",
+				"tipo": "saida", "valor": 42.5, "data": "2026-09-12T00:00:00Z",
+				"categoria": "mercado", "descricao": "compras", "anexo_imagem": "aGVsbG8=",
+			}},
+		})
+	})
+	fake := httptest.NewServer(mux)
+	defer fake.Close()
+
+	s := newTestServer(fake.URL)
+	req := authedRequest(http.MethodGet, "/api/transacoes", nil)
+	w := httptest.NewRecorder()
+
+	s.handleListarTransacoes(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body %s)", w.Code, w.Body.String())
+	}
+	body := string(w.Body.Bytes())
+	if !strings.Contains(body, `"contaId":"c1"`) {
+		t.Fatalf("expected camelCase contaId on the wire, got %s", body)
+	}
+	if !strings.Contains(body, `"anexoImagem":"aGVsbG8="`) {
+		t.Fatalf("expected camelCase anexoImagem on the wire, got %s", body)
+	}
+	if strings.Contains(body, "conta_id") || strings.Contains(body, "anexo_imagem") {
+		t.Fatalf("snake_case leaked through the BFF: %s", body)
 	}
 }
 
