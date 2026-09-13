@@ -128,6 +128,18 @@ resource "random_password" "financas_session_secret" {
   special = false
 }
 
+# The static shared secret the betting-slip Chrome extension sends as
+# X-Extension-Token -- a service worker has no session cookie to reuse,
+# and financas is a single-person product, so one token mapped to one
+# fixed identity (var.apostas_extension_usuario_email) is enough. See
+# apostas-api's own Config doc comment for why this isn't a general
+# personal-token system. Retrieve with `terraform output -raw
+# apostas_extension_token` to paste into the extension's options page.
+resource "random_password" "apostas_extension_token" {
+  length  = 48
+  special = false
+}
+
 locals {
   domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers,${random_id.cch_api_domain_key.hex}:cch-api,${random_id.contas_api_domain_key.hex}:contas-api,${random_id.transacional_api_domain_key.hex}:transacional-api,${random_id.asset_manager_api_domain_key.hex}:asset-manager-api,${random_id.dashboard_api_domain_key.hex}:dashboard-api,${random_id.leads_api_domain_key.hex}:leads-api,${random_id.proventos_worker_domain_key.hex}:proventos-worker,${random_id.apostas_api_domain_key.hex}:apostas-api"
 }

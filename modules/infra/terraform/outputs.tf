@@ -48,3 +48,11 @@ output "postgres_password" {
   value     = random_password.postgres.result
   sensitive = true
 }
+
+# Paste into the betting-slip Chrome extension's options page (X-Extension-
+# Token) -- see apostas-api's own Config doc comment and secrets.tf's
+# random_password.apostas_extension_token.
+output "apostas_extension_token" {
+  value     = random_password.apostas_extension_token.result
+  sensitive = true
+}

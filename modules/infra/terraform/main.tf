@@ -407,10 +407,12 @@ module "compute_apps_apostas_api" {
   session_secret = random_password.financas_session_secret.result
   # Empty on purpose -- see the same note on compute_apps_contas_api
   # above.
-  allowed_emails   = []
-  domain_api_key   = random_id.apostas_api_domain_key.hex
-  frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
-  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
+  allowed_emails          = []
+  domain_api_key          = random_id.apostas_api_domain_key.hex
+  extension_token         = random_password.apostas_extension_token.result
+  extension_usuario_email = var.apostas_extension_usuario_email
+  frontend_origins        = ["https://financas.giomartins.dev", "http://localhost:5173"]
+  otlp_endpoint           = module.compute_services_observability.otlp_endpoint
 
   depends_on = [module.compute_apps_domain_api]
 }

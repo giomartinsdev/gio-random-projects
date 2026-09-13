@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/apostas-api/internal/ai"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/apostas-api/internal/domainapi"
 )
 
@@ -32,18 +33,26 @@ type Config struct {
 	DevBypassAuth bool
 	DevUserEmail  string
 	DevUserNome   string
+	// ExtensionToken/ExtensionUsuarioEmail authenticate the betting-slip
+	// Chrome extension (see extensaohandlers.go) -- a service worker has
+	// no session cookie, and financas is a single-person product, so one
+	// static shared secret mapped to one fixed identity is enough. Empty
+	// ExtensionToken disables the route entirely (see handleImportarPrint).
+	ExtensionToken        string
+	ExtensionUsuarioEmail string
 }
 
 type Server struct {
 	domain *domainapi.Client
+	ai     *ai.Client
 	cfg    Config
 	mux    *http.ServeMux
 }
 
-func New(domain *domainapi.Client, cfg Config) *Server {
+func New(domain *domainapi.Client, aiClient *ai.Client, cfg Config) *Server {
 	cfg.AllowedOrigins = normalizeOrigins(cfg.AllowedOrigins)
 	cfg.AllowedEmails = normalizeEmails(cfg.AllowedEmails)
-	s := &Server{domain: domain, cfg: cfg, mux: http.NewServeMux()}
+	s := &Server{domain: domain, ai: aiClient, cfg: cfg, mux: http.NewServeMux()}
 
 	// Foundational routes.
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
@@ -52,17 +61,22 @@ func New(domain *domainapi.Client, cfg Config) *Server {
 	s.mux.HandleFunc("GET /api/apostas", s.handleListarApostas)
 	s.mux.HandleFunc("POST /api/apostas", s.handleRegistrarAposta)
 	s.mux.HandleFunc("PATCH /api/apostas/{id}/resolver", s.handleResolverAposta)
+	// The extension's route -- its own token check (extensaohandlers.go),
+	// not the session middleware, so it must be exempted in Handler()
+	// exactly like /api/health.
+	s.mux.HandleFunc("POST /api/extensao/apostas", s.handleImportarPrint)
 
 	return s
 }
 
-// Handler wraps the mux with the auth middleware and CORS. Only
-// /api/health is public; everything else requires a verified financas
-// session.
+// Handler wraps the mux with the auth middleware and CORS. /api/health
+// and /api/extensao/apostas are the two exceptions to "requires a
+// verified financas session" -- the extension route checks its own
+// token instead (see handleImportarPrint).
 func (s *Server) Handler() http.Handler {
 	authed := s.requireAuth(s.mux)
 	return s.cors(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/health" {
+		if r.URL.Path == "/api/health" || r.URL.Path == "/api/extensao/apostas" {
 			s.mux.ServeHTTP(w, r)
 			return
 		}

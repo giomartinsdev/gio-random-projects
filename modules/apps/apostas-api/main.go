@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/apostas-api/internal/ai"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/apostas-api/internal/domainapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/apostas-api/internal/httpapi"
 )
@@ -31,31 +32,38 @@ func main() {
 	if domain == nil {
 		log.Printf("APOSTAS_DOMAIN_API_URL/APOSTAS_DOMAIN_API_KEY unset: rotas de apostas vão falhar com 502")
 	}
+	aiClient := ai.NewFromEnv()
 
 	sessionSecret := os.Getenv("FINANCAS_SESSION_SECRET")
+	extensionToken := os.Getenv("APOSTAS_EXTENSION_TOKEN")
 	cfg := httpapi.Config{
-		AllowedOrigins: splitCSV(os.Getenv("APOSTAS_FRONTEND_ORIGINS")),
-		SessionSecret:  sessionSecret,
-		AllowedEmails:  splitCSV(os.Getenv("APOSTAS_ALLOWED_EMAILS")),
-		DevBypassAuth:  os.Getenv("APOSTAS_DEV_BYPASS_AUTH") == "1",
-		DevUserEmail:   os.Getenv("APOSTAS_DEV_USER_EMAIL"),
-		DevUserNome:    os.Getenv("APOSTAS_DEV_USER_NOME"),
+		AllowedOrigins:        splitCSV(os.Getenv("APOSTAS_FRONTEND_ORIGINS")),
+		SessionSecret:         sessionSecret,
+		AllowedEmails:         splitCSV(os.Getenv("APOSTAS_ALLOWED_EMAILS")),
+		DevBypassAuth:         os.Getenv("APOSTAS_DEV_BYPASS_AUTH") == "1",
+		DevUserEmail:          os.Getenv("APOSTAS_DEV_USER_EMAIL"),
+		DevUserNome:           os.Getenv("APOSTAS_DEV_USER_NOME"),
+		ExtensionToken:        extensionToken,
+		ExtensionUsuarioEmail: os.Getenv("APOSTAS_EXTENSION_USUARIO_EMAIL"),
 	}
 	if sessionSecret == "" && !cfg.DevBypassAuth {
 		log.Printf("FINANCAS_SESSION_SECRET unset e sem bypass dev: nenhuma sessão vai validar")
 	}
+	if extensionToken == "" {
+		log.Printf("APOSTAS_EXTENSION_TOKEN unset: a rota da extensão de captura de apostas fica desabilitada")
+	}
 
 	server := &http.Server{
 		Addr:              os.Getenv("BIND_HOST") + ":" + port,
-		Handler:           httpapi.New(domain, cfg).Handler(),
+		Handler:           httpapi.New(domain, aiClient, cfg).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
-		log.Printf("listening on :%s (domain-api: %v, bypass dev: %v, origens: %v)",
-			port, domain.Enabled(), cfg.DevBypassAuth, cfg.AllowedOrigins)
+		log.Printf("listening on :%s (domain-api: %v, ia: %v, bypass dev: %v, origens: %v)",
+			port, domain.Enabled(), aiClient.Enabled(), cfg.DevBypassAuth, cfg.AllowedOrigins)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("server failed: %v", err)
 		}

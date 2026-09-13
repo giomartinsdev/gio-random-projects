@@ -70,7 +70,7 @@ func TestRegistrarAposta_DebitaAposRegistrar(t *testing.T) {
 	fake, syncCalls, txCalls := fakeDomain(t)
 	defer fake.Close()
 
-	s := New(domainapi.New(fake.URL, "test-key"), Config{})
+	s := New(domainapi.New(fake.URL, "test-key"), nil, Config{})
 	body := []byte(`{"contaId":"conta-1","descricao":"Real Madrid vence","valorApostado":100,"odd":1.8,"dataAposta":"2026-09-01"}`)
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, authedRequest(http.MethodPost, "/api/apostas", body))
@@ -96,7 +96,7 @@ func TestRegistrarAposta_RejeitaContaDeOutroTipo(t *testing.T) {
 	fake := httptest.NewServer(mux)
 	defer fake.Close()
 
-	s := New(domainapi.New(fake.URL, "test-key"), Config{})
+	s := New(domainapi.New(fake.URL, "test-key"), nil, Config{})
 	body := []byte(`{"contaId":"conta-1","descricao":"Real Madrid vence","valorApostado":100,"dataAposta":"2026-09-01"}`)
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, authedRequest(http.MethodPost, "/api/apostas", body))
@@ -107,7 +107,7 @@ func TestRegistrarAposta_RejeitaContaDeOutroTipo(t *testing.T) {
 }
 
 func TestRegistrarAposta_ValidaCampos(t *testing.T) {
-	s := New(domainapi.New("http://unused", "k"), Config{})
+	s := New(domainapi.New("http://unused", "k"), nil, Config{})
 	body := []byte(`{"contaId":"","descricao":"","valorApostado":0,"dataAposta":""}`)
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, authedRequest(http.MethodPost, "/api/apostas", body))
@@ -121,7 +121,7 @@ func TestResolverAposta_GreenCreditaRetorno(t *testing.T) {
 	fake, syncCalls, txCalls := fakeDomain(t)
 	defer fake.Close()
 
-	s := New(domainapi.New(fake.URL, "test-key"), Config{})
+	s := New(domainapi.New(fake.URL, "test-key"), nil, Config{})
 	body := []byte(`{"status":"green","retornoObtido":180,"dataResultado":"2026-09-02"}`)
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, authedRequest(http.MethodPatch, "/api/apostas/aposta-1/resolver", body))
@@ -141,7 +141,7 @@ func TestResolverAposta_RedNaoCriaTransacao(t *testing.T) {
 	fake, syncCalls, txCalls := fakeDomain(t)
 	defer fake.Close()
 
-	s := New(domainapi.New(fake.URL, "test-key"), Config{})
+	s := New(domainapi.New(fake.URL, "test-key"), nil, Config{})
 	body := []byte(`{"status":"red","dataResultado":"2026-09-02"}`)
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, authedRequest(http.MethodPatch, "/api/apostas/aposta-1/resolver", body))
@@ -161,7 +161,7 @@ func TestResolverAposta_CanceladaReembolsaValorApostado(t *testing.T) {
 	fake, _, txCalls := fakeDomain(t)
 	defer fake.Close()
 
-	s := New(domainapi.New(fake.URL, "test-key"), Config{})
+	s := New(domainapi.New(fake.URL, "test-key"), nil, Config{})
 	body := []byte(`{"status":"cancelada","dataResultado":"2026-09-02"}`)
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, authedRequest(http.MethodPatch, "/api/apostas/aposta-1/resolver", body))
