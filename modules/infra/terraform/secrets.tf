@@ -363,6 +363,13 @@ locals {
       trigger = random_id.apostas_resultado_worker_domain_key.hex
       items   = { APOSTAS_RESULTADO_WORKER_DOMAIN_KEY = random_id.apostas_resultado_worker_domain_key.hex }
     }
+    # Not Terraform-generated (BSD's own dashboard mints it), but
+    # seeded here anyway so CI/a human can fetch it from the vault --
+    # same reasoning as the brapi/9router token groups above.
+    apostas_sportsdata_api_key = {
+      trigger = var.apostas_sportsdata_api_key
+      items   = { APOSTAS_SPORTSDATA_API_KEY = var.apostas_sportsdata_api_key }
+    }
     vaultwarden_admin_token = {
       trigger = random_password.vaultwarden_admin_token.result
       items   = { TF_VAULTWARDEN_ADMIN_TOKEN = random_password.vaultwarden_admin_token.result }
