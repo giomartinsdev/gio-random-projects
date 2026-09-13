@@ -38,6 +38,20 @@ func (h *ApostaHandlers) ListApostas(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"apostas": toApostaResponses(apostas)})
 }
 
+// ListApostasPendentes is the one cross-user aposta read: the
+// resultado worker's daily sweep has no session to scope by, unlike
+// every other caller of ListApostas above -- same precedent as
+// AtivoHandlers.ListTodosAtivos. Same auth as any other domain-api
+// route (a valid API key, no extra permission scoping).
+func (h *ApostaHandlers) ListApostasPendentes(w http.ResponseWriter, r *http.Request) {
+	apostas, err := h.apostas.ListPendentes(r.Context())
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"apostas": toApostaResponses(apostas)})
+}
+
 func (h *ApostaHandlers) GetAposta(w http.ResponseWriter, r *http.Request) {
 	aposta, err := h.apostas.FindByID(r.Context(), chi.URLParam(r, "id"))
 	if errors.Is(err, domainaposta.ErrNotFound) {
