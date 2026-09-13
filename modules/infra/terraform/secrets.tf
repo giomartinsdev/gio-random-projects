@@ -333,6 +333,13 @@ locals {
       trigger = random_password.post_api_better_auth_secret.result
       items   = { POST_API_BETTER_AUTH_SECRET = random_password.post_api_better_auth_secret.result }
     }
+    # Paste into the betting-slip Chrome extension's options page --
+    # see apostas-api's Config doc comment and this file's own
+    # random_password.apostas_extension_token.
+    apostas_extension_token = {
+      trigger = random_password.apostas_extension_token.result
+      items   = { APOSTAS_EXTENSION_TOKEN = random_password.apostas_extension_token.result }
+    }
     vaultwarden_admin_token = {
       trigger = random_password.vaultwarden_admin_token.result
       items   = { TF_VAULTWARDEN_ADMIN_TOKEN = random_password.vaultwarden_admin_token.result }
