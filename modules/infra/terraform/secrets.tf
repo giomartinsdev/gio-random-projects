@@ -340,6 +340,13 @@ locals {
       trigger = random_password.apostas_extension_token.result
       items   = { APOSTAS_EXTENSION_TOKEN = random_password.apostas_extension_token.result }
     }
+    # Not Terraform-generated (9router's own dashboard mints it), but
+    # seeded here anyway so CI/a human can fetch it from the vault --
+    # same reasoning as the brapi token group above.
+    apostas_ai_api_key = {
+      trigger = var.apostas_ai_api_key
+      items   = { APOSTAS_AI_API_KEY = var.apostas_ai_api_key }
+    }
     vaultwarden_admin_token = {
       trigger = random_password.vaultwarden_admin_token.result
       items   = { TF_VAULTWARDEN_ADMIN_TOKEN = random_password.vaultwarden_admin_token.result }

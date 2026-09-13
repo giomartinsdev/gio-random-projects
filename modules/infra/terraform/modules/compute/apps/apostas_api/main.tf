@@ -40,9 +40,12 @@ resource "docker_container" "apostas_api" {
     "APOSTAS_EXTENSION_TOKEN=${var.extension_token}",
     "APOSTAS_EXTENSION_USUARIO_EMAIL=${var.extension_usuario_email}",
     # Vision AI for reading a betting-slip screenshot -- 9router on the
-    # internal docker network, REQUIRE_API_KEY=false there.
+    # internal docker network. Its own dashboard's "Require API key"
+    # toggle applies regardless of network trust, so ai_api_key is
+    # real, not a formality.
     "APOSTAS_AI_BASE_URL=${var.ai_base_url}",
     "APOSTAS_AI_MODEL=${var.ai_model}",
+    "APOSTAS_AI_API_KEY=${var.ai_api_key}",
     # Traces + metrics only -- logs flow via alloy's docker-socket
     # scrape of this container's stdout.
     "OTEL_EXPORTER_OTLP_ENDPOINT=${var.otlp_endpoint}",
