@@ -63,9 +63,9 @@ variable "ai_base_url" {
 }
 
 variable "ai_model" {
-  description = "Comma-separated cascade of model names to try for reading a betting-slip screenshot -- MUST name a vision-capable model (empty falls back to auto-discovery, which cannot tell a vision model from a text-only one; verify against the live 9router model list before relying on this). Default is 9router's own \"vision\" combo (Combo & Vision Adapter in its dashboard), a fallback pool of vision-capable models."
+  description = "Comma-separated cascade of model names to try for reading a betting-slip screenshot -- MUST name a vision-capable model (empty falls back to auto-discovery, which cannot tell a vision model from a text-only one). 9router's own \"vision\" combo (Combo & Vision Adapter in its dashboard) pointed at a deprecated Gemini 3.5 Flash alias as of 2026-09-13 (confirmed live: \"Gemini 3.5 Flash is no longer available\") -- ag/gemini-3.7-flash-low is confirmed working with real image input as of the same date. Fix the combo's own model list in the 9router dashboard when convenient and this can go back to \"vision\"."
   type        = string
-  default     = "vision"
+  default     = "ag/gemini-3.7-flash-low"
 }
 
 variable "ai_api_key" {

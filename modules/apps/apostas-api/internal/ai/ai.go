@@ -115,7 +115,13 @@ func (c *Client) LerAposta(ctx context.Context, imagem []byte, mimeType string) 
 	basePayload, _ := json.Marshal(map[string]any{
 		"temperature": 0.0,
 		"max_tokens":  512,
-		"messages":    []map[string]any{{"role": "user", "content": content}},
+		// 9router streams by default for at least some model/combo
+		// routes (confirmed live: the exact same request without this
+		// came back as "data: {...}" SSE chunks, which chat()'s plain
+		// json.Unmarshal can't parse at all) -- explicit false is load-
+		// bearing, not a default worth omitting.
+		"stream":   false,
+		"messages": []map[string]any{{"role": "user", "content": content}},
 	})
 	buildPayload := func(model string) []byte {
 		var m map[string]any
