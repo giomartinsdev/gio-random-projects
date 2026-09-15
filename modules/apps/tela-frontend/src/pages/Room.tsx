@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Activity, AlertTriangle, ArrowLeft, Check, Crop, Film, Link2, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeft, Check, Crop, Film, Link2, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Star, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
 import { usePeerStats } from "@/lib/usePeerStats";
@@ -444,6 +444,21 @@ function LiveRoom({
     if (room.roomClosed) navigate("/");
   }, [room.roomClosed, navigate]);
 
+  // The room's shared spotlight: whoever is pinned becomes the stage,
+  // in theater mode, for EVERYONE -- that's what "em foco" means
+  // server-side. Clearing hands the view back to the grid. The local
+  // stage picker still works while a spotlight stands (picking
+  // something else is a private peek, not a fight with the room).
+  useEffect(() => {
+    if (room.spotlight) {
+      setTheater(true);
+      setTheaterStage(room.spotlight);
+    } else {
+      setTheater(false);
+      setTheaterStage(null);
+    }
+  }, [room.spotlight]);
+
   // The idle-closing popup counts down, so it needs a clock. Ticked
   // only while a warning is standing.
   const [nowMs, setNowMs] = useState(Date.now());
@@ -660,6 +675,7 @@ function LiveRoom({
           count={peopleCount}
           participants={participants}
           videoOffPeers={room.videoOffPeers}
+          spotlight={room.spotlight}
           yourName={room.you?.name ?? null}
           onRenameSelf={(n) => room.rename(n)}
         />
@@ -897,6 +913,10 @@ function LiveRoom({
             onToggleMuted={() => toggleMuted(selectedTile.peerId)}
             videoOff={room.videoOffPeers.has(selectedTile.peerId)}
             onToggleVideo={() => toggleVideo(selectedTile.peerId)}
+            spotlightOn={room.spotlight === selectedTile.peerId}
+            onToggleSpotlight={() =>
+              room.setSpotlightPeer(room.spotlight === selectedTile.peerId ? null : selectedTile.peerId)
+            }
             onClose={closeFullscreenTile}
             aspectMode={aspectMode}
             onAspectModeChange={setAspectMode}
@@ -912,6 +932,8 @@ function LiveRoom({
             onToggleMuted={toggleMuted}
             videoOffPeers={room.videoOffPeers}
             onToggleVideo={toggleVideo}
+            spotlight={room.spotlight}
+            onToggleSpotlight={(peerId) => room.setSpotlightPeer(room.spotlight === peerId ? null : peerId)}
             getPublishPc={getPublishPc}
             getSubscribePc={getSubscribePc}
           />
@@ -924,6 +946,8 @@ function LiveRoom({
             onToggleMuted={toggleMuted}
             videoOffPeers={room.videoOffPeers}
             onToggleVideo={toggleVideo}
+            spotlight={room.spotlight}
+            onToggleSpotlight={(peerId) => room.setSpotlightPeer(room.spotlight === peerId ? null : peerId)}
             onSelect={openFullscreenTile}
             getPublishPc={getPublishPc}
             getSubscribePc={getSubscribePc}
@@ -970,6 +994,8 @@ function Grid({
   onToggleMuted,
   videoOffPeers,
   onToggleVideo,
+  spotlight,
+  onToggleSpotlight,
   onSelect,
   getPublishPc,
   getSubscribePc,
@@ -979,6 +1005,8 @@ function Grid({
   onToggleMuted: (peerId: string) => void;
   videoOffPeers: Set<string>;
   onToggleVideo: (peerId: string) => void;
+  spotlight: string | null;
+  onToggleSpotlight: (peerId: string) => void;
   onSelect: (peerId: string) => void;
   getPublishPc: () => RTCPeerConnection | null;
   getSubscribePc: () => RTCPeerConnection | null;
@@ -1072,6 +1100,17 @@ function Grid({
             {!tile.isYou && tile.stream && (
               <StatsButton getPc={getSubscribePc} stream={tile.stream} own={false} className="absolute right-12 top-2 z-20" />
             )}
+            {/* The room's shared stage pin. To the left of the stats
+                button when there's a stream to have stats for, alone
+                otherwise -- and only on remote tiles: spotlighting your
+                own tile would make everyone watch you watching. */}
+            {!tile.isYou && (
+              <SpotlightStarButton
+                on={spotlight === tile.peerId}
+                onToggle={() => onToggleSpotlight(tile.peerId)}
+                className={"absolute top-2 z-20 " + (tile.stream ? "right-24" : "right-2")}
+              />
+            )}
           </motion.button>
         ))}
       </AnimatePresence>
@@ -1086,12 +1125,16 @@ function PeopleList({
   count,
   participants,
   videoOffPeers,
+  spotlight,
   yourName,
   onRenameSelf,
 }: {
   count: number;
   participants: { peerId: string; name: string; isYou: boolean; publishing: boolean }[];
   videoOffPeers: Set<string>;
+  // The room's shared stage choice -- marked here so it's clear whose
+  // tile the star on the grid refers to.
+  spotlight: string | null;
   // room.you's label -- the participants list renders the own row as
   // "Você", so the editor has to be seeded from the real name, not from
   // what's on screen.
@@ -1185,6 +1228,9 @@ function PeopleList({
                         {p.isYou && <span className="text-muted-foreground"> (você)</span>}
                       </span>
                       <span className="flex shrink-0 items-center gap-1">
+                        {spotlight === p.peerId && (
+                          <Star className="size-3.5 shrink-0 fill-amber-400 text-amber-400" aria-label="Em foco da sala" />
+                        )}
                         {p.isYou && (
                           <button
                             type="button"
@@ -1225,6 +1271,8 @@ function FullscreenTile({
   onToggleMuted,
   videoOff,
   onToggleVideo,
+  spotlightOn,
+  onToggleSpotlight,
   onClose,
   aspectMode,
   onAspectModeChange,
@@ -1236,6 +1284,8 @@ function FullscreenTile({
   onToggleMuted: () => void;
   videoOff: boolean;
   onToggleVideo: () => void;
+  spotlightOn: boolean;
+  onToggleSpotlight: () => void;
   onClose: () => void;
   aspectMode: AspectMode;
   onAspectModeChange: (mode: AspectMode) => void;
@@ -1266,6 +1316,7 @@ function FullscreenTile({
         )}
         <AspectModeButton mode={aspectMode} onChange={onAspectModeChange} />
         {tile.stream && <PipButton />}
+        {!tile.isYou && <SpotlightStarButton on={spotlightOn} onToggle={onToggleSpotlight} />}
         {!tile.isYou && <VideoToggleButton off={videoOff} onToggle={onToggleVideo} />}
         {!tile.isYou && hasAudio(tile.stream) && <MuteButton muted={muted} onToggle={onToggleMuted} />}
         <Button variant="secondary" size="sm" onClick={onClose} aria-label="Voltar para o grid">
@@ -1290,6 +1341,8 @@ function TheaterView({
   onToggleMuted,
   videoOffPeers,
   onToggleVideo,
+  spotlight,
+  onToggleSpotlight,
   getPublishPc,
   getSubscribePc,
 }: {
@@ -1300,6 +1353,8 @@ function TheaterView({
   onToggleMuted: (peerId: string) => void;
   videoOffPeers: Set<string>;
   onToggleVideo: (peerId: string) => void;
+  spotlight: string | null;
+  onToggleSpotlight: (peerId: string) => void;
   getPublishPc: () => RTCPeerConnection | null;
   getSubscribePc: () => RTCPeerConnection | null;
 }) {
@@ -1340,6 +1395,12 @@ function TheaterView({
               />
             )}
             {stageTile.stream && <PipButton />}
+            {!stageTile.isYou && (
+              <SpotlightStarButton
+                on={spotlight === stageTile.peerId}
+                onToggle={() => onToggleSpotlight(stageTile.peerId)}
+              />
+            )}
             {!stageTile.isYou && (
               <VideoToggleButton
                 off={videoOffPeers.has(stageTile.peerId)}
@@ -1382,6 +1443,35 @@ function TheaterView({
         </div>
       )}
     </div>
+  );
+}
+
+// Pinning one publisher as the room's shared stage (the spotlight).
+// Server-side state: everyone's view follows. The star fills when that
+// person is the room's stage.
+function SpotlightStarButton({
+  on,
+  onToggle,
+  className = "",
+}: {
+  on: boolean;
+  onToggle: () => void;
+  className?: string;
+}) {
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      className={className}
+      aria-label={on ? "Tirar do foco da sala" : "Colocar em foco para todo mundo"}
+      title={on ? "Tirar do foco da sala" : "Colocar em foco para todo mundo"}
+    >
+      <Star className={"size-4" + (on ? " fill-amber-400 text-amber-400" : "")} />
+    </Button>
   );
 }
 

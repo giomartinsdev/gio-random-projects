@@ -76,6 +76,9 @@ type Room struct {
 	lastPublishChange time.Time
 	// Zero until the reaper has warned the room it's about to close.
 	closingAt time.Time
+	// Who is pinned as the room's stage, "" when nobody (see
+	// SetSpotlight in peer.go).
+	spotlight string
 	// Injectable clock for the reaper's tests. Nil means the real one.
 	now func() time.Time
 	// Requests to enter without the password -- see knock.go. Never

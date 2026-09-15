@@ -682,3 +682,82 @@ func TestRoomResetReachesEveryoneIncludingTheSender(t *testing.T) {
 		t.Fatalf("other peer expected the reset, got %v", got)
 	}
 }
+
+// The spotlight is a room-wide choice: whoever pins a publisher as the
+// stage announces it to everyone, sender included -- a view decision
+// nobody should have to guess at.
+func TestSpotlightReachesEveryoneIncludingTheSender(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, aID := join(t, srv, roomID)
+	b, _ := join(t, srv, roomID)
+	readUntil(t, a, "peer:join") // b's arrival, announced to a
+
+	write(t, a, map[string]any{"type": "spotlight:set", "publisherId": aID})
+
+	if got := readUntil(t, a, "spotlight:set"); got["peerId"] != aID {
+		t.Fatalf("sender expected its own spotlight echo, got %v", got)
+	}
+	if got := readUntil(t, b, "spotlight:set"); got["peerId"] != aID {
+		t.Fatalf("other peer expected the spotlight, got %v", got)
+	}
+}
+
+// A spotlight naming someone who isn't in the room is dropped, not
+// remembered -- stale ids would otherwise survive the person leaving
+// and pin the room to a ghost. Proven via a newcomer's welcome, which
+// carries the room's stage choice.
+func TestSpotlightIgnoresAPeerNotInTheRoom(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, _ := join(t, srv, roomID)
+	write(t, a, map[string]any{"type": "spotlight:set", "publisherId": "fantasma"})
+
+	c := mustDial(t, srv, "room="+roomID+"&password=segredo123")
+	welcome := read(t, c)
+	if welcome["type"] != "welcome" {
+		t.Fatalf("expected welcome, got %v", welcome["type"])
+	}
+	if s, _ := welcome["spotlight"].(string); s != "" {
+		t.Fatalf("a spotlight for a peer nobody knows survived: %q", s)
+	}
+}
+
+// Clearing announces itself the same way setting does, and a welcome
+// issued after the clear no longer carries a stage.
+func TestSpotlightCanBeClearedAndArrivesInWelcome(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, aID := join(t, srv, roomID)
+	write(t, a, map[string]any{"type": "spotlight:set", "publisherId": aID})
+	if got := readUntil(t, a, "spotlight:set"); got["peerId"] != aID {
+		t.Fatalf("sender echo missing, got %v", got)
+	}
+
+	// A newcomer lands with the spotlight already standing.
+	b := mustDial(t, srv, "room="+roomID+"&password=segredo123")
+	welcome := read(t, b)
+	if welcome["type"] != "welcome" {
+		t.Fatalf("expected welcome, got %v", welcome["type"])
+	}
+	if welcome["spotlight"] != aID {
+		t.Fatalf("welcome spotlight = %v, want %s", welcome["spotlight"], aID)
+	}
+
+	write(t, a, map[string]any{"type": "spotlight:set", "publisherId": ""})
+	if got := readUntil(t, a, "spotlight:set"); got["peerId"] != "" {
+		t.Fatalf("expected the clear echo on the sender, got %v", got)
+	}
+	if got := readUntil(t, b, "spotlight:set"); got["peerId"] != "" {
+		t.Fatalf("expected the clear on the other peer, got %v", got)
+	}
+
+	c := mustDial(t, srv, "room="+roomID+"&password=segredo123")
+	welcome2 := read(t, c)
+	if s, _ := welcome2["spotlight"].(string); s != "" {
+		t.Fatalf("a cleared spotlight still arrived in welcome: %q", s)
+	}
+}

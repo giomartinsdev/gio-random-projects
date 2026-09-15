@@ -162,6 +162,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		// arrives -- reconnecting mid-warning must not hide the
 		// countdown (0 means nothing pending).
 		"closingAt": room.ClosingAtMillis(),
+		// The room's stage choice, so a newcomer lands watching what
+		// everyone else is watching ("" = none).
+		"spotlight": room.SpotlightPeerID(),
 		// Requests broadcast before this connection existed would
 		// otherwise never reach it -- someone joining mid-wait still
 		// needs to see (and be able to answer) a knock already in
@@ -318,6 +321,12 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 		// for everyone.
 		case "room:keepalive":
 			w.room.KeepAlive()
+
+		// Pinning one publisher as the room's stage. Anyone may set or
+		// clear it -- there is no host -- and the echo reaches the
+		// sender too, like room:reset. An empty publisherId clears.
+		case "spotlight:set":
+			w.room.SetSpotlight(msg.PublisherID)
 
 		case "ping":
 			w.peer.Send(map[string]any{"type": "pong"})

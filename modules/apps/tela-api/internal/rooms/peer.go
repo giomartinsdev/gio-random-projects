@@ -185,6 +185,39 @@ func (room *Room) SetPublishing(p *Peer, publishing bool) {
 	room.Broadcast(map[string]any{"type": event, "peerId": p.ID}, p.ID)
 }
 
+// SetSpotlight pins one publisher as the stage everyone watches -- a
+// room-wide view choice, unlike the per-viewer video opt-out. There is
+// no host, so anyone may set or clear it; the server's whole part is
+// keeping ONE authoritative answer to "who's on stage" (a newcomer's
+// welcome carries it too, so they land on the same stage everyone else
+// is watching) and announcing every change. An empty id clears; a
+// target that isn't in the room is dropped rather than remembered --
+// stale ids would otherwise survive the person leaving and keep the
+// room pinned to a ghost.
+func (room *Room) SetSpotlight(peerID string) {
+	room.mu.Lock()
+	if peerID != "" {
+		if _, ok := room.peers[peerID]; !ok {
+			room.mu.Unlock()
+			return
+		}
+	}
+	room.spotlight = peerID
+	room.lastSeen = time.Now()
+	room.mu.Unlock()
+
+	// The sender included: their UI updates from the echo, exactly like
+	// room:reset.
+	room.Broadcast(map[string]any{"type": "spotlight:set", "peerId": peerID}, "")
+}
+
+// SpotlightPeerID is the room's current stage choice, "" when none.
+func (room *Room) SpotlightPeerID() string {
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	return room.spotlight
+}
+
 // Rename changes a peer's display name and tells everyone else. The
 // renamer gets a FRESH resume token in the direct reply: the token is an
 // HMAC over the id AND the name (see ResumeToken), so the old one stops

@@ -231,6 +231,10 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   // The room was closed for real (idle, or deleted): the page navigates
   // home when this flips.
   const [roomClosed, setRoomClosed] = useState(false);
+  // The room's shared stage choice: whoever is pinned in the spotlight
+  // ("" from the server = none). A newcomer's welcome carries it, so
+  // they land watching what everyone else is watching.
+  const [spotlight, setSpotlight] = useState<string | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [source, setSource] = useState<Source | null>(null);
@@ -617,6 +621,8 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
             // A closing warning that was already standing -- reconnecting
             // mid-warning must not hide the countdown.
             setClosingAt(typeof msg.closingAt === "number" && msg.closingAt > 0 ? (msg.closingAt as number) : null);
+            // The room's stage, as the room sees it right now.
+            setSpotlight((msg.spotlight as string) || null);
 
             const present = new Set(list.map((p) => p.peerId));
             for (const id of [...pendingLeaveRef.current.keys()]) {
@@ -818,6 +824,11 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
             break;
           }
 
+          // The room's stage choice changed (set or cleared, "" = none).
+          case "spotlight:set":
+            setSpotlight((msg.peerId as string) || null);
+            break;
+
           // The idle reaper's warning: a countdown until this room
           // closes for everyone. closingAt 0 means a warning someone
           // already saw was withdrawn -- hide it everywhere.
@@ -880,6 +891,15 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   // everyone.
   const keepAlive = useCallback(() => send({ type: "room:keepalive" }), [send]);
 
+  // Pinning (or unpinning, null) one publisher as the room's stage.
+  // Server-side state -- everyone sees the same stage. The UI updates
+  // from the server's echo, so a client that disagrees is corrected
+  // rather than fought.
+  const setSpotlightPeer = useCallback(
+    (peerId: string | null) => send({ type: "spotlight:set", publisherId: peerId ?? "" }),
+    [send],
+  );
+
   return {
     status,
     errorMessage,
@@ -908,6 +928,8 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     closingAt,
     roomClosed,
     keepAlive,
+    spotlight,
+    setSpotlightPeer,
     videoOffPeers,
     setPublisherVideo,
     rename,
