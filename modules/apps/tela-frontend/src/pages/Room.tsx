@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Activity, ArrowLeft, Check, Crop, Link2, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Trash2, Users, Video, VideoOff, X } from "lucide-react";
+import { Activity, ArrowLeft, Check, Crop, Link2, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
 import { usePeerStats } from "@/lib/usePeerStats";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { useLiveFavicon } from "@/lib/useLiveFavicon";
+import { useRoomSounds } from "@/lib/useRoomSounds";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -427,6 +428,9 @@ function LiveRoom({
   // Same trigger, different surface: a red badge on the tab's favicon
   // for whoever parked this room in a background tab.
   useLiveFavicon(tiles.length > 0);
+  // A chime when someone arrives or leaves -- the hook diffs the roster
+  // itself; here only the header's on/off switch is wired.
+  const { soundsOn, toggleSounds } = useRoomSounds(room.peers);
 
   // A pill announcing whoever just started sharing. Fires only on a
   // false->true transition for a peer id this session had already seen
@@ -629,6 +633,18 @@ function LiveRoom({
           yourName={room.you?.name ?? null}
           onRenameSelf={(n) => room.rename(n)}
         />
+        {/* Ambient, like the people count next to it: entry/exit chimes
+            off by default stay off, and the state rides localStorage. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleSounds}
+          aria-label={soundsOn ? "Desativar sons de entrada e saída" : "Ativar sons de entrada e saída"}
+          title={soundsOn ? "Sons de entrada e saída: ligados" : "Sons de entrada e saída: desligados"}
+          className="text-muted-foreground"
+        >
+          {soundsOn ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+        </Button>
         {room.status !== "connected" && (
           <span className="text-sm text-muted-foreground">
             {room.status === "reconnecting"
