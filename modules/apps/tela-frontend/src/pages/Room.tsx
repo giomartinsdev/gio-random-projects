@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Activity, Check, Crop, Link2, MonitorUp, Pencil, SlidersHorizontal, Trash2, Users, Video, VideoOff, X } from "lucide-react";
+import { Activity, Check, Crop, Link2, MonitorUp, Pencil, PictureInPicture2, SlidersHorizontal, Trash2, Users, Video, VideoOff, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
 import { usePeerStats } from "@/lib/usePeerStats";
 import { useWakeLock } from "@/lib/useWakeLock";
+import { useLiveFavicon } from "@/lib/useLiveFavicon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -374,10 +375,10 @@ function LiveRoom({
   // was made. The room-wide banner below keeps protocol-level errors.
   const [shareError, setShareError] = useState<string | null>(null);
 
-  const toggleSharePanel = () => {
+  const toggleSharePanel = useCallback(() => {
     setShareError(null);
     setSharePanelOpen((open) => !open);
-  };
+  }, []);
 
   const toggleMuted = (peerId: string) =>
     setMutedPeers((current) => {
@@ -423,6 +424,34 @@ function LiveRoom({
   }, [room.localStream, room.you, room.peers, room.remoteStreams]);
 
   useWakeLock(tiles.length > 0);
+  // Same trigger, different surface: a red badge on the tab's favicon
+  // for whoever parked this room in a background tab.
+  useLiveFavicon(tiles.length > 0);
+
+  // A pill announcing whoever just started sharing. Fires only on a
+  // false->true transition for a peer id this session had already seen
+  // idle: the roster that arrives with welcome -- and every fresh peer
+  // id after a reconnect -- counts as "was already sharing", not news.
+  const [shareToast, setShareToast] = useState<string | null>(null);
+  const prevPublishingRef = useRef<Map<string, boolean>>(new Map());
+  const toastTimerRef = useRef(0);
+  useEffect(() => {
+    const prev = prevPublishingRef.current;
+    const next = new Map<string, boolean>();
+    let announced: string | null = null;
+    for (const peer of room.peers) {
+      next.set(peer.peerId, peer.publishing);
+      if (peer.publishing && prev.get(peer.peerId) === false) announced = peer.name;
+    }
+    prevPublishingRef.current = next;
+    if (announced) {
+      setShareToast(announced);
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = window.setTimeout(() => setShareToast(null), 5000);
+    }
+  }, [room.peers]);
+  // A timer must never outlive the component that set it.
+  useEffect(() => () => window.clearTimeout(toastTimerRef.current), []);
 
   // A selected tile that stops publishing would otherwise leave a
   // fullscreen view of nothing.
@@ -485,6 +514,46 @@ function LiveRoom({
     }
     return list;
   }, [room.you, room.localStream, room.peers]);
+
+  // The tile the single-key shortcuts act on: the fullscreen one when
+  // one is open, else the first remote stream on screen (falling back
+  // to any tile -- your own -- when that's all there is).
+  const activeTile = selectedTile ?? tiles.find((t) => !t.isYou && t.stream) ?? tiles[0] ?? null;
+
+  // One-key shortcuts: F fullscreen of the active tile, M mute it,
+  // V stop/restore its video, S the share panel. Guarded against
+  // typing contexts (the rename editor lives on this page) and against
+  // modifier combos -- Ctrl+F and friends stay the browser's.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.target instanceof HTMLElement) {
+        const tag = e.target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || e.target.isContentEditable) return;
+      }
+      switch (e.key.toLowerCase()) {
+        case "f":
+          if (activeTile) {
+            if (selected === activeTile.peerId) closeFullscreenTile();
+            else openFullscreenTile(activeTile.peerId);
+          }
+          return;
+        case "m":
+          if (activeTile && !activeTile.isYou && hasAudio(activeTile.stream)) toggleMuted(activeTile.peerId);
+          return;
+        case "v":
+          if (activeTile && !activeTile.isYou) toggleVideo(activeTile.peerId);
+          return;
+        case "s":
+          // Mid-capture the panel must stay put: the picker is in front
+          // and an error would land where nobody can read it.
+          if (!starting) toggleSharePanel();
+          return;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeTile, selected, starting, openFullscreenTile, closeFullscreenTile, toggleMuted, toggleVideo, toggleSharePanel]);
 
   // Whatever the dialog confirms. A same-source change is a pure
   // encoder retune (applyQuality) -- live, no recapture. A different
@@ -674,6 +743,23 @@ function LiveRoom({
           </div>
         )}
 
+        <AnimatePresence>
+          {shareToast && (
+            <motion.div
+              initial={{ opacity: 0, y: -12, x: "-50%", scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
+              exit={{ opacity: 0, y: -8, x: "-50%", scale: 0.95 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="pointer-events-none absolute left-1/2 top-4 z-20 flex items-center gap-2 rounded-full border bg-card px-3.5 py-1.5 text-sm shadow-md"
+            >
+              <MonitorUp className="size-4 shrink-0 text-muted-foreground" />
+              <span>
+                <strong className="font-medium">{shareToast}</strong> começou a compartilhar
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {selectedTile ? (
           <FullscreenTile
             tile={selectedTile}
@@ -774,6 +860,7 @@ function Grid({
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
             onClick={() => onSelect(tile.peerId)}
+            data-tile="1"
             className="group relative min-h-0 overflow-hidden rounded-lg border bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <TileVideo tile={tile} muted={mutedPeers.has(tile.peerId)} />
@@ -828,6 +915,12 @@ function Grid({
                 onToggle={() => onToggleVideo(tile.peerId)}
                 className="absolute left-2 top-2 z-20"
               />
+            )}
+            {/* Picture-in-picture needs a stream to pin -- before that
+                there's nothing to float. Left side: next to the video
+                toggle on remote tiles, alone on your own. */}
+            {tile.stream && (
+              <PipButton className={tile.isYou ? "absolute left-2 top-2 z-20" : "absolute left-12 top-2 z-20"} />
             )}
             {/* Numbers exist only once there's a stream to read them
                 from -- before that the panel would just say coletando. */}
@@ -1008,7 +1101,7 @@ function FullscreenTile({
   getSubscribePc: () => RTCPeerConnection | null;
 }) {
   return (
-    <div className="absolute inset-0 flex flex-col bg-black">
+    <div className="absolute inset-0 flex flex-col bg-black" data-tile="1">
       <TileVideo tile={tile} muted={muted} aspectMode={aspectMode} className="flex-1" />
       {/* Same story as the grid overlay: cover, don't unmount -- the
           audio underneath must keep playing. Placed before the bars so
@@ -1030,6 +1123,7 @@ function FullscreenTile({
           <StatsButton getPc={tile.isYou ? getPublishPc : getSubscribePc} stream={tile.stream} own={tile.isYou} />
         )}
         <AspectModeButton mode={aspectMode} onChange={onAspectModeChange} />
+        {tile.stream && <PipButton />}
         {!tile.isYou && <VideoToggleButton off={videoOff} onToggle={onToggleVideo} />}
         {!tile.isYou && hasAudio(tile.stream) && <MuteButton muted={muted} onToggle={onToggleMuted} />}
         <Button variant="secondary" size="sm" onClick={onClose} aria-label="Voltar para o grid">
@@ -1241,6 +1335,50 @@ function MuteButton({
   );
 }
 
+// Picture-in-picture for one tile's stream: the browser floats the
+// picture in an always-on-top window, so the stream keeps playing
+// (sound included) while this tab shows something else -- or the whole
+// browser is minimized. Only one video may sit in PiP at a time, so
+// the active state is tracked at document level, not per button. iOS
+// Safari deliberately ships no web PiP, hence the availability check.
+function PipButton({ className = "" }: { className?: string }) {
+  const [inPip, setInPip] = useState(false);
+  useEffect(() => {
+    const sync = () => setInPip(document.pictureInPictureElement !== null);
+    document.addEventListener("enterpictureinpicture", sync);
+    document.addEventListener("leavepictureinpicture", sync);
+    return () => {
+      document.removeEventListener("enterpictureinpicture", sync);
+      document.removeEventListener("leavepictureinpicture", sync);
+    };
+  }, []);
+
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={(e) => {
+        e.stopPropagation();
+        // The button and the <video> always share a tile root; looking
+        // the video up here saves threading a ref through Grid,
+        // TileVideo and FullscreenTile.
+        const video = e.currentTarget.closest("[data-tile]")?.querySelector("video");
+        if (!(video instanceof HTMLVideoElement)) return;
+        if (document.pictureInPictureElement === video) {
+          void document.exitPictureInPicture().catch(() => {});
+          return;
+        }
+        void video.requestPictureInPicture().catch(() => {});
+      }}
+      className={className}
+      aria-label={inPip ? "Sair do picture-in-picture" : "Assistir em picture-in-picture"}
+      title={inPip ? "Sair do picture-in-picture" : "Assistir em picture-in-picture"}
+    >
+      <PictureInPicture2 className="size-4" />
+    </Button>
+  );
+}
+
 // Per-viewer, server-side video opt-out for one publisher: the SFU stops
 // forwarding this person's video frames (audio never stops). The choice
 // lives in the room hook, keyed by peer id, so it survives reconnects.
@@ -1384,6 +1522,10 @@ function Empty({ roomId, password }: { roomId: string; password?: string }) {
           Quem não tiver a senha pode pedir para entrar direto pelo código <Code>{roomId}</Code>.
         </p>
       )}
+      <p className="mt-6 text-xs text-muted-foreground/80">
+        Atalhos: <span className="font-mono">F</span> tela cheia · <span className="font-mono">M</span> mudo ·{" "}
+        <span className="font-mono">V</span> vídeo · <span className="font-mono">S</span> compartilhar
+      </p>
     </div>
   );
 }
