@@ -1627,6 +1627,30 @@ function VideoToggleButton({
 // only runs while this popover is open, so a room never stats itself in
 // the background; opening a different panel closes this one first
 // (useDismissable), which keeps at most one poller alive.
+// The last minute of video bitrate, one polyline over the samples the
+// stats hook already collects. Scaled to the window's own peak --
+// absolute numbers are the text line above it; the shape is what shows
+// a dip a number never would.
+function BitrateSparkline({ points }: { points: number[] }) {
+  const w = 208;
+  const h = 34;
+  if (points.length < 2) return null;
+  // A 1 kb/s floor keeps an all-zero window from pretending to be
+  // full-scale noise.
+  const max = Math.max(...points, 1000);
+  const path = points
+    .map((v, i) => `${((i / (points.length - 1)) * w).toFixed(1)},${(h - 2 - (v / max) * (h - 4)).toFixed(1)}`)
+    .join(" ");
+  return (
+    <div className="mt-2">
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-8 w-full" aria-hidden>
+        <polyline points={path} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <p className="mt-0.5 text-[10px] text-muted-foreground">vídeo · últimos ~60 s</p>
+    </div>
+  );
+}
+
 function StatsButton({
   getPc,
   stream,
@@ -1702,6 +1726,7 @@ function StatsButton({
               </div>
             </dl>
           )}
+          {stats !== null && <BitrateSparkline points={stats.bitrateHistory} />}
           <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
             RTT mede o caminho até o servidor SFU -- para todo mundo assistindo, é o mesmo número.
           </p>

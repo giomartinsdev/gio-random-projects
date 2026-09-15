@@ -12,9 +12,18 @@ export type PeerStats = {
   fps: number | null;
   width: number | null;
   height: number | null;
+  // Video bitrate, one entry per successful tick, oldest first -- the
+  // sparkline in the stats panel draws it. ~60s of samples (30 × the
+  // 2s poll); a tick that couldn't produce a rate (baseline, mid-
+  // renegotiation) contributes nothing rather than a fake zero.
+  bitrateHistory: number[];
 };
 
 const POLL_MS = 2000;
+// 30 samples × 2s poll ≈ one minute of sparkline. Long enough to show
+// a quality dip after the fact; short enough that the line still
+// reacts to what's happening now.
+const SPARK_POINTS = 30;
 
 // The baseline a rate is computed against, keyed to the peer connection
 // it was taken on: a re-share replaces the PC, and deltas across
@@ -51,11 +60,16 @@ export function usePeerStats({
   const readRef = useRef({ getPc, stream, own });
   readRef.current = { getPc, stream, own };
   const prevRef = useRef<Sample | null>(null);
+  // The sparkline's ring buffer, kept across ticks. Cleared when the
+  // panel closes -- a history from before you opened it would draw a
+  // line for time you weren't watching.
+  const historyRef = useRef<number[]>([]);
 
   useEffect(() => {
     if (!active) {
       setStats(null);
       prevRef.current = null;
+      historyRef.current = [];
       return;
     }
     let inFlight = false;
@@ -149,8 +163,12 @@ export function usePeerStats({
         }
 
         const settings = read.stream?.getVideoTracks()[0]?.getSettings();
+        const videoBitrate = rate(video?.bytesSent ?? video?.bytesReceived, prev?.videoBytes);
+        if (videoBitrate !== null) {
+          historyRef.current = [...historyRef.current, videoBitrate].slice(-SPARK_POINTS);
+        }
         setStats({
-          bitrateBps: rate(video?.bytesSent ?? video?.bytesReceived, prev?.videoBytes),
+          bitrateBps: videoBitrate,
           audioBitrateBps: rate(audio?.bytesSent ?? audio?.bytesReceived, prev?.audioBytes),
           rttMs: rttSec === null ? null : rttSec * 1000,
           // A viewer's loss comes from their own receive counters; a
@@ -159,6 +177,7 @@ export function usePeerStats({
           fps,
           width: video?.frameWidth ?? settings?.width ?? null,
           height: video?.frameHeight ?? settings?.height ?? null,
+          bitrateHistory: [...historyRef.current],
         });
       } finally {
         inFlight = false;
