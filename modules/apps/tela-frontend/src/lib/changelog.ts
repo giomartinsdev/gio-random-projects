@@ -11,6 +11,15 @@ export type Release = {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.3.0",
+    date: "2026-09-15",
+    items: [
+      "Clips com áudio da sala inteira: o recorte carrega tudo o que você ouve — mute e volume locais valem — e agora aceita um nome escolhido por você.",
+      "Clips na home com busca por nome, sala ou pessoa.",
+      "Header da sala só com ícones (tooltip carrega a descrição) e sem o flick do botão Compartilhar.",
+    ],
+  },
+  {
     version: "1.2.0",
     date: "2026-09-15",
     items: [

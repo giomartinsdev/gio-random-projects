@@ -418,42 +418,134 @@ function LiveRoom({
   // Recording follows the local capture: starts when a share starts,
   // restarts from a fresh buffer when the source changes (old chunks
   // would be glued onto an incompatible header), stops when it stops.
+  //
+  // The clip's audio is the ROOM, not just the capture: an
+  // AudioContext mixes the shared audio with every remote peer's
+  // stream (gains below), and MediaRecorder records that mix instead
+  // of the raw capture track. The mix destination is created once and
+  // lives as long as the room, so peers joining/leaving or a re-share
+  // never restart the recorder -- sources just connect and disconnect
+  // from under a track that keeps rolling.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const mixDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  // Connected sources by key ("local" or the peer id), each behind its
+  // own gain so mute/volume changes are a value write, not a rewire.
+  const audioSourcesRef = useRef<Map<string, { src: MediaStreamAudioSourceNode; gain: GainNode }>>(new Map());
+  const ensureAudioGraph = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AudioContext();
+      mixDestRef.current = audioCtxRef.current.createMediaStreamDestination();
+    }
+    // Autoplay policy: the first call rides the share click (a user
+    // gesture); later calls resume in case the context was born
+    // suspended (remote audio arriving before any share).
+    audioCtxRef.current.resume().catch(() => {});
+    return audioCtxRef.current;
+  };
+  const setSource = (key: string, stream: MediaStream | null, volume: number) => {
+    const prev = audioSourcesRef.current.get(key);
+    if (!stream || stream.getAudioTracks().length === 0) {
+      if (prev) {
+        prev.src.disconnect();
+        audioSourcesRef.current.delete(key);
+      }
+      return;
+    }
+    const ctx = ensureAudioGraph();
+    if (prev) {
+      prev.gain.gain.value = volume;
+      return;
+    }
+    const src = ctx.createMediaStreamSource(stream);
+    const gain = ctx.createGain();
+    gain.gain.value = volume;
+    src.connect(gain).connect(mixDestRef.current!);
+    audioSourcesRef.current.set(key, { src, gain });
+  };
+
+  // The capture's own audio at full volume -- it's what's going out to
+  // the room anyway, and the local VolumeControls only govern remote peers.
+  useEffect(() => {
+    setSource("local", room.localStream, 1);
+  }, [room.localStream]);
+
+  // Remote peers: what the clip records is what YOU hear -- a locally
+  // muted peer is silent in the clip, a volume slider shapes it. Streams
+  // whose peer left are disconnected.
+  useEffect(() => {
+    for (const [peerId, stream] of Object.entries(room.remoteStreams)) {
+      setSource(peerId, stream, mutedPeers.has(peerId) ? 0 : (volumes[peerId] ?? 1));
+    }
+    for (const key of audioSourcesRef.current.keys()) {
+      if (key !== "local" && !(key in room.remoteStreams)) {
+        audioSourcesRef.current.get(key)!.src.disconnect();
+        audioSourcesRef.current.delete(key);
+      }
+    }
+  }, [room.remoteStreams, mutedPeers, volumes]);
+
   useEffect(() => {
     const rec = clipRecorderRef.current;
-    if (room.localStream) rec.start(room.localStream);
+    if (!room.localStream) {
+      rec.stop();
+      return;
+    }
+    const tracks = room.localStream.getVideoTracks().slice(0, 1);
+    const mixedAudio = mixDestRef.current?.stream.getAudioTracks()[0];
+    if (mixedAudio) tracks.push(mixedAudio);
+    rec.start(new MediaStream(tracks));
     return () => rec.stop();
   }, [room.localStream]);
 
-  const makeClip = useCallback(async () => {
-    const rec = clipRecorderRef.current;
-    if (!rec.recording || clipState === "uploading" || !password) return;
-    if (clipTimerRef.current !== null) {
-      window.clearTimeout(clipTimerRef.current);
-      clipTimerRef.current = null;
-    }
-    const blob = rec.makeClip();
-    if (!blob) {
-      setClipState("error");
-      setClipMessage("ainda não tem nada para cortar — grava um pouquinho mais");
-      clipTimerRef.current = window.setTimeout(() => setClipState("idle"), 4000);
-      return;
-    }
-    setClipState("uploading");
-    setClipProgress(0);
-    try {
-      await api.uploadClip(roomId, password, "", blob, (fraction) => setClipProgress(fraction));
-      setClipState("saved");
-      setClipMessage("clip salvo — baixe na home, na seção Clips");
-    } catch (err) {
-      setClipState("error");
-      setClipMessage(err instanceof Error ? err.message : "falha ao salvar o clip");
-    } finally {
-      clipTimerRef.current = window.setTimeout(() => {
-        setClipState("idle");
-        setClipMessage(null);
-      }, 4000);
-    }
-  }, [roomId, password, clipState]);
+  // The mixing graph's hardware (AudioContext) is closed when the room
+  // unmounts -- the sources and destination die with it.
+  useEffect(
+    () => () => {
+      audioCtxRef.current?.close().catch(() => {});
+    },
+    [],
+  );
+
+  const makeClip = useCallback(
+    async (clipName: string) => {
+      const rec = clipRecorderRef.current;
+      if (!rec.recording || clipState === "uploading" || !password) return;
+      if (clipTimerRef.current !== null) {
+        window.clearTimeout(clipTimerRef.current);
+        clipTimerRef.current = null;
+      }
+      const blob = rec.makeClip();
+      if (!blob) {
+        setClipState("error");
+        setClipMessage("ainda não tem nada para cortar — grava um pouquinho mais");
+        clipTimerRef.current = window.setTimeout(() => setClipState("idle"), 4000);
+        return;
+      }
+      setClipState("uploading");
+      setClipProgress(0);
+      try {
+        await api.uploadClip(
+          roomId,
+          password,
+          clipName.trim(),
+          room.you?.name ?? "",
+          blob,
+          (fraction) => setClipProgress(fraction),
+        );
+        setClipState("saved");
+        setClipMessage("clip salvo — baixe na home, na seção Clips");
+      } catch (err) {
+        setClipState("error");
+        setClipMessage(err instanceof Error ? err.message : "falha ao salvar o clip");
+      } finally {
+        clipTimerRef.current = window.setTimeout(() => {
+          setClipState("idle");
+          setClipMessage(null);
+        }, 4000);
+      }
+    },
+    [roomId, password, clipState, room.you?.name],
+  );
 
   const toggleMuted = (peerId: string) =>
     setMutedPeers((current) => {
@@ -826,25 +918,7 @@ function LiveRoom({
               >
                 {room.sendingAudio && room.hasAudioTrack ? <Mic className="size-4" /> : <MicOff className="size-4" />}
               </Button>
-              <Button
-                variant="secondary"
-                size="icon"
-                onClick={makeClip}
-                disabled={clipState === "uploading"}
-                aria-label={
-                  clipState === "uploading"
-                    ? `Salvando clip: ${Math.round(clipProgress * 100)}%`
-                    : "Salvar clip dos últimos 5 minutos"
-                }
-                title="Salva os últimos 5 minutos da sua transmissão — depois baixe na home, na seção Clips"
-              >
-                <Clapperboard className="size-4" />
-              </Button>
-              {clipState !== "idle" && (
-                <span className="text-xs tabular-nums text-muted-foreground" aria-live="polite">
-                  {clipState === "uploading" ? `${Math.round(clipProgress * 100)}%` : "salvo ✓"}
-                </span>
-              )}
+              <ClipButton clipState={clipState} clipProgress={clipProgress} onClip={makeClip} />
               <Button variant="destructive" onClick={room.stopSharing}>
                 <Square className="size-3.5 fill-current" />
                 Parar
@@ -1839,6 +1913,95 @@ function TileVideo({
           <span className="text-sm font-medium">Toque para assistir</span>
         </span>
       )}
+    </div>
+  );
+}
+
+// The header's clip button, plus the tiny popover where the clip gets
+// its (optional) name before the last ~5 minutes upload. Enter saves
+// with whatever is typed; closing the popover (Escape, click outside)
+// loses nothing -- the recording window keeps rolling, a new clip can
+// be cut any time. Upload feedback rides the header: a percentage
+// while uploading, "salvo ✓" once the server files it away.
+function ClipButton({
+  clipState,
+  clipProgress,
+  onClip,
+}: {
+  clipState: "idle" | "uploading" | "saved" | "error";
+  clipProgress: number;
+  onClip: (name: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const containerRef = useDismissable<HTMLDivElement>(open, () => setOpen(false));
+  const inputRef = useRef<HTMLInputElement>(null);
+  const busy = clipState === "uploading";
+
+  useEffect(() => {
+    if (!open) return;
+    setDraft("");
+    // One frame later: the input only exists once the popover mounts.
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [open]);
+
+  const submit = () => {
+    if (busy) return;
+    setOpen(false);
+    onClip(draft);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Button
+        variant="secondary"
+        size="icon"
+        onClick={() => setOpen((v) => !v)}
+        disabled={busy}
+        aria-expanded={open}
+        aria-label={busy ? `Salvando clip: ${Math.round(clipProgress * 100)}%` : "Salvar clip dos últimos 5 minutos"}
+        title="Salva os últimos 5 minutos da sua transmissão — depois baixe na home, na seção Clips"
+      >
+        <Clapperboard className="size-4" />
+      </Button>
+      {clipState !== "idle" && (
+        <span className="text-xs tabular-nums text-muted-foreground" aria-live="polite">
+          {clipState === "uploading" ? `${Math.round(clipProgress * 100)}%` : clipState === "error" ? "erro" : "salvo ✓"}
+        </span>
+      )}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-0 top-full z-30 mt-2 w-64 origin-top-right rounded-md border bg-card p-3 shadow-lg"
+          >
+            <label htmlFor="clip-name" className="text-xs font-medium text-muted-foreground">
+              Nome do clip (opcional)
+            </label>
+            <Input
+              id="clip-name"
+              ref={inputRef}
+              value={draft}
+              maxLength={30}
+              placeholder="ex.: retrospectiva da sprint"
+              className="mt-1.5 h-8 text-sm"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+            />
+            <Button size="sm" className="mt-2 w-full" onClick={submit} disabled={busy}>
+              {busy ? `Enviando ${Math.round(clipProgress * 100)}%` : "Salvar clip"}
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

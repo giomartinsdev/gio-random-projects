@@ -12,6 +12,7 @@ export type Clip = {
   id: string;
   roomId: string;
   name: string;
+  owner: string;
   size: number;
   createdAt: string;
   expiresAt: string;
@@ -83,6 +84,7 @@ export const api = {
     roomId: string,
     password: string,
     name: string,
+    owner: string,
     blob: Blob,
     onProgress: (fraction: number) => void,
   ): Promise<Clip> =>
@@ -91,6 +93,7 @@ export const api = {
       form.append("room", roomId);
       form.append("password", password);
       form.append("name", name);
+      form.append("owner", owner);
       form.append("clip", blob, "clip.webm");
 
       const xhr = new XMLHttpRequest();

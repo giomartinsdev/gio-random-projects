@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Clapperboard, Download, ChevronDown, Lock, MonitorPlay, Sparkles, Users, Zap } from "lucide-react";
+import { ArrowRight, Clapperboard, Download, ChevronDown, Lock, MonitorPlay, Search, Sparkles, Users, Zap } from "lucide-react";
 import { api, type Clip, type RoomSummary } from "@/lib/api";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { airplayIcon, arrowRightCircleIcon, loadingIcon, radioButtonIcon } from "@/lib/lottie-icons";
@@ -28,12 +28,16 @@ function formatDay(iso: string): string {
 }
 
 // Clips live on the server for a limited time (the API carries the
-// expiry); the section itself just lists what's there and links the
-// download URLs. Fetched once per mount -- clips don't change while
-// you sit on this page.
+// expiry); the section lists what's there and links the download URLs.
+// One search box answers "por pessoa, sala, nome etc." -- every
+// searchable field (the clip's name, the room it came from, who cut
+// it) is matched against the same query, because a person looking for
+// a clip knows SOME of those, rarely which one will hit. Fetched once
+// per mount -- clips don't change while you sit on this page.
 function Clips() {
   const [clips, setClips] = useState<Clip[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +62,13 @@ function Clips() {
     return `${Math.round(bytes / 1024)} kB`;
   };
 
+  const q = query.trim().toLowerCase();
+  const visible = q
+    ? clips.filter((clip) =>
+        [clip.name, clip.roomId, clip.owner].some((field) => field?.toLowerCase().includes(q)),
+      )
+    : clips;
+
   return (
     <Card>
       <CardHeader>
@@ -68,34 +79,56 @@ function Clips() {
         <CardDescription>Recortes de 5 minutos feitos nas salas — baixe enquanto existirem.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
-        {clips.map((clip) => {
-          // "2026-09-15T14:03:22Z" shown as the viewer's local day+time.
-          const when = new Date(clip.createdAt).toLocaleString("pt-BR", {
-            day: "2-digit",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-          });
-          return (
-            <a
-              key={clip.id}
-              href={api.clipDownloadUrl(clip.id)}
-              download
-              className="group flex items-center justify-between gap-3 rounded-lg border bg-secondary/30 px-3 py-2 text-sm transition-colors hover:border-primary/40 hover:bg-secondary/60"
-            >
-              <span className="min-w-0">
-                <span className="block truncate font-medium">{clip.name}</span>
-                <span className="block text-xs text-muted-foreground">
-                  sala {clip.roomId} · {when} · {formatSize(clip.size)}
+        {/* One field, every axis: name, room and owner all match the
+            same query -- three dropdowns for a list this size would be
+            ceremony, not search. */}
+        {clips.length > 3 && (
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="buscar por nome, sala ou pessoa"
+              className="h-9 pl-8 text-sm"
+              aria-label="Buscar clips"
+            />
+          </div>
+        )}
+        {visible.length === 0 ? (
+          <p className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+            Nenhum clip casa com “{query.trim()}”.
+          </p>
+        ) : (
+          visible.map((clip) => {
+            // "2026-09-15T14:03:22Z" shown as the viewer's local day+time.
+            const when = new Date(clip.createdAt).toLocaleString("pt-BR", {
+              day: "2-digit",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            return (
+              <a
+                key={clip.id}
+                href={api.clipDownloadUrl(clip.id)}
+                download
+                className="group flex items-center justify-between gap-3 rounded-lg border bg-secondary/30 px-3 py-2 text-sm transition-colors hover:border-primary/40 hover:bg-secondary/60"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">{clip.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    sala {clip.roomId}
+                    {clip.owner && <> · por {clip.owner}</>} · {when} · {formatSize(clip.size)}
+                  </span>
                 </span>
-              </span>
-              <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground transition-colors group-hover:text-primary">
-                <Download className="size-3.5" />
-                baixar
-              </span>
-            </a>
-          );
-        })}
+                <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground transition-colors group-hover:text-primary">
+                  <Download className="size-3.5" />
+                  baixar
+                </span>
+              </a>
+            );
+          })
+        )}
       </CardContent>
     </Card>
   );
