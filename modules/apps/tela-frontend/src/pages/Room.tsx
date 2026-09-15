@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Activity, ArrowLeft, Check, Crop, Link2, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
+import { Activity, ArrowLeft, Check, Crop, Film, Link2, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
 import { usePeerStats } from "@/lib/usePeerStats";
@@ -361,6 +361,14 @@ function LiveRoom({
   // you're watching in fullscreen keeps whatever fit you picked
   // instead of resetting to "Original" every time.
   const [aspectMode, setAspectMode] = useState<AspectMode>("auto");
+  // Theater mode: one big stage tile instead of the grid, everyone
+  // else shrunk to a thumbnail strip along the bottom. Session-local
+  // like aspectMode -- a view preference, not a room fact.
+  const [theater, setTheater] = useState(false);
+  // Who's on stage. Null means "the automatic choice" (first remote
+  // stream, else the first tile); picking a thumbnail pins it until it
+  // leaves the room.
+  const [theaterStage, setTheaterStage] = useState<string | null>(null);
 
   // The share panel: opened by the header's "Compartilhar" button, or by
   // its "Qualidade" variant once a share is already live. A drawer over
@@ -423,6 +431,12 @@ function LiveRoom({
     }
     return list;
   }, [room.localStream, room.you, room.peers, room.remoteStreams]);
+
+  // A pinned stage that stopped publishing can't stay pinned -- the
+  // TheaterView's automatic fallback takes over instead.
+  useEffect(() => {
+    if (theaterStage && !tiles.some((t) => t.peerId === theaterStage)) setTheaterStage(null);
+  }, [theaterStage, tiles]);
 
   useWakeLock(tiles.length > 0);
   // Same trigger, different surface: a red badge on the tab's favicon
@@ -722,6 +736,23 @@ function LiveRoom({
               </Button>
             </motion.div>
           )}
+          {/* Theater: one stage tile plus a thumbnail strip, for
+              watching instead of browsing. Only meaningful when there
+              is something to watch. */}
+          {tiles.length > 0 && (
+            <Button
+              variant={theater ? "default" : "secondary"}
+              size="sm"
+              onClick={() => setTheater((v) => !v)}
+              className="flex-1 sm:flex-none"
+              aria-pressed={theater}
+              title={theater ? "Voltar para a grade" : "Modo teatro: um palco grande e uma faixa com o resto"}
+            >
+              <Film className="size-4" />
+              <span className="sm:hidden">Teatro</span>
+              <span className="hidden sm:inline">{theater ? "Sair do teatro" : "Teatro"}</span>
+            </Button>
+          )}
           {/* The "algo esquisito" escape hatch: one click tells the whole
               room to drop and rebuild every media connection. Captures
               keep running -- nobody re-picks their window -- so the cost
@@ -825,6 +856,18 @@ function LiveRoom({
             onClose={closeFullscreenTile}
             aspectMode={aspectMode}
             onAspectModeChange={setAspectMode}
+            getPublishPc={getPublishPc}
+            getSubscribePc={getSubscribePc}
+          />
+        ) : theater && tiles.length > 0 ? (
+          <TheaterView
+            tiles={tiles}
+            stage={theaterStage}
+            onPickStage={setTheaterStage}
+            mutedPeers={mutedPeers}
+            onToggleMuted={toggleMuted}
+            videoOffPeers={room.videoOffPeers}
+            onToggleVideo={toggleVideo}
             getPublishPc={getPublishPc}
             getSubscribePc={getSubscribePc}
           />
@@ -1186,6 +1229,114 @@ function FullscreenTile({
           Voltar
         </Button>
       </div>
+    </div>
+  );
+}
+
+// Theater mode: the pinned (or automatic) tile fills the room and a
+// thin strip along the bottom carries everyone as clickable
+// thumbnails. Deliberately simpler than fullscreen -- no fullscreen, no
+// aspect picker, one stage to watch -- the point is to hide the grid,
+// not to duplicate the fullscreen controls.
+function TheaterView({
+  tiles,
+  stage,
+  onPickStage,
+  mutedPeers,
+  onToggleMuted,
+  videoOffPeers,
+  onToggleVideo,
+  getPublishPc,
+  getSubscribePc,
+}: {
+  tiles: Tile[];
+  stage: string | null;
+  onPickStage: (peerId: string | null) => void;
+  mutedPeers: Set<string>;
+  onToggleMuted: (peerId: string) => void;
+  videoOffPeers: Set<string>;
+  onToggleVideo: (peerId: string) => void;
+  getPublishPc: () => RTCPeerConnection | null;
+  getSubscribePc: () => RTCPeerConnection | null;
+}) {
+  // Pinned stage when it's still here, else the same automatic choice
+  // the single-key shortcuts use: first remote stream, else the first
+  // tile (your own).
+  const stageTile = tiles.find((t) => t.peerId === stage) ?? tiles.find((t) => !t.isYou && t.stream) ?? tiles[0] ?? null;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {stageTile && (
+        <div className="relative min-h-0 flex-1" data-tile="1">
+          <TileVideo tile={stageTile} muted={mutedPeers.has(stageTile.peerId)} />
+          {/* Same cover-don't-unmount story as the grid and fullscreen:
+              the audio lives on the stream under the picture. */}
+          {!stageTile.isYou && videoOffPeers.has(stageTile.peerId) && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/80">
+              <VideoOff className="size-5 text-muted-foreground" />
+              <span className="text-sm font-medium text-muted-foreground">vídeo desativado</span>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => onToggleVideo(stageTile.peerId)}
+              >
+                Ativar vídeo
+              </Button>
+            </div>
+          )}
+          <div className="absolute left-3 top-3 z-20 rounded-md bg-black/70 px-3 py-1.5 text-sm font-medium">
+            {stageTile.name}
+          </div>
+          <div className="absolute right-3 top-3 z-20 flex gap-2">
+            {stageTile.stream && (
+              <StatsButton
+                getPc={stageTile.isYou ? getPublishPc : getSubscribePc}
+                stream={stageTile.stream}
+                own={stageTile.isYou}
+              />
+            )}
+            {stageTile.stream && <PipButton />}
+            {!stageTile.isYou && (
+              <VideoToggleButton
+                off={videoOffPeers.has(stageTile.peerId)}
+                onToggle={() => onToggleVideo(stageTile.peerId)}
+              />
+            )}
+            {!stageTile.isYou && hasAudio(stageTile.stream) && (
+              <MuteButton
+                muted={mutedPeers.has(stageTile.peerId)}
+                onToggle={() => onToggleMuted(stageTile.peerId)}
+              />
+            )}
+          </div>
+        </div>
+      )}
+      {tiles.length > 1 && (
+        <div className="flex h-20 shrink-0 items-center gap-2 overflow-x-auto border-t bg-black/40 p-2">
+          {tiles.map((t) => (
+            <button
+              key={t.peerId}
+              type="button"
+              data-tile="1"
+              onClick={() => onPickStage(t.peerId)}
+              className={
+                "relative h-full aspect-video shrink-0 overflow-hidden rounded-md border bg-black " +
+                (t.peerId === stageTile?.peerId
+                  ? "ring-2 ring-ring"
+                  : "opacity-75 transition-opacity hover:opacity-100")
+              }
+              title={`Colocar ${t.name} no palco`}
+            >
+              {/* Thumbnails are always silent -- the stage is the only
+                  thing allowed to sound, or a tile would play twice. */}
+              <TileVideo tile={t} muted />
+              <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1.5 py-0.5 text-[10px]">
+                {t.name}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
