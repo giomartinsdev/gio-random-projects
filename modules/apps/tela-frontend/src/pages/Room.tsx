@@ -1329,7 +1329,7 @@ function TheaterView({
             >
               {/* Thumbnails are always silent -- the stage is the only
                   thing allowed to sound, or a tile would play twice. */}
-              <TileVideo tile={t} muted />
+              <TileVideo tile={t} muted ambient={false} />
               <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1.5 py-0.5 text-[10px]">
                 {t.name}
               </span>
@@ -1410,20 +1410,30 @@ function TileVideo({
   tile,
   muted,
   aspectMode = "auto",
+  ambient = true,
   className = "",
 }: {
   tile: Tile;
   muted: boolean;
   aspectMode?: AspectMode;
+  // Decorative blur behind the letterbox bars. object-contain leaves
+  // black bars around a stream whose ratio doesn't match its box; a
+  // huge, blurred copy of the same video behind it turns dead bars into
+  // a wallpaper that follows the picture. Only the big surfaces want
+  // it -- a thumbnail blurred behind itself is mush.
+  ambient?: boolean;
   className?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const ambientRef = useRef<HTMLVideoElement>(null);
   const [needsTap, setNeedsTap] = useState(false);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    const ambientVideo = ambientRef.current;
     video.srcObject = tile.stream;
+    if (ambientVideo) ambientVideo.srcObject = tile.stream;
     if (!tile.stream) {
       setNeedsTap(false);
       return;
@@ -1437,6 +1447,7 @@ function TileVideo({
     // makes the picture come back after a video opt-out is undone.
     const reseat = () => {
       video.srcObject = stream;
+      if (ambientVideo) ambientVideo.srcObject = stream;
       // Clears the tap overlay too: the first play() attempt (right
       // after a remount) can lose the autoplay race and put the overlay
       // up, while this later one -- same gesture era, media now
@@ -1482,9 +1493,30 @@ function TileVideo({
     : aspectMode === "fill"
       ? "h-full w-full object-cover"
       : "h-full w-full object-contain";
+  // Bars exist whenever the picture doesn't cover the box -- every mode
+  // but "fill" -- and only then is there something to wallpaper.
+  const showAmbient = ambient && aspectMode !== "fill";
 
   return (
     <div className={`relative flex h-full w-full items-center justify-center overflow-hidden ${className}`}>
+      {showAmbient && (
+        <div className="pointer-events-none absolute inset-0" aria-hidden>
+          {/* A second <video> on the SAME stream, blown up and blurred.
+              Muted and autoplay: it must never be the one demanding a
+              gesture, and its only job is to glow behind the picture. */}
+          <video
+            ref={ambientRef}
+            autoPlay
+            playsInline
+            muted
+            tabIndex={-1}
+            className="h-full w-full scale-110 object-cover opacity-40 blur-2xl"
+          />
+          {/* A dark wash between the blur and the stream keeps text
+              overlays readable over a bright wallpaper. */}
+          <div className="absolute inset-0 bg-black/45" />
+        </div>
+      )}
       <video
         ref={videoRef}
         autoPlay
