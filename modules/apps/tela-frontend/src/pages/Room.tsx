@@ -1809,7 +1809,13 @@ function TileVideo({
         // at me would echo. Everyone else's follows this viewer's choice.
         muted={tile.isYou || muted}
         style={fixedRatio ? { aspectRatio: fixedRatio } : undefined}
-        className={fit}
+        // relative, always: positioned siblings paint in document order,
+        // so this stays above the ambient wallpaper above. Unpositioned,
+        // the video paints in the normal-flow layer and the absolute
+        // ambient (blur + dark wash) lands ON TOP of the picture --
+        // a 45% black veil and a blurred ghost over everything, reading
+        // as a "filter" glued to the stream.
+        className={`relative ${fit}`}
       />
       {needsTap && (
         <span
