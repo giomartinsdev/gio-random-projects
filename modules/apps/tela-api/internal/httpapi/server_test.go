@@ -821,6 +821,7 @@ func uploadClip(t *testing.T, srv *httptest.Server, roomID, password, body strin
 	_ = mw.WriteField("room", roomID)
 	_ = mw.WriteField("password", password)
 	_ = mw.WriteField("name", "Meu clip")
+	_ = mw.WriteField("owner", "gio")
 	fw, _ := mw.CreateFormFile("clip", "clip.webm")
 	_, _ = fw.Write([]byte(body))
 	if err := mw.Close(); err != nil {
@@ -846,12 +847,13 @@ func TestClipUploadListAndDownload(t *testing.T) {
 		ID     string `json:"id"`
 		RoomID string `json:"roomId"`
 		Name   string `json:"name"`
+		Owner  string `json:"owner"`
 		Size   int64  `json:"size"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&clip); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if clip.RoomID != roomID || clip.Name != "Meu clip" || clip.Size != int64(len("FAKEWEBM")) || clip.ID == "" {
+	if clip.RoomID != roomID || clip.Name != "Meu clip" || clip.Owner != "gio" || clip.Size != int64(len("FAKEWEBM")) || clip.ID == "" {
 		t.Fatalf("clip metadata = %+v", clip)
 	}
 

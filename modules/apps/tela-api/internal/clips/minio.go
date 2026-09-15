@@ -69,6 +69,7 @@ func (s *S3Store) Save(ctx context.Context, clip Clip, r io.Reader) error {
 			UserMetadata: map[string]string{
 				"room":      clip.RoomID,
 				"name":      clip.Name,
+				"owner":     clip.Owner,
 				metaExpires: strconv.FormatInt(clip.ExpiresAt.Unix(), 10),
 			},
 		})
@@ -88,6 +89,7 @@ func (s *S3Store) clipFrom(id string, size int64, meta map[string]string, create
 		ID:        id,
 		RoomID:    s.meta(meta, "room"),
 		Name:      name,
+		Owner:     s.meta(meta, "owner"),
 		Size:      size,
 		CreatedAt: createdAt,
 		ExpiresAt: time.Unix(expires, 0),

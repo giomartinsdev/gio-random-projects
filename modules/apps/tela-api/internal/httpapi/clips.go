@@ -82,11 +82,13 @@ func (s *Server) handleCreateClip(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "Clip"
 	}
+	owner := sanitizeName(fields["owner"])
 	now := time.Now()
 	clip := clips.Clip{
 		ID:        id,
 		RoomID:    room.ID,
 		Name:      name,
+		Owner:     owner,
 		// The handler owns the bytes, so it owns the size too -- the
 		// S3 store passes it straight to PutObject, which would
 		// otherwise upload a zero-length object.
@@ -125,7 +127,7 @@ func readClipUpload(w http.ResponseWriter, r *http.Request) (map[string]string, 
 		return writeBad(http.StatusBadRequest, "corpo inválido")
 	}
 
-	fields := make(map[string]string, 3)
+	fields := make(map[string]string, 4)
 	var data []byte
 	for {
 		part, err := mr.NextPart()
@@ -136,7 +138,7 @@ func readClipUpload(w http.ResponseWriter, r *http.Request) (map[string]string, 
 			return writeBad(http.StatusBadRequest, "corpo inválido")
 		}
 		switch part.FormName() {
-		case "room", "password", "name":
+		case "room", "password", "name", "owner":
 			b, err := io.ReadAll(io.LimitReader(part, 4*1024))
 			part.Close()
 			if err != nil {

@@ -24,9 +24,13 @@ var (
 // Clip is the metadata of one stored recording. The bytes live behind
 // the store; everything here is safe to hand to any client.
 type Clip struct {
-	ID        string    `json:"id"`
-	RoomID    string    `json:"roomId"`
-	Name      string    `json:"name"`
+	ID     string `json:"id"`
+	RoomID string `json:"roomId"`
+	Name   string `json:"name"`
+	// Who cut the clip -- the uploader's in-room display name. Free
+	// text, no identity behind it (tela has no accounts); it exists so
+	// the home's Clips search can find "that clip gio made".
+	Owner     string    `json:"owner"`
 	Size      int64     `json:"size"`
 	CreatedAt time.Time `json:"createdAt"`
 	ExpiresAt time.Time `json:"expiresAt"`
