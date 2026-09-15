@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FPS_OPTIONS, QUALITY_OPTIONS, type DisplaySurface, type Fps, type Quality, type Source } from "@/lib/useRoom";
+import { AnimatedIcon } from "@/components/ui/animated-icon";
+import { loadingIcon } from "@/lib/lottie-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +38,8 @@ export function ShareDialog({
   open,
   canScreenShare,
   sharing,
+  starting,
+  error,
   initial,
   onOpenChange,
   onConfirm,
@@ -47,6 +51,15 @@ export function ShareDialog({
   // True while a share is live: then this retunes it (reductions apply
   // immediately; increases need the next share) instead of starting one.
   sharing: boolean;
+  // True from confirm until the capture settles -- the browser's own
+  // picker may sit in front of this dialog for seconds, during which
+  // nothing here may be dismissable or clickable (a double confirm must
+  // not queue two captures, and a stray Escape must not close the
+  // dialog out from under the picker).
+  starting: boolean;
+  // What the last attempt came back with, shown inline -- the dialog is
+  // where the capture was asked for, so it's where the refusal lands.
+  error: string | null;
   initial: ShareChoice;
   onOpenChange: (open: boolean) => void;
   onConfirm: (choice: ShareChoice) => void;
@@ -67,6 +80,9 @@ export function ShareDialog({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
+      // A capture in flight must not be closed out from under the
+      // browser's own picker.
+      if (starting) return;
       if (e.key === "Escape") onOpenChange(false);
     };
     window.addEventListener("keydown", onKey);
@@ -78,7 +94,7 @@ export function ShareDialog({
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = previousOverflow;
     };
-  }, [open, onOpenChange]);
+  }, [open, onOpenChange, starting]);
 
   return (
     <AnimatePresence>
@@ -90,7 +106,10 @@ export function ShareDialog({
           transition={{ duration: 0.2 }}
           // Between bottom sheet (phone) and centered card (desktop).
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
-          onClick={() => onOpenChange(false)}
+          onClick={() => {
+            if (starting) return;
+            onOpenChange(false);
+          }}
         >
           <motion.div
             ref={panelRef}
@@ -109,10 +128,11 @@ export function ShareDialog({
               {sharing ? "Qualidade da transmissão" : "Compartilhar"}
             </h2>
 
-            {!sharing && canScreenShare && (
-              // Which source to capture. Phones without getDisplayMedia
-              // only have the camera, so the row would be one option --
-              // noise, and it stays hidden.
+            {canScreenShare && (
+              // Which source to capture. Shown live as well as up front:
+              // changing the source of an existing share restarts the
+              // transmission (a new capture, a new connection), and the
+              // caption below says so.
               <div className="mt-3">
                 <SegmentRow label="O que compartilhar" ariaLabel="Fonte" options={SOURCE_OPTIONS} value={sourceKeyOf(choice)} onChange={(key) => setChoice(applySourceKey(choice, key))} />
               </div>
@@ -125,16 +145,24 @@ export function ShareDialog({
 
             {sharing && (
               <p className="mt-3 text-xs text-muted-foreground">
-                Reduções de qualidade/FPS aplicam na hora, sem recapturar ou cortar a transmissão. Aumentos (ou
-                "Original") valem a partir do próximo compartilhamento.
+                Trocar a fonte reinicia a transmissão por alguns instantes. Reduções de qualidade/FPS aplicam na hora, sem
+                recapturar ou cortar a transmissão. Aumentos (ou "Original") valem a partir do próximo compartilhamento.
               </p>
             )}
 
+            {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+
             <div className="mt-4 flex gap-2">
-              <Button variant="ghost" className="flex-1" onClick={() => onOpenChange(false)}>
+              <Button
+                variant="ghost"
+                className="flex-1"
+                disabled={starting}
+                onClick={() => onOpenChange(false)}
+              >
                 Cancelar
               </Button>
-              <Button className="flex-1" onClick={() => onConfirm(choice)}>
+              <Button className="flex-1" disabled={starting} onClick={() => onConfirm(choice)}>
+                {starting && <AnimatedIcon animation={loadingIcon} autoplay loop />}
                 {sharing ? "Aplicar" : "Compartilhar"}
               </Button>
             </div>

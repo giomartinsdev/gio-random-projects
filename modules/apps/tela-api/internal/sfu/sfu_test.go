@@ -2,6 +2,7 @@ package sfu_test
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -316,6 +317,21 @@ type browserSubscriber struct {
 	pc    *webrtc.PeerConnection
 	got   chan string // remote track IDs, as negotiated onto this PC
 	fatal chan string
+
+	mu       sync.Mutex
+	offerLog []string // SDP of every offer the server sent, in arrival order
+}
+
+func (b *browserSubscriber) offersSince(n int) []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]string(nil), b.offerLog[n:]...)
+}
+
+func (b *browserSubscriber) offerCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.offerLog)
 }
 
 func newBrowserSubscriber(t *testing.T, s *sfu.Server, roomID, peerID string) *browserSubscriber {
@@ -356,6 +372,9 @@ func newBrowserSubscriber(t *testing.T, s *sfu.Server, roomID, peerID string) *b
 	t.Cleanup(func() { b.sub.Close() })
 	go func() {
 		for o := range offers {
+			b.mu.Lock()
+			b.offerLog = append(b.offerLog, o.SDP)
+			b.mu.Unlock()
 			if err := pc.SetRemoteDescription(o); err != nil {
 				continue
 			}
@@ -538,4 +557,305 @@ func TestChurnedPublishersAlwaysDeliverTheLastShare(t *testing.T) {
 		}
 	}
 	t.Fatalf("churn lost renegotiations: the last generation never arrived (got %v)", got)
+}
+
+// startPublisherAV is startPublisher with an audio track riding beside
+// the video. The video-toggle tests need it to prove that silencing one
+// publisher's VIDEO leaves its AUDIO flowing -- something a video-only
+// publisher cannot demonstrate.
+func startPublisherAV(t *testing.T, s *sfu.Server, roomID, peerID, videoID, audioID string) *webrtc.PeerConnection {
+	t.Helper()
+	pubPC, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("publisher pc: %v", err)
+	}
+	video, err := webrtc.NewTrackLocalStaticSample(
+		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, videoID, peerID)
+	if err != nil {
+		t.Fatalf("video track: %v", err)
+	}
+	audio, err := webrtc.NewTrackLocalStaticSample(
+		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, audioID, peerID)
+	if err != nil {
+		t.Fatalf("audio track: %v", err)
+	}
+	if _, err := pubPC.AddTrack(video); err != nil {
+		t.Fatalf("add video track: %v", err)
+	}
+	if _, err := pubPC.AddTrack(audio); err != nil {
+		t.Fatalf("add audio track: %v", err)
+	}
+	offer, err := pubPC.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("offer: %v", err)
+	}
+	if err := pubPC.SetLocalDescription(offer); err != nil {
+		t.Fatalf("set local: %v", err)
+	}
+	_, answer, err := s.Publish(roomID, peerID, gathered(t, pubPC), func(webrtc.ICECandidateInit) {})
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	stop := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(20 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				_ = video.WriteSample(media.Sample{Data: []byte{0x00, 0x01, 0x02, 0x03}, Duration: 20 * time.Millisecond})
+				_ = audio.WriteSample(media.Sample{Data: []byte{0x00, 0x01, 0x02, 0x03}, Duration: 20 * time.Millisecond})
+			}
+		}
+	}()
+
+	if err := pubPC.SetRemoteDescription(*answer); err != nil {
+		t.Fatalf("publisher set remote: %v", err)
+	}
+	t.Cleanup(func() { _ = pubPC.Close() })
+	return pubPC
+}
+
+// waitForOffer waits for an offer the server generates AFTER this call
+// whose SDP satisfies pred. The server may coalesce several track
+// changes into one offer, so the predicate is applied to each new offer
+// in arrival order and the first match wins.
+func waitForOffer(t *testing.T, b *browserSubscriber, timeout time.Duration, pred func(sdp string) bool) string {
+	t.Helper()
+	start := b.offerCount()
+	deadline := time.After(timeout)
+	for {
+		for _, sdp := range b.offersSince(start) {
+			if pred(sdp) {
+				return sdp
+			}
+		}
+		select {
+		case <-deadline:
+			// The SDP of the last new offer turns a bare "none matched"
+			// into something diagnosable -- a direction that didn't flip,
+			// an m-line missing entirely, and so on.
+			seen := b.offersSince(start)
+			last := ""
+			if len(seen) > 0 {
+				last = seen[len(seen)-1]
+			}
+			t.Fatalf("no offer matching the predicate arrived (%d new offers, none matched)\nlast offer SDP:\n%s",
+				b.offerCount()-start, last)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// countSendonlySections counts media sections of one kind whose body
+// declares `a=sendonly`. Section counts alone would lie here: pion's
+// RemoveTrack turns a transceiver's direction from sendonly to INACTIVE
+// but leaves the m-line in the offer, so "the video is gone" reads as a
+// direction change, not as a missing m-line.
+func countSendonlySections(sdp, kind string) int {
+	count, inSection := 0, false
+	for _, line := range strings.Split(sdp, "\r\n") {
+		if strings.HasPrefix(line, "m=") {
+			inSection = strings.HasPrefix(line, "m="+kind+" ")
+			continue
+		}
+		if inSection && strings.TrimSpace(line) == "a=sendonly" {
+			count++
+		}
+	}
+	return count
+}
+
+// Turning a publisher's video off is a per-subscriber renegotiation: the
+// offer loses the video m-line's sendonly direction while the audio
+// m-line keeps it, and turning it back on brings the picture (and a new
+// video m-line -- pion won't reuse a transceiver the browser has
+// answered inactive) with it.
+func TestSubscriberVideoToggleStopsAndRestoresVideo(t *testing.T) {
+	server := newServer(t)
+	const roomID, peerID = "SALA-VO", "pub-v"
+
+	startPublisherAV(t, server, roomID, peerID, "share-a", "voice-a")
+	b := newBrowserSubscriber(t, server, roomID, "watcher")
+
+	// Both tracks of the share arrive before anything is toggled.
+	received := map[string]bool{}
+	for len(received) < 2 {
+		select {
+		case id := <-b.got:
+			received[id] = true
+		case code := <-b.fatal:
+			t.Fatalf("subscriber signalled an error before the toggle: %s", code)
+		case <-time.After(15 * time.Second):
+			t.Fatalf("viewer never received both tracks, got %v", received)
+		}
+	}
+
+	if err := b.sub.SetPublisherVideoEnabled(peerID, false); err != nil {
+		t.Fatalf("toggle off: %v", err)
+	}
+	waitForOffer(t, b, 10*time.Second, func(sdp string) bool {
+		return countSendonlySections(sdp, "video") == 0 && countSendonlySections(sdp, "audio") >= 1
+	})
+
+	if err := b.sub.SetPublisherVideoEnabled(peerID, true); err != nil {
+		t.Fatalf("toggle on: %v", err)
+	}
+	waitForOffer(t, b, 10*time.Second, func(sdp string) bool {
+		return countSendonlySections(sdp, "video") >= 1
+	})
+	select {
+	case id := <-b.got:
+		if id != "share-a" {
+			t.Fatalf("expected the video track back, got %q", id)
+		}
+	case code := <-b.fatal:
+		t.Fatalf("subscriber signalled an error on restore: %s", code)
+	case <-time.After(15 * time.Second):
+		t.Fatal("video never came back after the re-enable")
+	}
+}
+
+// A viewer who turned a publisher's video off must not get it back just
+// because the publisher stopped and re-shared: a re-share replaces the
+// publishedTrack objects, and the opt-out is keyed by peer id, so the
+// fan-out of the replacement has to honour it too.
+func TestVideoOptOutSurvivesAPublisherReshare(t *testing.T) {
+	server := newServer(t)
+	const roomID, peerID = "SALA-RS", "pub-r"
+
+	startPublisherAV(t, server, roomID, peerID, "gen-a", "voice-a")
+	b := newBrowserSubscriber(t, server, roomID, "watcher")
+
+	received := map[string]bool{}
+	for len(received) < 2 {
+		select {
+		case id := <-b.got:
+			received[id] = true
+		case code := <-b.fatal:
+			t.Fatalf("subscriber signalled an error before the toggle: %s", code)
+		case <-time.After(15 * time.Second):
+			t.Fatalf("viewer never received both tracks, got %v", received)
+		}
+	}
+
+	if err := b.sub.SetPublisherVideoEnabled(peerID, false); err != nil {
+		t.Fatalf("toggle off: %v", err)
+	}
+	waitForOffer(t, b, 10*time.Second, func(sdp string) bool {
+		return countSendonlySections(sdp, "video") == 0 && countSendonlySections(sdp, "audio") >= 1
+	})
+
+	// Re-share under the same peer id, the way a fast stop/start does.
+	startPublisherAV(t, server, roomID, peerID, "gen-b", "voice-b")
+	waitForOffer(t, b, 10*time.Second, func(sdp string) bool {
+		return countSendonlySections(sdp, "video") == 0 && countSendonlySections(sdp, "audio") >= 1
+	})
+
+	// The re-shared audio arrives; the re-shared video must not.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case id := <-b.got:
+			if id == "gen-b" {
+				t.Fatal("the opted-out viewer received the re-shared video anyway")
+			}
+		case code := <-b.fatal:
+			t.Fatalf("subscriber signalled an error during the re-share: %s", code)
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+
+	if err := b.sub.SetPublisherVideoEnabled(peerID, true); err != nil {
+		t.Fatalf("toggle on: %v", err)
+	}
+	waitForOffer(t, b, 10*time.Second, func(sdp string) bool {
+		return countSendonlySections(sdp, "video") >= 1
+	})
+	select {
+	case id := <-b.got:
+		if id != "gen-b" {
+			t.Fatalf("expected the re-shared video track, got %q", id)
+		}
+	case code := <-b.fatal:
+		t.Fatalf("subscriber signalled an error on restore: %s", code)
+	case <-time.After(15 * time.Second):
+		t.Fatal("the re-shared video never came back after the re-enable")
+	}
+}
+
+// One viewer's choices say nothing about another's: silencing a
+// publisher's video for yourself must not touch anyone else's
+// subscription.
+func TestVideoOptOutOnlyAffectsTheAskingSubscriber(t *testing.T) {
+	server := newServer(t)
+	const roomID, peerID = "SALA-OO", "pub-o"
+
+	startPublisherAV(t, server, roomID, peerID, "gen-a", "voice-a")
+	b1 := newBrowserSubscriber(t, server, roomID, "watcher-1")
+	b2 := newBrowserSubscriber(t, server, roomID, "watcher-2")
+
+	received := map[string]bool{}
+	for len(received) < 4 { // both tracks, both viewers
+		select {
+		case id := <-b1.got:
+			received["1:"+id] = true
+		case id := <-b2.got:
+			received["2:"+id] = true
+		case <-time.After(15 * time.Second):
+			t.Fatalf("viewers never received both tracks, got %v", received)
+		}
+	}
+
+	if err := b1.sub.SetPublisherVideoEnabled(peerID, false); err != nil {
+		t.Fatalf("toggle off: %v", err)
+	}
+	waitForOffer(t, b1, 10*time.Second, func(sdp string) bool {
+		return countSendonlySections(sdp, "video") == 0 && countSendonlySections(sdp, "audio") >= 1
+	})
+
+	// Re-share under the same peer id: b2 keeps getting video, b1 must
+	// not -- until b1 asks for it back.
+	startPublisherAV(t, server, roomID, peerID, "gen-b", "voice-b")
+	select {
+	case id := <-b2.got:
+		if id != "gen-b" {
+			t.Fatalf("expected the unaffected viewer to keep receiving video, got %q", id)
+		}
+	case code := <-b2.fatal:
+		t.Fatalf("b2 signalled an error during the re-share: %s", code)
+	case <-time.After(15 * time.Second):
+		t.Fatal("b2 never received the re-shared video")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case id := <-b1.got:
+			if id == "gen-b" {
+				t.Fatal("the opted-out viewer received the re-shared video anyway")
+			}
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+
+	if err := b1.sub.SetPublisherVideoEnabled(peerID, true); err != nil {
+		t.Fatalf("toggle on: %v", err)
+	}
+	waitForOffer(t, b1, 10*time.Second, func(sdp string) bool {
+		return countSendonlySections(sdp, "video") >= 1
+	})
+	select {
+	case id := <-b1.got:
+		if id != "gen-b" {
+			t.Fatalf("expected the re-shared video track, got %q", id)
+		}
+	case code := <-b1.fatal:
+		t.Fatalf("b1 signalled an error on restore: %s", code)
+	case <-time.After(15 * time.Second):
+		t.Fatal("b1's video never came back after the re-enable")
+	}
 }

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Crop, Link2, MonitorUp, SlidersHorizontal, Trash2, Users } from "lucide-react";
+import { Activity, Check, Crop, Link2, MonitorUp, Pencil, SlidersHorizontal, Trash2, Users, Video, VideoOff, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
+import { usePeerStats } from "@/lib/usePeerStats";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -367,6 +368,15 @@ function LiveRoom({
   // queue two getDisplayMedia calls (the hook also guards this, this
   // just keeps the button honest).
   const [starting, setStarting] = useState(false);
+  // What the last capture attempt came back with -- shown on the dialog
+  // itself, which stays open so the refusal is read where the choice
+  // was made. The room-wide banner below keeps protocol-level errors.
+  const [shareError, setShareError] = useState<string | null>(null);
+
+  const openShareDialog = () => {
+    setShareError(null);
+    setShareDialogOpen(true);
+  };
 
   const toggleMuted = (peerId: string) =>
     setMutedPeers((current) => {
@@ -375,6 +385,21 @@ function LiveRoom({
       else next.add(peerId);
       return next;
     });
+
+  // Stop or restore one publisher's video, on the server. Kept as a
+  // plain set-flip here; the state itself lives in the room hook so it
+  // survives reconnects (the off-list is re-asserted after every one).
+  const toggleVideo = (peerId: string) => {
+    room.setPublisherVideo(peerId, room.videoOffPeers.has(peerId));
+  };
+
+  // Stable accessors for the per-tile stats reader: the refs are stable,
+  // the peer connections inside them are replaced on every re-share, and
+  // only reading at poll time gets the current one.
+  const publishPcRef = room.publishPcRef;
+  const subscribePcRef = room.subscribePcRef;
+  const getPublishPc = useCallback(() => publishPcRef.current, [publishPcRef]);
+  const getSubscribePc = useCallback(() => subscribePcRef.current, [subscribePcRef]);
 
   // Everyone currently publishing, me included. A tile can exist before
   // its stream arrives (the peer announced publishing but WebRTC is
@@ -460,20 +485,43 @@ function LiveRoom({
     return list;
   }, [room.you, room.localStream, room.peers]);
 
-  // Whatever the dialog confirms: live shares only retune the encoder
-  // (see applyQuality) -- a real change of source/quality is the next
-  // share's business. `starting` covers the browser picker window.
-  const confirmShare = (choice: ShareChoice) => {
-    setShareDialogOpen(false);
+  // Whatever the dialog confirms. A same-source change is a pure
+  // encoder retune (applyQuality) -- live, no recapture. A different
+  // source needs the previous capture GONE first: startSharing alone
+  // would swap the stream over while the old capture's tracks kept
+  // running, leaving a hot camera or screen grab with nothing holding
+  // it. Either way the dialog stays open until the outcome is known --
+  // closing before the picker resolves was the old bug: an error (or a
+  // plain dismiss) closed into nothing.
+  const confirmShare = async (choice: ShareChoice) => {
+    if (starting) return;
+    const surface = choice.source === "screen" ? choice.surface : undefined;
+
+    const start = async () => {
+      setStarting(true);
+      setShareError(null);
+      try {
+        const res = await room.startSharing(choice.source, choice.quality, choice.fps, surface);
+        if (res.error) setShareError(res.error);
+        else setShareDialogOpen(false);
+      } finally {
+        setStarting(false);
+      }
+    };
+
     if (room.isSharing) {
+      const liveKey = room.source === "camera" ? "camera" : room.surface;
+      const wantedKey = choice.source === "camera" ? "camera" : choice.surface;
+      if (liveKey !== wantedKey) {
+        room.stopSharing();
+        await start();
+        return;
+      }
       room.applyQuality(choice.quality, choice.fps);
+      setShareDialogOpen(false);
       return;
     }
-    setStarting(true);
-    const surface = choice.source === "screen" ? choice.surface : undefined;
-    room
-      .startSharing(choice.source, choice.quality, choice.fps, surface)
-      .finally(() => setStarting(false));
+    await start();
   };
 
   // Label for the live "Qualidade" button, showing what's actually
@@ -488,7 +536,13 @@ function LiveRoom({
         </Link>
         <CopyableCode code={roomId} />
         {password && <CopyLinkWithPassword roomId={roomId} password={password} />}
-        <PeopleList count={peopleCount} participants={participants} />
+        <PeopleList
+          count={peopleCount}
+          participants={participants}
+          videoOffPeers={room.videoOffPeers}
+          yourName={room.you?.name ?? null}
+          onRenameSelf={(n) => room.rename(n)}
+        />
         {room.status !== "connected" && (
           <span className="text-sm text-muted-foreground">
             {room.status === "reconnecting"
@@ -526,7 +580,7 @@ function LiveRoom({
             <>
               <Button
                 variant="secondary"
-                onClick={() => setShareDialogOpen(true)}
+                onClick={openShareDialog}
                 className="flex-1 sm:flex-none"
                 title="Mudar qualidade e FPS sem recomeçar a transmissão"
               >
@@ -560,7 +614,7 @@ function LiveRoom({
             </>
           ) : (
             <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex-1 sm:flex-none">
-              <Button onClick={() => setShareDialogOpen(true)} disabled={starting} className="w-full">
+              <Button onClick={openShareDialog} disabled={starting} className="w-full">
                 <AnimatedIcon animation={canShareScreen ? airplayIcon : videoIcon} />
                 {canShareScreen ? "Compartilhar" : "Compartilhar câmera"}
               </Button>
@@ -624,14 +678,27 @@ function LiveRoom({
             tile={selectedTile}
             muted={mutedPeers.has(selectedTile.peerId)}
             onToggleMuted={() => toggleMuted(selectedTile.peerId)}
+            videoOff={room.videoOffPeers.has(selectedTile.peerId)}
+            onToggleVideo={() => toggleVideo(selectedTile.peerId)}
             onClose={closeFullscreenTile}
             aspectMode={aspectMode}
             onAspectModeChange={setAspectMode}
+            getPublishPc={getPublishPc}
+            getSubscribePc={getSubscribePc}
           />
         ) : tiles.length === 0 ? (
           <Empty roomId={roomId} password={password} />
         ) : (
-          <Grid tiles={tiles} mutedPeers={mutedPeers} onToggleMuted={toggleMuted} onSelect={openFullscreenTile} />
+          <Grid
+            tiles={tiles}
+            mutedPeers={mutedPeers}
+            onToggleMuted={toggleMuted}
+            videoOffPeers={room.videoOffPeers}
+            onToggleVideo={toggleVideo}
+            onSelect={openFullscreenTile}
+            getPublishPc={getPublishPc}
+            getSubscribePc={getSubscribePc}
+          />
         )}
 
         {room.errorMessage && (
@@ -647,7 +714,17 @@ function LiveRoom({
         open={shareDialogOpen}
         canScreenShare={canShareScreen}
         sharing={room.isSharing}
-        initial={{ source: canShareScreen ? "screen" : "camera", quality: room.quality, fps: room.fps, surface: room.surface }}
+        starting={starting}
+        error={shareError}
+        // Seeded from what's LIVE while a share is up -- the hardcoded
+        // default used to lie while sharing a camera ("Tela inteira"
+        // selected, applying as-is was a no-op that claimed otherwise).
+        initial={{
+          source: room.source ?? (canShareScreen ? "screen" : "camera"),
+          quality: room.quality,
+          fps: room.fps,
+          surface: room.surface,
+        }}
         onOpenChange={setShareDialogOpen}
         onConfirm={confirmShare}
       />
@@ -659,12 +736,20 @@ function Grid({
   tiles,
   mutedPeers,
   onToggleMuted,
+  videoOffPeers,
+  onToggleVideo,
   onSelect,
+  getPublishPc,
+  getSubscribePc,
 }: {
   tiles: Tile[];
   mutedPeers: Set<string>;
   onToggleMuted: (peerId: string) => void;
+  videoOffPeers: Set<string>;
+  onToggleVideo: (peerId: string) => void;
   onSelect: (peerId: string) => void;
+  getPublishPc: () => RTCPeerConnection | null;
+  getSubscribePc: () => RTCPeerConnection | null;
 }) {
   return (
     <div
@@ -694,14 +779,59 @@ function Grid({
                 ver em tela cheia
               </span>
             </span>
+            {/* An opaque cover rather than hiding the tile's <video>:
+                audio and video of a share ride the SAME MediaStream
+                (stream id = the publisher's peer id), so unmounting or
+                emptying the stream to hide the picture would cut the
+                sound too. The video element keeps playing underneath --
+                only the picture is hidden. */}
+            {!tile.isYou && videoOffPeers.has(tile.peerId) && (
+              <div
+                className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/80"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <VideoOff className="size-5 text-muted-foreground" />
+                <span className="text-sm font-medium text-muted-foreground">vídeo desativado</span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleVideo(tile.peerId);
+                  }}
+                >
+                  Ativar vídeo
+                </Button>
+              </div>
+            )}
             {/* Own tile is always silent (hearing yourself back echoes),
                 so there's nothing to toggle on it. */}
             {!tile.isYou && hasAudio(tile.stream) && (
               <MuteButton
                 muted={mutedPeers.has(tile.peerId)}
                 onToggle={() => onToggleMuted(tile.peerId)}
-                className="absolute right-2 top-2"
+                className="absolute right-2 top-2 z-20"
               />
+            )}
+            {/* Rendered even while the stream is still negotiating: the
+                opt-out is consulted server-side the moment the track
+                arrives, so the choice made before that isn't lost.
+                z-20: the overlay below carries a z-index of its own, and
+                z-indexed siblings paint above every auto one. */}
+            {!tile.isYou && (
+              <VideoToggleButton
+                off={videoOffPeers.has(tile.peerId)}
+                onToggle={() => onToggleVideo(tile.peerId)}
+                className="absolute left-2 top-2 z-20"
+              />
+            )}
+            {/* Numbers exist only once there's a stream to read them
+                from -- before that the panel would just say coletando. */}
+            {tile.isYou && tile.stream && (
+              <StatsButton getPc={getPublishPc} stream={tile.stream} own className="absolute right-2 top-2 z-20" />
+            )}
+            {!tile.isYou && tile.stream && (
+              <StatsButton getPc={getSubscribePc} stream={tile.stream} own={false} className="absolute right-12 top-2 z-20" />
             )}
           </motion.button>
         ))}
@@ -716,13 +846,40 @@ function Grid({
 function PeopleList({
   count,
   participants,
+  videoOffPeers,
+  yourName,
+  onRenameSelf,
 }: {
   count: number;
   participants: { peerId: string; name: string; isYou: boolean; publishing: boolean }[];
+  videoOffPeers: Set<string>;
+  // room.you's label -- the participants list renders the own row as
+  // "Você", so the editor has to be seeded from the real name, not from
+  // what's on screen.
+  yourName: string | null;
+  onRenameSelf: (name: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const containerRef = useDismissable<HTMLDivElement>(open, close);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  // A popover close (click outside, a stray Escape) discards the edit
+  // too -- reopening on a half-typed editor nobody remembers opening
+  // would be confusing.
+  useEffect(() => {
+    if (!open) setEditing(false);
+  }, [open]);
+
+  const startEdit = () => {
+    setDraft(yourName ?? "");
+    setEditing(true);
+  };
+  const confirmEdit = () => {
+    const name = draft.trim();
+    setEditing(false);
+    if (name && name !== yourName) onRenameSelf(name);
+  };
 
   return (
     <div ref={containerRef} className="relative">
@@ -748,12 +905,70 @@ function PeopleList({
             <ul className="max-h-64 space-y-0.5 overflow-y-auto">
               {participants.map((p) => (
                 <li key={p.peerId} className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-sm">
-                  <span className="truncate">
-                    {p.name}
-                    {p.isYou && <span className="text-muted-foreground"> (você)</span>}
-                  </span>
-                  {p.publishing && (
-                    <MonitorUp className="size-3.5 shrink-0 text-muted-foreground" aria-label="Compartilhando" />
+                  {p.isYou && editing ? (
+                    <div className="flex w-full items-center gap-1">
+                      <Input
+                        value={draft}
+                        maxLength={30}
+                        autoFocus
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") confirmEdit();
+                          if (e.key === "Escape") setEditing(false);
+                        }}
+                        className="h-7 text-sm"
+                      />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 shrink-0 p-0"
+                        onClick={confirmEdit}
+                        aria-label="Salvar nome"
+                        title="Salvar nome"
+                      >
+                        <Check className="size-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 shrink-0 p-0"
+                        onClick={() => setEditing(false)}
+                        aria-label="Cancelar"
+                        title="Cancelar"
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="truncate">
+                        {p.name}
+                        {p.isYou && <span className="text-muted-foreground"> (você)</span>}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1">
+                        {p.isYou && (
+                          <button
+                            type="button"
+                            onClick={startEdit}
+                            className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                            aria-label="Mudar meu nome"
+                            title="Mudar meu nome"
+                          >
+                            <Pencil className="size-3.5" />
+                          </button>
+                        )}
+                        {p.publishing && (
+                          <span className="flex shrink-0 items-center gap-1.5">
+                            {/* Keeps my own per-viewer choice visible even with
+                                the tile hidden behind its overlay. */}
+                            {videoOffPeers.has(p.peerId) && (
+                              <VideoOff className="size-3.5 shrink-0 text-muted-foreground" aria-label="Vídeo desativado por você" />
+                            )}
+                            <MonitorUp className="size-3.5 shrink-0 text-muted-foreground" aria-label="Compartilhando" />
+                          </span>
+                        )}
+                      </span>
+                    </>
                   )}
                 </li>
               ))}
@@ -769,25 +984,49 @@ function FullscreenTile({
   tile,
   muted,
   onToggleMuted,
+  videoOff,
+  onToggleVideo,
   onClose,
   aspectMode,
   onAspectModeChange,
+  getPublishPc,
+  getSubscribePc,
 }: {
   tile: Tile;
   muted: boolean;
   onToggleMuted: () => void;
+  videoOff: boolean;
+  onToggleVideo: () => void;
   onClose: () => void;
   aspectMode: AspectMode;
   onAspectModeChange: (mode: AspectMode) => void;
+  getPublishPc: () => RTCPeerConnection | null;
+  getSubscribePc: () => RTCPeerConnection | null;
 }) {
   return (
     <div className="absolute inset-0 flex flex-col bg-black">
       <TileVideo tile={tile} muted={muted} aspectMode={aspectMode} className="flex-1" />
-      <div className="absolute left-3 top-3 rounded-md bg-black/70 px-3 py-1.5 text-sm font-medium">
+      {/* Same story as the grid overlay: cover, don't unmount -- the
+          audio underneath must keep playing. Placed before the bars so
+          the header cluster above stays clickable. */}
+      {!tile.isYou && videoOff && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/80">
+          <VideoOff className="size-5 text-muted-foreground" />
+          <span className="text-sm font-medium text-muted-foreground">vídeo desativado</span>
+          <Button size="sm" variant="secondary" onClick={onToggleVideo}>
+            Ativar vídeo
+          </Button>
+        </div>
+      )}
+      <div className="absolute left-3 top-3 z-20 rounded-md bg-black/70 px-3 py-1.5 text-sm font-medium">
         {tile.name}
       </div>
-      <div className="absolute right-3 top-3 flex gap-2">
+      <div className="absolute right-3 top-3 z-20 flex gap-2">
+        {tile.stream && (
+          <StatsButton getPc={tile.isYou ? getPublishPc : getSubscribePc} stream={tile.stream} own={tile.isYou} />
+        )}
         <AspectModeButton mode={aspectMode} onChange={onAspectModeChange} />
+        {!tile.isYou && <VideoToggleButton off={videoOff} onToggle={onToggleVideo} />}
         {!tile.isYou && hasAudio(tile.stream) && <MuteButton muted={muted} onToggle={onToggleMuted} />}
         <Button variant="secondary" size="sm" onClick={onClose} aria-label="Voltar para o grid">
           <AnimatedIcon animation={plusToXIcon} reverse />
@@ -885,6 +1124,18 @@ function TileVideo({
       setNeedsTap(false);
       return;
     }
+    const stream = tile.stream;
+    // A re-enabled track usually arrives on the SAME MediaStream the
+    // element is already playing -- the server keeps one stream per
+    // publisher (its id is the publisher's peer id), so re-assigning
+    // srcObject would be referentially identical and the effect wouldn't
+    // even rerun. Listening for the track and re-seating it is what
+    // makes the picture come back after a video opt-out is undone.
+    const reseat = () => {
+      video.srcObject = stream;
+      void video.play().catch(() => {});
+    };
+    stream.addEventListener("addtrack", reseat);
     // Phones refuse to autoplay anything carrying sound. Rather than
     // muting other people's streams outright (and silently dropping
     // their audio), try to play and fall back to asking for the one tap
@@ -894,6 +1145,7 @@ function TileVideo({
       () => setNeedsTap(false),
       () => setNeedsTap(true),
     );
+    return () => stream.removeEventListener("addtrack", reseat);
   }, [tile.stream]);
 
   if (!tile.stream) {
@@ -982,6 +1234,123 @@ function MuteButton({
     >
       <AnimatedIcon animation={volumeIcon} reverse={muted} />
     </Button>
+  );
+}
+
+// Per-viewer, server-side video opt-out for one publisher: the SFU stops
+// forwarding this person's video frames (audio never stops). The choice
+// lives in the room hook, keyed by peer id, so it survives reconnects.
+function VideoToggleButton({
+  off,
+  onToggle,
+  className = "",
+}: {
+  off: boolean;
+  onToggle: () => void;
+  className?: string;
+}) {
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      className={className}
+      aria-label={off ? "Ativar vídeo" : "Desativar vídeo"}
+      title={off ? "Ativar vídeo" : "Desativar vídeo (o áudio continua)"}
+    >
+      {off ? <VideoOff className="size-4" /> : <Video className="size-4" />}
+    </Button>
+  );
+}
+
+// Connection numbers for one tile, read live from getStats(). The poller
+// only runs while this popover is open, so a room never stats itself in
+// the background; opening a different panel closes this one first
+// (useDismissable), which keeps at most one poller alive.
+function StatsButton({
+  getPc,
+  stream,
+  own,
+  className = "",
+}: {
+  getPc: () => RTCPeerConnection | null;
+  stream: MediaStream | null;
+  own: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const wrapRef = useDismissable<HTMLDivElement>(open, close);
+  const stats = usePeerStats({ getPc, stream, own, active: open });
+
+  const bitrate = (bps: number | null) =>
+    bps === null ? "—" : bps >= 1_000_000 ? `${(bps / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} Mb/s` : `${Math.max(1, Math.round(bps / 1000)).toLocaleString("pt-BR")} kb/s`;
+
+  return (
+    <div ref={wrapRef} className={className}>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        aria-label="Estatísticas de conexão"
+        title="Estatísticas de conexão"
+      >
+        <Activity className="size-4" />
+      </Button>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: -4 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: -4 }}
+          transition={{ duration: 0.15 }}
+          className="absolute right-2 top-10 z-30 w-56 rounded-md border bg-card p-3 text-card-foreground shadow-md"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {stats === null ? (
+            <p className="text-xs text-muted-foreground">coletando…</p>
+          ) : (
+            <dl className="space-y-1 text-xs tabular-nums">
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">{own ? "Enviando" : "Recebendo"}</dt>
+                <dd>{bitrate(stats.bitrateBps)}</dd>
+              </div>
+              {stats.audioBitrateBps !== null && (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-muted-foreground">Áudio</dt>
+                  <dd>{bitrate(stats.audioBitrateBps)}</dd>
+                </div>
+              )}
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">RTT</dt>
+                <dd>{stats.rttMs === null ? "—" : `${Math.round(stats.rttMs)} ms`}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">Perda</dt>
+                <dd>{stats.lossPct === null ? "—" : `${stats.lossPct.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">Vídeo</dt>
+                <dd>
+                  {stats.width === null || stats.height === null
+                    ? "—"
+                    : `${stats.width}×${stats.height}`}
+                  {stats.fps !== null && ` @ ${Math.round(stats.fps)} fps`}
+                </dd>
+              </div>
+            </dl>
+          )}
+          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+            RTT mede o caminho até o servidor SFU -- para todo mundo assistindo, é o mesmo número.
+          </p>
+        </motion.div>
+      )}
+    </div>
   );
 }
 

@@ -170,6 +170,31 @@ func (room *Room) SetPublishing(p *Peer, publishing bool) {
 	room.Broadcast(map[string]any{"type": event, "peerId": p.ID}, p.ID)
 }
 
+// Rename changes a peer's display name and tells everyone else. The
+// renamer gets a FRESH resume token in the direct reply: the token is an
+// HMAC over the id AND the name (see ResumeToken), so the old one stops
+// verifying the instant the rename is applied, and without a replacement
+// the renamed client's next reconnect would arrive as a stranger -- a new
+// peer id, and every established media connection torn down.
+func (room *Room) Rename(p *Peer, name string) {
+	room.mu.Lock()
+	if peer, ok := room.peers[p.ID]; ok {
+		peer.Name = name
+	}
+	room.lastSeen = time.Now()
+	room.mu.Unlock()
+
+	// Broadcast is outside the lock: it re-locks room.mu, and sync.Mutex
+	// is not reentrant (SetPublishing sets the precedent).
+	room.Broadcast(map[string]any{"type": "peer:rename", "peerId": p.ID, "name": name}, p.ID)
+	p.Send(map[string]any{
+		"type":   "peer:rename",
+		"peerId": p.ID,
+		"name":   name,
+		"resume": room.ResumeToken(p.ID, name),
+	})
+}
+
 // Relay hands one peer's signalling payload to another peer in the same
 // room. With everyone able to publish, any pair may legitimately need
 // to talk -- so the check is simply "is the target in this room", and

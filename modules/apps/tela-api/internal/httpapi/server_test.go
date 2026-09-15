@@ -516,6 +516,104 @@ func readUntil(t *testing.T, conn *websocket.Conn, want string) map[string]any {
 	return nil
 }
 
+// Renaming tells the room, and hands the renamer a fresh resume token in
+// the direct reply: the token signs the NAME along with the id, so the
+// old one stops verifying the instant the rename lands. Without a
+// replacement, the renamed client's next reconnect would arrive as a
+// stranger -- a new peer id, and every established media connection torn
+// down.
+func TestPeerRenameTellsTheRoomAndReissuesTheResumeToken(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, aID := join(t, srv, roomID)
+	b, bID := join(t, srv, roomID)
+	readUntil(t, a, "peer:join") // b's arrival, announced to a
+
+	write(t, a, map[string]any{"type": "peer:rename", "name": "Novo Nome"})
+
+	// The other member sees the new name, tied to the same id.
+	renamed := readUntil(t, b, "peer:rename")
+	if renamed["peerId"] != aID || renamed["name"] != "Novo Nome" {
+		t.Fatalf("b expected a's rename, got %v", renamed)
+	}
+	if renamed["peerId"] == bID {
+		t.Fatal("the rename was attributed to the wrong peer")
+	}
+
+	// The renamer's own copy comes back as a direct reply carrying the
+	// replacement token.
+	own := readUntil(t, a, "peer:rename")
+	if own["peerId"] != aID || own["name"] != "Novo Nome" {
+		t.Fatalf("a expected its own rename confirmation, got %v", own)
+	}
+	token, _ := own["resume"].(string)
+	if token == "" {
+		t.Fatal("the rename reply must carry a fresh resume token")
+	}
+	_ = b.Close(websocket.StatusNormalClosure, "")
+	_ = a.Close(websocket.StatusNormalClosure, "")
+
+	// The new token resumes into the renamed identity; the old name and
+	// old token would no longer verify together.
+	back := mustDial(t, srv, "room="+roomID+"&password=segredo123"+
+		"&peerId="+url.QueryEscape(aID)+"&name="+url.QueryEscape("Novo Nome")+"&resume="+url.QueryEscape(token))
+	resumed := read(t, back)
+	if resumed["peerId"] != aID {
+		t.Fatalf("expected to resume as %v with the new token, got %v", aID, resumed["peerId"])
+	}
+	if resumed["name"] != "Novo Nome" {
+		t.Fatalf("expected the renamed identity to survive, got %v", resumed["name"])
+	}
+}
+
+// The rename is a display label, not a novel: the server bounds it the
+// same way it bounds a name typed at join time.
+func TestPeerRenameBoundsTheName(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, _ := join(t, srv, roomID)
+	b, _ := join(t, srv, roomID)
+	readUntil(t, a, "peer:join")
+
+	write(t, a, map[string]any{"type": "peer:rename", "name": strings.Repeat("x", 40)})
+	renamed := readUntil(t, b, "peer:rename")
+	name, _ := renamed["name"].(string)
+	if name == "" || len(name) > 30 {
+		t.Fatalf("expected the name to be capped at 30 runes, got %q", name)
+	}
+}
+
+// An empty (or whitespace-only) rename is ignored entirely -- no
+// broadcast, no reply -- rather than letting someone erase their label.
+// A real rename sent right behind it acts as a fence: whatever the
+// server did with the empty one is already in the pipe ahead of it, so
+// the first rename traffic either side observes must be the real one.
+// (A quiet-window assertion is not workable here: the read timeout
+// itself invalidates the test's socket, and the teardown the server
+// then performs broadcasts real traffic into the window.)
+func TestPeerRenameIgnoresAnEmptyName(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, _ := join(t, srv, roomID)
+	b, _ := join(t, srv, roomID)
+	readUntil(t, a, "peer:join")
+
+	write(t, a, map[string]any{"type": "peer:rename", "name": "   "})
+	write(t, a, map[string]any{"type": "peer:rename", "name": "Nome Real"})
+
+	renamed := readUntil(t, b, "peer:rename")
+	if name, _ := renamed["name"].(string); name != "Nome Real" {
+		t.Fatalf("expected the first rename seen in the room to be the real one, got %v", renamed)
+	}
+	own := readUntil(t, a, "peer:rename")
+	if name, _ := own["name"].(string); name != "Nome Real" {
+		t.Fatalf("expected the renamer's first confirmation to be the real one, got %v", own)
+	}
+}
+
 // A real publish handshake: a peer connection with a real track, an
 // offer over the WebSocket, and the SFU's answer. Publishing state is a
 // consequence of media actually being accepted now, not a flag the

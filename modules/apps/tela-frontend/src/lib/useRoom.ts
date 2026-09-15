@@ -191,6 +191,12 @@ export const canShareCamera =
 // displayName is only ever sent on a brand-new join (see connect()
 // below) -- once the server has assigned an identity, a reconnect
 // always resumes with the name it already gave out, chosen or not.
+// What startSharing resolves with: the capture either happened (the
+// dialog closes, the tile lights up) or it didn't. A null error means
+// "the person backed out" -- dismissing the picker is not a failure and
+// must not be reported as one.
+export type ShareStartResult = { started: boolean; error: string | null };
+
 export function useRoom(roomId: string, credential: Credential, displayName?: string) {
   // Pulled out as primitives rather than depending on `credential`
   // itself below -- a caller passing a fresh object literal every
@@ -253,6 +259,19 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   surfaceRef.current = surface;
   const remoteStreamsRef = useRef<Record<string, MediaStream>>({});
   remoteStreamsRef.current = remoteStreams;
+  // Mirrored for the same reason remoteStreamsRef is: the WebSocket
+  // callbacks were created once and would otherwise close over stale
+  // state.
+  const youRef = useRef<{ peerId: string; name: string } | null>(null);
+  youRef.current = you;
+  // Publishers whose video this viewer asked NOT to receive, keyed by
+  // peer id. The server's per-viewer opt-outs live on its Subscriber,
+  // which dies with every WebSocket -- so the ref is what re-asserts the
+  // list after each reconnect (see the welcome handler). Not pruned on
+  // peer:leave: a blip must not flip someone's video back on, and stale
+  // ids are inert.
+  const videoOffPeersRef = useRef<Set<string>>(new Set());
+  const [videoOffPeers, setVideoOffPeers] = useState<Set<string>>(new Set());
 
   const send = useCallback((payload: unknown) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -378,8 +397,13 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   republishRef.current = republish;
 
   const startSharing = useCallback(
-    async (from: Source, newQuality?: Quality, newFps?: Fps, newSurface?: DisplaySurface) => {
-      if (startingRef.current) return;
+    async (
+      from: Source,
+      newQuality?: Quality,
+      newFps?: Fps,
+      newSurface?: DisplaySurface,
+    ): Promise<ShareStartResult> => {
+      if (startingRef.current) return { started: false, error: null };
       startingRef.current = true;
       try {
         // Committed to refs before anything async runs, so the capture
@@ -414,11 +438,15 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
               : await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: true });
         } catch (err) {
           const name = err instanceof Error ? err.name : "Error";
-          // Dismissing the picker is a normal thing to do, not an error.
-          if (name !== "NotAllowedError" && name !== "AbortError") {
-            setErrorMessage(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
+          // Capture failures are the caller's to display (they belong on
+          // the dialog that asked for the capture), so they are returned
+          // rather than routed to the room-wide banner. Backing out of
+          // the picker is a normal thing to do, not an error.
+          if (name === "AbortError") return { started: false, error: null };
+          if (name === "NotAllowedError") {
+            return { started: false, error: "permissão negada — o compartilhamento não foi autorizado" };
           }
-          return;
+          return { started: false, error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) };
         }
 
         // Tells the encoder what this footage actually is: "detail" keeps
@@ -437,7 +465,11 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
         // The browser's own "Stop sharing" bar ends the track.
         videoTrack?.addEventListener("ended", () => stopSharing());
 
-        await publishStream(stream);
+        // Same swallow as the welcome republish: a publish connection
+        // that dies right away is the failed-uplink recovery's problem,
+        // not the dialog's.
+        await publishStream(stream).catch(() => {});
+        return { started: true, error: null };
       } finally {
         startingRef.current = false;
       }
@@ -467,6 +499,30 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     // removing it would mean rebuilding the publish connection.
     for (const track of localStreamRef.current?.getAudioTracks() ?? []) track.enabled = on;
   }, []);
+
+  // Stop (or restore) ONE publisher's video on the server, where the
+  // saving is real: the SFU stops forwarding those frames to this
+  // browser instead of this browser decoding and throwing them away.
+  // Optimistic on purpose -- the local set flips immediately so the UI
+  // never waits on a renegotiation round trip, and re-asserting an
+  // already-held state is harmless server-side (a remove with nothing
+  // to remove negotiates nothing).
+  const setPublisherVideo = useCallback(
+    (publisherId: string, enabled: boolean) => {
+      const next = new Set(videoOffPeersRef.current);
+      if (enabled) next.delete(publisherId);
+      else next.add(publisherId);
+      videoOffPeersRef.current = next;
+      setVideoOffPeers(next);
+      send({ type: "subscribe:video", publisherId, enabled });
+    },
+    [send],
+  );
+
+  // Changing your own label. The server answers with the broadcast the
+  // room sees plus a fresh resume token (handled in the peer:rename
+  // case below).
+  const rename = useCallback((name: string) => send({ type: "peer:rename", name }), [send]);
 
   useEffect(() => {
     let disposed = false;
@@ -526,6 +582,9 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
             const myId = msg.peerId as string;
             const myName = msg.name as string;
             setYou({ peerId: myId, name: myName });
+            // Written here as well as during render: a peer:rename for
+            // this very connection could land before React re-renders.
+            youRef.current = { peerId: myId, name: myName };
             rememberIdentity(roomId, { peerId: myId, name: myName, resume: (msg.resume as string) ?? "" });
 
             const list = (msg.peers as Peer[]) ?? [];
@@ -543,6 +602,14 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
             }
             for (const id of Object.keys(remoteStreamsRef.current)) {
               if (!present.has(id)) dropRemote(id);
+            }
+
+            // The old Subscriber's per-viewer video opt-outs died with
+            // the WebSocket that carried them -- re-assert each one so a
+            // network blip doesn't turn every hidden video back on. Ids
+            // of people who left for good are inert server-side.
+            for (const id of videoOffPeersRef.current) {
+              send({ type: "subscribe:video", publisherId: id, enabled: false });
             }
 
             // A restarted server has forgotten everything, this
@@ -578,6 +645,25 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
                 dropRemote(peerId);
               }, LEAVE_GRACE_MS),
             );
+            break;
+          }
+
+          case "peer:rename": {
+            const peerId = msg.peerId as string;
+            const name = msg.name as string;
+            // Our own copy carries a fresh resume token: the token signs
+            // the NAME along with the id, so the one we held stopped
+            // verifying the instant the rename landed -- the next
+            // reconnect must not go out carrying it.
+            if (youRef.current?.peerId === peerId) {
+              setYou({ peerId, name });
+              youRef.current = { peerId, name };
+              if (msg.resume) {
+                rememberIdentity(roomId, { peerId, name, resume: msg.resume as string });
+              }
+              break;
+            }
+            setPeers((current) => current.map((p) => (p.peerId === peerId ? { ...p, name } : p)));
             break;
           }
 
@@ -750,5 +836,13 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     knockRequests,
     approveKnock,
     denyKnock,
+    videoOffPeers,
+    setPublisherVideo,
+    rename,
+    // The two peer connections, by ref (they're replaced on every
+    // re-share/re-negotiation) -- the per-tile stats reader needs the
+    // current one at poll time, not at render time.
+    publishPcRef: publishRef,
+    subscribePcRef: subscribeRef,
   };
 }

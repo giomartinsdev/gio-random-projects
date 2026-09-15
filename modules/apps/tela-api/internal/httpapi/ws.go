@@ -31,6 +31,12 @@ type clientMessage struct {
 	// discarded connection (a fast re-share) must not be applied to the
 	// replacement's description. Echoed verbatim in publish:answer.
 	Seq int `json:"seq,omitempty"`
+	// For peer:rename, the requested new display name.
+	Name string `json:"name,omitempty"`
+	// For subscribe:video, which publisher's video this viewer wants gone
+	// (enabled=false) or back (enabled=true).
+	PublisherID string `json:"publisherId,omitempty"`
+	Enabled     bool   `json:"enabled,omitempty"`
 }
 
 // The WebSocket carries signalling only; the media itself rides the
@@ -264,6 +270,29 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 		case "subscribe:ice":
 			if msg.Candidate != nil && w.subscriber != nil {
 				_ = w.subscriber.AddICECandidate(*msg.Candidate)
+			}
+
+		// One viewer's choice to stop (or restore) one publisher's video.
+		// Private on purpose -- nobody else is told; each viewer's grid
+		// reflects its own choices. Audio keeps flowing regardless; only
+		// the video track is removed and renegotiated away.
+		case "subscribe:video":
+			if w.subscriber == nil || msg.PublisherID == "" || msg.PublisherID == w.peer.ID {
+				continue // no SFU, junk, or a no-op: nobody subscribes to their own share
+			}
+			if err := w.subscriber.SetPublisherVideoEnabled(msg.PublisherID, msg.Enabled); err != nil {
+				w.server.log.ErrorContext(ctx, "subscribe video toggle failed", "peer_id", w.peer.ID, "publisher_id", msg.PublisherID, "error", err)
+				w.peer.Send(map[string]any{"type": "subscribe:error", "error": err.Error()})
+			}
+
+		// Changing your own label. The room hands back a fresh resume
+		// token in the direct reply (see rooms.Room.Rename) -- the old
+		// one signed the previous name.
+		case "peer:rename":
+			// Empty means nothing left after trimming -- ignore rather
+			// than letting someone erase their label.
+			if name := sanitizeName(msg.Name); name != "" {
+				w.room.Rename(w.peer, name)
 			}
 
 		case "ping":

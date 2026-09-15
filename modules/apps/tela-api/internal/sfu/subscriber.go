@@ -51,6 +51,15 @@ type Subscriber struct {
 	mu      sync.Mutex
 	senders map[*publishedTrack][]*webrtc.RTPSender // by published track
 	closed  bool
+
+	// Publishers whose video this viewer asked NOT to receive, keyed by
+	// publisher peer id. Audio always keeps flowing. Kept on the
+	// Subscriber -- not looked up per negotiation -- because a re-share
+	// replaces the publishedTrack objects: the choice has to outlive them
+	// (and outlive the publisher stopping entirely). It dies with the
+	// subscriber: a reconnect lands on a fresh Subscriber, and the client
+	// re-sends its off-list after `welcome`.
+	videoOptOut map[string]bool
 }
 
 // Subscribe opens the receive side for one person. onOffer is called
@@ -73,6 +82,7 @@ func (s *Server) Subscribe(roomID, peerID string, onICE func(webrtc.ICECandidate
 		onOffer: onOffer,
 		onError: onError,
 		senders: make(map[*publishedTrack][]*webrtc.RTPSender),
+		videoOptOut: make(map[string]bool),
 	}
 
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
@@ -125,10 +135,35 @@ func (s *Subscriber) attach(t *publishedTrack) bool {
 	if s.closed {
 		return false
 	}
-	sender, err := s.pc.AddTrack(t.local)
+	// Already attached -- a second sender for the same track would
+	// duplicate the stream. Matters when restoring a video: the audio
+	// senders never left, so re-attaching must add only what's missing.
+	if _, ok := s.senders[t]; ok {
+		return false
+	}
+	// Every attach passes through here -- the initial Subscribe loop, the
+	// fan-out when a track appears, and a re-enable -- so the opt-out
+	// can't be forgotten by a future code path that attaches. A video
+	// re-share creates a brand-new publishedTrack and flows through here
+	// like the first one did.
+	if t.local.Kind() == webrtc.RTPCodecTypeVideo && s.videoOptOut[t.publisher] {
+		return false
+	}
+	// Sendonly, not AddTrack's default sendrecv: this side sends to the
+	// browser and never receives. With the direction pinned, RemoveTrack
+	// (a stop, not a restore) flips the transceiver to `inactive` -- with
+	// sendrecv it would land on `recvonly`, and a fast re-enable would
+	// try to re-add a track onto a recvonly transceiver, which pion
+	// rejects as an invalid state transition. Each attach takes a fresh
+	// transceiver (AddTransceiverFromTrack never reuses), so a stop/restore
+	// cycle appends one m-line; see SetPublisherVideoEnabled.
+	transceiver, err := s.pc.AddTransceiverFromTrack(t.local, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendonly,
+	})
 	if err != nil {
 		return false
 	}
+	sender := transceiver.Sender()
 	s.senders[t] = append(s.senders[t], sender)
 
 	// Draining RTCP from this sender is what keeps NACK and receiver
@@ -168,6 +203,70 @@ func (s *Subscriber) removeTracks(tracks []*publishedTrack) {
 		_ = s.pc.RemoveTrack(sender)
 	}
 	s.negotiate()
+}
+
+// SetPublisherVideoEnabled stops or restores forwarding ONE publisher's
+// video track to this subscriber alone. Renegotiation is the only
+// supported way to stop a track here: every subscriber shares the
+// publisher's single TrackLocalStaticRTP, so dropping packets per viewer
+// is impossible without transcoding. Audio is never touched -- muting
+// someone's voice is already a purely local concern on the client.
+//
+// Lock order (this file's invariant): room.mu and s.mu are never held
+// together, and s.mu is never held across negotiate(). The off path
+// collects senders under s.mu and releases before removing; the on path
+// reads the room (allTracks takes room.mu.RLock) before touching s.mu
+// again inside attach.
+//
+// Each stop costs the browser a renegotiation whose offer carries the
+// stopped video m-line as `a=inactive` -- RemoveTrack stops the sender
+// but pion keeps the m-line in the SDP. Pion won't reuse a transceiver
+// the browser has answered `inactive`, so restoring appends a fresh
+// video m-line -- the SDP grows by one section per off/on cycle, which
+// is harmless at the scale of a human pressing a button.
+func (s *Subscriber) SetPublisherVideoEnabled(publisherID string, enabled bool) error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	if enabled {
+		delete(s.videoOptOut, publisherID)
+	} else {
+		s.videoOptOut[publisherID] = true
+	}
+	var toRemove []*publishedTrack
+	if !enabled {
+		for t := range s.senders {
+			if t.publisher == publisherID && t.local.Kind() == webrtc.RTPCodecTypeVideo {
+				toRemove = append(toRemove, t)
+			}
+		}
+	}
+	s.mu.Unlock()
+
+	if enabled {
+		// Restore whatever this publisher is sharing right now. Audio
+		// senders never left, and attach skips what's already there, so
+		// at most the video track is added.
+		attached := false
+		for _, t := range s.room.allTracks() {
+			if t.publisher != publisherID {
+				continue
+			}
+			if s.attach(t) {
+				attached = true
+			}
+		}
+		if attached {
+			s.negotiate()
+		}
+		return nil
+	}
+	// removeTracks renegotiates ONCE at the end and no-ops when nothing
+	// matched -- the publisher already stopped, or video was already off.
+	s.removeTracks(toRemove)
+	return nil
 }
 
 // negotiate makes a fresh offer reflecting the tracks currently attached.
