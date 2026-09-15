@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { X } from "lucide-react";
 import { FPS_OPTIONS, QUALITY_OPTIONS, type DisplaySurface, type Fps, type Quality, type Source } from "@/lib/useRoom";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { loadingIcon } from "@/lib/lottie-icons";
@@ -10,7 +11,7 @@ export type ShareChoice = { source: Source; quality: Quality; fps: Fps; surface:
 
 // The picker's first row is one flat choice: three screen surfaces plus
 // the camera. The labels for the screen surfaces come from useRoom's
-// SURFACE_OPTIONS so the two stay in sync; "Câmera" is dialog-only.
+// SURFACE_OPTIONS so the two stay in sync; "Câmera" is panel-only.
 type SurfaceOrCamera = DisplaySurface | "camera";
 
 const SOURCE_OPTIONS: { value: SurfaceOrCamera; label: string }[] = [
@@ -29,12 +30,13 @@ function applySourceKey(c: ShareChoice, key: SurfaceOrCamera): ShareChoice {
   return { ...c, source: "screen", surface: key };
 }
 
-// The share panel: one place to pick what to share and how, opened from
-// the header's "Compartilhar" button before streaming and from it as
-// "Qualidade" while a share is live. Hand-rolled modal -- the app has no
-// dialog primitive, and this follows the same AnimatePresence pattern the
-// knock banners use.
-export function ShareDialog({
+// The share panel: a drawer over the room's right edge, opened from the
+// header's "Compartilhar" button before streaming and from it as
+// "Qualidade" while a share is live. Deliberately not a modal -- the room
+// stays visible and the header stays clickable, so this is a panel, not a
+// dialog. It closes on its X, on Escape, on a click anywhere else in the
+// room, and on its own the moment a share starts successfully.
+export function SharePanel({
   open,
   canScreenShare,
   sharing,
@@ -52,12 +54,12 @@ export function ShareDialog({
   // immediately; increases need the next share) instead of starting one.
   sharing: boolean;
   // True from confirm until the capture settles -- the browser's own
-  // picker may sit in front of this dialog for seconds, during which
+  // picker may sit in front of this panel for seconds, during which
   // nothing here may be dismissable or clickable (a double confirm must
-  // not queue two captures, and a stray Escape must not close the
-  // dialog out from under the picker).
+  // not queue two captures, and a stray Escape must not close the panel
+  // out from under the picker).
   starting: boolean;
-  // What the last attempt came back with, shown inline -- the dialog is
+  // What the last attempt came back with, shown inline -- the panel is
   // where the capture was asked for, so it's where the refusal lands.
   error: string | null;
   initial: ShareChoice;
@@ -66,7 +68,7 @@ export function ShareDialog({
 }) {
   const [choice, setChoice] = useState(initial);
   const panelRef = useRef<HTMLDivElement>(null);
-  // Re-seed the draft only when the dialog OPENS -- not on every render
+  // Re-seed the draft only when the panel OPENS -- not on every render
   // (that would fight the person editing it), and only from the values
   // that were live at open time.
   const lastOpenRef = useRef(false);
@@ -80,94 +82,100 @@ export function ShareDialog({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      // A capture in flight must not be closed out from under the
-      // browser's own picker.
       if (starting) return;
       if (e.key === "Escape") onOpenChange(false);
     };
+    const onPointerDown = (e: PointerEvent) => {
+      if (starting) return;
+      if (!(e.target instanceof Element)) return;
+      // Clicks on the header belong to its toggle button -- closing here
+      // too would fight it (close then reopen within one click).
+      if (e.target.closest("header")) return;
+      if (panelRef.current && !panelRef.current.contains(e.target)) onOpenChange(false);
+    };
     window.addEventListener("keydown", onKey);
-    // Body scroll behind the sheet gets in the way on a phone.
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    window.addEventListener("pointerdown", onPointerDown);
     panelRef.current?.focus();
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("pointerdown", onPointerDown);
     };
   }, [open, onOpenChange, starting]);
 
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          // Between bottom sheet (phone) and centered card (desktop).
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
-          onClick={() => {
-            if (starting) return;
-            onOpenChange(false);
-          }}
+        <motion.aside
+          ref={panelRef}
+          role="dialog"
+          aria-labelledby="share-panel-title"
+          tabIndex={-1}
+          initial={{ x: "100%" }}
+          animate={{ x: 0 }}
+          exit={{ x: "100%" }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
+          className="absolute inset-y-0 right-0 z-40 flex w-full flex-col border-l bg-card text-card-foreground shadow-xl outline-none sm:max-w-[22rem]"
         >
-          <motion.div
-            ref={panelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="share-dialog-title"
-            tabIndex={-1}
-            initial={{ opacity: 0, y: 24, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 24, scale: 0.98 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-t-2xl border bg-card p-4 text-card-foreground shadow-lg outline-none sm:rounded-2xl"
-          >
-            <h2 id="share-dialog-title" className="text-base font-semibold">
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <h2 id="share-panel-title" className="text-base font-semibold">
               {sharing ? "Qualidade da transmissão" : "Compartilhar"}
             </h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0"
+              disabled={starting}
+              onClick={() => onOpenChange(false)}
+              aria-label="Fechar"
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
 
+          <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
             {canScreenShare && (
               // Which source to capture. Shown live as well as up front:
               // changing the source of an existing share restarts the
               // transmission (a new capture, a new connection), and the
               // caption below says so.
-              <div className="mt-3">
-                <SegmentRow label="O que compartilhar" ariaLabel="Fonte" options={SOURCE_OPTIONS} value={sourceKeyOf(choice)} onChange={(key) => setChoice(applySourceKey(choice, key))} />
-              </div>
+              <SegmentRow label="O que compartilhar" ariaLabel="Fonte" options={SOURCE_OPTIONS} value={sourceKeyOf(choice)} onChange={(key) => setChoice(applySourceKey(choice, key))} />
             )}
 
-            <div className="mt-3 space-y-2">
+            <div className="space-y-2">
               <SegmentRow ariaLabel="Qualidade" label="Qualidade" options={QUALITY_OPTIONS} value={choice.quality} onChange={(quality) => setChoice((c) => ({ ...c, quality }))} />
               <SegmentRow ariaLabel="Quadros por segundo" label="FPS" options={FPS_OPTIONS} value={choice.fps} onChange={(fps) => setChoice((c) => ({ ...c, fps }))} />
             </div>
 
+            {canScreenShare && (
+              // The one thing the browser can't do on its own -- excluding
+              // one app from a full-screen system-audio capture -- spelled
+              // out where the choice is made: per-app output routing for
+              // the monitor case, and Chrome 141's per-window audio for
+              // the window case.
+              <p className="rounded-lg border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+                Compartilhando uma <span className="font-medium text-foreground">janela</span>, só o áudio desse app vai
+                (Chrome 141+). Na tela inteira, para deixar um app de fora — ex.: Discord — defina a saída dele para
+                outro dispositivo nas configurações de som.
+              </p>
+            )}
+
             {sharing && (
-              <p className="mt-3 text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Trocar a fonte reinicia a transmissão por alguns instantes. Reduções de qualidade/FPS aplicam na hora, sem
                 recapturar ou cortar a transmissão. Aumentos (ou "Original") valem a partir do próximo compartilhamento.
               </p>
             )}
 
-            {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+            {error && <p className="text-xs text-destructive">{error}</p>}
+          </div>
 
-            <div className="mt-4 flex gap-2">
-              <Button
-                variant="ghost"
-                className="flex-1"
-                disabled={starting}
-                onClick={() => onOpenChange(false)}
-              >
-                Cancelar
-              </Button>
-              <Button className="flex-1" disabled={starting} onClick={() => onConfirm(choice)}>
-                {starting && <AnimatedIcon animation={loadingIcon} autoplay loop />}
-                {sharing ? "Aplicar" : "Compartilhar"}
-              </Button>
-            </div>
-          </motion.div>
-        </motion.div>
+          <div className="flex justify-end border-t px-4 py-3">
+            <Button disabled={starting} onClick={() => onConfirm(choice)}>
+              {starting && <AnimatedIcon animation={loadingIcon} autoplay loop />}
+              {sharing ? "Aplicar" : "Compartilhar"}
+            </Button>
+          </div>
+        </motion.aside>
       )}
     </AnimatePresence>
   );

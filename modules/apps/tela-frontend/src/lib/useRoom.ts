@@ -144,13 +144,25 @@ function videoConstraintsFor(
 
 // getDisplayMedia options lib.dom doesn't type yet: not offering this
 // very tab (about to capture itself) and letting people Alt-Tab between
-// windows mid-share without renegotiating.
-function gdmOptions(video: MediaTrackConstraints): DisplayMediaStreamOptions {
+// windows mid-share without renegotiating. The two audio hints are
+// Chromium-only biases and the picker still lets the person pick any
+// surface, so each one only tightens the surface it names and degrades
+// to the browser default everywhere else.
+function gdmOptions(video: MediaTrackConstraints, surface?: DisplaySurface): DisplayMediaStreamOptions {
   return {
     video,
     audio: true,
     selfBrowserSurface: "exclude",
     surfaceSwitching: "include",
+    // Monitor: system audio IS the point of a screen share, so pin the
+    // picker's audio checkbox on. A window/tab capture never wants the
+    // whole desktop mix.
+    systemAudio: surface === "monitor" ? "include" : undefined,
+    // Chrome 141+: a window share carries ONLY that app's audio (WASAPI
+    // process loopback) -- streaming a game window keeps Discord and
+    // friends out of the mix, audible to the sharer alone. Older
+    // browsers ignore this and keep their window-audio default.
+    windowAudio: surface === "window" ? "window" : undefined,
   } as DisplayMediaStreamOptions;
 }
 
@@ -434,12 +446,12 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
           const videoConstraints = videoConstraintsFor(from, q, f, s);
           stream =
             from === "screen"
-              ? await navigator.mediaDevices.getDisplayMedia(gdmOptions(videoConstraints))
+              ? await navigator.mediaDevices.getDisplayMedia(gdmOptions(videoConstraints, s))
               : await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: true });
         } catch (err) {
           const name = err instanceof Error ? err.name : "Error";
           // Capture failures are the caller's to display (they belong on
-          // the dialog that asked for the capture), so they are returned
+          // the panel that asked for the capture), so they are returned
           // rather than routed to the room-wide banner. Backing out of
           // the picker is a normal thing to do, not an error.
           if (name === "AbortError") return { started: false, error: null };

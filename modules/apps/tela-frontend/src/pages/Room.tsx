@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
-import { ShareDialog, type ShareChoice } from "@/components/ShareDialog";
+import { SharePanel, type ShareChoice } from "@/components/SharePanel";
 import { useDismissable } from "@/lib/useDismissable";
 import { enterFullscreen, exitFullscreen, fullscreenChangeEventName, isFullscreen } from "@/lib/fullscreen";
 import {
@@ -361,21 +361,22 @@ function LiveRoom({
   const [aspectMode, setAspectMode] = useState<AspectMode>("auto");
 
   // The share panel: opened by the header's "Compartilhar" button, or by
-  // its "Qualidade" variant once a share is already live.
-  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  // its "Qualidade" variant once a share is already live. A drawer over
+  // the room's right edge, not a modal.
+  const [sharePanelOpen, setSharePanelOpen] = useState(false);
   // True from confirm until the capture settles -- while the browser's
   // own picker is up the button stays inert, so a double click can't
   // queue two getDisplayMedia calls (the hook also guards this, this
   // just keeps the button honest).
   const [starting, setStarting] = useState(false);
-  // What the last capture attempt came back with -- shown on the dialog
+  // What the last capture attempt came back with -- shown on the panel
   // itself, which stays open so the refusal is read where the choice
   // was made. The room-wide banner below keeps protocol-level errors.
   const [shareError, setShareError] = useState<string | null>(null);
 
-  const openShareDialog = () => {
+  const toggleSharePanel = () => {
     setShareError(null);
-    setShareDialogOpen(true);
+    setSharePanelOpen((open) => !open);
   };
 
   const toggleMuted = (peerId: string) =>
@@ -490,7 +491,7 @@ function LiveRoom({
   // source needs the previous capture GONE first: startSharing alone
   // would swap the stream over while the old capture's tracks kept
   // running, leaving a hot camera or screen grab with nothing holding
-  // it. Either way the dialog stays open until the outcome is known --
+  // it. Either way the panel stays open until the outcome is known --
   // closing before the picker resolves was the old bug: an error (or a
   // plain dismiss) closed into nothing.
   const confirmShare = async (choice: ShareChoice) => {
@@ -503,7 +504,7 @@ function LiveRoom({
       try {
         const res = await room.startSharing(choice.source, choice.quality, choice.fps, surface);
         if (res.error) setShareError(res.error);
-        else setShareDialogOpen(false);
+        else setSharePanelOpen(false);
       } finally {
         setStarting(false);
       }
@@ -518,7 +519,7 @@ function LiveRoom({
         return;
       }
       room.applyQuality(choice.quality, choice.fps);
-      setShareDialogOpen(false);
+      setSharePanelOpen(false);
       return;
     }
     await start();
@@ -574,13 +575,13 @@ function LiveRoom({
         {/* Full width on a phone (the buttons split the row), pushed to
             the right once everything fits on one line. Source, quality
             and FPS all live behind the share button now -- pre-stream in
-            the dialog, mid-stream via its live variant. */}
+            the side panel, mid-stream via its live variant. */}
         <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">
           {room.isSharing ? (
             <>
               <Button
                 variant="secondary"
-                onClick={openShareDialog}
+                onClick={toggleSharePanel}
                 className="flex-1 sm:flex-none"
                 title="Mudar qualidade e FPS sem recomeçar a transmissão"
               >
@@ -614,7 +615,7 @@ function LiveRoom({
             </>
           ) : (
             <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex-1 sm:flex-none">
-              <Button onClick={openShareDialog} disabled={starting} className="w-full">
+              <Button onClick={toggleSharePanel} disabled={starting} className="w-full">
                 <AnimatedIcon animation={canShareScreen ? airplayIcon : videoIcon} />
                 {canShareScreen ? "Compartilhar" : "Compartilhar câmera"}
               </Button>
@@ -708,26 +709,29 @@ function LiveRoom({
             </Alert>
           </div>
         )}
-      </main>
 
-      <ShareDialog
-        open={shareDialogOpen}
-        canScreenShare={canShareScreen}
-        sharing={room.isSharing}
-        starting={starting}
-        error={shareError}
-        // Seeded from what's LIVE while a share is up -- the hardcoded
-        // default used to lie while sharing a camera ("Tela inteira"
-        // selected, applying as-is was a no-op that claimed otherwise).
-        initial={{
-          source: room.source ?? (canShareScreen ? "screen" : "camera"),
-          quality: room.quality,
-          fps: room.fps,
-          surface: room.surface,
-        }}
-        onOpenChange={setShareDialogOpen}
-        onConfirm={confirmShare}
-      />
+        {/* Anchored to main, not to the viewport: the header stays
+            clickable above it and the drawer covers the room, not the
+            page chrome. */}
+        <SharePanel
+          open={sharePanelOpen}
+          canScreenShare={canShareScreen}
+          sharing={room.isSharing}
+          starting={starting}
+          error={shareError}
+          // Seeded from what's LIVE while a share is up -- the hardcoded
+          // default used to lie while sharing a camera ("Tela inteira"
+          // selected, applying as-is was a no-op that claimed otherwise).
+          initial={{
+            source: room.source ?? (canShareScreen ? "screen" : "camera"),
+            quality: room.quality,
+            fps: room.fps,
+            surface: room.surface,
+          }}
+          onOpenChange={setSharePanelOpen}
+          onConfirm={confirmShare}
+        />
+      </main>
     </div>
   );
 }
