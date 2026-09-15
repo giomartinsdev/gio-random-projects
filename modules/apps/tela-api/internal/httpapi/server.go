@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/cluster"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/clips"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/sfu"
@@ -41,6 +42,10 @@ type Server struct {
 	// then, and the routes simply don't exist.
 	clipStore clips.Store
 	clipTTL   time.Duration
+
+	// Multi-node routing (see cluster.go), wired by RegisterCluster.
+	// Nil in the common single-node deployment.
+	cluster *cluster.Cluster
 }
 
 // The metrics handler is optional (nil = the /metrics route doesn't
@@ -94,7 +99,11 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if slices.Contains(s.AllowedOrigins, origin) {
+		// Requests forwarded by a cluster peer skip CORS entirely: the
+		// peer already answered the browser, and a second layer here
+		// would duplicate the header (the proxy copies response
+		// headers additively) -- which browsers treat as a violation.
+		if !s.isFromPeer(r) && slices.Contains(s.AllowedOrigins, origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 			// traceparent/tracestate/baggage: the frontend's fetch
@@ -151,17 +160,22 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 // Lets the home page show "salas rolando" -- who's live right now --
 // so switching rooms doesn't require someone to paste you a code.
 // Never leaks a password or its hash, only what handleRoomStatus
-// already exposes per-room without auth (a count of people).
-func (s *Server) handleListRooms(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.registry.Active())
+// already exposes per-room without auth (a count of people). Under a
+// cluster the lists of every live peer are merged in, so the home
+// page shows the whole fleet no matter which node answered.
+func (s *Server) handleListRooms(w http.ResponseWriter, r *http.Request) {
+	local := s.registry.Active()
+	if s.cluster != nil {
+		local = mergeRooms(local, s.cluster.RemoteRooms(r.Context()))
+	}
+	writeJSON(w, http.StatusOK, local)
 }
 
 // Deliberately says nothing about whether the room exists beyond
 // "found or not" -- no password hints, no viewer identities.
 func (s *Server) handleRoomStatus(w http.ResponseWriter, r *http.Request) {
-	room, err := s.registry.Get(strings.ToLower(r.PathValue("id")))
-	if err != nil {
-		writeError(w, http.StatusNotFound, rooms.ErrNotFound.Error())
+	room, ok := s.roomOrProxy(w, r)
+	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -178,14 +192,18 @@ type deleteRoomRequest struct {
 // handleDeleteRoom lets the room creator (who knows the password)
 // destroy a room immediately instead of waiting for the janitor.
 func (s *Server) handleDeleteRoom(w http.ResponseWriter, r *http.Request) {
+	room, ok := s.roomOrProxy(w, r)
+	if !ok {
+		return
+	}
+
 	var req deleteRoomRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
 	}
 
-	err := s.registry.Delete(strings.ToLower(r.PathValue("id")), req.Password)
-	if err != nil {
+	if err := s.registry.Delete(room.ID, req.Password); err != nil {
 		if errors.Is(err, rooms.ErrNotFound) {
 			writeError(w, http.StatusNotFound, rooms.ErrNotFound.Error())
 			return
@@ -212,15 +230,17 @@ func (s *Server) handleCheckPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req createRoomRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "corpo inválido")
+	// Resolve the room before touching the body: under a cluster the
+	// request may be forwarded verbatim, and a body read here first
+	// would hand the proxy a corpse.
+	room, ok := s.roomOrProxy(w, r)
+	if !ok {
 		return
 	}
 
-	room, err := s.registry.Get(strings.ToLower(r.PathValue("id")))
-	if err != nil {
-		writeError(w, http.StatusNotFound, rooms.ErrNotFound.Error())
+	var req createRoomRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
 	}
 	if !room.CheckPassword(req.Password) {
@@ -249,15 +269,16 @@ func (s *Server) handleKnock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req knockCreateRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "corpo inválido")
+	// Same order as handleCheckPassword: room first, body after, so a
+	// room on a peer gets the request with its body intact.
+	room, ok := s.roomOrProxy(w, r)
+	if !ok {
 		return
 	}
 
-	room, err := s.registry.Get(strings.ToLower(r.PathValue("id")))
-	if err != nil {
-		writeError(w, http.StatusNotFound, rooms.ErrNotFound.Error())
+	var req knockCreateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
 	}
 
@@ -280,9 +301,8 @@ func (s *Server) handleKnock(w http.ResponseWriter, r *http.Request) {
 // Room.tsx's knock lobby). The admit token only comes back once the
 // request is actually approved.
 func (s *Server) handleKnockStatus(w http.ResponseWriter, r *http.Request) {
-	room, err := s.registry.Get(strings.ToLower(r.PathValue("id")))
-	if err != nil {
-		writeError(w, http.StatusNotFound, rooms.ErrNotFound.Error())
+	room, ok := s.roomOrProxy(w, r)
+	if !ok {
 		return
 	}
 

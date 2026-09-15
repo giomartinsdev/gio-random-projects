@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/cluster"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/clips"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/metrics"
@@ -157,6 +158,30 @@ func main() {
 	// dev) falls back to every interface, same as before this existed.
 	api := httpapi.New(registry, media, allowedOrigins, log, metricsHandler)
 	api.RegisterClips(clipStore, clipTTL)
+
+	// Multi-node: TELA_NODE_PEERS lists the other tela-api nodes
+	// ("nome=http://host:porta, ..."), and rooms are routed to whoever
+	// owns them (internal/cluster). Unset keeps the plain single-node
+	// behavior -- no internal endpoints, no proxying. Peers without a
+	// token is the one config error that refuses to boot: the token is
+	// what keeps /internal/* from being an open proxy, and starting
+	// without it would only be discovered the hard way.
+	peers, err := cluster.ParsePeersEnv(os.Getenv("TELA_NODE_PEERS"))
+	if err != nil {
+		log.Error("TELA_NODE_PEERS inválida", "error", err)
+		os.Exit(1)
+	}
+	if len(peers) > 0 {
+		nodeToken := os.Getenv("TELA_NODE_TOKEN")
+		if nodeToken == "" {
+			log.Error("TELA_NODE_TOKEN é obrigatório quando TELA_NODE_PEERS está configurada")
+			os.Exit(1)
+		}
+		nodeName := env("TELA_NODE_NAME", mustHostname(log))
+		api.RegisterCluster(cluster.New(nodeName, nodeToken, peers))
+		log.Info("cluster on", "node", nodeName, "peers", len(peers))
+	}
+
 	server := &http.Server{
 		Addr:    os.Getenv("BIND_HOST") + ":" + port,
 		Handler: api.Handler(),
@@ -193,6 +218,19 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// mustHostname is the default TELA_NODE_NAME: only called when peers
+// are configured and the name wasn't given, so an odd failure to read
+// the hostname is worth a warning but not a crash -- any string works
+// as a node name (it's only echoed in /internal/rooms/{id}/owner).
+func mustHostname(log *slog.Logger) string {
+	h, err := os.Hostname()
+	if err != nil {
+		log.Warn("não consegui ler o hostname; usando \"node\"", "error", err)
+		return "node"
+	}
+	return h
 }
 
 func envInt(key string, fallback int) int {

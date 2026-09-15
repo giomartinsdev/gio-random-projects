@@ -58,6 +58,15 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	room, err := s.registry.Get(roomID)
 	if err != nil {
+		// Under a cluster the room may live on a peer -- forward the
+		// handshake there verbatim (the query string carries the
+		// credentials, so the origin node still authenticates it).
+		if s.cluster != nil {
+			if target, ok := s.cluster.Locate(r.Context(), roomID); ok {
+				s.cluster.Proxy(w, r, target)
+				return
+			}
+		}
 		http.Error(w, rooms.ErrNotFound.Error(), http.StatusNotFound)
 		return
 	}
