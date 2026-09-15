@@ -619,13 +619,20 @@ func startPublisherAV(t *testing.T, s *sfu.Server, roomID, peerID, videoID, audi
 	return pubPC
 }
 
-// waitForOffer waits for an offer the server generates AFTER this call
-// whose SDP satisfies pred. The server may coalesce several track
-// changes into one offer, so the predicate is applied to each new offer
-// in arrival order and the first match wins.
-func waitForOffer(t *testing.T, b *browserSubscriber, timeout time.Duration, pred func(sdp string) bool) string {
+// waitForOffer waits for an offer whose SDP satisfies pred, considering
+// only offers logged after `since`. `since` MUST be captured with
+// b.offerCount() BEFORE the action that triggers the negotiation: the
+// server sends the offer synchronously inside that action (onOffer), and
+// the helper goroutine's log append can land before a wait that started
+// afterwards takes its own snapshot -- which would make a negotiation
+// that did happen read as "0 new offers" and time out. This was a real
+// flake under -race, where that window widens from nanoseconds to
+// milliseconds. The server may coalesce several track changes into one
+// offer, so the predicate is applied to each new offer in arrival order
+// and the first match wins.
+func waitForOffer(t *testing.T, b *browserSubscriber, since int, timeout time.Duration, pred func(sdp string) bool) string {
 	t.Helper()
-	start := b.offerCount()
+	start := since
 	deadline := time.After(timeout)
 	for {
 		for _, sdp := range b.offersSince(start) {
@@ -669,6 +676,29 @@ func countSendonlySections(sdp, kind string) int {
 	return count
 }
 
+// waitForTrack blocks until the subscriber's PC fires ontrack for one
+// specific track id, draining any other id that arrives first. There is
+// no guaranteed order between the receivers of a renegotiation: the new
+// audio of a re-share can announce itself before the new video, and a
+// test that read a single receive as "the video" would pass on a fast
+// machine and flake on CI.
+func waitForTrack(t *testing.T, b *browserSubscriber, want, stage string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case id := <-b.got:
+			if id == want {
+				return
+			}
+		case code := <-b.fatal:
+			t.Fatalf("%s: %s", stage, code)
+		case <-deadline:
+			t.Fatalf("%s: never received track %q", stage, want)
+		}
+	}
+}
+
 // Turning a publisher's video off is a per-subscriber renegotiation: the
 // offer loses the video m-line's sendonly direction while the audio
 // m-line keeps it, and turning it back on brings the picture (and a new
@@ -694,17 +724,19 @@ func TestSubscriberVideoToggleStopsAndRestoresVideo(t *testing.T) {
 		}
 	}
 
+	since := b.offerCount()
 	if err := b.sub.SetPublisherVideoEnabled(peerID, false); err != nil {
 		t.Fatalf("toggle off: %v", err)
 	}
-	waitForOffer(t, b, 10*time.Second, func(sdp string) bool {
+	waitForOffer(t, b, since, 10*time.Second, func(sdp string) bool {
 		return countSendonlySections(sdp, "video") == 0 && countSendonlySections(sdp, "audio") >= 1
 	})
 
+	since = b.offerCount()
 	if err := b.sub.SetPublisherVideoEnabled(peerID, true); err != nil {
 		t.Fatalf("toggle on: %v", err)
 	}
-	waitForOffer(t, b, 10*time.Second, func(sdp string) bool {
+	waitForOffer(t, b, since, 10*time.Second, func(sdp string) bool {
 		return countSendonlySections(sdp, "video") >= 1
 	})
 	select {
@@ -742,16 +774,18 @@ func TestVideoOptOutSurvivesAPublisherReshare(t *testing.T) {
 		}
 	}
 
+	since := b.offerCount()
 	if err := b.sub.SetPublisherVideoEnabled(peerID, false); err != nil {
 		t.Fatalf("toggle off: %v", err)
 	}
-	waitForOffer(t, b, 10*time.Second, func(sdp string) bool {
+	waitForOffer(t, b, since, 10*time.Second, func(sdp string) bool {
 		return countSendonlySections(sdp, "video") == 0 && countSendonlySections(sdp, "audio") >= 1
 	})
 
 	// Re-share under the same peer id, the way a fast stop/start does.
+	since = b.offerCount()
 	startPublisherAV(t, server, roomID, peerID, "gen-b", "voice-b")
-	waitForOffer(t, b, 10*time.Second, func(sdp string) bool {
+	waitForOffer(t, b, since, 10*time.Second, func(sdp string) bool {
 		return countSendonlySections(sdp, "video") == 0 && countSendonlySections(sdp, "audio") >= 1
 	})
 
@@ -769,22 +803,16 @@ func TestVideoOptOutSurvivesAPublisherReshare(t *testing.T) {
 		}
 	}
 
+	since = b.offerCount()
 	if err := b.sub.SetPublisherVideoEnabled(peerID, true); err != nil {
 		t.Fatalf("toggle on: %v", err)
 	}
-	waitForOffer(t, b, 10*time.Second, func(sdp string) bool {
+	waitForOffer(t, b, since, 10*time.Second, func(sdp string) bool {
 		return countSendonlySections(sdp, "video") >= 1
 	})
-	select {
-	case id := <-b.got:
-		if id != "gen-b" {
-			t.Fatalf("expected the re-shared video track, got %q", id)
-		}
-	case code := <-b.fatal:
-		t.Fatalf("subscriber signalled an error on restore: %s", code)
-	case <-time.After(15 * time.Second):
-		t.Fatal("the re-shared video never came back after the re-enable")
-	}
+	// The video id, specifically -- the re-share's audio may still be in
+	// flight and must not be mistaken for the restore having worked.
+	waitForTrack(t, b, "gen-b", "the re-shared video never came back after the re-enable", 15*time.Second)
 }
 
 // One viewer's choices say nothing about another's: silencing a
@@ -810,26 +838,21 @@ func TestVideoOptOutOnlyAffectsTheAskingSubscriber(t *testing.T) {
 		}
 	}
 
+	since := b1.offerCount()
 	if err := b1.sub.SetPublisherVideoEnabled(peerID, false); err != nil {
 		t.Fatalf("toggle off: %v", err)
 	}
-	waitForOffer(t, b1, 10*time.Second, func(sdp string) bool {
+	waitForOffer(t, b1, since, 10*time.Second, func(sdp string) bool {
 		return countSendonlySections(sdp, "video") == 0 && countSendonlySections(sdp, "audio") >= 1
 	})
 
 	// Re-share under the same peer id: b2 keeps getting video, b1 must
 	// not -- until b1 asks for it back.
 	startPublisherAV(t, server, roomID, peerID, "gen-b", "voice-b")
-	select {
-	case id := <-b2.got:
-		if id != "gen-b" {
-			t.Fatalf("expected the unaffected viewer to keep receiving video, got %q", id)
-		}
-	case code := <-b2.fatal:
-		t.Fatalf("b2 signalled an error during the re-share: %s", code)
-	case <-time.After(15 * time.Second):
-		t.Fatal("b2 never received the re-shared video")
-	}
+	// The re-share's two new tracks fire ontrack in either order, so
+	// wait for the video id specifically and let waitForTrack drain the
+	// audio one if it got there first.
+	waitForTrack(t, b2, "gen-b", "the unaffected viewer, during the re-share", 15*time.Second)
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -842,20 +865,12 @@ func TestVideoOptOutOnlyAffectsTheAskingSubscriber(t *testing.T) {
 		}
 	}
 
+	since = b1.offerCount()
 	if err := b1.sub.SetPublisherVideoEnabled(peerID, true); err != nil {
 		t.Fatalf("toggle on: %v", err)
 	}
-	waitForOffer(t, b1, 10*time.Second, func(sdp string) bool {
+	waitForOffer(t, b1, since, 10*time.Second, func(sdp string) bool {
 		return countSendonlySections(sdp, "video") >= 1
 	})
-	select {
-	case id := <-b1.got:
-		if id != "gen-b" {
-			t.Fatalf("expected the re-shared video track, got %q", id)
-		}
-	case code := <-b1.fatal:
-		t.Fatalf("b1 signalled an error on restore: %s", code)
-	case <-time.After(15 * time.Second):
-		t.Fatal("b1's video never came back after the re-enable")
-	}
+	waitForTrack(t, b1, "gen-b", "b1's video never came back after the re-enable", 15*time.Second)
 }

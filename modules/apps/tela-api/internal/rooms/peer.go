@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -20,8 +21,18 @@ type Peer struct {
 	// Buffered so a slow reader can't block whoever is sending. Filling
 	// it means that peer is too far behind to keep up, and its messages
 	// get dropped rather than stalling the room -- see Send.
-	send   chan []byte
+	send chan []byte
+	// Closed once, in Close, to release the write loop and stop further
+	// queuing. The send channel is deliberately never closed: Close can
+	// run concurrently with a Broadcast that is mid-Send to this peer
+	// (this peer leaving while someone else's departure is being
+	// announced, say), and closing a channel concurrently with a send is
+	// undefined -- worst case it panics the server. Sends that land in
+	// the buffer of an abandoned peer are simply garbage-collected with
+	// it; the write loop exits through Done, not through channel close.
 	closed chan struct{}
+
+	closeOnce sync.Once
 
 	// Guarded by the owning Room's mutex.
 	publishing bool
@@ -65,16 +76,15 @@ func (p *Peer) Send(v any) {
 	}
 }
 
-// Close is safe to call more than once -- both the read loop ending and
-// an explicit teardown can reach it.
+// Close releases the peer's write loop and stops further queuing. Safe
+// to call more than once, and from concurrent goroutines -- both the
+// read loop ending and an explicit teardown (TakeOver, the deferred
+// cleanup in handleWS) can reach it, and only the sync.Once makes the
+// double call actually safe rather than merely unlikely to collide.
 func (p *Peer) Close() {
-	select {
-	case <-p.closed:
-		return
-	default:
-	}
-	close(p.closed)
-	close(p.send)
+	p.closeOnce.Do(func() {
+		close(p.closed)
+	})
 }
 
 func (p *Peer) Done() <-chan struct{} { return p.closed }
