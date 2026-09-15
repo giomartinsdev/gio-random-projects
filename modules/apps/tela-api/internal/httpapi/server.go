@@ -37,7 +37,10 @@ type Server struct {
 	log            *slog.Logger
 }
 
-func New(registry *rooms.Registry, media *sfu.Server, allowedOrigins []string, log *slog.Logger) *Server {
+// The metrics handler is optional (nil = the /metrics route doesn't
+// exist at all) because scraping is a deployment's choice, not the
+// app's: TELA_METRICS=1 in main is what turns it on.
+func New(registry *rooms.Registry, media *sfu.Server, allowedOrigins []string, log *slog.Logger, metrics http.Handler) *Server {
 	s := &Server{
 		registry:       registry,
 		limiter:        newAttemptLimiter(),
@@ -49,6 +52,9 @@ func New(registry *rooms.Registry, media *sfu.Server, allowedOrigins []string, l
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("GET /statusz", s.handleStatusz)
+	if metrics != nil {
+		s.mux.Handle("GET /metrics", metrics)
+	}
 	s.mux.HandleFunc("POST /api/rooms", s.handleCreateRoom)
 	s.mux.HandleFunc("GET /api/rooms", s.handleListRooms)
 	s.mux.HandleFunc("GET /api/rooms/{id}", s.handleRoomStatus)

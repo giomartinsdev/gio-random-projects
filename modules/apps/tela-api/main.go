@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/httpapi"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/metrics"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/sfu"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/telemetry"
@@ -99,6 +100,15 @@ func main() {
 	registry.StartJanitor(stopJanitor)
 	defer close(stopJanitor)
 
+	// Prometheus scraping is opt-in: off by default, and off means the
+	// /metrics route isn't registered at all rather than erroring. The
+	// gauges read the room registry at scrape time (internal/metrics).
+	var metricsHandler http.Handler
+	if envBool("TELA_METRICS", false) {
+		metricsHandler = metrics.New(registry)
+		log.Info("metrics on", "path", "/metrics")
+	}
+
 	// A room where nobody has shared for a while gets one warning
 	// (room:closing with a countdown) and then closes for everyone --
 	// the client navigates home on room:closed. Both knobs exist as env
@@ -116,7 +126,7 @@ func main() {
 	// dev) falls back to every interface, same as before this existed.
 	server := &http.Server{
 		Addr:    os.Getenv("BIND_HOST") + ":" + port,
-		Handler: httpapi.New(registry, media, allowedOrigins, log).Handler(),
+		Handler: httpapi.New(registry, media, allowedOrigins, log, metricsHandler).Handler(),
 		// No WriteTimeout: a WebSocket connection is meant to stay open
 		// for as long as the screen share lasts, and WriteTimeout would
 		// cut it off. Per-write deadlines in the WS write loop cover the
@@ -158,6 +168,16 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	return v
+}
+
+// envBool reads a feature flag: "1"/"true"/"yes" (case-insensitive) on,
+// anything else -- including unset -- off.
+func envBool(key string, fallback bool) bool {
+	v := strings.ToLower(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	return v == "1" || v == "true" || v == "yes"
 }
 
 // envDuration parses a Go duration ("15m", "90s"). Unset, malformed

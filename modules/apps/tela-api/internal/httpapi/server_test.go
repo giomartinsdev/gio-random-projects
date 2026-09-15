@@ -33,7 +33,7 @@ func newServer(t *testing.T) *httptest.Server {
 		t.Fatalf("sfu: %v", err)
 	}
 	srv := httptest.NewServer(httpapi.New(rooms.NewRegistry(""), media,
-		[]string{"http://example.com"}, slog.New(slog.NewJSONHandler(io.Discard, nil))).Handler())
+		[]string{"http://example.com"}, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil).Handler())
 	t.Cleanup(srv.Close)
 	return srv
 }
