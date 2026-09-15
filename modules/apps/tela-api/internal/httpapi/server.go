@@ -48,6 +48,7 @@ func New(registry *rooms.Registry, media *sfu.Server, allowedOrigins []string, l
 	}
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
+	s.mux.HandleFunc("GET /statusz", s.handleStatusz)
 	s.mux.HandleFunc("POST /api/rooms", s.handleCreateRoom)
 	s.mux.HandleFunc("GET /api/rooms", s.handleListRooms)
 	s.mux.HandleFunc("GET /api/rooms/{id}", s.handleRoomStatus)

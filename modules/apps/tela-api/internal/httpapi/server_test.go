@@ -761,3 +761,48 @@ func TestSpotlightCanBeClearedAndArrivesInWelcome(t *testing.T) {
 		t.Fatalf("a cleared spotlight still arrived in welcome: %q", s)
 	}
 }
+
+func TestStatuszCountsRoomsAndPeople(t *testing.T) {
+	srv := newServer(t)
+	a := createRoom(t, srv, "segredo123")
+	createRoom(t, srv, "segredo123")
+
+	// Two people in one room, none in the other: the busy-ness numbers
+	// come from occupied rooms only, while "rooms" counts both.
+	join(t, srv, a)
+	join(t, srv, a)
+
+	res, err := srv.Client().Get(srv.URL + "/statusz")
+	if err != nil {
+		t.Fatalf("get statusz: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("statusz: status %d", res.StatusCode)
+	}
+	var body struct {
+		Status        string `json:"status"`
+		Version       string `json:"version"`
+		UptimeSeconds int    `json:"uptimeSeconds"`
+		Rooms         int    `json:"rooms"`
+		ActiveRooms   int    `json:"activeRooms"`
+		People        int    `json:"people"`
+		Publishing    int    `json:"publishing"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Status != "ok" {
+		t.Errorf("status = %q, want ok", body.Status)
+	}
+	if body.Version == "" {
+		t.Error("statusz carried no version")
+	}
+	if body.Rooms != 2 || body.ActiveRooms != 1 || body.People != 2 || body.Publishing != 0 {
+		t.Errorf("counts = rooms %d active %d people %d publishing %d, want 2/1/2/0",
+			body.Rooms, body.ActiveRooms, body.People, body.Publishing)
+	}
+	if body.UptimeSeconds < 0 {
+		t.Errorf("uptimeSeconds = %d, want >= 0", body.UptimeSeconds)
+	}
+}
