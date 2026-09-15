@@ -14,6 +14,8 @@ export const CHANGELOG: Release[] = [
     version: "1.3.0",
     date: "2026-09-15",
     items: [
+      "Clips abrem direto na home — qualquer pessoa assiste no navegador, sem baixar.",
+      "Áudio da tela sem o tratamento de voz (fim do robozinho) e modo original pedindo 60fps na captura.",
       "Clips aceitam um nome escolhido por você, e a Clips da home ganhou busca por nome, sala ou pessoa.",
       "Header da sala só com ícones (tooltip carrega a descrição) e sem o flick do botão Compartilhar.",
     ],

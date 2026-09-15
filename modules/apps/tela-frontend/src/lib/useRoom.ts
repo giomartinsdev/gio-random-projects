@@ -131,6 +131,14 @@ function videoConstraintsFor(
   }
   if (fps !== "source") {
     constraints.frameRate = { ideal: fps, max: fps };
+  } else if (source === "screen") {
+    // "Original" means "whatever the surface gives" -- but left unset,
+    // Chrome's display capturer settles on 30fps. `ideal` steers the
+    // capturer without capping anything: a 30Hz surface still only
+    // delivers frames when it repaints, and one that can do 60 now will.
+    // (min/exact are illegal in getDisplayMedia constraints; ideal/max
+    // is the whole vocabulary.)
+    constraints.frameRate = { ideal: 60 };
   }
   // Chrome biases its picker to the surface chosen ahead of time in the
   // share dialog. Strictly `{ideal}`, never `{exact}`: {exact} would make
@@ -151,7 +159,19 @@ function videoConstraintsFor(
 function gdmOptions(video: MediaTrackConstraints, surface?: DisplaySurface): DisplayMediaStreamOptions {
   return {
     video,
-    audio: true,
+    // Screen audio is CONTENT -- music, apps, games -- not a phone call.
+    // Plain `audio: true` runs it through the voice pipeline (echo
+    // cancellation, noise suppression, AGC), which reads sustained
+    // tones as "stationary noise" and pumps the gain: the robotic,
+    // underwater artifact people hear on shared music. The AEC can't
+    // work on loopback audio anyway, so there's nothing to lose here.
+    // Browsers that ignore these constraints just behave as before.
+    audio: {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      channelCount: { ideal: 2 },
+    },
     selfBrowserSurface: "exclude",
     surfaceSwitching: "include",
     // Monitor: system audio IS the point of a screen share, so pin the
@@ -164,6 +184,36 @@ function gdmOptions(video: MediaTrackConstraints, surface?: DisplaySurface): Dis
     // browsers ignore this and keep their window-audio default.
     windowAudio: surface === "window" ? "window" : undefined,
   } as DisplayMediaStreamOptions;
+}
+
+// Chrome negotiates WebRTC Opus shaped like a phone call: mono, a
+// speech-sized bitrate. The audio a screen share carries is content --
+// and the fmtp line is the one lever the browser hands us to say so.
+// The SFU forwards RTP untouched, so whatever this offer's encoder is
+// negotiated to produce is exactly what every viewer decodes: stereo,
+// a real music budget, and in-band FEC for the lossy moments is the
+// difference between "robozinho" and the sound the app actually made.
+// Params already present (Chrome ships useinbandfec=1 by default) are
+// kept, not duplicated -- a repeated param makes the SDP invalid.
+function boostOpusSdp(sdp: string): string {
+  const extra = ["stereo=1", "sprop-stereo=1", "maxaveragebitrate=256000", "useinbandfec=1"];
+  const lines = sdp.split("\r\n");
+  for (let i = 0; i < lines.length; i++) {
+    const rtpmap = lines[i].match(/^a=rtpmap:(\d+) opus\/48000\/2/);
+    if (!rtpmap) continue;
+    const fmtp = `a=fmtp:${rtpmap[1]}`;
+    const idx = lines.findIndex((line) => line.startsWith(fmtp));
+    if (idx < 0) {
+      lines.splice(i + 1, 0, `${fmtp} ${extra.join(";")}`);
+    } else {
+      const current = lines[idx];
+      const has = (p: string) => current.split(";").some((part) => part.trim() === p);
+      const additions = extra.filter((p) => !has(p));
+      if (additions.length > 0) lines[idx] = [current, ...additions].join(";");
+    }
+    break; // one opus m-line per publish connection is all there is
+  }
+  return lines.join("\r\n");
 }
 
 export type Status = "connecting" | "connected" | "reconnecting" | "error" | "closed";
@@ -397,7 +447,10 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
       };
 
       const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      // Munge before sealing: the answer negotiated against THIS offer
+      // is what configures the encoder, so the boosted fmtp has to be
+      // in the SDP we put local, not in one we merely inspected.
+      await pc.setLocalDescription({ type: offer.type, sdp: boostOpusSdp(offer.sdp ?? "") });
       // The offer is numbered; the answer comes back with the same
       // number, and answers for superseded connections are dropped.
       send({ type: "publish:offer", seq, sdp: pc.localDescription });
@@ -472,14 +525,25 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
           return { started: false, error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) };
         }
 
-        // Tells the encoder what this footage actually is: "detail" keeps
-        // text sharp on a shared screen at the cost of framerate, "motion"
-        // does the opposite for a camera.
+        // Tells the encoder what this footage actually is. "detail"
+        // keeps text sharp AT THE COST OF FRAMERATE -- right for slides
+        // and docs (the explicit low-fps picks), wrong for anything
+        // moving, where a stutter is the loudest artifact. 30/60/source
+        // get "motion": keep the frames flowing.
         const videoTrack = stream.getVideoTracks()[0];
-        if (videoTrack) videoTrack.contentHint = from === "screen" ? "detail" : "motion";
+        if (videoTrack) {
+          videoTrack.contentHint = from === "screen" && (f === 5 || f === 15) ? "detail" : "motion";
+        }
         // getDisplayMedia only yields audio if the person also ticked
-        // "share audio", so there may be nothing here to disable.
-        for (const track of stream.getAudioTracks()) track.enabled = sendingAudioRef.current;
+        // "share audio", so there may be nothing here to touch.
+        for (const track of stream.getAudioTracks()) {
+          track.enabled = sendingAudioRef.current;
+          // Display audio is content, not speech: the "music" hint
+          // steers Chrome's Opus encoder away from the mono speech
+          // budget (and its heavy voice FEC) that makes it sound
+          // robotic. A camera's mic keeps its voice treatment.
+          if (from === "screen") track.contentHint = "music";
+        }
 
         localStreamRef.current = stream;
         setLocalStream(stream);

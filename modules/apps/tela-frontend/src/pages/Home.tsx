@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Clapperboard, Download, ChevronDown, Lock, MonitorPlay, Search, Sparkles, Users, Zap } from "lucide-react";
+import { ArrowRight, Clapperboard, Download, ChevronDown, Lock, MonitorPlay, Play, Search, Sparkles, Users, X, Zap } from "lucide-react";
 import { api, type Clip, type RoomSummary } from "@/lib/api";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { airplayIcon, arrowRightCircleIcon, loadingIcon, radioButtonIcon } from "@/lib/lottie-icons";
@@ -28,8 +28,9 @@ function formatDay(iso: string): string {
 }
 
 // Clips live on the server for a limited time (the API carries the
-// expiry); the section lists what's there and links the download URLs.
-// One search box answers "por pessoa, sala, nome etc." -- every
+// expiry); the section lists what's there, plays each one in place and
+// links the download URLs. One search box answers "por pessoa, sala,
+// nome etc." -- every
 // searchable field (the clip's name, the room it came from, who cut
 // it) is matched against the same query, because a person looking for
 // a clip knows SOME of those, rarely which one will hit. Fetched once
@@ -38,6 +39,7 @@ function Clips() {
   const [clips, setClips] = useState<Clip[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
+  const [playing, setPlaying] = useState<Clip | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +55,15 @@ function Clips() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!playing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPlaying(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [playing]);
 
   if (!clips && !failed) return null; // still loading: stay quiet
   if (!clips || clips.length === 0) return null; // nothing to show (or the API is down)
@@ -70,67 +81,134 @@ function Clips() {
     : clips;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Clapperboard className="size-4 text-primary" />
-          Clips
-        </CardTitle>
-        <CardDescription>Recortes de 5 minutos feitos nas salas — baixe enquanto existirem.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {/* One field, every axis: name, room and owner all match the
-            same query -- three dropdowns for a list this size would be
-            ceremony, not search. */}
-        {clips.length > 3 && (
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="buscar por nome, sala ou pessoa"
-              className="h-9 pl-8 text-sm"
-              aria-label="Buscar clips"
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Clapperboard className="size-4 text-primary" />
+            Clips
+          </CardTitle>
+          <CardDescription>Recortes de 5 minutos feitos nas salas — abra aqui mesmo ou baixe enquanto existirem.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {/* One field, every axis: name, room and owner all match the
+              same query -- three dropdowns for a list this size would be
+              ceremony, not search. */}
+          {clips.length > 3 && (
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="buscar por nome, sala ou pessoa"
+                className="h-9 pl-8 text-sm"
+                aria-label="Buscar clips"
+              />
+            </div>
+          )}
+          {visible.length === 0 ? (
+            <p className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+              Nenhum clip casa com “{query.trim()}”.
+            </p>
+          ) : (
+            visible.map((clip) => {
+              // "2026-09-15T14:03:22Z" shown as the viewer's local day+time.
+              const when = new Date(clip.createdAt).toLocaleString("pt-BR", {
+                day: "2-digit",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+              return (
+                <div
+                  key={clip.id}
+                  className="group flex items-center justify-between gap-3 rounded-lg border bg-secondary/30 px-3 py-2 text-sm transition-colors hover:border-primary/40 hover:bg-secondary/60"
+                >
+                  {/* The whole left side opens the clip in place --
+                      opening is the default act, downloading the
+                      deliberate one. */}
+                  <button
+                    type="button"
+                    onClick={() => setPlaying(clip)}
+                    title="Abrir o clip"
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <span className="block truncate font-medium">{clip.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      sala {clip.roomId}
+                      {clip.owner && <> · por {clip.owner}</>} · {when} · {formatSize(clip.size)}
+                    </span>
+                  </button>
+                  <span className="inline-flex shrink-0 items-center gap-3 text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => setPlaying(clip)}
+                      className="inline-flex items-center gap-1 transition-colors hover:text-primary"
+                    >
+                      <Play className="size-3.5" />
+                      abrir
+                    </button>
+                    <a
+                      href={api.clipDownloadUrl(clip.id)}
+                      download
+                      title="Baixar o .webm"
+                      className="inline-flex items-center gap-1 transition-colors hover:text-primary"
+                    >
+                      <Download className="size-3.5" />
+                      baixar
+                    </a>
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
+      {/* The player: same URL the download uses, played by an element
+          instead of filed away. Anyone with this page can open it -- the
+          bytes are guarded by the clip's unguessable id, nothing else.
+          Progressive download (the server doesn't speak Range), so
+          seeking inside what's buffered works; a deep seek may restart
+          the fetch. Escape and the backdrop close; the video stops
+          with the unmount. */}
+      {playing && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Clip: ${playing.name}`}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setPlaying(null)}
+        >
+          <div className="w-full max-w-3xl space-y-2" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3">
+              <p className="min-w-0 truncate text-sm font-medium">
+                {playing.name}
+                <span className="text-muted-foreground">
+                  {" "}
+                  · sala {playing.roomId}
+                  {playing.owner && <> · por {playing.owner}</>}
+                </span>
+              </p>
+              <button
+                type="button"
+                onClick={() => setPlaying(null)}
+                aria-label="Fechar"
+                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <video
+              src={api.clipDownloadUrl(playing.id)}
+              controls
+              autoPlay
+              playsInline
+              className="max-h-[75vh] w-full rounded-lg border bg-black"
             />
           </div>
-        )}
-        {visible.length === 0 ? (
-          <p className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-            Nenhum clip casa com “{query.trim()}”.
-          </p>
-        ) : (
-          visible.map((clip) => {
-            // "2026-09-15T14:03:22Z" shown as the viewer's local day+time.
-            const when = new Date(clip.createdAt).toLocaleString("pt-BR", {
-              day: "2-digit",
-              month: "short",
-              hour: "2-digit",
-              minute: "2-digit",
-            });
-            return (
-              <a
-                key={clip.id}
-                href={api.clipDownloadUrl(clip.id)}
-                download
-                className="group flex items-center justify-between gap-3 rounded-lg border bg-secondary/30 px-3 py-2 text-sm transition-colors hover:border-primary/40 hover:bg-secondary/60"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate font-medium">{clip.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    sala {clip.roomId}
-                    {clip.owner && <> · por {clip.owner}</>} · {when} · {formatSize(clip.size)}
-                  </span>
-                </span>
-                <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground transition-colors group-hover:text-primary">
-                  <Download className="size-3.5" />
-                  baixar
-                </span>
-              </a>
-            );
-          })
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </>
   );
 }
 
