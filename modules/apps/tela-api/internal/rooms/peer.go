@@ -171,6 +171,11 @@ func (room *Room) SetPublishing(p *Peer, publishing bool) {
 		peer.publishing = publishing
 	}
 	room.lastSeen = time.Now()
+	// A share starting or ending is idle-clock activity either way: a
+	// start obviously keeps the room alive, and a fresh stop is when
+	// the idle countdown BEGINS -- stamping it here is what makes "at
+	// least idle+grace of warning" true.
+	room.lastPublishChange = room.clock()
 	room.mu.Unlock()
 
 	event := "publish:stop"
@@ -255,13 +260,7 @@ func (room *Room) PeerCount() int {
 func (room *Room) PublisherCount() int {
 	room.mu.Lock()
 	defer room.mu.Unlock()
-	n := 0
-	for _, p := range room.peers {
-		if p.publishing {
-			n++
-		}
-	}
-	return n
+	return room.publisherCountLocked()
 }
 
 // NextName hands out "Pessoa 1", "Pessoa 2", … in join order. Nobody

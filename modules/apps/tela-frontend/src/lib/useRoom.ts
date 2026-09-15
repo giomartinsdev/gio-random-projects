@@ -224,6 +224,13 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   // Requests to enter without the password -- broadcast to everyone
   // currently in the room, answered by whoever gets there first.
   const [knockRequests, setKnockRequests] = useState<KnockRequest[]>([]);
+  // The idle reaper's countdown: unix ms when the room closes for
+  // everyone, null when nothing is pending. 0 from the server means "a
+  // previously announced closing was withdrawn".
+  const [closingAt, setClosingAt] = useState<number | null>(null);
+  // The room was closed for real (idle, or deleted): the page navigates
+  // home when this flips.
+  const [roomClosed, setRoomClosed] = useState(false);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [source, setSource] = useState<Source | null>(null);
@@ -607,6 +614,9 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
                 name: k.name,
               })) ?? [],
             );
+            // A closing warning that was already standing -- reconnecting
+            // mid-warning must not hide the countdown.
+            setClosingAt(typeof msg.closingAt === "number" && msg.closingAt > 0 ? (msg.closingAt as number) : null);
 
             const present = new Set(list.map((p) => p.peerId));
             for (const id of [...pendingLeaveRef.current.keys()]) {
@@ -808,6 +818,20 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
             break;
           }
 
+          // The idle reaper's warning: a countdown until this room
+          // closes for everyone. closingAt 0 means a warning someone
+          // already saw was withdrawn -- hide it everywhere.
+          case "room:closing":
+            setClosingAt(typeof msg.closingAt === "number" && msg.closingAt > 0 ? (msg.closingAt as number) : null);
+            break;
+
+          // The room is gone server-side. Reconnecting would only 404,
+          // so the page reads roomClosed and navigates home.
+          case "room:closed":
+            setClosingAt(null);
+            setRoomClosed(true);
+            break;
+
           // The room's reset button: something is wedged and every media
           // connection should be rebuilt. Closing the WebSocket IS the
           // whole implementation -- the reconnect below already replays
@@ -851,6 +875,11 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   // state) without anyone re-picking their capture.
   const resetRoom = useCallback(() => send({ type: "room:reset" }), [send]);
 
+  // Pressing the button on the idle-closing popup: tells the reaper
+  // this room is still wanted, which withdraws the countdown for
+  // everyone.
+  const keepAlive = useCallback(() => send({ type: "room:keepalive" }), [send]);
+
   return {
     status,
     errorMessage,
@@ -876,6 +905,9 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     knockRequests,
     approveKnock,
     denyKnock,
+    closingAt,
+    roomClosed,
+    keepAlive,
     videoOffPeers,
     setPublisherVideo,
     rename,

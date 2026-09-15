@@ -158,6 +158,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		"peers":  existing,
 		// Kept by the client and presented on reconnect (see above).
 		"resume": room.ResumeToken(peerID, peer.Name),
+		// A closing warning already standing when this connection
+		// arrives -- reconnecting mid-warning must not hide the
+		// countdown (0 means nothing pending).
+		"closingAt": room.ClosingAtMillis(),
 		// Requests broadcast before this connection existed would
 		// otherwise never reach it -- someone joining mid-wait still
 		// needs to see (and be able to answer) a knock already in
@@ -307,6 +311,13 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 		// room:reset case.
 		case "room:reset":
 			w.room.Broadcast(map[string]any{"type": "room:reset"}, "")
+
+		// Someone (usually whoever is looking at the idle warning)
+		// telling the reaper this room is still wanted. Resets the idle
+		// clock and, when a closing was already announced, withdraws it
+		// for everyone.
+		case "room:keepalive":
+			w.room.KeepAlive()
 
 		case "ping":
 			w.peer.Send(map[string]any{"type": "pong"})

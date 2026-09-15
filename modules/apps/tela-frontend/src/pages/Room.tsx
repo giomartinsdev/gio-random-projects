@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Activity, ArrowLeft, Check, Crop, Film, Link2, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeft, Check, Crop, Film, Link2, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
 import { usePeerStats } from "@/lib/usePeerStats";
@@ -438,6 +438,22 @@ function LiveRoom({
     if (theaterStage && !tiles.some((t) => t.peerId === theaterStage)) setTheaterStage(null);
   }, [theaterStage, tiles]);
 
+  // The room was closed for real (idle reaper, or deleted) -- everyone
+  // goes home.
+  useEffect(() => {
+    if (room.roomClosed) navigate("/");
+  }, [room.roomClosed, navigate]);
+
+  // The idle-closing popup counts down, so it needs a clock. Ticked
+  // only while a warning is standing.
+  const [nowMs, setNowMs] = useState(Date.now());
+  useEffect(() => {
+    if (room.closingAt === null) return;
+    setNowMs(Date.now());
+    const timer = setInterval(() => setNowMs(Date.now()), 500);
+    return () => clearInterval(timer);
+  }, [room.closingAt]);
+
   useWakeLock(tiles.length > 0);
   // Same trigger, different surface: a red badge on the tab's favicon
   // for whoever parked this room in a background tab.
@@ -842,6 +858,34 @@ function LiveRoom({
               <span>
                 <strong className="font-medium">{shareToast}</strong> começou a compartilhar
               </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {room.closingAt !== null && (
+            <motion.div
+              initial={{ opacity: 0, y: -16, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="absolute left-1/2 top-4 z-30 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border bg-card p-3.5 shadow-md"
+            >
+              <AlertTriangle className="size-5 shrink-0 text-amber-500" />
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="font-medium">Ninguém compartilhou nada há um tempo</p>
+                <p className="text-muted-foreground">
+                  Esta sala fecha em {Math.max(0, Math.ceil((room.closingAt - nowMs) / 1000))} s para todo mundo.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                className="shrink-0"
+                onClick={() => room.keepAlive()}
+                title="Desarma o fechamento para todos na sala"
+              >
+                Continuar aqui
+              </Button>
             </motion.div>
           )}
         </AnimatePresence>

@@ -68,6 +68,16 @@ type Room struct {
 	nextLabel int
 	emptyAt   time.Time // zero while anyone is connected
 	lastSeen  time.Time
+	// Idle-room lifecycle (see idle.go): the last time something
+	// happened that counts as "this room is in use" -- a share starting
+	// or ending, or anyone pressing the keep-alive button on the
+	// closing warning. Zero means "never", which idleTick reads as the
+	// room's creation.
+	lastPublishChange time.Time
+	// Zero until the reaper has warned the room it's about to close.
+	closingAt time.Time
+	// Injectable clock for the reaper's tests. Nil means the real one.
+	now func() time.Time
 	// Requests to enter without the password -- see knock.go. Never
 	// persisted: like connected peers, these are meaningless across a
 	// restart (nobody is still waiting on the other end).
@@ -128,15 +138,17 @@ func (r *Registry) Create(password string) (*Room, error) {
 
 	now := r.now()
 	room := &Room{
-		ID:        id,
-		CreatedAt: now,
-		salt:      salt,
-		hash:      hash,
-		resumeKey: resumeKey,
-		peers:     make(map[string]*Peer),
-		knocks:    make(map[string]*Knock),
-		emptyAt:   now,
-		lastSeen:  now,
+		ID:                id,
+		CreatedAt:         now,
+		salt:              salt,
+		hash:              hash,
+		resumeKey:         resumeKey,
+		peers:             make(map[string]*Peer),
+		knocks:            make(map[string]*Knock),
+		emptyAt:           now,
+		lastSeen:          now,
+		lastPublishChange: now,
+		now:               r.now,
 	}
 	r.rooms[id] = room
 	r.mu.Unlock()

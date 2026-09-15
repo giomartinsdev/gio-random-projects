@@ -63,6 +63,10 @@ func (r *Registry) Load() error {
 			knocks:    make(map[string]*Knock),
 			emptyAt:   now,
 			lastSeen:  now,
+			// A restored room has no recorded publish activity, so its
+			// idle clock reads as "since creation" (see idleTick).
+			lastPublishChange: p.CreatedAt,
+			now:               r.now,
 		}
 	}
 	return nil

@@ -99,6 +99,16 @@ func main() {
 	registry.StartJanitor(stopJanitor)
 	defer close(stopJanitor)
 
+	// A room where nobody has shared for a while gets one warning
+	// (room:closing with a countdown) and then closes for everyone --
+	// the client navigates home on room:closed. Both knobs exist as env
+	// so the whole lifecycle is exercisable in milliseconds by tests
+	// and so a deployment can be more patient than the default.
+	idleTimeout := envDuration("TELA_ROOM_IDLE_TIMEOUT", 15*time.Minute)
+	idleGrace := envDuration("TELA_ROOM_IDLE_GRACE", time.Minute)
+	registry.StartIdleReaper(stopJanitor, idleTimeout, idleGrace)
+	log.Info("idle reaper on", "idle_timeout", idleTimeout.String(), "grace", idleGrace.String())
+
 	// Host networking (see the container's own docs) means this binds
 	// straight onto the VPS's interfaces -- BIND_HOST lets the ingress
 	// deployment keep it off everything but loopback, since nginx is
@@ -144,6 +154,17 @@ func env(key, fallback string) string {
 
 func envInt(key string, fallback int) int {
 	v, err := strconv.Atoi(os.Getenv(key))
+	if err != nil || v <= 0 {
+		return fallback
+	}
+	return v
+}
+
+// envDuration parses a Go duration ("15m", "90s"). Unset, malformed
+// or non-positive falls back -- configuration being wrong must never
+// disable a safety behavior silently different from its default.
+func envDuration(key string, fallback time.Duration) time.Duration {
+	v, err := time.ParseDuration(os.Getenv(key))
 	if err != nil || v <= 0 {
 		return fallback
 	}
