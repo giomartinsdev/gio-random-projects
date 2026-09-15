@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/clips"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/metrics"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
@@ -109,6 +110,36 @@ func main() {
 		log.Info("metrics on", "path", "/metrics")
 	}
 
+	// Clips: the upload endpoint is always on (the publisher's browser
+	// records the last 5 minutes and POSTs the finished WebM), but
+	// WHERE the bytes live is configurable. With TELA_S3_* set they go
+	// to MinIO and survive restarts; without it they stay in RAM and
+	// die with the process. A broken S3 config degrades to RAM with a
+	// loud warning rather than refusing to boot -- clips are a
+	// convenience, and telas without clips are worse than telas with
+	// temporary clips.
+	clipTTL := envDuration("TELA_CLIP_TTL", 7*24*time.Hour)
+	var clipStore clips.Store
+	if endpoint := os.Getenv("TELA_S3_ENDPOINT"); endpoint != "" {
+		store, err := clips.NewS3Store(endpoint,
+			env("TELA_S3_ACCESS_KEY", ""), env("TELA_S3_SECRET_KEY", ""),
+			env("TELA_S3_BUCKET", "tela-clips"), envBool("TELA_S3_SECURE", true))
+		if err != nil {
+			log.Warn("S3 de clips indisponivel; usando memoria (clips morrem com o processo)", "error", err)
+			clipStore = clips.NewMemoryStore()
+		} else {
+			clipStore = store
+			log.Info("clips no S3", "endpoint", endpoint, "bucket", env("TELA_S3_BUCKET", "tela-clips"))
+		}
+	} else {
+		clipStore = clips.NewMemoryStore()
+		log.Info("clips em memoria", "ttl", clipTTL.String())
+	}
+
+	// Clips expirados saem do storage no mesmo relógio do janitor.
+	clips.StartSweeper(context.Background(), clipStore, time.Minute, stopJanitor,
+		func(msg string, removed int) { log.Info(msg, "removed", removed) })
+
 	// A room where nobody has shared for a while gets one warning
 	// (room:closing with a countdown) and then closes for everyone --
 	// the client navigates home on room:closed. Both knobs exist as env
@@ -124,9 +155,11 @@ func main() {
 	// deployment keep it off everything but loopback, since nginx is
 	// the only thing meant to reach it directly. Empty (bare metal /
 	// dev) falls back to every interface, same as before this existed.
+	api := httpapi.New(registry, media, allowedOrigins, log, metricsHandler)
+	api.RegisterClips(clipStore, clipTTL)
 	server := &http.Server{
 		Addr:    os.Getenv("BIND_HOST") + ":" + port,
-		Handler: httpapi.New(registry, media, allowedOrigins, log, metricsHandler).Handler(),
+		Handler: api.Handler(),
 		// No WriteTimeout: a WebSocket connection is meant to stay open
 		// for as long as the screen share lasts, and WriteTimeout would
 		// cut it off. Per-write deadlines in the WS write loop cover the

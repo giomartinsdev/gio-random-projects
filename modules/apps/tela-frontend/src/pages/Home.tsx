@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Sparkles, Users } from "lucide-react";
-import { api, type RoomSummary } from "@/lib/api";
+import { Clapperboard, Download, ChevronDown, Sparkles, Users } from "lucide-react";
+import { api, type Clip, type RoomSummary } from "@/lib/api";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { airplayIcon, arrowRightCircleIcon, loadingIcon, radioButtonIcon } from "@/lib/lottie-icons";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,80 @@ function formatDay(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   const months = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
   return `${d} de ${months[m - 1]} de ${y}`;
+}
+
+// Clips live on the server for a limited time (the API carries the
+// expiry); the section itself just lists what's there and links the
+// download URLs. Fetched once per mount -- clips don't change while
+// you sit on this page.
+function Clips() {
+  const [clips, setClips] = useState<Clip[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listClips()
+      .then((list) => {
+        if (!cancelled) setClips(list);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!clips && !failed) return null; // still loading: stay quiet
+  if (!clips || clips.length === 0) return null; // nothing to show (or the API is down)
+
+  const formatSize = (bytes: number) => {
+    if (bytes >= 1 << 20) return `${(bytes / (1 << 20)).toFixed(1)} MB`;
+    return `${Math.round(bytes / 1024)} kB`;
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Clapperboard className="size-4 text-primary" />
+          Clips
+        </CardTitle>
+        <CardDescription>Recortes de 5 minutos feitos nas salas — baixe enquanto existirem.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {clips.map((clip) => {
+          // "2026-09-15T14:03:22Z" shown as the viewer's local day+time.
+          const when = new Date(clip.createdAt).toLocaleString("pt-BR", {
+            day: "2-digit",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          return (
+            <a
+              key={clip.id}
+              href={api.clipDownloadUrl(clip.id)}
+              download
+              className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-accent"
+            >
+              <span className="min-w-0">
+                <span className="block truncate font-medium">{clip.name}</span>
+                <span className="block text-xs text-muted-foreground">
+                  sala {clip.roomId} · {when} · {formatSize(clip.size)}
+                </span>
+              </span>
+              <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
+                <Download className="size-3.5" />
+                baixar
+              </span>
+            </a>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
 }
 
 function WhatsNew() {
@@ -341,6 +415,14 @@ export default function Home() {
           </Card>
         </motion.div>
 
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.13, ease: "easeOut" }}
+          className="mt-4"
+        >
+          <Clips />
+        </motion.div>
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/clips"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/sfu"
 
@@ -35,6 +36,11 @@ type Server struct {
 	// ws.go's use of this for why it can't just trust r.Host anymore.
 	AllowedOrigins []string
 	log            *slog.Logger
+
+	// Clip storage, wired by RegisterClips (see clips.go). Nil until
+	// then, and the routes simply don't exist.
+	clipStore clips.Store
+	clipTTL   time.Duration
 }
 
 // The metrics handler is optional (nil = the /metrics route doesn't

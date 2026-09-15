@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Activity, AlertTriangle, ArrowLeft, Check, Crop, Film, Link2, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Star, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeft, Check, Clapperboard, Crop, Film, Link2, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Star, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
+import { ClipRecorder } from "@/lib/clipRecorder";
 import { usePeerStats } from "@/lib/usePeerStats";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { useLiveFavicon } from "@/lib/useLiveFavicon";
@@ -389,6 +390,63 @@ function LiveRoom({
     setSharePanelOpen((open) => !open);
   }, []);
 
+  // The "clip dos últimos 5 minutos": a MediaRecorder ring buffer
+  // (see clipRecorder.ts) around the local capture, uploaded on
+  // demand and downloadable later from the home's Clips section.
+  const clipRecorderRef = useRef(new ClipRecorder());
+  const [clipState, setClipState] = useState<"idle" | "uploading" | "saved" | "error">("idle");
+  const [clipProgress, setClipProgress] = useState(0);
+  const [clipMessage, setClipMessage] = useState<string | null>(null);
+  // Saved/error feedback clears itself; the timer is kept so an
+  // unmount can't set state on a dead component.
+  const clipTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    const timer = clipTimerRef;
+    return () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+    };
+  }, []);
+
+  // Recording follows the local capture: starts when a share starts,
+  // restarts from a fresh buffer when the source changes (old chunks
+  // would be glued onto an incompatible header), stops when it stops.
+  useEffect(() => {
+    const rec = clipRecorderRef.current;
+    if (room.localStream) rec.start(room.localStream);
+    return () => rec.stop();
+  }, [room.localStream]);
+
+  const makeClip = useCallback(async () => {
+    const rec = clipRecorderRef.current;
+    if (!rec.recording || clipState === "uploading" || !password) return;
+    if (clipTimerRef.current !== null) {
+      window.clearTimeout(clipTimerRef.current);
+      clipTimerRef.current = null;
+    }
+    const blob = rec.makeClip();
+    if (!blob) {
+      setClipState("error");
+      setClipMessage("ainda não tem nada para cortar — grava um pouquinho mais");
+      clipTimerRef.current = window.setTimeout(() => setClipState("idle"), 4000);
+      return;
+    }
+    setClipState("uploading");
+    setClipProgress(0);
+    try {
+      await api.uploadClip(roomId, password, "", blob, (fraction) => setClipProgress(fraction));
+      setClipState("saved");
+      setClipMessage("clip salvo — baixe na home, na seção Clips");
+    } catch (err) {
+      setClipState("error");
+      setClipMessage(err instanceof Error ? err.message : "falha ao salvar o clip");
+    } finally {
+      clipTimerRef.current = window.setTimeout(() => {
+        setClipState("idle");
+        setClipMessage(null);
+      }, 4000);
+    }
+  }, [roomId, password, clipState]);
+
   const toggleMuted = (peerId: string) =>
     setMutedPeers((current) => {
       const next = new Set(current);
@@ -759,6 +817,26 @@ function LiveRoom({
                 <AnimatedIcon animation={errorIcon} />
                 Parar
               </Button>
+              {/* Cuts the last ~5 minutes of THIS capture into a clip
+                  and files it on the server -- only meaningful while a
+                  share is live. */}
+              <Button
+                variant="secondary"
+                onClick={makeClip}
+                disabled={clipState === "uploading"}
+                className="flex-1 sm:flex-none"
+                title="Salva os últimos 5 minutos da sua transmissão — depois baixe na home, na seção Clips"
+              >
+                <Clapperboard className="size-4" />
+                <span className="sm:hidden">Clip</span>
+                <span className="hidden sm:inline">
+                  {clipState === "uploading"
+                    ? `Enviando ${Math.round(clipProgress * 100)}%`
+                    : clipState === "saved"
+                      ? "Salvo!"
+                      : "Clip 5min"}
+                </span>
+              </Button>
             </>
           ) : (
             <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex-1 sm:flex-none">
@@ -874,6 +952,26 @@ function LiveRoom({
               <span>
                 <strong className="font-medium">{shareToast}</strong> começou a compartilhar
               </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Clip feedback (saved / error / nothing-to-cut): sits below
+            the share toast so the two never overlap. */}
+        <AnimatePresence>
+          {clipMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -12, x: "-50%", scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
+              exit={{ opacity: 0, y: -8, x: "-50%", scale: 0.95 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className={
+                "pointer-events-none absolute left-1/2 top-16 z-20 flex items-center gap-2 rounded-full border bg-card px-3.5 py-1.5 text-sm shadow-md " +
+                (clipState === "error" ? "border-destructive/40 text-destructive" : "")
+              }
+            >
+              <Clapperboard className="size-4 shrink-0 text-muted-foreground" />
+              <span>{clipMessage}</span>
             </motion.div>
           )}
         </AnimatePresence>

@@ -8,6 +8,14 @@ export type CreatedRoom = { roomId: string };
 export type RoomStatus = { roomId: string; people: number; publishing: number };
 export type RoomSummary = { roomId: string; people: number; publishing: number; createdAt: string };
 export type KnockStatus = { status: "pending" | "approved" | "denied"; admitToken?: string };
+export type Clip = {
+  id: string;
+  roomId: string;
+  name: string;
+  size: number;
+  createdAt: string;
+  expiresAt: string;
+};
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
@@ -58,6 +66,49 @@ export const api = {
     request<{ ok: boolean }>(`/api/rooms/${encodeURIComponent(roomId)}`, {
       method: "DELETE",
       body: JSON.stringify({ password }),
+    }),
+
+  // Every live clip, newest first -- the home page's Clips section.
+  // Metadata only; the bytes come through the download URL.
+  listClips: () => request<Clip[]>("/api/clips"),
+
+  clipDownloadUrl: (id: string) => `${API_URL}/api/clips/${encodeURIComponent(id)}/download`,
+
+  // Uploads the assembled clip. XHR, not fetch: only XHR reports
+  // upload progress, and a ~100 MB blob with no feedback reads as a
+  // hang. Multipart (rather than a raw body + custom headers) keeps
+  // the request "simple" in CORS terms -- no preflight round-trip
+  // before the bytes start moving.
+  uploadClip: (
+    roomId: string,
+    password: string,
+    name: string,
+    blob: Blob,
+    onProgress: (fraction: number) => void,
+  ): Promise<Clip> =>
+    new Promise((resolve, reject) => {
+      const form = new FormData();
+      form.append("room", roomId);
+      form.append("password", password);
+      form.append("name", name);
+      form.append("clip", blob, "clip.webm");
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_URL}/api/clips`);
+      xhr.responseType = "json";
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
+      };
+      xhr.onload = () => {
+        const body = xhr.response as (Clip & { error?: string }) | null;
+        if (xhr.status >= 200 && xhr.status < 300 && body) {
+          resolve(body);
+        } else {
+          reject(new Error(body?.error ?? `falha no upload (${xhr.status})`));
+        }
+      };
+      xhr.onerror = () => reject(new Error("falha no upload do clip"));
+      xhr.send(form);
     }),
 };
 

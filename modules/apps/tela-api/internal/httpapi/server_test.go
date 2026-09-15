@@ -1,10 +1,12 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +17,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/clips"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/sfu"
@@ -32,8 +35,10 @@ func newServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatalf("sfu: %v", err)
 	}
-	srv := httptest.NewServer(httpapi.New(rooms.NewRegistry(""), media,
-		[]string{"http://example.com"}, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil).Handler())
+	api := httpapi.New(rooms.NewRegistry(""), media,
+		[]string{"http://example.com"}, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil)
+	api.RegisterClips(clips.NewMemoryStore(), 24*time.Hour)
+	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -804,5 +809,125 @@ func TestStatuszCountsRoomsAndPeople(t *testing.T) {
 	}
 	if body.UptimeSeconds < 0 {
 		t.Errorf("uptimeSeconds = %d, want >= 0", body.UptimeSeconds)
+	}
+}
+
+// uploadClip builds the exact multipart body the frontend's XHR sends
+// (fields + the WebM bytes) and posts it.
+func uploadClip(t *testing.T, srv *httptest.Server, roomID, password, body string) *http.Response {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("room", roomID)
+	_ = mw.WriteField("password", password)
+	_ = mw.WriteField("name", "Meu clip")
+	fw, _ := mw.CreateFormFile("clip", "clip.webm")
+	_, _ = fw.Write([]byte(body))
+	if err := mw.Close(); err != nil {
+		t.Fatalf("multipart: %v", err)
+	}
+	res, err := srv.Client().Post(srv.URL+"/api/clips", mw.FormDataContentType(), &buf)
+	if err != nil {
+		t.Fatalf("post clip: %v", err)
+	}
+	return res
+}
+
+func TestClipUploadListAndDownload(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	res := uploadClip(t, srv, roomID, "segredo123", "FAKEWEBM")
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("upload: status %d", res.StatusCode)
+	}
+	var clip struct {
+		ID     string `json:"id"`
+		RoomID string `json:"roomId"`
+		Name   string `json:"name"`
+		Size   int64  `json:"size"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&clip); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if clip.RoomID != roomID || clip.Name != "Meu clip" || clip.Size != int64(len("FAKEWEBM")) || clip.ID == "" {
+		t.Fatalf("clip metadata = %+v", clip)
+	}
+
+	res2, err := srv.Client().Get(srv.URL + "/api/clips")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	defer res2.Body.Close()
+	var list []struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(res2.Body).Decode(&list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != clip.ID {
+		t.Fatalf("list = %+v, want [%s]", list, clip.ID)
+	}
+
+	res3, err := srv.Client().Get(srv.URL + "/api/clips/" + clip.ID + "/download")
+	if err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	defer res3.Body.Close()
+	if res3.StatusCode != http.StatusOK {
+		t.Fatalf("download: status %d", res3.StatusCode)
+	}
+	if ct := res3.Header.Get("Content-Type"); ct != "video/webm" {
+		t.Errorf("content-type = %q, want video/webm", ct)
+	}
+	if cd := res3.Header.Get("Content-Disposition"); !strings.Contains(cd, "attachment") || !strings.Contains(cd, ".webm") {
+		t.Errorf("content-disposition = %q", cd)
+	}
+	got, err := io.ReadAll(res3.Body)
+	if err != nil {
+		t.Fatalf("read download: %v", err)
+	}
+	if string(got) != "FAKEWEBM" {
+		t.Errorf("downloaded %q, want %q", got, "FAKEWEBM")
+	}
+}
+
+func TestClipUploadRejectsWrongPassword(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	res := uploadClip(t, srv, roomID, "errada", "FAKEWEBM")
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("upload wrong password: status %d, want 401", res.StatusCode)
+	}
+
+	res2, err := srv.Client().Get(srv.URL + "/api/clips")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	defer res2.Body.Close()
+	var list []map[string]any
+	if err := json.NewDecoder(res2.Body).Decode(&list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(list) != 0 {
+		t.Errorf("unauthenticated upload stored %d clips", len(list))
+	}
+}
+
+func TestClipDownloadRejectsAMalformedID(t *testing.T) {
+	srv := newServer(t)
+
+	// The id becomes part of a storage key; anything with a slash,
+	// dots, or uppercase in it is refused before it gets there.
+	res, err := srv.Client().Get(srv.URL + "/api/clips/..%2Fsneaky/download")
+	if err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("malformed id: status %d, want 404", res.StatusCode)
 	}
 }
