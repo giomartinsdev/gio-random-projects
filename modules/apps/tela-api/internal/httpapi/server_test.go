@@ -660,3 +660,25 @@ func publish(t *testing.T, conn *websocket.Conn) *webrtc.PeerConnection {
 	}
 	return pc
 }
+
+// The reset is a relay: whoever clicks tells the whole room -- their
+// own tab included -- to rebuild every media connection. Both halves
+// of "everyone" are asserted, because a reset that skipped the sender
+// would leave exactly the person who asked for one unreset.
+func TestRoomResetReachesEveryoneIncludingTheSender(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, _ := join(t, srv, roomID)
+	b, _ := join(t, srv, roomID)
+	readUntil(t, a, "peer:join") // b's arrival, announced to a
+
+	write(t, a, map[string]any{"type": "room:reset"})
+
+	if got := readUntil(t, a, "room:reset"); got["type"] != "room:reset" {
+		t.Fatalf("sender expected its own reset echo, got %v", got)
+	}
+	if got := readUntil(t, b, "room:reset"); got["type"] != "room:reset" {
+		t.Fatalf("other peer expected the reset, got %v", got)
+	}
+}

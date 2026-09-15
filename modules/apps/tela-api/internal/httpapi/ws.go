@@ -295,6 +295,19 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 				w.room.Rename(w.peer, name)
 			}
 
+		// The room's red "reset" button: something is wedged and every
+		// media connection in the room should be rebuilt from zero. The
+		// server's part is only relaying the instruction to everyone, the
+		// sender included -- each client then drops its own WebSocket,
+		// and the reconnect (same resume identity) replays the
+		// server-restart recovery: this session's publisher and
+		// subscriber are closed on the way out, a fresh Subscriber is
+		// offered on the way in, and the capture that never stopped is
+		// re-offered as-is. Nobody re-picks their window; see useRoom's
+		// room:reset case.
+		case "room:reset":
+			w.room.Broadcast(map[string]any{"type": "room:reset"}, "")
+
 		case "ping":
 			w.peer.Send(map[string]any{"type": "pong"})
 

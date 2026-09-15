@@ -624,15 +624,23 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
               send({ type: "subscribe:video", publisherId: id, enabled: false });
             }
 
+            // The receive side starts over too, publisher or not: the
+            // server built a brand-new Subscriber for this connection,
+            // and its offers carry a fresh m-line layout. Answering from
+            // the previous peer connection fails the moment history
+            // diverges ("the order of m-lines in subsequent offer doesn't
+            // match") -- a failed answer means the tracks attach in SDP
+            // but no media ever flows. Closing the old PC makes the next
+            // subscribe:offer build a symmetric fresh one.
+            subscribeRef.current?.close();
+            subscribeRef.current = null;
+
             // A restarted server has forgotten everything, this
             // browser's publish connection included -- so republish.
             // The capture itself survived the disconnect (nobody called
             // stopSharing), so re-offer the same tracks instead of
-            // making the person re-pick the window; the receive side is
-            // re-offered by the server.
+            // making the person re-pick the window.
             if (localStreamRef.current && sourceRef.current) {
-              subscribeRef.current?.close();
-              subscribeRef.current = null;
               await publishStream(localStreamRef.current).catch(() => {});
             }
             break;
@@ -799,6 +807,18 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
             setKnockRequests((current) => current.filter((k) => k.requestId !== requestId));
             break;
           }
+
+          // The room's reset button: something is wedged and every media
+          // connection should be rebuilt. Closing the WebSocket IS the
+          // whole implementation -- the reconnect below already replays
+          // the server-restart recovery: the server closes this session's
+          // publisher and subscriber, re-offers a fresh subscriber after
+          // the resume, and the still-running capture is re-offered
+          // as-is, so nobody is asked to re-pick their window. Only the
+          // transport dies, briefly.
+          case "room:reset":
+            wsRef.current?.close();
+            break;
         }
       };
     };
@@ -824,6 +844,13 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   const approveKnock = useCallback((requestId: string) => send({ type: "knock:approve", requestId }), [send]);
   const denyKnock = useCallback((requestId: string) => send({ type: "knock:deny", requestId }), [send]);
 
+  // The room-wide "reset" button: asks the server to tell everyone to
+  // rebuild their media connections. This side does nothing itself --
+  // the room:reset case above turns the echo into a reconnect, which is
+  // the one path that genuinely rebuilds everything (including server
+  // state) without anyone re-picking their capture.
+  const resetRoom = useCallback(() => send({ type: "room:reset" }), [send]);
+
   return {
     status,
     errorMessage,
@@ -845,6 +872,7 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     applyQuality,
     startSharing,
     stopSharing,
+    resetRoom,
     knockRequests,
     approveKnock,
     denyKnock,

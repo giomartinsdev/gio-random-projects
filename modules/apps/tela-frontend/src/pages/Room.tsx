@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Activity, Check, Crop, Link2, MonitorUp, Pencil, PictureInPicture2, SlidersHorizontal, Trash2, Users, Video, VideoOff, X } from "lucide-react";
+import { Activity, ArrowLeft, Check, Crop, Link2, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Trash2, Users, Video, VideoOff, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
 import { usePeerStats } from "@/lib/usePeerStats";
@@ -601,6 +601,22 @@ function LiveRoom({
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2.5 sm:px-4 sm:py-3">
+        {/* A back affordance you can actually see -- the wordmark alone
+            asked people to know it was a link. The wordmark stays a link
+            too; this is the one that reads as a button. */}
+        <Button
+          asChild
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          aria-label="Voltar para a página inicial"
+          title="Voltar para a página inicial"
+        >
+          <Link to="/">
+            <ArrowLeft className="size-4" />
+            <span className="hidden sm:inline">Voltar</span>
+          </Link>
+        </Button>
         <Link to="/" className="text-lg font-bold tracking-tight">
           tela
         </Link>
@@ -690,6 +706,29 @@ function LiveRoom({
               </Button>
             </motion.div>
           )}
+          {/* The "algo esquisito" escape hatch: one click tells the whole
+              room to drop and rebuild every media connection. Captures
+              keep running -- nobody re-picks their window -- so the cost
+              of a stray click is a couple of seconds of rebuilding, not
+              a lost share. */}
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              // One guard before dropping everyone's connections: the
+              // button lives next to the primary actions and a stray
+              // click costs the whole room a couple of seconds of
+              // rebuilding. Same native dialog as Apagar sala.
+              if (!confirm("Resetar a conexão de todo mundo? As transmissões continuam — ninguém precisa compartilhar de novo."))
+                return;
+              room.resetRoom();
+            }}
+            className="flex-1 sm:flex-none"
+            title="Reconstrói as conexões de todo mundo quando algo engasga — as transmissões continuam, ninguém precisa compartilhar de novo"
+          >
+            <RotateCcw className="size-4" />
+            Reset
+          </Button>
         </div>
       </header>
 
@@ -1231,7 +1270,16 @@ function TileVideo({
     // makes the picture come back after a video opt-out is undone.
     const reseat = () => {
       video.srcObject = stream;
-      void video.play().catch(() => {});
+      // Clears the tap overlay too: the first play() attempt (right
+      // after a remount) can lose the autoplay race and put the overlay
+      // up, while this later one -- same gesture era, media now
+      // flowing -- succeeds. Leaving needsTap set would park a "Toque
+      // para assistir" sheet on top of a video that is, in fact,
+      // already playing.
+      video.play().then(
+        () => setNeedsTap(false),
+        () => {},
+      );
     };
     stream.addEventListener("addtrack", reseat);
     // Phones refuse to autoplay anything carrying sound. Rather than
