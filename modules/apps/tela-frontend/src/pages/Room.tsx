@@ -720,8 +720,12 @@ function LiveRoom({
           the status line. Static lucide icons throughout -- the lottie
           ones here animated in an endless loop (react-useanimations
           forces LOOP_PLAY for airplay/checkmark/error) and restarted on
-          every re-render, which read as the header flickering. */}
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-2 border-b bg-background/70 px-3 py-2.5 backdrop-blur sm:px-4 sm:py-3">
+          every re-render, which read as the header flickering.
+          relative z-20: backdrop-blur turns the header into a stacking
+          context, and without a z-index of its own the <main> that
+          follows paints over it -- popovers born here (the people list)
+          ended up behind the video. */}
+      <header className="relative z-20 flex flex-wrap items-center gap-x-2 gap-y-2 border-b bg-background/70 px-3 py-2.5 backdrop-blur sm:px-4 sm:py-3">
         <Button
           asChild
           variant="outline"
