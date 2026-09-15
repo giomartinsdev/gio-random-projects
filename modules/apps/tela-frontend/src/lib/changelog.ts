@@ -11,6 +11,19 @@ export type Release = {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.2.0",
+    date: "2026-09-15",
+    items: [
+      "Sala ociosa: 15 minutos sem ninguém transmitindo dispara um aviso com contagem regressiva e fecha a sala pra todo mundo.",
+      "Clips: grave os últimos 5 minutos da sua transmissão, guarde no servidor e baixe depois — a home agora tem uma seção com todos os seus clips.",
+      "Modo teatro e spotlight: palco em tela cheia pra todos e a estrela que põe alguém em foco pra sala inteira.",
+      "Gráfico de pulso por tile (bitrate dos últimos minutos) e fundo desfocado com a cor da sala.",
+      "Multi-nó: várias instâncias do servidor atrás de um endereço, cada sala morando em uma delas — o roteamento é invisível pra quem usa.",
+      "/statusz público com o pulso do serviço e métricas Prometheus opcionais (TELA_METRICS=1).",
+      "Changelog na home: é daqui que as novidades passam a sair.",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-09-15",
     items: [
