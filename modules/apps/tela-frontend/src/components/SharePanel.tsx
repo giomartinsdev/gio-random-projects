@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X } from "lucide-react";
+import { AppWindow, Camera, Info, Monitor, PanelTop, X } from "lucide-react";
 import { FPS_OPTIONS, QUALITY_OPTIONS, type DisplaySurface, type Fps, type Quality, type Source } from "@/lib/useRoom";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { loadingIcon } from "@/lib/lottie-icons";
@@ -14,11 +14,11 @@ export type ShareChoice = { source: Source; quality: Quality; fps: Fps; surface:
 // SURFACE_OPTIONS so the two stay in sync; "Câmera" is panel-only.
 type SurfaceOrCamera = DisplaySurface | "camera";
 
-const SOURCE_OPTIONS: { value: SurfaceOrCamera; label: string }[] = [
-  { value: "monitor", label: "Tela inteira" },
-  { value: "window", label: "Janela" },
-  { value: "browser", label: "Aba" },
-  { value: "camera", label: "Câmera" },
+const SOURCE_OPTIONS: { value: SurfaceOrCamera; label: string; hint: string; icon: typeof Monitor }[] = [
+  { value: "monitor", label: "Tela inteira", hint: "tudo o que você vê", icon: Monitor },
+  { value: "window", label: "Janela", hint: "um app específico", icon: AppWindow },
+  { value: "browser", label: "Aba", hint: "uma aba do navegador", icon: PanelTop },
+  { value: "camera", label: "Câmera", hint: "sua webcam", icon: Camera },
 ];
 
 function sourceKeyOf(c: ShareChoice): SurfaceOrCamera {
@@ -114,12 +114,19 @@ export function SharePanel({
           animate={{ x: 0 }}
           exit={{ x: "100%" }}
           transition={{ duration: 0.22, ease: "easeOut" }}
-          className="absolute inset-y-0 right-0 z-40 flex w-full flex-col border-l bg-card text-card-foreground shadow-xl outline-none sm:max-w-[22rem]"
+          className="absolute inset-y-0 right-0 z-40 flex w-full flex-col border-l bg-card text-card-foreground shadow-2xl outline-none sm:max-w-[25rem]"
         >
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <h2 id="share-panel-title" className="text-base font-semibold">
-              {sharing ? "Qualidade da transmissão" : "Compartilhar"}
-            </h2>
+          <div className="flex items-start justify-between gap-3 border-b px-5 py-4">
+            <div>
+              <h2 id="share-panel-title" className="text-lg font-semibold tracking-tight">
+                {sharing ? "Qualidade da transmissão" : "Compartilhar"}
+              </h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {sharing
+                  ? "Ajuste o que está no ar sem encerrar nada."
+                  : "Escolha o que vai no ar e com que qualidade."}
+              </p>
+            </div>
             <Button
               variant="ghost"
               size="icon"
@@ -132,19 +139,98 @@ export function SharePanel({
             </Button>
           </div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+          <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
             {canScreenShare && (
-              // Which source to capture. Shown live as well as up front:
-              // changing the source of an existing share restarts the
-              // transmission (a new capture, a new connection), and the
-              // caption below says so.
-              <SegmentRow label="O que compartilhar" ariaLabel="Fonte" options={SOURCE_OPTIONS} value={sourceKeyOf(choice)} onChange={(key) => setChoice(applySourceKey(choice, key))} />
+              // Which source to capture, as cards rather than a flat
+              // segmented row: four choices with room to explain each.
+              // Shown live as well as up front -- changing the source of
+              // an existing share restarts the transmission (a new
+              // capture, a new connection), and the caption below says so.
+              <section>
+                <SectionLabel>O que compartilhar</SectionLabel>
+                <div className="grid grid-cols-2 gap-2">
+                  {SOURCE_OPTIONS.map(({ value, label, hint, icon: Icon }) => {
+                    const selected = sourceKeyOf(choice) === value;
+                    return (
+                      <motion.button
+                        key={value}
+                        type="button"
+                        aria-pressed={selected}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => setChoice(applySourceKey(choice, value))}
+                        className={cn(
+                          "group flex flex-col items-start gap-2 rounded-xl border p-3 text-left transition-colors",
+                          selected
+                            ? "border-primary bg-primary/10 ring-1 ring-primary"
+                            : "border-border bg-secondary/30 hover:border-primary/40 hover:bg-secondary/60",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "flex size-9 items-center justify-center rounded-lg transition-colors",
+                            selected
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-secondary text-muted-foreground group-hover:text-foreground",
+                          )}
+                        >
+                          <Icon className="size-4.5" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium leading-tight">{label}</span>
+                          <span className="block text-xs text-muted-foreground">{hint}</span>
+                        </span>
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              </section>
             )}
 
-            <div className="space-y-2">
-              <SegmentRow ariaLabel="Qualidade" label="Qualidade" options={QUALITY_OPTIONS} value={choice.quality} onChange={(quality) => setChoice((c) => ({ ...c, quality }))} />
-              <SegmentRow ariaLabel="Quadros por segundo" label="FPS" options={FPS_OPTIONS} value={choice.fps} onChange={(fps) => setChoice((c) => ({ ...c, fps }))} />
-            </div>
+            <section className="space-y-3">
+              <div>
+                <SectionLabel>Qualidade</SectionLabel>
+                {/* Short labels: the raw tables say "1080p"/"30 fps",
+                    which wraps badly five-across in a 25rem drawer. The
+                    row label already says what the numbers mean. */}
+                <Segments
+                  ariaLabel="Qualidade"
+                  options={QUALITY_OPTIONS.map((o) => ({
+                    value: o.value,
+                    label: o.value === "source" ? "Orig" : o.value.replace("p", ""),
+                  }))}
+                  value={choice.quality}
+                  onChange={(quality) => setChoice((c) => ({ ...c, quality }))}
+                />
+              </div>
+              <div>
+                <SectionLabel>Quadros por segundo</SectionLabel>
+                <Segments
+                  ariaLabel="Quadros por segundo"
+                  options={FPS_OPTIONS.map((o) => ({
+                    value: o.value,
+                    label: o.value === "source" ? "Orig" : String(o.value),
+                  }))}
+                  value={choice.fps}
+                  onChange={(fps) => setChoice((c) => ({ ...c, fps }))}
+                />
+              </div>
+            </section>
+
+            {/* One line that restates the pick in plain words -- the
+                instant feedback a settings panel owes: change anything
+                and this sentence changes with it. "source" is the
+                don't-constrain sentinel; in prose it reads "original". */}
+            <p className="text-sm text-muted-foreground">
+              Vai no ar com{" "}
+              <span className="font-medium text-foreground">
+                {choice.quality === "source" ? "qualidade original" : choice.quality}
+              </span>{" "}
+              a{" "}
+              <span className="font-medium text-foreground">
+                {choice.fps === "source" ? "fps originais" : `${choice.fps} fps`}
+              </span>
+              {choice.source === "camera" ? ", da câmera" : ""}.
+            </p>
 
             {canScreenShare && (
               // The one thing the browser can't do on its own -- excluding
@@ -152,15 +238,18 @@ export function SharePanel({
               // out where the choice is made: per-app output routing for
               // the monitor case, and Chrome 141's per-window audio for
               // the window case.
-              <p className="rounded-lg border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
-                Compartilhando uma <span className="font-medium text-foreground">janela</span>, só o áudio desse app vai
-                (Chrome 141+). Na tela inteira, para deixar um app de fora — ex.: Discord — defina a saída dele para
-                outro dispositivo nas configurações de som.
+              <p className="flex gap-2 rounded-lg border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+                <Info className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  Compartilhando uma <span className="font-medium text-foreground">janela</span>, só o áudio desse app vai
+                  (Chrome 141+). Na tela inteira, para deixar um app de fora — ex.: Discord — defina a saída dele para
+                  outro dispositivo nas configurações de som.
+                </span>
               </p>
             )}
 
             {sharing && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs leading-relaxed text-muted-foreground">
                 Trocar a fonte reinicia a transmissão por alguns instantes. Reduções de qualidade/FPS aplicam na hora, sem
                 recapturar ou cortar a transmissão. Aumentos (ou "Original") valem a partir do próximo compartilhamento.
               </p>
@@ -169,8 +258,16 @@ export function SharePanel({
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
 
-          <div className="flex justify-end border-t px-4 py-3">
-            <Button disabled={starting} onClick={() => onConfirm(choice)}>
+          <div className="flex gap-2 border-t bg-card px-5 py-4">
+            <Button
+              variant="outline"
+              disabled={starting}
+              onClick={() => onOpenChange(false)}
+              aria-label="Cancelar"
+            >
+              Cancelar
+            </Button>
+            <Button className="h-10 flex-1" disabled={starting} onClick={() => onConfirm(choice)}>
               {starting && <AnimatedIcon animation={loadingIcon} autoplay loop />}
               {sharing ? "Aplicar" : "Compartilhar"}
             </Button>
@@ -179,6 +276,10 @@ export function SharePanel({
       )}
     </AnimatePresence>
   );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-muted-foreground">{children}</span>;
 }
 
 // One flat row of segmented options -- aria-pressed buttons rendered from
@@ -196,7 +297,7 @@ export function Segments<T extends string | number>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div role="group" aria-label={ariaLabel} className="flex overflow-hidden rounded-md border">
+    <div role="group" aria-label={ariaLabel} className="flex overflow-hidden rounded-lg border">
       {options.map((o) => (
         <button
           key={String(o.value)}
@@ -204,36 +305,15 @@ export function Segments<T extends string | number>({
           aria-pressed={o.value === value}
           onClick={() => onChange(o.value)}
           className={cn(
-            "flex-1 px-1 py-1.5 text-xs font-medium transition-colors sm:text-sm",
+            "flex-1 px-1 py-2 text-xs font-medium transition-colors sm:text-sm",
             o.value === value
               ? "bg-primary text-primary-foreground"
-              : "bg-secondary text-secondary-foreground hover:bg-secondary/70",
+              : "bg-secondary/50 text-secondary-foreground hover:bg-secondary",
           )}
         >
           {o.label}
         </button>
       ))}
     </div>
-  );
-}
-
-function SegmentRow<T extends string | number>({
-  ariaLabel,
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  ariaLabel: string;
-  label: string;
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs text-muted-foreground">{label}</span>
-      <Segments ariaLabel={ariaLabel} options={options} value={value} onChange={onChange} />
-    </label>
   );
 }

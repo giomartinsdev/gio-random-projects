@@ -714,7 +714,7 @@ function LiveRoom({
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2.5 sm:px-4 sm:py-3">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background/70 px-3 py-2.5 backdrop-blur sm:px-4 sm:py-3">
         {/* A back affordance you can actually see -- the wordmark alone
             asked people to know it was a link. The wordmark stays a link
             too; this is the one that reads as a button. */}
