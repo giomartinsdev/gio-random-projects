@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Activity, AlertTriangle, ArrowLeft, Check, Clapperboard, Crop, Film, Link2, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Star, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
+import { Activity, Airplay, AlertTriangle, ArrowLeft, Check, Clapperboard, Copy, Crop, Film, Link2, Mic, MicOff, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Square, Star, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
 import { ClipRecorder } from "@/lib/clipRecorder";
@@ -19,17 +19,11 @@ import { SharePanel, type ShareChoice } from "@/components/SharePanel";
 import { useDismissable } from "@/lib/useDismissable";
 import { enterFullscreen, exitFullscreen, fullscreenChangeEventName, isFullscreen } from "@/lib/fullscreen";
 import {
-  airplayIcon,
   arrowRightCircleIcon,
-  checkmarkIcon,
-  copyIcon,
-  errorIcon,
   loadingIcon,
-  microphoneIcon,
   notificationIcon,
   playPauseCircleIcon,
   plusToXIcon,
-  videoIcon,
   volumeIcon,
 } from "@/lib/lottie-icons";
 
@@ -316,7 +310,14 @@ function KnockLobby({
             transition={{ duration: 0.3, ease: "easeOut" }}
             className="flex justify-center text-muted-foreground"
           >
-            <AnimatedIcon animation={denied ? errorIcon : loadingIcon} size={40} autoplay loop={!denied} />
+            {/* A spin only while the knock is pending; once denied a
+                looping error lottie would just spin forever -- a static
+                warning reads calmer and never re-triggers. */}
+            {denied ? (
+              <AlertTriangle className="size-10 text-destructive" />
+            ) : (
+              <AnimatedIcon animation={loadingIcon} size={40} autoplay loop />
+            )}
           </motion.div>
           <Button variant="outline" className="w-full" onClick={onCancel}>
             {denied ? "Voltar" : "Cancelar"}
@@ -714,26 +715,25 @@ function LiveRoom({
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background/70 px-3 py-2.5 backdrop-blur sm:px-4 sm:py-3">
-        {/* A back affordance you can actually see -- the wordmark alone
-            asked people to know it was a link. The wordmark stays a link
-            too; this is the one that reads as a button. */}
+      {/* Icon-first header: every secondary action is a named icon
+          (title + aria-label), text survives only on the primary CTA and
+          the status line. Static lucide icons throughout -- the lottie
+          ones here animated in an endless loop (react-useanimations
+          forces LOOP_PLAY for airplay/checkmark/error) and restarted on
+          every re-render, which read as the header flickering. */}
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-2 border-b bg-background/70 px-3 py-2.5 backdrop-blur sm:px-4 sm:py-3">
         <Button
           asChild
           variant="outline"
-          size="sm"
+          size="icon"
           className="shrink-0"
           aria-label="Voltar para a página inicial"
           title="Voltar para a página inicial"
         >
           <Link to="/">
             <ArrowLeft className="size-4" />
-            <span className="hidden sm:inline">Voltar</span>
           </Link>
         </Button>
-        <Link to="/" className="text-lg font-bold tracking-tight">
-          tela
-        </Link>
         <CopyableCode code={roomId} />
         {password && <CopyLinkWithPassword roomId={roomId} password={password} />}
         <PeopleList
@@ -748,7 +748,7 @@ function LiveRoom({
             off by default stay off, and the state rides localStorage. */}
         <Button
           variant="ghost"
-          size="sm"
+          size="icon"
           onClick={toggleSounds}
           aria-label={soundsOn ? "Desativar sons de entrada e saída" : "Ativar sons de entrada e saída"}
           title={soundsOn ? "Sons de entrada e saída: ligados" : "Sons de entrada e saída: desligados"}
@@ -771,87 +771,86 @@ function LiveRoom({
         {isAdm && password && (
           <Button
             variant="destructive"
-            size="sm"
+            size="icon"
             onClick={async () => {
               if (!confirm("Tem certeza que quer apagar esta sala?")) return;
               await api.deleteRoom(roomId, password);
               navigate("/");
             }}
-            className="flex-1 sm:flex-none"
+            aria-label="Apagar sala"
+            title="Apagar sala"
           >
             <Trash2 className="size-4" />
-            Apagar sala
           </Button>
         )}
 
-        {/* Full width on a phone (the buttons split the row), pushed to
-            the right once everything fits on one line. Source, quality
-            and FPS all live behind the share button now -- pre-stream in
-            the side panel, mid-stream via its live variant. */}
-        <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">
+        {/* Pushed to the right once everything fits on one line; on a
+            phone the CTA stretches and the icons keep their size. Source,
+            quality and FPS all live behind the share button now --
+            pre-stream in the side panel, mid-stream via its live variant. */}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           {room.isSharing ? (
             <>
               <Button
                 variant="secondary"
+                size="icon"
                 onClick={toggleSharePanel}
-                className="flex-1 sm:flex-none"
-                title="Mudar qualidade e FPS sem recomeçar a transmissão"
+                aria-label={`Qualidade: ${qualityLabel}`}
+                title={`Qualidade: ${qualityLabel} — mude sem recomeçar a transmissão`}
               >
                 <SlidersHorizontal className="size-4" />
-                <span className="sm:hidden">Qualidade</span>
-                <span className="hidden sm:inline">Qualidade: {qualityLabel}</span>
               </Button>
               <Button
                 variant="secondary"
+                size="icon"
                 onClick={() => room.setAudio(!room.sendingAudio)}
                 disabled={!room.hasAudioTrack}
-                className="flex-1 sm:flex-none"
+                aria-label={
+                  !room.hasAudioTrack
+                    ? "Esta transmissão não tem áudio"
+                    : room.sendingAudio
+                      ? "Parar de enviar áudio"
+                      : "Voltar a enviar áudio"
+                }
                 title={
                   room.hasAudioTrack
                     ? room.sendingAudio
-                      ? "Parar de enviar áudio"
-                      : "Voltar a enviar áudio"
+                      ? "Enviando áudio — clique para parar"
+                      : "Áudio desligado — clique para voltar a enviar"
                     : "Esta transmissão não tem áudio"
                 }
               >
-                <AnimatedIcon animation={microphoneIcon} reverse={!(room.sendingAudio && room.hasAudioTrack)} />
-                <span className="sm:hidden">{room.sendingAudio && room.hasAudioTrack ? "Áudio" : "Sem áudio"}</span>
-                <span className="hidden sm:inline">
-                  {!room.hasAudioTrack ? "Sem áudio" : room.sendingAudio ? "Enviando áudio" : "Áudio desligado"}
-                </span>
+                {room.sendingAudio && room.hasAudioTrack ? <Mic className="size-4" /> : <MicOff className="size-4" />}
               </Button>
-              <Button variant="destructive" onClick={room.stopSharing} className="flex-1 sm:flex-none">
-                <AnimatedIcon animation={errorIcon} />
-                Parar
-              </Button>
-              {/* Cuts the last ~5 minutes of THIS capture into a clip
-                  and files it on the server -- only meaningful while a
-                  share is live. */}
               <Button
                 variant="secondary"
+                size="icon"
                 onClick={makeClip}
                 disabled={clipState === "uploading"}
-                className="flex-1 sm:flex-none"
+                aria-label={
+                  clipState === "uploading"
+                    ? `Salvando clip: ${Math.round(clipProgress * 100)}%`
+                    : "Salvar clip dos últimos 5 minutos"
+                }
                 title="Salva os últimos 5 minutos da sua transmissão — depois baixe na home, na seção Clips"
               >
                 <Clapperboard className="size-4" />
-                <span className="sm:hidden">Clip</span>
-                <span className="hidden sm:inline">
-                  {clipState === "uploading"
-                    ? `Enviando ${Math.round(clipProgress * 100)}%`
-                    : clipState === "saved"
-                      ? "Salvo!"
-                      : "Clip 5min"}
+              </Button>
+              {clipState !== "idle" && (
+                <span className="text-xs tabular-nums text-muted-foreground" aria-live="polite">
+                  {clipState === "uploading" ? `${Math.round(clipProgress * 100)}%` : "salvo ✓"}
                 </span>
+              )}
+              <Button variant="destructive" onClick={room.stopSharing}>
+                <Square className="size-3.5 fill-current" />
+                Parar
               </Button>
             </>
           ) : (
-            <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex-1 sm:flex-none">
-              <Button onClick={toggleSharePanel} disabled={starting} className="w-full">
-                <AnimatedIcon animation={canShareScreen ? airplayIcon : videoIcon} />
-                {canShareScreen ? "Compartilhar" : "Compartilhar câmera"}
-              </Button>
-            </motion.div>
+            <Button onClick={toggleSharePanel} disabled={starting} className="min-w-36 flex-1 sm:flex-none">
+              {canShareScreen ? <Airplay className="size-4" /> : <Video className="size-4" />}
+              {canShareScreen ? "Compartilhar" : "Compartilhar câmera"}
+            </Button>
           )}
           {/* Theater: one stage tile plus a thumbnail strip, for
               watching instead of browsing. Only meaningful when there
@@ -859,15 +858,13 @@ function LiveRoom({
           {tiles.length > 0 && (
             <Button
               variant={theater ? "default" : "secondary"}
-              size="sm"
+              size="icon"
               onClick={() => setTheater((v) => !v)}
-              className="flex-1 sm:flex-none"
               aria-pressed={theater}
+              aria-label={theater ? "Sair do modo teatro" : "Modo teatro"}
               title={theater ? "Voltar para a grade" : "Modo teatro: um palco grande e uma faixa com o resto"}
             >
               <Film className="size-4" />
-              <span className="sm:hidden">Teatro</span>
-              <span className="hidden sm:inline">{theater ? "Sair do teatro" : "Teatro"}</span>
             </Button>
           )}
           {/* The "algo esquisito" escape hatch: one click tells the whole
@@ -877,7 +874,7 @@ function LiveRoom({
               a lost share. */}
           <Button
             variant="destructive"
-            size="sm"
+            size="icon"
             onClick={() => {
               // One guard before dropping everyone's connections: the
               // button lives next to the primary actions and a stray
@@ -887,11 +884,10 @@ function LiveRoom({
                 return;
               room.resetRoom();
             }}
-            className="flex-1 sm:flex-none"
+            aria-label="Resetar conexões da sala"
             title="Reconstrói as conexões de todo mundo quando algo engasga — as transmissões continuam, ninguém precisa compartilhar de novo"
           >
             <RotateCcw className="size-4" />
-            Reset
           </Button>
         </div>
       </header>
@@ -934,7 +930,7 @@ function LiveRoom({
                           Recusar
                         </Button>
                         <Button size="sm" onClick={() => room.approveKnock(req.requestId)}>
-                          <AnimatedIcon animation={checkmarkIcon} autoplay />
+                          <Check className="size-4" />
                           Aprovar
                         </Button>
                       </span>
@@ -1293,7 +1289,6 @@ function PeopleList({
       >
         <Users className="size-4" />
         <span className="tabular-nums">{count}</span>
-        <span className="hidden sm:inline">{count === 1 ? "pessoa" : "pessoas"}</span>
       </button>
       <AnimatePresence>
         {open && (
@@ -2159,18 +2154,12 @@ function CopyLinkWithPassword({
   return (
     <Button
       variant={variant}
-      size="sm"
+      size="icon"
       onClick={copy}
+      aria-label={copied ? "Link com senha copiado!" : "Copiar link direto com senha"}
       title="Copiar link direto com senha"
-      className="gap-1.5"
     >
-      {copied ? (
-        <AnimatedIcon animation={checkmarkIcon} autoplay className="text-green-500" />
-      ) : (
-        <Link2 className="size-4" />
-      )}
-      <span className="hidden sm:inline">{copied ? "Link com senha copiado!" : "Copiar link com senha"}</span>
-      <span className="sm:hidden">{copied ? "Copiado!" : "Link com senha"}</span>
+      {copied ? <Check className="size-4 text-green-500" /> : <Link2 className="size-4" />}
     </Button>
   );
 }
@@ -2195,8 +2184,14 @@ function CopyableCode({ code }: { code: string }) {
   }
 
   return (
-    <Button variant="secondary" size="sm" onClick={copy} className="font-mono tracking-widest" title="Copiar código / link da sala">
-      <AnimatedIcon animation={copied ? checkmarkIcon : copyIcon} autoplay={copied} />
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={copy}
+      className="gap-1.5 font-mono tracking-widest"
+      title="Copiar código / link da sala"
+    >
+      {copied ? <Check className="size-4 text-green-500" /> : <Copy className="size-3.5 text-muted-foreground" />}
       {code}
     </Button>
   );
