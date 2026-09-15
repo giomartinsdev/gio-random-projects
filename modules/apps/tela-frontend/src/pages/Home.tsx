@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Users } from "lucide-react";
+import { ChevronDown, Sparkles, Users } from "lucide-react";
 import { api, type RoomSummary } from "@/lib/api";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { airplayIcon, arrowRightCircleIcon, loadingIcon, radioButtonIcon } from "@/lib/lottie-icons";
@@ -11,11 +11,80 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { APP_VERSION, CHANGELOG, type Release } from "@/lib/changelog";
 
 // How often the "salas rolando" list refreshes. Frequent enough that a
 // room appearing/emptying out feels close to live, cheap enough (one
 // small JSON response) that nobody notices the polling.
 const ROOMS_POLL_MS = 5_000;
+
+// "2026-09-15" parsed as UTC midnight comes out a day early in Brazil
+// (UTC-3), so the ISO string is formatted by hand instead of through
+// Date -- the changelog's dates are calendar dates, not moments.
+function formatDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const months = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  return `${d} de ${months[m - 1]} de ${y}`;
+}
+
+function WhatsNew() {
+  const [showOlder, setShowOlder] = useState(false);
+  const [latest, ...older] = CHANGELOG;
+  if (!latest) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Sparkles className="size-4 text-primary" />
+          Novidades
+          <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 font-mono text-xs font-medium text-secondary-foreground">
+            v{APP_VERSION}
+          </span>
+        </CardTitle>
+        <CardDescription>{formatDay(latest.date)}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <ul className="space-y-1.5 text-sm">
+          {latest.items.map((item) => (
+            <li key={item} className="flex gap-2">
+              <span aria-hidden className="mt-[7px] size-1.5 shrink-0 rounded-full bg-primary/60" />
+              <span className="text-foreground/90">{item}</span>
+            </li>
+          ))}
+        </ul>
+        {older.length > 0 && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowOlder((v) => !v)}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
+            >
+              <ChevronDown className={"size-3.5 transition-transform" + (showOlder ? " rotate-180" : "")} />
+              {showOlder ? "esconder versões anteriores" : "versões anteriores"}
+            </button>
+            {showOlder && (
+              <div className="mt-3 space-y-3 border-l-2 pl-3">
+                {older.map((release: Release) => (
+                  <div key={release.version}>
+                    <p className="text-xs font-medium">
+                      v{release.version}{" "}
+                      <span className="font-normal text-muted-foreground">· {formatDay(release.date)}</span>
+                    </p>
+                    <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
+                      {release.items.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function Home() {
   const navigate = useNavigate();
@@ -270,6 +339,15 @@ export default function Home() {
               </AnimatePresence>
             </CardContent>
           </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.15, ease: "easeOut" }}
+          className="mt-4"
+        >
+          <WhatsNew />
         </motion.div>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
