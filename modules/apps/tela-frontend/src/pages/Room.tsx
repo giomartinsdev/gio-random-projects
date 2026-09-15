@@ -358,6 +358,13 @@ function LiveRoom({
   // Which people I've muted, decided per stream and only on my side --
   // muting someone here doesn't stop them sending audio to anyone else.
   const [mutedPeers, setMutedPeers] = useState<Set<string>>(new Set());
+  // How loud each person plays for me, 0..1, per peer and only on my
+  // side. The slider is the fine knob over the room's mix; the mute
+  // toggle stays the coarse one (and the M shortcut keeps flipping it
+  // directly). Session-local like mutedPeers: a preference about THIS
+  // room's mix, not a room fact.
+  const [volumes, setVolumes] = useState<Record<string, number>>({});
+  const setVolume = (peerId: string, v: number) => setVolumes((current) => ({ ...current, [peerId]: v }));
   // One choice for the whole session, not per-tile: switching who
   // you're watching in fullscreen keeps whatever fit you picked
   // instead of resetting to "Original" every time.
@@ -1009,6 +1016,8 @@ function LiveRoom({
             tile={selectedTile}
             muted={mutedPeers.has(selectedTile.peerId)}
             onToggleMuted={() => toggleMuted(selectedTile.peerId)}
+            volume={volumes[selectedTile.peerId] ?? 1}
+            onVolumeChange={(v) => setVolume(selectedTile.peerId, v)}
             videoOff={room.videoOffPeers.has(selectedTile.peerId)}
             onToggleVideo={() => toggleVideo(selectedTile.peerId)}
             spotlightOn={room.spotlight === selectedTile.peerId}
@@ -1028,6 +1037,8 @@ function LiveRoom({
             onPickStage={setTheaterStage}
             mutedPeers={mutedPeers}
             onToggleMuted={toggleMuted}
+            volumes={volumes}
+            onVolumeChange={setVolume}
             videoOffPeers={room.videoOffPeers}
             onToggleVideo={toggleVideo}
             spotlight={room.spotlight}
@@ -1042,6 +1053,8 @@ function LiveRoom({
             tiles={tiles}
             mutedPeers={mutedPeers}
             onToggleMuted={toggleMuted}
+            volumes={volumes}
+            onVolumeChange={setVolume}
             videoOffPeers={room.videoOffPeers}
             onToggleVideo={toggleVideo}
             spotlight={room.spotlight}
@@ -1090,6 +1103,8 @@ function Grid({
   tiles,
   mutedPeers,
   onToggleMuted,
+  volumes,
+  onVolumeChange,
   videoOffPeers,
   onToggleVideo,
   spotlight,
@@ -1101,6 +1116,8 @@ function Grid({
   tiles: Tile[];
   mutedPeers: Set<string>;
   onToggleMuted: (peerId: string) => void;
+  volumes: Record<string, number>;
+  onVolumeChange: (peerId: string, v: number) => void;
   videoOffPeers: Set<string>;
   onToggleVideo: (peerId: string) => void;
   spotlight: string | null;
@@ -1131,7 +1148,11 @@ function Grid({
             data-tile="1"
             className="group relative min-h-0 overflow-hidden rounded-lg border bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <TileVideo tile={tile} muted={mutedPeers.has(tile.peerId)} />
+            <TileVideo
+              tile={tile}
+              muted={mutedPeers.has(tile.peerId)}
+              volume={volumes[tile.peerId] ?? 1}
+            />
             <span className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 text-left text-sm">
               <span className="truncate font-medium">{tile.name}</span>
               <span className="shrink-0 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
@@ -1166,9 +1187,11 @@ function Grid({
             {/* Own tile is always silent (hearing yourself back echoes),
                 so there's nothing to toggle on it. */}
             {!tile.isYou && hasAudio(tile.stream) && (
-              <MuteButton
+              <VolumeControl
                 muted={mutedPeers.has(tile.peerId)}
-                onToggle={() => onToggleMuted(tile.peerId)}
+                onToggleMuted={() => onToggleMuted(tile.peerId)}
+                volume={volumes[tile.peerId] ?? 1}
+                onVolumeChange={(v) => onVolumeChange(tile.peerId, v)}
                 className="absolute right-2 top-2 z-20"
               />
             )}
@@ -1367,6 +1390,8 @@ function FullscreenTile({
   tile,
   muted,
   onToggleMuted,
+  volume,
+  onVolumeChange,
   videoOff,
   onToggleVideo,
   spotlightOn,
@@ -1380,6 +1405,8 @@ function FullscreenTile({
   tile: Tile;
   muted: boolean;
   onToggleMuted: () => void;
+  volume: number;
+  onVolumeChange: (v: number) => void;
   videoOff: boolean;
   onToggleVideo: () => void;
   spotlightOn: boolean;
@@ -1392,7 +1419,7 @@ function FullscreenTile({
 }) {
   return (
     <div className="absolute inset-0 flex flex-col bg-black" data-tile="1">
-      <TileVideo tile={tile} muted={muted} aspectMode={aspectMode} className="flex-1" />
+      <TileVideo tile={tile} muted={muted} volume={volume} aspectMode={aspectMode} className="flex-1" />
       {/* Same story as the grid overlay: cover, don't unmount -- the
           audio underneath must keep playing. Placed before the bars so
           the header cluster above stays clickable. */}
@@ -1416,7 +1443,14 @@ function FullscreenTile({
         {tile.stream && <PipButton />}
         {!tile.isYou && <SpotlightStarButton on={spotlightOn} onToggle={onToggleSpotlight} />}
         {!tile.isYou && <VideoToggleButton off={videoOff} onToggle={onToggleVideo} />}
-        {!tile.isYou && hasAudio(tile.stream) && <MuteButton muted={muted} onToggle={onToggleMuted} />}
+        {!tile.isYou && hasAudio(tile.stream) && (
+          <VolumeControl
+            muted={muted}
+            onToggleMuted={onToggleMuted}
+            volume={volume}
+            onVolumeChange={onVolumeChange}
+          />
+        )}
         <Button variant="secondary" size="sm" onClick={onClose} aria-label="Voltar para o grid">
           <AnimatedIcon animation={plusToXIcon} reverse />
           Voltar
@@ -1437,6 +1471,8 @@ function TheaterView({
   onPickStage,
   mutedPeers,
   onToggleMuted,
+  volumes,
+  onVolumeChange,
   videoOffPeers,
   onToggleVideo,
   spotlight,
@@ -1449,6 +1485,8 @@ function TheaterView({
   onPickStage: (peerId: string | null) => void;
   mutedPeers: Set<string>;
   onToggleMuted: (peerId: string) => void;
+  volumes: Record<string, number>;
+  onVolumeChange: (peerId: string, v: number) => void;
   videoOffPeers: Set<string>;
   onToggleVideo: (peerId: string) => void;
   spotlight: string | null;
@@ -1465,7 +1503,11 @@ function TheaterView({
     <div className="flex min-h-0 flex-1 flex-col">
       {stageTile && (
         <div className="relative min-h-0 flex-1" data-tile="1">
-          <TileVideo tile={stageTile} muted={mutedPeers.has(stageTile.peerId)} />
+          <TileVideo
+            tile={stageTile}
+            muted={mutedPeers.has(stageTile.peerId)}
+            volume={volumes[stageTile.peerId] ?? 1}
+          />
           {/* Same cover-don't-unmount story as the grid and fullscreen:
               the audio lives on the stream under the picture. */}
           {!stageTile.isYou && videoOffPeers.has(stageTile.peerId) && (
@@ -1506,9 +1548,11 @@ function TheaterView({
               />
             )}
             {!stageTile.isYou && hasAudio(stageTile.stream) && (
-              <MuteButton
+              <VolumeControl
                 muted={mutedPeers.has(stageTile.peerId)}
-                onToggle={() => onToggleMuted(stageTile.peerId)}
+                onToggleMuted={() => onToggleMuted(stageTile.peerId)}
+                volume={volumes[stageTile.peerId] ?? 1}
+                onVolumeChange={(v) => onVolumeChange(stageTile.peerId, v)}
               />
             )}
           </div>
@@ -1641,12 +1685,17 @@ function AspectModeButton({ mode, onChange }: { mode: AspectMode; onChange: (mod
 function TileVideo({
   tile,
   muted,
+  volume = 1,
   aspectMode = "auto",
   ambient = true,
   className = "",
 }: {
   tile: Tile;
   muted: boolean;
+  // How loud this peer plays for me (0..1), set on the ELEMENT, not
+  // the stream -- re-seats and re-shares keep the level, and a remount
+  // re-applies it because the effect always runs on mount.
+  volume?: number;
   aspectMode?: AspectMode;
   // Decorative blur behind the letterbox bars. object-contain leaves
   // black bars around a stream whose ratio doesn't match its box; a
@@ -1703,6 +1752,15 @@ function TileVideo({
     );
     return () => stream.removeEventListener("addtrack", reseat);
   }, [tile.stream]);
+
+  // volume is element state (not stream state), but it still has to be
+  // re-asserted when the stream lands: the "conectando…" branch above
+  // has no element at all, so a level chosen before the video mounted
+  // would otherwise be silently lost to the default 1.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) video.volume = volume;
+  }, [volume, tile.stream]);
 
   if (!tile.stream) {
     return (
@@ -1786,31 +1844,71 @@ function TileVideo({
   );
 }
 
-function MuteButton({
+// Per-peer volume: the button opens a small popover with a slider (the
+// fine knob, 0..100) and a mute toggle (the coarse one the M key
+// flips). One control slot on the tile, but both knobs reachable --
+// before this the only option was all-or-nothing muting. The icon
+// speaks for the whole state: any effective silence (muted flag OR
+// slider at zero) reads as off. Clicks stop propagating -- grid tiles
+// are themselves buttons that open fullscreen.
+function VolumeControl({
   muted,
-  onToggle,
+  volume,
+  onToggleMuted,
+  onVolumeChange,
   className = "",
 }: {
   muted: boolean;
-  onToggle: () => void;
+  volume: number;
+  onToggleMuted: () => void;
+  onVolumeChange: (v: number) => void;
   className?: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const ref = useDismissable<HTMLDivElement>(open, () => setOpen(false));
   return (
-    <Button
-      variant="secondary"
-      size="sm"
-      // Grid tiles are themselves buttons that open fullscreen, so this
-      // must not bubble up into that.
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-      className={className}
-      aria-label={muted ? "Ativar som" : "Silenciar"}
-      title={muted ? "Ativar som" : "Silenciar"}
-    >
-      <AnimatedIcon animation={volumeIcon} reverse={muted} />
-    </Button>
+    <div ref={ref} className={"relative " + className}>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+        aria-label="Volume"
+        aria-expanded={open}
+        title="Volume"
+      >
+        <AnimatedIcon animation={volumeIcon} reverse={muted || volume === 0} />
+      </Button>
+      {open && (
+        <div
+          className="absolute right-0 top-full z-30 mt-2 flex w-44 items-center gap-1 rounded-md border bg-card p-2 shadow-lg"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0 [&_svg]:size-3.5"
+            onClick={onToggleMuted}
+            aria-label={muted ? "Ativar som" : "Silenciar"}
+            title={muted ? "Ativar som" : "Silenciar"}
+          >
+            {muted ? <VolumeX /> : <Volume2 />}
+          </Button>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={Math.round(volume * 100)}
+            onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
+            className="h-1.5 w-full accent-primary"
+            aria-label="Volume"
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
