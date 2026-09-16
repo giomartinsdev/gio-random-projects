@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Activity, Airplay, AlertTriangle, ArrowLeft, Check, Clapperboard, Copy, Crop, Film, Link2, Mic, MicOff, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Square, Star, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
-import { ClipRecorder } from "@/lib/clipRecorder";
+import { ClipRecorder, clipSupported } from "@/lib/clipRecorder";
 import { usePeerStats } from "@/lib/usePeerStats";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { useLiveFavicon } from "@/lib/useLiveFavicon";
@@ -422,6 +422,9 @@ function LiveRoom({
   // deliberately not the rest of the room: a clip is a cut of YOUR
   // transmission, not a recording of the meeting.
   useEffect(() => {
+    // iOS Safari has no WebM MediaRecorder -- clips don't exist there,
+    // and starting the recorder would throw the moment a share began.
+    if (!clipSupported) return;
     const rec = clipRecorderRef.current;
     if (room.localStream) rec.start(room.localStream);
     return () => rec.stop();
@@ -726,6 +729,59 @@ function LiveRoom({
   // being sent right now.
   const qualityLabel = QUALITY_OPTIONS.find((o) => o.value === room.quality)?.label ?? String(room.quality);
 
+  // The transmission controls, shared between their two homes: on a
+  // phone they sit in the fixed bottom bar (48px, thumb-sized), on the
+  // desktop they stay in the header at their usual 40px. One set of
+  // elements, both homes -- CSS picks by breakpoint which is visible,
+  // so the two never drift apart.
+  const qualityButton = (
+    <Button
+      variant="secondary"
+      size="icon"
+      className="h-12 w-12 sm:h-10 sm:w-10"
+      onClick={toggleSharePanel}
+      aria-label={`Qualidade: ${qualityLabel}`}
+      title={`Qualidade: ${qualityLabel} — mude sem recomeçar a transmissão`}
+    >
+      <SlidersHorizontal className="size-4" />
+    </Button>
+  );
+  const micButton = (
+    <Button
+      variant="secondary"
+      size="icon"
+      className="h-12 w-12 sm:h-10 sm:w-10"
+      onClick={() => room.setAudio(!room.sendingAudio)}
+      disabled={!room.hasAudioTrack}
+      aria-label={
+        !room.hasAudioTrack
+          ? "Esta transmissão não tem áudio"
+          : room.sendingAudio
+            ? "Parar de enviar áudio"
+            : "Voltar a enviar áudio"
+      }
+      title={
+        room.hasAudioTrack
+          ? room.sendingAudio
+            ? "Enviando áudio — clique para parar"
+            : "Áudio desligado — clique para voltar a enviar"
+          : "Esta transmissão não tem áudio"
+      }
+    >
+      {room.sendingAudio && room.hasAudioTrack ? <Mic className="size-4" /> : <MicOff className="size-4" />}
+    </Button>
+  );
+  // Clips need a WebM MediaRecorder; iOS Safari's records only MP4, so
+  // there the button (and the whole feature) doesn't render.
+  const clipButton = clipSupported ? (
+    <ClipButton
+      clipState={clipState}
+      clipProgress={clipProgress}
+      onClip={makeClip}
+      className="h-12 w-12 sm:h-10 sm:w-10"
+    />
+  ) : null;
+
   return (
     <div className="flex min-h-dvh flex-col">
       {/* Icon-first header: every secondary action is a named icon
@@ -801,56 +857,30 @@ function LiveRoom({
           </Button>
         )}
 
-        {/* Pushed to the right once everything fits on one line; on a
-            phone the CTA stretches and the icons keep their size. Source,
+        {/* Pushed to the right once everything fits on one line. Source,
             quality and FPS all live behind the share button now --
-            pre-stream in the side panel, mid-stream via its live variant. */}
+            pre-stream in the side panel, mid-stream via its live variant.
+            From sm up the transmission controls stay here; on a phone
+            they moved to the fixed bottom bar below. */}
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {room.isSharing ? (
-            <>
-              <Button
-                variant="secondary"
-                size="icon"
-                onClick={toggleSharePanel}
-                aria-label={`Qualidade: ${qualityLabel}`}
-                title={`Qualidade: ${qualityLabel} — mude sem recomeçar a transmissão`}
-              >
-                <SlidersHorizontal className="size-4" />
+          <div className="hidden items-center gap-2 sm:flex sm:flex-wrap">
+            {room.isSharing ? (
+              <>
+                {qualityButton}
+                {micButton}
+                {clipButton}
+                <Button variant="destructive" onClick={room.stopSharing}>
+                  <Square className="size-3.5 fill-current" />
+                  Parar
+                </Button>
+              </>
+            ) : (
+              <Button onClick={toggleSharePanel} disabled={starting} className="min-w-36 flex-1 sm:flex-none">
+                {canShareScreen ? <Airplay className="size-4" /> : <Video className="size-4" />}
+                {canShareScreen ? "Compartilhar" : "Compartilhar câmera"}
               </Button>
-              <Button
-                variant="secondary"
-                size="icon"
-                onClick={() => room.setAudio(!room.sendingAudio)}
-                disabled={!room.hasAudioTrack}
-                aria-label={
-                  !room.hasAudioTrack
-                    ? "Esta transmissão não tem áudio"
-                    : room.sendingAudio
-                      ? "Parar de enviar áudio"
-                      : "Voltar a enviar áudio"
-                }
-                title={
-                  room.hasAudioTrack
-                    ? room.sendingAudio
-                      ? "Enviando áudio — clique para parar"
-                      : "Áudio desligado — clique para voltar a enviar"
-                    : "Esta transmissão não tem áudio"
-                }
-              >
-                {room.sendingAudio && room.hasAudioTrack ? <Mic className="size-4" /> : <MicOff className="size-4" />}
-              </Button>
-              <ClipButton clipState={clipState} clipProgress={clipProgress} onClip={makeClip} />
-              <Button variant="destructive" onClick={room.stopSharing}>
-                <Square className="size-3.5 fill-current" />
-                Parar
-              </Button>
-            </>
-          ) : (
-            <Button onClick={toggleSharePanel} disabled={starting} className="min-w-36 flex-1 sm:flex-none">
-              {canShareScreen ? <Airplay className="size-4" /> : <Video className="size-4" />}
-              {canShareScreen ? "Compartilhar" : "Compartilhar câmera"}
-            </Button>
-          )}
+            )}
+          </div>
           {/* Theater: one stage tile plus a thumbnail strip, for
               watching instead of browsing. Only meaningful when there
               is something to watch. */}
@@ -891,7 +921,45 @@ function LiveRoom({
         </div>
       </header>
 
-      <main ref={mainRef} className="relative flex flex-1 bg-black">
+      {/* The phone's action bar: transmission controls within the
+          thumb's reach, fixed to the viewport, padded with the
+          safe-area inset so home-indicator phones don't paint over it.
+          Gone while a fullscreen tile is up -- the tile owns the screen.
+          z-30 sits under the share panel (z-40), which covers it when
+          open, and above the video area. */}
+      {!selected && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 backdrop-blur sm:hidden"
+          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        >
+          <div className="flex h-16 items-center gap-2 px-3">
+            {room.isSharing ? (
+              <>
+                <Button variant="destructive" className="h-12 flex-1" onClick={room.stopSharing}>
+                  <Square className="size-3.5 fill-current" />
+                  Parar
+                </Button>
+                {qualityButton}
+                {micButton}
+                {clipButton}
+              </>
+            ) : (
+              <Button className="h-12 w-full" onClick={toggleSharePanel} disabled={starting}>
+                {canShareScreen ? <Airplay className="size-4" /> : <Video className="size-4" />}
+                {canShareScreen ? "Compartilhar" : "Compartilhar câmera"}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Bottom padding on a phone: the fixed bar above overlays this
+          box's floor, so the content gets the same height back -- tiles,
+          theater strip and popovers all end above the bar. */}
+      <main
+        ref={mainRef}
+        className="relative flex flex-1 bg-black pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0"
+      >
         {(room.status === "error" || room.knockRequests.length > 0) && (
           <div className="absolute inset-x-4 top-4 z-10 mx-auto flex max-w-md flex-col gap-2">
             {room.status === "error" && (
@@ -918,7 +986,7 @@ function LiveRoom({
                   transition={{ duration: 0.25, ease: "easeOut" }}
                 >
                   <Alert className="bg-card">
-                    <AlertDescription className="flex items-center justify-between gap-3">
+                    <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
                       <span className="flex items-center gap-2">
                         <AnimatedIcon animation={notificationIcon} autoplay loop className="text-muted-foreground" />
                         <strong>{req.name}</strong> quer entrar na sala
@@ -948,7 +1016,7 @@ function LiveRoom({
               animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
               exit={{ opacity: 0, y: -8, x: "-50%", scale: 0.95 }}
               transition={{ duration: 0.25, ease: "easeOut" }}
-              className="pointer-events-none absolute left-1/2 top-4 z-20 flex items-center gap-2 rounded-full border bg-card px-3.5 py-1.5 text-sm shadow-md"
+              className="pointer-events-none absolute left-1/2 top-4 z-20 flex max-w-[calc(100%-2rem)] items-center gap-2 rounded-full border bg-card px-3.5 py-1.5 text-sm shadow-md"
             >
               <MonitorUp className="size-4 shrink-0 text-muted-foreground" />
               <span>
@@ -968,7 +1036,7 @@ function LiveRoom({
               exit={{ opacity: 0, y: -8, x: "-50%", scale: 0.95 }}
               transition={{ duration: 0.25, ease: "easeOut" }}
               className={
-                "pointer-events-none absolute left-1/2 top-16 z-20 flex items-center gap-2 rounded-full border bg-card px-3.5 py-1.5 text-sm shadow-md " +
+                "pointer-events-none absolute left-1/2 top-16 z-20 flex max-w-[calc(100%-2rem)] items-center gap-2 rounded-full border bg-card px-3.5 py-1.5 text-sm shadow-md " +
                 (clipState === "error" ? "border-destructive/40 text-destructive" : "")
               }
             >
@@ -1061,7 +1129,7 @@ function LiveRoom({
         )}
 
         {room.errorMessage && (
-          <div className="absolute inset-x-4 bottom-4">
+          <div className="absolute inset-x-4 bottom-[calc(4rem+env(safe-area-inset-bottom))] sm:bottom-4">
             <Alert variant="destructive">
               <AlertDescription className="font-mono text-xs">{room.errorMessage}</AlertDescription>
             </Alert>
@@ -1150,7 +1218,7 @@ function Grid({
             />
             <span className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 text-left text-sm">
               <span className="truncate font-medium">{tile.name}</span>
-              <span className="shrink-0 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+              <span className="shrink-0 text-xs text-muted-foreground opacity-60 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                 ver em tela cheia
               </span>
             </span>
@@ -1284,19 +1352,22 @@ function PeopleList({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        className="inline-flex h-9 items-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       >
         <Users className="size-4" />
         <span className="tabular-nums">{count}</span>
       </button>
       <AnimatePresence>
         {open && (
+          // Anchored right on a phone (the people badge can be the last
+          // item of a full header line -- left-anchored it overflowed the
+          // screen), left on the desktop as always.
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -4 }}
             transition={{ duration: 0.15 }}
-            className="absolute left-0 top-full z-20 mt-2 w-56 origin-top-left rounded-md border bg-card p-2 text-card-foreground shadow-md"
+            className="absolute right-0 top-full z-20 mt-2 w-56 origin-top-right rounded-md border bg-card p-2 text-card-foreground shadow-md sm:left-0 sm:right-auto sm:origin-top-left"
           >
             <p className="mb-1 px-1.5 text-xs font-medium text-muted-foreground">Na sala</p>
             <ul className="max-h-64 space-y-0.5 overflow-y-auto">
@@ -1313,12 +1384,12 @@ function PeopleList({
                           if (e.key === "Enter") confirmEdit();
                           if (e.key === "Escape") setEditing(false);
                         }}
-                        className="h-7 text-sm"
+                        className="h-9 text-sm"
                       />
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 w-7 shrink-0 p-0"
+                        className="h-9 w-9 shrink-0 p-0"
                         onClick={confirmEdit}
                         aria-label="Salvar nome"
                         title="Salvar nome"
@@ -1328,7 +1399,7 @@ function PeopleList({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 w-7 shrink-0 p-0"
+                        className="h-9 w-9 shrink-0 p-0"
                         onClick={() => setEditing(false)}
                         aria-label="Cancelar"
                         title="Cancelar"
@@ -1350,7 +1421,7 @@ function PeopleList({
                           <button
                             type="button"
                             onClick={startEdit}
-                            className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                            className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                             aria-label="Mudar meu nome"
                             title="Mudar meu nome"
                           >
@@ -1854,10 +1925,14 @@ function ClipButton({
   clipState,
   clipProgress,
   onClip,
+  className = "",
 }: {
   clipState: "idle" | "uploading" | "saved" | "error";
   clipProgress: number;
   onClip: (name: string) => void;
+  // Trigger size override: 48px in the phone's bottom bar, 40px in the
+  // desktop header.
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -1883,6 +1958,7 @@ function ClipButton({
       <Button
         variant="secondary"
         size="icon"
+        className={className}
         onClick={() => setOpen((v) => !v)}
         disabled={busy}
         aria-expanded={open}
@@ -1898,12 +1974,14 @@ function ClipButton({
       )}
       <AnimatePresence>
         {open && (
+          // Up in the phone's bottom bar, down from the desktop header --
+          // the button's two homes pull opposite ways.
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -4 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 top-full z-30 mt-2 w-64 origin-top-right rounded-md border bg-card p-3 shadow-lg"
+            className="absolute bottom-full right-0 top-auto z-30 mb-2 w-64 origin-bottom-right rounded-md border bg-card p-3 shadow-lg sm:bottom-auto sm:top-full sm:mb-0 sm:mt-2 sm:origin-top-right"
           >
             <label htmlFor="clip-name" className="text-xs font-medium text-muted-foreground">
               Nome do clip (opcional)
@@ -2008,6 +2086,11 @@ function VolumeControl({
 // the active state is tracked at document level, not per button. iOS
 // Safari deliberately ships no web PiP, hence the availability check.
 function PipButton({ className = "" }: { className?: string }) {
+  // iOS Safari (and embedders with the feature disabled) have no web
+  // PiP at all: pictureInPictureEnabled is undefined there. A button
+  // that silently does nothing is worse than no button -- it doesn't
+  // render, and the tile layouts just skip its slot.
+  const supported = typeof document !== "undefined" && document.pictureInPictureEnabled;
   const [inPip, setInPip] = useState(false);
   useEffect(() => {
     const sync = () => setInPip(document.pictureInPictureElement !== null);
@@ -2019,6 +2102,7 @@ function PipButton({ className = "" }: { className?: string }) {
     };
   }, []);
 
+  if (!supported) return null;
   return (
     <Button
       variant="secondary"
@@ -2213,7 +2297,8 @@ function Empty({ roomId, password }: { roomId: string; password?: string }) {
           Quem não tiver a senha pode pedir para entrar direto pelo código <Code>{roomId}</Code>.
         </p>
       )}
-      <p className="mt-6 text-xs text-muted-foreground/80">
+      {/* Keyboard shortcuts don't exist on a phone. */}
+      <p className="mt-6 hidden text-xs text-muted-foreground/80 sm:block">
         Atalhos: <span className="font-mono">F</span> tela cheia · <span className="font-mono">M</span> mudo ·{" "}
         <span className="font-mono">V</span> vídeo · <span className="font-mono">S</span> compartilhar
       </p>

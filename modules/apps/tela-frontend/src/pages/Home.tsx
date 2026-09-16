@@ -133,8 +133,8 @@ function Clips() {
                     title="Abrir o clip"
                     className="min-w-0 flex-1 text-left"
                   >
-                    <span className="block truncate font-medium">{clip.name}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className="block font-medium sm:truncate">{clip.name}</span>
+                    <span className="block text-xs text-muted-foreground sm:truncate">
                       sala {clip.roomId}
                       {clip.owner && <> · por {clip.owner}</>} · {when} · {formatSize(clip.size)}
                     </span>

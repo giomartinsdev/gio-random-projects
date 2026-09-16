@@ -30,12 +30,14 @@ function applySourceKey(c: ShareChoice, key: SurfaceOrCamera): ShareChoice {
   return { ...c, source: "screen", surface: key };
 }
 
-// The share panel: a drawer over the room's right edge, opened from the
-// header's "Compartilhar" button before streaming and from it as
-// "Qualidade" while a share is live. Deliberately not a modal -- the room
-// stays visible and the header stays clickable, so this is a panel, not a
-// dialog. It closes on its X, on Escape, on a click anywhere else in the
-// room, and on its own the moment a share starts successfully.
+// The share panel: a drawer over the room's right edge on the desktop,
+// a bottom sheet on a phone (same thumb-reach idea as the room's bottom
+// bar). Opened from the header's "Compartilhar" button before streaming
+// and from it as "Qualidade" while a share is live. Deliberately not a
+// modal -- the room stays visible and the header stays clickable, so
+// this is a panel, not a dialog. It closes on its X, on Escape, on a
+// click anywhere else in the room, and on its own the moment a share
+// starts successfully.
 export function SharePanel({
   open,
   canScreenShare,
@@ -68,6 +70,12 @@ export function SharePanel({
 }) {
   const [choice, setChoice] = useState(initial);
   const panelRef = useRef<HTMLDivElement>(null);
+  // One breakpoint read at mount picks the slide axis: right drawer on
+  // the desktop, bottom sheet on a phone. A window resized across sm
+  // while the panel is open keeps its axis -- cosmetic either way.
+  const [wide] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 640px)").matches,
+  );
   // Re-seed the draft only when the panel OPENS -- not on every render
   // (that would fight the person editing it), and only from the values
   // that were live at open time.
@@ -110,11 +118,11 @@ export function SharePanel({
           role="dialog"
           aria-labelledby="share-panel-title"
           tabIndex={-1}
-          initial={{ x: "100%" }}
-          animate={{ x: 0 }}
-          exit={{ x: "100%" }}
+          initial={wide ? { x: "100%" } : { y: "100%" }}
+          animate={{ x: 0, y: 0 }}
+          exit={wide ? { x: "100%" } : { y: "100%" }}
           transition={{ duration: 0.22, ease: "easeOut" }}
-          className="absolute inset-y-0 right-0 z-40 flex w-full flex-col border-l bg-card text-card-foreground shadow-2xl outline-none sm:max-w-[25rem]"
+          className="absolute inset-x-0 bottom-0 top-auto z-40 flex max-h-[85dvh] w-full flex-col rounded-t-2xl border-t bg-card text-card-foreground shadow-2xl outline-none sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:max-h-none sm:max-w-[25rem] sm:rounded-none sm:border-l sm:border-t-0"
         >
           <div className="flex items-start justify-between gap-3 border-b px-5 py-4">
             <div>
@@ -258,7 +266,9 @@ export function SharePanel({
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
 
-          <div className="flex gap-2 border-t bg-card px-5 py-4">
+          {/* The safe-area padding keeps the buttons clear of a phone's
+              home indicator; the sheet reaches the floor of the screen. */}
+          <div className="flex gap-2 border-t bg-card px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 sm:pb-4">
             <Button
               variant="outline"
               disabled={starting}

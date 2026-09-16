@@ -16,6 +16,18 @@ export const CLIP_WINDOW_MS = 5 * 60_000;
 // earlier than requested), large enough that the array stays tiny.
 const TIMESLICE_MS = 2_000;
 
+// Whether this browser can record the WebM the ring buffer is built
+// from. Safari (iPhone included) ships a MediaRecorder that produces
+// only MP4: recording would start fine and makeClip() would hand back
+// a blob no player can parse. The clip feature simply doesn't exist
+// there -- callers gate the button on this instead of offering a
+// recorder that dies on save.
+export const clipSupported =
+  typeof window !== "undefined" &&
+  typeof window.MediaRecorder === "function" &&
+  (window.MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus") ||
+    window.MediaRecorder.isTypeSupported("video/webm"));
+
 export class ClipRecorder {
   private recorder: MediaRecorder | null = null;
   private header: Blob | null = null;

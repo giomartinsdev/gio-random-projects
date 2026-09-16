@@ -11,6 +11,16 @@ export type Release = {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.4.0",
+    date: "2026-09-15",
+    items: [
+      "A sala agora funciona de verdade no celular: compartilhar, parar, microfone, qualidade e clip ficaram numa barra fixa no rodapé, no alcance do polegar.",
+      "No celular o painel de compartilhamento sobe como folha deslizante de baixo, e o picture-in-picture só aparece onde o navegador suporta.",
+      "Clips desligados no iPhone — o Safari não grava WebM, então o botão não promete o que não pode cumprir.",
+      "Toques mais confortáveis: botões de sobreposição e do cabeçalho maiores, e nada de atalhos de teclado na tela do celular.",
+    ],
+  },
+  {
     version: "1.3.0",
     date: "2026-09-15",
     items: [
