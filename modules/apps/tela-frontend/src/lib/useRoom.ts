@@ -82,14 +82,38 @@ function dimensionsFor(quality: Quality) {
 // lower rate now actually saves bandwidth instead of encoding
 // low-detail content at a ceiling sized for 1080p60.
 const BITS_PER_PIXEL_PER_FRAME = 0.08;
+// A hard stop regardless of what the formula above works out to.
+// Without it a 5K ultrawide "Original" capture prices itself at
+// 60-70 Mbps -- a number no home uplink will ever sustain, and WebRTC's
+// own congestion control (see applyEncodingLimits) will clamp the REAL
+// send rate to what the network can carry anyway. 20 Mbps sits above
+// Twitch's and YouTube's own 4K60 ingest guidance (15-35 Mbps), so nothing
+// realistic hits this ceiling -- it exists to keep the number sane, not
+// to be a target.
+const MAX_BITRATE_BPS = 20_000_000;
 // "source" fps has no fixed number to multiply by either -- 60 is the
-// same stand-in dimensions above uses.
+// same stand-in dimensions above uses, but only when the ACTUAL capture
+// (see `actual` below) isn't known yet.
 const CAMERA_BITRATE_SHARE = 0.4; // a phone camera's own encoder needs less than a full desktop capture at the same resolution/fps
 
-function bitrateFor(source: Source, quality: Quality, fps: Fps): number {
-  const { width, height } = dimensionsFor(quality);
-  const rate = fps === "source" ? 60 : fps;
-  const bitrate = width * height * rate * BITS_PER_PIXEL_PER_FRAME;
+// `actual` is the captured track's real getSettings() once the capture
+// exists -- using its real width/height/frameRate instead of the
+// quality-implied stand-in is what makes "Original" actually mean "as
+// much as THIS screen and THIS network can carry", not "pretend every
+// screen is 1080p60". A 2560x1440 display asked for at "Original"
+// prices its own real pixel count, not 1080p's -- this is the fix for
+// the encoder-starves-and-drops-resolution regression: the ceiling used
+// to assume 1080p60 while a forced 60fps hint made the real capture
+// bigger than that, and the encoder had nowhere to put the extra
+// pixels. Falls back to the stand-in before the capture exists (dialog
+// preview) or when `actual` is camera/unavailable.
+function bitrateFor(source: Source, quality: Quality, fps: Fps, actual?: MediaTrackSettings): number {
+  const dims =
+    quality === "source" && actual?.width && actual?.height
+      ? { width: actual.width, height: actual.height }
+      : dimensionsFor(quality);
+  const rate = fps === "source" ? (actual?.frameRate ? Math.round(actual.frameRate) : 60) : fps;
+  const bitrate = Math.min(MAX_BITRATE_BPS, dims.width * dims.height * rate * BITS_PER_PIXEL_PER_FRAME);
   return Math.round(source === "camera" ? bitrate * CAMERA_BITRATE_SHARE : bitrate);
 }
 
@@ -131,19 +155,20 @@ function videoConstraintsFor(
   }
   if (fps !== "source") {
     constraints.frameRate = { ideal: fps, max: fps };
+  } else if (source === "screen") {
+    // "Original" fps means "whatever this screen can actually do" --
+    // left unset, Chrome's capturer settles near 30fps, capping fast
+    // content at half its natural rate for no reason. This DID backfire
+    // once: the bitrate ceiling used to assume 1080p regardless of the
+    // real capture size, so a real screen bigger than 1080p pushed to
+    // 60fps blew straight through it, and the encoder's only way to
+    // keep up was to gut resolution (measured: 2560x1440 source ->
+    // 1080p or worse, ~25% of frames dropped). That's fixed now: the
+    // ceiling in bitrateFor reads the ACTUAL captured width/height/fps
+    // via getSettings(), so whatever this hint actually produces gets a
+    // budget sized for it, not a budget sized for something else.
+    constraints.frameRate = { ideal: 60 };
   }
-  // "source" fps used to push `{ideal: 60}` on a screen share here, on
-  // the idea that Chrome's capturer settles on 30fps when left alone.
-  // It backfired: the bitrate ceiling below is sized as if 60fps was
-  // already the assumption (see bitrateFor), so a REAL screen at 60fps
-  // (any modern display) blew straight through that ceiling. The
-  // encoder's only way to keep up under `degradationPreference:
-  // "maintain-framerate"` is to gut resolution -- measured on a
-  // 2560x1440 source, that forced a 1920x1080 (sometimes 1280x720)
-  // encode with ~25% of frames dropped. "Original" quality rendering
-  // worse than 1080p, and choppy on top, is the opposite of the point.
-  // Leaving this unconstrained gives back the 2x bitrate headroom the
-  // ceiling already budgets for a 30fps-ish real capture.
   // Chrome biases its picker to the surface chosen ahead of time in the
   // share dialog. Strictly `{ideal}`, never `{exact}`: {exact} would make
   // browsers that don't support the hint fail the whole capture instead
@@ -376,19 +401,22 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   // --- publishing ---
 
   // Caps what this browser sends and tells the encoder what to give up
-  // when it can't keep up. Both sources now prefer smooth motion over
-  // sharpness: a screen share used to mean mostly static text/docs
-  // (where a soft frame drop is worse than a slightly blurrier
-  // picture), but 120fps game footage is the opposite -- a stutter is
-  // far more noticeable than the encoder shaving resolution to keep up.
+  // when it can't keep up. The tradeoff follows the content, via the
+  // contentHint startSharing already sets: "detail" (slides, docs --
+  // the explicit low-fps picks) protects sharpness, because a soft
+  // frame drop there is less noticeable than the text going mushy;
+  // everything else ("motion" -- 30/60/Original, camera) protects the
+  // frame rate, because a stutter is the loudest artifact on anything
+  // that moves.
   const applyEncodingLimits = useCallback((pc: RTCPeerConnection | null) => {
     if (!pc) return;
     const src = sourceRef.current ?? "screen";
     const q = qualityRef.current;
     const f = fpsRef.current;
-    const bitrate = bitrateFor(src, q, f);
     for (const sender of pc.getSenders()) {
       if (sender.track?.kind !== "video") continue;
+      const settings = sender.track.getSettings();
+      const bitrate = bitrateFor(src, q, f, settings);
       const params = sender.getParameters();
       if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
       const encoding = params.encodings[0];
@@ -398,10 +426,11 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
       // it scale captured frames down to the chosen size.
       if (f !== "source") encoding.maxFramerate = f;
       else delete encoding.maxFramerate;
-      const scale = scaleResolutionDownByFor(sender.track?.getSettings() ?? {}, q);
+      const scale = scaleResolutionDownByFor(settings, q);
       if (scale) encoding.scaleResolutionDownBy = scale;
       else delete encoding.scaleResolutionDownBy;
-      params.degradationPreference = "maintain-framerate";
+      params.degradationPreference =
+        sender.track.contentHint === "detail" ? "maintain-resolution" : "maintain-framerate";
       // Best-effort: not every browser accepts every field, and a
       // rejected tuning shouldn't break the connection -- but a flat
       // swallow would hide a total failure to e.g. save bandwidth.

@@ -11,6 +11,15 @@ export type Release = {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.4.2",
+    date: "2026-09-17",
+    items: [
+      "Qualidade 'Original' bem mais nítida: o teto de banda agora usa a resolução real da sua tela (não mais um valor fixo de 1080p), então uma tela grande recebe um orçamento à altura em vez de ser espremida.",
+      "FPS 'Original' volta a pedir 60fps de verdade quando a tela aguenta — com o teto de banda certo, isso já não derruba a resolução como antes.",
+      "Em telas muito grandes que não sustentam resolução máxima E 60fps ao mesmo tempo, a troca agora é inteligente por tipo de conteúdo: slides/documentos protegem nitidez, o resto protege fluidez — em vez de sempre esmagar a resolução.",
+    ],
+  },
+  {
     version: "1.4.1",
     date: "2026-09-17",
     items: [
