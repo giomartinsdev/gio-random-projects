@@ -43,28 +43,35 @@ const LAYER_UPGRADE_CLEAN_WINDOWS = 5;
 // video at the new resolution both ways.
 const LAYER_AUTO_SWITCH_ENABLED = true;
 
-// Whoever is sharing picks these before they start -- see
-// AspectModeButton-style pickers in Room.tsx. "source" means "don't
-// constrain this at all", i.e. whatever the display/camera natively
-// gives getDisplayMedia/getUserMedia.
-export type Quality = "360p" | "480p" | "720p" | "1080p" | "source";
-export type Fps = 5 | 15 | 30 | 60 | "source";
+// Whoever is sharing picks these before they start -- see the segmented
+// pickers in SharePanel.tsx. Three fixed tiers, no "native resolution"
+// option: asking the capturer for an exact size up front (see
+// videoConstraintsFor) is what keeps a MacBook's oddball physical
+// resolution from ever reaching the encoder unconstrained -- that
+// mismatch between "whatever the screen really is" and a bitrate budget
+// sized for something else is what caused the 306x180 garbage
+// resolution and the ~800kbps budget at "1080p60" people were hitting.
+export type Quality = "low" | "medium" | "high";
+// The single fps dial confused two different things that trade off
+// against EACH OTHER, not against a number: smoothness and sharpness.
+// "Performance" spends the bit budget on 60 real frames a second, right
+// for anything that moves (video, games, a live demo). "Nitidez" spends
+// almost all of it on very few frames -- right for slides, code, a
+// document -- text and fine detail hold up, and nobody was going to
+// notice 5fps was different from 30fps on a static screen anyway.
+export type EncodeMode = "performance" | "sharpness";
 
 export const QUALITY_OPTIONS: { value: Quality; label: string }[] = [
-  { value: "360p", label: "360p" },
-  { value: "480p", label: "480p" },
-  { value: "720p", label: "720p" },
-  { value: "1080p", label: "1080p" },
-  { value: "source", label: "Original" },
+  { value: "low", label: "Baixa" },
+  { value: "medium", label: "Média" },
+  { value: "high", label: "Alta" },
 ];
 
-export const FPS_OPTIONS: { value: Fps; label: string }[] = [
-  { value: 5, label: "5 fps" },
-  { value: 15, label: "15 fps" },
-  { value: 30, label: "30 fps" },
-  { value: 60, label: "60 fps" },
-  { value: "source", label: "Original" },
+export const MODE_OPTIONS: { value: EncodeMode; label: string; hint: string }[] = [
+  { value: "performance", label: "Performance", hint: "60fps, prioriza fluidez" },
+  { value: "sharpness", label: "Nitidez", hint: "poucos fps, prioriza nitidez" },
 ];
+
 
 // What the display picker should start on. Purely a hint to Chrome's own
 // getDisplayMedia picker (Firefox and Safari pick their own defaults) --
@@ -77,66 +84,48 @@ export const SURFACE_OPTIONS: { value: DisplaySurface; label: string }[] = [
   { value: "browser", label: "Aba" },
 ];
 
-const QUALITY_DIMENSIONS: Record<Exclude<Quality, "source">, { width: number; height: number }> = {
-  "360p": { width: 640, height: 360 },
-  "480p": { width: 854, height: 480 },
-  "720p": { width: 1280, height: 720 },
-  "1080p": { width: 1920, height: 1080 },
+const QUALITY_DIMENSIONS: Record<Quality, { width: number; height: number }> = {
+  low: { width: 854, height: 480 },
+  medium: { width: 1280, height: 720 },
+  high: { width: 1920, height: 1080 },
 };
-
-// "source" quality has no fixed dimensions to reason about ahead of
-// capture -- 1080p is the stand-in for sizing the bitrate ceiling
-// below, not a real constraint (videoConstraintsFor below never sets
-// width/height for it).
-function dimensionsFor(quality: Quality) {
-  return quality === "source" ? QUALITY_DIMENSIONS["1080p"] : QUALITY_DIMENSIONS[quality];
-}
 
 // One upload, not one per viewer: the server fans the stream out, so
 // this is a flat cost however many people are watching. That's the
 // whole reason the SFU exists, and why this was never divided by the
 // size of the audience.
 //
-// Bits-per-pixel-per-frame instead of a table of 25 hand-picked
-// numbers: bitrate scales with both resolution and frame rate, and
-// this scales the same way real encoders do. 0.08 is tuned so
-// 1080p+60fps lands close to the flat 10 Mbps ceiling screen sharing
-// used before quality became selectable (Twitch/OBS's own guidance
-// puts 1080p60 gaming at 6-9 Mbps) -- picking a smaller size or a
-// lower rate now actually saves bandwidth instead of encoding
-// low-detail content at a ceiling sized for 1080p60.
+// Bits-per-pixel-per-frame instead of a table of hand-picked numbers:
+// bitrate scales with both resolution and frame rate, and this scales
+// the same way real encoders do. 0.08 is tuned so 1080p+60fps lands
+// close to the flat 10 Mbps ceiling screen sharing used before quality
+// became selectable (Twitch/OBS's own guidance puts 1080p60 gaming at
+// 6-9 Mbps) -- picking a smaller size or a lower rate now actually
+// saves bandwidth instead of encoding low-detail content at a ceiling
+// sized for 1080p60.
 const BITS_PER_PIXEL_PER_FRAME = 0.08;
 // A hard stop regardless of what the formula above works out to.
-// Without it a 5K ultrawide "Original" capture prices itself at
-// 60-70 Mbps -- a number no home uplink will ever sustain, and WebRTC's
-// own congestion control (see applyEncodingLimits) will clamp the REAL
-// send rate to what the network can carry anyway. 20 Mbps sits above
-// Twitch's and YouTube's own 4K60 ingest guidance (15-35 Mbps), so nothing
-// realistic hits this ceiling -- it exists to keep the number sane, not
-// to be a target.
+// WebRTC's own congestion control (see applyEncodingLimits) clamps the
+// REAL send rate to what the network can carry anyway; this just keeps
+// the requested ceiling itself sane. 20 Mbps sits above Twitch's and
+// YouTube's own 4K60 ingest guidance (15-35 Mbps).
 const MAX_BITRATE_BPS = 20_000_000;
-// "source" fps has no fixed number to multiply by either -- 60 is the
-// same stand-in dimensions above uses, but only when the ACTUAL capture
-// (see `actual` below) isn't known yet.
 const CAMERA_BITRATE_SHARE = 0.4; // a phone camera's own encoder needs less than a full desktop capture at the same resolution/fps
+// The two EncodeMode targets. 60 is a real, standard "smooth" number;
+// 8 sits in the middle of the 5-10 range that's plenty for a slide
+// change or a cursor move without spending frames nobody asked for.
+const PERFORMANCE_FPS = 60;
+const SHARPNESS_FPS = 8;
 
 // `actual` is the captured track's real getSettings() once the capture
-// exists -- using its real width/height/frameRate instead of the
-// quality-implied stand-in is what makes "Original" actually mean "as
-// much as THIS screen and THIS network can carry", not "pretend every
-// screen is 1080p60". A 2560x1440 display asked for at "Original"
-// prices its own real pixel count, not 1080p's -- this is the fix for
-// the encoder-starves-and-drops-resolution regression: the ceiling used
-// to assume 1080p60 while a forced 60fps hint made the real capture
-// bigger than that, and the encoder had nowhere to put the extra
-// pixels. Falls back to the stand-in before the capture exists (dialog
-// preview) or when `actual` is camera/unavailable.
-function bitrateFor(source: Source, quality: Quality, fps: Fps, actual?: MediaTrackSettings): number {
-  const dims =
-    quality === "source" && actual?.width && actual?.height
-      ? { width: actual.width, height: actual.height }
-      : dimensionsFor(quality);
-  const rate = fps === "source" ? (actual?.frameRate ? Math.round(actual.frameRate) : 60) : fps;
+// exists -- sizing the budget off the REAL captured pixels (a MacBook's
+// physical resolution rarely matches the nominal 1920x1080 exactly)
+// beats the nominal target whenever it's known. Falls back to the
+// quality's nominal dimensions before the capture exists (dialog
+// preview) or when `actual` is unavailable.
+function bitrateFor(source: Source, quality: Quality, mode: EncodeMode, actual?: MediaTrackSettings): number {
+  const dims = actual?.width && actual?.height ? { width: actual.width, height: actual.height } : QUALITY_DIMENSIONS[quality];
+  const rate = mode === "performance" ? PERFORMANCE_FPS : SHARPNESS_FPS;
   const bitrate = Math.min(MAX_BITRATE_BPS, dims.width * dims.height * rate * BITS_PER_PIXEL_PER_FRAME);
   return Math.round(source === "camera" ? bitrate * CAMERA_BITRATE_SHARE : bitrate);
 }
@@ -144,11 +133,11 @@ function bitrateFor(source: Source, quality: Quality, fps: Fps, actual?: MediaTr
 // How much the encoder must shrink captured frames for the chosen
 // quality to hold, from the track's ACTUAL capture size -- what was shared
 // is whatever the browser granted, not the constraint asked for.
-// Undefined when there's nothing to shrink (Original, or already at the
+// Undefined when there's nothing to shrink (already at or under the
 // target size). Scale can only ever be >= 1: an encoder cannot upscale
 // what it never captured.
 function scaleResolutionDownByFor(settings: MediaTrackSettings, quality: Quality): number | undefined {
-  if (quality === "source" || !settings.width || !settings.height) return undefined;
+  if (!settings.width || !settings.height) return undefined;
   const { width, height } = QUALITY_DIMENSIONS[quality];
   const scale = Math.max(settings.width / width, settings.height / height);
   if (scale <= 1.05) return undefined;
@@ -157,12 +146,7 @@ function scaleResolutionDownByFor(settings: MediaTrackSettings, quality: Quality
   return Math.min(16, Math.round(scale * 2) / 2);
 }
 
-function videoConstraintsFor(
-  source: Source,
-  quality: Quality,
-  fps: Fps,
-  surface?: DisplaySurface,
-): MediaTrackConstraints {
+function videoConstraintsFor(source: Source, quality: Quality, mode: EncodeMode, surface?: DisplaySurface): MediaTrackConstraints {
   const constraints: MediaTrackConstraints =
     source === "camera"
       ? // Rear camera by default -- sharing a phone's camera is usually
@@ -172,27 +156,16 @@ function videoConstraintsFor(
         { facingMode: { ideal: "environment" } }
       : {};
 
-  if (quality !== "source") {
-    const { width, height } = QUALITY_DIMENSIONS[quality];
-    constraints.width = { ideal: width, max: width };
-    constraints.height = { ideal: height, max: height };
-  }
-  if (fps !== "source") {
-    constraints.frameRate = { ideal: fps, max: fps };
-  } else if (source === "screen") {
-    // "Original" fps means "whatever this screen can actually do" --
-    // left unset, Chrome's capturer settles near 30fps, capping fast
-    // content at half its natural rate for no reason. This DID backfire
-    // once: the bitrate ceiling used to assume 1080p regardless of the
-    // real capture size, so a real screen bigger than 1080p pushed to
-    // 60fps blew straight through it, and the encoder's only way to
-    // keep up was to gut resolution (measured: 2560x1440 source ->
-    // 1080p or worse, ~25% of frames dropped). That's fixed now: the
-    // ceiling in bitrateFor reads the ACTUAL captured width/height/fps
-    // via getSettings(), so whatever this hint actually produces gets a
-    // budget sized for it, not a budget sized for something else.
-    constraints.frameRate = { ideal: 60 };
-  }
+  // Always an explicit target now -- no more "native resolution,
+  // unconstrained" tier. Asking the CAPTURER for the size (not just the
+  // encoder) is what keeps a screen whose physical resolution isn't a
+  // round number from ever reaching the encoder as something the
+  // bitrate budget wasn't sized for.
+  const { width, height } = QUALITY_DIMENSIONS[quality];
+  constraints.width = { ideal: width, max: width };
+  constraints.height = { ideal: height, max: height };
+  const fps = mode === "performance" ? PERFORMANCE_FPS : SHARPNESS_FPS;
+  constraints.frameRate = { ideal: fps, max: fps };
   // Chrome biases its picker to the surface chosen ahead of time in the
   // share dialog. Strictly `{ideal}`, never `{exact}`: {exact} would make
   // browsers that don't support the hint fail the whole capture instead
@@ -369,8 +342,8 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [source, setSource] = useState<Source | null>(null);
   const [sendingAudio, setSendingAudio] = useState(true);
-  const [quality, setQuality] = useState<Quality>("source");
-  const [fps, setFps] = useState<Fps>("source");
+  const [quality, setQuality] = useState<Quality>("high");
+  const [mode, setMode] = useState<EncodeMode>("performance");
   const [surface, setSurface] = useState<DisplaySurface>("window");
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -404,10 +377,10 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   sendingAudioRef.current = sendingAudio;
   const sourceRef = useRef<Source | null>(null);
   sourceRef.current = source;
-  const qualityRef = useRef<Quality>("source");
+  const qualityRef = useRef<Quality>("high");
   qualityRef.current = quality;
-  const fpsRef = useRef<Fps>("source");
-  fpsRef.current = fps;
+  const modeRef = useRef<EncodeMode>("performance");
+  modeRef.current = mode;
   const surfaceRef = useRef<DisplaySurface>("window");
   surfaceRef.current = surface;
   const remoteStreamsRef = useRef<Record<string, MediaStream>>({});
@@ -473,11 +446,11 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     if (!pc) return;
     const src = sourceRef.current ?? "screen";
     const q = qualityRef.current;
-    const f = fpsRef.current;
+    const m = modeRef.current;
     for (const sender of pc.getSenders()) {
       if (sender.track?.kind !== "video") continue;
       const settings = sender.track.getSettings();
-      const bitrate = bitrateFor(src, q, f, settings);
+      const bitrate = bitrateFor(src, q, m, settings);
       const params = sender.getParameters();
       if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
       for (const encoding of params.encodings) {
@@ -485,20 +458,29 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
         // publishStream time (see its sendEncodings) -- it doesn't grow
         // or shrink with the chosen quality, that's the whole point of
         // having a floor. Only the "high" layer (or the lone encoding,
-        // rid "" outside simulcast) follows the picked quality/fps.
+        // rid "" outside simulcast) follows the picked quality/mode.
         if (encoding.rid === "low") continue;
         encoding.maxBitrate = bitrate;
         // Two levers beyond bitrate make quality changes apply live
         // without recapturing: cap the encoder's own output rate, and
         // have it scale captured frames down to the chosen size.
-        if (f !== "source") encoding.maxFramerate = f;
-        else delete encoding.maxFramerate;
+        encoding.maxFramerate = m === "performance" ? PERFORMANCE_FPS : SHARPNESS_FPS;
         const scale = scaleResolutionDownByFor(settings, q);
         if (scale) encoding.scaleResolutionDownBy = scale;
         else delete encoding.scaleResolutionDownBy;
+        // Pins VP9 to plain temporal scalability (one spatial layer,
+        // matching what VP8 does by default). Left alone, Chrome
+        // silently upgrades a VP9 screen-share encode to spatial SVC
+        // (getStats() shows scalabilityMode "L2T3_KEY") and splits the
+        // bit budget this function just set across invisible internal
+        // layers -- measured directly: an "Alta"-equivalent request
+        // landed at ~800kbps actual target and, combined with an
+        // explicit fps pick, sometimes as small as 306x180. "L1T3" is
+        // exactly what a non-VP9 codec already does here, so this is a
+        // no-op for VP8/H264 and a fix for VP9.
+        (encoding as RTCRtpEncodingParameters & { scalabilityMode?: string }).scalabilityMode = "L1T3";
       }
-      params.degradationPreference =
-        sender.track.contentHint === "detail" ? "maintain-resolution" : "maintain-framerate";
+      params.degradationPreference = m === "sharpness" ? "maintain-resolution" : "maintain-framerate";
       // Best-effort: not every browser accepts every field, and a
       // rejected tuning shouldn't break the connection -- but a flat
       // swallow would hide a total failure to e.g. save bandwidth.
@@ -531,10 +513,9 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
       publishRef.current = pc;
       const seq = ++publishSeqRef.current;
 
-      // Only for Original quality: an explicit resolution pick (360p...)
-      // is already its own low tier, a second layer under it buys
-      // nothing.
-      const simulcast = sourceRef.current === "screen" && qualityRef.current === "source";
+      // Only for "Alta": "Baixa"/"Média" are already their own low tier,
+      // a second layer under one of those buys nothing.
+      const simulcast = sourceRef.current === "screen" && qualityRef.current === "high";
       for (const track of stream.getTracks()) {
         if (track.kind === "video" && simulcast) {
           // Two encodings of the SAME track under one m-line, so the SFU
@@ -545,15 +526,17 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
           // and Safari's simulcast support is limited -- both just
           // collapse to a single layer silently, never an error, so a
           // viewer on an older browser loses nothing but the adaptive
-          // floor.
+          // floor. scalabilityMode "L1T3" on both: see applyEncodingLimits
+          // for why VP9 needs to be told not to invent spatial layers of
+          // its own on top of the ones already being asked for here.
           pc.addTransceiver(track, {
             direction: "sendonly",
             streams: [stream],
             sendEncodings: [
-              { rid: "high" },
+              { rid: "high", scalabilityMode: "L1T3" } as RTCRtpEncodingParameters,
               // A fixed floor, not sized off the chosen quality --
               // applyEncodingLimits skips this rid entirely.
-              { rid: "low", scaleResolutionDownBy: 4, maxBitrate: 350_000, maxFramerate: 15 },
+              { rid: "low", scaleResolutionDownBy: 4, maxBitrate: 350_000, maxFramerate: 15, scalabilityMode: "L1T3" } as RTCRtpEncodingParameters,
             ],
           });
         } else {
@@ -618,7 +601,7 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     async (
       from: Source,
       newQuality?: Quality,
-      newFps?: Fps,
+      newMode?: EncodeMode,
       newSurface?: DisplaySurface,
     ): Promise<ShareStartResult> => {
       if (startingRef.current) return { started: false, error: null };
@@ -633,9 +616,9 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
           setQuality(newQuality);
           qualityRef.current = newQuality;
         }
-        if (newFps !== undefined) {
-          setFps(newFps);
-          fpsRef.current = newFps;
+        if (newMode !== undefined) {
+          setMode(newMode);
+          modeRef.current = newMode;
         }
         if (newSurface !== undefined) {
           setSurface(newSurface);
@@ -643,13 +626,13 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
         }
         retriedRef.current = false;
         const q = qualityRef.current;
-        const f = fpsRef.current;
+        const m = modeRef.current;
         const s = surfaceRef.current;
 
         setErrorMessage(null);
         let stream: MediaStream;
         try {
-          const videoConstraints = videoConstraintsFor(from, q, f, s);
+          const videoConstraints = videoConstraintsFor(from, q, m, s);
           stream =
             from === "screen"
               ? await navigator.mediaDevices.getDisplayMedia(gdmOptions(videoConstraints, s))
@@ -668,13 +651,13 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
         }
 
         // Tells the encoder what this footage actually is. "detail"
-        // keeps text sharp AT THE COST OF FRAMERATE -- right for slides
-        // and docs (the explicit low-fps picks), wrong for anything
-        // moving, where a stutter is the loudest artifact. 30/60/source
-        // get "motion": keep the frames flowing.
+        // keeps text sharp AT THE COST OF FRAMERATE -- right for
+        // Nitidez, wrong for anything moving, where a stutter is the
+        // loudest artifact. Performance gets "motion": keep the frames
+        // flowing.
         const videoTrack = stream.getVideoTracks()[0];
         if (videoTrack) {
-          videoTrack.contentHint = from === "screen" && (f === 5 || f === 15) ? "detail" : "motion";
+          videoTrack.contentHint = m === "sharpness" ? "detail" : "motion";
         }
         // getDisplayMedia only yields audio if the person also ticked
         // "share audio", so there may be nothing here to touch.
@@ -712,11 +695,11 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   // past what was captured can't happen through setParameters, so the UI
   // re-shares for that instead.
   const applyQuality = useCallback(
-    (q: Quality, f: Fps) => {
+    (q: Quality, m: EncodeMode) => {
       setQuality(q);
-      setFps(f);
+      setMode(m);
       qualityRef.current = q;
-      fpsRef.current = f;
+      modeRef.current = m;
       applyEncodingLimits(publishRef.current);
     },
     [applyEncodingLimits],
@@ -1222,10 +1205,10 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     setAudio,
     hasAudioTrack: (localStream?.getAudioTracks().length ?? 0) > 0,
     quality,
-    fps,
+    mode,
     surface,
     setQuality,
-    setFps,
+    setMode,
     setSurface,
     applyQuality,
     startSharing,

@@ -11,6 +11,15 @@ export type Release = {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.6.0",
+    date: "2026-09-18",
+    items: [
+      "Tela de qualidade simplificada: agora são só Baixa, Média e Alta — sem mais combinações de resolução e fps que podiam sair pela culatra.",
+      "FPS virou Modo: Performance (60fps, prioriza fluidez) ou Nitidez (poucos fps, prioriza imagem nítida) — mais direto do que escolher um número.",
+      "Corrigido o motivo dos números malucos (resolução minúscula tipo 306x180, bitrate baixo com fps alto): o Chrome ligava sozinho um modo de compressão em camadas pra telas compartilhadas, que fatiava o orçamento de banda escondido. Travado numa única camada — a partir de agora o que você pede é o que sai.",
+    ],
+  },
+  {
     version: "1.5.1",
     date: "2026-09-18",
     items: [

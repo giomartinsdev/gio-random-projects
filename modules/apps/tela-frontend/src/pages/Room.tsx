@@ -702,7 +702,7 @@ function LiveRoom({
       setStarting(true);
       setShareError(null);
       try {
-        const res = await room.startSharing(choice.source, choice.quality, choice.fps, surface);
+        const res = await room.startSharing(choice.source, choice.quality, choice.mode, surface);
         if (res.error) setShareError(res.error);
         else setSharePanelOpen(false);
       } finally {
@@ -718,7 +718,7 @@ function LiveRoom({
         await start();
         return;
       }
-      room.applyQuality(choice.quality, choice.fps);
+      room.applyQuality(choice.quality, choice.mode);
       setSharePanelOpen(false);
       return;
     }
@@ -858,7 +858,7 @@ function LiveRoom({
         )}
 
         {/* Pushed to the right once everything fits on one line. Source,
-            quality and FPS all live behind the share button now --
+            quality and modo all live behind the share button now --
             pre-stream in the side panel, mid-stream via its live variant.
             From sm up the transmission controls stay here; on a phone
             they moved to the fixed bottom bar below. */}
@@ -1151,7 +1151,7 @@ function LiveRoom({
           initial={{
             source: room.source ?? (canShareScreen ? "screen" : "camera"),
             quality: room.quality,
-            fps: room.fps,
+            mode: room.mode,
             surface: room.surface,
           }}
           onOpenChange={setSharePanelOpen}
