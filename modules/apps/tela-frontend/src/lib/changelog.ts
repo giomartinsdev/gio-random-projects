@@ -11,6 +11,13 @@ export type Release = {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.4.1",
+    date: "2026-09-17",
+    items: [
+      "Corrigido: o modo 'Original' da tela estava forçando 60fps e saía pior — o encoder derrubava a resolução real pra caber no teto de banda, deixando a imagem borrada e engasgada pra todo mundo. Voltou a deixar o navegador escolher o fps sozinho.",
+    ],
+  },
+  {
     version: "1.4.0",
     date: "2026-09-15",
     items: [

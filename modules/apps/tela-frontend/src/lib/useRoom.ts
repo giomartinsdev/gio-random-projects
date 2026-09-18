@@ -131,15 +131,19 @@ function videoConstraintsFor(
   }
   if (fps !== "source") {
     constraints.frameRate = { ideal: fps, max: fps };
-  } else if (source === "screen") {
-    // "Original" means "whatever the surface gives" -- but left unset,
-    // Chrome's display capturer settles on 30fps. `ideal` steers the
-    // capturer without capping anything: a 30Hz surface still only
-    // delivers frames when it repaints, and one that can do 60 now will.
-    // (min/exact are illegal in getDisplayMedia constraints; ideal/max
-    // is the whole vocabulary.)
-    constraints.frameRate = { ideal: 60 };
   }
+  // "source" fps used to push `{ideal: 60}` on a screen share here, on
+  // the idea that Chrome's capturer settles on 30fps when left alone.
+  // It backfired: the bitrate ceiling below is sized as if 60fps was
+  // already the assumption (see bitrateFor), so a REAL screen at 60fps
+  // (any modern display) blew straight through that ceiling. The
+  // encoder's only way to keep up under `degradationPreference:
+  // "maintain-framerate"` is to gut resolution -- measured on a
+  // 2560x1440 source, that forced a 1920x1080 (sometimes 1280x720)
+  // encode with ~25% of frames dropped. "Original" quality rendering
+  // worse than 1080p, and choppy on top, is the opposite of the point.
+  // Leaving this unconstrained gives back the 2x bitrate headroom the
+  // ceiling already budgets for a 30fps-ish real capture.
   // Chrome biases its picker to the surface chosen ahead of time in the
   // share dialog. Strictly `{ideal}`, never `{exact}`: {exact} would make
   // browsers that don't support the hint fail the whole capture instead
