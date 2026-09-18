@@ -28,21 +28,20 @@ const LAYER_POLL_MS = 3_000;
 const LAYER_DOWNGRADE_LOSS_PCT = 8;
 const LAYER_DOWNGRADE_WINDOWS = 2;
 const LAYER_UPGRADE_CLEAN_WINDOWS = 5;
-// OFF for now. Measured against a real Chrome publisher: the "low"
-// simulcast layer's encoder stays dormant -- zero bytes ever sent --
-// until something makes the browser start it, for as long as 45s with
-// a real subscriber connected the whole time (this is a known, open
-// problem in other pion-based SFUs too, not specific to this one). The
-// server-side fix already refuses to drop a viewer's working "high"
-// layer for a "low" that doesn't exist yet (see SetPublisherVideoLayer,
-// tela-api), so flipping this on can only ever mean "the auto-switch
-// silently fails to downgrade," never "someone loses their video" --
-// but it also means the floor this was supposed to add doesn't
-// actually exist yet. Leave off until the SFU has a way to wake the
-// layer up (a PLI targeted at it, once its SSRC is known some other
-// way) and that's been verified the same way this was: a real Chrome
-// publisher, a real viewer, real getStats() numbers.
-const LAYER_AUTO_SWITCH_ENABLED = false;
+// ON. Measured against a real Chrome publisher: the "low" simulcast
+// layer's encoder looked dormant (zero bytes ever sent, for as long as
+// 45s with a real subscriber connected the whole time) -- but that
+// turned out to be VP9 fighting simulcast, not simulcast itself. VP9 +
+// multiple sendEncodings makes Chrome represent BOTH layers as one
+// stream's embedded SVC layers (getStats() shows scalabilityMode
+// "L2T3_KEY" -- a dead giveaway), so the second, independent RTP stream
+// the SFU needs to relay never existed. publishStream now skips the VP9
+// preference specifically when simulcast is in play (see there); with
+// plain VP8/H264, both layers send real packets from the start, and a
+// live switch (verified: real publisher, real viewer, subscribe:layer
+// over the wire, getStats() before/after) delivers actual decodable
+// video at the new resolution both ways.
+const LAYER_AUTO_SWITCH_ENABLED = true;
 
 // Whoever is sharing picks these before they start -- see
 // AspectModeButton-style pickers in Room.tsx. "source" means "don't
@@ -532,19 +531,21 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
       publishRef.current = pc;
       const seq = ++publishSeqRef.current;
 
+      // Only for Original quality: an explicit resolution pick (360p...)
+      // is already its own low tier, a second layer under it buys
+      // nothing.
+      const simulcast = sourceRef.current === "screen" && qualityRef.current === "source";
       for (const track of stream.getTracks()) {
-        if (track.kind === "video" && sourceRef.current === "screen" && qualityRef.current === "source") {
-          // Simulcast: two encodings of the SAME track under one m-line,
-          // so the SFU can hand each viewer the layer THEIR connection
-          // can carry (see subscriber.go's per-viewer layer selection)
-          // instead of everyone fighting over one stream sized for the
-          // best case. Chrome supports this for screen capture; Firefox
-          // needs 134+ and Safari's simulcast support is limited --
-          // both just collapse to a single layer silently, never an
-          // error, so a viewer on an older browser loses nothing but the
-          // adaptive floor. Only for Original quality: an explicit
-          // resolution pick (360p...) is already its own low tier, a
-          // second layer under it buys nothing.
+        if (track.kind === "video" && simulcast) {
+          // Two encodings of the SAME track under one m-line, so the SFU
+          // can hand each viewer the layer THEIR connection can carry
+          // (see subscriber.go's per-viewer layer selection) instead of
+          // everyone fighting over one stream sized for the best case.
+          // Chrome supports this for screen capture; Firefox needs 134+
+          // and Safari's simulcast support is limited -- both just
+          // collapse to a single layer silently, never an error, so a
+          // viewer on an older browser loses nothing but the adaptive
+          // floor.
           pc.addTransceiver(track, {
             direction: "sendonly",
             streams: [stream],
@@ -559,7 +560,19 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
           pc.addTrack(track, stream);
         }
       }
-      preferVp9(pc);
+      // VP9 and simulcast fight each other: with VP9 selected, Chrome
+      // represents the two requested encodings as ONE stream carrying
+      // embedded SVC layers (scalabilityMode "L2T3_KEY" in its own
+      // getStats()) instead of genuine simulcast -- two independent
+      // streams, each with its own SSRC and its own bytesSent. Measured
+      // directly: with VP9, the "low" rid's outbound-rtp never appears
+      // at all (0 bytes, forever); force VP8/H264 instead (skip the
+      // preference here) and both layers start sending real packets
+      // immediately. The SFU only relays bytes -- it has no way to
+      // unpack SVC's embedded layers itself -- so simulcast needs actual
+      // separate streams to have anything to select between. Outside
+      // simulcast, VP9's better compression stands on its own.
+      if (!simulcast) preferVp9(pc);
       applyEncodingLimits(pc);
       pc.onicecandidate = (ev) => {
         if (ev.candidate) send({ type: "publish:ice", candidate: ev.candidate.toJSON() });

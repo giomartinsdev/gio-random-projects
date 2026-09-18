@@ -11,6 +11,14 @@ export type Release = {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.5.1",
+    date: "2026-09-18",
+    items: [
+      "Simulcast ligado de verdade: em qualidade Original, cada pessoa assistindo passa a receber a resolução que a própria conexão aguenta, trocando sozinha e sem travar quando a rede oscila.",
+      "Corrigido: VP9 e o simulcast brigavam entre si e a camada leve nunca chegava a existir — telas em qualidade Original usam VP8 (simulcast de verdade) e o resto continua em VP9 (mais nítido, menos banda).",
+    ],
+  },
+  {
     version: "1.5.0",
     date: "2026-09-18",
     items: [
