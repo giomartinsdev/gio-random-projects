@@ -60,6 +60,16 @@ type Subscriber struct {
 	// subscriber: a reconnect lands on a fresh Subscriber, and the client
 	// re-sends its off-list after `welcome`.
 	videoOptOut map[string]bool
+
+	// Which simulcast layer ("high"/"low") this viewer gets of each
+	// publisher's video, keyed by publisher peer id. Missing means "high"
+	// -- everyone starts on the best layer, same as before simulcast
+	// existed; a client-side heuristic (loss/jitter, watching its own
+	// getStats()) asks to downgrade, not the server. Same lifetime rule
+	// as videoOptOut: dies with the subscriber, re-asserted after a
+	// reconnect isn't needed since a fresh Subscriber defaults to "high"
+	// anyway, which is the same starting point a first-time join gets.
+	videoLayer map[string]string
 }
 
 // Subscribe opens the receive side for one person. onOffer is called
@@ -75,14 +85,15 @@ func (s *Server) Subscribe(roomID, peerID string, onICE func(webrtc.ICECandidate
 
 	room := s.room(roomID)
 	sub := &Subscriber{
-		pc:      pc,
-		server:  s,
-		room:    room,
-		peerID:  peerID,
-		onOffer: onOffer,
-		onError: onError,
-		senders: make(map[*publishedTrack][]*webrtc.RTPSender),
+		pc:          pc,
+		server:      s,
+		room:        room,
+		peerID:      peerID,
+		onOffer:     onOffer,
+		onError:     onError,
+		senders:     make(map[*publishedTrack][]*webrtc.RTPSender),
 		videoOptOut: make(map[string]bool),
+		videoLayer:  make(map[string]string),
 	}
 
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
@@ -149,6 +160,15 @@ func (s *Subscriber) attach(t *publishedTrack) bool {
 	if t.local.Kind() == webrtc.RTPCodecTypeVideo && s.videoOptOut[t.publisher] {
 		return false
 	}
+	// A simulcast layer this viewer didn't pick is not attached at all --
+	// forwarding every layer to every viewer would defeat the entire
+	// point (N times the upload cost for no benefit). Non-simulcast
+	// tracks (t.rid == "") are unaffected: audio, camera shares, and
+	// screen shares at an explicit low quality all attach exactly as
+	// before.
+	if t.rid != "" && t.rid != s.layerForLocked(t.publisher) {
+		return false
+	}
 	// Sendonly, not AddTrack's default sendrecv: this side sends to the
 	// browser and never receives. With the direction pinned, RemoveTrack
 	// (a stop, not a restore) flips the transceiver to `inactive` -- with
@@ -177,6 +197,16 @@ func (s *Subscriber) attach(t *publishedTrack) bool {
 		}
 	}()
 	return true
+}
+
+// layerForLocked returns which simulcast layer this viewer wants of one
+// publisher's video -- "high" if they never asked for anything else.
+// Caller holds s.mu.
+func (s *Subscriber) layerForLocked(publisherID string) string {
+	if rid, ok := s.videoLayer[publisherID]; ok {
+		return rid
+	}
+	return "high"
 }
 
 // removeTracks drops this subscriber's copies of exactly these tracks and
@@ -266,6 +296,78 @@ func (s *Subscriber) SetPublisherVideoEnabled(publisherID string, enabled bool) 
 	// removeTracks renegotiates ONCE at the end and no-ops when nothing
 	// matched -- the publisher already stopped, or video was already off.
 	s.removeTracks(toRemove)
+	return nil
+}
+
+// SetPublisherVideoLayer switches which simulcast layer ("high"/"low")
+// this viewer gets of one publisher's video -- the mechanism a
+// client-side quality heuristic drives by watching its own connection
+// (see useRoom.ts), same shape as SetPublisherVideoEnabled next to it.
+// Asking for a layer that doesn't exist yet -- the publisher isn't
+// simulcasting, or that layer hasn't arrived -- is not an error: the
+// preference is recorded and applies the moment a matching
+// publishedTrack shows up, via the normal addTrack fan-out.
+func (s *Subscriber) SetPublisherVideoLayer(publisherID, rid string) error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	current := s.layerForLocked(publisherID)
+	if current == rid {
+		s.mu.Unlock()
+		return nil
+	}
+	s.videoLayer[publisherID] = rid
+	s.mu.Unlock()
+
+	// Only cut over once the wanted layer actually exists. A simulcast
+	// publisher's lower layer can take a while to start flowing (some
+	// browsers only spin up an unwatched encoding's RTP once something
+	// asks), and a publisher who isn't simulcasting at all never has a
+	// "low" to switch to. Either way, the preference above is recorded
+	// and the normal addTrack fan-out applies it the moment a matching
+	// publishedTrack shows up -- what must NOT happen is dropping the
+	// layer that's already flowing on the strength of a preference for
+	// one that isn't there yet, which would swap a working (if heavy)
+	// picture for nothing at all.
+	layers := s.room.videoLayersFor(publisherID)
+	wanted := false
+	for _, t := range layers {
+		if t.rid == rid {
+			wanted = true
+			break
+		}
+	}
+	if !wanted {
+		return nil
+	}
+
+	s.mu.Lock()
+	var old *publishedTrack
+	for t := range s.senders {
+		if t.publisher == publisherID && t.local.Kind() == webrtc.RTPCodecTypeVideo && t.rid == current {
+			old = t
+			break
+		}
+	}
+	s.mu.Unlock()
+
+	if old != nil {
+		s.removeTracks([]*publishedTrack{old})
+	}
+	// attach() re-checks the (now-updated) preference itself, so handing
+	// it every layer this publisher has is safe -- only the wanted one
+	// actually attaches.
+	attached := false
+	for _, t := range layers {
+		if s.attach(t) {
+			attached = true
+		}
+	}
+	if attached {
+		s.negotiate()
+	}
 	return nil
 }
 

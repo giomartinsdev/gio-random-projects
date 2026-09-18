@@ -11,6 +11,15 @@ export type Release = {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.5.0",
+    date: "2026-09-18",
+    items: [
+      "Vídeo compartilhado codifica em VP9 quando o navegador aguenta — mesma nitidez por menos banda, sem trocar nada no servidor.",
+      "Começo do simulcast: uma tela em qualidade Original agora sobe em duas resoluções ao mesmo tempo, abrindo caminho pra cada pessoa assistir na que a própria conexão aguenta (troca automática ainda não ligada — ver Novidades técnicas).",
+    ],
+  },
+
+  {
     version: "1.4.2",
     date: "2026-09-17",
     items: [

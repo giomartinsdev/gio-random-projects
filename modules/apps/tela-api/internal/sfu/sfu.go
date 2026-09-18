@@ -68,6 +68,17 @@ func New(opts Options) (*Server, error) {
 	if err := media.RegisterDefaultCodecs(); err != nil {
 		return nil, fmt.Errorf("register codecs: %w", err)
 	}
+	// A simulcast publisher's layers arrive as one RTP stream per rid
+	// ("high"/"low"), and pion tells them apart by reading the RID (and
+	// mid) RTP header extensions off the actual packets -- SSRC-based
+	// mapping is bypassed entirely for a simulcast m-line. Without these
+	// registered, incoming simulcast RTP fails pion's SSRC probing and
+	// OnTrack never fires for it at all (silently: the publish offer
+	// still answers fine, the video just never arrives). Not part of
+	// RegisterDefaultCodecs -- has to be asked for explicitly.
+	if err := webrtc.ConfigureSimulcastExtensionHeaders(media); err != nil {
+		return nil, fmt.Errorf("configure simulcast extension headers: %w", err)
+	}
 
 	// Interceptors give us RTCP reports, NACK-based retransmission and
 	// TWCC for free -- without them a subscriber loses packets with no
@@ -133,6 +144,14 @@ type publishedTrack struct {
 	// connection under the same id, and the old one's teardown drains
 	// asynchronously -- see removePublisherTracks.
 	pub *Publisher
+	// Simulcast layer id ("high"/"low"), or "" for every track that
+	// isn't simulcast -- audio always, video whenever the publisher's
+	// browser didn't send multiple encodings (camera shares, screen
+	// shares at an explicit low quality). A publisher sending simulcast
+	// registers one publishedTrack PER LAYER, same publisher/pub, one
+	// OnTrack call each (pion demuxes simulcast by RID before this
+	// package ever sees it -- see publisher.go).
+	rid string
 }
 
 func (s *Server) room(roomID string) *Room {
@@ -173,6 +192,23 @@ func (r *Room) allTracks() []*publishedTrack {
 	out := make([]*publishedTrack, 0, len(r.tracks))
 	for _, list := range r.tracks {
 		out = append(out, list...)
+	}
+	return out
+}
+
+// videoLayersFor returns just one publisher's video layers -- for a
+// simulcast publisher that's every rid ("high", "low"); for a plain
+// (non-simulcast) publisher it's the single video publishedTrack, rid
+// "". Used by Subscriber to pick which layer to attach without also
+// pulling in that publisher's audio track.
+func (r *Room) videoLayersFor(publisherID string) []*publishedTrack {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []*publishedTrack
+	for _, t := range r.tracks[publisherID] {
+		if t.local.Kind() == webrtc.RTPCodecTypeVideo {
+			out = append(out, t)
+		}
 	}
 	return out
 }

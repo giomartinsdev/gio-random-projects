@@ -19,6 +19,31 @@ const LEAVE_GRACE_MS = 12_000;
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 8_000;
 
+// The simulcast auto-switch heuristic's tuning (see the effect near
+// setPublisherVideoLayer). 8% sustained over two 3s windows before
+// downgrading -- a single bad sample is normal jitter, not a verdict;
+// 5 clean windows (~15s) before trying "high" again -- recovering
+// slower than falling protects against flapping right back down.
+const LAYER_POLL_MS = 3_000;
+const LAYER_DOWNGRADE_LOSS_PCT = 8;
+const LAYER_DOWNGRADE_WINDOWS = 2;
+const LAYER_UPGRADE_CLEAN_WINDOWS = 5;
+// OFF for now. Measured against a real Chrome publisher: the "low"
+// simulcast layer's encoder stays dormant -- zero bytes ever sent --
+// until something makes the browser start it, for as long as 45s with
+// a real subscriber connected the whole time (this is a known, open
+// problem in other pion-based SFUs too, not specific to this one). The
+// server-side fix already refuses to drop a viewer's working "high"
+// layer for a "low" that doesn't exist yet (see SetPublisherVideoLayer,
+// tela-api), so flipping this on can only ever mean "the auto-switch
+// silently fails to downgrade," never "someone loses their video" --
+// but it also means the floor this was supposed to add doesn't
+// actually exist yet. Leave off until the SFU has a way to wake the
+// layer up (a PLI targeted at it, once its SSRC is known some other
+// way) and that's been verified the same way this was: a real Chrome
+// publisher, a real viewer, real getStats() numbers.
+const LAYER_AUTO_SWITCH_ENABLED = false;
+
 // Whoever is sharing picks these before they start -- see
 // AspectModeButton-style pickers in Room.tsx. "source" means "don't
 // constrain this at all", i.e. whatever the display/camera natively
@@ -245,6 +270,33 @@ function boostOpusSdp(sdp: string): string {
   return lines.join("\r\n");
 }
 
+// VP9 compresses noticeably better than VP8/H264 at the same visual
+// quality -- the same lever YouTube, Twitch and Meet lean on for "good
+// quality, less bandwidth". The SFU forwards RTP untouched (see
+// publisher.go's OnTrack: it builds the relay track FROM whatever codec
+// the offer negotiates), so it's already codec-agnostic -- nothing on
+// the server needs to change for this. Safari has decoded VP9 since
+// Safari 14 / iOS 14 (2020), and screen sharing only ever originates
+// from a desktop browser (canShareScreen gates that), so the risk of a
+// viewer stuck unable to decode this is low. Falls back to the
+// browser's own default order (VP8/H264 first) wherever VP9 isn't
+// offered at all -- a `setCodecPreferences` call only ever reorders,
+// it can't force a codec neither side actually supports.
+function preferVp9(pc: RTCPeerConnection) {
+  if (typeof RTCRtpSender === "undefined" || !RTCRtpSender.getCapabilities) return;
+  const caps = RTCRtpSender.getCapabilities("video");
+  const vp9 = caps?.codecs.filter((c) => c.mimeType.toLowerCase() === "video/vp9") ?? [];
+  if (vp9.length === 0) return; // no VP9 encoder in this browser -- default order stands
+  const rest = caps!.codecs.filter((c) => c.mimeType.toLowerCase() !== "video/vp9");
+  const transceiver = pc.getTransceivers().find((t) => t.sender.track?.kind === "video");
+  try {
+    transceiver?.setCodecPreferences([...vp9, ...rest]);
+  } catch {
+    // Wrong signaling state, or a combination the browser rejects --
+    // the default negotiation order still works.
+  }
+}
+
 export type Status = "connecting" | "connected" | "reconnecting" | "error" | "closed";
 export type Source = "screen" | "camera";
 
@@ -374,6 +426,16 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
   // ids are inert.
   const videoOffPeersRef = useRef<Set<string>>(new Set());
   const [videoOffPeers, setVideoOffPeers] = useState<Set<string>>(new Set());
+  // Which simulcast layer ("high"/"low") this viewer wants of each
+  // publisher's video, keyed by publisher peer id. Missing means "high"
+  // -- same default the server assumes (see subscriber.go). Driven by
+  // useLayerAutoSwitch below, reacting to this viewer's own connection;
+  // re-asserted after a reconnect for the same reason videoOffPeersRef
+  // is: the server's Subscriber (and its layer choice) dies with the
+  // WebSocket, and a network blip shouldn't hand a struggling viewer
+  // back the heavy layer just because the connection blipped.
+  const videoLayerRef = useRef<Record<string, "high" | "low">>({});
+  const [videoLayer, setVideoLayer] = useState<Record<string, "high" | "low">>({});
 
   const send = useCallback((payload: unknown) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -419,16 +481,23 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
       const bitrate = bitrateFor(src, q, f, settings);
       const params = sender.getParameters();
       if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-      const encoding = params.encodings[0];
-      encoding.maxBitrate = bitrate;
-      // Two levers beyond bitrate make quality changes apply live
-      // without recapturing: cap the encoder's own output rate, and have
-      // it scale captured frames down to the chosen size.
-      if (f !== "source") encoding.maxFramerate = f;
-      else delete encoding.maxFramerate;
-      const scale = scaleResolutionDownByFor(settings, q);
-      if (scale) encoding.scaleResolutionDownBy = scale;
-      else delete encoding.scaleResolutionDownBy;
+      for (const encoding of params.encodings) {
+        // The simulcast "low" layer is a fixed floor tier set once at
+        // publishStream time (see its sendEncodings) -- it doesn't grow
+        // or shrink with the chosen quality, that's the whole point of
+        // having a floor. Only the "high" layer (or the lone encoding,
+        // rid "" outside simulcast) follows the picked quality/fps.
+        if (encoding.rid === "low") continue;
+        encoding.maxBitrate = bitrate;
+        // Two levers beyond bitrate make quality changes apply live
+        // without recapturing: cap the encoder's own output rate, and
+        // have it scale captured frames down to the chosen size.
+        if (f !== "source") encoding.maxFramerate = f;
+        else delete encoding.maxFramerate;
+        const scale = scaleResolutionDownByFor(settings, q);
+        if (scale) encoding.scaleResolutionDownBy = scale;
+        else delete encoding.scaleResolutionDownBy;
+      }
       params.degradationPreference =
         sender.track.contentHint === "detail" ? "maintain-resolution" : "maintain-framerate";
       // Best-effort: not every browser accepts every field, and a
@@ -463,7 +532,34 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
       publishRef.current = pc;
       const seq = ++publishSeqRef.current;
 
-      for (const track of stream.getTracks()) pc.addTrack(track, stream);
+      for (const track of stream.getTracks()) {
+        if (track.kind === "video" && sourceRef.current === "screen" && qualityRef.current === "source") {
+          // Simulcast: two encodings of the SAME track under one m-line,
+          // so the SFU can hand each viewer the layer THEIR connection
+          // can carry (see subscriber.go's per-viewer layer selection)
+          // instead of everyone fighting over one stream sized for the
+          // best case. Chrome supports this for screen capture; Firefox
+          // needs 134+ and Safari's simulcast support is limited --
+          // both just collapse to a single layer silently, never an
+          // error, so a viewer on an older browser loses nothing but the
+          // adaptive floor. Only for Original quality: an explicit
+          // resolution pick (360p...) is already its own low tier, a
+          // second layer under it buys nothing.
+          pc.addTransceiver(track, {
+            direction: "sendonly",
+            streams: [stream],
+            sendEncodings: [
+              { rid: "high" },
+              // A fixed floor, not sized off the chosen quality --
+              // applyEncodingLimits skips this rid entirely.
+              { rid: "low", scaleResolutionDownBy: 4, maxBitrate: 350_000, maxFramerate: 15 },
+            ],
+          });
+        } else {
+          pc.addTrack(track, stream);
+        }
+      }
+      preferVp9(pc);
       applyEncodingLimits(pc);
       pc.onicecandidate = (ev) => {
         if (ev.candidate) send({ type: "publish:ice", candidate: ev.candidate.toJSON() });
@@ -639,6 +735,101 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     [send],
   );
 
+  // Which simulcast layer this viewer gets of one publisher's video.
+  // Asking for "low" on a publisher who isn't simulcasting (a camera
+  // share, or a screen share at an explicit quality) is a harmless
+  // no-op server-side (see SetPublisherVideoLayer) -- callers never
+  // need to know in advance whether a layer actually exists.
+  const setPublisherVideoLayer = useCallback(
+    (publisherId: string, rid: "high" | "low") => {
+      if (videoLayerRef.current[publisherId] === rid) return;
+      const next = { ...videoLayerRef.current, [publisherId]: rid };
+      videoLayerRef.current = next;
+      setVideoLayer(next);
+      send({ type: "subscribe:layer", publisherId, rid });
+    },
+    [send],
+  );
+
+  // The client-driven half of simulcast: watches THIS viewer's own
+  // receive connection for sustained packet loss on each publisher's
+  // video and asks the server for the low layer instead -- reactive to
+  // what's actually arriving, not a bandwidth estimate. Deliberately
+  // simple (loss-rate + hysteresis, no GCC/REMB-style prediction): a
+  // heuristic that's wrong occasionally and easy to reason about beats
+  // one that's usually-right and opaque, especially right after the
+  // last "smarter" quality change made things worse. Runs for every
+  // publisher uniformly -- asking a publisher who isn't simulcasting
+  // for "low" is a no-op server-side (see SetPublisherVideoLayer's Go
+  // doc comment), so this never needs to know in advance who qualifies.
+  useEffect(() => {
+    if (!LAYER_AUTO_SWITCH_ENABLED) return;
+    // Consecutive bad/clean windows per publisher -- local to this
+    // effect instance, reset on every reconnect along with everything
+    // else the subscribe connection carries.
+    const badStreak = new Map<string, number>();
+    const cleanStreak = new Map<string, number>();
+    const prevCounts = new Map<string, { lost: number; received: number }>();
+
+    const tick = async () => {
+      const pc = subscribeRef.current;
+      if (!pc || pc.connectionState !== "connected") return;
+      let report: RTCStatsReport;
+      try {
+        report = await pc.getStats();
+      } catch {
+        return;
+      }
+      // inbound-rtp's trackIdentifier is the id of the MediaStreamTrack
+      // the browser created for it -- the same technique usePeerStats
+      // uses to pick one tile's counters out of the shared subscribe
+      // connection's report.
+      const trackToPublisher = new Map<string, string>();
+      for (const [peerId, stream] of Object.entries(remoteStreamsRef.current)) {
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) trackToPublisher.set(videoTrack.id, peerId);
+      }
+
+      report.forEach((s: any) => {
+        if (s.type !== "inbound-rtp" || s.kind !== "video") return;
+        const publisherId = trackToPublisher.get(s.trackIdentifier);
+        if (!publisherId) return;
+        const lost = typeof s.packetsLost === "number" ? s.packetsLost : 0;
+        const received = typeof s.packetsReceived === "number" ? s.packetsReceived : 0;
+        const prev = prevCounts.get(publisherId);
+        prevCounts.set(publisherId, { lost, received });
+        if (!prev) return; // first sample is only a baseline
+        const dLost = lost - prev.lost;
+        const dReceived = received - prev.received;
+        if (dLost < 0 || dReceived < 0) return; // counters reset -- a renegotiation landed; skip this window
+        const total = dLost + dReceived;
+        const lossPct = total > 0 ? (dLost * 100) / total : 0;
+
+        const currentLayer = videoLayerRef.current[publisherId] ?? "high";
+        if (lossPct > LAYER_DOWNGRADE_LOSS_PCT) {
+          cleanStreak.delete(publisherId);
+          const streak = (badStreak.get(publisherId) ?? 0) + 1;
+          badStreak.set(publisherId, streak);
+          if (currentLayer !== "low" && streak >= LAYER_DOWNGRADE_WINDOWS) {
+            setPublisherVideoLayer(publisherId, "low");
+          }
+          return;
+        }
+        badStreak.delete(publisherId);
+        if (currentLayer !== "low") return;
+        const streak = (cleanStreak.get(publisherId) ?? 0) + 1;
+        cleanStreak.set(publisherId, streak);
+        if (streak >= LAYER_UPGRADE_CLEAN_WINDOWS) {
+          cleanStreak.delete(publisherId);
+          setPublisherVideoLayer(publisherId, "high");
+        }
+      });
+    };
+
+    const timer = setInterval(() => void tick(), LAYER_POLL_MS);
+    return () => clearInterval(timer);
+  }, [setPublisherVideoLayer]);
+
   // Changing your own label. The server answers with the broadcast the
   // room sees plus a fresh resume token (handled in the peer:rename
   // case below).
@@ -735,6 +926,14 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
             // of people who left for good are inert server-side.
             for (const id of videoOffPeersRef.current) {
               send({ type: "subscribe:video", publisherId: id, enabled: false });
+            }
+            // Same reasoning for layer choices: a fresh Subscriber
+            // defaults everyone back to "high", so a struggling viewer
+            // whose blip just triggered this reconnect would otherwise
+            // get handed the heavy layer again for a few seconds until
+            // the auto-switch heuristic notices and downgrades it back.
+            for (const [id, rid] of Object.entries(videoLayerRef.current)) {
+              if (rid !== "high") send({ type: "subscribe:layer", publisherId: id, rid });
             }
 
             // The receive side starts over too, publisher or not: the
@@ -1029,6 +1228,12 @@ export function useRoom(roomId: string, credential: Credential, displayName?: st
     setSpotlightPeer,
     videoOffPeers,
     setPublisherVideo,
+    // The simulcast layer each publisher's video is on for this viewer
+    // (missing = "high"). Read-only from the UI's perspective today --
+    // the auto-switch heuristic above drives it -- exposed mainly so a
+    // manual override can be added later without touching the hook.
+    videoLayer,
+    setPublisherVideoLayer,
     rename,
     // The two peer connections, by ref (they're replaced on every
     // re-share/re-negotiation) -- the per-tile stats reader needs the

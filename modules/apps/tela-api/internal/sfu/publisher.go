@@ -66,13 +66,25 @@ func (s *Server) Publish(roomID, peerID string, offer webrtc.SessionDescription,
 	})
 
 	pc.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+		// Simulcast: the browser's offer carries several encodings under
+		// one video m-line (see the frontend's sendEncodings), and pion
+		// demuxes that into one OnTrack call PER LAYER before this
+		// package ever sees it -- each remote here is already exactly
+		// one layer's RTP, distinguished by RID ("high"/"low"). A plain
+		// (non-simulcast) track's RID is "". Local id gets the rid
+		// suffixed on so two layers of the same track never collide.
+		rid := remote.RID()
+		localID := remote.ID()
+		if rid != "" {
+			localID = remote.ID() + ":" + rid
+		}
 		// The stream id is the publisher's peer id, so subscribers can
 		// tell whose picture a track belongs to without a side channel.
-		local, err := webrtc.NewTrackLocalStaticRTP(remote.Codec().RTPCodecCapability, remote.ID(), peerID)
+		local, err := webrtc.NewTrackLocalStaticRTP(remote.Codec().RTPCodecCapability, localID, peerID)
 		if err != nil {
 			return
 		}
-		track := &publishedTrack{local: local, remote: remote, publisher: peerID, pub: p}
+		track := &publishedTrack{local: local, remote: remote, publisher: peerID, pub: p, rid: rid}
 
 		for _, sub := range room.addTrack(track) {
 			sub.addTrack(track)

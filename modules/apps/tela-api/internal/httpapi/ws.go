@@ -37,6 +37,9 @@ type clientMessage struct {
 	// (enabled=false) or back (enabled=true).
 	PublisherID string `json:"publisherId,omitempty"`
 	Enabled     bool   `json:"enabled,omitempty"`
+	// For subscribe:layer, which simulcast layer ("high"/"low") of
+	// PublisherID's video this viewer wants.
+	Rid string `json:"rid,omitempty"`
 }
 
 // The WebSocket carries signalling only; the media itself rides the
@@ -300,6 +303,18 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 				w.server.log.ErrorContext(ctx, "subscribe video toggle failed", "peer_id", w.peer.ID, "publisher_id", msg.PublisherID, "error", err)
 				w.peer.Send(map[string]any{"type": "subscribe:error", "error": err.Error()})
 			}
+
+			// A client-side quality heuristic switching this viewer between
+			// a publisher's simulcast layers (see useRoom.ts) -- same shape
+			// and same privacy as subscribe:video above.
+			case "subscribe:layer":
+				if w.subscriber == nil || msg.PublisherID == "" || msg.PublisherID == w.peer.ID || msg.Rid == "" {
+					continue
+				}
+				if err := w.subscriber.SetPublisherVideoLayer(msg.PublisherID, msg.Rid); err != nil {
+					w.server.log.ErrorContext(ctx, "subscribe layer switch failed", "peer_id", w.peer.ID, "publisher_id", msg.PublisherID, "error", err)
+					w.peer.Send(map[string]any{"type": "subscribe:error", "error": err.Error()})
+				}
 
 		// Changing your own label. The room hands back a fresh resume
 		// token in the direct reply (see rooms.Room.Rename) -- the old

@@ -874,3 +874,40 @@ func TestVideoOptOutOnlyAffectsTheAskingSubscriber(t *testing.T) {
 	})
 	waitForTrack(t, b1, "gen-b", "b1's video never came back after the re-enable", 15*time.Second)
 }
+
+// Asking for a layer that doesn't exist (a plain, non-simulcast
+// publisher) is not an error and doesn't disturb the video already
+// flowing -- the preference is recorded, nothing attaches or detaches
+// for a layer that was never there.
+func TestSetPublisherVideoLayerOnANonSimulcastPublisherIsANoOp(t *testing.T) {
+	server := newServer(t)
+	const roomID, peerID = "SALA-SIMN", "pub-simn"
+
+	startPublisherAV(t, server, roomID, peerID, "share-a", "voice-a")
+	b := newBrowserSubscriber(t, server, roomID, "watcher")
+
+	received := map[string]bool{}
+	for len(received) < 2 {
+		select {
+		case id := <-b.got:
+			received[id] = true
+		case <-time.After(15 * time.Second):
+			t.Fatalf("viewer never received both tracks, got %v", received)
+		}
+	}
+
+	if err := b.sub.SetPublisherVideoLayer(peerID, "low"); err != nil {
+		t.Fatalf("requesting a nonexistent layer should not error: %v", err)
+	}
+
+	// The video already flowing must not have been dropped as a side
+	// effect of asking for a layer that isn't there.
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case code := <-b.fatal:
+			t.Fatalf("subscriber errored after a no-op layer request: %s", code)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
