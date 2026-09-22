@@ -40,6 +40,9 @@ type Repository interface {
 
 	// Feed e rankings
 	RecentAnnouncements(ctx context.Context, limit int) ([]Announcement, error)
+	// AnnouncementCount is how many announcements are live (not expired) --
+	// the home header's number, independent of how few the feed shows.
+	AnnouncementCount(ctx context.Context) (int, error)
 	RankingClubs(ctx context.Context, metrica string) ([]ClubRef, error)
 	RankingPlayers(ctx context.Context, metrica, posicao string) ([]RankPlayer, error)
 

@@ -955,6 +955,18 @@ func (r *ClubsRepository) RecentAnnouncements(ctx context.Context, limit int) ([
 	return list, rows.Err()
 }
 
+// AnnouncementCount counts what the feed could show, not what it does show:
+// the home caps the feed at a few items, and the header must not shrink with it.
+func (r *ClubsRepository) AnnouncementCount(ctx context.Context) (int, error) {
+	var n int
+	if err := r.pool.QueryRow(ctx, `
+		SELECT count(*) FROM clubs_announcements
+		WHERE expira_em IS NULL OR expira_em > now()`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("announcement count: %w", err)
+	}
+	return n, nil
+}
+
 // ------------------------------------------------------------------ rankings
 
 func (r *ClubsRepository) RankingClubs(ctx context.Context, metrica string) ([]domainclubs.ClubRef, error) {
@@ -1018,9 +1030,9 @@ func (r *ClubsRepository) RankingPlayers(ctx context.Context, metrica, posicao s
 		})
 	}
 	sortPlayers(out, metrica)
-	if len(out) > 100 {
-		out = out[:100]
-	}
+	// Deliberately NOT capped here: the handler paginates, so the last page
+	// has to be reachable. Capping at 100 made "até o último" impossible --
+	// a ranking 1,288 players deep stopped at 100 with no way past it.
 	return out, nil
 }
 

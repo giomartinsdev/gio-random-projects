@@ -226,3 +226,46 @@ export function Bar({ value, max, color = "var(--accent)" }: { value: number; ma
 export function Spinner({ label = "carregando…" }: { label?: string }) {
   return <div className="px-4 py-10 text-center text-sm text-muted">{label}</div>;
 }
+
+/** Paginação de uma lista já carregada: a home não rola até o fim. O rótulo
+ * pode dizer o que se está paginando ("10 de 100 jogadores"). */
+export function Pager({
+  page,
+  totalPages,
+  onPage,
+  label,
+}: {
+  page: number;
+  totalPages: number;
+  onPage: (p: number) => void;
+  label?: ReactNode;
+}) {
+  if (totalPages <= 1) return null;
+  const btn =
+    "rounded-md border px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wide transition-colors disabled:opacity-40";
+  return (
+    <div className="hair-t flex items-center justify-between gap-3 px-4 py-2.5">
+      <button
+        type="button"
+        disabled={page <= 0}
+        onClick={() => onPage(page - 1)}
+        className={btn}
+        style={{ borderColor: "var(--border-strong)", color: "var(--text-muted)" }}
+      >
+        ← anterior
+      </button>
+      <span className="font-mono text-[10px] text-faint">
+        {label ?? `${page + 1} / ${totalPages}`}
+      </span>
+      <button
+        type="button"
+        disabled={page >= totalPages - 1}
+        onClick={() => onPage(page + 1)}
+        className={btn}
+        style={{ borderColor: "var(--border-strong)", color: "var(--text-muted)" }}
+      >
+        próxima →
+      </button>
+    </div>
+  );
+}

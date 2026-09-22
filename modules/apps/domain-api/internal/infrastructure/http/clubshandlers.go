@@ -46,6 +46,28 @@ func intParam(r *http.Request, name string, def, max int) int {
 	return n
 }
 
+// page slices a fully-sorted list for the caller's `limite`/`offset`. The
+// ranking endpoints build the whole list (Postgres computes the order), then
+// hand back only the requested window -- so "page 3 of 129" is a slice, not a
+// second query, and the last page is always reachable.
+func page[T any](list []T, r *http.Request) []T {
+	limit := intParam(r, "limite", 10, 100)
+	offset := 0
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			offset = n
+		}
+	}
+	if offset >= len(list) {
+		return []T{}
+	}
+	end := offset + limit
+	if end > len(list) {
+		end = len(list)
+	}
+	return list[offset:end]
+}
+
 // ------------------------------------------------------------------ clubes
 
 func (h *ClubsHandlers) ListClubs(w http.ResponseWriter, r *http.Request) {
@@ -259,7 +281,12 @@ func (h *ClubsHandlers) RankingClubs(w http.ResponseWriter, r *http.Request) {
 		h.internalError(r, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"metrica": metrica, "clubes": list, "total": len(list)})
+	// `total` is the whole ranking, not the page: the SPA paginates and needs
+	// to know where the end is. The page itself is sliced here so the caller
+	// only pays for what it shows.
+	total := len(list)
+	list = page(list, r)
+	writeJSON(w, http.StatusOK, map[string]any{"metrica": metrica, "clubes": list, "total": total})
 }
 
 func (h *ClubsHandlers) RankingPlayers(w http.ResponseWriter, r *http.Request) {
@@ -270,7 +297,9 @@ func (h *ClubsHandlers) RankingPlayers(w http.ResponseWriter, r *http.Request) {
 		h.internalError(r, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"metrica": metrica, "jogadores": list, "total": len(list)})
+	total := len(list)
+	list = page(list, r)
+	writeJSON(w, http.StatusOK, map[string]any{"metrica": metrica, "jogadores": list, "total": total})
 }
 
 // ------------------------------------------------------------------ jogadores
@@ -317,7 +346,14 @@ func (h *ClubsHandlers) ListAnnouncements(w http.ResponseWriter, r *http.Request
 		h.internalError(r, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"anuncios": list, "total": len(list)})
+	// `total` is everything live, not just this page: the home shows the last
+	// 3 in the feed, and its header must still say how many there are.
+	total, err := h.clubs.AnnouncementCount(r.Context())
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"anuncios": list, "total": total})
 }
 
 // -------------------------------------------------------------- preferências

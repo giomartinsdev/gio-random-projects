@@ -87,14 +87,14 @@ export const api = {
   h2h: (clubId: string, rivalId: string) =>
     request<HeadToHead>(`/clubs/${encodeURIComponent(clubId)}/h2h/${encodeURIComponent(rivalId)}`),
 
-  rankingClubs: (metrica = "nivel") =>
+  rankingClubs: (metrica = "nivel", limite = 10, offset = 0) =>
     request<{ metrica: string; clubes: Club[]; total: number }>(
-      `/rankings/clubs?metrica=${encodeURIComponent(metrica)}`,
+      `/rankings/clubs?metrica=${encodeURIComponent(metrica)}&limite=${limite}&offset=${offset}`,
     ),
 
-  rankingPlayers: (metrica = "nota", posicao = "") =>
+  rankingPlayers: (metrica = "nota", limite = 10, offset = 0, posicao = "") =>
     request<{ metrica: string; jogadores: RankPlayer[]; total: number }>(
-      `/rankings/players?metrica=${encodeURIComponent(metrica)}&posicao=${encodeURIComponent(posicao)}`,
+      `/rankings/players?metrica=${encodeURIComponent(metrica)}&limite=${limite}&offset=${offset}&posicao=${encodeURIComponent(posicao)}`,
     ),
 
   players: (q = "", limite = 60) =>
@@ -113,8 +113,8 @@ export const api = {
   player: (playerId: string) =>
     request<PlayerProfile>(`/players/${encodeURIComponent(playerId)}`),
 
-  announcements: () =>
-    request<{ anuncios: Announcement[]; total: number }>("/announcements"),
+  announcements: (limite = 12) =>
+    request<{ anuncios: Announcement[]; total: number }>(`/announcements?limite=${limite}`),
 
   // --- pessoal (exige login) ---------------------------------------------
 

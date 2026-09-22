@@ -3,46 +3,78 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { Announcement, Club, RankPlayer } from "../lib/types";
-import { Badge, Bar, Card, Crest, Empty, RankMedallion, Spinner, Stat } from "../components/ui";
+import { Badge, Bar, Card, Crest, Empty, Pager, RankMedallion, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { BarChart } from "../components/charts";
 import { fmt, POS_SHORT, timeAgo } from "../lib/format";
 
 type RankTab = "clubes" | "jogadores";
 
+// A home não é o arquivo: o feed mostra os últimos 3 e o ranking, 10 por
+// página. Quem quer tudo vai para Clubes/Jogadores.
+const FEED = 3;
+const PER_PAGE = 10;
+
 export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string) => void; onOpenPlayer: (id: string) => void }) {
   const [anuncios, setAnuncios] = useState<Announcement[] | null>(null);
+  const [totalAnuncios, setTotalAnuncios] = useState(0);
   const [tab, setTab] = useState<RankTab>("clubes");
   const [metrica, setMetrica] = useState("nivel");
+  const [page, setPage] = useState(0);
   const [clubes, setClubes] = useState<Club[] | null>(null);
   const [jogadores, setJogadores] = useState<RankPlayer[] | null>(null);
+  const [totalRanking, setTotalRanking] = useState(0);
+  // Os números do cabeçalho são totais, não o tamanho da página: depois de
+  // paginar o ranking, `clubes.length` passou a ser 10. O índice de clubes
+  // vem de /api/clubs (que devolve a lista inteira, sem paginar).
+  const [totalClubes, setTotalClubes] = useState<number | null>(null);
   // O número do cabeçalho é o índice inteiro, não a página do ranking: o
   // ranking carrega só ao abrir a aba, então usá-lo aqui mostrava 0 na home.
   const [totalJogadores, setTotalJogadores] = useState<number | null>(null);
   const [erro, setErro] = useState("");
 
   useEffect(() => {
-    api.announcements().then((r) => setAnuncios(r.anuncios ?? [])).catch(() => setAnuncios([]));
+    api
+      .announcements(FEED)
+      .then((r) => {
+        setAnuncios(r.anuncios ?? []);
+        setTotalAnuncios(r.total ?? 0);
+      })
+      .catch(() => setAnuncios([]));
   }, []);
 
   useEffect(() => {
     api.playerCount().then(setTotalJogadores).catch(() => setTotalJogadores(0));
+    api.clubs().then((r) => setTotalClubes(r.total ?? (r.clubes?.length ?? 0))).catch(() => setTotalClubes(0));
   }, []);
+
+  // Trocar de aba ou de métrica volta à primeira página: manter a página 5
+  // numa ordenação nova mostraria um recorte sem sentido.
+  useEffect(() => {
+    setPage(0);
+  }, [tab, metrica]);
 
   useEffect(() => {
     setErro("");
+    const offset = page * PER_PAGE;
     if (tab === "clubes") {
       api
-        .rankingClubs(metrica)
-        .then((r) => setClubes(r.clubes ?? []))
+        .rankingClubs(metrica, PER_PAGE, offset)
+        .then((r) => {
+          setClubes(r.clubes ?? []);
+          setTotalRanking(r.total ?? 0);
+        })
         .catch((e) => setErro(String(e)));
     } else {
       api
-        .rankingPlayers(metrica === "nivel" ? "nota" : metrica)
-        .then((r) => setJogadores(r.jogadores ?? []))
+        .rankingPlayers(metrica === "nivel" ? "nota" : metrica, PER_PAGE, offset)
+        .then((r) => {
+          setJogadores(r.jogadores ?? []);
+          setTotalRanking(r.total ?? 0);
+        })
         .catch((e) => setErro(String(e)));
     }
-  }, [tab, metrica]);
+  }, [tab, metrica, page]);
 
   const metricas = tab === "clubes"
     ? [
@@ -61,6 +93,12 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
   const maxClube = Math.max(...(clubes ?? []).map((c) => c.nivel), 1);
   const maxJogador = Math.max(...(jogadores ?? []).map((p) => p.nota), 1);
 
+  // A posição é absoluta, não da página: o medalhão da página 2 começa em 11.
+  const posBase = page * PER_PAGE;
+  const totalPages = Math.max(1, Math.ceil(totalRanking / PER_PAGE));
+  // O rótulo nomeia o recorte, porque "1 / 2" sozinho não diz de quê.
+  const pagerLabel = `${fmt(posBase + (tab === "clubes" ? clubes?.length ?? 0 : jogadores?.length ?? 0))} de ${fmt(totalRanking)}`;
+
   return (
     <>
       <PageHead
@@ -70,9 +108,9 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
       />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="clubes no hub" value={fmt(clubes?.length ?? 0)} sub="com dados acumulados" accent />
+        <Stat label="clubes no hub" value={fmt(totalClubes ?? 0)} sub="com dados acumulados" accent />
         <Stat label="jogadores indexados" value={fmt(totalJogadores ?? 0)} sub="descobertos pelas partidas" />
-        <Stat label="anúncios" value={fmt(anuncios?.length ?? 0)} sub="gerados dos resultados" />
+        <Stat label="anúncios" value={fmt(totalAnuncios)} sub="gerados dos resultados" />
         <Stat label="histórico" value="contínuo" sub="cresce a cada atualização" />
       </div>
 
@@ -177,14 +215,14 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
               <Empty title="Nenhum clube no ranking ainda" hint="O hub começa vazio e cresce conforme acompanha clubes." />
             ) : (
               <ul className="divide-y divide-[var(--border)]">
-                {clubes.slice(0, 20).map((c, i) => (
+                {clubes.map((c, i) => (
                   <li key={c.club_id}>
                     <button
                       type="button"
                       onClick={() => onOpenClub(c.club_id)}
                       className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface-3"
                     >
-                      <RankMedallion pos={i + 1} />
+                      <RankMedallion pos={posBase + i + 1} />
                       <Crest club={c} size={26} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold">{c.nome}</span>
@@ -207,16 +245,16 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
             <Spinner />
           ) : jogadores.length === 0 ? (
             <Empty title="Nenhum jogador no ranking ainda" hint="Os jogadores aparecem a partir das partidas acompanhadas." />
-          ) : (
-            <ul className="divide-y divide-[var(--border)]">
-              {jogadores.slice(0, 20).map((p, i) => (
-                <li key={p.player_id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenPlayer(p.player_id)}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface-3"
-                  >
-                    <RankMedallion pos={i + 1} />
+            ) : (
+              <ul className="divide-y divide-[var(--border)]">
+                {jogadores.map((p, i) => (
+                  <li key={p.player_id}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenPlayer(p.player_id)}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface-3"
+                    >
+                      <RankMedallion pos={posBase + i + 1} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold">
                         {p.gamertag} {p.verificado && <span title="verificado">✓</span>}
@@ -236,6 +274,7 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
               ))}
             </ul>
           )}
+          {!erro && <Pager page={page} totalPages={totalPages} onPage={setPage} label={pagerLabel} />}
         </Card>
       </div>
     </>

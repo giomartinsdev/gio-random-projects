@@ -21,11 +21,15 @@ import (
 type stubClubs struct {
 	domainclubs.Repository
 
-	club     domainclubs.Club
-	matches  []domainclubs.Match
-	players  []domainclubs.PlayerProfile
-	count    int
-	recentNo int
+	club        domainclubs.Club
+	matches     []domainclubs.Match
+	players     []domainclubs.PlayerProfile
+	count       int
+	recentNo    int
+	rankPlayers []domainclubs.RankPlayer
+	rankClubs   []domainclubs.ClubRef
+	announces   []domainclubs.Announcement
+	annCount    int
 }
 
 func (s *stubClubs) GetClub(context.Context, string) (domainclubs.Club, error) {
@@ -39,6 +43,16 @@ func (s *stubClubs) SearchPlayers(context.Context, string, int) ([]domainclubs.P
 	return s.players, nil
 }
 func (s *stubClubs) PlayerCount(context.Context) (int, error) { return s.count, nil }
+func (s *stubClubs) RankingPlayers(context.Context, string, string) ([]domainclubs.RankPlayer, error) {
+	return s.rankPlayers, nil
+}
+func (s *stubClubs) RankingClubs(context.Context, string) ([]domainclubs.ClubRef, error) {
+	return s.rankClubs, nil
+}
+func (s *stubClubs) RecentAnnouncements(context.Context, int) ([]domainclubs.Announcement, error) {
+	return s.announces, nil
+}
+func (s *stubClubs) AnnouncementCount(context.Context) (int, error) { return s.annCount, nil }
 
 func clubsRouter(repo domainclubs.Repository) http.Handler {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -46,6 +60,9 @@ func clubsRouter(repo domainclubs.Repository) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/clubs/{clubId}", h.GetClub)
 	r.Get("/players", h.ListPlayers)
+	r.Get("/rankings/players", h.RankingPlayers)
+	r.Get("/rankings/clubs", h.RankingClubs)
+	r.Get("/announcements", h.ListAnnouncements)
 	return r
 }
 
@@ -124,5 +141,90 @@ func TestGetClubWithoutMatches(t *testing.T) {
 	rec := getJSON(t, clubsRouter(repo), "/clubs/1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s; want 200", rec.Code, rec.Body)
+	}
+}
+
+func rankPlayers(n int) []domainclubs.RankPlayer {
+	out := make([]domainclubs.RankPlayer, n)
+	for i := range out {
+		out[i] = domainclubs.RankPlayer{PlayerID: string(rune('a' + i)), Gamertag: "p"}
+	}
+	return out
+}
+
+// The ranking paginates: `total` is the whole ranking (so the caller knows
+// where the end is) while the payload is only the requested window. Capping
+// or returning everything made "até o último" impossible from the home.
+func TestRankingPlayersPaginates(t *testing.T) {
+	repo := &stubClubs{rankPlayers: rankPlayers(25)}
+
+	rec := getJSON(t, clubsRouter(repo), "/rankings/players?metrica=nota&limite=10&offset=0")
+	var first struct {
+		Jogadores []domainclubs.RankPlayer `json:"jogadores"`
+		Total     int                      `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &first); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(first.Jogadores) != 10 || first.Total != 25 {
+		t.Fatalf("page0: got %d of total %d; want 10 of 25", len(first.Jogadores), first.Total)
+	}
+
+	// The last page is partial, not empty: offset 20 of 25 -> 5 rows.
+	rec = getJSON(t, clubsRouter(repo), "/rankings/players?metrica=nota&limite=10&offset=20")
+	var last struct {
+		Jogadores []domainclubs.RankPlayer `json:"jogadores"`
+		Total     int                      `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &last); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(last.Jogadores) != 5 {
+		t.Fatalf("last page: got %d; want 5", len(last.Jogadores))
+	}
+	if last.Total != 25 {
+		t.Fatalf("last page total = %d; want 25", last.Total)
+	}
+}
+
+// An offset past the end is an empty page, not a panic.
+func TestRankingPlayersOffsetPastEnd(t *testing.T) {
+	repo := &stubClubs{rankPlayers: rankPlayers(3)}
+	rec := getJSON(t, clubsRouter(repo), "/rankings/players?metrica=nota&limite=10&offset=99")
+	var body struct {
+		Jogadores []domainclubs.RankPlayer `json:"jogadores"`
+		Total     int                      `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Jogadores) != 0 || body.Total != 3 {
+		t.Fatalf("got %d of total %d; want 0 of 3", len(body.Jogadores), body.Total)
+	}
+}
+
+// The feed is capped at a few items, but the header's "anúncios" number is
+// every live announcement -- slicing the feed must not shrink the count.
+func TestAnnouncementsTotalIsNotTheFeedLength(t *testing.T) {
+	repo := &stubClubs{
+		announces: []domainclubs.Announcement{{ID: "1"}, {ID: "2"}, {ID: "3"}},
+		annCount:  200,
+	}
+	rec := getJSON(t, clubsRouter(repo), "/announcements?limite=3")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s; want 200", rec.Code, rec.Body)
+	}
+	var body struct {
+		Anuncios []domainclubs.Announcement `json:"anuncios"`
+		Total    int                        `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Anuncios) != 3 {
+		t.Fatalf("feed: got %d; want 3", len(body.Anuncios))
+	}
+	if body.Total != 200 {
+		t.Fatalf("total = %d; want 200 (all live, not the feed page)", body.Total)
 	}
 }

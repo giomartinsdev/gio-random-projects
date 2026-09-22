@@ -233,12 +233,15 @@ func (s *Server) getMatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) rankingClubs(w http.ResponseWriter, r *http.Request) {
-	s.proxyGet(w, r, "/rankings/clubs?metrica="+domainclient.Escape(r.URL.Query().Get("metrica")))
+	q := r.URL.Query()
+	s.proxyGet(w, r, "/rankings/clubs?metrica="+domainclient.Escape(q.Get("metrica"))+
+		"&limite="+limitParam(q.Get("limite"), "10")+"&offset="+limitParam(q.Get("offset"), "0"))
 }
 
 func (s *Server) rankingPlayers(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	s.proxyGet(w, r, "/rankings/players?metrica="+domainclient.Escape(q.Get("metrica"))+"&posicao="+domainclient.Escape(q.Get("posicao")))
+	s.proxyGet(w, r, "/rankings/players?metrica="+domainclient.Escape(q.Get("metrica"))+"&posicao="+domainclient.Escape(q.Get("posicao"))+
+		"&limite="+limitParam(q.Get("limite"), "10")+"&offset="+limitParam(q.Get("offset"), "0"))
 }
 
 func (s *Server) listPlayers(w http.ResponseWriter, r *http.Request) {
