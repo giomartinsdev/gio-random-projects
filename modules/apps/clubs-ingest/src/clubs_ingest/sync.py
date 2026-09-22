@@ -56,15 +56,17 @@ class Sync:
         novos: list[str] = []
         lvl1 = self._follow(usuario_email, own, ORIGEM_PROPRIO, novos)
 
-        # Level 2: their direct rivals.
-        lvl2 = self._rivals_of(lvl1)
+        # Level 2: their direct rivals — as últimas 10 partidas do clube da
+        # pessoa é que revelam quem são.
+        lvl2 = self._rivals_of(lvl1, self.RIVAL_MATCHES_OWN)
         self._save(usuario_email, rodando=True, nivel=2, total=len(lvl2),
                    concluidos=len(lvl1), atual=lvl2[0] if lvl2 else "", novos=novos)
         lvl2 = [c for c in lvl2 if c not in lvl1]
         self._follow(usuario_email, lvl2, ORIGEM_RIVAL, novos)
 
-        # Level 3: the rivals of the rivals — the "clubes de clubes".
-        lvl3 = self._rivals_of(lvl2)
+        # Level 3: the rivals of the rivals — 5 partidas de cada rival, para o
+        # crawl não multiplicar: 10 rivais × 5 = 50 consultas, contra 100.
+        lvl3 = self._rivals_of(lvl2, self.RIVAL_MATCHES_RIVAL)
         self._save(usuario_email, rodando=True, nivel=3, total=len(lvl3),
                    concluidos=len(lvl1) + len(lvl2), atual=lvl3[0] if lvl3 else "", novos=novos)
         lvl3 = [c for c in lvl3 if c not in lvl1 and c not in lvl2]
@@ -91,10 +93,18 @@ class Sync:
             own = [str(w.get("club_id")) for w in watched]
         return [c for c in own if c]
 
-    def _rivals_of(self, club_ids: list[str]) -> list[str]:
+    # Quantas partidas de cada clube olhamos para descobrir rivais. O nível 1
+    # usa 10 (as últimas do clube da pessoa); o nível 2 usa 5 por rival, para
+    # o crawl não explodir: 10 rivais × 5 = 50 consultas, contra 100 se fosse
+    # 10 em cada. São números de produto, não de infraestrutura -- por isso
+    # vivem aqui, nomeados, e não espalhados nas chamadas.
+    RIVAL_MATCHES_OWN = 10
+    RIVAL_MATCHES_RIVAL = 5
+
+    def _rivals_of(self, club_ids: list[str], matches_per_club: int) -> list[str]:
         seen: list[str] = []
         for club_id in club_ids:
-            for match in self.source.club_matches(club_id, 10):
+            for match in self.source.club_matches(club_id, matches_per_club):
                 for other in (match.get("clubs") or {}):
                     if str(other) != str(club_id) and str(other) not in seen:
                         seen.append(str(other))

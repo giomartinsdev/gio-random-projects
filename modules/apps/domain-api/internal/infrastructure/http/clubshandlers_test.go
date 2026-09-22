@@ -30,6 +30,9 @@ type stubClubs struct {
 	rankClubs   []domainclubs.ClubRef
 	announces   []domainclubs.Announcement
 	annCount    int
+	squad       []domainclubs.SquadMember
+	fetchRun    domainclubs.FetchRun
+	pending     []domainclubs.FetchRun
 }
 
 func (s *stubClubs) GetClub(context.Context, string) (domainclubs.Club, error) {
@@ -53,6 +56,15 @@ func (s *stubClubs) RecentAnnouncements(context.Context, int) ([]domainclubs.Ann
 	return s.announces, nil
 }
 func (s *stubClubs) AnnouncementCount(context.Context) (int, error) { return s.annCount, nil }
+func (s *stubClubs) Squad(context.Context, string) ([]domainclubs.SquadMember, error) {
+	return s.squad, nil
+}
+func (s *stubClubs) GetFetchRun(context.Context, string) (domainclubs.FetchRun, error) {
+	return s.fetchRun, nil
+}
+func (s *stubClubs) ListPendingFetches(context.Context) ([]domainclubs.FetchRun, error) {
+	return s.pending, nil
+}
 
 func clubsRouter(repo domainclubs.Repository) http.Handler {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -60,6 +72,9 @@ func clubsRouter(repo domainclubs.Repository) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/clubs/{clubId}", h.GetClub)
 	r.Get("/players", h.ListPlayers)
+	r.Get("/clubs/{clubId}/squad", h.GetSquad)
+	r.Get("/clubs/{clubId}/fetch-run", h.GetFetchRun)
+	r.Get("/fetch-pending", h.ListPendingFetches)
 	r.Get("/rankings/players", h.RankingPlayers)
 	r.Get("/rankings/clubs", h.RankingClubs)
 	r.Get("/announcements", h.ListAnnouncements)
@@ -226,5 +241,75 @@ func TestAnnouncementsTotalIsNotTheFeedLength(t *testing.T) {
 	}
 	if body.Total != 200 {
 		t.Fatalf("total = %d; want 200 (all live, not the feed page)", body.Total)
+	}
+}
+
+// O elenco da tela de resgate precisa dizer quais pros JÁ têm dono, senão ela
+// oferece um botão "SOU EU" que só falharia depois. O bloqueio é do lado do
+// servidor -- a SPA só desenha o que vier.
+func TestGetSquadCarriesResgatado(t *testing.T) {
+	repo := &stubClubs{squad: []domainclubs.SquadMember{
+		{PlayerID: "free", Gamertag: "Livre", Resgatado: false},
+		{PlayerID: "taken", Gamertag: "ComDono", Resgatado: true},
+	}}
+	rec := getJSON(t, clubsRouter(repo), "/clubs/141881/squad")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	var body struct {
+		Jogadores []domainclubs.SquadMember `json:"jogadores"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Jogadores) != 2 {
+		t.Fatalf("got %d players; want 2", len(body.Jogadores))
+	}
+	// O campo precisa chegar ao JSON -- sem `json:"resgatado"` ele sumiria e a
+	// tela bloquearia (ou deixaria de bloquear) errado.
+	if body.Jogadores[1].PlayerID != "taken" || !body.Jogadores[1].Resgatado {
+		t.Fatalf("o pro com dono deve vir resgatado=true: %+v", body.Jogadores[1])
+	}
+	if body.Jogadores[0].Resgatado {
+		t.Fatalf("o pro livre não deve vir resgatado: %+v", body.Jogadores[0])
+	}
+}
+
+// A tela polla o estado do fetch até o elenco ficar pronto. Antes do primeiro
+// pedido a linha não existe: isso é "ainda não busquei", não erro.
+func TestGetFetchRunDefaultsToNotStarted(t *testing.T) {
+	repo := &stubClubs{fetchRun: domainclubs.FetchRun{ClubID: "141881"}}
+	rec := getJSON(t, clubsRouter(repo), "/clubs/141881/fetch-run")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	var run domainclubs.FetchRun
+	if err := json.Unmarshal(rec.Body.Bytes(), &run); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if run.Rodando || run.ConcluidoEm != nil {
+		t.Fatalf("run não iniciado deve vir zerado: %+v", run)
+	}
+}
+
+// A fila que o worker de ingestão consome.
+func TestListPendingFetches(t *testing.T) {
+	repo := &stubClubs{pending: []domainclubs.FetchRun{
+		{ClubID: "141881", Rodando: true},
+		{ClubID: "234", Rodando: true},
+	}}
+	rec := getJSON(t, clubsRouter(repo), "/fetch-pending")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	var body struct {
+		Pendentes []domainclubs.FetchRun `json:"pendentes"`
+		Total     int                    `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Total != 2 || len(body.Pendentes) != 2 {
+		t.Fatalf("got %d pendentes (total %d); want 2", len(body.Pendentes), body.Total)
 	}
 }

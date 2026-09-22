@@ -109,6 +109,11 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Get("/sync-status", cl.GetSyncRun)
 		// Consumida pelo worker de ingestão: quem pediu sync e ainda não terminou.
 		r.Get("/sync-pending", cl.ListPendingSyncs)
+		// Fila de fetch sob demanda de um clube: a tela de resgate grava o
+		// pedido, o worker de ingestão polla `fetch-pending`, busca o elenco e
+		// publica o resultado em /fetch-run.
+		r.Get("/fetch-pending", cl.ListPendingFetches)
+		r.Get("/clubs/{clubId}/fetch-run", cl.GetFetchRun)
 		r.Get("/admin/status", cl.AdminStatus)
 		// Saúde do worker de ingestão (ele não tem host próprio).
 		r.Get("/admin/ingest", cl.GetIngestEstado)
@@ -123,6 +128,9 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Post("/claimed-pro", clw.ClaimPro)
 		r.Post("/sync-status", clw.SaveSyncRun)
 		r.Post("/admin/ingest", clw.SaveIngestEstado)
+		// Fetch sob demanda: a SPA pede, o worker Python busca,
+		r.Post("/fetch-run", clw.RequestFetch)
+		r.Post("/fetch-run/result", clw.SaveFetchRun)
 	})
 
 	return r

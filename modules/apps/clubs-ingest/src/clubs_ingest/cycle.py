@@ -89,6 +89,32 @@ class Ingest:
         )
         return stats
 
+    def run_fetch(self, club_id: str) -> tuple[int, int]:
+        """Busca o elenco e as partidas de UM clube, sob demanda.
+
+        É o que a tela de resgate precisa: ela não pode esperar o ciclo (até
+        15 min) para mostrar o elenco de onde escolher o pro. O clube é marcado
+        como acompanhado, então o ciclo seguinte continua cuidando dele -- o
+        fetch sob demanda não substitui o poller, só o antecipa.
+
+        Devolve (jogadores, partidas). Erros da fonte sobem como exceção: quem
+        chamou (o loop) registra a falha na linha da fila, onde a tela a lê.
+        """
+        info = self.source.club_info(club_id)
+        if info:
+            identity = club_identity(info)
+            if identity["club_id"]:
+                identity["acompanhado"] = True
+                self.domain.upsert_club(identity)
+
+        overall = self.source.club_overall(club_id)
+        if overall:
+            self.domain.upsert_totals(club_id, club_totals(overall))
+
+        stats = CycleStats()
+        players = self._ingest_matches(club_id, stats)
+        return players, stats.partidas_novas
+
     # Quantos clubes o bootstrap acompanha. O leaderboard traz 100; acompanhar
     # todos de uma vez significaria 100 consultas de partidas no primeiro ciclo,
     # o que é a via mais rápida para o CDN da fonte bloquear o worker. Vinte dá
@@ -162,11 +188,28 @@ class Ingest:
 
         stats.clubes_processados += 1
 
-    def _ingest_matches(self, club_id: str, stats: CycleStats) -> None:
+    def _ingest_matches(self, club_id: str, stats: CycleStats) -> int:
+        """Grava as partidas do clube e devolve quantos jogadores distintos
+        apareceram nelas.
+
+        O número de jogadores é derivado das linhas de partida, não de um
+        endpoint de elenco: a fonte não tem um que sobreviva à temporada. É o
+        mesmo cálculo que a API faz para montar o elenco, então a tela recebe
+        um número consistente com o que ela vai mostrar em seguida.
+        """
+        players: set[str] = set()
         for match in self.source.club_matches(club_id, self.cfg.max_matches):
             payload = match_payload(match, club_id)
             if not payload or not payload["match_id"]:
                 continue
+            # Só o nosso lado: o payload traz os jogadores dos DOIS clubes, e o
+            # elenco que a tela mostra é o deste clube.
+            for line in payload.get("jogadores") or []:
+                if str(line.get("club_id")) != str(club_id):
+                    continue
+                pid = str(line.get("player_id") or "")
+                if pid:
+                    players.add(pid)
             try:
                 self.domain.upsert_match(club_id, payload)
             except DomainQueued:
@@ -191,6 +234,7 @@ class Ingest:
             opp = opponent_club_id(match, club_id)
             if opp:
                 self._ensure_known(opp)
+        return len(players)
 
     def _ensure_known(self, club_id: str) -> None:
         """Register a club we have only seen as an opponent, with its totals.

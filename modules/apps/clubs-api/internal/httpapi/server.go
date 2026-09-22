@@ -92,6 +92,11 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/clubs/search", s.searchClubs)
 		r.Get("/clubs/{clubId}", s.getClub)
 		r.Get("/clubs/{clubId}/squad", s.getSquad)
+		// Fetch sob demanda do elenco: a tela de resgate pede e polla o
+		// estado. PÚBLICO de propósito -- a pessoa decide o clube antes de
+		// entrar, e o dado do elenco é o mesmo dataset público.
+		r.Get("/clubs/{clubId}/fetch-run", s.getFetchRun)
+		r.Post("/clubs/{clubId}/fetch-run", s.requestFetch)
 		r.Get("/clubs/{clubId}/matches", s.listMatches)
 		r.Get("/clubs/{clubId}/evolution", s.getEvolution)
 		r.Get("/clubs/{clubId}/division-changes", s.getDivisionChanges)
@@ -205,6 +210,24 @@ func (s *Server) getClub(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getSquad(w http.ResponseWriter, r *http.Request) {
 	s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/squad")
+}
+
+// getFetchRun lê o estado do fetch sob demanda do elenco de um clube.
+func (s *Server) getFetchRun(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/fetch-run")
+}
+
+// requestFetch abre a fila de fetch do elenco de um clube. Público: a pessoa
+// escolhe o clube antes de entrar, e o worker traz o elenco para ela escolher
+// o próprio pro. A resposta é 202 -- a busca acontece em segundo plano.
+func (s *Server) requestFetch(w http.ResponseWriter, r *http.Request) {
+	if err := s.domain.Post(r.Context(), "/fetch-run", map[string]any{
+		"club_id": chi.URLParam(r, "clubId"),
+	}); err != nil {
+		s.syncError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"iniciado": true})
 }
 
 func (s *Server) listMatches(w http.ResponseWriter, r *http.Request) {

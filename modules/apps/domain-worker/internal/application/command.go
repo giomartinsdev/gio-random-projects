@@ -92,6 +92,11 @@ const (
 	ActionSaveNotify     Action = "preferencia.saveNotificacoes"
 	ActionClaimPro       Action = "preferencia.claimPro"
 	ActionSaveSyncRun    Action = "preferencia.saveSyncRun"
+
+	// Fila de fetch sob demanda de um clube (clubs_fetch_runs). A tela de
+	// resgate grava o pedido, o worker Python polla e busca o elenco, e o
+	// estado é gravado de volta por aqui.
+	ActionSaveFetchRun Action = "clubs.fetchRunSave"
 )
 
 type Command struct {

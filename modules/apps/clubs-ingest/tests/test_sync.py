@@ -178,3 +178,75 @@ def test_a_club_already_followed_is_not_re_followed():
 
     # The second run sees the cached/refreshed watchlist and skips the write.
     assert len(domain.watches) == first
+
+
+# --------------------------------------------------- as regras 10/5 do crawl
+
+class CountingSource(FakeSource):
+    """Records how many matches each club was asked for, so the crawl's shape
+    is assertable -- it is a product rule (10 then 5), not a detail."""
+
+    def __init__(self, matches_by_club=None, search_by_id=None):
+        super().__init__(matches_by_club, search_by_id)
+        self.asked: list[tuple[str, int]] = []
+
+    def club_matches(self, club_id, count=10):
+        self.asked.append((str(club_id), count))
+        return self.matches_by_club.get(str(club_id), [])
+
+
+def test_own_club_is_asked_for_ten_matches():
+    """Nível 1 -> nível 2 sai das últimas 10 partidas do clube da pessoa."""
+    source = CountingSource(
+        matches_by_club={"1001": [{"clubs": {"1001": {}, "2001": {}}}]},
+        search_by_id={"1001": search_hit("1001"), "2001": search_hit("2001")},
+    )
+    domain = FakeDomain(watch=[{"club_id": "1001", "origem": "proprio"}])
+    new_sync(source, domain).run("me@test")
+
+    asked_of_own = [c for (cid, c) in source.asked if cid == "1001"]
+    assert 10 in asked_of_own, f"o clube próprio deve ser consultado com 10, veio {asked_of_own}"
+
+
+def test_rival_is_asked_for_five_matches_not_ten():
+    """Nível 2 -> nível 3 usa 5 por rival: 10 rivais × 5 = 50 consultas, contra
+    100 se fosse 10 em cada. É o freio que impede o crawl de explodir o CDN."""
+    source = CountingSource(
+        matches_by_club={
+            "1001": [{"clubs": {"1001": {}, "2001": {}}}],
+            "2001": [{"clubs": {"2001": {}, "3001": {}}}],
+        },
+        search_by_id={"1001": search_hit("1001"), "2001": search_hit("2001"), "3001": search_hit("3001")},
+    )
+    domain = FakeDomain(watch=[{"club_id": "1001", "origem": "proprio"}])
+    new_sync(source, domain).run("me@test")
+
+    asked_of_rival = [c for (cid, c) in source.asked if cid == "2001"]
+    assert 5 in asked_of_rival, f"o rival deve ser consultado com 5, veio {asked_of_rival}"
+    assert 10 not in asked_of_rival, "o rival NÃO deve ser consultado com 10"
+
+
+def test_level3_never_re_asks_a_level1_or_level2_club():
+    """O nível 3 visita rivais dos rivais, mas não repete quem já é próprio ou
+    rival direto -- repetir só gastaria consulta e não traria clube novo."""
+    source = CountingSource(
+        matches_by_club={
+            "1001": [{"clubs": {"1001": {}, "2001": {}}}],
+            # 2001 joga contra 3001 E contra 1001 (o próprio): 1001 não pode
+            # aparecer como "clube de clube".
+            "2001": [{"clubs": {"2001": {}, "3001": {}, "1001": {}}}],
+        },
+        search_by_id={"1001": search_hit("1001"), "2001": search_hit("2001"), "3001": search_hit("3001")},
+    )
+    domain = FakeDomain(watch=[{"club_id": "1001", "origem": "proprio"}])
+    out = new_sync(source, domain).run("me@test")
+
+    followed = [w["club_id"] for w in domain.watches]
+    assert "3001" in followed, "o rival do rival entra"
+    assert followed.count("2001") == 1, "2001 entra UMA vez, como rival direto"
+    # O clube próprio não é re-seguido: o claim já o gravou como "proprio".
+    assert followed.count("1001") == 0
+    # O nível 3 é terminal: 3001 entra na watchlist mas NÃO é crawleado de novo
+    # (seria nível 4). Já o rival 2001, esse sim, foi consultado com 5.
+    assert not [c for (cid, c) in source.asked if cid == "3001"], "nível 3 não é crawleado"
+    assert 5 in [c for (cid, c) in source.asked if cid == "2001"]

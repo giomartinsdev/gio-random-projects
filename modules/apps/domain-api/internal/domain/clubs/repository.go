@@ -57,6 +57,11 @@ type Repository interface {
 	// actual discovering, without either side knowing about the other.
 	ListPendingSyncs(ctx context.Context) ([]SyncRun, error)
 
+	// Fetch sob demanda de um clube: a tela de resgate grava o pedido, o
+	// worker de ingestão polla e busca o elenco, a SPA lê o estado.
+	GetFetchRun(ctx context.Context, clubID string) (FetchRun, error)
+	ListPendingFetches(ctx context.Context) ([]FetchRun, error)
+
 	// Administração
 	AdminStatus(ctx context.Context) (AdminStatus, error)
 	IngestEstado(ctx context.Context) (IngestEstado, error)

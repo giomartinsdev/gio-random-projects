@@ -150,6 +150,38 @@ func (h *ClubsWriteHandlers) SaveSyncRun(w http.ResponseWriter, r *http.Request)
 	h.publish(w, r, application.ActionSaveSyncRun, in)
 }
 
+// RequestFetch grava o pedido de fetch sob demanda de um clube. Caminho
+// assíncrono: a tela de resgate não espera a busca (que envolve a fonte
+// externa) -- ela só abre a fila e passa a ler o estado.
+func (h *ClubsWriteHandlers) RequestFetch(w http.ResponseWriter, r *http.Request) {
+	var in appclubs.FetchRunInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		return
+	}
+	if in.ClubID == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "club_id is required"})
+		return
+	}
+	in.Rodando = true
+	h.publish(w, r, application.ActionRequestFetch, in)
+}
+
+// SaveFetchRun grava o resultado do fetch. O worker de ingestão (Python) é
+// quem publica aqui; mesmo caminho assíncrono da saúde dele.
+func (h *ClubsWriteHandlers) SaveFetchRun(w http.ResponseWriter, r *http.Request) {
+	var in appclubs.FetchRunInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		return
+	}
+	if in.ClubID == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "club_id is required"})
+		return
+	}
+	h.publish(w, r, application.ActionSaveFetch, in)
+}
+
 func (h *ClubsWriteHandlers) publish(w http.ResponseWriter, r *http.Request, action application.Action, payload any) {
 	raw, err := json.Marshal(payload)
 	if err != nil {

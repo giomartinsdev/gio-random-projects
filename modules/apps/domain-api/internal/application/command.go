@@ -63,6 +63,11 @@ const (
 	ActionSaveNotify   Action = "preferencia.saveNotificacoes"
 	ActionClaimPro     Action = "preferencia.claimPro"
 	ActionSaveSyncRun  Action = "preferencia.saveSyncRun"
+
+	// Fila de fetch sob demanda de um clube: a tela de resgate pede, o worker
+	// de ingestão busca o elenco, e o estado volta para a SPA.
+	ActionRequestFetch Action = "clubs.fetchRun"
+	ActionSaveFetch    Action = "clubs.fetchRunSave"
 )
 
 type Command struct {

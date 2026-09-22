@@ -140,6 +140,20 @@ export interface SquadMember {
   cartoes_vermelhos: number;
   goleiro: boolean;
   defesas_por_tipo?: Record<string, number> | null;
+  /** Alguém já reivindicou este pro (o hub não diz quem) — a tela de resgate
+   * bloqueia os que já têm dono em vez de oferecer um botão que falharia. */
+  resgatado?: boolean;
+}
+
+/** O estado do fetch sob demanda do elenco de um clube. A tela de resgate
+ * grava o pedido e polla isto até `concluido_em` aparecer. */
+export interface FetchRun {
+  club_id: string;
+  rodando: boolean;
+  jogadores: number;
+  partidas: number;
+  erro: string;
+  concluido_em: string | null;
 }
 
 export interface PlayerClub {

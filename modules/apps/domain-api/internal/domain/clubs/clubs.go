@@ -158,6 +158,22 @@ type SquadMember struct {
 	CartoesVermelhos    int            `json:"cartoes_vermelhos"`
 	Goleiro             bool           `json:"goleiro"`
 	DefesasPorTipo      map[string]int `json:"defesas_por_tipo,omitempty"`
+	// Resgatado diz que ALGUÉM já reivindicou este pro (sem dizer quem --
+	// FR-025). A tela de resgate bloqueia os que já têm dono, para não
+	// oferecer um botão que só falharia depois.
+	Resgatado bool `json:"resgatado"`
+}
+
+// FetchRun é o progresso de um fetch sob demanda de um clube. A tela de
+// resgate grava o pedido, o worker de ingestão busca, e a SPA lê daqui para
+// saber quando o elenco está pronto -- sem esperar o ciclo de 15 min.
+type FetchRun struct {
+	ClubID      string     `json:"club_id"`
+	Rodando     bool       `json:"rodando"`
+	Jogadores   int        `json:"jogadores"`
+	Partidas    int        `json:"partidas"`
+	Erro        string     `json:"erro"`
+	ConcluidoEm *time.Time `json:"concluido_em"`
 }
 
 // PlayerProfile is one player across every club they were seen at.

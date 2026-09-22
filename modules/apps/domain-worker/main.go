@@ -203,6 +203,7 @@ func main() {
 		club: clubHandler, partida: partidaHandler, snapshot: snapshotHandler,
 		anuncio: anuncioHandler, preferencia: preferenciaHandler,
 		ingestEstado: postgres.NewIngestEstadoRepository(pool),
+		fetchRun:     postgres.NewFetchRunRepository(pool),
 	}
 
 	errCh := make(chan error, 1)
@@ -269,6 +270,10 @@ type handlers struct {
 	// worker é um poller sem host, e esta é a única forma de a saúde dele
 	// chegar até a API.
 	ingestEstado *postgres.IngestEstadoRepository
+	// Fila de fetch sob demanda de um clube: escrita pela tela de resgate,
+	// consumida pelo worker de ingestão (Python), que grava o resultado por
+	// aqui.
+	fetchRun *postgres.FetchRunRepository
 }
 
 func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
@@ -461,6 +466,33 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 		// only producer; no domain event is raised (nothing subscribes).
 		entityType = "preferencia"
 		err = h.preferencia.Handle(ctx, cmd)
+	case string(cmd.Action) == "clubs.fetchRun":
+		// A tela de resgate abriu a fila: abre a linha como rodando. O worker
+		// Python polla `pendentes` e é ele quem busca de verdade.
+		entityType = "clubesfetch"
+		var in struct {
+			ClubID string `json:"club_id"`
+		}
+		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
+			err = h.fetchRun.Save(ctx, in.ClubID, true, 0, 0, "", false)
+		}
+	case string(cmd.Action) == "clubs.fetchRunSave":
+		// Estado da fila de fetch sob demanda: o worker de ingestão (Python)
+		// publica o resultado do que buscou, e a tela de resgate lê da API.
+		// Sem agregado nem evento -- é um upsert direto, como a saúde do
+		// próprio worker.
+		entityType = "clubesfetch"
+		var in struct {
+			ClubID    string `json:"club_id"`
+			Rodando   bool   `json:"rodando"`
+			Jogadores int    `json:"jogadores"`
+			Partidas  int    `json:"partidas"`
+			Erro      string `json:"erro"`
+			Concluido bool   `json:"concluido"`
+		}
+		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
+			err = h.fetchRun.Save(ctx, in.ClubID, in.Rodando, in.Jogadores, in.Partidas, in.Erro, in.Concluido)
+		}
 	default:
 		err = fmt.Errorf("unknown action: %q", cmd.Action)
 	}

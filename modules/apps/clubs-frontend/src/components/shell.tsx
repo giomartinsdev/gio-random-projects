@@ -18,6 +18,7 @@ export type RouteId =
   | "partida"
   | "jogador"
   | "jogadores"
+  | "resgatar"
   | "minha-area"
   | "notificacoes"
   | "admin";
@@ -35,6 +36,7 @@ const NAV: NavItem[] = [
   { id: "home", label: "Início", icon: "🏠", group: "principal" },
   { id: "clubes", label: "Clubes", icon: "🛡️", group: "principal" },
   { id: "jogadores", label: "Jogadores", icon: "⭐", group: "principal" },
+  { id: "resgatar", label: "Resgatar pro", icon: "🎯", group: "minha conta" },
   { id: "minha-area", label: "Minha área", icon: "👤", group: "minha conta" },
   { id: "notificacoes", label: "Notificações", icon: "🔔", group: "minha conta", requiresAuth: true },
   { id: "admin", label: "Administração", icon: "🔒", group: "administração", adminOnly: true },

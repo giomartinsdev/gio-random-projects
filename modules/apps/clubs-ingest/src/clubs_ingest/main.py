@@ -101,6 +101,31 @@ def main() -> int:
         except Exception as err:  # noqa: BLE001
             log.error("leitura da fila de sync falhou: %s", err)
 
+        # Fetch sob demanda ANTES do ciclo: a tela de resgate está esperando o
+        # elenco para a pessoa escolher o pro, e o ciclo pode levar 15 min.
+        # É o mesmo cliente da fonte, então a sessão do CDN já está aquecida.
+        try:
+            for pedido in domain.list_pending_fetches():
+                club_id = str(pedido.get("club_id") or "")
+                if not club_id:
+                    continue
+                log.info("fetch sob demanda: clube %s", club_id)
+                try:
+                    jogadores, partidas = ingest.run_fetch(club_id)
+                    domain.save_fetch_run(club_id, rodando=False, jogadores=jogadores,
+                                          partidas=partidas, concluido=True)
+                except Exception as err:  # noqa: BLE001 -- uma busca não derruba o loop
+                    log.error("fetch de %s falhou: %s", club_id, err)
+                    # Fecha a linha com o erro: sem isto o pedido falharia em
+                    # todo ciclo e a tela ficaria "buscando" para sempre.
+                    try:
+                        domain.save_fetch_run(club_id, rodando=False, jogadores=0,
+                                              partidas=0, erro=str(err)[:300], concluido=True)
+                    except Exception:  # noqa: BLE001
+                        pass
+        except Exception as err:  # noqa: BLE001
+            log.error("leitura da fila de fetch falhou: %s", err)
+
         try:
             st = ingest.run_cycle()
             rodadas += 1

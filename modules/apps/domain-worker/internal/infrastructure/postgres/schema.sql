@@ -502,6 +502,12 @@ CREATE TABLE IF NOT EXISTS clubs_claimed_pros (
 
 CREATE INDEX IF NOT EXISTS idx_clubs_claimed_pros_player ON clubs_claimed_pros(player_id);
 
+-- Um pro pertence a UMA pessoa: a gamertag é a identidade dela no jogo, e
+-- duas contas reivindicando o mesmo pro deixaria o selo de verificado mentindo
+-- para uma delas. É este índice que dá sentido ao "já resgatado" da tela de
+-- resgate -- sem ele o botão bloquearia por engano ou não bloquearia nada.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_clubs_claimed_pros_player ON clubs_claimed_pros(player_id);
+
 -- Estado da última sincronização de uma pessoa, para a SPA desenhar o
 -- progresso por nível sem bloquear a navegação.
 CREATE TABLE IF NOT EXISTS clubs_sync_runs (
@@ -515,6 +521,32 @@ CREATE TABLE IF NOT EXISTS clubs_sync_runs (
     iniciado_em   TIMESTAMPTZ,
     concluido_em  TIMESTAMPTZ
 );
+
+-- ===========================================================================
+-- Fila de fetch sob demanda de um clube (clubs_fetch_runs).
+--
+-- O sync de três níveis (clubs_sync_runs) só existe depois do login. Mas o
+-- momento em que a pessoa mais precisa dos dados é ANTES disso: na tela de
+-- resgate ela busca o clube, clica, e quer ver o elenco para escolher o seu
+-- pro. Esperar o ciclo do worker (até 15 min) tornaria a tela inútil.
+--
+-- A SPA grava um pedido aqui; o worker de ingestão polla, busca o elenco e as
+-- partidas daquele clube, grava pela domain-api e fecha o pedido. A SPA lê o
+-- estado para desenhar o progresso -- mesmo desenho do clubs_sync_runs, uma
+-- linha por clube (pedir o mesmo clube duas vezes não duplica trabalho).
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS clubs_fetch_runs (
+    club_id       TEXT PRIMARY KEY,
+    rodando       BOOLEAN NOT NULL DEFAULT false,
+    jogadores     INTEGER NOT NULL DEFAULT 0,
+    partidas      INTEGER NOT NULL DEFAULT 0,
+    erro          TEXT NOT NULL DEFAULT '',
+    solicitado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+    concluido_em  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_clubs_fetch_runs_pendentes ON clubs_fetch_runs(rodando, solicitado_em);
 
 -- ===========================================================================
 -- Estado do worker de ingestão (clubs-ingest).

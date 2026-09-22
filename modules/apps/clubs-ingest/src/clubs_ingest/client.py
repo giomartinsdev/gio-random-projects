@@ -149,3 +149,26 @@ class DomainClient:
             "bootstrap_feito": bootstrap_feito,
             "ultimo_erro": ultimo_erro,
         })
+
+    # --- fila de fetch sob demanda ----------------------------------------
+
+    def list_pending_fetches(self) -> list[dict[str, Any]]:
+        """Os clubes que a tela de resgate pediu e ninguém buscou ainda.
+
+        É a ponte entre o clique na tela (que grava o pedido) e este worker:
+        nenhum dos dois conhece o outro. É o que faz a tela ser útil -- sem
+        isto ela esperaria o ciclo de 15 min para ver qualquer elenco.
+        """
+        data = self.get("/fetch-pending") or {}
+        return data.get("pendentes") or []
+
+    def save_fetch_run(self, club_id: str, *, rodando: bool, jogadores: int,
+                       partidas: int, erro: str = "", concluido: bool = False) -> None:
+        self.post("/fetch-run/result", {
+            "club_id": club_id,
+            "rodando": rodando,
+            "jogadores": jogadores,
+            "partidas": partidas,
+            "erro": erro,
+            "concluido": concluido,
+        })

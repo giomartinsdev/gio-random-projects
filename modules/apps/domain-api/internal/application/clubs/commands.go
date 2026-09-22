@@ -140,3 +140,14 @@ type IngestEstadoInput struct {
 	BootstrapFeito bool   `json:"bootstrap_feito"`
 	UltimoErro     string `json:"ultimo_erro,omitempty"`
 }
+
+// FetchRunInput é o pedido de fetch sob demanda de um clube (a tela de resgate
+// grava) e o resultado que o worker de ingestão publica de volta.
+type FetchRunInput struct {
+	ClubID    string `json:"club_id"`
+	Rodando   bool   `json:"rodando"`
+	Jogadores int    `json:"jogadores,omitempty"`
+	Partidas  int    `json:"partidas,omitempty"`
+	Erro      string `json:"erro,omitempty"`
+	Concluido bool   `json:"concluido,omitempty"`
+}

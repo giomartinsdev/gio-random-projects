@@ -12,6 +12,7 @@ import { PartidaPage } from "./pages/PartidaPage";
 import { JogadorPage } from "./pages/JogadorPage";
 import { JogadoresPage } from "./pages/JogadoresPage";
 import { MinhaAreaPage } from "./pages/MinhaAreaPage";
+import { ResgatarPage } from "./pages/ResgatarPage";
 import { NotificacoesPage } from "./pages/NotificacoesPage";
 import { AdminPage } from "./pages/AdminPage";
 
@@ -26,6 +27,7 @@ const ROUTE_PATHS: Record<RouteId, string> = {
   partida: "partida",
   jogador: "jogador",
   jogadores: "jogadores",
+  resgatar: "resgatar",
   "minha-area": "minha-area",
   notificacoes: "notificacoes",
   admin: "admin",
@@ -206,6 +208,17 @@ export default function App() {
         );
       case "jogadores":
         return <JogadoresPage onOpenPlayer={(id) => navigate("jogador", id)} />;
+      case "resgatar":
+        return (
+          <ResgatarPage
+            authed={authed}
+            claimed={claimed}
+            onClaim={claimPro}
+            onSignedIn={refreshAuth}
+            onOpenClub={(id) => navigate("clube", id)}
+            onOpenPlayer={(id) => navigate("jogador", id)}
+          />
+        );
       case "minha-area":
         return (
           <MinhaAreaPage

@@ -414,6 +414,29 @@ func (h *ClubsHandlers) GetSyncRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, run)
 }
 
+// ListPendingFetches é consumida pelo worker de ingestão: os clubes que a tela
+// de resgate pediu e ainda não foram buscados.
+func (h *ClubsHandlers) ListPendingFetches(w http.ResponseWriter, r *http.Request) {
+	list, err := h.clubs.ListPendingFetches(r.Context())
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pendentes": list, "total": len(list)})
+}
+
+// GetFetchRun é o estado do fetch de um clube, lido pela tela de resgate para
+// saber quando o elenco está pronto -- sem esperar o ciclo do worker.
+func (h *ClubsHandlers) GetFetchRun(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "clubId")
+	run, err := h.clubs.GetFetchRun(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
 // ------------------------------------------------------------- administração
 
 // GetIngestEstado expõe a saúde do worker de ingestão. Ele não serve HTTP, e

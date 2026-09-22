@@ -474,6 +474,13 @@ func (r *ClubsRepository) Squad(ctx context.Context, clubID string) ([]domainclu
 		out = append(out, m)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Nota > out[j].Nota })
+	// Which of these pros already have an owner. The claim is global (a person
+	// claims across all clubs), so this is a set lookup, not a per-club query.
+	if claimed, err := r.ClaimedPlayerIDs(ctx); err == nil {
+		for i := range out {
+			out[i].Resgatado = claimed[out[i].PlayerID]
+		}
+	}
 	return out, nil
 }
 
@@ -1177,6 +1184,56 @@ func (r *ClubsRepository) ListPendingSyncs(ctx context.Context) ([]domainclubs.S
 		if len(novos) > 0 {
 			_ = json.Unmarshal(novos, &run.Novos)
 		}
+		list = append(list, run)
+	}
+	return list, rows.Err()
+}
+
+// ---------------------------------------------------------------- fetch runs
+
+// GetFetchRun é o estado do fetch sob demanda de um clube. Devolve um run
+// zerado quando nunca foi pedido -- a SPA trata isso como "ainda não busquei",
+// não como erro.
+func (r *ClubsRepository) GetFetchRun(ctx context.Context, clubID string) (domainclubs.FetchRun, error) {
+	run := domainclubs.FetchRun{ClubID: clubID}
+	var concluido *time.Time
+	err := r.pool.QueryRow(ctx, `
+		SELECT rodando, jogadores, partidas, erro, concluido_em
+		FROM clubs_fetch_runs WHERE club_id = $1`, clubID).
+		Scan(&run.Rodando, &run.Jogadores, &run.Partidas, &run.Erro, &concluido)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return run, nil
+	}
+	if err != nil {
+		return domainclubs.FetchRun{}, fmt.Errorf("get fetch run: %w", err)
+	}
+	run.ConcluidoEm = concluido
+	return run, nil
+}
+
+// ListPendingFetches: os clubes que a SPA pediu e o worker ainda não buscou.
+// É a ponte entre o clique na tela de resgate e o poller Python -- nenhum dos
+// dois conhece o outro.
+func (r *ClubsRepository) ListPendingFetches(ctx context.Context) ([]domainclubs.FetchRun, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT club_id, rodando, jogadores, partidas, erro, concluido_em
+		FROM clubs_fetch_runs
+		WHERE rodando = true AND concluido_em IS NULL
+		ORDER BY solicitado_em ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list pending fetches: %w", err)
+	}
+	defer rows.Close()
+
+	var list []domainclubs.FetchRun
+	for rows.Next() {
+		var run domainclubs.FetchRun
+		var concluido *time.Time
+		if err := rows.Scan(&run.ClubID, &run.Rodando, &run.Jogadores, &run.Partidas,
+			&run.Erro, &concluido); err != nil {
+			return nil, fmt.Errorf("scan fetch run: %w", err)
+		}
+		run.ConcluidoEm = concluido
 		list = append(list, run)
 	}
 	return list, rows.Err()

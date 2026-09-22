@@ -8,6 +8,7 @@ import type {
   ClaimedPro,
   DivisionChange,
   Evolution,
+  FetchRun,
   HeadToHead,
   Match,
   NotificationPrefs,
@@ -66,6 +67,19 @@ export const api = {
 
   squad: (clubId: string) =>
     request<{ jogadores: SquadMember[]; total: number }>(`/clubs/${encodeURIComponent(clubId)}/squad`),
+
+  /** O estado do fetch sob demanda do elenco. A tela de resgate polla isto
+   * depois de pedir, para saber quando mostrar os jogadores. */
+  fetchRun: (clubId: string) =>
+    request<FetchRun>(`/clubs/${encodeURIComponent(clubId)}/fetch-run`),
+
+  /** Pede o fetch do elenco de um clube. Público de propósito: a pessoa
+   * escolhe o clube antes de entrar. A resposta é 202 -- a busca é em
+   * segundo plano. */
+  requestFetch: (clubId: string) =>
+    request<{ iniciado: boolean }>(`/clubs/${encodeURIComponent(clubId)}/fetch-run`, {
+      method: "POST",
+    }),
 
   matches: (clubId: string, tipo = "", limite = 25) =>
     request<{ partidas: Match[]; total: number }>(
