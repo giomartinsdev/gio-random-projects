@@ -419,6 +419,30 @@ def club_identity(details: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def merge_club_sources(*fontes: dict[str, Any] | None) -> dict[str, Any]:
+    """Funde as leituras de um clube numa só, sem deixar o vazio vencer.
+
+    Nenhuma fonte sozinha tem o conjunto completo, e é isso que fazia todo
+    clube aparecer como D0: o ``overallStats`` traz nível, vitórias e a streaks,
+    mas NÃO traz divisão nem clean sheets; a busca/leaderboard trazem divisão e
+    clean sheets, mas não trazem nível. O ciclo usava só o overall -- então
+    ``currentDivision`` vinha sempre vazio e virava 0.
+
+    A fusão ignora valores ausentes em vez de sobrescrever com eles: a fonte
+    manda campos presentes e vazios (``None``, ``""``) com frequência, e deixar
+    o vazio vencer apagaria justamente o dado que a outra fonte trouxe.
+
+    A ordem importa para os campos presentes nas duas: a última fonte vence.
+    """
+    merged: dict[str, Any] = {}
+    for fonte in fontes:
+        for chave, valor in (fonte or {}).items():
+            if valor is None or valor == "":
+                continue
+            merged[chave] = valor
+    return merged
+
+
 def club_totals(row: dict[str, Any]) -> dict[str, Any]:
     """An all-time totals row, in domain-api's ``TotaisInput`` shape.
 
@@ -541,7 +565,28 @@ def match_payload(match: dict[str, Any], club_id: str) -> dict[str, Any] | None:
 def opponent_club_id(match: dict[str, Any], club_id: str) -> str | None:
     """The other club in a match payload -- needed to enqueue discovery of
     clubs the person never played against directly."""
-    for other_id in (match.get("clubs") or {}):
-        if str(other_id) != str(club_id):
-            return str(other_id)
+    opp = opponent_club(match, club_id)
+    return opp[0] if opp else None
+
+
+def opponent_club(match: dict[str, Any], club_id: str) -> tuple[str, str] | None:
+    """O adversário como (id, nome).
+
+    O nome não é enfeite: a busca da fonte -- a única que traz divisão e os
+    totais -- só aceita NOME. Descobrir o adversário sem ele deixava a
+    descoberta vazia em silêncio. O nome vive no ``details.name`` do próprio
+    payload da partida, então vem de graça junto do id.
+
+    Devolve None quando o clube pedido não está na partida: dizer "o outro" de
+    um clube ausente escolheria um lado arbitrário, e a descoberta gravaria o
+    clube errado.
+    """
+    clubs = match.get("clubs") or {}
+    if str(club_id) not in {str(k) for k in clubs}:
+        return None
+    for other_id, bloco in clubs.items():
+        if str(other_id) == str(club_id):
+            continue
+        nome = str((bloco or {}).get("details", {}).get("name") or "")
+        return str(other_id), nome
     return None

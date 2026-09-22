@@ -245,3 +245,53 @@ def test_opponent_club_id_finds_the_other_side():
     match = fixture("matches")[0]
     assert nz.opponent_club_id(match, "1001") == "2001"
     assert nz.opponent_club_id(match, "2001") == "1001"
+
+
+# ------------------------------------------- fusão das fontes (bug do D0)
+
+def test_merge_lifts_division_from_the_search_side():
+    """O overallStats NÃO traz divisão; a busca traz. Fundir as duas é o que
+    impede todo clube de aparecer como D0 -- nenhuma das duas sozinha tem o
+    conjunto completo."""
+    overall = {"clubId": "1", "skillRating": "2144", "wins": "43"}
+    busca = {"clubId": "1", "currentDivision": "1", "bestDivision": "1", "cleanSheets": "20"}
+    totals = nz.club_totals(nz.merge_club_sources(overall, busca))
+
+    assert totals["divisao_atual"] == 1, "a divisão vem da busca"
+    assert totals["melhor_divisao"] == 1
+    assert totals["jogos_sem_sofrer"] == 20, "cleanSheets também só existe na busca"
+    assert totals["nivel"] == 2144, "o nível vem do overall"
+    assert totals["vitorias"] == 43
+
+
+def test_merge_ignores_absent_values_so_they_do_not_blank_the_result():
+    """A fonte manda o campo presente e vazio (ou null) em vez de omitir. Se o
+    vazio vencesse, o merge apagaria justamente o que a outra fonte trouxe."""
+    overall = {"clubId": "1", "skillRating": "2144", "currentDivision": None}
+    busca = {"clubId": "1", "currentDivision": "1", "skillRating": ""}
+    merged = nz.merge_club_sources(overall, busca)
+
+    assert merged["currentDivision"] == "1", "o vazio do overall não apaga a busca"
+    assert merged["skillRating"] == "2144", "o vazio da busca não apaga o overall"
+
+
+def test_merge_tolerates_missing_sources():
+    """Descobrir um clube pode falhar num dos lados; o merge não pode explodir."""
+    assert nz.merge_club_sources(None, {"clubId": "1"}) == {"clubId": "1"}
+    assert nz.merge_club_sources(None, None) == {}
+
+
+# ------------------------------- busca por id (o outro bug silencioso)
+
+def test_opponent_club_carries_the_name():
+    """O nome do adversário vem no próprio payload da partida -- e é o que a
+    busca da fonte exige. Sem ele a descoberta voltava vazia, em silêncio."""
+    match = {
+        "clubs": {
+            "1001": {"details": {"name": "Example FC"}},
+            "2001": {"details": {"name": "Opponent A"}},
+        }
+    }
+    assert nz.opponent_club(match, "1001") == ("2001", "Opponent A")
+    assert nz.opponent_club(match, "2001") == ("1001", "Example FC")
+    assert nz.opponent_club(match, "9999") is None

@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 from .client import DomainClient
-from .normalize import club_identity, club_totals
+from .normalize import club_identity, club_totals, merge_club_sources
 
 log = logging.getLogger("clubs-ingest")
 
@@ -49,6 +49,10 @@ class Sync:
         # survived between runs would keep a club "already followed" (or a
         # claimed pro unseen) long after the watchlist changed.
         self._known: set[str] | None = None
+        # id -> nome, do payload das partidas. A busca da fonte (que traz
+        # divisão e totais) só aceita nome; sem este mapa a descoberta de cada
+        # rival voltava vazia em silêncio.
+        self._nomes: dict[str, str] = {}
 
         # Level 1: the person's own clubs.
         self._save(usuario_email, rodando=True, nivel=1, total=len(own), concluidos=0,
@@ -58,7 +62,9 @@ class Sync:
 
         # Level 2: their direct rivals — as últimas 10 partidas do clube da
         # pessoa é que revelam quem são.
-        lvl2 = self._rivals_of(lvl1, self.RIVAL_MATCHES_OWN)
+        rivais1 = self._rivals_named(lvl1, self.RIVAL_MATCHES_OWN)
+        self._nomes.update({cid: nome for cid, nome in rivais1 if nome})
+        lvl2 = [cid for cid, _ in rivais1]
         self._save(usuario_email, rodando=True, nivel=2, total=len(lvl2),
                    concluidos=len(lvl1), atual=lvl2[0] if lvl2 else "", novos=novos)
         lvl2 = [c for c in lvl2 if c not in lvl1]
@@ -66,7 +72,9 @@ class Sync:
 
         # Level 3: the rivals of the rivals — 5 partidas de cada rival, para o
         # crawl não multiplicar: 10 rivais × 5 = 50 consultas, contra 100.
-        lvl3 = self._rivals_of(lvl2, self.RIVAL_MATCHES_RIVAL)
+        rivais2 = self._rivals_named(lvl2, self.RIVAL_MATCHES_RIVAL)
+        self._nomes.update({cid: nome for cid, nome in rivais2 if nome})
+        lvl3 = [cid for cid, _ in rivais2]
         self._save(usuario_email, rodando=True, nivel=3, total=len(lvl3),
                    concluidos=len(lvl1) + len(lvl2), atual=lvl3[0] if lvl3 else "", novos=novos)
         lvl3 = [c for c in lvl3 if c not in lvl1 and c not in lvl2]
@@ -101,13 +109,25 @@ class Sync:
     RIVAL_MATCHES_OWN = 10
     RIVAL_MATCHES_RIVAL = 5
 
-    def _rivals_of(self, club_ids: list[str], matches_per_club: int) -> list[str]:
-        seen: list[str] = []
+    def _rivals_named(self, club_ids: list[str], matches_per_club: int) -> list[tuple[str, str]]:
+        """Os adversários vistos nas partidas, como (id, nome).
+
+        O nome sai do próprio payload da partida e não é enfeite: a busca da
+        fonte -- a única que traz divisão e totais -- só aceita NOME, e sem ele
+        a descoberta de cada rival voltava vazia em silêncio.
+        """
+        seen: list[tuple[str, str]] = []
+        vistos: set[str] = set()
         for club_id in club_ids:
             for match in self.source.club_matches(club_id, matches_per_club):
                 for other in (match.get("clubs") or {}):
-                    if str(other) != str(club_id) and str(other) not in seen:
-                        seen.append(str(other))
+                    oid = str(other)
+                    if oid == str(club_id) or oid in vistos:
+                        continue
+                    vistos.add(oid)
+                    bloco = (match.get("clubs") or {}).get(other) or {}
+                    nome = str((bloco.get("details") or {}).get("name") or "")
+                    seen.append((oid, nome))
         return seen
 
     def _follow(self, usuario_email: str, club_ids: list[str], origem: str,
@@ -144,12 +164,16 @@ class Sync:
     def _ensure_ingestable(self, club_id: str) -> None:
         """Write the club's identity + totals so the cycle will pick it up."""
         try:
-            for row in self.source.search_by_id(club_id):
+            for row in self.source.search_by_id(club_id, self._nomes.get(club_id, "")):
                 if str(row.get("clubId")) == club_id:
                     identity = club_identity(row)
                     identity["acompanhado"] = True
                     self.domain.upsert_club(identity)
-                    self.domain.upsert_totals(club_id, club_totals(row))
+                    # O overall completa o que a busca não traz (nível), e a
+                    # busca completa o que o overall não traz (divisão). Só um
+                    # dos dois deixaria o clube com metade dos números.
+                    overall = self.source.club_overall(club_id)
+                    self.domain.upsert_totals(club_id, club_totals(merge_club_sources(overall, row)))
                     return
         except Exception as err:  # noqa: BLE001 -- best-effort; the cycle retries
             log.debug("identidade/totais de %s falharam: %s", club_id, err)

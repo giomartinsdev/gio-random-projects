@@ -17,10 +17,11 @@ from clubs_ingest.cycle import Ingest, IngestConfig
 
 
 class FakeSource:
-    def __init__(self, info=None, overall=None, matches=None):
+    def __init__(self, info=None, overall=None, matches=None, search=None):
         self._info = info or {}
         self._overall = overall or {}
         self._matches = matches or []
+        self.search_by_id_map = search or {}
 
     def club_info(self, club_id):
         return self._info
@@ -30,6 +31,9 @@ class FakeSource:
 
     def club_matches(self, club_id, count=10):
         return self._matches
+
+    def search_by_id(self, club_id, name=""):
+        return self.search_by_id_map.get(str(club_id), [])
 
 
 class FakeDomain:
@@ -134,3 +138,25 @@ def test_known_matches_still_count_as_processed():
     # Segunda busca: a mesma partida, agora já conhecida.
     _, segunda = ingest.run_fetch("1")
     assert segunda == 1, "a partida conhecida ainda foi processada, e a tela deve ver 1"
+
+
+def test_run_fetch_writes_the_division_from_the_search_side():
+    """O overallStats NÃO traz divisão; a busca traz. Sem fundir as duas, todo
+    clube entra como D0 e nenhuma mudança de divisão é detectada -- foi
+    exatamente o que aconteceu em produção (20 clubes, todos divisao_atual=0)."""
+    source = FakeSource(
+        info={"clubId": "1", "name": "X", "customKit": {}},
+        overall={"clubId": "1", "gamesPlayed": "51", "wins": "43", "skillRating": "2144"},
+        matches=[],
+    )
+    # A busca devolve a divisão (e o overall não).
+    source.search_by_id_map = {"1": [{"clubId": "1", "currentDivision": "1", "bestDivision": "1"}]}
+    domain = FakeDomain()
+
+    new_ingest(source, domain).run_fetch("1")
+
+    assert domain.totals, "os totais precisam ser gravados"
+    t = domain.totals[0]
+    assert t["divisao_atual"] == 1, "a divisão vem da busca"
+    assert t["melhor_divisao"] == 1
+    assert t["nivel"] == 2144, "e o nível continua vindo do overall"

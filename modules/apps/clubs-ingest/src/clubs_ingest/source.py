@@ -92,11 +92,23 @@ class SourceClient:
             return []
         return data if isinstance(data, list) else []
 
-    def search_by_id(self, club_id: str) -> list[dict[str, Any]]:
-        """The search endpoint is the only one that returns all-time totals,
-        and it takes a name -- so a discovery lookup by id has to find the
-        club's name first (from the match payload's details.name)."""
-        return self.search(club_id)
+    def search_by_id(self, club_id: str, name: str = "") -> list[dict[str, Any]]:
+        """A linha da busca para um clube que conhecemos por id.
+
+        O endpoint de busca da fonte só aceita NOME. Passar o id devolvia
+        vazio em silêncio -- o que quebrava toda a descoberta de adversário
+        (e a divisão, que só a busca traz). Por isso o nome é obrigatório
+        quando quem chama o tem: ele está no ``details.name`` do payload da
+        partida, que é exatamente de onde o adversário é descoberto.
+        """
+        alvo = str(club_id)
+        # Sem nome, uma busca pelo id ainda tenta -- a fonte às vezes casa por
+        # nome exato, e um clube cujo nome É o id não é impossível.
+        for termo in filter(None, [name, alvo]):
+            for row in self.search(termo):
+                if str(row.get("clubId")) == alvo:
+                    return [row]
+        return []
 
 
 def from_env() -> SourceClient:

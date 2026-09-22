@@ -19,7 +19,8 @@ from .normalize import (
     club_identity,
     club_totals,
     match_payload,
-    opponent_club_id,
+    merge_club_sources,
+    opponent_club,
     snapshot,
 )
 from .source import SourceClient
@@ -108,8 +109,10 @@ class Ingest:
                 self.domain.upsert_club(identity)
 
         overall = self.source.club_overall(club_id)
-        if overall:
-            self.domain.upsert_totals(club_id, club_totals(overall))
+        # Mesma fusão do ciclo: o overall sozinho não traz divisão.
+        totals_row = merge_club_sources(overall, self._search_row(club_id))
+        if totals_row:
+            self.domain.upsert_totals(club_id, club_totals(totals_row))
 
         stats = CycleStats()
         players, matches = self._ingest_matches(club_id, stats)
@@ -163,10 +166,14 @@ class Ingest:
                 self.domain.upsert_club(identity)
 
         overall = self.source.club_overall(club_id)
+        # A divisão (e os clean sheets) NÃO vêm do overallStats -- vêm da
+        # busca/leaderboard. Usar só o overall fazia todo clube virar "D0" e
+        # nenhuma mudança de divisão ser detectada.
+        busca = self._search_row(club_id)
+        totals_row = merge_club_sources(overall, busca)
         team_size = 0
-        if overall:
-            totals = club_totals(overall)
-            self.domain.upsert_totals(club_id, totals)
+        if totals_row:
+            self.domain.upsert_totals(club_id, club_totals(totals_row))
 
         # Squad size, derived from the members endpoint (used only for the
         # snapshot's squad-change signal).
@@ -181,8 +188,8 @@ class Ingest:
             self._last_match_fetch[club_id] = now
 
         # Snapshot last, so it reflects the totals we just wrote.
-        if overall:
-            snap = snapshot(overall, team_size)
+        if totals_row:
+            snap = snapshot(totals_row, team_size)
             try:
                 self.domain.append_snapshot(club_id, snap)
                 stats.snapshots += 1
@@ -190,6 +197,20 @@ class Ingest:
                 log.debug("snapshot falhou para %s: %s", club_id, err)
 
         stats.clubes_processados += 1
+
+    def _search_row(self, club_id: str) -> dict:
+        """A linha da busca/leaderboard para este clube, ou {}.
+
+        É a única fonte que traz divisão. A busca exige um NOME -- passar o id
+        devolvia vazio em silêncio, que foi o outro bug desta família.
+        """
+        try:
+            for row in self.source.search_by_id(club_id):
+                if str(row.get("clubId")) == str(club_id):
+                    return row
+        except Exception as err:  # noqa: BLE001 -- best-effort; o overall ainda vai
+            log.debug("busca de %s falhou: %s", club_id, err)
+        return {}
 
     def _ingest_matches(self, club_id: str, stats: CycleStats) -> tuple[int, int]:
         """Grava as partidas do clube e devolve (jogadores, partidas).
@@ -236,23 +257,26 @@ class Ingest:
             # Discovery: every opponent we have never seen is a candidate for
             # the "clubes de clubes" crawl. Registered as a known-but-not-yet
             # followed club so the sync can pick it up.
-            opp = opponent_club_id(match, club_id)
+            opp = opponent_club(match, club_id)
             if opp:
-                self._ensure_known(opp)
+                self._ensure_known(opp[0], opp[1])
         return len(players), processadas
 
-    def _ensure_known(self, club_id: str) -> None:
+    def _ensure_known(self, club_id: str, name: str = "") -> None:
         """Register a club we have only seen as an opponent, with its totals.
 
         This is what makes the three-level sync possible: an opponent's club
         row has to exist before it can be followed, and its all-time totals are
         the only thing available until the cycle reaches it.
+
+        O nome vem do payload da partida e é obrigatório na prática: a busca da
+        fonte só aceita nome, e sem ele a descoberta voltava vazia em silêncio.
         """
         if club_id in self._known_clubs:
             return
         self._known_clubs.add(club_id)
         try:
-            results = self.source.search_by_id(club_id)
+            results = self.source.search_by_id(club_id, name)
             for row in results:
                 if str(row.get("clubId")) == club_id:
                     self.domain.upsert_totals(club_id, club_totals(row))

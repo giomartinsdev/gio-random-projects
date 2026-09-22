@@ -40,3 +40,48 @@ def test_client_uses_a_browser_impersonating_transport():
     session = api.session
     assert session is not None
     assert getattr(session, "impersonate", None), "transport must impersonate a browser"
+
+
+# ------------------------------------- busca por id vs. busca por nome
+
+class RecordingAPI:
+    """Registra os termos pedidos, porque o bug era justamente o termo errado:
+    a fonte só busca por NOME, e passar o id devolvia vazio em silêncio."""
+
+    def __init__(self, rows_by_term=None):
+        self.rows_by_term = rows_by_term or {}
+        self.asked: list[str] = []
+
+    def get_json(self, endpoint, params):
+        termo = params.get("clubName", "")
+        self.asked.append(termo)
+        return self.rows_by_term.get(termo, [])
+
+
+def make_client(api):
+    from clubs_ingest.source import SourceClient
+    c = SourceClient.__new__(SourceClient)
+    c.api = api
+    return c
+
+
+def test_search_by_id_uses_the_name_not_the_id():
+    """Com o nome, acha; era isso que a descoberta de adversário precisava."""
+    api = RecordingAPI({"Opponent A": [{"clubId": "2001", "clubName": "Opponent A"}]})
+    rows = make_client(api).search_by_id("2001", "Opponent A")
+
+    assert rows and rows[0]["clubId"] == "2001"
+    assert api.asked[0] == "Opponent A", "o primeiro termo tem de ser o nome"
+
+
+def test_search_by_id_returns_empty_when_the_name_does_not_match():
+    """Nome errado não deve devolver um clube que não é o pedido."""
+    api = RecordingAPI({"Outro": [{"clubId": "9999", "clubName": "Outro"}]})
+    assert make_client(api).search_by_id("2001", "Outro") == []
+
+
+def test_search_by_id_without_a_name_still_tries():
+    """Quem chama sem nome não ganha um erro -- tenta o id e devolve o que vier."""
+    api = RecordingAPI({"2001": [{"clubId": "2001"}]})
+    rows = make_client(api).search_by_id("2001")
+    assert rows and rows[0]["clubId"] == "2001"

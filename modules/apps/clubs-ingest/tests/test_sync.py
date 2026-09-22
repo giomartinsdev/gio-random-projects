@@ -30,8 +30,14 @@ class FakeSource:
     def club_matches(self, club_id, count=10):
         return self.matches_by_club.get(str(club_id), [])
 
-    def search_by_id(self, club_id):
+    def search_by_id(self, club_id, name=""):
+        # A assinatura carrega o nome porque a fonte só busca por nome; o fake
+        # ignora o termo e devolve o mapa, como o teste já esperava.
         return self.search_by_id_map.get(str(club_id), [])
+
+    def club_overall(self, club_id):
+        # O sync funde overall + busca; o fake devolve vazio (a busca basta).
+        return {}
 
 
 class FakeDomain:
