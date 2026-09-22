@@ -18,7 +18,10 @@ variable "external_port" {
 variable "access_team_domain" {
   description = "Cloudflare Access team domain whose JWKS clubs-api verifies the Cf-Access-Jwt-Assertion header against -- same shape as bet-api's own teamDomain."
   type        = string
-  default     = "giomartinsdev.cloudflareaccess.com"
+  # The real team domain -- the same one bet-frontend and hub-frontend use.
+  # Not a guess: an invented domain makes the JWKS lookup fail on every
+  # authenticated request, and that failure looks like "login does nothing".
+  default     = "workwithgiomartinsdev.cloudflareaccess.com"
 }
 
 variable "access_aud" {

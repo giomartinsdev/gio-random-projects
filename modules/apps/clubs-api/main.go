@@ -69,20 +69,35 @@ func main() {
 	if v := os.Getenv("CLUBS_ACCESS_AUD"); v != "" {
 		audiences = strings.Split(v, ",")
 	}
-	auth, err := httpapi.NewAccessAuth(
-		os.Getenv("CLUBS_ACCESS_TEAM_DOMAIN"),
-		audiences,
-		allowedEmails,
-		os.Getenv("CLUBS_DEV_USER_EMAIL"),
-		log,
-	)
+	teamDomain := os.Getenv("CLUBS_ACCESS_TEAM_DOMAIN")
+	devBypass := os.Getenv("CLUBS_DEV_BYPASS_AUTH") == "1"
+	devEmail := os.Getenv("CLUBS_DEV_USER_EMAIL")
+
+	// The dev bypass must be impossible to combine with a configured Access
+	// team: that combination means someone is running in front of real Access
+	// while also accepting anyone as a fixed identity, which is exactly the way
+	// a local shortcut turns into an authentication hole. Refuse to boot rather
+	// than log a warning nobody reads.
+	if devBypass && teamDomain != "" {
+		log.Error("refusing to start: CLUBS_DEV_BYPASS_AUTH=1 with CLUBS_ACCESS_TEAM_DOMAIN set",
+			"hint", "the bypass is for local dev only; unset it wherever Access is configured")
+		os.Exit(1)
+	}
+	if devBypass && devEmail == "" {
+		log.Warn("CLUBS_DEV_BYPASS_AUTH=1 but CLUBS_DEV_USER_EMAIL is empty; defaulting to dev@local")
+		devEmail = "dev@local"
+	}
+
+	auth, err := httpapi.NewAccessAuth(teamDomain, audiences, allowedEmails, devEmail, log)
 	if err != nil {
 		log.Error("access auth init failed", "error", err)
 		os.Exit(1)
 	}
-	if os.Getenv("CLUBS_DEV_BYPASS_AUTH") == "1" && os.Getenv("CLUBS_DEV_USER_EMAIL") == "" {
-		log.Warn("CLUBS_DEV_BYPASS_AUTH=1 but CLUBS_DEV_USER_EMAIL is empty; defaulting to dev@local")
-		os.Setenv("CLUBS_DEV_USER_EMAIL", "dev@local")
+	if !auth.Enabled() {
+		// Not fatal -- the public dataset is still fully served -- but it must
+		// be loud, because the personal layer silently stops working.
+		log.Warn("identity verification is OFF: the personal routes will answer 401 to everyone",
+			"fix", "set CLUBS_ACCESS_TEAM_DOMAIN + CLUBS_ACCESS_AUD, or CLUBS_DEV_BYPASS_AUTH=1 for local dev")
 	}
 
 	srv := &http.Server{

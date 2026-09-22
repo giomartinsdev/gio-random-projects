@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -77,8 +78,47 @@ func (s *Server) Handler() http.Handler {
 			r.Get("/sync/status", s.syncStatus)
 			r.Post("/sync", s.startSync)
 		})
+
+		// /sso is the login hop and MUST NOT sit behind requireIdentity: the
+		// whole point is that the Cloudflare Access application in front of
+		// /api intercepts this navigation when there is no session yet,
+		// runs the Google one-click, and only then lets the request reach
+		// here to bounce back to the SPA. It lives under /api (not a second
+		// path) on purpose -- see the handler's own comment.
+		r.Get("/sso", s.sso)
 	})
 	return r
+}
+
+// sso is the login hop the SPA navigates to (never fetches: Google's own
+// login cannot run inside a fetch or an iframe). By the time execution
+// reaches here the Access application has already admitted the visitor; this
+// only bounces back to the SPA.
+//
+// Under /api, the same Access application the probe and the writes hit,
+// because Access cookies are domain-scoped but the JWT's `aud` is per
+// application: a cookie minted by a second path app would always be rejected
+// by the /api app, and login could never survive the probe. Same reasoning as
+// bet-api's own auth router.
+func (s *Server) sso(w http.ResponseWriter, r *http.Request) {
+	target := ""
+	if len(s.origins) > 0 {
+		target = strings.TrimSpace(s.origins[0])
+	}
+	// The return param is checked against the same allowlist CORS uses, so
+	// the redirect cannot be pointed anywhere else.
+	if requested := r.URL.Query().Get("return"); requested != "" {
+		if u, err := url.Parse(requested); err == nil {
+			origin := u.Scheme + "://" + u.Host
+			if s.originAllowed(origin) {
+				target = origin
+			}
+		}
+	}
+	if target == "" {
+		target = "/"
+	}
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 // cors allows the SPA's MinIO-served origin (and localhost dev) to call this

@@ -261,9 +261,3 @@ variable "apostas_sportsdata_api_key" {
   sensitive   = true
   default     = ""
 }
-
-variable "clubs_access_aud" {
-  description = "Audience of the Cloudflare Access application in front of clubs-api's /api path (see path_protected_hostnames in locals.tf). The SPA probes /api/me to decide visitor vs connected -- the same /sso-probe shape the hub uses. Empty disables real verification, which is only correct in local dev."
-  type        = string
-  default     = ""
-}
