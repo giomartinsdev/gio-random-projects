@@ -13,14 +13,23 @@ export function JogadoresPage({ onOpenPlayer }: { onOpenPlayer: (id: string) => 
   const [posicao, setPosicao] = useState("");
   const [ordem, setOrdem] = useState<"nota" | "gols" | "assistencias">("nota");
   const [list, setList] = useState<PlayerProfile[] | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const t = window.setTimeout(() => {
       api
         .players(q, 120)
-        .then((r) => !cancelled && setList(r.jogadores ?? []))
-        .catch(() => !cancelled && setList([]));
+        .then((r) => {
+          if (cancelled) return;
+          setList(r.jogadores ?? []);
+          setTotal(r.total ?? null);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setList([]);
+          setTotal(null);
+        });
     }, q ? 180 : 0);
     return () => {
       cancelled = true;
@@ -33,6 +42,14 @@ export function JogadoresPage({ onOpenPlayer }: { onOpenPlayer: (id: string) => 
     .sort((a, b) => (ordem === "gols" ? b.gols - a.gols : ordem === "assistencias" ? b.assistencias - a.assistencias : b.nota - a.nota));
 
   const max = Math.max(...filtered.map((p) => (ordem === "gols" ? p.gols : ordem === "assistencias" ? p.assistencias : p.nota)), 1);
+
+  // "120 jogadores" lia como "só existem 120" enquanto o cabeçalho da home
+  // dizia 1.267. A lista é uma página; o total é o índice. Quando a lista
+  // está truncada, dizer as duas coisas.
+  const contagem =
+    total !== null && total > filtered.length
+      ? `${fmt(filtered.length)} de ${fmt(total)} jogadores`
+      : `${fmt(filtered.length)} jogadores`;
 
   return (
     <>
@@ -90,7 +107,7 @@ export function JogadoresPage({ onOpenPlayer }: { onOpenPlayer: (id: string) => 
         </div>
       </div>
 
-      <Card title={`${filtered.length} jogadores`}>
+      <Card title={contagem}>
         {list === null ? (
           <Spinner />
         ) : filtered.length === 0 ? (
