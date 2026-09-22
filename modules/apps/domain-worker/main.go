@@ -294,6 +294,10 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 		id         string
 	)
 
+	// A família clubs tem três destinos que se parecem por prefixo; a decisão
+	// é pura e testada (ver classifyClubsAction).
+	k := classifyClubsAction(cmd.Action)
+
 	switch {
 	case strings.HasPrefix(string(cmd.Action), "user."):
 		entityType = "user"
@@ -443,7 +447,33 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 	case strings.HasPrefix(string(cmd.Action), "anuncio."):
 		entityType = "anuncio"
 		_, err = h.anuncio.Handle(ctx, cmd)
-	case strings.HasPrefix(string(cmd.Action), "clubs."):
+	// Os três destinos da família clubs. Vêm de classifyClubsAction, que é
+	// pura e testada -- foi uma colisão de prefixo aqui (o genérico "clubs."
+	// engolindo clubs.fetchRun) que fez a fila de fetch nunca ser criada.
+	case k == clubsKindFetch:
+		entityType = "clubesfetch"
+		var in struct {
+			ClubID string `json:"club_id"`
+		}
+		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
+			id = in.ClubID
+			err = h.fetchRun.Save(ctx, in.ClubID, true, 0, 0, "", false)
+		}
+	case k == clubsKindFetchSave:
+		entityType = "clubesfetch"
+		var in struct {
+			ClubID    string `json:"club_id"`
+			Rodando   bool   `json:"rodando"`
+			Jogadores int    `json:"jogadores"`
+			Partidas  int    `json:"partidas"`
+			Erro      string `json:"erro"`
+			Concluido bool   `json:"concluido"`
+		}
+		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
+			id = in.ClubID
+			err = h.fetchRun.Save(ctx, in.ClubID, in.Rodando, in.Jogadores, in.Partidas, in.Erro, in.Concluido)
+		}
+	case k == clubsKindIngestHealth:
 		// Saúde do worker de ingestão: um upsert simples, sem agregado nem
 		// evento. Chega aqui porque o worker não tem host próprio para expor
 		// um /healthz.
@@ -466,33 +496,6 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 		// only producer; no domain event is raised (nothing subscribes).
 		entityType = "preferencia"
 		err = h.preferencia.Handle(ctx, cmd)
-	case string(cmd.Action) == "clubs.fetchRun":
-		// A tela de resgate abriu a fila: abre a linha como rodando. O worker
-		// Python polla `pendentes` e é ele quem busca de verdade.
-		entityType = "clubesfetch"
-		var in struct {
-			ClubID string `json:"club_id"`
-		}
-		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
-			err = h.fetchRun.Save(ctx, in.ClubID, true, 0, 0, "", false)
-		}
-	case string(cmd.Action) == "clubs.fetchRunSave":
-		// Estado da fila de fetch sob demanda: o worker de ingestão (Python)
-		// publica o resultado do que buscou, e a tela de resgate lê da API.
-		// Sem agregado nem evento -- é um upsert direto, como a saúde do
-		// próprio worker.
-		entityType = "clubesfetch"
-		var in struct {
-			ClubID    string `json:"club_id"`
-			Rodando   bool   `json:"rodando"`
-			Jogadores int    `json:"jogadores"`
-			Partidas  int    `json:"partidas"`
-			Erro      string `json:"erro"`
-			Concluido bool   `json:"concluido"`
-		}
-		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
-			err = h.fetchRun.Save(ctx, in.ClubID, in.Rodando, in.Jogadores, in.Partidas, in.Erro, in.Concluido)
-		}
 	default:
 		err = fmt.Errorf("unknown action: %q", cmd.Action)
 	}
@@ -526,6 +529,36 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 	if auditErr := audits.Record(ctx, entry); auditErr != nil {
 		span.RecordError(auditErr)
 		log.ErrorContext(ctx, "audit write failed", "error", auditErr, "command_id", cmd.ID)
+	}
+}
+
+// clubsKind é o destino de uma ação da família "clubs." dentro do worker.
+type clubsKind int
+
+const (
+	clubsKindOther clubsKind = iota
+	clubsKindIngestHealth
+	clubsKindFetch
+	clubsKindFetchSave
+)
+
+// classifyClubsAction decide PARA ONDE vai uma ação da família clubs.
+//
+// Existe porque o match por prefixo ("clubs.") engolia clubs.fetchRun: o
+// pedido de fetch caía no case da saúde do worker, que gravava a saúde com
+// zeros e nunca criava a linha da fila -- o clique na tela de resgate não
+// fazia nada, sem erro nenhum. Isolar a decisão numa função pura é o que
+// torna essa colisão testável.
+func classifyClubsAction(a application.Action) clubsKind {
+	switch a {
+	case application.ActionSaveIngestEstado:
+		return clubsKindIngestHealth
+	case application.ActionRequestFetchRun:
+		return clubsKindFetch
+	case application.ActionSaveFetchRun:
+		return clubsKindFetchSave
+	default:
+		return clubsKindOther
 	}
 }
 

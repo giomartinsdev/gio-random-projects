@@ -77,26 +77,27 @@ const (
 	// EA source. The ingest worker is the only producer of club/partida/
 	// snapshot/anuncio writes; clubs-api produces the per-person ones
 	// (watchlist, claimed pro, notifications preferences).
-	ActionUpsertClub         Action = "club.upsert"
-	ActionUpsertClubeTotais  Action = "clubetotais.upsert"
-	ActionUpsertPartida      Action = "partida.upsert"
-	ActionAppendSnapshot     Action = "clubesnapshot.append"
-	ActionCreateAnuncio      Action = "anuncio.create"
+	ActionUpsertClub        Action = "club.upsert"
+	ActionUpsertClubeTotais Action = "clubetotais.upsert"
+	ActionUpsertPartida     Action = "partida.upsert"
+	ActionAppendSnapshot    Action = "clubesnapshot.append"
+	ActionCreateAnuncio     Action = "anuncio.create"
 	// Saúde do worker de ingestão (clubs-ingest não serve HTTP).
-	ActionSaveIngestEstado  Action = "clubs.ingestEstado"
+	ActionSaveIngestEstado Action = "clubs.ingestEstado"
 
 	// The per-person partition (usuario_email from the Access JWT) —
 	// these are the only clubs actions that are not public data.
-	ActionSetWatch       Action = "preferencia.setWatch"
-	ActionRemoveWatch    Action = "preferencia.removeWatch"
-	ActionSaveNotify     Action = "preferencia.saveNotificacoes"
-	ActionClaimPro       Action = "preferencia.claimPro"
-	ActionSaveSyncRun    Action = "preferencia.saveSyncRun"
+	ActionSetWatch    Action = "preferencia.setWatch"
+	ActionRemoveWatch Action = "preferencia.removeWatch"
+	ActionSaveNotify  Action = "preferencia.saveNotificacoes"
+	ActionClaimPro    Action = "preferencia.claimPro"
+	ActionSaveSyncRun Action = "preferencia.saveSyncRun"
 
 	// Fila de fetch sob demanda de um clube (clubs_fetch_runs). A tela de
 	// resgate grava o pedido, o worker Python polla e busca o elenco, e o
 	// estado é gravado de volta por aqui.
-	ActionSaveFetchRun Action = "clubs.fetchRunSave"
+	ActionRequestFetchRun Action = "clubs.fetchRun"
+	ActionSaveFetchRun    Action = "clubs.fetchRunSave"
 )
 
 type Command struct {
