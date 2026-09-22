@@ -98,6 +98,11 @@ const (
 	// estado é gravado de volta por aqui.
 	ActionRequestFetchRun Action = "clubs.fetchRun"
 	ActionSaveFetchRun    Action = "clubs.fetchRunSave"
+
+	// Busca ao vivo na fonte (clubs_search_runs), para um clube que o hub
+	// ainda não viu.
+	ActionRequestSearchRun Action = "clubs.searchRun"
+	ActionSaveSearchRun    Action = "clubs.searchRunSave"
 )
 
 type Command struct {

@@ -68,6 +68,10 @@ const (
 	// de ingestão busca o elenco, e o estado volta para a SPA.
 	ActionRequestFetch Action = "clubs.fetchRun"
 	ActionSaveFetch    Action = "clubs.fetchRunSave"
+
+	// Busca ao vivo na fonte, para um clube que o hub ainda não viu.
+	ActionRequestSearch Action = "clubs.searchRun"
+	ActionSaveSearch    Action = "clubs.searchRunSave"
 )
 
 type Command struct {

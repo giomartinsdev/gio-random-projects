@@ -204,6 +204,7 @@ func main() {
 		anuncio: anuncioHandler, preferencia: preferenciaHandler,
 		ingestEstado: postgres.NewIngestEstadoRepository(pool),
 		fetchRun:     postgres.NewFetchRunRepository(pool),
+		searchRun:    postgres.NewSearchRunRepository(pool),
 	}
 
 	errCh := make(chan error, 1)
@@ -274,6 +275,9 @@ type handlers struct {
 	// consumida pelo worker de ingestão (Python), que grava o resultado por
 	// aqui.
 	fetchRun *postgres.FetchRunRepository
+	// Fila de busca ao vivo na fonte: escrita pela tela de resgate para um
+	// clube que o hub ainda não viu, consumida pelo worker de ingestão.
+	searchRun *postgres.SearchRunRepository
 }
 
 func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
@@ -473,6 +477,30 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 			id = in.ClubID
 			err = h.fetchRun.Save(ctx, in.ClubID, in.Rodando, in.Jogadores, in.Partidas, in.Erro, in.Concluido)
 		}
+	case k == clubsKindSearch:
+		// A tela de resgate pediu uma busca ao vivo: abre a linha como
+		// rodando. O worker Python polla e é ele quem consulta a fonte.
+		entityType = "clubesbusca"
+		var in struct {
+			Termo string `json:"termo"`
+		}
+		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
+			id = in.Termo
+			err = h.searchRun.Save(ctx, in.Termo, true, 0, "", false)
+		}
+	case k == clubsKindSearchSave:
+		entityType = "clubesbusca"
+		var in struct {
+			Termo       string `json:"termo"`
+			Rodando     bool   `json:"rodando"`
+			Encontrados int    `json:"encontrados"`
+			Erro        string `json:"erro"`
+			Concluido   bool   `json:"concluido"`
+		}
+		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
+			id = in.Termo
+			err = h.searchRun.Save(ctx, in.Termo, in.Rodando, in.Encontrados, in.Erro, in.Concluido)
+		}
 	case k == clubsKindIngestHealth:
 		// Saúde do worker de ingestão: um upsert simples, sem agregado nem
 		// evento. Chega aqui porque o worker não tem host próprio para expor
@@ -540,6 +568,8 @@ const (
 	clubsKindIngestHealth
 	clubsKindFetch
 	clubsKindFetchSave
+	clubsKindSearch
+	clubsKindSearchSave
 )
 
 // classifyClubsAction decide PARA ONDE vai uma ação da família clubs.
@@ -557,6 +587,10 @@ func classifyClubsAction(a application.Action) clubsKind {
 		return clubsKindFetch
 	case application.ActionSaveFetchRun:
 		return clubsKindFetchSave
+	case application.ActionRequestSearchRun:
+		return clubsKindSearch
+	case application.ActionSaveSearchRun:
+		return clubsKindSearchSave
 	default:
 		return clubsKindOther
 	}

@@ -62,6 +62,10 @@ type Repository interface {
 	GetFetchRun(ctx context.Context, clubID string) (FetchRun, error)
 	ListPendingFetches(ctx context.Context) ([]FetchRun, error)
 
+	// Busca ao vivo na fonte, para um clube que o hub ainda não viu.
+	GetSearchRun(ctx context.Context, termo string) (SearchRun, error)
+	ListPendingSearches(ctx context.Context) ([]SearchRun, error)
+
 	// Administração
 	AdminStatus(ctx context.Context) (AdminStatus, error)
 	IngestEstado(ctx context.Context) (IngestEstado, error)

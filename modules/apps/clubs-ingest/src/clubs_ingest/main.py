@@ -19,7 +19,7 @@ import time
 
 from .client import DomainClient
 from .cycle import Ingest, IngestConfig
-from .queues import drain_fetch_queue, drain_sync_queue
+from .queues import drain_fetch_queue, drain_search_queue, drain_sync_queue
 from .source import from_env as source_from_env
 from .sync import Sync
 
@@ -90,6 +90,7 @@ def main() -> int:
         # da tela de resgate virar trabalho em segundos, não em até 15 min.
         drain_sync_queue(domain, sync)
         drain_fetch_queue(domain, ingest)
+        drain_search_queue(domain, source)
 
         if time.monotonic() >= proximo_ciclo:
             try:

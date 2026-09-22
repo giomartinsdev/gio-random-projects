@@ -21,18 +21,20 @@ import (
 type stubClubs struct {
 	domainclubs.Repository
 
-	club        domainclubs.Club
-	matches     []domainclubs.Match
-	players     []domainclubs.PlayerProfile
-	count       int
-	recentNo    int
-	rankPlayers []domainclubs.RankPlayer
-	rankClubs   []domainclubs.ClubRef
-	announces   []domainclubs.Announcement
-	annCount    int
-	squad       []domainclubs.SquadMember
-	fetchRun    domainclubs.FetchRun
-	pending     []domainclubs.FetchRun
+	club            domainclubs.Club
+	matches         []domainclubs.Match
+	players         []domainclubs.PlayerProfile
+	count           int
+	recentNo        int
+	rankPlayers     []domainclubs.RankPlayer
+	rankClubs       []domainclubs.ClubRef
+	announces       []domainclubs.Announcement
+	annCount        int
+	squad           []domainclubs.SquadMember
+	fetchRun        domainclubs.FetchRun
+	pending         []domainclubs.FetchRun
+	searchRun       domainclubs.SearchRun
+	pendingSearches []domainclubs.SearchRun
 }
 
 func (s *stubClubs) GetClub(context.Context, string) (domainclubs.Club, error) {
@@ -65,6 +67,12 @@ func (s *stubClubs) GetFetchRun(context.Context, string) (domainclubs.FetchRun, 
 func (s *stubClubs) ListPendingFetches(context.Context) ([]domainclubs.FetchRun, error) {
 	return s.pending, nil
 }
+func (s *stubClubs) GetSearchRun(context.Context, string) (domainclubs.SearchRun, error) {
+	return s.searchRun, nil
+}
+func (s *stubClubs) ListPendingSearches(context.Context) ([]domainclubs.SearchRun, error) {
+	return s.pendingSearches, nil
+}
 
 func clubsRouter(repo domainclubs.Repository) http.Handler {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -75,6 +83,8 @@ func clubsRouter(repo domainclubs.Repository) http.Handler {
 	r.Get("/clubs/{clubId}/squad", h.GetSquad)
 	r.Get("/clubs/{clubId}/fetch-run", h.GetFetchRun)
 	r.Get("/fetch-pending", h.ListPendingFetches)
+	r.Get("/search-run", h.GetSearchRun)
+	r.Get("/search-pending", h.ListPendingSearches)
 	r.Get("/rankings/players", h.RankingPlayers)
 	r.Get("/rankings/clubs", h.RankingClubs)
 	r.Get("/announcements", h.ListAnnouncements)
@@ -311,5 +321,62 @@ func TestListPendingFetches(t *testing.T) {
 	}
 	if body.Total != 2 || len(body.Pendentes) != 2 {
 		t.Fatalf("got %d pendentes (total %d); want 2", len(body.Pendentes), body.Total)
+	}
+}
+
+// O termo é a CHAVE da fila de busca ao vivo. Sem normalizar, "Vila " e "vila"
+// seriam duas linhas para o mesmo pedido -- trabalho duplicado no CDN, e a SPA
+// pollando uma linha que não é a que o worker preenche.
+func TestNormalizeTermo(t *testing.T) {
+	cases := map[string]string{
+		"  Vila  ":      "vila",
+		"VILANOVA FC":   "vilanova fc",
+		"Sporting":      "sporting",
+		"":              "",
+		"   ":           "",
+		"já tem acento": "já tem acento",
+	}
+	for in, want := range cases {
+		if got := normalizeTermo(in); got != want {
+			t.Errorf("normalizeTermo(%q) = %q; want %q", in, got, want)
+		}
+	}
+}
+
+// O estado de um termo nunca buscado é "ainda não busquei", não erro.
+func TestGetSearchRunDefaultsToNotStarted(t *testing.T) {
+	repo := &stubClubs{searchRun: domainclubs.SearchRun{Termo: "vila"}}
+	rec := getJSON(t, clubsRouter(repo), "/search-run?termo=vila")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	var run domainclubs.SearchRun
+	if err := json.Unmarshal(rec.Body.Bytes(), &run); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if run.Rodando || run.ConcluidoEm != nil {
+		t.Fatalf("run não iniciado deve vir zerado: %+v", run)
+	}
+}
+
+// A fila que o worker de ingestão consome para buscar na fonte.
+func TestListPendingSearches(t *testing.T) {
+	repo := &stubClubs{pendingSearches: []domainclubs.SearchRun{
+		{Termo: "vila", Rodando: true},
+		{Termo: "sporting", Rodando: true},
+	}}
+	rec := getJSON(t, clubsRouter(repo), "/search-pending")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	var body struct {
+		Pendentes []domainclubs.SearchRun `json:"pendentes"`
+		Total     int                     `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Total != 2 {
+		t.Fatalf("total = %d; want 2", body.Total)
 	}
 }

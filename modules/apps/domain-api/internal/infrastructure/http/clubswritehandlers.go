@@ -182,6 +182,39 @@ func (h *ClubsWriteHandlers) SaveFetchRun(w http.ResponseWriter, r *http.Request
 	h.publish(w, r, application.ActionSaveFetch, in)
 }
 
+// RequestSearch grava o pedido de busca ao vivo de um termo. Assíncrono: a
+// consulta vai na fonte (CDN), então a SPA não espera -- ela polla o estado.
+func (h *ClubsWriteHandlers) RequestSearch(w http.ResponseWriter, r *http.Request) {
+	var in appclubs.SearchRunInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		return
+	}
+	in.Termo = normalizeTermo(in.Termo)
+	if len(in.Termo) < 2 {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "termo is required (min 2 chars)"})
+		return
+	}
+	in.Rodando = true
+	h.publish(w, r, application.ActionRequestSearch, in)
+}
+
+// SaveSearchRun grava o resultado da busca ao vivo. O worker de ingestão
+// publica aqui.
+func (h *ClubsWriteHandlers) SaveSearchRun(w http.ResponseWriter, r *http.Request) {
+	var in appclubs.SearchRunInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		return
+	}
+	in.Termo = normalizeTermo(in.Termo)
+	if in.Termo == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "termo is required"})
+		return
+	}
+	h.publish(w, r, application.ActionSaveSearch, in)
+}
+
 func (h *ClubsWriteHandlers) publish(w http.ResponseWriter, r *http.Request, action application.Action, payload any) {
 	raw, err := json.Marshal(payload)
 	if err != nil {

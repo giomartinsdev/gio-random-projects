@@ -18,6 +18,8 @@ func TestClassifyClubsAction(t *testing.T) {
 		application.ActionSaveIngestEstado: clubsKindIngestHealth,
 		application.ActionRequestFetchRun:  clubsKindFetch,
 		application.ActionSaveFetchRun:     clubsKindFetchSave,
+		application.ActionRequestSearchRun: clubsKindSearch,
+		application.ActionSaveSearchRun:    clubsKindSearchSave,
 		// Qualquer outra ação clubs. continua indo para o genérico -- o
 		// default não pode virar um "unknown action" e derrubar o worker.
 		application.Action("clubs.qualquerOutra"): clubsKindOther,
@@ -34,5 +36,16 @@ func TestClassifyClubsAction(t *testing.T) {
 func TestFetchRequestIsNotMistakenForIngestHealth(t *testing.T) {
 	if classifyClubsAction(application.ActionRequestFetchRun) == classifyClubsAction(application.ActionSaveIngestEstado) {
 		t.Fatal("clubs.fetchRun deve ir para o fetch, não para a saúde do worker")
+	}
+}
+
+// A busca ao vivo tem os seus dois destinos, e nenhum deles pode colidir com
+// o fetch -- os três compartilham o prefixo "clubs.".
+func TestSearchActionsHaveTheirOwnDestinations(t *testing.T) {
+	if classifyClubsAction(application.ActionRequestSearchRun) == classifyClubsAction(application.ActionRequestFetchRun) {
+		t.Fatal("clubs.searchRun não pode ir para o mesmo destino do fetch")
+	}
+	if classifyClubsAction(application.ActionSaveSearchRun) == classifyClubsAction(application.ActionSaveFetchRun) {
+		t.Fatal("os dois saves não podem colidir")
 	}
 }

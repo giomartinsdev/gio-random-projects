@@ -1239,6 +1239,52 @@ func (r *ClubsRepository) ListPendingFetches(ctx context.Context) ([]domainclubs
 	return list, rows.Err()
 }
 
+// ---------------------------------------------------------------- busca viva
+
+// GetSearchRun é o estado da busca ao vivo de um termo. Termo nunca buscado
+// devolve um run zerado -- é "ainda não busquei", não erro.
+func (r *ClubsRepository) GetSearchRun(ctx context.Context, termo string) (domainclubs.SearchRun, error) {
+	run := domainclubs.SearchRun{Termo: termo}
+	var concluido *time.Time
+	err := r.pool.QueryRow(ctx, `
+		SELECT rodando, encontrados, erro, concluido_em
+		FROM clubs_search_runs WHERE termo = $1`, termo).
+		Scan(&run.Rodando, &run.Encontrados, &run.Erro, &concluido)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return run, nil
+	}
+	if err != nil {
+		return domainclubs.SearchRun{}, fmt.Errorf("get search run: %w", err)
+	}
+	run.ConcluidoEm = concluido
+	return run, nil
+}
+
+// ListPendingSearches: os termos que a SPA pediu e o worker ainda não buscou.
+func (r *ClubsRepository) ListPendingSearches(ctx context.Context) ([]domainclubs.SearchRun, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT termo, rodando, encontrados, erro, concluido_em
+		FROM clubs_search_runs
+		WHERE rodando = true AND concluido_em IS NULL
+		ORDER BY solicitado_em ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list pending searches: %w", err)
+	}
+	defer rows.Close()
+
+	var list []domainclubs.SearchRun
+	for rows.Next() {
+		var run domainclubs.SearchRun
+		var concluido *time.Time
+		if err := rows.Scan(&run.Termo, &run.Rodando, &run.Encontrados, &run.Erro, &concluido); err != nil {
+			return nil, fmt.Errorf("scan search run: %w", err)
+		}
+		run.ConcluidoEm = concluido
+		list = append(list, run)
+	}
+	return list, rows.Err()
+}
+
 // ------------------------------------------------------------- administração
 
 func (r *ClubsRepository) AdminStatus(ctx context.Context) (domainclubs.AdminStatus, error) {

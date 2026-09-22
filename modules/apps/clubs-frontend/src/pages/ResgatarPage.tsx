@@ -120,22 +120,79 @@ function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
   const [q, setQ] = useState("");
   const [list, setList] = useState<Club[] | null>(null);
   const [buscando, setBuscando] = useState(false);
+  // A busca local só conhece o que o hub já viu. Quando ela devolve pouco,
+  // caímos na busca AO VIVO na fonte -- senão quem chega com um clube novo
+  // procura por ele, não acha e conclui que a tela está quebrada.
+  const [buscandoAoVivo, setBuscandoAoVivo] = useState(false);
+  const [aoVivo, setAoVivo] = useState(false);
+  const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
     const termo = q.trim();
+    setAoVivo(false);
+    if (pollRef.current) window.clearTimeout(pollRef.current);
     if (termo.length < 2) {
       setList(null);
       return;
     }
+
+    let cancelled = false;
     setBuscando(true);
-    const t = window.setTimeout(() => {
-      api
-        .searchClubs(termo)
-        .then((r) => setList(r.clubes ?? []))
-        .catch(() => setList([]))
-        .finally(() => setBuscando(false));
-    }, 200);
-    return () => window.clearTimeout(t);
+
+    const run = async () => {
+      // 1. Local primeiro: é instantâneo e já traz os dados completos.
+      let locais: Club[] = [];
+      try {
+        const r = await api.searchClubs(termo);
+        locais = r.clubes ?? [];
+      } catch {
+        locais = [];
+      }
+      if (cancelled) return;
+      setList(locais);
+      setBuscando(false);
+
+      // 2. Pouco resultado? Vai na fonte. O corte em 2 é de propósito: um
+      // termo que já acha vários clubes não precisa pagar a latência do CDN.
+      if (locais.length >= 2) return;
+      setBuscandoAoVivo(true);
+      try {
+        await api.requestSearchLive(termo);
+      } catch {
+        setBuscandoAoVivo(false);
+        return;
+      }
+
+      // 3. Polla o estado até o worker trazer. O termo é a chave da fila, então
+      // reusa a linha se já foi buscado antes.
+      const tick = async () => {
+        if (cancelled) return;
+        try {
+          const st = await api.searchLiveStatus(termo);
+          if (cancelled) return;
+          if (st.concluido_em) {
+            setBuscandoAoVivo(false);
+            setAoVivo(true);
+            if (st.encontrados > 0) {
+              const r = await api.searchClubs(termo);
+              if (!cancelled) setList(r.clubes ?? []);
+            }
+            return;
+          }
+          pollRef.current = window.setTimeout(tick, 1800);
+        } catch {
+          if (!cancelled) pollRef.current = window.setTimeout(tick, 3500);
+        }
+      };
+      tick();
+    };
+
+    const t = window.setTimeout(run, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+      if (pollRef.current) window.clearTimeout(pollRef.current);
+    };
   }, [q]);
 
   return (
@@ -165,15 +222,35 @@ function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
                 ? "digite ao menos 2 letras"
                 : buscando
                   ? "buscando…"
-                  : `${fmt(list?.length ?? 0)} clubes encontrados para “${q.trim()}”`}
+                  : buscandoAoVivo
+                    ? "procurando na fonte…"
+                    : `${fmt(list?.length ?? 0)} clubes encontrados para “${q.trim()}”`}
             </div>
+            {buscandoAoVivo && (
+              <div className="flex items-start gap-2 rounded-md px-3 py-2.5" style={{ background: "var(--info-soft)" }}>
+                <span>📡</span>
+                <p className="text-[11px] text-muted">
+                  O hub ainda não conhecia esse clube, então fomos buscar na fonte.
+                  Isso leva alguns segundos — não precisa recarregar.
+                </p>
+              </div>
+            )}
           </div>
         </Card>
 
         {list !== null && (
           <Card title={`${fmt(list.length)} ${list.length === 1 ? "clube" : "clubes"}`} actions={<span className="text-[10px] text-faint">toque para ver os jogadores →</span>}>
             {list.length === 0 ? (
-              <Empty title="Nenhum clube encontrado" hint="Tente parte do nome ou a sigla do clube." />
+              <Empty
+                title={buscandoAoVivo ? "Procurando na fonte…" : "Nenhum clube encontrado"}
+                hint={
+                  buscandoAoVivo
+                    ? "Assim que a fonte responder, os clubes aparecem aqui."
+                    : aoVivo
+                      ? "A fonte também não devolveu este clube. Confira o nome exato — tente a sigla."
+                      : "Tente parte do nome ou a sigla do clube."
+                }
+              />
             ) : (
               <ul className="divide-y divide-[var(--border)]">
                 {list.map((c) => (

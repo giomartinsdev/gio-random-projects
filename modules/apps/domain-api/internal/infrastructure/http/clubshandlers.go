@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -435,6 +436,35 @@ func (h *ClubsHandlers) GetFetchRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, run)
+}
+
+// GetSearchRun é o estado da busca ao vivo de um termo. A busca do diretório é
+// local; esta é a que vai na fonte, para um clube que o hub ainda não viu.
+func (h *ClubsHandlers) GetSearchRun(w http.ResponseWriter, r *http.Request) {
+	termo := normalizeTermo(r.URL.Query().Get("termo"))
+	run, err := h.clubs.GetSearchRun(r.Context(), termo)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
+// ListPendingSearches é consumida pelo worker de ingestão.
+func (h *ClubsHandlers) ListPendingSearches(w http.ResponseWriter, r *http.Request) {
+	list, err := h.clubs.ListPendingSearches(r.Context())
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pendentes": list, "total": len(list)})
+}
+
+// normalizeTermo deixa o termo comparável: minúsculo e sem espaços nas pontas.
+// É a chave da fila, então "Vila " e "vila" precisam apontar para a MESMA
+// linha -- senão o mesmo pedido entraria duas vezes.
+func normalizeTermo(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
 }
 
 // ------------------------------------------------------------- administração

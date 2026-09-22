@@ -156,6 +156,16 @@ export interface FetchRun {
   concluido_em: string | null;
 }
 
+/** O estado da busca ao vivo de um termo na fonte. A busca do diretório é
+ * local; esta alcança um clube que o hub ainda não viu. */
+export interface SearchRun {
+  termo: string;
+  rodando: boolean;
+  encontrados: number;
+  erro: string;
+  concluido_em: string | null;
+}
+
 export interface PlayerClub {
   club_id: string;
   nome: string;

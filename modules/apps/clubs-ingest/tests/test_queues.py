@@ -129,3 +129,109 @@ def test_sync_failure_closes_the_request():
 
     assert domain.marked, "o pedido precisa ser fechado"
     assert domain.marked[0][0] == "quebrado@test"
+
+
+# ------------------------------------------------------- busca ao vivo
+
+class FakeSourceSearch:
+    def __init__(self, results=None, fail=False):
+        self.results = results or []
+        self.fail = fail
+        self.asked: list[str] = []
+
+    def search(self, termo):
+        self.asked.append(termo)
+        if self.fail:
+            raise RuntimeError("a fonte bloqueou")
+        return self.results
+
+
+def _serch_hit(club_id, nome):
+    return {
+        "clubId": club_id, "clubName": nome,
+        "wins": "5", "losses": "2", "ties": "1", "gamesPlayed": "8",
+        "goals": "12", "goalsAgainst": "8", "cleanSheets": "2",
+        "points": "16", "currentDivision": "3", "bestDivision": "2",
+        "clubInfo": {"clubId": club_id, "name": nome, "regionId": "1", "teamId": "9", "customKit": {}},
+    }
+
+
+def test_search_queue_queries_source_and_writes_clubs():
+    """O caso que a busca local não cobre: um clube que o hub nunca viu. O
+    termo vai na fonte, os clubes achados entram na base, e a linha fecha."""
+    from clubs_ingest.queues import drain_search_queue
+
+    achados = []
+
+    class D(FakeDomain):
+        def list_pending_searches(self):
+            return [{"termo": "vilanova"}]
+
+        def upsert_club(self, club):
+            achados.append(club)
+
+        def upsert_totals(self, club_id, totals):
+            pass
+
+        def save_search_run(self, termo, **kw):
+            self.saved.append({"termo": termo, **kw})
+
+    source = FakeSourceSearch(results=[_serch_hit("141881", "Vilanova FC")])
+    d = D()
+    feitos = drain_search_queue(d, source)
+
+    assert feitos == 1
+    assert source.asked == ["vilanova"]
+    assert achados, "o clube achado precisa ser gravado na base"
+    assert achados[0]["club_id"] == "141881"
+    assert achados[0]["nome"] == "Vilanova FC"
+    assert d.saved[0]["concluido"] is True
+    assert d.saved[0]["encontrados"] == 1
+
+
+def test_search_does_not_follow_the_clubs_it_finds():
+    """A busca só APRESENTA candidatos -- acompanhar é decisão do resgate. Se a
+    busca acompanhasse, digitar um nome mudaria a lista de clubes do hub."""
+    from clubs_ingest.queues import drain_search_queue
+
+    achados = []
+
+    class D(FakeDomain):
+        def list_pending_searches(self):
+            return [{"termo": "x"}]
+
+        def upsert_club(self, club):
+            achados.append(club)
+
+        def upsert_totals(self, club_id, totals):
+            pass
+
+        def save_search_run(self, *a, **kw):
+            pass
+
+    drain_search_queue(D(), FakeSourceSearch(results=[_serch_hit("1", "Achado FC")]))
+    assert achados[0]["acompanhado"] is False
+
+
+def test_search_failure_still_closes_the_row():
+    from clubs_ingest.queues import drain_search_queue
+
+    class D(FakeDomain):
+        def list_pending_searches(self):
+            return [{"termo": "ruim"}]
+
+        def upsert_club(self, club):
+            pass
+
+        def upsert_totals(self, club_id, totals):
+            pass
+
+        def save_search_run(self, termo, **kw):
+            self.saved.append({"termo": termo, **kw})
+
+    d = D()
+    drain_search_queue(d, FakeSourceSearch(fail=True))
+
+    assert d.saved, "a linha precisa fechar mesmo no erro"
+    assert d.saved[0]["concluido"] is True
+    assert "a fonte bloqueou" in d.saved[0]["erro"]

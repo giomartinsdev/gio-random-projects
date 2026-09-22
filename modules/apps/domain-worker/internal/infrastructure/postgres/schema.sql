@@ -549,6 +549,33 @@ CREATE TABLE IF NOT EXISTS clubs_fetch_runs (
 CREATE INDEX IF NOT EXISTS idx_clubs_fetch_runs_pendentes ON clubs_fetch_runs(rodando, solicitado_em);
 
 -- ===========================================================================
+-- Fila de busca ao vivo na fonte (clubs_search_runs).
+--
+-- A busca de clubes do hub é LOCAL: ela procura no que o hub já viu. Isso é
+-- rápido e é o certo para o diretório, mas cria um ovo-e-a-galinha na tela de
+-- resgate: quem chega com um clube que o hub nunca viu procura por ele, não
+-- acha, e conclui que a tela está quebrada -- sem ter como saber que o clube
+-- simplesmente não está na base ainda.
+--
+-- Esta fila é a saída: quando a busca local não devolve nada útil, a SPA grava
+-- o termo aqui, o worker de ingestão consulta a fonte (é ele que fala com o
+-- CDN) e grava os clubes encontrados na base. A SPA polla o estado e mostra o
+-- resultado quando chega. A chave é o TERMO normalizado, então buscar duas
+-- vezes a mesma coisa não duplica trabalho.
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS clubs_search_runs (
+    termo         TEXT PRIMARY KEY,
+    rodando       BOOLEAN NOT NULL DEFAULT false,
+    encontrados   INTEGER NOT NULL DEFAULT 0,
+    erro          TEXT NOT NULL DEFAULT '',
+    solicitado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+    concluido_em  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_clubs_search_runs_pendentes ON clubs_search_runs(rodando, solicitado_em);
+
+-- ===========================================================================
 -- Estado do worker de ingestão (clubs-ingest).
 --
 -- O worker é Python e NÃO serve HTTP (é um poller, sem porta e sem host), então

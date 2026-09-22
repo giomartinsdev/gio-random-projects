@@ -114,6 +114,10 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		// publica o resultado em /fetch-run.
 		r.Get("/fetch-pending", cl.ListPendingFetches)
 		r.Get("/clubs/{clubId}/fetch-run", cl.GetFetchRun)
+		// Busca ao vivo na fonte: a busca local é a do diretório; esta é a
+		// saída para um clube que o hub ainda não viu.
+		r.Get("/search-pending", cl.ListPendingSearches)
+		r.Get("/search-run", cl.GetSearchRun)
 		r.Get("/admin/status", cl.AdminStatus)
 		// Saúde do worker de ingestão (ele não tem host próprio).
 		r.Get("/admin/ingest", cl.GetIngestEstado)
@@ -131,6 +135,8 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		// Fetch sob demanda: a SPA pede, o worker Python busca,
 		r.Post("/fetch-run", clw.RequestFetch)
 		r.Post("/fetch-run/result", clw.SaveFetchRun)
+		r.Post("/search-run", clw.RequestSearch)
+		r.Post("/search-run/result", clw.SaveSearchRun)
 	})
 
 	return r

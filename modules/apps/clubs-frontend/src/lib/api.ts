@@ -15,6 +15,7 @@ import type {
   PlayerProfile,
   RankPlayer,
   Records,
+  SearchRun,
   SquadMember,
   SyncRun,
   WatchEntry,
@@ -79,6 +80,21 @@ export const api = {
   requestFetch: (clubId: string) =>
     request<{ iniciado: boolean }>(`/clubs/${encodeURIComponent(clubId)}/fetch-run`, {
       method: "POST",
+    }),
+
+  // --- busca ao vivo (a normal é local) ----------------------------------
+  //
+  // A busca local só conhece o que o hub já viu. Para quem chega com um clube
+  // novo, ela devolve vazio e a pessoa conclui que a tela está quebrada. Estas
+  // duas chamadas são o caminho que vai na fonte.
+
+  searchLiveStatus: (termo: string) =>
+    request<SearchRun>(`/clubs/search-live?termo=${encodeURIComponent(termo)}`),
+
+  requestSearchLive: (termo: string) =>
+    request<{ iniciado: boolean }>("/clubs/search-live", {
+      method: "POST",
+      body: JSON.stringify({ termo }),
     }),
 
   matches: (clubId: string, tipo = "", limite = 25) =>

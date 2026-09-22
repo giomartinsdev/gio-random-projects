@@ -172,3 +172,25 @@ class DomainClient:
             "erro": erro,
             "concluido": concluido,
         })
+
+    # --- fila de busca ao vivo --------------------------------------------
+
+    def list_pending_searches(self) -> list[dict[str, Any]]:
+        """Os termos que a tela de resgate pediu para buscar na fonte.
+
+        A busca do hub é local; esta fila é a saída para um clube que ainda
+        não está na base -- sem ela, quem chega novo procura pelo próprio
+        clube e não acha nada, sem saber por quê.
+        """
+        data = self.get("/search-pending") or {}
+        return data.get("pendentes") or []
+
+    def save_search_run(self, termo: str, *, rodando: bool, encontrados: int,
+                        erro: str = "", concluido: bool = False) -> None:
+        self.post("/search-run/result", {
+            "termo": termo,
+            "rodando": rodando,
+            "encontrados": encontrados,
+            "erro": erro,
+            "concluido": concluido,
+        })

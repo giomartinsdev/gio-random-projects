@@ -90,6 +90,15 @@ func (s *Server) Handler() http.Handler {
 		// --- public: no identity required -----------------------------
 		r.Get("/clubs", s.listClubs)
 		r.Get("/clubs/search", s.searchClubs)
+		// Busca AO VIVO na fonte: a busca normal é local (só o que o hub já
+		// viu). Esta é a saída para um clube que ainda não está na base --
+		// quem chega novo procuraria por ele e não acharia nada.
+		//
+		// Registradas ANTES de /clubs/{clubId} de propósito: são caminhos
+		// estáticos, e deixá-los junto do wildcard convidaria a leitura de
+		// que "search-live" é um club_id.
+		r.Get("/clubs/search-live", s.searchLiveStatus)
+		r.Post("/clubs/search-live", s.requestSearchLive)
 		r.Get("/clubs/{clubId}", s.getClub)
 		r.Get("/clubs/{clubId}/squad", s.getSquad)
 		// Fetch sob demanda do elenco: a tela de resgate pede e polla o
@@ -224,6 +233,34 @@ func (s *Server) requestFetch(w http.ResponseWriter, r *http.Request) {
 	if err := s.domain.Post(r.Context(), "/fetch-run", map[string]any{
 		"club_id": chi.URLParam(r, "clubId"),
 	}); err != nil {
+		s.syncError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"iniciado": true})
+}
+
+// searchLiveStatus lê o estado da busca ao vivo de um termo. A SPA polla isto
+// depois de pedir, e mostra os clubes quando o worker termina.
+func (s *Server) searchLiveStatus(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/search-run?termo="+domainclient.Escape(r.URL.Query().Get("termo")))
+}
+
+// requestSearchLive pede uma busca ao vivo na fonte. Público pelo mesmo motivo
+// do fetch: a pessoa procura o próprio clube antes de entrar, e a busca local
+// só conhece o que o hub já viu. 202 -- a consulta vai no CDN, em segundo plano.
+func (s *Server) requestSearchLive(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Termo string `json:"termo"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	if len([]rune(body.Termo)) < 2 {
+		writeError(w, http.StatusUnprocessableEntity, "termo precisa de ao menos 2 letras")
+		return
+	}
+	if err := s.domain.Post(r.Context(), "/search-run", map[string]any{"termo": body.Termo}); err != nil {
 		s.syncError(w, r, err)
 		return
 	}

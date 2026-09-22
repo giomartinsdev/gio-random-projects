@@ -176,6 +176,17 @@ type FetchRun struct {
 	ConcluidoEm *time.Time `json:"concluido_em"`
 }
 
+// SearchRun é o estado da busca ao vivo de um termo na fonte. A busca do
+// diretório é local; esta é a saída para um clube que o hub ainda não viu, e
+// a SPA polla isto enquanto o worker consulta o CDN.
+type SearchRun struct {
+	Termo       string     `json:"termo"`
+	Rodando     bool       `json:"rodando"`
+	Encontrados int        `json:"encontrados"`
+	Erro        string     `json:"erro"`
+	ConcluidoEm *time.Time `json:"concluido_em"`
+}
+
 // PlayerProfile is one player across every club they were seen at.
 type PlayerProfile struct {
 	PlayerID            string         `json:"player_id"`

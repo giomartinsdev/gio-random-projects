@@ -151,3 +151,14 @@ type FetchRunInput struct {
 	Erro      string `json:"erro,omitempty"`
 	Concluido bool   `json:"concluido,omitempty"`
 }
+
+// SearchRunInput é o pedido de busca ao vivo na fonte e o resultado que o
+// worker publica de volta. A busca do diretório é local; esta é a saída para
+// um clube que o hub ainda não viu.
+type SearchRunInput struct {
+	Termo       string `json:"termo"`
+	Rodando     bool   `json:"rodando"`
+	Encontrados int    `json:"encontrados,omitempty"`
+	Erro        string `json:"erro,omitempty"`
+	Concluido   bool   `json:"concluido,omitempty"`
+}
