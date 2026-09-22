@@ -143,6 +143,24 @@ def to_bool(value: Any) -> bool:
     return to_int(value) == 1
 
 
+def obj(parent: Any, key: str) -> dict[str, Any]:
+    """Lê ``parent[key]`` como objeto, tolerando ausência E null explícito.
+
+    ``parent.get(key, {})`` parece proteger, mas não: o default só vale quando
+    a chave FALTA. A fonte manda ``"details": null`` e ``"customKit": null``
+    com frequência, e o ``.get`` seguinte estourava no None -- derrubando o
+    clube inteiro no ciclo, logado apenas como "'NoneType' object has no
+    attribute 'get'", sem dizer onde.
+
+    Este helper é o único lugar que trata isso, para o padrão não voltar
+    espalhado em cada leitura aninhada.
+    """
+    if not isinstance(parent, dict):
+        return {}
+    value = parent.get(key)
+    return value if isinstance(value, dict) else {}
+
+
 def position(raw: Any) -> str:
     """Map a position to one of the four buckets.
 
@@ -213,9 +231,9 @@ def is_dnf(club: dict[str, Any], opponent: dict[str, Any]) -> tuple[bool, str]:
     ``winnerByDnf`` on whichever side carries it.
     """
     if to_bool(club.get("winnerByDnf")):
-        return True, str(club.get("clubId") or club.get("details", {}).get("clubId") or "")
+        return True, str(club.get("clubId") or obj(club, "details").get("clubId") or "")
     if to_bool(opponent.get("winnerByDnf")):
-        return True, str(opponent.get("clubId") or opponent.get("details", {}).get("clubId") or "")
+        return True, str(opponent.get("clubId") or obj(opponent, "details").get("clubId") or "")
     # A DNF result code with no flag is still a DNF -- the code is the more
     # reliable signal of the two.
     code = str(club.get("result", "")).strip()
@@ -402,7 +420,9 @@ def club_identity(details: dict[str, Any]) -> dict[str, Any]:
     desaninhar aqui, um clube vindo da busca ficava sem estádio e sem cores.
     """
     details = details.get("clubInfo") or details
-    kit = details.get("customKit") or {}
+    if not isinstance(details, dict):
+        details = {}
+    kit = obj(details, "customKit")
     return {
         "club_id": str(details.get("clubId") or details.get("club_id") or ""),
         "nome": str(details.get("name") or details.get("clubName") or ""),
@@ -606,6 +626,6 @@ def opponent_club(match: dict[str, Any], club_id: str) -> tuple[str, str] | None
     for other_id, bloco in clubs.items():
         if str(other_id) == str(club_id):
             continue
-        nome = str((bloco or {}).get("details", {}).get("name") or "")
+        nome = str(obj(bloco, "details").get("name") or "")
         return str(other_id), nome
     return None

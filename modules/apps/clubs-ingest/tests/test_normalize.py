@@ -329,3 +329,55 @@ def test_player_line_of_a_null_is_skipped_not_crashed():
     em vez de estourar."""
     assert nz.player_line_opt(None, "1001", "p1") is None
     assert nz.player_line_opt({"playername": "ok"}, "1001", "p2") is not None
+
+
+# ------------------- null explícito onde se esperava um objeto (bug real)
+
+def test_is_dnf_tolerates_a_null_details():
+    """`club.get("details", {})` NÃO protege contra `"details": null`: o default
+    só vale quando a chave falta. A fonte manda null explícito, e o `.get` do
+    None estourava -- derrubando o clube inteiro no ciclo (visto em produção
+    como "'NoneType' object has no attribute 'get'", sem dizer onde)."""
+    club = {"clubId": "1", "details": None, "winnerByDnf": "1"}
+    dnf, winner = nz.is_dnf(club, {"clubId": "2", "details": None})
+    assert dnf is True
+    assert winner == "1"
+
+
+def test_opponent_club_tolerates_a_null_details():
+    match = {
+        "clubs": {
+            "1001": {"details": None},
+            "2001": {"details": {"name": "Opponent A"}},
+        }
+    }
+    assert nz.opponent_club(match, "1001") == ("2001", "Opponent A")
+    # E o lado sem nome não pode estourar tampouco.
+    assert nz.opponent_club(match, "2001") == ("1001", "")
+
+
+def test_match_payload_survives_null_details_on_both_sides():
+    """O caso de produção: um clube da partida vem com `details: null`. A
+    partida continua sendo gravada; só o nome do adversário sai vazio."""
+    match = {
+        "matchId": "m1",
+        "timestamp": "1767297600",
+        "clubs": {
+            "1001": {"goals": "2", "goalsAgainst": "0", "result": "1", "details": None},
+            "2001": {"goals": "0", "goalsAgainst": "2", "result": "2",
+                     "details": {"name": "Opponent A", "clubId": 2001}},
+        },
+        "players": {},
+    }
+    payload = nz.match_payload(match, "1001")
+    assert payload is not None, "a partida não pode ser perdida por um details nulo"
+    assert payload["match_id"] == "m1"
+    assert payload["gols_casa"] == 2
+
+
+def test_is_dnf_reads_the_winner_id_from_a_null_safe_details():
+    """O clube sem details ainda pode ser o vencedor por desistência -- o id
+    está no topo do bloco, não só no details."""
+    club = {"clubId": "1001", "details": None, "winnerByDnf": "1"}
+    _, winner = nz.is_dnf(club, {})
+    assert winner == "1001"
