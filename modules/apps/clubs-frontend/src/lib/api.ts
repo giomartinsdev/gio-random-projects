@@ -102,6 +102,14 @@ export const api = {
       `/players?q=${encodeURIComponent(q)}&limite=${limite}`,
     ),
 
+  /** O tamanho do índice cross-club, sem trazer a página: o total que o
+   * cabeçalho da home mostra. Pede 1 registro só para ler o `total`, que é o
+   * índice inteiro, não a página. */
+  playerCount: () =>
+    request<{ jogadores: PlayerProfile[]; total: number; termo: string }>(
+      "/players?limite=1",
+    ).then((r) => r.total ?? 0),
+
   player: (playerId: string) =>
     request<PlayerProfile>(`/players/${encodeURIComponent(playerId)}`),
 

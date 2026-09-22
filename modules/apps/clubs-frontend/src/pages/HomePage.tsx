@@ -16,10 +16,17 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
   const [metrica, setMetrica] = useState("nivel");
   const [clubes, setClubes] = useState<Club[] | null>(null);
   const [jogadores, setJogadores] = useState<RankPlayer[] | null>(null);
+  // O número do cabeçalho é o índice inteiro, não a página do ranking: o
+  // ranking carrega só ao abrir a aba, então usá-lo aqui mostrava 0 na home.
+  const [totalJogadores, setTotalJogadores] = useState<number | null>(null);
   const [erro, setErro] = useState("");
 
   useEffect(() => {
     api.announcements().then((r) => setAnuncios(r.anuncios ?? [])).catch(() => setAnuncios([]));
+  }, []);
+
+  useEffect(() => {
+    api.playerCount().then(setTotalJogadores).catch(() => setTotalJogadores(0));
   }, []);
 
   useEffect(() => {
@@ -64,7 +71,7 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="clubes no hub" value={fmt(clubes?.length ?? 0)} sub="com dados acumulados" accent />
-        <Stat label="jogadores indexados" value={fmt(jogadores?.length ?? 0)} sub="descobertos pelas partidas" />
+        <Stat label="jogadores indexados" value={fmt(totalJogadores ?? 0)} sub="descobertos pelas partidas" />
         <Stat label="anúncios" value={fmt(anuncios?.length ?? 0)} sub="gerados dos resultados" />
         <Stat label="histórico" value="contínuo" sub="cresce a cada atualização" />
       </div>

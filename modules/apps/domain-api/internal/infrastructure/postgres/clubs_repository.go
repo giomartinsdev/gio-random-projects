@@ -686,6 +686,17 @@ func (r *ClubsRepository) AllPlayers(ctx context.Context) ([]domainclubs.PlayerP
 	return r.playersGrouped(ctx, "", nil)
 }
 
+// PlayerCount is the size of the cross-club index. It counts distinct player
+// ids in the match lines directly, so it is cheap and never capped by a page
+// size -- the home header asks for the whole index, not a slice of it.
+func (r *ClubsRepository) PlayerCount(ctx context.Context) (int, error) {
+	var n int
+	if err := r.pool.QueryRow(ctx, `SELECT count(DISTINCT player_id) FROM clubs_match_players`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("player count: %w", err)
+	}
+	return n, nil
+}
+
 func (r *ClubsRepository) SearchPlayers(ctx context.Context, query string, limit int) ([]domainclubs.PlayerProfile, error) {
 	all, err := r.playersGrouped(ctx, "", nil)
 	if err != nil {

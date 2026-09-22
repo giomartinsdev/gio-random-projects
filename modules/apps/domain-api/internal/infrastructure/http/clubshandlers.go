@@ -104,7 +104,12 @@ func (h *ClubsHandlers) GetClub(w http.ResponseWriter, r *http.Request) {
 					// keep counting
 				}
 				if i < 10 {
-					c.Forma = append(c.Forma, resultLetter(m.NossoResultado))
+					// Vocabulary, not letter: every other forma path
+					// (withForm) and the frontend's FormChips map on
+					// "vitoria"/"empate"/"derrota". Emitting "V" here made
+					// the profile header render "?" for every chip while the
+					// same club read correctly in the list.
+					c.Forma = append(c.Forma, m.NossoResultado)
 				}
 				o, ok := opponents[m.AdversarioID]
 				if !ok {
@@ -149,17 +154,6 @@ func (h *ClubsHandlers) GetClub(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, c)
-}
-
-func resultLetter(r string) string {
-	switch r {
-	case "vitoria":
-		return "V"
-	case "derrota":
-		return "D"
-	default:
-		return "E"
-	}
 }
 
 func (h *ClubsHandlers) GetSquad(w http.ResponseWriter, r *http.Request) {
@@ -289,7 +283,15 @@ func (h *ClubsHandlers) ListPlayers(w http.ResponseWriter, r *http.Request) {
 		h.internalError(r, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"jogadores": list, "total": len(list), "termo": q})
+	// `total` is the whole index, not the page: the home header asks "how many
+	// players has the hub found?", and len(list) would answer "how many fit in
+	// this page". The listing itself only reads `jogadores`.
+	total, err := h.clubs.PlayerCount(r.Context())
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"jogadores": list, "total": total, "termo": q})
 }
 
 func (h *ClubsHandlers) GetPlayer(w http.ResponseWriter, r *http.Request) {

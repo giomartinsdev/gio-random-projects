@@ -27,6 +27,10 @@ type Repository interface {
 	GetPlayer(ctx context.Context, playerID string) (PlayerProfile, error)
 	SearchPlayers(ctx context.Context, query string, limit int) ([]PlayerProfile, error)
 	AllPlayers(ctx context.Context) ([]PlayerProfile, error)
+	// PlayerCount is the whole cross-club index size, independent of any page
+	// or search -- the number the home header shows as "jogadores indexados".
+	// SearchPlayers' `total` is its own page length, so it cannot answer this.
+	PlayerCount(ctx context.Context) (int, error)
 
 	// Histórico
 	Snapshots(ctx context.Context, clubID string, since time.Time) ([]Snapshot, error)
