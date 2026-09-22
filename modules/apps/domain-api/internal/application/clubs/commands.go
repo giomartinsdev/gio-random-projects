@@ -38,24 +38,24 @@ type TotaisInput struct {
 }
 
 type PlayerLineInput struct {
-	ClubID    string `json:"club_id"`
-	PlayerID  string `json:"player_id"`
-	Gamertag  string `json:"gamertag"`
-	Posicao   string `json:"posicao"`
-	Nota      float64 `json:"nota"`
-	Gols      int    `json:"gols"`
-	Assistencias int `json:"assistencias"`
-	Chutes        int `json:"chutes"`
-	PassesCertos  int `json:"passes_certos"`
-	PassesTentados int `json:"passes_tentados"`
-	DesarmesCertos int `json:"desarmes_certos"`
-	DesarmesTentados int `json:"desarmes_tentados"`
-	Defesas          int `json:"defesas"`
+	ClubID           string         `json:"club_id"`
+	PlayerID         string         `json:"player_id"`
+	Gamertag         string         `json:"gamertag"`
+	Posicao          string         `json:"posicao"`
+	Nota             float64        `json:"nota"`
+	Gols             int            `json:"gols"`
+	Assistencias     int            `json:"assistencias"`
+	Chutes           int            `json:"chutes"`
+	PassesCertos     int            `json:"passes_certos"`
+	PassesTentados   int            `json:"passes_tentados"`
+	DesarmesCertos   int            `json:"desarmes_certos"`
+	DesarmesTentados int            `json:"desarmes_tentados"`
+	Defesas          int            `json:"defesas"`
 	DefesasPorTipo   map[string]int `json:"defesas_por_tipo,omitempty"`
-	SegundosJogados  int `json:"segundos_jogados"`
-	MelhorEmCampo    bool `json:"melhor_em_campo"`
-	CartaoVermelho   bool `json:"cartao_vermelho"`
-	JogoSemSofrerGol bool `json:"jogo_sem_sofrer_gol"`
+	SegundosJogados  int            `json:"segundos_jogados"`
+	MelhorEmCampo    bool           `json:"melhor_em_campo"`
+	CartaoVermelho   bool           `json:"cartao_vermelho"`
+	JogoSemSofrerGol bool           `json:"jogo_sem_sofrer_gol"`
 }
 
 type PartidaInput struct {
@@ -88,12 +88,12 @@ type SnapshotInput struct {
 }
 
 type AnuncioInput struct {
-	Tipo         string `json:"tipo"`
-	Titulo       string `json:"titulo"`
-	Texto        string `json:"texto,omitempty"`
-	ReferenciaID string `json:"referencia_id,omitempty"`
-	Icone        string `json:"icone,omitempty"`
-	ExpiraEmHoras int   `json:"expira_em_horas,omitempty"`
+	Tipo          string `json:"tipo"`
+	Titulo        string `json:"titulo"`
+	Texto         string `json:"texto,omitempty"`
+	ReferenciaID  string `json:"referencia_id,omitempty"`
+	Icone         string `json:"icone,omitempty"`
+	ExpiraEmHoras int    `json:"expira_em_horas,omitempty"`
 }
 
 type WatchInput struct {
@@ -127,4 +127,16 @@ type SyncRunInput struct {
 	Atual        string   `json:"atual,omitempty"`
 	Novos        []string `json:"novos,omitempty"`
 	Concluido    bool     `json:"concluido,omitempty"`
+}
+
+// IngestEstadoInput é o que o worker de ingestão publica a cada ciclo. Ele não
+// tem host nem porta, então este é o canal para a saúde dele chegar até a API.
+type IngestEstadoInput struct {
+	Rodadas        int    `json:"rodadas"`
+	ClubesOK       int    `json:"clubes_ok"`
+	ClubesFalhos   int    `json:"clubes_falhos"`
+	PartidasNovas  int    `json:"partidas_novas"`
+	Snapshots      int    `json:"snapshots"`
+	BootstrapFeito bool   `json:"bootstrap_feito"`
+	UltimoErro     string `json:"ultimo_erro,omitempty"`
 }

@@ -378,6 +378,18 @@ func (h *ClubsHandlers) GetSyncRun(w http.ResponseWriter, r *http.Request) {
 
 // ------------------------------------------------------------- administração
 
+// GetIngestEstado expõe a saúde do worker de ingestão. Ele não serve HTTP, e
+// sem isto uma falha em produção (por exemplo o CDN da fonte bloqueando o IP
+// do datacenter) fica invisível: o log está no container, atrás do SSH.
+func (h *ClubsHandlers) GetIngestEstado(w http.ResponseWriter, r *http.Request) {
+	e, err := h.clubs.IngestEstado(r.Context())
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, e)
+}
+
 func (h *ClubsHandlers) AdminStatus(w http.ResponseWriter, r *http.Request) {
 	st, err := h.clubs.AdminStatus(r.Context())
 	if err != nil {

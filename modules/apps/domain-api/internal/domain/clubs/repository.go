@@ -52,6 +52,7 @@ type Repository interface {
 
 	// Administração
 	AdminStatus(ctx context.Context) (AdminStatus, error)
+	IngestEstado(ctx context.Context) (IngestEstado, error)
 	ClaimedPlayerIDs(ctx context.Context) (map[string]bool, error)
 }
 

@@ -515,3 +515,29 @@ CREATE TABLE IF NOT EXISTS clubs_sync_runs (
     iniciado_em   TIMESTAMPTZ,
     concluido_em  TIMESTAMPTZ
 );
+
+-- ===========================================================================
+-- Estado do worker de ingestão (clubs-ingest).
+--
+-- O worker é Python e NÃO serve HTTP (é um poller, sem porta e sem host), então
+-- não há /healthz para consultar. Sem isto, quando ele falha em produção não há
+-- como saber por quê: o log fica no container, atrás do SSH.
+--
+-- Uma linha só, atualizada a cada ciclo. É o que permite diagnosticar de fora
+-- -- inclusive o cenário do ADR#4, em que o CDN da fonte bloqueia o IP do
+-- datacenter e nenhuma consulta passa.
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS clubs_ingest_estado (
+    id                INTEGER PRIMARY KEY DEFAULT 1,
+    ultimo_ciclo_em   TIMESTAMPTZ,
+    rodadas           INTEGER NOT NULL DEFAULT 0,
+    clubes_ok         INTEGER NOT NULL DEFAULT 0,
+    clubes_falhos     INTEGER NOT NULL DEFAULT 0,
+    partidas_novas    INTEGER NOT NULL DEFAULT 0,
+    snapshots         INTEGER NOT NULL DEFAULT 0,
+    bootstrap_feito   BOOLEAN NOT NULL DEFAULT false,
+    ultimo_erro       TEXT NOT NULL DEFAULT '',
+    ultimo_erro_em    TIMESTAMPTZ,
+    CONSTRAINT clubs_ingest_estado_single CHECK (id = 1)
+);

@@ -165,3 +165,15 @@ func (h *ClubsWriteHandlers) publish(w http.ResponseWriter, r *http.Request, act
 	}
 	writeJSON(w, http.StatusAccepted, acceptedBody{CommandID: cmd.ID, Status: "accepted"})
 }
+
+// SaveIngestEstado grava a saúde do worker. Mesmo caminho assíncrono das outras
+// escritas de alto volume: perder uma atualização só faz o painel ficar um
+// ciclo atrasado, e ninguém espera pela resposta.
+func (h *ClubsWriteHandlers) SaveIngestEstado(w http.ResponseWriter, r *http.Request) {
+	var in appclubs.IngestEstadoInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		return
+	}
+	h.publish(w, r, "clubs.ingestEstado", in)
+}

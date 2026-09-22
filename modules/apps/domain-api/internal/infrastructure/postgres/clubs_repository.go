@@ -1205,6 +1205,28 @@ func (r *ClubsRepository) AdminStatus(ctx context.Context) (domainclubs.AdminSta
 	return st, nil
 }
 
+// IngestEstado lê a linha única de estado do worker.
+func (r *ClubsRepository) IngestEstado(ctx context.Context) (domainclubs.IngestEstado, error) {
+	var e domainclubs.IngestEstado
+	err := r.pool.QueryRow(ctx, `
+		SELECT ultimo_ciclo_em, rodadas, clubes_ok, clubes_falhos, partidas_novas,
+		       snapshots, bootstrap_feito, ultimo_erro, ultimo_erro_em
+		FROM clubs_ingest_estado WHERE id = 1`).
+		Scan(&e.UltimoCicloEm, &e.Rodadas, &e.ClubesOK, &e.ClubesFalhos, &e.PartidasNovas,
+			&e.Snapshots, &e.BootstrapFeito, &e.UltimoErro, &e.UltimoErroEm)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Nunca rodou: não é erro, é o estado inicial.
+		return domainclubs.IngestEstado{}, nil
+	}
+	if err != nil {
+		return domainclubs.IngestEstado{}, fmt.Errorf("ingest estado: %w", err)
+	}
+	if e.UltimoCicloEm != nil {
+		e.Vivo = time.Since(*e.UltimoCicloEm) < 3*time.Hour
+	}
+	return e, nil
+}
+
 // --------------------------------------------------------------- helpers
 
 // foldAccents lowercases and strips diacritics so "uniao" finds "União" —

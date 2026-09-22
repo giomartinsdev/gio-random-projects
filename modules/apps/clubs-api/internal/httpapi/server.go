@@ -121,6 +121,10 @@ func (s *Server) Handler() http.Handler {
 			// (administrador de verdade) é uma decisão futura; hoje o login já
 			// é opt-in e o conteúdo é agregado, não dado de outra pessoa.
 			r.Get("/admin/status", s.adminStatus)
+			// Saúde do worker de ingestão: ele não tem host próprio, então é
+			// por aqui que "está coletando?" e "qual foi o último erro?"
+			// chegam ao painel.
+			r.Get("/admin/ingest", s.ingestStatus)
 		})
 
 		// --- auth: sessão própria, não Cloudflare Access -----------------
@@ -365,6 +369,12 @@ func (s *Server) startSync(w http.ResponseWriter, r *http.Request) {
 // e o topo do ranking. Vem tudo de uma leitura só na base de domínio.
 func (s *Server) adminStatus(w http.ResponseWriter, r *http.Request) {
 	s.proxyGet(w, r, "/admin/status")
+}
+
+// ingestStatus encaminha a saúde do worker. É o diagnóstico de fora: sem isto,
+// uma falha do coletor em produção só aparece via SSH no container.
+func (s *Server) ingestStatus(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/admin/ingest")
 }
 
 // --- helpers --------------------------------------------------------------

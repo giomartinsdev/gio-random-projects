@@ -26,3 +26,15 @@ var ErrNotFound = notFoundError{}
 type notFoundError struct{}
 
 func (notFoundError) Error() string { return "snapshot not found" }
+
+// IngestEstado é a saúde do worker. Não pertence a um clube, mas a este
+// agregado por proximidade -- é o snapshot do próprio coletor.
+type IngestEstado struct {
+	Rodadas        int
+	ClubesOK       int
+	ClubesFalhos   int
+	PartidasNovas  int
+	Snapshots      int
+	BootstrapFeito bool
+	UltimoErro     string
+}

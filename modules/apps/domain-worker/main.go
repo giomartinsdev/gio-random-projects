@@ -26,39 +26,39 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
+	appanuncio "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/anuncio"
 	appaposta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/aposta"
 	appativo "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/ativo"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
 	appcchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchdeck"
 	appcchroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchroom"
-	appconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/conta"
-	appanuncio "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/anuncio"
 	appclub "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/club"
 	appclubesnapshot "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/clubesnapshot"
-	apppartida "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/partida"
-	apppreferencia "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/preferencia"
+	appconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/conta"
 	appdashboardlayout "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/dashboardlayout"
 	appdeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/deal"
 	applead "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/lead"
 	appmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/message"
+	apppartida "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/partida"
 	apppost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/post"
+	apppreferencia "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/preferencia"
 	approom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/room"
 	apptransacao "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/transacao"
 	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/user"
+	domainanuncio "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/anuncio"
 	domainaposta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/aposta"
 	domainativo "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/ativo"
 	domaincchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchdeck"
 	domaincchroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchroom"
-	domainconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/conta"
-	domainanuncio "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/anuncio"
 	domainclub "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/club"
-	domainpref "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/preferencia"
+	domainconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/conta"
 	domaindashboardlayout "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/dashboardlayout"
 	domaindeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/deal"
 	domainlead "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/lead"
 	domainmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/message"
-	domainpost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/post"
 	domainpartida "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/partida"
+	domainpost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/post"
+	domainpref "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/preferencia"
 	domainroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/room"
 	domaintransacao "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/transacao"
 	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
@@ -202,6 +202,7 @@ func main() {
 		aposta: apostaHandler, dashboardLayout: dashboardLayoutHandler, lead: leadHandler,
 		club: clubHandler, partida: partidaHandler, snapshot: snapshotHandler,
 		anuncio: anuncioHandler, preferencia: preferenciaHandler,
+		ingestEstado: postgres.NewIngestEstadoRepository(pool),
 	}
 
 	errCh := make(chan error, 1)
@@ -264,6 +265,10 @@ type handlers struct {
 	snapshot        *appclubesnapshot.CommandHandler
 	anuncio         *appanuncio.CommandHandler
 	preferencia     *apppreferencia.CommandHandler
+	// Saúde do worker de ingestão: um upsert direto, não um agregado -- o
+	// worker é um poller sem host, e esta é a única forma de a saúde dele
+	// chegar até a API.
+	ingestEstado *postgres.IngestEstadoRepository
 }
 
 func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
@@ -433,6 +438,24 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 	case strings.HasPrefix(string(cmd.Action), "anuncio."):
 		entityType = "anuncio"
 		_, err = h.anuncio.Handle(ctx, cmd)
+	case strings.HasPrefix(string(cmd.Action), "clubs."):
+		// Saúde do worker de ingestão: um upsert simples, sem agregado nem
+		// evento. Chega aqui porque o worker não tem host próprio para expor
+		// um /healthz.
+		entityType = "clubesingest"
+		var in struct {
+			Rodadas        int    `json:"rodadas"`
+			ClubesOK       int    `json:"clubes_ok"`
+			ClubesFalhos   int    `json:"clubes_falhos"`
+			PartidasNovas  int    `json:"partidas_novas"`
+			Snapshots      int    `json:"snapshots"`
+			BootstrapFeito bool   `json:"bootstrap_feito"`
+			UltimoErro     string `json:"ultimo_erro"`
+		}
+		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
+			err = h.ingestEstado.Save(ctx, in.Rodadas, in.ClubesOK, in.ClubesFalhos,
+				in.PartidasNovas, in.Snapshots, in.BootstrapFeito, in.UltimoErro)
+		}
 	case strings.HasPrefix(string(cmd.Action), "preferencia."):
 		// Per-person writes, all carrying usuario_email. The API is the
 		// only producer; no domain event is raised (nothing subscribes).

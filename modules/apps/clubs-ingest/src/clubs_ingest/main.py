@@ -72,6 +72,9 @@ def main() -> int:
     log.info("clubs-ingest iniciado (poll=%ss, ttl_matches=%ss, ttl_squad=%ss)",
              poll_seconds, cfg.ttl_matches, cfg.ttl_squad)
 
+    rodadas = 0
+    bootstrap_feito = False
+
     while not stop["now"]:
         # Sincronização primeiro: um pedido gravado pelo SPA (clubs_sync_runs
         # com rodando=true) é a única forma de um clube entrar na lista de
@@ -99,12 +102,35 @@ def main() -> int:
             log.error("leitura da fila de sync falhou: %s", err)
 
         try:
-            ingest.run_cycle()
+            st = ingest.run_cycle()
+            rodadas += 1
+            if st.clubes_processados:
+                bootstrap_feito = True
+            # Publica a saúde DEPOIS do ciclo: é o que o painel lê, e a única
+            # janela para ver uma falha em produção sem SSH.
+            domain.save_ingest_estado(
+                rodadas=rodadas,
+                clubes_ok=st.clubes_processados,
+                clubes_falhos=st.clubes_falhos,
+                partidas_novas=st.partidas_novas,
+                snapshots=st.snapshots,
+                bootstrap_feito=bootstrap_feito,
+                ultimo_erro="; ".join(st.falhas[:3]),
+            )
         except Exception as err:  # noqa: BLE001 -- a whole-cycle failure must not kill the loop
             # The in-memory source client is deliberately kept alive across
             # failures: its CDN challenge token has to survive, which is why
             # this is a loop and not a one-shot job.
             log.error("ciclo falhou: %s", err)
+            rodadas += 1
+            try:
+                domain.save_ingest_estado(
+                    rodadas=rodadas, clubes_ok=0, clubes_falhos=0,
+                    partidas_novas=0, snapshots=0, bootstrap_feito=bootstrap_feito,
+                    ultimo_erro=str(err)[:400],
+                )
+            except Exception:  # noqa: BLE001 -- registrar a falha não pode falhar
+                pass
         # Sleep in short slices so a signal is honored promptly.
         for _ in range(poll_seconds):
             if stop["now"]:

@@ -82,6 +82,8 @@ const (
 	ActionUpsertPartida      Action = "partida.upsert"
 	ActionAppendSnapshot     Action = "clubesnapshot.append"
 	ActionCreateAnuncio      Action = "anuncio.create"
+	// Saúde do worker de ingestão (clubs-ingest não serve HTTP).
+	ActionSaveIngestEstado  Action = "clubs.ingestEstado"
 
 	// The per-person partition (usuario_email from the Access JWT) —
 	// these are the only clubs actions that are not public data.

@@ -129,3 +129,23 @@ class DomainClient:
             "novos": novos,
             "concluido": True,
         })
+
+    def save_ingest_estado(self, *, rodadas: int, clubes_ok: int, clubes_falhos: int,
+                           partidas_novas: int, snapshots: int, bootstrap_feito: bool,
+                           ultimo_erro: str = "") -> None:
+        """Publica a saúde deste worker.
+
+        Ele é Python e não serve HTTP, então sem isto uma falha em produção
+        (inclusive o CDN da fonte bloqueando o IP do datacenter, que é o risco
+        do ADR#4) fica invisível: o log vive no container, atrás do SSH. O
+        painel lê daqui.
+        """
+        self.post("/admin/ingest", {
+            "rodadas": rodadas,
+            "clubes_ok": clubes_ok,
+            "clubes_falhos": clubes_falhos,
+            "partidas_novas": partidas_novas,
+            "snapshots": snapshots,
+            "bootstrap_feito": bootstrap_feito,
+            "ultimo_erro": ultimo_erro,
+        })

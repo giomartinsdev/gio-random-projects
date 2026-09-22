@@ -399,3 +399,20 @@ type AdminStatus struct {
 	PorDivisao         map[string]int `json:"por_divisao"`
 	TopClubes          []ClubRef      `json:"top_clubes"`
 }
+
+// IngestEstado é a saúde do worker de ingestão. Ele não serve HTTP, então este
+// é o único jeito de ver, pela API, se ele está coletando e qual foi o último
+// erro -- inclusive o caso em que o CDN da fonte bloqueia o IP do datacenter.
+type IngestEstado struct {
+	UltimoCicloEm  *time.Time `json:"ultimo_ciclo_em"`
+	Rodadas        int        `json:"rodadas"`
+	ClubesOK       int        `json:"clubes_ok"`
+	ClubesFalhos   int        `json:"clubes_falhos"`
+	PartidasNovas  int        `json:"partidas_novas"`
+	Snapshots      int        `json:"snapshots"`
+	BootstrapFeito bool       `json:"bootstrap_feito"`
+	UltimoErro     string     `json:"ultimo_erro"`
+	UltimoErroEm   *time.Time `json:"ultimo_erro_em"`
+	// Vivo é derivado: um ciclo nos últimos 3 intervalos esperados.
+	Vivo bool `json:"vivo"`
+}

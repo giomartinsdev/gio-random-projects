@@ -110,6 +110,8 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		// Consumida pelo worker de ingestão: quem pediu sync e ainda não terminou.
 		r.Get("/sync-pending", cl.ListPendingSyncs)
 		r.Get("/admin/status", cl.AdminStatus)
+		// Saúde do worker de ingestão (ele não tem host próprio).
+		r.Get("/admin/ingest", cl.GetIngestEstado)
 
 		r.Post("/clubs", clw.UpsertClub)
 		r.Post("/clubs/{clubId}/totals", clw.UpsertTotais)
@@ -120,6 +122,7 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Post("/notifications", clw.SaveNotifications)
 		r.Post("/claimed-pro", clw.ClaimPro)
 		r.Post("/sync-status", clw.SaveSyncRun)
+		r.Post("/admin/ingest", clw.SaveIngestEstado)
 	})
 
 	return r
