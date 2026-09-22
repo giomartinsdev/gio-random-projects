@@ -112,8 +112,11 @@ class Ingest:
             self.domain.upsert_totals(club_id, club_totals(overall))
 
         stats = CycleStats()
-        players = self._ingest_matches(club_id, stats)
-        return players, stats.partidas_novas
+        players, matches = self._ingest_matches(club_id, stats)
+        # `matches` é o total PROCESSADO (novas + atualizadas), não só as novas:
+        # a tela mostra "trouxe N partidas" e um clube já conhecido retornaria
+        # 0 se contássemos apenas as novas -- dizendo "nada" depois de buscar 10.
+        return players, matches
 
     # Quantos clubes o bootstrap acompanha. O leaderboard traz 100; acompanhar
     # todos de uma vez significaria 100 consultas de partidas no primeiro ciclo,
@@ -188,16 +191,17 @@ class Ingest:
 
         stats.clubes_processados += 1
 
-    def _ingest_matches(self, club_id: str, stats: CycleStats) -> int:
-        """Grava as partidas do clube e devolve quantos jogadores distintos
-        apareceram nelas.
+    def _ingest_matches(self, club_id: str, stats: CycleStats) -> tuple[int, int]:
+        """Grava as partidas do clube e devolve (jogadores, partidas).
 
-        O número de jogadores é derivado das linhas de partida, não de um
-        endpoint de elenco: a fonte não tem um que sobreviva à temporada. É o
-        mesmo cálculo que a API faz para montar o elenco, então a tela recebe
-        um número consistente com o que ela vai mostrar em seguida.
+        `jogadores` é quantos jogadores DISTINTOS do clube apareceram nas
+        partidas -- é o tamanho do elenco que a API vai montar, derivado das
+        linhas de partida porque a fonte não tem um endpoint de elenco que
+        sobreviva à temporada. `partidas` é o total processado (novas e
+        atualizadas), que é o número que a tela mostra.
         """
         players: set[str] = set()
+        processadas = 0
         for match in self.source.club_matches(club_id, self.cfg.max_matches):
             payload = match_payload(match, club_id)
             if not payload or not payload["match_id"]:
@@ -220,6 +224,7 @@ class Ingest:
                 log.warning("partida %s recusada: %s", payload["match_id"], err)
                 continue
 
+            processadas += 1
             fresh = payload["match_id"] not in self._known_clubs
             if fresh:
                 self._known_clubs.add(payload["match_id"])
@@ -234,7 +239,7 @@ class Ingest:
             opp = opponent_club_id(match, club_id)
             if opp:
                 self._ensure_known(opp)
-        return len(players)
+        return len(players), processadas
 
     def _ensure_known(self, club_id: str) -> None:
         """Register a club we have only seen as an opponent, with its totals.

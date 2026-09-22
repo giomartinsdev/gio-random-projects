@@ -113,3 +113,24 @@ def test_run_fetch_without_a_source_hit_still_returns():
 
     assert jogadores == 0 and partidas == 0
     assert domain.clubs == []
+
+
+def test_known_matches_still_count_as_processed():
+    """Um clube que o hub já acompanha tem as mesmas partidas de novo. A tela
+    diz "trouxe N partidas" -- se contássemos só as NOVAS, ela diria 0 depois
+    de buscar 10, que parece falha mas é sucesso."""
+    source = FakeSource(
+        info={"clubId": "1", "name": "X", "customKit": {}},
+        overall={"clubId": "1", "gamesPlayed": "2"},
+        matches=[match_with_players("1", "2", ["p1"])],
+    )
+    domain = FakeDomain()
+    ingest = new_ingest(source, domain)
+
+    # Primeira busca: tudo novo.
+    _, primeira = ingest.run_fetch("1")
+    assert primeira == 1
+
+    # Segunda busca: a mesma partida, agora já conhecida.
+    _, segunda = ingest.run_fetch("1")
+    assert segunda == 1, "a partida conhecida ainda foi processada, e a tela deve ver 1"
