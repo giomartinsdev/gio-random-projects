@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
+import { logout } from "./auth";
 import type { SyncRun } from "./types";
 
 export interface Session {
@@ -35,10 +36,14 @@ export function useAuth(): Session {
   return { autenticado, email, refresh };
 }
 
-/** A URL de login: o hop do Access vive sob /api, no mesmo host da API. */
-export function loginUrl(returnTo: string): string {
-  const base = import.meta.env.VITE_CLUBS_API_URL ?? "";
-  return `${base}/api/sso?return=${encodeURIComponent(returnTo || window.location.href)}`;
+/** Encerra a sessão no servidor e recarrega: sem cookie, o hub volta ao
+ * estado de visitante sem quebrar a tela em que a pessoa estava. */
+export async function sair(): Promise<void> {
+  try {
+    await logout();
+  } finally {
+    window.location.reload();
+  }
 }
 
 // --- tema -----------------------------------------------------------------

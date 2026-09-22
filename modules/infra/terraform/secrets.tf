@@ -95,6 +95,16 @@ resource "random_id" "dashboard_api_domain_key" {
   byte_length = 24
 }
 
+# clubs-api's session-signing secret. The hub no longer sits behind Cloudflare
+# Access: the SPA sends a Google ID token, clubs-api verifies it and mints an
+# HS256 cookie signed with this. It never leaves the infrastructure -- terraform
+# wires it straight into the container's env, so there is no Vaultwarden item to
+# keep in sync.
+resource "random_password" "clubs_session_secret" {
+  length  = 48
+  special = false
+}
+
 # clubs-api's own key -- the FC Clubs Hub's per-person writes (watchlist,
 # claimed pro, notification prefs) go through domain-api's command pipeline, so
 # the audit log needs a caller identity for it. No Vaultwarden item: terraform

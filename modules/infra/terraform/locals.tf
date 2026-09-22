@@ -307,9 +307,10 @@ locals {
       # clubs-frontend: the FC Clubs Hub SPA -- rankings, match and player
       # profiles, and the historical series the EA source does not keep. It
       # enters the hub as a microfrontend like bet/tela/cch, so it must stay
-      # iframe-embeddable (a Google SSO redirect inside the hub's renderer frame
-      # cannot be completed) and therefore stays out of Access; the real gate is
-      # the Access application on clubs-api.giomartins.dev/api.
+      # iframe-embeddable: the login is a Google Identity Services button the SPA
+      # renders itself, not a redirect to an edge login page (which could not
+      # complete inside the hub's renderer frame). That is also why clubs-api has
+      # no Cloudflare Access application at all.
       hostname = "clubs.giomartins.dev"
       bucket   = "clubs-frontend"
     },
@@ -365,9 +366,5 @@ locals {
   path_protected_hostnames = [
     "hub.giomartins.dev/sso",
     "bet-api.giomartins.dev/api",
-    # clubs-api's personal layer: the hub is public, and logging in is opt-in.
-    # Everything a visitor reads (rankings, clubs, players, matches) answers
-    # without identity; only these routes are gated.
-    "clubs-api.giomartins.dev/api",
   ]
 }

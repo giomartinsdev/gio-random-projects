@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -61,52 +62,61 @@ func main() {
 		log.Warn("CLUBS_DOMAIN_API_URL/KEY ausentes: servindo estados vazios (dev)")
 	}
 
-	var allowedEmails []string
-	if v := os.Getenv("CLUBS_ALLOWED_EMAILS"); v != "" {
-		allowedEmails = strings.Split(v, ",")
-	}
-	var audiences []string
-	if v := os.Getenv("CLUBS_ACCESS_AUD"); v != "" {
-		audiences = strings.Split(v, ",")
-	}
-	teamDomain := os.Getenv("CLUBS_ACCESS_TEAM_DOMAIN")
+	// Identidade: sessão própria, não Cloudflare Access. O login é um "Entrar
+	// com Google" comum -- o SPA manda o ID token, este serviço verifica e
+	// emite o cookie de sessão.
+	sessionSecret := os.Getenv("CLUBS_SESSION_SECRET")
+	googleClientID := os.Getenv("CLUBS_GOOGLE_CLIENT_ID")
 	devBypass := os.Getenv("CLUBS_DEV_BYPASS_AUTH") == "1"
 	devEmail := os.Getenv("CLUBS_DEV_USER_EMAIL")
 
-	// The dev bypass must be impossible to combine with a configured Access
-	// team: that combination means someone is running in front of real Access
-	// while also accepting anyone as a fixed identity, which is exactly the way
-	// a local shortcut turns into an authentication hole. Refuse to boot rather
-	// than log a warning nobody reads.
-	if devBypass && teamDomain != "" {
-		log.Error("refusing to start: CLUBS_DEV_BYPASS_AUTH=1 with CLUBS_ACCESS_TEAM_DOMAIN set",
-			"hint", "the bypass is for local dev only; unset it wherever Access is configured")
+	// A escotilha de dev e um client ID real não podem coexistir: a combinação
+	// significa rodar com login de verdade configurado E aceitar qualquer
+	// requisição como uma identidade fixa. É o buraco de autenticação mais
+	// fácil de criar sem perceber, então vira falha de boot em vez de warning.
+	if devBypass && googleClientID != "" {
+		log.Error("recusando iniciar: CLUBS_DEV_BYPASS_AUTH=1 com CLUBS_GOOGLE_CLIENT_ID definido",
+			"dica", "a escotilha é só para dev local; remova-a onde o login do Google estiver configurado")
 		os.Exit(1)
 	}
 	if devBypass && devEmail == "" {
-		log.Warn("CLUBS_DEV_BYPASS_AUTH=1 but CLUBS_DEV_USER_EMAIL is empty; defaulting to dev@local")
+		log.Warn("CLUBS_DEV_BYPASS_AUTH=1 mas CLUBS_DEV_USER_EMAIL vazio; usando dev@local")
 		devEmail = "dev@local"
 	}
 
-	auth, err := httpapi.NewAccessAuth(teamDomain, audiences, allowedEmails, devEmail, log)
-	if err != nil {
-		log.Error("access auth init failed", "error", err)
-		os.Exit(1)
+	if sessionSecret == "" && !devBypass {
+		// Não é fatal -- a leitura pública segue inteira -- mas precisa ser
+		// alto, porque a camada pessoal para de funcionar em silêncio.
+		log.Warn("emissão de sessão DESLIGADA: /api/auth/google vai recusar todo login e as rotas pessoais respondem 401",
+			"corrija", "defina CLUBS_SESSION_SECRET + CLUBS_GOOGLE_CLIENT_ID, ou CLUBS_DEV_BYPASS_AUTH=1 para dev")
 	}
-	if !auth.Enabled() {
-		// Not fatal -- the public dataset is still fully served -- but it must
-		// be loud, because the personal layer silently stops working.
-		log.Warn("identity verification is OFF: the personal routes will answer 401 to everyone",
-			"fix", "set CLUBS_ACCESS_TEAM_DOMAIN + CLUBS_ACCESS_AUD, or CLUBS_DEV_BYPASS_AUTH=1 for local dev")
+	if googleClientID == "" && !devBypass {
+		log.Warn("CLUBS_GOOGLE_CLIENT_ID vazio: o login com Google não vai funcionar")
+	}
+
+	cfg := httpapi.Config{
+		AllowedOrigins:      origins,
+		SessionSecret:       sessionSecret,
+		SessionCookieDomain: os.Getenv("CLUBS_SESSION_COOKIE_DOMAIN"),
+		SessionDuration:     envDuration("CLUBS_SESSION_DURATION", 30*24*time.Hour),
+		GoogleClientID:      googleClientID,
+		DevUserEmail:        devEmail,
+	}
+	if cfg.SessionCookieDomain != "" {
+		log.Info("cookie de sessão escopado", "domain", cfg.SessionCookieDomain)
+	} else {
+		log.Info("cookie de sessão host-only (certo para dev; em produção escopar em .giomartins.dev se o hub precisar)")
 	}
 
 	srv := &http.Server{
 		Addr: ":" + port,
-		Handler: otelhttp.NewHandler(httpapi.NewServer(domain, auth, origins, log).Handler(), "clubs-api",
+		Handler: otelhttp.NewHandler(httpapi.NewServer(domain, cfg, log).Handler(), "clubs-api",
 			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 				return r.Method + " " + r.URL.Path
 			})),
 		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
@@ -127,6 +137,17 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
+}
+
+// envDuration lê uma duração em segundos (a convenção do repo é um número
+// simples, não uma string de duração do Go) com um default.
+func envDuration(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return def
 }
 
 func env(key, def string) string {

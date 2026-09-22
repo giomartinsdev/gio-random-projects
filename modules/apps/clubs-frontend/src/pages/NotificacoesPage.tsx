@@ -6,11 +6,7 @@ import { api } from "../lib/api";
 import type { NotificationPrefs } from "../lib/types";
 import { Badge, Card, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
-
-const loginHref = () => {
-  const base = import.meta.env.VITE_CLUBS_API_URL ?? "";
-  return `${base}/api/sso?return=${encodeURIComponent(window.location.href)}`;
-};
+import { GoogleSignInButton } from "../components/google-signin";
 
 const DEFAULTS: NotificationPrefs = {
   canal: "",
@@ -19,7 +15,13 @@ const DEFAULTS: NotificationPrefs = {
   resultado_partidas: true,
 };
 
-export function NotificacoesPage({ authed }: { authed: boolean | null }) {
+export function NotificacoesPage({
+  authed,
+  onSignedIn,
+}: {
+  authed: boolean | null;
+  onSignedIn: () => void;
+}) {
   const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -43,13 +45,7 @@ export function NotificacoesPage({ authed }: { authed: boolean | null }) {
               <p className="text-sm text-muted">
                 As notificações são pessoais: sem login não há para quem enviar. O resto do hub continua aberto.
               </p>
-              <a
-                href={loginHref()}
-                className="rounded-md px-4 py-2.5 text-center font-display text-sm font-bold uppercase tracking-wide"
-                style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
-              >
-                Entrar com Google
-              </a>
+              <GoogleSignInButton onSuccess={onSignedIn} />
             </div>
           </Card>
         </div>

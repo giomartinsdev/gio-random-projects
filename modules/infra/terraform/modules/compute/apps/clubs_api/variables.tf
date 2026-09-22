@@ -15,25 +15,28 @@ variable "external_port" {
   default     = 8017
 }
 
-variable "access_team_domain" {
-  description = "Cloudflare Access team domain whose JWKS clubs-api verifies the Cf-Access-Jwt-Assertion header against -- same shape as bet-api's own teamDomain."
+variable "session_secret" {
+  description = "The HS256 secret clubs-api signs its session cookie with, after verifying the caller's Google ID token. Generated in the root module (random_password.clubs_session_secret) and never leaves the infrastructure."
   type        = string
-  # The real team domain -- the same one bet-frontend and hub-frontend use.
-  # Not a guess: an invented domain makes the JWKS lookup fail on every
-  # authenticated request, and that failure looks like "login does nothing".
-  default     = "workwithgiomartinsdev.cloudflareaccess.com"
+  sensitive   = true
 }
 
-variable "access_aud" {
-  description = "Audience of the Access application in front of /api (see path_protected_hostnames in locals.tf) -- the token's aud must match this."
+variable "session_cookie_domain" {
+  description = <<-EOT
+    Domain attribute of the clubs_session cookie. Empty means host-only, which
+    is the right default for the local dev setup (localhost ignores port, so
+    the SPA on :5173 and the API on :8017 share it). Set to
+    ".giomartins.dev" only if something other than clubs-api's own host ever
+    needs to read the session.
+  EOT
   type        = string
   default     = ""
 }
 
-variable "allowed_emails" {
-  description = "Optional restriction to specific accounts, checked after the JWT verifies -- empty means anyone the Access policy admits."
-  type        = list(string)
-  default     = []
+variable "google_oauth_client_id" {
+  description = "The Google OAuth 2.0 Web application Client ID whose ID tokens clubs-api accepts -- the same one financas uses, so a token minted for that app cannot be replayed here and vice versa. Not secret (it is public in every ID token's aud claim and in the bundle)."
+  type        = string
+  default     = ""
 }
 
 variable "frontend_origins" {

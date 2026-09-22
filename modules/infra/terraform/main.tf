@@ -34,12 +34,6 @@ module "cloud_cloudflare" {
   # each service's own cors() middleware answers OPTIONS directly.
   preflight_bypass_hostnames = [
     "bet-api.giomartins.dev/api",
-    # clubs-api's personal layer has the same shape as bet-api's: the SPA is
-    # cross-origin (MinIO-served) and every POST carries content-type: json, so
-    # the browser sends an OPTIONS preflight that Access would 403 because
-    # preflights carry no cookies -- the login would appear to work and no write
-    # would ever land. clubs-api's own cors() middleware answers the preflight.
-    "clubs-api.giomartins.dev/api",
   ]
 
   # Email Routing lives on the zone's DNS (MX/SPF/DKIM) plus account
@@ -491,20 +485,18 @@ module "compute_apps_clubs_api" {
     docker = docker
   }
 
-  network_name   = module.network_docker_apps.network_name
-  registry_host  = var.registry_host
-  domain_api_key = random_id.clubs_api_domain_key.hex
-  # The aud is not a hand-filled variable: the Access application this path
-  # app gets is created by module.cloud_cloudflare, which already outputs
-  # every application's aud keyed by hostname. Reading it here is what makes
-  # the token verification actually work; a blank aud would reject every
-  # authenticated request even with a valid signature.
-  access_aud     = module.cloud_cloudflare.access_app_auds["clubs-api.giomartins.dev/api"]
-  otlp_endpoint  = module.compute_services_observability.otlp_endpoint
+  network_name       = module.network_docker_apps.network_name
+  registry_host      = var.registry_host
+  domain_api_key     = random_id.clubs_api_domain_key.hex
+  session_secret     = random_password.clubs_session_secret.result
+  google_oauth_client_id = var.google_oauth_client_id
+  # Host-only cookie by default: only clubs-api reads the session, so scoping it
+  # to a whole domain would be more privilege than the design needs.
+  session_cookie_domain = ""
 
-  # module.cloud_cloudflare because of the aud read above -- the Access
-  # application has to exist before its aud can be wired in.
-  depends_on = [module.compute_apps_domain_api, module.cloud_cloudflare]
+  # No module.cloud_cloudflare dependency: there is no Access application in
+  # front of this host anymore -- the login is our own Google Sign-In + session.
+  depends_on = [module.compute_apps_domain_api]
 }
 
 # clubs-ingest -- a poller, not a service: no port, no hostname, no ingress.

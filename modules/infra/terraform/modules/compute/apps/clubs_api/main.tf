@@ -27,11 +27,12 @@ resource "docker_container" "clubs_api" {
     # Cross-origin caller (the SPA's MinIO-served origin, plus localhost dev)
     # -- the CORS allowlist.
     "CLUBS_FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
-    # Identity: Cloudflare Access, verified here rather than trusted from the
-    # edge -- the same ingress also routes direct traffic.
-    "CLUBS_ACCESS_TEAM_DOMAIN=${var.access_team_domain}",
-    "CLUBS_ACCESS_AUD=${var.access_aud}",
-    "CLUBS_ALLOWED_EMAILS=${join(",", var.allowed_emails)}",
+    # Identity: our own session, not Cloudflare Access. clubs-api verifies the
+    # Google ID token the SPA sends (against google_oauth_client_id) and mints
+    # a signed cookie; the session secret is what makes that cookie unforgeable.
+    "CLUBS_SESSION_SECRET=${var.session_secret}",
+    "CLUBS_SESSION_COOKIE_DOMAIN=${var.session_cookie_domain}",
+    "CLUBS_GOOGLE_CLIENT_ID=${var.google_oauth_client_id}",
     # Persistence: no driver, HTTP + X-API-Key to domain-api.
     "CLUBS_DOMAIN_API_URL=${var.domain_api_url}",
     "CLUBS_DOMAIN_API_KEY=${var.domain_api_key}",

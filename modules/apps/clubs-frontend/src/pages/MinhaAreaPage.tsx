@@ -9,6 +9,7 @@ import { api } from "../lib/api";
 import type { PlayerProfile, SyncRun, WatchEntry } from "../lib/types";
 import { Badge, Card, Empty, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
+import { GoogleSignInButton } from "../components/google-signin";
 import { fmt, POS_LABEL } from "../lib/format";
 
 export function MinhaAreaPage({
@@ -16,6 +17,7 @@ export function MinhaAreaPage({
   email,
   sync,
   onStartSync,
+  onSignedIn,
   onOpenClub,
   onOpenPlayer,
   onToggleWatch,
@@ -24,21 +26,17 @@ export function MinhaAreaPage({
   email: string;
   sync: SyncRun | null;
   onStartSync: () => void;
+  onSignedIn: () => void;
   onOpenClub: (id: string) => void;
   onOpenPlayer: (id: string) => void;
   onToggleWatch: (id: string) => void;
 }) {
   if (authed === null) return <Spinner label="verificando sua sessão…" />;
-  if (!authed) return <LoginScreen />;
+  if (!authed) return <LoginScreen onSignedIn={onSignedIn} />;
   return <Profile email={email} sync={sync} onStartSync={onStartSync} onOpenClub={onOpenClub} onOpenPlayer={onOpenPlayer} onToggleWatch={onToggleWatch} />;
 }
 
-const loginHref = () => {
-  const base = import.meta.env.VITE_CLUBS_API_URL ?? "";
-  return `${base}/api/sso?return=${encodeURIComponent(window.location.href)}`;
-};
-
-function LoginScreen() {
+function LoginScreen({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <>
       <PageHead
@@ -48,13 +46,9 @@ function LoginScreen() {
       <div className="mx-auto max-w-xl">
         <Card title="Entrar com o Google">
           <div className="flex flex-col gap-4 px-5 py-5">
-            <a
-              href={loginHref()}
-              className="rounded-md px-4 py-2.5 text-center font-display text-sm font-bold uppercase tracking-wide transition-opacity hover:opacity-90"
-              style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
-            >
-              Entrar com Google
-            </a>
+            <div className="flex justify-center">
+              <GoogleSignInButton onSuccess={onSignedIn} />
+            </div>
             <p className="text-xs text-muted">
               Sem cadastro e sem senha nova: usamos o mesmo login do resto do hub. Você sai quando quiser.
             </p>

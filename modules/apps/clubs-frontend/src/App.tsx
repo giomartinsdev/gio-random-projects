@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Shell, type RouteId } from "./components/shell";
-import { loginUrl, useAuth, useSyncStatus, useTheme } from "./lib/hooks";
+import { sair, useAuth, useSyncStatus, useTheme } from "./lib/hooks";
 import { api } from "./lib/api";
 import type { WatchEntry } from "./lib/types";
 import { HomePage } from "./pages/HomePage";
@@ -56,7 +56,7 @@ function hashFor(view: View): string {
 
 export default function App() {
   const [view, setView] = useState<View>(parseHash);
-  const { autenticado: authed, email } = useAuth();
+  const { autenticado: authed, email, refresh: refreshAuth } = useAuth();
   const { theme, setTheme } = useTheme();
   const [watch, setWatch] = useState<WatchEntry[]>([]);
 
@@ -172,13 +172,14 @@ export default function App() {
             email={email}
             sync={sync}
             onStartSync={startSync}
+            onSignedIn={refreshAuth}
             onOpenClub={(id) => navigate("clube", id)}
             onOpenPlayer={(id) => navigate("jogador", id)}
             onToggleWatch={toggleWatch}
           />
         );
       case "notificacoes":
-        return <NotificacoesPage authed={authed} />;
+        return <NotificacoesPage authed={authed} onSignedIn={refreshAuth} />;
       case "admin":
         return <AdminPage authed={authed} />;
       default:
@@ -196,10 +197,9 @@ export default function App() {
       onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
       sync={sync}
       isAdmin={authed === true}
+      onLogout={sair}
     >
       {body}
     </Shell>
   );
 }
-
-export { loginUrl };

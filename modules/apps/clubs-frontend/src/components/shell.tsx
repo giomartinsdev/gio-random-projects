@@ -49,6 +49,7 @@ export function Shell({
   onToggleTheme,
   sync,
   isAdmin,
+  onLogout,
   children,
 }: {
   route: RouteId;
@@ -59,6 +60,7 @@ export function Shell({
   onToggleTheme: () => void;
   sync: SyncRun | null;
   isAdmin: boolean;
+  onLogout: () => void;
   children: ReactNode;
 }) {
   const visible = NAV.filter((n) => {
@@ -117,14 +119,23 @@ export function Shell({
                 <span className="min-w-0 flex-1 truncate text-xs text-muted" title={email}>
                   {email}
                 </span>
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  title="Sair da conta"
+                  className="shrink-0 rounded border border-line-strong px-1.5 py-0.5 text-[10px] text-muted hover:text-ink"
+                >
+                  sair
+                </button>
               </>
             ) : authed === false ? (
-              <a
-                href={loginHref()}
+              <button
+                type="button"
+                onClick={() => onNavigate("minha-area")}
                 className="flex-1 rounded-md border border-line-strong px-2 py-1 text-center text-xs text-muted transition-colors hover:text-ink"
               >
                 Entrar com Google
-              </a>
+              </button>
             ) : (
               <span className="text-xs text-faint">sondando sessão…</span>
             )}
@@ -150,9 +161,13 @@ export function Shell({
             {authed ? (
               <Badge tone="accent">conectado</Badge>
             ) : (
-              <a href={loginHref()} className="rounded-md border border-line-strong px-2 py-1 text-xs text-muted">
+              <button
+                type="button"
+                onClick={() => onNavigate("minha-area")}
+                className="rounded-md border border-line-strong px-2 py-1 text-xs text-muted"
+              >
                 Entrar
-              </a>
+              </button>
             )}
             <button type="button" onClick={onToggleTheme} className="px-1 text-muted">
               {theme === "dark" ? "☾" : "☀"}
@@ -184,11 +199,6 @@ export function Shell({
       </div>
     </div>
   );
-}
-
-function loginHref(): string {
-  const base = import.meta.env.VITE_CLUBS_API_URL ?? "";
-  return `${base}/api/sso?return=${encodeURIComponent(window.location.href)}`;
 }
 
 /** O indicador de sincronização: mostra o progresso por nível sem bloquear

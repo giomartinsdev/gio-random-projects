@@ -19,24 +19,63 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/clubs-api/internal/domainclient"
 )
 
-type Server struct {
-	domain  *domainclient.Client
-	auth    *AccessAuth
-	log     *slog.Logger
-	origins []string
+// Config reúne o que o servidor precisa saber sobre identidade e CORS. Um
+// struct em vez de uma lista de parâmetros posicionais: acrescentar um campo
+// não muda a assinatura de quem chama.
+type Config struct {
+	// Origens com CORS liberado. A primeira também é o destino padrão em
+	// qualquer decisão de redirect.
+	AllowedOrigins []string
+	// Segredo HS256 que assina o cookie de sessão. Vazio desliga a emissão
+	// (login deixa de funcionar), o que é correto só em dev com a escotilha.
+	SessionSecret string
+	// Domínio do cookie. Vazio = host-only, que é o certo em dev
+	// (localhost ignora porta, então 5173 e 8017 compartilham o cookie).
+	SessionCookieDomain string
+	SessionDuration     time.Duration
+	// Client ID do Google OAuth que os ID tokens precisam declarar em aud.
+	GoogleClientID string
+	// Escotilha de dev: com ela, uma requisição sem cookie roda como este
+	// e-mail. Nunca deve coexistir com um client ID configurado.
+	DevUserEmail string
 }
 
-func NewServer(domain *domainclient.Client, auth *AccessAuth, origins []string, log *slog.Logger) *Server {
-	return &Server{domain: domain, auth: auth, origins: origins, log: log}
+type Server struct {
+	domain *domainclient.Client
+	log    *slog.Logger
+
+	origins             []string
+	sessionSecret       string
+	sessionCookieDomain string
+	sessionDuration     time.Duration
+	googleClientID      string
+	devEmail            string
+}
+
+func NewServer(domain *domainclient.Client, cfg Config, log *slog.Logger) *Server {
+	dur := cfg.SessionDuration
+	if dur <= 0 {
+		dur = sessionTTL
+	}
+	return &Server{
+		domain:              domain,
+		log:                 log,
+		origins:             cfg.AllowedOrigins,
+		sessionSecret:       cfg.SessionSecret,
+		sessionCookieDomain: cfg.SessionCookieDomain,
+		sessionDuration:     dur,
+		googleClientID:      cfg.GoogleClientID,
+		devEmail:            strings.ToLower(strings.TrimSpace(cfg.DevUserEmail)),
+	}
 }
 
 // Handler wires every route. /healthz is public and unauthenticated so the
@@ -67,7 +106,7 @@ func (s *Server) Handler() http.Handler {
 
 		// --- personal: identity required ------------------------------
 		r.Group(func(r chi.Router) {
-			r.Use(s.auth.requireIdentity)
+			r.Use(s.requireIdentity)
 			r.Get("/me", s.me)
 			r.Get("/watchlist", s.listWatch)
 			r.Post("/watchlist", s.setWatch)
@@ -79,46 +118,13 @@ func (s *Server) Handler() http.Handler {
 			r.Post("/sync", s.startSync)
 		})
 
-		// /sso is the login hop and MUST NOT sit behind requireIdentity: the
-		// whole point is that the Cloudflare Access application in front of
-		// /api intercepts this navigation when there is no session yet,
-		// runs the Google one-click, and only then lets the request reach
-		// here to bounce back to the SPA. It lives under /api (not a second
-		// path) on purpose -- see the handler's own comment.
-		r.Get("/sso", s.sso)
+		// --- auth: sessão própria, não Cloudflare Access -----------------
+		// Públicas por definição: o login é justamente o que cria a sessão
+		// que as rotas pessoais exigem.
+		r.Post("/auth/google", s.handleAuthGoogle)
+		r.Post("/auth/logout", s.handleAuthLogout)
 	})
 	return r
-}
-
-// sso is the login hop the SPA navigates to (never fetches: Google's own
-// login cannot run inside a fetch or an iframe). By the time execution
-// reaches here the Access application has already admitted the visitor; this
-// only bounces back to the SPA.
-//
-// Under /api, the same Access application the probe and the writes hit,
-// because Access cookies are domain-scoped but the JWT's `aud` is per
-// application: a cookie minted by a second path app would always be rejected
-// by the /api app, and login could never survive the probe. Same reasoning as
-// bet-api's own auth router.
-func (s *Server) sso(w http.ResponseWriter, r *http.Request) {
-	target := ""
-	if len(s.origins) > 0 {
-		target = strings.TrimSpace(s.origins[0])
-	}
-	// The return param is checked against the same allowlist CORS uses, so
-	// the redirect cannot be pointed anywhere else.
-	if requested := r.URL.Query().Get("return"); requested != "" {
-		if u, err := url.Parse(requested); err == nil {
-			origin := u.Scheme + "://" + u.Host
-			if s.originAllowed(origin) {
-				target = origin
-			}
-		}
-	}
-	if target == "" {
-		target = "/"
-	}
-	http.Redirect(w, r, target, http.StatusFound)
 }
 
 // cors allows the SPA's MinIO-served origin (and localhost dev) to call this
@@ -154,16 +160,19 @@ func (s *Server) originAllowed(origin string) bool {
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	// Report whether persistence is wired, so a deploy check can tell
 	// "running but disconnected" from "running".
+	// "login_configurado" é o que diz se o login funciona: sem segredo de
+	// sessão ou sem client ID, /api/auth/google recusa todo mundo, e o hub
+	// fica só com a leitura pública (que continua funcionando de propósito).
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":             "ok",
-		"persistencia":       s.domain.Enabled(),
-		"verificacao_acesso": s.auth.Enabled(),
+		"status":            "ok",
+		"persistencia":      s.domain.Enabled(),
+		"login_configurado": s.AuthEnabled() && s.googleClientID != "",
 	})
 }
 
-// me is the SPA's login probe: 200 with the identity when authenticated,
-// 401 when not. Same shape as the hub's /sso probe and bet-api's /api/me —
-// the SPA uses it to decide visitor vs connected without a redirect.
+// me é a sonda de login do SPA: 200 com a identidade quando autenticado, 401
+// quando não. Sem Access na frente deste host, um fetch simples basta -- não há
+// redirect de edge para contornar.
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	id, _ := IdentityFrom(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{"email": id.Email, "autenticado": true})

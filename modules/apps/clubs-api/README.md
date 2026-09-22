@@ -3,21 +3,41 @@
 Backend do **FC Clubs Hub** ([clubs.giomartins.dev](https://clubs.giomartins.dev)) —
 rankings, perfis de clube/partida/jogador e **o histórico que a EA não guarda**.
 
-## O desenho: público com login opt-in
+## O desenho: público, com login opt-in próprio
 
 Este é o ponto que define o serviço, e ele existe porque o produto é uma
-enciclopédia **pública** com uma camada pessoal **opcional**:
+enciclopédia **pública** com uma camada pessoal **opcional**.
+
+**Não há Cloudflare Access na frente deste host.** O login é um "Entrar com
+Google" comum, igual ao do financas:
+
+1. o SPA carrega o Google Identity Services e renderiza o botão oficial;
+2. o Google devolve um **ID token**;
+3. o SPA manda o token para `POST /api/auth/google`;
+4. este serviço verifica o token contra o JWKS do Google **e** contra o nosso
+   client ID (`idtoken.Validate`), e recusa e-mail não verificado;
+5. verificada, emite o cookie `clubs_session` (HS256, HttpOnly, Secure,
+   SameSite=None);
+6. toda requisição seguinte se identifica por esse cookie.
+
+O primeiro login de uma conta **é** a criação dela: não há formulário de
+cadastro, porque todo dado pessoal do hub é particionado por e-mail.
 
 | Host | Situação | Por quê |
 |---|---|---|
-| `clubs.giomartins.dev` | público, fora do SSO | é o SPA público e é embutido no hub como microfrontend |
-| `clubs-api.giomartins.dev` | público, fora do SSO | um visitante sem conta lê todo o dataset |
-| `clubs-api.giomartins.dev/api` | atrás do Access | só aqui o login é exigido |
+| `clubs.giomartins.dev` | público | é o SPA público e é embutido no hub como microfrontend |
+| `clubs-api.giomartins.dev` | público | um visitante sem conta lê todo o dataset |
 
-O hostname bare serve as leituras públicas (rankings, clubes, jogadores,
-partidas). O caminho `/api` é que tem aplicação de Access (ver
-`path_protected_hostnames` no `locals.tf`), e a SPA sonda `/api/me` para decidir
-entre visitante e conectado — a mesma forma do probe `/sso` do hub.
+As rotas **públicas** respondem sem identidade alguma (o dataset é aberto de
+propósito); as **pessoais** exigem o cookie. A SPA sonda `/api/me` para decidir
+entre visitante e conectado — um fetch simples, sem redirect de edge.
+
+### Por que SameSite=None
+
+O SPA vive em `clubs.giomartins.dev` e chama `clubs-api.giomartins.dev`: um
+fetch cross-origin só carrega o cookie com `SameSite=None`, e `None` exige
+`Secure`. O domínio do cookie fica vazio por padrão (host-only) — só este host
+lê a sessão, então escopar num domínio inteiro seria privilégio a mais.
 
 **Consequência importante**: "sincronizar meus clubes" só existe autenticado.
 Isso é o desenho, não um defeito — sem login o hub é uma enciclopédia pública;

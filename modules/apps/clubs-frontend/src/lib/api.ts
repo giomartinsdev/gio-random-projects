@@ -24,6 +24,12 @@ import type {
 // relativo funciona nos dois casos.
 const BASE = import.meta.env.VITE_CLUBS_API_URL ?? "";
 
+/** URL absoluta de um caminho da API. Usado pelo fluxo de login, que precisa
+ * montar a URL fora do wrapper de request. */
+export function apiUrl(path: string): string {
+  return `${BASE}${path}`;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,

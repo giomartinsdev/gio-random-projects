@@ -1,140 +1,75 @@
-// Identity = Cloudflare Access, the same shape bet-api's /api path uses.
+// Identidade do FC Clubs Hub: sessão própria, não Cloudflare Access.
 //
-// The bare hostname clubs-api.giomartins.dev is PUBLIC — a visitor with no
-// account reads the whole public dataset, which is the point of the product.
-// Only the /api path carries an Access application (see
-// path_protected_hostnames in locals.tf), so this middleware is mounted on
-// the personal routes only. The edge stamps every request it passes through
-// with the Cf-Access-Jwt-Assertion header; this verifies it properly —
-// signature against the team JWKS, issuer against the team domain, audience
-// against this app's aud — because the same ingress also routes direct
-// (non-edge) traffic here, so anyone bypassing Cloudflare still needs a
-// valid JWT.
+// O fluxo é o de um "Entrar com Google" comum, e ele é o ÚNICO caminho de
+// entrada -- não há edge de Access na frente deste host:
 //
-// CLUBS_DEV_BYPASS_AUTH + CLUBS_DEV_USER_EMAIL is the explicit local-dev
-// escape hatch, mirroring harness-api/bet-api: with no JWT present, requests
-// run as that email. It must stay unset in prod.
+//  1. o SPA carrega o Google Identity Services e renderiza o botão oficial;
+//  2. o Google devolve um ID token (JWT assinado pelo Google);
+//  3. o SPA manda esse token para POST /api/auth/google;
+//  4. este serviço verifica o token contra o JWKS do Google E contra o nosso
+//     client ID (handleAuthGoogle, em authhandlers.go);
+//  5. verificada, emite o cookie clubs_session;
+//  6. toda requisição seguinte se identifica por esse cookie.
+//
+// O primeiro login de uma conta Google JÁ É a criação da conta: não há cadastro
+// separado, porque todo dado pessoal do hub é particionado por e-mail.
 package httpapi
 
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"strings"
-
-	"github.com/MicahParks/keyfunc/v3"
-	"github.com/golang-jwt/jwt/v5"
+	"time"
 )
 
-// Identity is who is calling. Email is the stable key everywhere (it is what
-// a watchlist entry's usuario_email stores in domain-api).
+// Identity é quem está chamando. Email é a chave estável em todo lugar (é o que
+// vai em usuario_email na base de domínio); Nome é só exibição.
 type Identity struct {
 	Email string
+	Nome  string
 }
 
 type identityContextKey struct{}
 
-// WithIdentity puts an Identity in a request context — exported for tests,
-// which build requests as already-authenticated users this way.
+// WithIdentity põe uma Identity no contexto da requisição — exportado para os
+// testes, que montam requisições como usuário já autenticado; em produção o
+// único escritor é o middleware abaixo.
 func WithIdentity(ctx context.Context, id Identity) context.Context {
 	return context.WithValue(ctx, identityContextKey{}, id)
 }
 
-// IdentityFrom reads the caller's Identity, set by the auth middleware.
+// IdentityFrom lê a Identity do contexto, definida pelo middleware.
 func IdentityFrom(ctx context.Context) (Identity, bool) {
 	id, ok := ctx.Value(identityContextKey{}).(Identity)
 	return id, ok
 }
 
-// AccessAuth verifies Cloudflare Access JWTs against the team's JWKS.
-type AccessAuth struct {
-	jwks          keyfunc.Keyfunc
-	issuer        string
-	audiences     []string
-	allowedEmails []string
-	devEmail      string
-	log           *slog.Logger
+// AuthEnabled reporta se a emissão de sessão está configurada. Sem segredo não
+// há como assinar cookie, então /api/auth/google não consegue logar ninguém.
+func (s *Server) AuthEnabled() bool { return s.sessionSecret != "" }
+
+// verify resolve a identidade: a sessão primeiro; se não houver e a escotilha
+// de dev estiver ligada, o e-mail de dev.
+func (s *Server) verify(r *http.Request) (Identity, error) {
+	if id, err := s.identidadeFromSession(r); err == nil {
+		return id, nil
+	}
+	if s.devEmail != "" {
+		return Identity{Email: s.devEmail, Nome: emailLocal(s.devEmail)}, nil
+	}
+	return Identity{}, errors.New("não autenticado")
 }
 
-// NewAccessAuth builds the verifier. An empty teamDomain (local dev without
-// Access) leaves jwks nil, and only the dev bypass can authenticate — which
-// is exactly the intended local-dev behavior.
-func NewAccessAuth(teamDomain string, audiences, allowedEmails []string, devEmail string, log *slog.Logger) (*AccessAuth, error) {
-	a := &AccessAuth{
-		issuer:        "https://" + teamDomain,
-		audiences:     audiences,
-		allowedEmails: allowedEmails,
-		devEmail:      strings.ToLower(strings.TrimSpace(devEmail)),
-		log:           log,
-	}
-	if teamDomain == "" {
-		return a, nil
-	}
-	jwks, err := keyfunc.NewDefault([]string{a.issuer + "/cdn-cgi/access/certs"})
-	if err != nil {
-		return nil, err
-	}
-	a.jwks = jwks
-	return a, nil
-}
-
-// Enabled reports whether real verification is wired up.
-func (a *AccessAuth) Enabled() bool { return a != nil && a.jwks != nil }
-
-// verify resolves the caller's identity from the Access JWT (or the dev
-// bypass). It never trusts the edge's decision alone.
-func (a *AccessAuth) verify(r *http.Request) (Identity, error) {
-	token := r.Header.Get("Cf-Access-Jwt-Assertion")
-	if token == "" {
-		if a.devEmail != "" {
-			return Identity{Email: a.devEmail}, nil
-		}
-		return Identity{}, errors.New("not authenticated")
-	}
-	if a.jwks == nil {
-		return Identity{}, errors.New("access verification not configured")
-	}
-
-	parsed, err := jwt.Parse(token, a.jwks.Keyfunc,
-		jwt.WithIssuer(a.issuer),
-		jwt.WithAudience(a.audiences...),
-		jwt.WithValidMethods([]string{"RS256"}))
-	if err != nil || !parsed.Valid {
-		return Identity{}, errors.New("invalid access token")
-	}
-	claims, ok := parsed.Claims.(jwt.MapClaims)
-	if !ok {
-		return Identity{}, errors.New("invalid access claims")
-	}
-	email, _ := claims["email"].(string)
-	email = strings.ToLower(strings.TrimSpace(email))
-	if email == "" {
-		return Identity{}, errors.New("access token has no email claim")
-	}
-	if len(a.allowedEmails) > 0 && !contains(a.allowedEmails, email) {
-		return Identity{}, errors.New("email not allowed")
-	}
-	return Identity{Email: email}, nil
-}
-
-func contains(list []string, v string) bool {
-	for _, s := range list {
-		if strings.EqualFold(strings.TrimSpace(s), v) {
-			return true
-		}
-	}
-	return false
-}
-
-// requireIdentity resolves identity before a handler runs. Used on the
-// personal routes only — the public dataset stays reachable with no account.
-func (a *AccessAuth) requireIdentity(next http.Handler) http.Handler {
+// requireIdentity protege as rotas pessoais. As rotas públicas continuam
+// abertas: o dataset do hub é público de propósito, e o login só liga a camada
+// pessoal.
+func (s *Server) requireIdentity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := IdentityFrom(r.Context())
 		if !ok {
 			var err error
-			if id, err = a.verify(r); err != nil {
+			if id, err = s.verify(r); err != nil {
 				writeError(w, http.StatusUnauthorized, "nao_autenticado")
 				return
 			}
@@ -142,4 +77,14 @@ func (a *AccessAuth) requireIdentity(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// sessionTTL é a duração padrão de uma sessão quando nada é configurado.
+const sessionTTL = 30 * 24 * time.Hour
+
+// emailLocal é a parte local de um e-mail ("ana@corp" -> "ana"), o nome de
+// exibição de fallback quando não há um nome real.
+func emailLocal(email string) string {
+	local, _, _ := strings.Cut(email, "@")
+	return local
 }

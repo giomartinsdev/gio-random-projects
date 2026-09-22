@@ -32,13 +32,19 @@ func TestDealRepositoryUpsertReportsInserts(t *testing.T) {
 	}
 
 	key := "test-" + time.Now().Format("150405.000000000")
+	posted := time.Now().UTC().Add(-time.Hour)
 	d := domaindeal.Deal{
 		Source:       "test",
 		SourceDealID: key,
 		Title:        "repo test deal",
 		URL:          "https://example.com/deal",
 		PriceCents:   intPtr(1234),
-		ScrapedAt:    time.Now().UTC(),
+		// posted_at is set on the FIRST upsert on purpose: the assertion below
+		// reads it back to prove "first seen wins". Leaving it nil here made
+		// the read fail with "cannot scan NULL into *time.Time" -- the column
+		// is nullable, and the second upsert's value must not overwrite this.
+		PostedAt:  &posted,
+		ScrapedAt: time.Now().UTC(),
 	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM raw_deals WHERE source = 'test' AND source_deal_id = $1`, key)
@@ -54,8 +60,11 @@ func TestDealRepositoryUpsertReportsInserts(t *testing.T) {
 		t.Fatal("first upsert must report inserted")
 	}
 
-	posted := time.Now().UTC().Add(-time.Hour)
-	d.PostedAt = &posted
+	// A re-poll that finds a slightly different posted_at must NOT rewrite it:
+	// "first seen wins" is the documented behaviour (posted_at sits outside the
+	// DO UPDATE), so the value asserted below is still the FIRST one.
+	later := time.Now().UTC()
+	d.PostedAt = &later
 	inserted, err = repo.Upsert(ctx, d)
 	if err != nil {
 		t.Fatalf("second upsert: %v", err)
