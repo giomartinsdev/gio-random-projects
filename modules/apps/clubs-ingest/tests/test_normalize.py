@@ -295,3 +295,37 @@ def test_opponent_club_carries_the_name():
     assert nz.opponent_club(match, "1001") == ("2001", "Opponent A")
     assert nz.opponent_club(match, "2001") == ("1001", "Example FC")
     assert nz.opponent_club(match, "9999") is None
+
+
+# ------------------------- estatística de jogador ausente (bug do crash)
+
+def test_match_payload_survives_a_null_player_line():
+    """A fonte manda `null` no lugar das estatísticas de um jogador em algumas
+    partidas -- provavelmente um jogador que saiu antes do apito. O normalizador
+    explodia com "'NoneType' object has no attribute 'get'", e o clube INTEIRO
+    era perdido no ciclo (sem identidade, totais, partidas nem snapshot)."""
+    match = {
+        "matchId": "m1",
+        "timestamp": "1767297600",
+        "clubs": {
+            "1001": {"goals": "2", "goalsAgainst": "0", "result": "1",
+                     "details": {"name": "Example FC", "clubId": 1001}},
+            "2001": {"goals": "0", "goalsAgainst": "2", "result": "2",
+                     "details": {"name": "Opponent A", "clubId": 2001}},
+        },
+        # O caso real: um jogador sem estatística nenhuma.
+        "players": {"1001": {"p1": None, "p2": {"playername": "Válido", "rating": "7.0"}}},
+    }
+    payload = nz.match_payload(match, "1001")
+
+    assert payload is not None, "a partida não pode ser descartada por um jogador sem dados"
+    ids = [j["player_id"] for j in payload["jogadores"]]
+    assert "p2" in ids, "o jogador com dados continua entrando"
+    assert "p1" not in ids, "o jogador sem estatística é pulado, não vira linha vazia"
+
+
+def test_player_line_of_a_null_is_skipped_not_crashed():
+    """Contrato direto do normalizador: um stats nulo devolve None (pular),
+    em vez de estourar."""
+    assert nz.player_line_opt(None, "1001", "p1") is None
+    assert nz.player_line_opt({"playername": "ok"}, "1001", "p2") is not None

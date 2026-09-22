@@ -83,7 +83,11 @@ class Ingest:
             except Exception as err:  # noqa: BLE001 -- one club must not stop the cycle
                 stats.clubes_falhos += 1
                 stats.falhas.append(f"{club_id}: {err}")
-                log.warning("falha ao processar clube %s: %s", club_id, err)
+                # Com traceback: sem ele, "falha ao processar clube X: 'NoneType'
+                # object has no attribute 'get'" não diz ONDE -- e diagnosticar
+                # vira adivinhação. O tipo sozinho não basta para um erro que
+                # depende do formato que a fonte mandou naquela partida.
+                log.warning("falha ao processar clube %s: %s", club_id, err, exc_info=True)
         log.info(
             "ciclo: %d clubes, %d falhas, %d partidas, %d snapshots",
             stats.clubes_processados, stats.clubes_falhos, stats.partidas_novas, stats.snapshots,

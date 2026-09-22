@@ -45,7 +45,9 @@ class SourceClient:
         except FC27APIError as err:
             log.warning("club_overall %s: %s", club_id, err)
             return {}
-        if isinstance(data, list) and data:
+        # A lista pode vir com um `null` no lugar do objeto (clube que a fonte
+        # não conhece): devolver o None faria o `.get` estourar lá em cima.
+        if isinstance(data, list) and data and isinstance(data[0], dict):
             return data[0]
         return {}
 
@@ -56,7 +58,10 @@ class SourceClient:
             log.warning("club_members %s: %s", club_id, err)
             return []
         if isinstance(data, dict):
-            return data.get("members") or []
+            membros = data.get("members") or []
+            # Lista de membros com buraco (`null`) acontece; um item assim não é
+            # um membro.
+            return [m for m in membros if isinstance(m, dict)]
         return []
 
     def club_matches(self, club_id: str, count: int = 10) -> list[dict[str, Any]]:
@@ -68,7 +73,8 @@ class SourceClient:
         except FC27APIError as err:
             log.warning("club_matches %s: %s", club_id, err)
             return []
-        return data if isinstance(data, list) else []
+        # Idem: item nulo na lista não é uma partida.
+        return [m for m in data if isinstance(m, dict)] if isinstance(data, list) else []
 
     def leaderboard(self) -> list[dict[str, Any]]:
         """Os 100 melhores clubes, com rank, divisão, skillRating e identidade.
@@ -82,7 +88,7 @@ class SourceClient:
         except FC27APIError as err:
             log.warning("leaderboard: %s", err)
             return []
-        return data if isinstance(data, list) else []
+        return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
 
     def search(self, name: str) -> list[dict[str, Any]]:
         try:
@@ -90,7 +96,7 @@ class SourceClient:
         except FC27APIError as err:
             log.warning("search %r: %s", name, err)
             return []
-        return data if isinstance(data, list) else []
+        return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
 
     def search_by_id(self, club_id: str, name: str = "") -> list[dict[str, Any]]:
         """A linha da busca para um clube que conhecemos por id.

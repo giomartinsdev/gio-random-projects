@@ -536,7 +536,12 @@ def match_payload(match: dict[str, Any], club_id: str) -> dict[str, Any] | None:
     raw_lines: list[dict[str, Any]] = []
     for side_club, squad in players.items():
         for player_id, stats in (squad or {}).items():
-            lines.append(player_line(stats, str(side_club), str(player_id)))
+            # Estatística nula: jogador pulado, partida preservada. Ver
+            # player_line_opt -- deixar estourar custava o clube inteiro.
+            line = player_line_opt(stats, str(side_club), str(player_id))
+            if line is None:
+                continue
+            lines.append(line)
             # Keep the raw dict too: the timeline is built from the event
             # aggregates, which player_line intentionally drops.
             raw_lines.append({**stats, "player_id": str(player_id)})
@@ -560,6 +565,20 @@ def match_payload(match: dict[str, Any], club_id: str) -> dict[str, Any] | None:
         "lances": timeline_from_lines(raw_lines),
         "jogadores": lines,
     }
+
+
+def player_line_opt(stats: dict[str, Any] | None, club_id: str, player_id: str) -> dict[str, Any] | None:
+    """``player_line`` tolerante a estatística ausente.
+
+    A fonte manda ``null`` no lugar das estatísticas de um jogador em algumas
+    partidas -- provavelmente alguém que saiu antes do apito. Deixar isso
+    estourar derrubava o clube INTEIRO no ciclo (sem identidade, totais,
+    partidas nem snapshot), e o erro só aparecia como um AttributeError seco no
+    log. Um jogador sem dados é um jogador pulado, não uma partida perdida.
+    """
+    if not isinstance(stats, dict):
+        return None
+    return player_line(stats, club_id, player_id)
 
 
 def opponent_club_id(match: dict[str, Any], club_id: str) -> str | None:
