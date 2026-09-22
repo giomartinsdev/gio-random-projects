@@ -6,3 +6,6 @@ dist/
 design/*.png
 design/light/
 *.tsbuildinfo
+# Credenciais locais de dev (client IDs, etc.) — nunca versionadas.
+.env.local
+.env.*.local
