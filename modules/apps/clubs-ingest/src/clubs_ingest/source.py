@@ -1,9 +1,11 @@
 """Thin wrapper over the vendored source client.
 
 ``fc27_api.py`` is a third-party, MIT-licensed client (see ``LICENSE.fc27``
-next to it) that knows how to pass the source's CDN check -- plain ``curl`` is
-blocked even with the right headers, while Python gets through. That is the
-whole reason this worker is Python instead of Go.
+next to it) that knows how to pass the source's CDN check. The CDN refuses a
+plain Python transport from a datacenter IP -- it fingerprints the TLS/HTTP2
+handshake -- so the client's calls go over a browser-impersonating ``curl_cffi``
+session (a local patch; see the file). That is the whole reason this worker is
+Python instead of Go.
 
 This module only adapts its DataFrame-returning methods to the plain dicts the
 normalizer wants, and centralizes the TTL-relevant calls so the cycle stays

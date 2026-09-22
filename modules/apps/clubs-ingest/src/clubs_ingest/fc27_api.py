@@ -5,12 +5,16 @@ in this directory, which is that project's licence verbatim).
 
 It was vendored rather than depended on for one reason: the EA Pro Clubs API
 sits behind a CDN that blocks requests which do not look like a browser's.
-Plain `curl` is refused even with the right headers, while this client's
-stdlib `urllib` calls get through. Reimplementing that in the ingest worker
-would mean rediscovering the CDN behavior this file already encodes.
+Plain `curl` is refused even with the right headers, and stdlib `urllib` is
+refused from a datacenter IP too -- the CDN fingerprints the TLS/HTTP2
+handshake. This client's behaviour is what we encode; the transport is a local
+patch (see get_json).
 
-Changes from upstream: none. Any fix belongs here as a local patch, and the
-product-specific translation lives in clubs_ingest/normalize.py instead.
+Changes from upstream: LOCAL PATCHES in this file -- (1) HEADERS carries the
+full browser XHR fingerprint, not upstream's partial set; (2) get_json goes over
+an impersonating curl_cffi session instead of urllib. Both are what make the
+worker work in production; see tests/test_source_headers.py. The product-specific
+translation lives in clubs_ingest/normalize.py instead.
 """
 
 """Unofficial client for the EA Sports FC 27 Pro Clubs API.
@@ -22,13 +26,18 @@ Raw response formats are in docs/endpoints.md.
 
 # Built into Python, no install needed:
 import json             # turns the text EA sends back into Python dicts and lists
-import urllib.error     # the errors urllib raises (e.g. EA answering 403)
 import urllib.parse     # builds the "?platform=...&clubIds=..." part of a URL
-import urllib.request   # sends the request to EA
 
 # The only thing you need to install (pip install pandas). It gives us tables
 # (DataFrames) that are easy to sort, filter, average and save to Excel/CSV.
 import pandas as pd
+
+# LOCAL PATCH: the transport, for the same reason as the headers below. EA's
+# Akamai layer fingerprints the TLS/HTTP2 handshake -- stdlib urllib (HTTP/1.1)
+# and httpx (even over HTTP/2) both get 403 from the VPS with the full browser
+# header set, while a browser-impersonating client gets 200. curl_cffi speaks
+# Chrome's exact handshake, which is what the CDN accepts.
+from curl_cffi import requests as cffi_requests
 
 
 BASE_URL = "https://proclubs.ea.com/api/fc"
@@ -37,12 +46,26 @@ MATCH_TYPES = ("leagueMatch", "friendlyMatch", "playoffMatch")
 
 # EA's servers sit behind Akamai, which blocks requests that don't look like
 # they come from the proclubs.ea.com website itself: without these headers you
-# get a 403 error or no answer at all. "sec-fetch-site: same-origin" is the key one.
+# get a 403 error or no answer at all.
+#
+# LOCAL PATCH (upstream ships only accept/accept-language/sec-ch-ua/
+# sec-fetch-site/user-agent): from the VPS's datacenter IP that set returns 403,
+# while the same IP returns 200 with the full browser XHR fingerprint. The
+# Sec-Fetch-* trio has to be complete -- `sec-fetch-site: same-origin` alone is
+# not enough, `mode: cors` and `dest: empty` are what the check keys on -- and
+# the origin/referer pair completes the same-origin story. Verified against the
+# live source: 6/6 leaderboard calls and all six endpoints the cycle uses.
 HEADERS = {
-    "accept": "application/json",
+    "accept": "application/json, text/plain, */*",
     "accept-language": "en-US,en;q=0.9",
+    "origin": "https://proclubs.ea.com",
+    "referer": "https://proclubs.ea.com/",
     "sec-ch-ua": '"Google Chrome";v="141", "Not?A_Brand";v="8", "Chromium";v="141"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
     "sec-fetch-site": "same-origin",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-dest": "empty",
     "user-agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
@@ -175,12 +198,20 @@ class FC27API:
     platform: "common-gen5" (PS5 / Xbox Series / PC). The only one tested.
     timeout:  seconds to wait for EA before giving up.
     timezone: timezone for match times, e.g. "Europe/Istanbul". Default "UTC".
+    impersonate: browser profile curl_cffi mimics for the TLS/HTTP2 handshake.
+        "chrome" by default -- the CDN refuses a plain Python transport from a
+        datacenter IP, so this is a requirement, not a tuning knob.
     """
 
-    def __init__(self, platform="common-gen5", timeout=10, timezone="UTC"):
+    def __init__(self, platform="common-gen5", timeout=10, timezone="UTC",
+                 impersonate="chrome"):
         self.platform = platform
         self.timeout = timeout
         self.timezone = timezone
+        # One session for the process's lifetime, like a real browser tab: the
+        # CDN's challenge and cookies have to survive between the dozens of
+        # calls a cycle makes.
+        self.session = cffi_requests.Session(impersonate=impersonate)
 
     # ------------------------------------------------------------------ basics
 
@@ -193,15 +224,16 @@ class FC27API:
         query = {"platform": self.platform}
         query.update(params)
         url = BASE_URL + "/" + endpoint + "?" + urllib.parse.urlencode(query)
-        request = urllib.request.Request(url, headers=HEADERS)
 
         # `from None` keeps the error message short: our message already says
         # what went wrong, so Python's internal error chain isn't shown.
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                data = json.load(response)
-        except urllib.error.HTTPError as error:
-            raise FC27APIError(f"EA answered with error {error.code} for {url}") from None
+            response = self.session.get(url, headers=HEADERS, timeout=self.timeout)
+            if response.status_code >= 400:
+                raise FC27APIError(f"EA answered with error {response.status_code} for {url}")
+            data = response.json()
+        except FC27APIError:
+            raise
         except OSError as error:  # no internet, timeout, DNS problem, ...
             raise FC27APIError(f"Could not reach EA ({error}) for {url}") from None
         except json.JSONDecodeError:

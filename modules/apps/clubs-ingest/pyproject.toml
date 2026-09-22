@@ -7,10 +7,13 @@ name = "clubs-ingest"
 version = "0.1.0"
 description = "Worker: EA Pro Clubs API -> domain-api. No database of its own."
 requires-python = ">=3.12"
-# pandas is the only dependency of the vendored source client (fc27_api.py),
-# which speaks urllib -- exactly what passes the source's CDN check.
+# pandas is the dependency of the vendored source client (fc27_api.py);
+# curl_cffi is what makes its calls pass the source's CDN check -- the CDN
+# fingerprints the TLS/HTTP2 handshake, so a browser-impersonating transport is
+# required from the VPS's datacenter IP (stdlib urllib gets a 403 there).
 dependencies = [
     "pandas>=2.0",
+    "curl_cffi>=0.7",
 ]
 
 [project.optional-dependencies]

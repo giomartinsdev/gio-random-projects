@@ -129,6 +129,7 @@ jobs:
           VITE_DASHBOARD_API_URL: https://dashboard-api.giomartins.dev
           VITE_APOSTAS_API_URL: https://apostas-api.giomartins.dev
           VITE_LEADS_API_URL: https://leads-api.giomartins.dev
+          VITE_CLUBS_API_URL: https://clubs-api.giomartins.dev
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.FINANCAS_GOOGLE_OAUTH_CLIENT_ID }}
         run: npm run build
 
