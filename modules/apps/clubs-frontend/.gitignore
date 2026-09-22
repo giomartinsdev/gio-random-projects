@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.shots/
+# Os PNGs exportados do design são regeneráveis a partir do ui.pen, que É
+# versionado (é a fonte canônica do design system).
+design/*.png
+design/light/
+*.tsbuildinfo

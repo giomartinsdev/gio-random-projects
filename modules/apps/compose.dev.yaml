@@ -1,0 +1,10 @@
+# Override SÓ para desenvolvimento local: publica Postgres e Redis no host para
+# que os binários nativos (go run) consigam conectar. Em produção nada disto é
+# usado — os serviços falam pela rede interna do Docker.
+services:
+  postgres:
+    ports:
+      - "15432:5432"
+  redis:
+    ports:
+      - "16379:6379"

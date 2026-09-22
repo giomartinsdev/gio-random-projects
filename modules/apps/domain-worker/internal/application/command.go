@@ -72,6 +72,24 @@ const (
 	// never crosses aggregates itself, same as everywhere else.
 	ActionRegistrarAposta Action = "aposta.registrar"
 	ActionResolverAposta  Action = "aposta.resolver"
+
+	// FC Clubs Hub (specs/003): public Pro Clubs data accumulated from the
+	// EA source. The ingest worker is the only producer of club/partida/
+	// snapshot/anuncio writes; clubs-api produces the per-person ones
+	// (watchlist, claimed pro, notifications preferences).
+	ActionUpsertClub         Action = "club.upsert"
+	ActionUpsertClubeTotais  Action = "clubetotais.upsert"
+	ActionUpsertPartida      Action = "partida.upsert"
+	ActionAppendSnapshot     Action = "clubesnapshot.append"
+	ActionCreateAnuncio      Action = "anuncio.create"
+
+	// The per-person partition (usuario_email from the Access JWT) —
+	// these are the only clubs actions that are not public data.
+	ActionSetWatch       Action = "preferencia.setWatch"
+	ActionRemoveWatch    Action = "preferencia.removeWatch"
+	ActionSaveNotify     Action = "preferencia.saveNotificacoes"
+	ActionClaimPro       Action = "preferencia.claimPro"
+	ActionSaveSyncRun    Action = "preferencia.saveSyncRun"
 )
 
 type Command struct {

@@ -95,6 +95,21 @@ resource "random_id" "dashboard_api_domain_key" {
   byte_length = 24
 }
 
+# clubs-api's own key -- the FC Clubs Hub's per-person writes (watchlist,
+# claimed pro, notification prefs) go through domain-api's command pipeline, so
+# the audit log needs a caller identity for it. No Vaultwarden item: terraform
+# wires the key straight into the container's env.
+resource "random_id" "clubs_api_domain_key" {
+  byte_length = 24
+}
+
+# clubs-ingest's own key, deliberately SEPARATE from clubs_api_domain_key --
+# the ingest worker and the BFF are different writers, and one shared key would
+# make the audit log unable to name which of them touched a club.
+resource "random_id" "clubs_ingest_domain_key" {
+  byte_length = 24
+}
+
 # leads-api's own key -- it never reads anything, only ever publishes
 # lead.create via POST /sync, but still needs its own identity so the
 # audit log can name it like every other caller.

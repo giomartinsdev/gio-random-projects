@@ -475,6 +475,43 @@ module "compute_apps_apostas_resultado_worker" {
   depends_on = [module.compute_apps_domain_api]
 }
 
+# clubs-api -- the FC Clubs Hub backend (clubs.giomartins.dev). One published
+# loopback port, one hostname, no database: everything goes through domain-api.
+# The bare hostname is public (the dataset is meant to be readable by anyone);
+# only /api is Access-gated, which is where the personal layer lives.
+module "compute_apps_clubs_api" {
+  source = "./modules/compute/apps/clubs_api"
+  providers = {
+    docker = docker
+  }
+
+  network_name   = module.network_docker_apps.network_name
+  registry_host  = var.registry_host
+  domain_api_key = random_id.clubs_api_domain_key.hex
+  access_aud     = var.clubs_access_aud
+  otlp_endpoint  = module.compute_services_observability.otlp_endpoint
+
+  depends_on = [module.compute_apps_domain_api]
+}
+
+# clubs-ingest -- a poller, not a service: no port, no hostname, no ingress.
+# It reads the clubs it follows from domain-api, fetches their data from the EA
+# source, and writes back through domain-api. Its OWN domain key, so the audit
+# log can tell a worker write from a BFF write.
+module "compute_apps_clubs_ingest" {
+  source = "./modules/compute/apps/clubs_ingest"
+  providers = {
+    docker = docker
+  }
+
+  network_name   = module.network_docker_apps.network_name
+  registry_host  = var.registry_host
+  domain_api_key = random_id.clubs_ingest_domain_key.hex
+  otlp_endpoint  = module.compute_services_observability.otlp_endpoint
+
+  depends_on = [module.compute_apps_domain_api]
+}
+
 # bet-runner used to live here as a Docker container on the apps
 # network -- Betano's compliance wall blocks the VPS's datacenter ASN
 # ("Access to this page is restricted due to security and compliance

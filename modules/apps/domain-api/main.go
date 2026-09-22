@@ -112,6 +112,13 @@ func main() {
 	dashboardLayouts := postgres.NewDashboardLayoutRepository(pool)
 	dashboardLayoutHandlers := httpapi.NewDashboardLayoutHandlers(dashboardLayouts, log)
 
+	// FC Clubs Hub (specs/003): read models + the write doors the clubs
+	// services call. domain-api is read-only against these tables --
+	// domain-worker is the sole writer, as everywhere else in this repo.
+	clubsRepo := postgres.NewClubsRepository(pool)
+	clubsHandlers := httpapi.NewClubsHandlers(clubsRepo, log)
+	clubsWriteHandlers := httpapi.NewClubsWriteHandlers(commands, log)
+
 	// A dedicated client for SSE's Redis SUBSCRIBE -- go-redis dedicates
 	// a connection per subscription for the life of that subscription,
 	// so this stays separate from rdb (which CommandPublisher uses for
@@ -120,7 +127,7 @@ func main() {
 	defer sseRDB.Close()
 	sseHandlers := httpapi.NewSSEHandlers(sseRDB, log)
 
-	router := httpapi.NewRouter(handlers, postHandlers, roomHandlers, messageHandlers, dealHandlers, sseHandlers, cchHandlers, syncHandlers, contaHandlers, transacaoHandlers, ativoHandlers, apostaHandlers, dashboardLayoutHandlers, apiKeys, rateLimiter, log)
+	router := httpapi.NewRouter(handlers, postHandlers, roomHandlers, messageHandlers, dealHandlers, sseHandlers, cchHandlers, syncHandlers, contaHandlers, transacaoHandlers, ativoHandlers, apostaHandlers, dashboardLayoutHandlers, clubsHandlers, clubsWriteHandlers, apiKeys, rateLimiter, log)
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: otelhttp.NewHandler(router, "domain-api",
 		// chi's route patterns aren't visible to otelhttp, so name the

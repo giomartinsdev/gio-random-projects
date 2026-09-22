@@ -77,6 +77,10 @@ func newDealServer(t *testing.T, deals domaindeal.Repository, publisher *spyPubl
 		NewAtivoHandlers(nil, nil, publisher, log),
 		NewApostaHandlers(nil, log),
 		NewDashboardLayoutHandlers(nil, log),
+		// nil repos/handlers: these tests never touch the clubs routes, they
+		// only need them registered on the router.
+		NewClubsHandlers(nil, log),
+		NewClubsWriteHandlers(publisher, log),
 		APIKeys{"k1": "test"},
 		NewIPRateLimiter(1000, 1000),
 		log,

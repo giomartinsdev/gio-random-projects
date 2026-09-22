@@ -10,7 +10,7 @@ per language+layer:
   `go.mod` (`domain-api`, `domain-worker`, `tela-api`, `cch-api`).
 - **`.github/workflows/ts-frontend-ci-cd.yml`** — TypeScript frontend
   apps (`buteco-class-frontend`, `tela-frontend`, `cch-frontend`,
-  `hub-frontend`, `bet-frontend`),
+  `hub-frontend`, `bet-frontend`, `clubs-frontend`),
   which need `VITE_*` env vars baked into the bundle at build time.
   None of them runs as a container: the build is mirrored straight
   into its own MinIO bucket instead (see
@@ -40,6 +40,15 @@ only ever fit one.
 - **`tela-api/`** / **`tela-frontend/`** — screen sharing at `tela.giomartins.dev`: a Go SFU/signalling backend (its own container) and its own separate React frontend (a static build in MinIO, no container), talking to each other over CORS, own origins. Shares nothing with the rest of this folder — no Postgres, no Better Auth, no domain-api. See `tela-api/README.md` for how the SFU itself works.
 - **`cch-api/`** / **`cch-frontend/`** — cartas contra a humanidade at `cch.giomartins.dev`: a Go game backend (its own container, in-memory game state machine) and its own separate React frontend (a static build in MinIO, no container), talking to each other over CORS + WebSocket, own origins. Same standalone model as tela — no Postgres, no Better Auth, no domain-api; themed card decks are plain Go data in `cch-api/internal/decks`.
 - **`bet-api/`** / **`bet-runner/`** / **`bet-frontend/`** — apostas automatizadas at `bet.giomartins.dev`: paste a bookmaker link, the queue in `bet-api` (Hono + Drizzle, Access-JWT auth instead of Better Auth — the edge's `Cf-Access-Jwt-Assertion` is verified in-app) hands it to `bet-runner`, a patchright/Chromium worker that logs into the bookmaker with AES-GCM-encrypted credentials from the DB and places the bet, screenshot receipt included. Vendor-agnostic on both sides: `bet-api/src/lib/vendors.ts` maps link hostnames to vendors, `bet-runner/src/vendors/` holds one driver per house (betano today, bet365/bet338 later) behind a `BookmakerDriver` interface.
+
+- **`clubs-api/`** / **`clubs-ingest/`** / **`clubs-frontend/`** — o FC Clubs Hub em
+  `clubs.giomartins.dev`: rankings, perfis de clube/partida/jogador e o histórico
+  que a EA não guarda. `clubs-ingest` é um worker Python (sem porta, sem host) que
+  puxa da API pública de Pro Clubs e grava via `domain-api`; `clubs-api` é um BFF
+  Go (um host, sem banco) com duas camadas — leituras públicas sem identidade e
+  uma camada pessoal atrás do Access no `/api`; `clubs-frontend` é uma SPA React
+  estática em bucket, sem container, que entra no hub como microfrontend. O design
+  system vive em `clubs-frontend/ui.pen`.
 
 `domain-api` and `domain-worker` are deliberately independent Go
 modules (each with its own `go.mod`) even though they agree on the

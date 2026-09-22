@@ -326,6 +326,7 @@ jobs:
               dashboard-api) REPLACE_ARGS+=("-replace=module.compute_apps_dashboard_api.docker_container.dashboard_api") ;;
               apostas-api) REPLACE_ARGS+=("-replace=module.compute_apps_apostas_api.docker_container.apostas_api") ;;
               leads-api) REPLACE_ARGS+=("-replace=module.compute_apps_leads_api.docker_container.leads_api") ;;
+              clubs-api) REPLACE_ARGS+=("-replace=module.compute_apps_clubs_api.docker_container.clubs_api") ;;
               proventos-worker) REPLACE_ARGS+=("-replace=module.compute_apps_proventos_worker.docker_container.proventos_worker") ;;
               *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
             esac

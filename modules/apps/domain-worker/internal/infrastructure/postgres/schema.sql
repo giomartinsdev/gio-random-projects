@@ -315,3 +315,203 @@ CREATE TABLE IF NOT EXISTS leads (
     email TEXT NOT NULL UNIQUE,
     criado_em TIMESTAMPTZ NOT NULL
 );
+
+-- ===========================================================================
+-- FC Clubs Hub (specs/003-fc-clubs-hub)
+--
+-- Dados públicos de Pro Clubs (EA FC 27), acumulados pelo clubs-ingest.
+-- A origem só entrega estado atual + ~10 partidas por tipo: tudo que é
+-- "ao longo do tempo" (nível, divisão, recordes, evolução de jogador)
+-- nasce dos snapshots abaixo. club_id é sempre TEXT porque a origem manda
+-- o id como string e alterna parâmetros singulares/plurais.
+-- ===========================================================================
+
+-- Um clube. acompanhado=false é o estado de qualquer clube descoberto por
+-- busca: só temos os totais gerais dele (clubs_totais). Vira true quando
+-- o ciclo de ingestão traz elenco e partidas.
+CREATE TABLE IF NOT EXISTS clubs (
+    club_id         TEXT PRIMARY KEY,
+    nome            TEXT NOT NULL,
+    sigla           TEXT NOT NULL DEFAULT '',
+    estadio         TEXT NOT NULL DEFAULT '',
+    regiao_id       TEXT NOT NULL DEFAULT '',
+    time_id         TEXT NOT NULL DEFAULT '',
+    escudo_asset_id TEXT NOT NULL DEFAULT '',
+    cor_1           INTEGER NOT NULL DEFAULT 0,
+    cor_2           INTEGER NOT NULL DEFAULT 0,
+    cor_3           INTEGER NOT NULL DEFAULT 0,
+    cor_4           INTEGER NOT NULL DEFAULT 0,
+    acompanhado     BOOLEAN NOT NULL DEFAULT false,
+    atualizado_em   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_clubs_acompanhado ON clubs(acompanhado);
+
+-- Totais gerais que a origem devolve mesmo para clube não acompanhado.
+-- Separado de clubs porque existe justamente para quem nunca terá elenco.
+CREATE TABLE IF NOT EXISTS clubs_totais (
+    club_id          TEXT PRIMARY KEY,
+    jogos            INTEGER NOT NULL DEFAULT 0,
+    vitorias         INTEGER NOT NULL DEFAULT 0,
+    empates          INTEGER NOT NULL DEFAULT 0,
+    derrotas         INTEGER NOT NULL DEFAULT 0,
+    gols             INTEGER NOT NULL DEFAULT 0,
+    gols_sofridos    INTEGER NOT NULL DEFAULT 0,
+    jogos_sem_sofrer INTEGER NOT NULL DEFAULT 0,
+    pontos           INTEGER NOT NULL DEFAULT 0,
+    divisao_atual    INTEGER NOT NULL DEFAULT 0,
+    melhor_divisao   INTEGER NOT NULL DEFAULT 0,
+    nivel            INTEGER NOT NULL DEFAULT 0,
+    promocoes        INTEGER NOT NULL DEFAULT 0,
+    rebaixamentos    INTEGER NOT NULL DEFAULT 0,
+    lido_em          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Uma partida, vista UMA ÚNICA VEZ mesmo quando os dois clubes jogaram
+-- entre si. match_id unique é o que garante isso: a segunda vez é update.
+-- resultado_* já vem normalizado do ingest (a origem usa 5 códigos
+-- numéricos para 3 resultados e amistoso não traz marcação nenhuma).
+CREATE TABLE IF NOT EXISTS clubs_matches (
+    id                            UUID PRIMARY KEY,
+    match_id                      TEXT NOT NULL UNIQUE,
+    timestamp                     TIMESTAMPTZ NOT NULL,
+    tipo                          TEXT NOT NULL CHECK (tipo IN ('liga','amistoso','playoff')),
+    rodada_playoff                TEXT NOT NULL DEFAULT '',
+    clube_casa_id                 TEXT NOT NULL,
+    clube_fora_id                 TEXT NOT NULL,
+    gols_casa                     INTEGER NOT NULL DEFAULT 0,
+    gols_fora                     INTEGER NOT NULL DEFAULT 0,
+    houve_desistencia             BOOLEAN NOT NULL DEFAULT false,
+    vencedor_por_desistencia_id   TEXT NOT NULL DEFAULT '',
+    resultado_casa                TEXT NOT NULL CHECK (resultado_casa IN ('vitoria','empate','derrota')),
+    lances                        JSONB NOT NULL DEFAULT '[]',
+    criado_em                     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_clubs_matches_casa ON clubs_matches(clube_casa_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_clubs_matches_fora ON clubs_matches(clube_fora_id, timestamp DESC);
+
+-- Atuação de um jogador numa partida. Uma linha por jogador por partida,
+-- dos DOIS times -- é daqui que sai o índice cross-club que a origem não
+-- oferece. defesas_por_tipo só existe para goleiro (jsonb evita 6 colunas
+-- vazias para todo mundo).
+CREATE TABLE IF NOT EXISTS clubs_match_players (
+    id                  UUID PRIMARY KEY,
+    partida_id          UUID NOT NULL REFERENCES clubs_matches(id) ON DELETE CASCADE,
+    club_id             TEXT NOT NULL,
+    player_id           TEXT NOT NULL,
+    gamertag            TEXT NOT NULL,
+    posicao             TEXT NOT NULL CHECK (posicao IN ('goleiro','defensor','meio','atacante')),
+    nota                NUMERIC(4,2) NOT NULL DEFAULT 0,
+    gols                INTEGER NOT NULL DEFAULT 0,
+    assistencias        INTEGER NOT NULL DEFAULT 0,
+    chutes              INTEGER NOT NULL DEFAULT 0,
+    passes_certos       INTEGER NOT NULL DEFAULT 0,
+    passes_tentados     INTEGER NOT NULL DEFAULT 0,
+    desarmes_certos     INTEGER NOT NULL DEFAULT 0,
+    desarmes_tentados   INTEGER NOT NULL DEFAULT 0,
+    defesas             INTEGER NOT NULL DEFAULT 0,
+    defesas_por_tipo    JSONB,
+    segundos_jogados    INTEGER NOT NULL DEFAULT 0,
+    melhor_em_campo     BOOLEAN NOT NULL DEFAULT false,
+    cartao_vermelho     BOOLEAN NOT NULL DEFAULT false,
+    jogo_sem_sofrer_gol BOOLEAN NOT NULL DEFAULT false,
+    UNIQUE (partida_id, player_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_clubs_match_players_partida ON clubs_match_players(partida_id, club_id);
+CREATE INDEX IF NOT EXISTS idx_clubs_match_players_player ON clubs_match_players(player_id);
+
+-- Leitura de nível/divisão num instante. APPEND-ONLY: é o único dado que
+-- torna a evolução possível, já que a origem não guarda histórico.
+CREATE TABLE IF NOT EXISTS clubs_snapshots (
+    id             UUID PRIMARY KEY,
+    club_id        TEXT NOT NULL,
+    lido_em        TIMESTAMPTZ NOT NULL,
+    nivel          INTEGER NOT NULL DEFAULT 0,
+    divisao        INTEGER NOT NULL DEFAULT 0,
+    jogos          INTEGER NOT NULL DEFAULT 0,
+    vitorias       INTEGER NOT NULL DEFAULT 0,
+    empates        INTEGER NOT NULL DEFAULT 0,
+    derrotas       INTEGER NOT NULL DEFAULT 0,
+    gols           INTEGER NOT NULL DEFAULT 0,
+    gols_sofridos  INTEGER NOT NULL DEFAULT 0,
+    tamanho_elenco INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_clubs_snapshots_club ON clubs_snapshots(club_id, lido_em DESC);
+
+-- Evento datado de subida/queda, derivado do diff entre dois snapshots.
+-- para < de = promoção.
+CREATE TABLE IF NOT EXISTS clubs_division_changes (
+    id           UUID PRIMARY KEY,
+    club_id      TEXT NOT NULL,
+    detectado_em TIMESTAMPTZ NOT NULL,
+    de           INTEGER NOT NULL,
+    para         INTEGER NOT NULL,
+    tipo         TEXT NOT NULL CHECK (tipo IN ('promocao','rebaixamento'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_clubs_division_changes_club ON clubs_division_changes(club_id, detectado_em DESC);
+
+-- Feed da home: derivado pelo próprio ingest dos fatos que acabou de
+-- gravar (resultado novo, recorde batido, mudança de divisão). Não é
+-- curado à mão e não tem endpoint de escrita pública.
+CREATE TABLE IF NOT EXISTS clubs_announcements (
+    id            UUID PRIMARY KEY,
+    tipo          TEXT NOT NULL CHECK (tipo IN ('resultado','ranking','jogador','novidade')),
+    titulo        TEXT NOT NULL,
+    texto         TEXT NOT NULL DEFAULT '',
+    referencia_id TEXT NOT NULL DEFAULT '',
+    icone         TEXT NOT NULL DEFAULT '',
+    gerado_em     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expira_em     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_clubs_announcements_gerado ON clubs_announcements(gerado_em DESC);
+
+-- Preferências por pessoa: watchlist, pro reivindicado e avisos. É a
+-- ÚNICA parte particionada por usuario_email -- o resto do schema de
+-- clubs é dado público. Toda leitura filtra por esse campo.
+CREATE TABLE IF NOT EXISTS clubs_preferences (
+    usuario_email      TEXT PRIMARY KEY,
+    canal              TEXT NOT NULL DEFAULT '',
+    resumo_periodico   BOOLEAN NOT NULL DEFAULT true,
+    recordes_e_divisoes BOOLEAN NOT NULL DEFAULT true,
+    resultado_partidas BOOLEAN NOT NULL DEFAULT true,
+    atualizado_em      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS clubs_watchlist (
+    usuario_email   TEXT NOT NULL,
+    club_id         TEXT NOT NULL,
+    seguindo_desde  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    origem          TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('proprio','rival','rival_de_rival','manual')),
+    PRIMARY KEY (usuario_email, club_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_clubs_watchlist_usuario ON clubs_watchlist(usuario_email);
+
+CREATE TABLE IF NOT EXISTS clubs_claimed_pros (
+    usuario_email  TEXT PRIMARY KEY,
+    club_id        TEXT NOT NULL,
+    player_id      TEXT NOT NULL,
+    verificado     BOOLEAN NOT NULL DEFAULT false,
+    reivindicado_em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_clubs_claimed_pros_player ON clubs_claimed_pros(player_id);
+
+-- Estado da última sincronização de uma pessoa, para a SPA desenhar o
+-- progresso por nível sem bloquear a navegação.
+CREATE TABLE IF NOT EXISTS clubs_sync_runs (
+    usuario_email TEXT PRIMARY KEY,
+    rodando       BOOLEAN NOT NULL DEFAULT false,
+    nivel         INTEGER NOT NULL DEFAULT 0,
+    total         INTEGER NOT NULL DEFAULT 0,
+    concluidos    INTEGER NOT NULL DEFAULT 0,
+    atual         TEXT NOT NULL DEFAULT '',
+    novos         JSONB NOT NULL DEFAULT '[]',
+    iniciado_em   TIMESTAMPTZ,
+    concluido_em  TIMESTAMPTZ
+);

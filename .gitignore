@@ -228,3 +228,9 @@ __marimo__/
 node_modules/
 npm-debug.log*
 .npm
+
+# Repo de terceiro clonado localmente para consulta (o client MIT que o
+# clubs-ingest vendoriza em modules/apps/clubs-ingest/src/clubs_ingest/).
+# Não versionar: é um repo com o próprio origin, e o que o produto usa já está
+# vendorizado com a licença ao lado.
+fc27-clubs-api/

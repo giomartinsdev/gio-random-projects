@@ -46,6 +46,23 @@ const (
 
 	ActionSaveDashboardLayout   Action = "dashboardlayout.save"
 	ActionDeleteDashboardLayout Action = "dashboardlayout.delete"
+
+	// FC Clubs Hub (specs/003). The ingest worker produces the public-data
+	// writes; clubs-api produces the per-person ones. Structural writes
+	// (club, partida, watchlist, claim, notifications) go through /sync so
+	// the caller knows the record landed; the high-volume append-only ones
+	// (snapshot, anuncio) use the normal async 202 path.
+	ActionUpsertClub        Action = "club.upsert"
+	ActionUpsertClubeTotais Action = "clubetotais.upsert"
+	ActionUpsertPartida     Action = "partida.upsert"
+	ActionAppendSnapshot    Action = "clubesnapshot.append"
+	ActionCreateAnuncio     Action = "anuncio.create"
+
+	ActionSetWatch     Action = "preferencia.setWatch"
+	ActionRemoveWatch  Action = "preferencia.removeWatch"
+	ActionSaveNotify   Action = "preferencia.saveNotificacoes"
+	ActionClaimPro     Action = "preferencia.claimPro"
+	ActionSaveSyncRun  Action = "preferencia.saveSyncRun"
 )
 
 type Command struct {

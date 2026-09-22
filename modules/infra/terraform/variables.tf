@@ -53,6 +53,8 @@ variable "excluded_hostnames" {
     "cch.giomartins.dev",               # rooms are shared with guests who have no account here; the room password is the access control, same as tela
     "cch-api.giomartins.dev",           # the cch-frontend page calls this cross-origin for game REST/WebSocket — a browser SSO redirect would break every fetch/WebSocket call, same as tela-api
     "hub.giomartins.dev",               # the hub is chrome around the public SPAs, so it's public too — its opt-in Google login lives on the /sso path instead (see path_protected_hostnames in locals.tf), which gates only the admin shortcuts tier
+    "clubs.giomartins.dev",             # the hub's SPA is public by design -- a visitor reads the whole dataset with no account, and it must be iframe-embeddable in the hub (same reasoning as tela/cch/bet); the opt-in login lives on clubs-api's /api path (see path_protected_hostnames in locals.tf)
+    "clubs-api.giomartins.dev",         # the bare hostname serves the public reads (rankings, clubs, players, matches); only /api is Access-gated, so an anonymous visitor can browse and the SPA can probe /api/me without a redirect
     "bet-api.giomartins.dev",           # path-protected like the hub (its /api and /auth have Access apps of their own, see path_protected_hostnames in locals.tf) — the bare hostname must stay reachable for bet-runner, which polls /internal/* from the home network with RUNNER_API_KEY (a machine-to-machine client can't pass a Google SSO redirect)
     "bet.giomartins.dev",               # the bet micro frontend — public chrome around the real gate (the Access app on bet-api.giomartins.dev, which the SPA probes like the hub's /sso); it must be iframe-embeddable in the hub like cch/tela, and a Google SSO redirect inside the hub's renderer frame cannot be completed
     "contas-api.giomartins.dev",        # no Cloudflare Access at all — financas' own Google Sign-In + session cookie is the gate now (contas-api issues it, see modules/apps/contas-api)
@@ -257,5 +259,11 @@ variable "apostas_sportsdata_api_key" {
   description = "BSD Sports Data API's own token (sports.bzzoiro.com/dashboard/) -- the resolver worker's free football tier still requires a registered token. Never hardcoded; comes from terraform.tfvars or TF_VAR_apostas_sportsdata_api_key."
   type        = string
   sensitive   = true
+  default     = ""
+}
+
+variable "clubs_access_aud" {
+  description = "Audience of the Cloudflare Access application in front of clubs-api's /api path (see path_protected_hostnames in locals.tf). The SPA probes /api/me to decide visitor vs connected -- the same /sso-probe shape the hub uses. Empty disables real verification, which is only correct in local dev."
+  type        = string
   default     = ""
 }

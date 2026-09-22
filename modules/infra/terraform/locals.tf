@@ -153,6 +153,16 @@ locals {
       port     = 8015
     },
     {
+      # clubs-api -- the FC Clubs Hub backend. The bare hostname is PUBLIC (in
+      # excluded_hostnames below): the whole dataset is meant to be readable by
+      # anyone with no account, which is the product. Only /api carries an
+      # Access application (path_protected_hostnames), and that is where the
+      # personal layer lives. Port must match module.compute_apps_clubs_api's
+      # external_port (8017 -- 8016 was the last taken, by apostas-api).
+      hostname = "clubs-api.giomartins.dev"
+      port     = 8017
+    },
+    {
       # apostas-api: the BFF for the Apostas module (betting-house
       # wallet reconciliation) -- same shape as contas-api/
       # transacional-api/asset-manager-api/dashboard-api: financas' own
@@ -294,6 +304,16 @@ locals {
       bucket   = "bet-frontend"
     },
     {
+      # clubs-frontend: the FC Clubs Hub SPA -- rankings, match and player
+      # profiles, and the historical series the EA source does not keep. It
+      # enters the hub as a microfrontend like bet/tela/cch, so it must stay
+      # iframe-embeddable (a Google SSO redirect inside the hub's renderer frame
+      # cannot be completed) and therefore stays out of Access; the real gate is
+      # the Access application on clubs-api.giomartins.dev/api.
+      hostname = "clubs.giomartins.dev"
+      bucket   = "clubs-frontend"
+    },
+    {
       # financas-frontend: the single SPA for the personal-finance
       # feature's 4 modules (contas, transações, ativos/investimentos,
       # dashboard) -- one frontend, not four, calling all 4 backends
@@ -345,5 +365,9 @@ locals {
   path_protected_hostnames = [
     "hub.giomartins.dev/sso",
     "bet-api.giomartins.dev/api",
+    # clubs-api's personal layer: the hub is public, and logging in is opt-in.
+    # Everything a visitor reads (rankings, clubs, players, matches) answers
+    # without identity; only these routes are gated.
+    "clubs-api.giomartins.dev/api",
   ]
 }

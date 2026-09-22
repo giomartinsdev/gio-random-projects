@@ -14,7 +14,7 @@ import (
 // is not for public browsing -- see PostHandlers.GetPostByID's own doc
 // comment. /sync is the synchronous-write exception -- see
 // SyncHandlers.Sync's doc comment before reaching for it.
-func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandlers, dl *DealHandlers, sse *SSEHandlers, cch *CCHHandlers, sync *SyncHandlers, ct *ContaHandlers, tr *TransacaoHandlers, at *AtivoHandlers, ap *ApostaHandlers, dash *DashboardLayoutHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
+func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandlers, dl *DealHandlers, sse *SSEHandlers, cch *CCHHandlers, sync *SyncHandlers, ct *ContaHandlers, tr *TransacaoHandlers, at *AtivoHandlers, ap *ApostaHandlers, dash *DashboardLayoutHandlers, cl *ClubsHandlers, clw *ClubsWriteHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Get("/healthz", h.Healthz)
@@ -83,6 +83,41 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Get("/apostas/{id}", ap.GetAposta)
 
 		r.Get("/dashboardlayouts/{usuario}", dash.GetDashboardLayout)
+
+		// FC Clubs Hub (specs/003). Reads are public data + per-person
+		// preferences; writes are the doors the clubs services call --
+		// structural ones ride /sync above, append-only ones (snapshot,
+		// anuncio) use the normal async 202 path.
+		r.Get("/clubs", cl.ListClubs)
+		r.Get("/clubs/search", cl.SearchClubs)
+		r.Get("/clubs/{clubId}", cl.GetClub)
+		r.Get("/clubs/{clubId}/squad", cl.GetSquad)
+		r.Get("/clubs/{clubId}/matches", cl.ListMatches)
+		r.Get("/clubs/{clubId}/evolution", cl.GetEvolution)
+		r.Get("/clubs/{clubId}/division-changes", cl.GetDivisionChanges)
+		r.Get("/clubs/{clubId}/records", cl.GetRecords)
+		r.Get("/clubs/{clubId}/h2h/{rivalId}", cl.HeadToHead)
+		r.Get("/matches/{matchId}", cl.GetMatch)
+		r.Get("/rankings/clubs", cl.RankingClubs)
+		r.Get("/rankings/players", cl.RankingPlayers)
+		r.Get("/players", cl.ListPlayers)
+		r.Get("/players/{playerId}", cl.GetPlayer)
+		r.Get("/announcements", cl.ListAnnouncements)
+		r.Get("/watchlist", cl.ListWatch)
+		r.Get("/notifications", cl.GetNotificacoes)
+		r.Get("/claimed-pro", cl.GetClaimed)
+		r.Get("/sync-status", cl.GetSyncRun)
+		r.Get("/admin/status", cl.AdminStatus)
+
+		r.Post("/clubs", clw.UpsertClub)
+		r.Post("/clubs/{clubId}/totals", clw.UpsertTotais)
+		r.Post("/clubs/{clubId}/matches", clw.UpsertMatch)
+		r.Post("/clubs/{clubId}/snapshots", clw.AppendSnapshot)
+		r.Post("/announcements", clw.CreateAnnouncement)
+		r.Post("/watchlist", clw.SetWatch)
+		r.Post("/notifications", clw.SaveNotifications)
+		r.Post("/claimed-pro", clw.ClaimPro)
+		r.Post("/sync-status", clw.SaveSyncRun)
 	})
 
 	return r

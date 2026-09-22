@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,6 +32,11 @@ import (
 	appcchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchdeck"
 	appcchroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchroom"
 	appconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/conta"
+	appanuncio "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/anuncio"
+	appclub "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/club"
+	appclubesnapshot "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/clubesnapshot"
+	apppartida "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/partida"
+	apppreferencia "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/preferencia"
 	appdashboardlayout "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/dashboardlayout"
 	appdeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/deal"
 	applead "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/lead"
@@ -44,11 +50,15 @@ import (
 	domaincchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchdeck"
 	domaincchroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchroom"
 	domainconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/conta"
+	domainanuncio "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/anuncio"
+	domainclub "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/club"
+	domainpref "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/preferencia"
 	domaindashboardlayout "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/dashboardlayout"
 	domaindeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/deal"
 	domainlead "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/lead"
 	domainmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/message"
 	domainpost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/post"
+	domainpartida "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/partida"
 	domainroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/room"
 	domaintransacao "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/transacao"
 	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
@@ -160,6 +170,40 @@ func main() {
 	leadService := applead.NewService(leadRepo)
 	leadHandler := applead.NewCommandHandler(leadService)
 
+	// FC Clubs Hub (specs/003): public Pro Clubs data + the per-person
+	// preferences. Same wiring shape as every other aggregate above.
+	clubRepo := postgres.NewClubRepository(pool)
+	clubService := appclub.NewService(clubRepo)
+	clubHandler := appclub.NewCommandHandler(clubService)
+
+	clubeTotaisRepo := postgres.NewClubeTotaisRepository(pool)
+	partidaRepo := postgres.NewPartidaRepository(pool)
+	partidaService := apppartida.NewService(partidaRepo, clubeTotaisRepo)
+	partidaHandler := apppartida.NewCommandHandler(partidaService)
+
+	snapshotRepo := postgres.NewClubSnapshotRepository(pool)
+	snapshotService := appclubesnapshot.NewService(snapshotRepo)
+	snapshotHandler := appclubesnapshot.NewCommandHandler(snapshotService)
+
+	anuncioRepo := postgres.NewAnuncioRepository(pool)
+	anuncioService := appanuncio.NewService(anuncioRepo)
+	anuncioHandler := appanuncio.NewCommandHandler(anuncioService)
+
+	preferenciaRepo := postgres.NewPreferenciaRepository(pool)
+	preferenciaService := apppreferencia.NewService(preferenciaRepo)
+	preferenciaHandler := apppreferencia.NewCommandHandler(preferenciaService)
+
+	// Every aggregate's handler in one place: process() takes this
+	// struct rather than a growing parameter list.
+	hs := handlers{
+		user: userHandler, post: postHandler, room: roomHandler, message: messageHandler,
+		deal: dealHandler, cchRoom: cchRoomHandler, cchDeck: cchDeckHandler,
+		conta: contaHandler, transacao: transacaoHandler, ativo: ativoHandler,
+		aposta: apostaHandler, dashboardLayout: dashboardLayoutHandler, lead: leadHandler,
+		club: clubHandler, partida: partidaHandler, snapshot: snapshotHandler,
+		anuncio: anuncioHandler, preferencia: preferenciaHandler,
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info("relay started")
@@ -179,7 +223,7 @@ func main() {
 				log.Error("fetch command error", "error", err)
 				continue
 			}
-			process(ctx, log, userHandler, postHandler, roomHandler, messageHandler, dealHandler, cchRoomHandler, cchDeckHandler, contaHandler, transacaoHandler, ativoHandler, apostaHandler, dashboardLayoutHandler, leadHandler, auditRepo, eventBus, cmd)
+			process(ctx, log, hs, auditRepo, eventBus, cmd)
 		}
 	}()
 
@@ -198,7 +242,31 @@ func main() {
 // resulting domain event. One shared command queue serves every
 // aggregate; this is the one place that knows how to fan a Command
 // back out to its owning handler.
-func process(ctx context.Context, log *slog.Logger, userHandler *appuser.CommandHandler, postHandler *apppost.CommandHandler, roomHandler *approom.CommandHandler, messageHandler *appmessage.CommandHandler, dealHandler *appdeal.CommandHandler, cchRoomHandler *appcchroom.CommandHandler, cchDeckHandler *appcchdeck.CommandHandler, contaHandler *appconta.CommandHandler, transacaoHandler *apptransacao.CommandHandler, ativoHandler *appativo.CommandHandler, apostaHandler *appaposta.CommandHandler, dashboardLayoutHandler *appdashboardlayout.CommandHandler, leadHandler *applead.CommandHandler, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
+// handlers bundles every aggregate's CommandHandler. One struct instead of a
+// twenty-parameter list: adding an aggregate is one field, and process()'s
+// signature never changes again.
+type handlers struct {
+	user            *appuser.CommandHandler
+	post            *apppost.CommandHandler
+	room            *approom.CommandHandler
+	message         *appmessage.CommandHandler
+	deal            *appdeal.CommandHandler
+	cchRoom         *appcchroom.CommandHandler
+	cchDeck         *appcchdeck.CommandHandler
+	conta           *appconta.CommandHandler
+	transacao       *apptransacao.CommandHandler
+	ativo           *appativo.CommandHandler
+	aposta          *appaposta.CommandHandler
+	dashboardLayout *appdashboardlayout.CommandHandler
+	lead            *applead.CommandHandler
+	club            *appclub.CommandHandler
+	partida         *apppartida.CommandHandler
+	snapshot        *appclubesnapshot.CommandHandler
+	anuncio         *appanuncio.CommandHandler
+	preferencia     *apppreferencia.CommandHandler
+}
+
+func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
 	// One span per command: the handler, the audit write and the event
 	// publish below are the whole story of that write, and the
 	// trace_id stamped into the log lines ties every one of them to it.
@@ -220,7 +288,7 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 	case strings.HasPrefix(string(cmd.Action), "user."):
 		entityType = "user"
 		var uevt domainuser.Event
-		uevt, err = userHandler.Handle(ctx, cmd)
+		uevt, err = h.user.Handle(ctx, cmd)
 		if uevt != nil {
 			evt = uevt
 			id = userEntityID(uevt)
@@ -228,7 +296,7 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 	case strings.HasPrefix(string(cmd.Action), "post."):
 		entityType = "post"
 		var pevt domainpost.Event
-		pevt, err = postHandler.Handle(ctx, cmd)
+		pevt, err = h.post.Handle(ctx, cmd)
 		if pevt != nil {
 			evt = pevt
 			id = postEntityID(pevt)
@@ -236,7 +304,7 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 	case strings.HasPrefix(string(cmd.Action), "room."):
 		entityType = "room"
 		var revt domainroom.Event
-		revt, err = roomHandler.Handle(ctx, cmd)
+		revt, err = h.room.Handle(ctx, cmd)
 		if revt != nil {
 			evt = revt
 			id = roomEntityID(revt)
@@ -244,7 +312,7 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 	case strings.HasPrefix(string(cmd.Action), "message."):
 		entityType = "message"
 		var mevt domainmessage.Event
-		mevt, err = messageHandler.Handle(ctx, cmd)
+		mevt, err = h.message.Handle(ctx, cmd)
 		if mevt != nil {
 			evt = mevt
 			id = messageEntityID(mevt)
@@ -256,7 +324,7 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 		entityType = "deal"
 		var d domaindeal.Deal
 		var devt domaindeal.Event
-		d, devt, err = dealHandler.Handle(ctx, cmd)
+		d, devt, err = h.deal.Handle(ctx, cmd)
 		if devt != nil {
 			evt = devt
 		}
@@ -267,7 +335,7 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 	case strings.HasPrefix(string(cmd.Action), "cchroom."):
 		entityType = "cchroom"
 		var cevt domaincchroom.Event
-		cevt, err = cchRoomHandler.Handle(ctx, cmd)
+		cevt, err = h.cchRoom.Handle(ctx, cmd)
 		if cevt != nil {
 			evt = cevt
 			id = cchRoomEntityID(cevt)
@@ -275,7 +343,7 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 	case strings.HasPrefix(string(cmd.Action), "cchdeck."):
 		entityType = "cchdeck"
 		var cevt domaincchdeck.Event
-		cevt, err = cchDeckHandler.Handle(ctx, cmd)
+		cevt, err = h.cchDeck.Handle(ctx, cmd)
 		if cevt != nil {
 			evt = cevt
 			id = cchDeckEntityID(cevt)
@@ -283,7 +351,7 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 	case strings.HasPrefix(string(cmd.Action), "conta."):
 		entityType = "conta"
 		var cevt domainconta.Event
-		cevt, err = contaHandler.Handle(ctx, cmd)
+		cevt, err = h.conta.Handle(ctx, cmd)
 		if cevt != nil {
 			evt = cevt
 			id = contaEntityID(cevt)
@@ -291,7 +359,7 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 	case strings.HasPrefix(string(cmd.Action), "transacao."):
 		entityType = "transacao"
 		var tevt domaintransacao.Event
-		tevt, err = transacaoHandler.Handle(ctx, cmd)
+		tevt, err = h.transacao.Handle(ctx, cmd)
 		if tevt != nil {
 			evt = tevt
 			id = transacaoEntityID(tevt)
@@ -299,7 +367,7 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 	case strings.HasPrefix(string(cmd.Action), "ativo."):
 		entityType = "ativo"
 		var aevt domainativo.Event
-		aevt, err = ativoHandler.Handle(ctx, cmd)
+		aevt, err = h.ativo.Handle(ctx, cmd)
 		if aevt != nil {
 			evt = aevt
 			id = ativoEntityID(aevt)
@@ -307,7 +375,7 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 	case strings.HasPrefix(string(cmd.Action), "aposta."):
 		entityType = "aposta"
 		var apevt domainaposta.Event
-		apevt, err = apostaHandler.Handle(ctx, cmd)
+		apevt, err = h.aposta.Handle(ctx, cmd)
 		if apevt != nil {
 			evt = apevt
 			id = apostaEntityID(apevt)
@@ -315,7 +383,7 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 	case strings.HasPrefix(string(cmd.Action), "dashboardlayout."):
 		entityType = "dashboardlayout"
 		var devt domaindashboardlayout.Event
-		devt, err = dashboardLayoutHandler.Handle(ctx, cmd)
+		devt, err = h.dashboardLayout.Handle(ctx, cmd)
 		if devt != nil {
 			evt = devt
 			id = dashboardLayoutEntityID(devt)
@@ -323,11 +391,53 @@ func process(ctx context.Context, log *slog.Logger, userHandler *appuser.Command
 	case strings.HasPrefix(string(cmd.Action), "lead."):
 		entityType = "lead"
 		var levt domainlead.Event
-		levt, err = leadHandler.Handle(ctx, cmd)
+		levt, err = h.lead.Handle(ctx, cmd)
 		if levt != nil {
 			evt = levt
 			id = leadEntityID(levt)
 		}
+	case strings.HasPrefix(string(cmd.Action), "club."):
+		entityType = "club"
+		var cevt domainclub.Event
+		cevt, err = h.club.Handle(ctx, cmd)
+		if cevt != nil {
+			evt = cevt
+			id = clubEntityID(cevt)
+		}
+	case strings.HasPrefix(string(cmd.Action), "clubetotais."):
+		// Routed through the partida handler: the two travel in the same
+		// ingest cycle and the totals repository lives beside the matches one.
+		entityType = "clubetotais"
+		_, err = h.partida.Handle(ctx, cmd)
+		if in, ok := cmd.Payload, err == nil; ok && in != nil {
+			// The action carries no event; the entity id comes from the payload.
+			var p struct {
+				ClubID string `json:"club_id"`
+			}
+			_ = json.Unmarshal(cmd.Payload, &p)
+			id = p.ClubID
+		}
+	case strings.HasPrefix(string(cmd.Action), "partida."):
+		entityType = "partida"
+		var pevt domainpartida.Event
+		pevt, err = h.partida.Handle(ctx, cmd)
+		if pevt != nil {
+			evt = pevt
+			id = partidaEntityID(pevt)
+		}
+	case strings.HasPrefix(string(cmd.Action), "clubesnapshot."):
+		// The snapshot handler raises no event -- the division change is
+		// recorded in the same transaction and read back by the API.
+		entityType = "clubesnapshot"
+		_, err = h.snapshot.Handle(ctx, cmd)
+	case strings.HasPrefix(string(cmd.Action), "anuncio."):
+		entityType = "anuncio"
+		_, err = h.anuncio.Handle(ctx, cmd)
+	case strings.HasPrefix(string(cmd.Action), "preferencia."):
+		// Per-person writes, all carrying usuario_email. The API is the
+		// only producer; no domain event is raised (nothing subscribes).
+		entityType = "preferencia"
+		err = h.preferencia.Handle(ctx, cmd)
 	default:
 		err = fmt.Errorf("unknown action: %q", cmd.Action)
 	}
@@ -505,3 +615,26 @@ func leadEntityID(evt domainlead.Event) string {
 		return ""
 	}
 }
+
+func clubEntityID(evt domainclub.Event) string {
+	switch e := evt.(type) {
+	case domainclub.Upserted:
+		return e.ClubID
+	default:
+		return ""
+	}
+}
+
+func partidaEntityID(evt domainpartida.Event) string {
+	switch e := evt.(type) {
+	case domainpartida.Upserted:
+		return e.MatchID
+	default:
+		return ""
+	}
+}
+
+// domainpref is imported for the preferencia handler's type; the blank
+// reference keeps the import meaningful even as the aggregate grows.
+var _ = domainpref.OrigemManual
+var _ domainanuncio.Event
