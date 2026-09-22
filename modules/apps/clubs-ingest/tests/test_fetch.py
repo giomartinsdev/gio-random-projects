@@ -160,3 +160,32 @@ def test_run_fetch_writes_the_division_from_the_search_side():
     assert t["divisao_atual"] == 1, "a divisão vem da busca"
     assert t["melhor_divisao"] == 1
     assert t["nivel"] == 2144, "e o nível continua vindo do overall"
+
+
+class NomeRecordingSource(FakeSource):
+    """Registra o nome passado à busca, porque foi exatamente isso que faltou:
+    o ciclo chamava `search_by_id(id)` sem nome, a fonte devolvia vazio, e a
+    divisão continuava 0 mesmo depois de corrigir a fusão das fontes."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.buscas: list[tuple[str, str]] = []
+
+    def search_by_id(self, club_id, name=""):
+        self.buscas.append((str(club_id), name))
+        return self.search_by_id_map.get(str(club_id), [])
+
+
+def test_run_fetch_passes_the_club_name_to_the_search():
+    """O nome sai do club_info, que o run_fetch já busca."""
+    source = NomeRecordingSource(
+        info={"clubId": "141881", "name": "ACG ZW", "customKit": {}},
+        overall={"clubId": "141881", "gamesPlayed": "51"},
+        matches=[],
+        search={"141881": [{"clubId": "141881", "currentDivision": "1"}]},
+    )
+    new_ingest(source, FakeDomain()).run_fetch("141881")
+
+    assert ("141881", "ACG ZW") in source.buscas, (
+        f"a busca precisa receber o nome; recebeu {source.buscas}"
+    )

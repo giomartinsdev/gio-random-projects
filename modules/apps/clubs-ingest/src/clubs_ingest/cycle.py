@@ -79,7 +79,7 @@ class Ingest:
             if not club_id:
                 continue
             try:
-                self._process_club(club_id, now, stats)
+                self._process_club(club_id, now, stats, str(club.get("nome") or ""))
             except Exception as err:  # noqa: BLE001 -- one club must not stop the cycle
                 stats.clubes_falhos += 1
                 stats.falhas.append(f"{club_id}: {err}")
@@ -113,8 +113,11 @@ class Ingest:
                 self.domain.upsert_club(identity)
 
         overall = self.source.club_overall(club_id)
-        # Mesma fusão do ciclo: o overall sozinho não traz divisão.
-        totals_row = merge_club_sources(overall, self._search_row(club_id))
+        # Mesma fusão do ciclo: o overall sozinho não traz divisão. O nome sai
+        # do próprio club_info, que acabou de ser buscado -- é o que a busca
+        # exige.
+        nome = str((info or {}).get("name") or "")
+        totals_row = merge_club_sources(overall, self._search_row(club_id, nome))
         if totals_row:
             self.domain.upsert_totals(club_id, club_totals(totals_row))
 
@@ -160,7 +163,7 @@ class Ingest:
             except Exception as err:  # noqa: BLE001 -- um clube não impede os outros
                 log.debug("bootstrap de %s falhou: %s", club_id, err)
 
-    def _process_club(self, club_id: str, now: float, stats: CycleStats) -> None:
+    def _process_club(self, club_id: str, now: float, stats: CycleStats, nome: str = "") -> None:
         # Identity + totals: cheap, and needed before matches so the club row
         # exists. Structural, so it travels the sync path.
         info = self.source.club_info(club_id)
@@ -173,7 +176,7 @@ class Ingest:
         # A divisão (e os clean sheets) NÃO vêm do overallStats -- vêm da
         # busca/leaderboard. Usar só o overall fazia todo clube virar "D0" e
         # nenhuma mudança de divisão ser detectada.
-        busca = self._search_row(club_id)
+        busca = self._search_row(club_id, nome)
         totals_row = merge_club_sources(overall, busca)
         team_size = 0
         if totals_row:
@@ -202,14 +205,15 @@ class Ingest:
 
         stats.clubes_processados += 1
 
-    def _search_row(self, club_id: str) -> dict:
+    def _search_row(self, club_id: str, name: str = "") -> dict:
         """A linha da busca/leaderboard para este clube, ou {}.
 
         É a única fonte que traz divisão. A busca exige um NOME -- passar o id
-        devolvia vazio em silêncio, que foi o outro bug desta família.
+        devolvia vazio em silêncio, que foi o bug que manteve todo clube em D0
+        mesmo depois de corrigir a fusão das fontes.
         """
         try:
-            for row in self.source.search_by_id(club_id):
+            for row in self.source.search_by_id(club_id, name):
                 if str(row.get("clubId")) == str(club_id):
                     return row
         except Exception as err:  # noqa: BLE001 -- best-effort; o overall ainda vai
