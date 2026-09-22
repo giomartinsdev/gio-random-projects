@@ -59,12 +59,32 @@ func (s *Service) ClaimPro(ctx context.Context, in ClaimProInput) error {
 	if in.PlayerID == "" {
 		return domainpref.ErrClubRequired
 	}
-	return s.repo.UpsertClaimed(ctx, domainpref.ProReivindicado{
+	if err := s.repo.UpsertClaimed(ctx, domainpref.ProReivindicado{
 		UsuarioEmail: in.UsuarioEmail,
 		ClubID:       in.ClubID,
 		PlayerID:     in.PlayerID,
 		Verificado:   in.Verificado,
-	})
+	}); err != nil {
+		return err
+	}
+	// Reivindicar o pro É dizer onde você joga, então o clube daquele jogador
+	// vira um clube PRÓPRIO: é dele que o sync de três níveis parte (o nível 1
+	// lê a watchlist com origem "proprio"). Sem esta linha, o login sincroniza
+	// a partir de uma watchlist que quase sempre está vazia, e o sync de quem
+	// acabou de reivindicar o pro não sai do lugar.
+	if in.ClubID == "" {
+		return nil
+	}
+	e, err := domainpref.NewWatch(in.UsuarioEmail, in.ClubID, domainpref.OrigemProprio)
+	if err != nil {
+		return err
+	}
+	// SetWatchWithOrigem, não SetWatch: se o clube já era seguido como rival
+	// ou manual, o claim precisa SUBIR a origem para "proprio".
+	if err := s.repo.SetWatchWithOrigem(ctx, e); err != nil {
+		return fmt.Errorf("claim: seguir clube próprio: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) SaveSyncRun(ctx context.Context, in SaveSyncRunInput) error {

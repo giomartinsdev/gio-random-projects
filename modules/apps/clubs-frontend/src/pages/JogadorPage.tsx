@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { PlayerProfile } from "../lib/types";
+import type { ClaimedPro, PlayerProfile } from "../lib/types";
 import { Badge, Card, Empty, PosTag, ResultBadge, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { LineChart } from "../components/charts";
@@ -11,17 +11,24 @@ import { fmt, minutes, POS_LABEL, POS_SHORT, ratingColor, SAVE_LABEL } from "../
 
 export function JogadorPage({
   playerId,
+  authed,
+  claimed,
+  onClaim,
   onOpenClub,
   onOpenMatch,
   onBack,
 }: {
   playerId: string;
+  authed: boolean | null;
+  claimed: ClaimedPro | null;
+  onClaim: (clubId: string, playerId: string) => Promise<void>;
   onOpenClub: (id: string) => void;
   onOpenMatch: (id: string) => void;
   onBack: () => void;
 }) {
   const [p, setP] = useState<PlayerProfile | null>(null);
   const [erro, setErro] = useState("");
+  const [reivindicando, setReivindicando] = useState(false);
 
   useEffect(() => {
     setP(null);
@@ -32,6 +39,11 @@ export function JogadorPage({
   if (!p) return <Spinner label="carregando jogador…" />;
 
   const partidas = p.partidas ?? [];
+  // O pro DESTA pessoa. O selo do perfil é público (qualquer um vê que o pro
+  // foi reivindicado), mas o botão só faz sentido para quem entrou e ainda
+  // não reivindicou — e o seu próprio pro não se re-reivindica.
+  const meu = claimed?.player_id === p.player_id;
+  const outroPro = !!claimed && !meu;
 
   return (
     <>
@@ -52,6 +64,39 @@ export function JogadorPage({
           </>
         }
       />
+
+      {authed === true && !outroPro && (
+        <div className="mb-4">
+          {meu ? (
+            <div className="surface flex flex-wrap items-center gap-3 px-4 py-3">
+              <Badge tone="accent">✓ este pro é seu</Badge>
+              <span className="text-xs text-muted">
+                Seu perfil carrega o selo de verificado. Seus clubes já estão no hub — a sincronização
+                em segundo plano usa este pro como ponto de partida.
+              </span>
+            </div>
+          ) : (
+            <div className="surface flex flex-wrap items-center gap-3 px-4 py-3">
+              <button
+                type="button"
+                disabled={reivindicando || !p.club_id}
+                onClick={() => {
+                  setReivindicando(true);
+                  onClaim(p.club_id, p.player_id).catch(() => setReivindicando(false));
+                }}
+                className="rounded-md border px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wide transition-colors disabled:opacity-40"
+                style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" }}
+              >
+                {reivindicando ? "reivindicando…" : "este pro sou eu"}
+              </button>
+              <span className="text-xs text-muted">
+                Diz ao hub onde você joga: ele passa a acompanhar este clube e a descobrir os rivais
+                dele, em segundo plano. É isso que liga a sua conta ao seu pro.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="nota média" value={fmt(p.nota, 2)} sub={`${fmt(p.jogos)} jogos`} accent />

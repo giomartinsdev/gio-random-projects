@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 from .client import DomainClient
-from .normalize import club_totals
+from .normalize import club_identity, club_totals
 
 log = logging.getLogger("clubs-ingest")
 
@@ -44,6 +44,11 @@ class Sync:
             self._save(usuario_email, rodando=False, nivel=3, total=0, concluidos=0,
                        atual="", novos=[], concluido=True)
             return {"iniciado": False, "motivo": "sem clubes próprios"}
+
+        # Fresh per run: the worker is a long-lived process, so a cache that
+        # survived between runs would keep a club "already followed" (or a
+        # claimed pro unseen) long after the watchlist changed.
+        self._known: set[str] | None = None
 
         # Level 1: the person's own clubs.
         self._save(usuario_email, rodando=True, nivel=1, total=len(own), concluidos=0,
@@ -97,45 +102,59 @@ class Sync:
 
     def _follow(self, usuario_email: str, club_ids: list[str], origem: str,
                 novos: list[str]) -> list[str]:
+        known = self._known_followed(usuario_email)
         followed: list[str] = []
         for club_id in club_ids:
             if not club_id:
                 continue
             followed.append(club_id)
-            if club_id in self._known_followed(usuario_email):
-                continue
-            try:
-                # Structural write through the sync path: the person must be
-                # able to reload and still see the club followed.
-                self.domain.sync("preferencia.setWatch", {
-                    "usuario_email": usuario_email,
-                    "club_id": club_id,
-                    "origem": origem,
-                    "seguindo": True,
-                })
-                novos.append(club_id)
-            except Exception as err:  # noqa: BLE001 -- one club must not stop the sync
-                log.debug("seguir %s falhou: %s", club_id, err)
-            # Give the club its totals and make sure the ingest loop will see
-            # it on the next cycle.
-            try:
-                for row in self.source.search_by_id(club_id):
-                    if str(row.get("clubId")) == club_id:
-                        self.domain.upsert_totals(club_id, club_totals(row))
-                        break
-            except Exception as err:  # noqa: BLE001
-                log.debug("totais de %s falharam: %s", club_id, err)
+            if club_id not in known:
+                try:
+                    # Structural write through the sync path: the person must be
+                    # able to reload and still see the club followed.
+                    self.domain.sync("preferencia.setWatch", {
+                        "usuario_email": usuario_email,
+                        "club_id": club_id,
+                        "origem": origem,
+                        "seguindo": True,
+                    })
+                    known.add(club_id)
+                    novos.append(club_id)
+                except Exception as err:  # noqa: BLE001 -- one club must not stop the sync
+                    log.debug("seguir %s falhou: %s", club_id, err)
+            # Ensure the club is ingestable, ALWAYS -- not only when the follow
+            # write just ran. A club with totals but no `club.upsert` never
+            # becomes `acompanhado`, and the cycle lists only followed clubs,
+            # so it would sit at "totals only" forever: no squad, no matches.
+            # This is also what repairs a club followed by an older sync that
+            # wrote the watchlist row but never the identity.
+            self._ensure_ingestable(club_id)
         return followed
 
-    _watched_cache: dict[str, set[str]] = {}
+    def _ensure_ingestable(self, club_id: str) -> None:
+        """Write the club's identity + totals so the cycle will pick it up."""
+        try:
+            for row in self.source.search_by_id(club_id):
+                if str(row.get("clubId")) == club_id:
+                    identity = club_identity(row)
+                    identity["acompanhado"] = True
+                    self.domain.upsert_club(identity)
+                    self.domain.upsert_totals(club_id, club_totals(row))
+                    return
+        except Exception as err:  # noqa: BLE001 -- best-effort; the cycle retries
+            log.debug("identidade/totais de %s falharam: %s", club_id, err)
 
     def _known_followed(self, usuario_email: str) -> set[str]:
-        cached = Sync._watched_cache.get(usuario_email)
-        if cached is not None:
-            return cached
-        watched = {str(w.get("club_id")) for w in self.domain.list_watch(usuario_email)}
-        Sync._watched_cache[usuario_email] = watched
-        return watched
+        """The watchlist as of the START of this run, read once.
+
+        Scoped to the run (self._known), not the class: a cache on the class
+        lived for the whole worker process, so a club followed (or a pro
+        claimed) after the first sync of the day stayed invisible to every
+        later run -- the sync silently stopped discovering.
+        """
+        if self._known is None:
+            self._known = {str(w.get("club_id")) for w in self.domain.list_watch(usuario_email)}
+        return self._known
 
     def _save(self, usuario_email: str, **kwargs: Any) -> None:
         payload = {"usuario_email": usuario_email}

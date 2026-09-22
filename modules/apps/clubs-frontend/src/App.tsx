@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Shell, type RouteId } from "./components/shell";
 import { sair, useAuth, useSyncStatus, useTheme } from "./lib/hooks";
 import { api } from "./lib/api";
-import type { WatchEntry } from "./lib/types";
+import type { ClaimedPro, WatchEntry } from "./lib/types";
 import { HomePage } from "./pages/HomePage";
 import { ClubesPage } from "./pages/ClubesPage";
 import { ClubePage } from "./pages/ClubePage";
@@ -59,6 +59,10 @@ export default function App() {
   const { autenticado: authed, email, refresh: refreshAuth } = useAuth();
   const { theme, setTheme } = useTheme();
   const [watch, setWatch] = useState<WatchEntry[]>([]);
+  // O pro reivindicado por esta pessoa. Vive aqui, e não na página do jogador,
+  // para o botão "reivindicar" saber que ela JÁ reivindicou — e o selo de
+  // verificado refletir isso sem esperar o próximo fetch.
+  const [claimed, setClaimed] = useState<ClaimedPro | null>(null);
 
   // Só quem entrou tem sincronização — e ela nunca bloqueia a navegação.
   const { run: sync, start: startSync } = useSyncStatus(authed === true);
@@ -116,6 +120,40 @@ export default function App() {
     [authed, isWatched, loadWatch],
   );
 
+  // O pro reivindicado, carregado quando a sessão fica autenticada.
+  const loadClaimed = useCallback(() => {
+    if (authed !== true) {
+      setClaimed(null);
+      return;
+    }
+    api
+      .claimedPro()
+      .then((r) => setClaimed(r.pro ?? null))
+      .catch(() => setClaimed(null));
+  }, [authed]);
+
+  useEffect(loadClaimed, [loadClaimed]);
+
+  const claimPro = useCallback(
+    async (clubId: string, playerId: string) => {
+      if (authed !== true) return;
+      // Otimista: o selo aparece na hora; o worker confirma a gravação.
+      setClaimed({ club_id: clubId, player_id: playerId, verificado: true });
+      try {
+        await api.claimPro(clubId, playerId);
+        // Reivindicar também SEGUE o clube (o worker faz isso), o que muda a
+        // Minha Área e dispara a descoberta — recarrega os dois.
+        loadClaimed();
+        loadWatch();
+        startSync();
+      } catch {
+        loadClaimed(); // reverte para o estado do servidor
+        throw new Error("claim failed");
+      }
+    },
+    [authed, loadClaimed, loadWatch, startSync],
+  );
+
   const body = (() => {
     switch (view.route) {
       case "clubes":
@@ -156,6 +194,9 @@ export default function App() {
         return view.param ? (
           <JogadorPage
             playerId={view.param}
+            authed={authed}
+            claimed={claimed}
+            onClaim={claimPro}
             onOpenClub={(id) => navigate("clube", id)}
             onOpenMatch={(id) => navigate("partida", id)}
             onBack={() => window.history.back()}
