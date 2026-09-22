@@ -466,12 +466,7 @@ function StepEscolher({
           {squad === null ? (
             <Spinner label="carregando elenco…" />
           ) : buscando ? (
-            <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-              <Spinner label="trazendo o elenco da fonte…" />
-              <p className="text-xs text-muted">
-                A busca do elenco roda em segundo plano. Você pode continuar navegando.
-              </p>
-            </div>
+            <Spinner label="trazendo o elenco da fonte…" />
           ) : filtered.length === 0 ? (
             <Empty title="Nenhum jogador aqui" hint="O elenco é montado das partidas do clube. Tente limpar o filtro." />
           ) : (

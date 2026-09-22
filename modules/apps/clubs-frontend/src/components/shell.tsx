@@ -6,6 +6,19 @@
 
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
+import {
+  Bell,
+  House,
+  Lock,
+  LogOut,
+  Moon,
+  Shield,
+  Star,
+  Sun,
+  Target,
+  User,
+  type LucideIcon,
+} from "lucide-react";
 import { Badge } from "./ui";
 import { fmt } from "../lib/format";
 import type { SyncRun } from "../lib/types";
@@ -26,20 +39,30 @@ export type RouteId =
 interface NavItem {
   id: RouteId;
   label: string;
-  icon: string;
-  group: "principal" | "minha conta" | "administração";
+  icon: LucideIcon;
+  group: "principal" | "meu hub" | "sistema";
   requiresAuth?: boolean;
   adminOnly?: boolean;
 }
 
+// A ordem é a da jornada, não a alfabética: o público primeiro (o hub é
+// usável sem conta), depois o que o login destrava, e o técnico por último.
+// Ícones do lucide -- o resto do repo já usa, e emoji como ícone de navegação
+// é o que dava o ar amador.
 const NAV: NavItem[] = [
-  { id: "home", label: "Início", icon: "🏠", group: "principal" },
-  { id: "clubes", label: "Clubes", icon: "🛡️", group: "principal" },
-  { id: "jogadores", label: "Jogadores", icon: "⭐", group: "principal" },
-  { id: "resgatar", label: "Resgatar pro", icon: "🎯", group: "minha conta" },
-  { id: "minha-area", label: "Minha área", icon: "👤", group: "minha conta" },
-  { id: "notificacoes", label: "Notificações", icon: "🔔", group: "minha conta", requiresAuth: true },
-  { id: "admin", label: "Administração", icon: "🔒", group: "administração", adminOnly: true },
+  { id: "home", label: "Início", icon: House, group: "principal" },
+  { id: "clubes", label: "Clubes", icon: Shield, group: "principal" },
+  { id: "jogadores", label: "Jogadores", icon: Star, group: "principal" },
+  { id: "resgatar", label: "Resgatar pro", icon: Target, group: "meu hub" },
+  { id: "minha-area", label: "Minha área", icon: User, group: "meu hub" },
+  { id: "notificacoes", label: "Notificações", icon: Bell, group: "meu hub", requiresAuth: true },
+  { id: "admin", label: "Administração", icon: Lock, group: "sistema", adminOnly: true },
+];
+
+const GROUPS: Array<{ id: NavItem["group"]; label: string }> = [
+  { id: "principal", label: "Explorar" },
+  { id: "meu hub", label: "Meu hub" },
+  { id: "sistema", label: "Sistema" },
 ];
 
 export function Shell({
@@ -71,83 +94,112 @@ export function Shell({
     return true;
   });
 
-  const groups: Array<NavItem["group"]> = ["principal", "minha conta", "administração"];
-
   return (
     <div className="flex min-h-dvh">
       {/* Sidebar — vira navegação compacta abaixo de md. */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-surface md:flex">
-        <div className="px-4 pb-3 pt-4">
+        <div className="px-4 pb-4 pt-5">
           <div className="font-display text-lg font-bold tracking-tight">
             FC Clubs<span style={{ color: "var(--accent)" }}>.</span>hub
           </div>
-          <div className="label mt-0.5">rankings e histórico</div>
+          <div className="label mt-1">rankings · histórico</div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-2 pb-4">
-          {groups.map((g) => {
-            const items = visible.filter((n) => n.group === g);
+        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-4">
+          {GROUPS.map((g) => {
+            const items = visible.filter((n) => n.group === g.id);
             if (!items.length) return null;
             return (
-              <div key={g}>
-                <div className="label px-2.5 pb-1 pt-4">{g}</div>
-                {items.map((n) => (
-                  <button
-                    key={n.id}
-                    type="button"
-                    onClick={() => onNavigate(n.id)}
-                    aria-current={route === n.id ? "page" : undefined}
-                    className={clsx(
-                      "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
-                      route === n.id
-                        ? "bg-[var(--accent-soft)] text-ink shadow-[inset_2px_0_0_var(--accent)]"
-                        : "text-muted hover:bg-surface-3 hover:text-ink",
-                    )}
-                  >
-                    <span className="w-[18px] text-center text-[15px] leading-none">{n.icon}</span>
-                    <span className="truncate font-medium">{n.label}</span>
-                  </button>
-                ))}
+              <div key={g.id} className="pt-3 first:pt-0">
+                <div className="label px-2.5 pb-1.5">{g.label}</div>
+                {items.map((n) => {
+                  const active = route === n.id;
+                  const Icon = n.icon;
+                  return (
+                    <button
+                      key={n.id}
+                      type="button"
+                      onClick={() => onNavigate(n.id)}
+                      aria-current={active ? "page" : undefined}
+                      className={clsx(
+                        "relative flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left text-[13px] transition-colors",
+                        active
+                          ? "bg-[var(--accent-soft)] text-ink"
+                          : "text-muted hover:bg-surface-3 hover:text-ink",
+                      )}
+                    >
+                      {active && (
+                        <span
+                          className="absolute inset-y-2 left-0 w-0.5 rounded-full"
+                          style={{ background: "var(--accent)" }}
+                        />
+                      )}
+                      <Icon
+                        className="size-4 shrink-0"
+                        style={{ color: active ? "var(--accent)" : undefined }}
+                        strokeWidth={2}
+                      />
+                      <span className="truncate font-display font-semibold tracking-wide">{n.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             );
           })}
         </nav>
 
-        <footer className="border-t border-line px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            {authed ? (
-              <>
-                <span className="size-2 rounded-full" style={{ background: "var(--accent)" }} />
-                <span className="min-w-0 flex-1 truncate text-xs text-muted" title={email}>
-                  {email}
-                </span>
+        <footer className="border-t border-line px-3 py-3">
+          <div className="flex items-center gap-2.5">
+            <span
+              className="grid size-7 shrink-0 place-items-center rounded-md font-mono text-[10px] font-bold"
+              style={
+                authed
+                  ? { background: "var(--accent-soft)", color: "var(--accent)" }
+                  : { background: "var(--surface-3)", color: "var(--text-faint)" }
+              }
+              aria-hidden="true"
+            >
+              {authed ? (email[0] ?? "?").toUpperCase() : "?"}
+            </span>
+            <span className="min-w-0 flex-1">
+              {authed ? (
+                <>
+                  <span className="block truncate text-xs font-semibold">{email.split("@")[0]}</span>
+                  <span className="block truncate font-mono text-[9.5px] text-faint" title={email}>
+                    conectado
+                  </span>
+                </>
+              ) : authed === false ? (
                 <button
                   type="button"
-                  onClick={onLogout}
-                  title="Sair da conta"
-                  className="shrink-0 rounded border border-line-strong px-1.5 py-0.5 text-[10px] text-muted hover:text-ink"
+                  onClick={() => onNavigate("minha-area")}
+                  className="text-xs font-semibold text-muted transition-colors hover:text-ink"
                 >
-                  sair
+                  Entrar com Google
                 </button>
-              </>
-            ) : authed === false ? (
+              ) : (
+                <span className="text-xs text-faint">sondando…</span>
+              )}
+            </span>
+            {authed && (
               <button
                 type="button"
-                onClick={() => onNavigate("minha-area")}
-                className="flex-1 rounded-md border border-line-strong px-2 py-1 text-center text-xs text-muted transition-colors hover:text-ink"
+                onClick={onLogout}
+                title="Sair da conta"
+                aria-label="Sair da conta"
+                className="shrink-0 rounded-md p-1.5 text-faint transition-colors hover:bg-surface-3 hover:text-ink"
               >
-                Entrar com Google
+                <LogOut className="size-3.5" />
               </button>
-            ) : (
-              <span className="text-xs text-faint">sondando sessão…</span>
             )}
             <button
               type="button"
               onClick={onToggleTheme}
               title={`Mudar para tema ${theme === "dark" ? "claro" : "escuro"}`}
-              className="rounded-md border border-line-strong px-2 py-1 text-xs text-muted hover:text-ink"
+              aria-label="Alternar tema"
+              className="shrink-0 rounded-md p-1.5 text-faint transition-colors hover:bg-surface-3 hover:text-ink"
             >
-              {theme === "dark" ? "☾" : "☀"}
+              {theme === "dark" ? <Moon className="size-3.5" /> : <Sun className="size-3.5" />}
             </button>
           </div>
         </footer>
@@ -171,28 +223,37 @@ export function Shell({
                 Entrar
               </button>
             )}
-            <button type="button" onClick={onToggleTheme} className="px-1 text-muted">
-              {theme === "dark" ? "☾" : "☀"}
+            <button
+              type="button"
+              onClick={onToggleTheme}
+              aria-label="Alternar tema"
+              className="p-1 text-muted"
+            >
+              {theme === "dark" ? <Moon className="size-4" /> : <Sun className="size-4" />}
             </button>
           </span>
         </header>
         <div className="flex gap-2 overflow-x-auto border-b border-line bg-surface px-3 py-2 md:hidden">
-          {visible.map((n) => (
-            <button
-              key={n.id}
-              type="button"
-              onClick={() => onNavigate(n.id)}
-              aria-current={route === n.id ? "page" : undefined}
-              className={clsx(
-                "shrink-0 rounded-full border px-3 py-1 text-xs transition-colors",
-                route === n.id
-                  ? "border-[var(--accent)] bg-[var(--accent-soft)] text-accent"
-                  : "border-line bg-surface-2 text-muted",
-              )}
-            >
-              {n.icon} {n.label}
-            </button>
-          ))}
+          {visible.map((n) => {
+            const Icon = n.icon;
+            return (
+              <button
+                key={n.id}
+                type="button"
+                onClick={() => onNavigate(n.id)}
+                aria-current={route === n.id ? "page" : undefined}
+                className={clsx(
+                  "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
+                  route === n.id
+                    ? "border-[var(--accent)] bg-[var(--accent-soft)] text-accent"
+                    : "border-line bg-surface-2 text-muted",
+                )}
+              >
+                <Icon className="size-3.5" />
+                {n.label}
+              </button>
+            );
+          })}
         </div>
 
         {sync?.rodando && <SyncBanner sync={sync} />}
