@@ -68,6 +68,20 @@ class SourceClient:
             return []
         return data if isinstance(data, list) else []
 
+    def leaderboard(self) -> list[dict[str, Any]]:
+        """Os 100 melhores clubes, com rank, divisão, skillRating e identidade.
+
+        É o único endpoint que dá uma lista pronta de clubes reais -- a busca
+        exige um nome, e a fonte não tem "liste todos". É daqui que a base se
+        semeia no primeiro boot.
+        """
+        try:
+            data = self.api.get_json("allTimeLeaderboard", {})
+        except FC27APIError as err:
+            log.warning("leaderboard: %s", err)
+            return []
+        return data if isinstance(data, list) else []
+
     def search(self, name: str) -> list[dict[str, Any]]:
         try:
             data = self.api.get_json("allTimeLeaderboard/search", {"clubName": name})

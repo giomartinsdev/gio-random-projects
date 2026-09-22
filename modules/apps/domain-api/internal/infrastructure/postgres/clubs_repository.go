@@ -61,7 +61,6 @@ func withAproveitamento(c domainclubs.Club) domainclubs.Club {
 	return c
 }
 
-
 // withForm fills each club's recent form from its persisted matches. The list
 // and search paths need it just as much as the profile does -- without this,
 // the directory shows "sem jogos" for every row, which reads as missing data
@@ -400,8 +399,8 @@ func (r *ClubsRepository) Squad(ctx context.Context, clubID string) ([]domainclu
 
 	for rows.Next() {
 		var (
-			playerID, gamertag, posicao string
-			nota                         float64
+			playerID, gamertag, posicao                             string
+			nota                                                    float64
 			gols, assist, chutes, pc, pt, dc, dt, defesas, segundos int
 			// melhor_em_campo is a real boolean column -- scanning it into an
 			// int fails in binary format.
@@ -492,7 +491,7 @@ func pct(part, total int) float64 {
 // playerRows is the shared scan of the player aggregate; the caller decides
 // how to group it.
 type playerRow struct {
-	line domainclubs.PlayerLine
+	line  domainclubs.PlayerLine
 	match domainclubs.Match
 }
 
@@ -1129,6 +1128,35 @@ func (r *ClubsRepository) GetSyncRun(ctx context.Context, usuarioEmail string) (
 		_ = json.Unmarshal(novos, &run.Novos)
 	}
 	return run, nil
+}
+
+// ListPendingSyncs: quem pediu sincronização e ainda não terminou.
+func (r *ClubsRepository) ListPendingSyncs(ctx context.Context) ([]domainclubs.SyncRun, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT usuario_email, rodando, nivel, total, concluidos, atual, novos,
+		       COALESCE(iniciado_em, 'epoch'::timestamptz), COALESCE(concluido_em, 'epoch'::timestamptz)
+		FROM clubs_sync_runs
+		WHERE rodando = true AND concluido_em IS NULL
+		ORDER BY iniciado_em ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list pending syncs: %w", err)
+	}
+	defer rows.Close()
+
+	var list []domainclubs.SyncRun
+	for rows.Next() {
+		var run domainclubs.SyncRun
+		var novos []byte
+		if err := rows.Scan(&run.UsuarioEmail, &run.Rodando, &run.Nivel, &run.Total,
+			&run.Concluidos, &run.Atual, &novos, &run.IniciadoEm, &run.ConcluidoEm); err != nil {
+			return nil, fmt.Errorf("scan pending sync: %w", err)
+		}
+		if len(novos) > 0 {
+			_ = json.Unmarshal(novos, &run.Novos)
+		}
+		list = append(list, run)
+	}
+	return list, rows.Err()
 }
 
 // ------------------------------------------------------------- administração

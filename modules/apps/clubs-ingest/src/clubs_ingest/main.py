@@ -73,6 +73,31 @@ def main() -> int:
              poll_seconds, cfg.ttl_matches, cfg.ttl_squad)
 
     while not stop["now"]:
+        # Sincronização primeiro: um pedido gravado pelo SPA (clubs_sync_runs
+        # com rodando=true) é a única forma de um clube entrar na lista de
+        # acompanhados. Sem consumir esta fila, o hub nunca sai do vazio -- e o
+        # `sync` era instanciado aqui em cima e nunca usado.
+        try:
+            pendentes = domain.list_pending_syncs()
+            for pedido in pendentes:
+                email = pedido.get("usuario_email") or ""
+                if not email:
+                    continue
+                log.info("sincronizando clubes de %s", email)
+                try:
+                    resultado = sync.run(email)
+                    log.info("sync de %s: %s", email, resultado.get("niveis", resultado))
+                except Exception as err:  # noqa: BLE001 -- um pedido não derruba o loop
+                    log.error("sync de %s falhou: %s", email, err)
+                    # Fecha o pedido mesmo assim: um erro permanente repetiria
+                    # em todo ciclo e bloquearia os próximos da fila.
+                    try:
+                        domain.mark_sync_done(email, nivel=3, total=0, concluidos=0, novos=[])
+                    except Exception:  # noqa: BLE001
+                        pass
+        except Exception as err:  # noqa: BLE001
+            log.error("leitura da fila de sync falhou: %s", err)
+
         try:
             ingest.run_cycle()
         except Exception as err:  # noqa: BLE001 -- a whole-cycle failure must not kill the loop

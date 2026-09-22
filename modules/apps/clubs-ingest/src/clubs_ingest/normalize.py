@@ -395,7 +395,13 @@ def timeline_from_lines(raw_lines: list[dict[str, Any]]) -> list[dict[str, Any]]
 # ------------------------------------------------------------ club / squad
 
 def club_identity(details: dict[str, Any]) -> dict[str, Any]:
-    """The club's identity block, in domain-api's ``UpsertClubInput`` shape."""
+    """The club's identity block, in domain-api's ``UpsertClubInput`` shape.
+
+    Aceita os DOIS formatos que a fonte usa: ``clubs/info`` devolve a identidade
+    no topo, e ``search`` a aninha em ``clubInfo`` (com os totais no topo). Sem
+    desaninhar aqui, um clube vindo da busca ficava sem estádio e sem cores.
+    """
+    details = details.get("clubInfo") or details
     kit = details.get("customKit") or {}
     return {
         "club_id": str(details.get("clubId") or details.get("club_id") or ""),
@@ -435,6 +441,10 @@ def club_totals(row: dict[str, Any]) -> dict[str, Any]:
         "pontos": to_int(row.get("points")) or (wins * 3 + draws),
         "divisao_atual": to_int(row.get("currentDivision")),
         "melhor_divisao": to_int(row.get("bestDivision")),
+        # O search não traz skillRating (só o overallStats traz), então um
+        # clube semeado pela busca entra com nível 0 e é corrigido no primeiro
+        # ciclo, quando club_overall roda. Zero aqui é "ainda não lido", não um
+        # nível real.
         "nivel": to_int(row.get("skillRating")),
         "promocoes": to_int(row.get("promotions")),
         "rebaixamentos": to_int(row.get("relegations")),

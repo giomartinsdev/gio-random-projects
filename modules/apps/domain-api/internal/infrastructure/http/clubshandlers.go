@@ -227,9 +227,9 @@ func (h *ClubsHandlers) GetEvolution(w http.ResponseWriter, r *http.Request) {
 	}
 	latest, _ := h.clubs.LatestSnapshot(r.Context(), id)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"serie":    series,
-		"total":    len(series),
-		"atual":    latest,
+		"serie": series,
+		"total": len(series),
+		"atual": latest,
 		// Explicit so the UI can explain "history grows with every sync"
 		// instead of drawing a degenerate one-point chart.
 		"historico_curto": len(series) < 2,
@@ -352,6 +352,18 @@ func (h *ClubsHandlers) GetClaimed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"pro": p})
+}
+
+// ListPendingSyncs é consumida pelo worker de ingestão: devolve quem pediu
+// sincronização (rodando=true, sem concluido_em). É a ponte entre o clique no
+// SPA e o worker que faz a descoberta, sem os dois se conhecerem.
+func (h *ClubsHandlers) ListPendingSyncs(w http.ResponseWriter, r *http.Request) {
+	list, err := h.clubs.ListPendingSyncs(r.Context())
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pendentes": list, "total": len(list)})
 }
 
 func (h *ClubsHandlers) GetSyncRun(w http.ResponseWriter, r *http.Request) {

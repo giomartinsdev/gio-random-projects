@@ -60,8 +60,17 @@ class Ingest:
         stats = CycleStats()
         clubs = self.domain.list_clubs(only_followed=True)
         if not clubs:
-            log.info("nenhum clube acompanhado ainda; ciclo vazio")
-            return stats
+            # Base vazia: o hub se semeia sozinho. Sem isto o produto nunca sai
+            # do zero, porque todo clube entra por um pedido de sincronização
+            # que ainda não existe -- é um ovo e a galinha.
+            #
+            # A lista é fixa de propósito: a fonte não tem "liste todos os
+            # clubes", só busca por nome. Ampliar depois é só crescer a lista.
+            self._bootstrap(stats)
+            clubs = self.domain.list_clubs(only_followed=True)
+            if not clubs:
+                log.warning("bootstrap não encontrou nenhum clube; a base segue vazia")
+                return stats
 
         now = datetime.now(tz=UTC).timestamp()
         for club in clubs:
@@ -79,6 +88,41 @@ class Ingest:
             stats.clubes_processados, stats.clubes_falhos, stats.partidas_novas, stats.snapshots,
         )
         return stats
+
+    # Quantos clubes o bootstrap acompanha. O leaderboard traz 100; acompanhar
+    # todos de uma vez significaria 100 consultas de partidas no primeiro ciclo,
+    # o que é a via mais rápida para o CDN da fonte bloquear o worker. Vinte dá
+    # um hub com conteúdo de verdade e mantém a carga por ciclo civilizada --
+    # os rivais de cada um entram sozinhos depois, pelo crawl de adversários.
+    BOOTSTRAP_LIMIT = 20
+
+    def _bootstrap(self, stats: CycleStats) -> None:
+        """Semeia a base com clubes reais, para o hub ter por onde começar.
+
+        Usa ``allTimeLeaderboard``, o único endpoint que devolve uma lista de
+        clubes sem exigir um nome -- a busca só responde a partir de 1 caractere
+        e mistura clubes de qualquer relevância. Cada clube entra já
+        acompanhado, então o ciclo seguinte traz elenco, partidas e nível.
+        """
+        log.info("base vazia: semeando clubes iniciais pelo leaderboard")
+        rows = self.source.leaderboard()
+        if not rows:
+            return
+        # O leaderboard já vem ordenado por rank, então os primeiros são os
+        # clubes mais ativos -- exatamente o que dá conteúdo a um hub novo.
+        for row in rows[: self.BOOTSTRAP_LIMIT]:
+            club_id = str(row.get("clubId") or "")
+            if not club_id or club_id in self._known_clubs:
+                continue
+            self._known_clubs.add(club_id)
+            try:
+                identity = club_identity({**row, "clubId": club_id})
+                identity["acompanhado"] = True
+                self.domain.upsert_club(identity)
+                self.domain.upsert_totals(club_id, club_totals(row))
+                stats.clubes_processados += 1
+            except Exception as err:  # noqa: BLE001 -- um clube não impede os outros
+                log.debug("bootstrap de %s falhou: %s", club_id, err)
 
     def _process_club(self, club_id: str, now: float, stats: CycleStats) -> None:
         # Identity + totals: cheap, and needed before matches so the club row

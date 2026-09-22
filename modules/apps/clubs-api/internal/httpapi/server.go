@@ -116,6 +116,11 @@ func (s *Server) Handler() http.Handler {
 			r.Post("/claimed-pro", s.claimPro)
 			r.Get("/sync/status", s.syncStatus)
 			r.Post("/sync", s.startSync)
+			// O estado técnico é pessoal: o SPA só renderiza a aba de
+			// administração para quem entrou. A restrição forte
+			// (administrador de verdade) é uma decisão futura; hoje o login já
+			// é opt-in e o conteúdo é agregado, não dado de outra pessoa.
+			r.Get("/admin/status", s.adminStatus)
 		})
 
 		// --- auth: sessão própria, não Cloudflare Access -----------------
@@ -353,6 +358,13 @@ func (s *Server) startSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"iniciado": true})
+}
+
+// adminStatus é o estado técnico que a área de administração desenha: quantos
+// clubes o hub conhece e acompanha, volume de partidas e de leituras de nível,
+// e o topo do ranking. Vem tudo de uma leitura só na base de domínio.
+func (s *Server) adminStatus(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/admin/status")
 }
 
 // --- helpers --------------------------------------------------------------

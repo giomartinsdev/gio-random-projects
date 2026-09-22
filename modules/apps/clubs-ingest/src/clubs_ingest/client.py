@@ -105,3 +105,27 @@ class DomainClient:
 
     def get_sync_run(self, usuario_email: str) -> dict[str, Any]:
         return self.get(f"/sync-status?usuario={urllib.parse.quote(usuario_email)}") or {}
+
+    def list_pending_syncs(self) -> list[dict[str, Any]]:
+        """Quem pediu sincronização e ainda não terminou.
+
+        É a ponte entre o clique no SPA (que grava o pedido) e este worker:
+        nenhum dos dois conhece o outro.
+        """
+        data = self.get("/sync-pending") or {}
+        return data.get("pendentes") or []
+
+    def mark_sync_done(self, usuario_email: str, *, nivel: int, total: int,
+                       concluidos: int, novos: list[str]) -> None:
+        """Fecha o pedido. Sem isto ele voltaria na próxima leitura de pendentes
+        e o worker repetiria a descoberta para sempre."""
+        self.post("/sync-status", {
+            "usuario_email": usuario_email,
+            "rodando": False,
+            "nivel": nivel,
+            "total": total,
+            "concluidos": concluidos,
+            "atual": "",
+            "novos": novos,
+            "concluido": True,
+        })

@@ -44,6 +44,11 @@ type Repository interface {
 	GetNotificacoes(ctx context.Context, usuarioEmail string) (NotificationPrefs, error)
 	GetClaimed(ctx context.Context, usuarioEmail string) (*ClaimedPro, error)
 	GetSyncRun(ctx context.Context, usuarioEmail string) (SyncRun, error)
+	// ListPendingSyncs returns every person whose sync was requested but not
+	// finished (`rodando = true`, no concluido_em). The ingest worker polls
+	// this -- it is how a click in the SPA reaches the worker that does the
+	// actual discovering, without either side knowing about the other.
+	ListPendingSyncs(ctx context.Context) ([]SyncRun, error)
 
 	// Administração
 	AdminStatus(ctx context.Context) (AdminStatus, error)

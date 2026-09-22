@@ -107,6 +107,8 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Get("/notifications", cl.GetNotificacoes)
 		r.Get("/claimed-pro", cl.GetClaimed)
 		r.Get("/sync-status", cl.GetSyncRun)
+		// Consumida pelo worker de ingestão: quem pediu sync e ainda não terminou.
+		r.Get("/sync-pending", cl.ListPendingSyncs)
 		r.Get("/admin/status", cl.AdminStatus)
 
 		r.Post("/clubs", clw.UpsertClub)
