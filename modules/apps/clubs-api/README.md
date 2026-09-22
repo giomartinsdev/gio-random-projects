@@ -20,6 +20,14 @@ Google" comum, igual ao do financas:
    SameSite=None);
 6. toda requisição seguinte se identifica por esse cookie.
 
+O client ID é **próprio do clubs**, não o do financas. O Google registra as
+"Origens JavaScript autorizadas" por client, então um client compartilhado
+entre dois produtos só funciona se cada host de cada produto estiver na mesma
+lista — e foi exatamente o que faltou: `clubs.giomartins.dev` não estava no
+client do financas, e o login de produção respondia `origin_mismatch`. Cada
+produto com botão de login tem o seu (`TF_VAR_clubs_google_oauth_client_id`,
+GitHub secret `CLUBS_GOOGLE_OAUTH_CLIENT_ID`).
+
 O primeiro login de uma conta **é** a criação dela: não há formulário de
 cadastro, porque todo dado pessoal do hub é particionado por e-mail.
 

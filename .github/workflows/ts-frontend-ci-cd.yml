@@ -112,6 +112,23 @@ jobs:
       # VITE_CCH_API_URL. The SPAs with browser telemetry also get
       # VITE_OTEL_EXPORTER_OTLP_ENDPOINT (unused here is a no-op --
       # see src/telemetry.ts in each app).
+      #
+      # VITE_GOOGLE_CLIENT_ID is the one exception: it is NOT shared. Google
+      # registers the authorized JavaScript origins per client, so a single
+      # client cannot serve two products on different hosts -- that is
+      # precisely what produced clubs' `origin_mismatch` in production
+      # (clubs.giomartins.dev was not in financas' client). Each app with a
+      # sign-in button therefore gets its own client, resolved per matrix.app.
+      - name: Resolve the app's Google OAuth client ID
+        working-directory: modules/apps/${{ matrix.app }}
+        run: |
+          case "${{ matrix.app }}" in
+            clubs-frontend)    id="${{ secrets.CLUBS_GOOGLE_OAUTH_CLIENT_ID }}" ;;
+            financas-frontend) id="${{ secrets.FINANCAS_GOOGLE_OAUTH_CLIENT_ID }}" ;;
+            *)                 id="" ;;
+          esac
+          echo "VITE_GOOGLE_CLIENT_ID=$id" >> "$GITHUB_ENV"
+
       - name: Build ${{ matrix.app }}
         working-directory: modules/apps/${{ matrix.app }}
         env:
@@ -130,7 +147,6 @@ jobs:
           VITE_APOSTAS_API_URL: https://apostas-api.giomartins.dev
           VITE_LEADS_API_URL: https://leads-api.giomartins.dev
           VITE_CLUBS_API_URL: https://clubs-api.giomartins.dev
-          VITE_GOOGLE_CLIENT_ID: ${{ secrets.FINANCAS_GOOGLE_OAUTH_CLIENT_ID }}
         run: npm run build
 
       # scp (not the docker provider/API) because the files have to

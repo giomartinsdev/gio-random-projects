@@ -243,6 +243,11 @@ variable "google_oauth_client_id" {
   type        = string
 }
 
+variable "clubs_google_oauth_client_id" {
+  description = "The Google OAuth 2.0 Web application Client ID the FC Clubs Hub's own sign-in button and clubs-api's ID-token verification use. Deliberately SEPARATE from google_oauth_client_id: each Google project registers exactly the JavaScript origins its own app calls from, so sharing one client across two products is what produced clubs' origin_mismatch in production. Not secret (public in every ID token's aud claim and in the bundle); comes from terraform.tfvars or TF_VAR_clubs_google_oauth_client_id."
+  type        = string
+}
+
 variable "apostas_extension_usuario_email" {
   description = "The one financas account the betting-slip Chrome extension registers bets as -- financas is a single-person product, so apostas-api's extension route (see its Config) maps every request bearing a valid X-Extension-Token straight to this fixed identity instead of running a real per-user auth flow. Never hardcoded; comes from terraform.tfvars or TF_VAR_apostas_extension_usuario_email."
   type        = string

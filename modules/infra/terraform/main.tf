@@ -485,11 +485,14 @@ module "compute_apps_clubs_api" {
     docker = docker
   }
 
-  network_name       = module.network_docker_apps.network_name
-  registry_host      = var.registry_host
-  domain_api_key     = random_id.clubs_api_domain_key.hex
-  session_secret     = random_password.clubs_session_secret.result
-  google_oauth_client_id = var.google_oauth_client_id
+  network_name   = module.network_docker_apps.network_name
+  registry_host  = var.registry_host
+  domain_api_key = random_id.clubs_api_domain_key.hex
+  session_secret = random_password.clubs_session_secret.result
+  # Clubs' OWN Google client, not the financas one: Google checks the
+  # JavaScript origin per client, so the shared client's origin mismatch was
+  # exactly the production login failure. See the variable's own note.
+  google_oauth_client_id = var.clubs_google_oauth_client_id
   # Host-only cookie by default: only clubs-api reads the session, so scoping it
   # to a whole domain would be more privilege than the design needs.
   session_cookie_domain = ""

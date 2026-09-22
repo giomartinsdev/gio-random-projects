@@ -202,6 +202,7 @@ jobs:
       # variable". Same three secrets go-ci-cd.yml passes.
       TF_VAR_asset_manager_brapi_token: ${{ secrets.TF_ASSET_MANAGER_BRAPI_TOKEN }}
       TF_VAR_google_oauth_client_id: ${{ secrets.FINANCAS_GOOGLE_OAUTH_CLIENT_ID }}
+      TF_VAR_clubs_google_oauth_client_id: ${{ secrets.CLUBS_GOOGLE_OAUTH_CLIENT_ID }}
       TF_VAR_apostas_extension_usuario_email: ${{ secrets.FINANCAS_APOSTAS_EXTENSION_USUARIO_EMAIL }}
       AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}

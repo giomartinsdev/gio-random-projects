@@ -34,7 +34,7 @@ variable "session_cookie_domain" {
 }
 
 variable "google_oauth_client_id" {
-  description = "The Google OAuth 2.0 Web application Client ID whose ID tokens clubs-api accepts -- the same one financas uses, so a token minted for that app cannot be replayed here and vice versa. Not secret (it is public in every ID token's aud claim and in the bundle)."
+  description = "The Google OAuth 2.0 Web application Client ID whose ID tokens clubs-api accepts -- clubs' OWN client, separate from financas': Google registers the JavaScript origins per client, and sharing one across products is what caused clubs' origin_mismatch. Not secret (it is public in every ID token's aud claim and in the bundle)."
   type        = string
   default     = ""
 }
