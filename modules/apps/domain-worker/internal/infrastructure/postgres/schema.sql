@@ -583,6 +583,7 @@ CREATE TABLE IF NOT EXISTS clubs_fetch_runs (
     rodando       BOOLEAN NOT NULL DEFAULT false,
     jogadores     INTEGER NOT NULL DEFAULT 0,
     partidas      INTEGER NOT NULL DEFAULT 0,
+    clubes        INTEGER NOT NULL DEFAULT 0,
     erro          TEXT NOT NULL DEFAULT '',
     solicitado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
     concluido_em  TIMESTAMPTZ,
