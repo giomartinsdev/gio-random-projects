@@ -2,35 +2,77 @@
 // ui.pen (ver design/), usando só os tokens — nenhum valor de cor ou fonte é
 // inventado aqui.
 
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { clsx } from "clsx";
 import { ChevronLeft, ChevronRight, Flag } from "lucide-react";
 import type { Club, Position, Resultado } from "../lib/types";
-import { hex, POS_SHORT, RESULT_LETTER, resultColor, resultSoft } from "../lib/format";
+import { POS_SHORT, RESULT_LETTER, resultColor, resultSoft } from "../lib/format";
+import { clubPalette, crestPattern, crestSeed, crestShape, type Pattern } from "../lib/crest";
 
 // ------------------------------------------------------------------ escudo
 
-/** O escudo é desenhado do zero a partir de crest_asset_id — a EA não publica
- * uma tabela de imagens, então a forma vem da de-para por inferência. */
-export function Crest({ club, size = 34 }: { club: Pick<Club, "name" | "tag" | "color_1" | "color_2" | "color_3" | "crest_asset_id">; size?: number }) {
-  const c1 = hex(club.color_1) === "#000000" ? "var(--accent)" : hex(club.color_1);
-  const c2 = hex(club.color_2) === "#000000" ? "var(--text)" : hex(club.color_2);
-  const id = `crest-${club.tag || "x"}-${size}`;
+/** O padrão desenhado por cima da forma, já recortado por ela.
+ *
+ * Coordenadas no mesmo 100x110 do escudo. Cada um é uma lista de paths; quem
+ * desenha só preenche com `detail`. "solid" não desenha nada -- é o repouso,
+ * para nem todo escudo ficar carregado. */
+function patternPaths(pattern: Pattern): string[] {
+  switch (pattern) {
+    case "stripe":
+      return ["M50 0H64V110H50Z"];
+    case "stripes":
+      return ["M28 0H40V110H28Z", "M60 0H72V110H60Z"];
+    case "band":
+      return ["M0 44H100V62H0Z"];
+    case "diagonal":
+      return ["M-10 78L78 -10H96L8 78Z"];
+    case "half":
+      return ["M50 0H100V110H50Z"];
+    case "chevron":
+      return ["M36 0H64L50 34 36 0Z"];
+    default:
+      return [];
+  }
+}
+
+/** O escudo do clube, desenhado do zero.
+ *
+ * A forma, o padrão e -- quando a fonte devolve o kit default da EA -- as
+ * cores vêm de um hash estável do clube: o mesmo clube desenha sempre o mesmo
+ * escudo, e clubes diferentes se distinguem. Quem tem cores próprias na fonte
+ * é desenhado com elas (ver lib/crest.ts). */
+export function Crest({
+  club,
+  size = 34,
+}: {
+  club: Pick<Club, "name" | "tag" | "color_1" | "color_2" | "color_3" | "color_4" | "crest_asset_id"> &
+    Partial<Pick<Club, "club_id">>;
+  size?: number;
+}) {
+  const uid = useId();
+  const seed = crestSeed(club);
+  const pal = clubPalette(seed, [club.color_1, club.color_2, club.color_3, club.color_4]);
+  const shape = crestShape(seed);
+  const gradId = `crest-g-${uid}`;
+  const clipId = `crest-c-${uid}`;
   return (
     <svg width={size} height={size} viewBox="0 0 100 110" aria-label={`escudo ${club.name}`}>
       <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0.4" y2="1">
-          <stop offset="0%" stopColor={c1} />
-          <stop offset="100%" stopColor={c2} />
+        <linearGradient id={gradId} x1="0" y1="0" x2="0.4" y2="1">
+          <stop offset="0%" stopColor={pal.base} />
+          <stop offset="100%" stopColor={pal.detail} />
         </linearGradient>
+        <clipPath id={clipId}>
+          <path d={shape} />
+        </clipPath>
       </defs>
-      <path
-        d="M50 4 L94 20 V56 C94 82 74 98 50 106 C26 98 6 82 6 56 V20 Z"
-        fill={`url(#${id})`}
-        stroke={c2}
-        strokeWidth={4}
-        strokeLinejoin="round"
-      />
+      <path d={shape} fill={`url(#${gradId})`} stroke={pal.detail} strokeWidth={4} strokeLinejoin="round" />
+      <g clipPath={`url(#${clipId})`}>
+        {patternPaths(crestPattern(seed)).map((d, i) => (
+          <path key={i} d={d} fill={pal.detail} opacity={0.9} />
+        ))}
+      </g>
+      <path d={shape} fill="none" stroke={pal.detail} strokeWidth={4} strokeLinejoin="round" />
       <text
         x="50"
         y="63"
@@ -38,9 +80,9 @@ export function Crest({ club, size = 34 }: { club: Pick<Club, "name" | "tag" | "
         fontFamily="Chakra Petch, sans-serif"
         fontSize="30"
         fontWeight="700"
-        fill={c2}
+        fill={pal.ink}
         style={{ paintOrder: "stroke" }}
-        stroke="rgba(0,0,0,.35)"
+        stroke="rgba(0,0,0,.25)"
         strokeWidth="1.6"
       >
         {club.tag || "FC"}
@@ -51,9 +93,13 @@ export function Crest({ club, size = 34 }: { club: Pick<Club, "name" | "tag" | "
 
 // -------------------------------------------------------------------- kit
 
-/** A camisa, desenhada a partir de kitColor1..4 (decimal RGB → hex). */
-export function Kit({ colors, size = 52, label }: { colors: number[]; size?: number; label: string }) {
-  const [c1, c2, c3, c4] = colors.map((c) => (c ? hex(c) : "var(--surface-3)"));
+/** A camisa, desenhada a partir das cores do kit (hex).
+ *
+ * Recebe a mesma paleta do escudo, então um clube que não customizou o kit
+ * (a EA manda o default) não exibe a mesma camisa branca/roxa de todos os
+ * outros -- ver lib/crest.ts. */
+export function Kit({ colors, size = 52, label }: { colors: string[]; size?: number; label: string }) {
+  const [c1, c2, c3, c4] = colors.map((c) => c || "var(--surface-3)");
   return (
     <svg width={size} height={size * 1.06} viewBox="0 0 100 106" aria-label={`uniforme ${label}`}>
       <path

@@ -30,6 +30,7 @@ import {
   TIPO_LABEL,
 } from "../lib/format";
 import { useI18n } from "../lib/i18n";
+import { clubPalette, crestSeed } from "../lib/crest";
 
 type Tab = "resumo" | "elenco" | "matches" | "numeros";
 
@@ -244,7 +245,7 @@ function ResumoTab({ club, onOpenMatch }: { club: Club; onOpenMatch: (id: string
         <div className="flex flex-col gap-4">
           <Card title={t("club.kits")}>
             <div className="flex items-center justify-around px-4 py-4">
-              <Kit colors={[club.color_1, club.color_2, club.color_3, club.color_4]} label="home" />
+              <Kit colors={clubPalette(crestSeed(club), [club.color_1, club.color_2, club.color_3, club.color_4]).kits} label="home" />
               <div className="text-center">
                 <Crest club={club} size={44} />
                 <div className="label mt-1">{t("club.crest")}</div>

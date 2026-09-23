@@ -53,7 +53,7 @@ export function MatchPage({
       <Card title={t("common.result")}>
         <div className="grid grid-cols-3 items-center gap-4 px-4 py-6">
           <button type="button" onClick={() => onOpenClub(m.home_club_id)} className="flex flex-col items-center gap-2 hover:text-accent">
-            <Crest club={{ name: m.home_club_name, tag: m.home_club_tag, color_1: 0, color_2: 0, color_3: 0, crest_asset_id: "" }} size={46} />
+            <Crest club={{ name: m.home_club_name, tag: m.home_club_tag, color_1: 0, color_2: 0, color_3: 0, color_4: 0, crest_asset_id: m.home_club_id, club_id: m.home_club_id }} size={46} />
             <span className="text-sm font-semibold">{m.home_club_name}</span>
           </button>
           <div className="text-center">
@@ -71,7 +71,7 @@ export function MatchPage({
             )}
           </div>
           <button type="button" onClick={() => onOpenClub(m.away_club_id)} className="flex flex-col items-center gap-2 hover:text-accent">
-            <Crest club={{ name: m.away_club_name, tag: m.away_club_tag, color_1: 0, color_2: 0, color_3: 0, crest_asset_id: "" }} size={46} />
+            <Crest club={{ name: m.away_club_name, tag: m.away_club_tag, color_1: 0, color_2: 0, color_3: 0, color_4: 0, crest_asset_id: m.away_club_id, club_id: m.away_club_id }} size={46} />
             <span className="text-sm font-semibold">{m.away_club_name}</span>
           </button>
         </div>
