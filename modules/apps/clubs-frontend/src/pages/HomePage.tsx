@@ -8,6 +8,7 @@ import { PageHead } from "../components/shell";
 import { ANUNCIO_ICONS, FLOW_ICONS, VerifiedIcon } from "../components/icons";
 import { BarChart } from "../components/charts";
 import { fmt, POS_SHORT, timeAgo } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 type RankTab = "clubs" | "players";
 
@@ -17,6 +18,7 @@ const FEED = 3;
 const PER_PAGE = 10;
 
 export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string) => void; onOpenPlayer: (id: string) => void }) {
+  const { t } = useI18n();
   const [announcements, setAnuncios] = useState<Announcement[] | null>(null);
   const [totalAnuncios, setTotalAnuncios] = useState(0);
   const [tab, setTab] = useState<RankTab>("clubs");
@@ -79,16 +81,16 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
 
   const metricas = tab === "clubs"
     ? [
-        { id: "skill_rating", label: "Nível" },
-        { id: "points", label: "Points" },
-        { id: "goals", label: "Goals" },
-        { id: "clean_sheets", label: "Sem sofrer gol" },
+        { id: "skill_rating", label: t("admin.levelReadings") && t("home.metric.levelShort") },
+        { id: "pontos", label: t("common.points") },
+        { id: "goals", label: t("common.goals") },
+        { id: "clean_sheets", label: t("home.metric.cleanSheetsShort") },
       ]
     : [
-        { id: "rating", label: "Rating" },
-        { id: "goals", label: "Goals" },
-        { id: "assists", label: "Assistências" },
-        { id: "goals_per_game", label: "Goals/jogo" },
+        { id: "rating", label: t("common.rating") },
+        { id: "goals", label: t("common.goals") },
+        { id: "assists", label: t("home.metric.assistsShort") },
+        { id: "goals_per_game", label: t("home.metric.goalsPerGame") },
       ];
 
   const maxClube = Math.max(...(clubs ?? []).map((c) => c.skill_rating), 1);
@@ -98,31 +100,31 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
   const posBase = page * PER_PAGE;
   const totalPages = Math.max(1, Math.ceil(totalRanking / PER_PAGE));
   // O rótulo nomeia o recorte, porque "1 / 2" sozinho não diz de quê.
-  const pagerLabel = `${fmt(posBase + (tab === "clubs" ? clubs?.length ?? 0 : players?.length ?? 0))} from_division ${fmt(totalRanking)}`;
+  const pagerLabel = `${fmt(posBase + (tab === "clubs" ? clubs?.length ?? 0 : players?.length ?? 0))} / ${fmt(totalRanking)}`;
 
   return (
     <>
       <PageHead
-        title="Arena"
-        sub="Rankings, matches e o histórico que a EA não guarda. Tudo aberto — entre só se quiser acompanhar seus clubs."
+        title={t("home.title")}
+        sub={t("home.subtitle")}
         actions={<Badge tone="accent">pro clubs · ea fc 27</Badge>}
       />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="clubs no hub" value={fmt(totalClubes ?? 0)} sub="com dados acumulados" accent />
-        <Stat label="players indexados" value={fmt(totalJogadores ?? 0)} sub="descobertos pelas matches" />
-        <Stat label="anúncios" value={fmt(totalAnuncios)} sub="gerados dos resultados" />
-        <Stat label="histórico" value="contínuo" sub="cresce a cada atualização" />
+        <Stat label={`${t("common.clubs")} ${t("common.index")}`} value={fmt(totalClubes ?? 0)} sub={t("home.subtitle") && t("common.history")} accent />
+        <Stat label={t("home.playersIndexed")} value={fmt(totalJogadores ?? 0)} sub={t("home.knownByMatches")} />
+        <Stat label={t("home.announcements")} value={fmt(totalAnuncios)} sub={t("home.generatedFromResults")} />
+        <Stat label={t("common.history")} value={t("home.continuous")} sub={t("home.growsEachUpdate")} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
-        <Card title="Feed da arena">
+        <Card title={t("home.feed")}>
           {announcements === null ? (
             <Spinner />
           ) : announcements.length === 0 ? (
             <Empty
-              title="Nenhum anúncio ainda"
-              hint="O feed é gerado dos resultados que o hub acompanha. Assim que houver matches, elas aparecem aqui."
+              title={t("home.feedEmpty")}
+              hint={t("home.feedEmptyHint")}
             />
           ) : (
             <ul className="divide-y divide-[var(--border)]">
@@ -160,7 +162,7 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
                 items={clubs.slice(0, 7).map((c) => ({ label: c.tag || c.name.slice(0, 3), value: c.skill_rating }))}
               />
             ) : (
-              <Empty title="sem dados ainda" hint="Assim que o hub acumular clubs, o gráfico aparece." />
+              <Empty title={t("common.noData")} hint={t("home.levelEmptyHint")} />
             )}
           </div>
         </Card>
@@ -168,7 +170,7 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
 
       <div className="mt-4">
         <Card
-          title="Ranking global"
+          title={t("home.globalRanking")}
           actions={
             <>
               <div className="flex rounded-md border border-line bg-surface-2 p-[3px]">
@@ -215,12 +217,12 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
           </div>
 
           {error ? (
-            <Empty title="Não foi possível carregar o ranking" hint={error} />
+            <Empty title={t("home.rankingFailed")} hint={error} />
           ) : tab === "clubs" ? (
             clubs === null ? (
               <Spinner />
             ) : clubs.length === 0 ? (
-              <Empty title="Nenhum clube no ranking ainda" hint="O hub começa vazio e cresce conforme acompanha clubs." />
+              <Empty title={t("home.noClubs")} hint={t("home.noClubsHint")} />
             ) : (
               <ul className="divide-y divide-[var(--border)]">
                 {clubs.map((c, i) => (
@@ -235,7 +237,7 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold">{c.name}</span>
                         <span className="block font-mono text-[10px] text-faint">
-                          D{c.division} · {fmt(c.played)} played
+                          D{c.division} · {fmt(c.played)} ${t("common.played")}
                         </span>
                       </span>
                       <span className="hidden w-32 sm:block">
@@ -252,7 +254,7 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
           ) : players === null ? (
             <Spinner />
           ) : players.length === 0 ? (
-            <Empty title="Nenhum jogador no ranking ainda" hint="Os players aparecem a partir das matches acompanhadas." />
+            <Empty title={t("home.noPlayers")} hint={t("home.noPlayersHint")} />
             ) : (
               <ul className="divide-y divide-[var(--border)]">
                 {players.map((p, i) => (

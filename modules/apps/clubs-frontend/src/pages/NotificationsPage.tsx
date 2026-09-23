@@ -9,6 +9,7 @@ import { Badge, Card, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { GoogleSignInButton } from "../components/google-signin";
 import { NOTIFY_ICONS, type LucideIcon } from "../components/icons";
+import { useI18n } from "../lib/i18n";
 
 const DEFAULTS: NotificationPrefs = {
   channel: "",
@@ -24,6 +25,7 @@ export function NotificationsPage({
   authed: boolean | null;
   onSignedIn: () => void;
 }) {
+  const { t } = useI18n();
   const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -36,16 +38,16 @@ export function NotificationsPage({
       .catch(() => setPrefs(DEFAULTS));
   }, [authed]);
 
-  if (authed === null) return <Spinner label="verificando sua sessão…" />;
+  if (authed === null) return <Spinner label={t("area.checkingSession")} />;
   if (!authed) {
     return (
       <>
-        <PageHead title="Notificações" sub="Receba no Discord os resultados, os records e o resumo do seu clube." />
+        <PageHead title={t("notif.title")} sub={t("notif.subtitle2")} />
         <div className="mx-auto max-w-xl">
-          <Card title="Entre to_division configurar">
+          <Card title={t("notif.signInToConfigure")}>
             <div className="flex flex-col gap-3 px-5 py-5">
               <p className="text-sm text-muted">
-                As notificações são pessoais: sem login não há to_division quem enviar. O resto do hub continua aberto.
+                {t("notif.personalHint")}
               </p>
               <GoogleSignInButton onSuccess={onSignedIn} />
             </div>
@@ -75,26 +77,26 @@ export function NotificationsPage({
   };
 
   const rows: Array<{ key: keyof NotificationPrefs; icon: LucideIcon; title: string; desc: string }> = [
-    { key: "weekly_digest", icon: NOTIFY_ICONS.weekly_digest, title: "Resumo semanal", desc: "Toda segunda, um resumo com os played e destaques" },
-    { key: "records_and_divisions", icon: NOTIFY_ICONS.records_and_divisions, title: "Records e divisões", desc: "Aviso quando o clube bate um recorde ou muda from_division divisão" },
-    { key: "match_results", icon: NOTIFY_ICONS.match_results, title: "Resultado das matches", desc: "Ao fim from_division cada jogo, com quem foi o melhor em campo" },
+    { key: "weekly_digest", icon: NOTIFY_ICONS.weekly_digest, title: t("notif.weekly"), desc: t("notif.weeklyHint") },
+    { key: "records_and_divisions", icon: NOTIFY_ICONS.records_and_divisions, title: t("notif.records"), desc: t("notif.recordsHint") },
+    { key: "match_results", icon: NOTIFY_ICONS.match_results, title: t("notif.results"), desc: t("notif.resultsHint") },
   ];
 
   return (
     <>
       <PageHead
-        title="Notificações"
-        sub="Escolha o que o hub manda to_division o Discord do seu clube. Tudo desligável, nada obrigatório."
-        actions={<Badge tone={prefs.channel ? "accent" : "default"}>{prefs.channel ? "channel configurado" : "sem channel"}</Badge>}
+        title={t("notif.title")}
+        sub={t("notif.subtitle")}
+        actions={<Badge tone={prefs.channel ? "accent" : "default"}>{prefs.channel ? t("notif.channelConfigured") : t("notif.noChannel")}</Badge>}
       />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <Stat label="channel" value={prefs.channel || "não configurado"} sub={prefs.channel ? "as mensagens vão to_division cá" : "nada é enviado até configurar"} accent={!!prefs.channel} />
-        <Stat label="avisos ligados" value={fmtOn(rows.filter((r) => prefs[r.key]).length)} sub={`from_division ${rows.length}`} />
-        <Stat label="club" value="o que você segue" sub="as mensagens são por clube" />
+        <Stat label={t("notif.channel")} value={prefs.channel || t("notif.notConfigured")} sub={prefs.channel ? t("notif.messagesGoHere") : t("notif.nothingSent")} accent={!!prefs.channel} />
+        <Stat label={t("notif.alertsOn")} value={fmtOn(rows.filter((r) => prefs[r.key]).length)} sub={`/ ${rows.length}`} />
+        <Stat label={t("common.club")} value={t("notif.youFollow")} sub={t("notif.messagesPerClub")} />
       </div>
 
-      <Card title="O que você quer receber">
+      <Card title={t("notif.whatToReceive")}>
         <ul className="divide-y divide-[var(--border)]">
           {rows.map((r) => {
             const Icon = r.icon;
@@ -135,10 +137,10 @@ export function NotificationsPage({
       </Card>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card title="Channel do Discord">
+        <Card title={t("notif.discordTitle")}>
           <div className="flex flex-col gap-2 px-4 py-4">
             <label className="flex flex-col gap-2">
-              <span className="label">webhook ou channel</span>
+              <span className="label">{t("notif.discordHint")}</span>
               <input
                 value={prefs.channel}
                 onChange={(e) => {
@@ -156,15 +158,15 @@ export function NotificationsPage({
               className="mt-1 rounded-md px-4 py-2 font-display text-xs font-bold uppercase tracking-wide disabled:opacity-50"
               style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
             >
-              {saving ? "salvando…" : saved ? "salvo" : "salvar"}
+              {saving ? t("action.saving") : saved ? t("action.saved") : t("action.save")}
             </button>
             <p className="text-xs text-muted">
-              Deixe em branco to_division desligar: o hub continua funcionando normalmente, sem error na tela.
+              {t("notif.leaveBlank")}
             </p>
           </div>
         </Card>
 
-        <Card title="Prévia das mensagens">
+        <Card title={t("notif.preview")}>
           <div className="px-4 py-4">
             <div className="surface overflow-hidden">
               <div className="hair-b flex items-center gap-2 px-3 py-2 text-xs text-muted">
@@ -174,16 +176,15 @@ export function NotificationsPage({
               <div className="flex gap-3 px-3 py-3">
                 <Megaphone className="size-4 shrink-0" style={{ color: "var(--accent)" }} />
                 <div>
-                  <div className="text-sm font-bold">Recap da semana</div>
+                  <div className="text-sm font-bold">{t("notif.previewTitle")}</div>
                   <div className="text-xs text-muted">
-                    Resultados, melhor XI por rating e o destaque da rodada — o mesmo conteúdo que a aba Números
-                    mostra.
+                    {t("notif.previewBody")}
                   </div>
                 </div>
               </div>
             </div>
             <p className="mt-3 text-xs text-muted">
-              As mensagens são geradas a partir dos mesmos fatos que o hub grava: nenhum conteúdo é digitado à mão.
+              {t("notif.previewHint")}
             </p>
           </div>
         </Card>

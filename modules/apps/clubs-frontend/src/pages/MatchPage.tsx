@@ -7,6 +7,7 @@ import type { Match, PlayerLine } from "../lib/types";
 import { Badge, Card, Crest, Empty, PosTag, Spinner } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { EVENT_LABEL, fmt, fmtDateTime, minutes, POS_SHORT, ratingColor, resultColor, TIPO_LABEL } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 export function MatchPage({
   matchId,
@@ -19,6 +20,7 @@ export function MatchPage({
   onOpenPlayer: (id: string) => void;
   onBack: () => void;
 }) {
+  const { t } = useI18n();
   const [m, setM] = useState<Match | null>(null);
   const [error, setErro] = useState("");
 
@@ -27,8 +29,8 @@ export function MatchPage({
     api.match(matchId).then(setM).catch((e) => setErro(String(e)));
   }, [matchId]);
 
-  if (error) return <Empty title="Partida não encontrada" hint={error} />;
-  if (!m) return <Spinner label="carregando partida…" />;
+  if (error) return <Empty title={t("match.notFound")} hint={error} />;
+  if (!m) return <Spinner label={t("match.loading")} />;
 
   // A súmula vem com os dois lados; separa por clube para desenhar cada bloco.
   const home = (m.players ?? []).filter((p) => p.club_id === m.home_club_id);
@@ -41,14 +43,14 @@ export function MatchPage({
         crumb={
           <button type="button" onClick={onBack} className="inline-flex items-center gap-1 hover:text-accent">
             <ChevronLeft className="size-3.5" />
-            voltar
+            {t("action.back")}
           </button>
         }
         title={`${m.home_club_name} ${m.home_goals}–${m.away_goals} ${m.away_club_name}`}
-        sub={`${fmtDateTime(m.timestamp)} · ${TIPO_LABEL[m.kind]}${m.playoff_round ? ` · ${m.playoff_round}` : ""}${m.decided_by_forfeit ? " · decidida por desistência" : ""}`}
+        sub={`${fmtDateTime(m.timestamp)} · ${TIPO_LABEL[m.kind]}${m.playoff_round ? ` · ${m.playoff_round}` : ""}${m.decided_by_forfeit ? t("match.decidedByForfeit") : ""}`}
       />
 
-      <Card title="Placar">
+      <Card title={t("common.result")}>
         <div className="grid grid-cols-3 items-center gap-4 px-4 py-6">
           <button type="button" onClick={() => onOpenClub(m.home_club_id)} className="flex flex-col items-center gap-2 hover:text-accent">
             <Crest club={{ name: m.home_club_name, tag: m.home_club_tag, color_1: 0, color_2: 0, color_3: 0, crest_asset_id: "" }} size={46} />
@@ -63,7 +65,7 @@ export function MatchPage({
             {m.decided_by_forfeit && (
               <div className="mt-2">
                 <Badge tone="accent">
-                  <Flag className="size-3" strokeWidth={2.5} /> vitória por desistência
+                  <Flag className="size-3" strokeWidth={2.5} /> {t("common.result")}
                 </Badge>
               </div>
             )}
@@ -81,16 +83,16 @@ export function MatchPage({
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_380px]">
-        <Card title="Events do jogo">
+        <Card title={t("match.events")}>
           {!m.events || m.events.length === 0 ? (
             <Empty
-              title="Sem events registrados"
-              hint="Os events vêm from_division campos sem tabela publicada, correlacionados com goals e shots. Quando não há correlação confiável, nada é mostrado."
+              title={t("match.noEvents")}
+              hint={t("match.eventsHint")}
             />
           ) : (
             <div className="px-4 py-3">
               <p className="mb-3 text-xs text-muted">
-                Estes rótulos são <b>inferidos por correlação</b>, não vêm from_division uma tabela oficial.
+                {t("common.inferred")}
               </p>
               <div className="flex flex-col gap-3">
                 {m.events.map((l) => (
@@ -108,7 +110,7 @@ export function MatchPage({
           )}
         </Card>
 
-        <Card title="Destaque">
+        <Card title={t("common.highlight")}>
           {melhor ? (
             <div className="px-4 py-4">
               <div className="flex items-center gap-3">
@@ -123,13 +125,11 @@ export function MatchPage({
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted">
-                A rating agregada do time nesta partida foi{" "}
-                <b>{fmt(m.avg_rating, 1)}</b>. Cada linha da súmula traz passes, desarmes e shots —
-                clique num jogador to_division ver o perfil completo.
+                {t("match.avgRating", { v: fmt(m.avg_rating, 1) })}
               </p>
             </div>
           ) : (
-            <Empty title="sem dados from_division players" />
+            <Empty title={t("common.noData")} />
           )}
         </Card>
       </div>
@@ -138,12 +138,13 @@ export function MatchPage({
 }
 
 function Lineup({ title, lines, onOpenPlayer }: { title: string; lines: PlayerLine[]; onOpenPlayer: (id: string) => void }) {
+  const { t } = useI18n();
   const order: Record<string, number> = { goalkeeper: 0, defender: 1, midfielder: 2, forward: 3 };
   const sorted = [...lines].sort((a, b) => (order[a.position] ?? 4) - (order[b.position] ?? 4));
   return (
     <Card title={title}>
       {sorted.length === 0 ? (
-        <Empty title="sem súmula deste lado" />
+        <Empty title={t("match.noSheet")} />
       ) : (
         <ul className="divide-y divide-[var(--border)]">
           {sorted.map((p) => (
@@ -158,7 +159,7 @@ function Lineup({ title, lines, onOpenPlayer }: { title: string; lines: PlayerLi
                   <span className="block truncate text-sm font-semibold">
                     {p.gamertag}{" "}
                     {p.man_of_the_match && (
-                      <span title="melhor em campo" className="inline-block align-[-2px]">
+                      <span title={t("player.motm")} className="inline-block align-[-2px]">
                         <Star
                           className="size-3.5"
                           fill="var(--gold)"

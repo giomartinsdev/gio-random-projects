@@ -8,6 +8,7 @@ import { Crest, Empty, FormChips, Spinner } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { WatchStar } from "../components/icons";
 import { fmt } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 export function ClubsPage({
   onOpenClub,
@@ -20,6 +21,7 @@ export function ClubsPage({
   onToggleWatch: (id: string) => void;
   authed: boolean | null;
 }) {
+  const { t } = useI18n();
   const [q, setQ] = useState("");
   const [list, setList] = useState<Club[] | null>(null);
 
@@ -42,8 +44,8 @@ export function ClubsPage({
   return (
     <>
       <PageHead
-        title="Clubs"
-        sub="Procure qualquer clube do servidor. Os que o hub acompanha abrem por completo; os outros mostram o histórico geral."
+        title={t("nav.clubs")}
+        sub={t("clubs.subtitle2")}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -52,17 +54,17 @@ export function ClubsPage({
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="name do clube… (funciona sem acento)"
+            placeholder={t("clubs.searchPlaceholder")}
             className="w-full bg-transparent text-sm outline-none placeholder:text-faint"
-            aria-label="buscar clube"
+            aria-label={t("action.search")}
           />
         </label>
-        {list && <span className="font-mono text-xs text-muted">{fmt(list.length)} resultados</span>}
+        {list && <span className="font-mono text-xs text-muted">{fmt(list.length)} {t("common.result")}</span>}
       </div>
 
       {seguidos.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="label">você segue</span>
+          <span className="label">{t("common.youFollow")}</span>
           {seguidos.map((c) => (
             <button
               key={c.club_id}
@@ -81,15 +83,15 @@ export function ClubsPage({
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-surface-2 text-faint">
-                <Th>clube</Th>
-                <Th right>div.</Th>
+                <Th>{t("common.club")}</Th>
+                <Th right>{t("common.division")}</Th>
                 <Th right>V</Th>
                 <Th right>E</Th>
                 <Th right>D</Th>
-                <Th right>goals</Th>
-                <Th right>points</Th>
-                <Th right>nível</Th>
-                <Th>form</Th>
+                <Th right>{t("common.goals")}</Th>
+                <Th right>{t("common.points")}</Th>
+                <Th right>{t("common.level")}</Th>
+                <Th>{t("club.form")}</Th>
                 <Th right>{""}</Th>
               </tr>
             </thead>
@@ -103,7 +105,7 @@ export function ClubsPage({
               ) : list.length === 0 ? (
                 <tr>
                   <td colSpan={10}>
-                    <Empty title="Nenhum clube encontrado" hint="Tente outro name — a busca ignora acentos e maiúsculas." />
+                    <Empty title={t("claim.notFound")} hint={t("clubs.tryAnotherName")} />
                   </td>
                 </tr>
               ) : (
@@ -119,7 +121,7 @@ export function ClubsPage({
                         <div className="min-w-0">
                           <div className="truncate font-semibold">{c.name}</div>
                           <div className="font-mono text-[10px] text-faint">
-                            {c.tracked ? "tracked" : "histórico geral"}
+                            {c.tracked ? t("common.tracked") : t("clubs.overallHistory")}
                           </div>
                         </div>
                       </div>
@@ -142,7 +144,7 @@ export function ClubsPage({
                             e.stopPropagation();
                             onToggleWatch(c.club_id);
                           }}
-                          title={isWatched(c.club_id) ? "deixar from_division seguir" : "seguir clube"}
+                          title={isWatched(c.club_id) ? t("clubs.unfollow") : t("clubs.follow")}
                           style={{ color: isWatched(c.club_id) ? "var(--gold)" : "var(--text-faint)" }}
                         >
                           <WatchStar size={16} filled={isWatched(c.club_id)} />
@@ -161,7 +163,7 @@ export function ClubsPage({
 
       {!authed && (
         <p className="mt-4 text-sm text-muted">
-          Entre com o Google to_division seguir clubs e ter o hub sincronizando os seus automaticamente.
+          {t("clubs.signInToFollow")}
         </p>
       )}
     </>

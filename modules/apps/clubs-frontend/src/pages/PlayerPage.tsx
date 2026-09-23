@@ -11,6 +11,7 @@ import { PageHead } from "../components/shell";
 import { VerifiedIcon } from "../components/icons";
 import { LineChart } from "../components/charts";
 import { fmt, minutes, POS_LABEL, POS_SHORT, ratingColor, SAVE_LABEL } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 export function PlayerPage({
   playerId,
@@ -29,6 +30,7 @@ export function PlayerPage({
   onOpenMatch: (id: string) => void;
   onBack: () => void;
 }) {
+  const { t } = useI18n();
   const [p, setP] = useState<PlayerProfile | null>(null);
   const [error, setErro] = useState("");
   const [reivindicando, setReivindicando] = useState(false);
@@ -44,8 +46,8 @@ export function PlayerPage({
     api.player(playerId).then(setP).catch((e) => setErro(String(e)));
   }, [playerId]);
 
-  if (error) return <Empty title="Jogador não encontrado" hint={error} />;
-  if (!p) return <Spinner label="carregando jogador…" />;
+  if (error) return <Empty title={t("player.notFound")} hint={error} />;
+  if (!p) return <Spinner label={t("player.loading")} />;
 
   const matches = p.matches ?? [];
   // O pro DESTA pessoa. O selo do perfil é público (qualquer um vê que o pro
@@ -60,16 +62,16 @@ export function PlayerPage({
         crumb={
           <button type="button" onClick={onBack} className="inline-flex items-center gap-1 hover:text-accent">
             <ChevronLeft className="size-3.5" />
-            voltar
+            {t("action.back")}
           </button>
         }
         title={p.gamertag}
-        sub={`${POS_LABEL[p.position]} · ${p.club_name || "sem clube principal"}`}
+        sub={`${POS_LABEL[p.position]} · ${p.club_name || t("common.noData")}`}
         actions={
           <>
             {p.verified && (
               <Badge tone="accent">
-                <VerifiedIcon /> verified
+                <VerifiedIcon /> {t("claim.verified")}
               </Badge>
             )}
             <SyncButton target="player" targetId={playerId} onDone={recarregar} />
@@ -85,11 +87,10 @@ export function PlayerPage({
           {meu ? (
             <div className="surface flex flex-wrap items-center gap-3 px-4 py-3">
               <Badge tone="accent">
-                <VerifiedIcon /> este pro é seu
+                <VerifiedIcon /> {t("claim.yourPro")}
               </Badge>
               <span className="text-xs text-muted">
-                Seu perfil carrega o selo from_division verified. Seus clubs já estão no hub — a sincronização
-                em segundo plano usa este pro como ponto from_division partida.
+                {t("player.mineHint")}
               </span>
             </div>
           ) : (
@@ -104,11 +105,10 @@ export function PlayerPage({
                 className="rounded-md border px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wide transition-colors disabled:opacity-40"
                 style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" }}
               >
-                {reivindicando ? "reivindicando…" : "este pro sou eu"}
+                {reivindicando ? t("player.claiming") : t("player.thisIsMe")}
               </button>
               <span className="text-xs text-muted">
-                Diz ao hub onde você joga: ele passa a acompanhar este clube e a descobrir os rivais
-                dele, em segundo plano. É isso que league a sua conta ao seu pro.
+                {t("player.claimHint")}
               </span>
             </div>
           )}
@@ -116,26 +116,26 @@ export function PlayerPage({
       )}
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="rating média" value={fmt(p.rating, 2)} sub={`${fmt(p.played)} played`} accent />
-        <Stat label="goals por jogo" value={fmt(p.goals_per_game, 2)} sub={`${fmt(p.goals)} goals`} />
-        <Stat label="assistências por jogo" value={fmt(p.assists_per_game, 2)} sub={`${fmt(p.assists)} no total`} />
-        <Stat label="melhor em campo" value={`${fmt(p.man_of_the_match)}x`} sub={`${minutes(p.seconds_played)} min jogados`} />
+        <Stat label={t("player.ratingAvg")} value={fmt(p.rating, 2)} sub={`${fmt(p.played)} ${t("common.played")}`} accent />
+        <Stat label={t("player.goalsPerGame")} value={fmt(p.goals_per_game, 2)} sub={`${fmt(p.goals)} ${t("common.goals")}`} />
+        <Stat label={t("player.assistsPerGame")} value={fmt(p.assists_per_game, 2)} sub={`${fmt(p.assists)} ${t("common.total")}`} />
+        <Stat label={t("player.motm")} value={`${fmt(p.man_of_the_match)}x`} sub={`${minutes(p.seconds_played)} ${t("common.min")}`} />
       </div>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <Stat label="acerto from_division passe" value={`${fmt(p.pass_accuracy)}%`} />
-        <Stat label="desarmes certos" value={`${fmt(p.tackle_accuracy)}%`} />
+        <Stat label={t("player.passAccuracy")} value={`${fmt(p.pass_accuracy)}%`} />
+        <Stat label={t("player.tackleAccuracy")} value={`${fmt(p.tackle_accuracy)}%`} />
         <Stat
-          label={p.goalkeeper ? "saves" : "melhor em campo"}
+          label={p.goalkeeper ? t("player.keeperSaves") : t("player.motm")}
           value={p.goalkeeper ? fmt(p.clean_sheets) : `${fmt(p.man_of_the_match)}x`}
-          sub={p.goalkeeper ? "played sem sofrer gol" : undefined}
+          sub={p.goalkeeper ? t("club.cleanSheets") : undefined}
         />
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
-        <Card title="Form recente">
+        <Card title={t("player.form")}>
           {matches.length < 2 ? (
-            <Empty title="O histórico está começando" hint="A form é montada das matches que o hub acompanhou." />
+            <Empty title={t("club.historyStarting")} hint={t("player.formEmptyHint")} />
           ) : (
             <div className="px-2 py-3">
               <LineChart
@@ -149,21 +149,21 @@ export function PlayerPage({
           )}
         </Card>
 
-        <Card title="Temporada">
+        <Card title={t("player.season")}>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 px-4 py-3 text-sm">
-            <dt className="text-faint">Posição current</dt>
+            <dt className="text-faint">{t("common.position")}</dt>
             <dd className="text-right">
               <PosTag position={p.position} />
             </dd>
-            <dt className="text-faint">Played</dt>
+            <dt className="text-faint">{t("common.played")}</dt>
             <dd className="tnum text-right font-mono">{fmt(p.played)}</dd>
-            <dt className="text-faint">Goals</dt>
+            <dt className="text-faint">{t("common.goals")}</dt>
             <dd className="tnum text-right font-mono">{fmt(p.goals)}</dd>
-            <dt className="text-faint">Assistências</dt>
+            <dt className="text-faint">{t("common.assists")}</dt>
             <dd className="tnum text-right font-mono">{fmt(p.assists)}</dd>
-            <dt className="text-faint">Cartões vermelhos</dt>
+            <dt className="text-faint">{t("common.redCards")}</dt>
             <dd className="tnum text-right font-mono">{fmt(p.red_cards)}</dd>
-            <dt className="text-faint">Clubs por onde passou</dt>
+            <dt className="text-faint">{t("player.clubsPlayedAt")}</dt>
             <dd className="text-right font-mono">{fmt((p.clubs ?? []).length)}</dd>
           </dl>
         </Card>
@@ -171,7 +171,7 @@ export function PlayerPage({
 
       {p.goalkeeper && p.saves_by_type && (
         <div className="mb-4">
-          <Card title="Saves do goalkeeper">
+          <Card title={t("player.keeperSavesTitle")}>
             <div className="flex flex-wrap gap-2 px-4 py-3">
               {Object.entries(p.saves_by_type).map(([k, v]) => (
                 <Badge key={k} tone="info">
@@ -180,18 +180,17 @@ export function PlayerPage({
               ))}
             </div>
             <p className="px-4 pb-3 text-xs text-muted">
-              Este detalhamento existe só na linha from_division partida do goalkeeper — os seis tipos from_division defesa são
-              registrados separadamente pela EA.
+              {t("player.keeperHint")}
             </p>
           </Card>
         </div>
       )}
 
-      {/* Aparece com mais from_division um clube OU quando há carreira -- o acumulado
-          interessa mesmo to_division quem só passou por um clube. */}
+      {/* Aparece com mais de um clube OU quando há carreira -- o acumulado
+          interessa mesmo para quem só passou por um clube. */}
       {((p.clubs ?? []).length > 1 || (p.clubs ?? []).some((c) => c.career)) && (
         <div className="mb-4">
-          <Card title="Clubs por onde passou">
+          <Card title={t("player.clubsPlayedAt")}>
             <ul className="divide-y divide-[var(--border)]">
               {(p.clubs ?? []).map((c) => (
                 <li key={c.club_id}>
@@ -207,7 +206,7 @@ export function PlayerPage({
                         // (as partidas acompanhadas) não dá. Rotulada para não
                         // ser lida como o mesmo número da linha acima.
                         <span className="block font-mono text-[10px] text-faint">
-                          carreira: {fmt(c.career.played)}J {fmt(c.career.goals)}G {fmt(c.career.assists)}A
+                          {t("player.careerAt")}: {fmt(c.career.played)}J {fmt(c.career.goals)}G {fmt(c.career.assists)}A
                         </span>
                       )}
                     </span>
@@ -222,27 +221,27 @@ export function PlayerPage({
               ))}
             </ul>
             <p className="px-4 py-3 text-xs text-muted">
-              A EA não tem busca por jogador — a lista from_division clubs vem do cruzamento das matches acompanhadas.
+              {t("player.clubsHint")}
             </p>
           </Card>
         </div>
       )}
 
-      <Card title="Últimas atuações">
+      <Card title={t("player.lastAppearances")}>
         {matches.length === 0 ? (
-          <Empty title="sem atuações registradas" />
+          <Empty title={t("player.noAppearances")} />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-surface-2 text-faint">
-                  <th className="px-3 py-2 text-left font-mono text-[10px] uppercase">quando</th>
-                  <th className="px-3 py-2 text-left font-mono text-[10px] uppercase">adversário</th>
-                  <th className="px-3 py-2 text-left font-mono text-[10px] uppercase">res.</th>
-                  <th className="px-3 py-2 text-right font-mono text-[10px] uppercase">rating</th>
-                  <th className="px-3 py-2 text-right font-mono text-[10px] uppercase">goals</th>
-                  <th className="px-3 py-2 text-right font-mono text-[10px] uppercase">assist.</th>
-                  <th className="px-3 py-2 text-right font-mono text-[10px] uppercase">min</th>
+                  <th className="px-3 py-2 text-left font-mono text-[10px] uppercase">{t("common.when")}</th>
+                  <th className="px-3 py-2 text-left font-mono text-[10px] uppercase">{t("club.opponents")}</th>
+                  <th className="px-3 py-2 text-left font-mono text-[10px] uppercase">{t("common.result")}</th>
+                  <th className="px-3 py-2 text-right font-mono text-[10px] uppercase">{t("common.rating")}</th>
+                  <th className="px-3 py-2 text-right font-mono text-[10px] uppercase">{t("common.goals")}</th>
+                  <th className="px-3 py-2 text-right font-mono text-[10px] uppercase">{t("common.assists")}</th>
+                  <th className="px-3 py-2 text-right font-mono text-[10px] uppercase">{t("common.min")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -274,7 +273,7 @@ export function PlayerPage({
       </Card>
 
       <p className="mt-4 text-xs text-muted">
-        {POS_SHORT[p.position]} · perfil público. Nada aqui exige login — o hub mostra o que a EA já expõe.
+        {POS_SHORT[p.position]} · {t("player.publicProfile")}
       </p>
     </>
   );

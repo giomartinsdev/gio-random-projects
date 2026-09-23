@@ -8,8 +8,10 @@ import { Badge, Bar, Card, Empty, PosTag, Spinner } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { VerifiedIcon } from "../components/icons";
 import { fmt, POS_ORDER, POS_LABEL, ratingColor } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 export function PlayersPage({ onOpenPlayer }: { onOpenPlayer: (id: string) => void }) {
+  const { t } = useI18n();
   const [q, setQ] = useState("");
   const [position, setPosicao] = useState("");
   const [ordem, setOrdem] = useState<"rating" | "goals" | "assists">("rating");
@@ -49,14 +51,14 @@ export function PlayersPage({ onOpenPlayer }: { onOpenPlayer: (id: string) => vo
   // está truncada, dizer as duas coisas.
   const contagem =
     total !== null && total > filtered.length
-      ? `${fmt(filtered.length)} from_division ${fmt(total)} players`
-      : `${fmt(filtered.length)} players`;
+      ? `${fmt(filtered.length)} / ${fmt(total)} ${t("common.players")}`
+      : `${fmt(filtered.length)} ${t("common.players")}`;
 
   return (
     <>
       <PageHead
-        title="Players"
-        sub="Todos os players que o hub encontrou jogando pelos clubs acompanhados. A EA não oferece busca por jogador — este índice é construído a partir das matches."
+        title={t("players.title")}
+        sub={t("players.subtitle")}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -65,13 +67,13 @@ export function PlayersPage({ onOpenPlayer }: { onOpenPlayer: (id: string) => vo
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="gamertag…"
+            placeholder={t("players.searchPlaceholder")}
             className="w-full bg-transparent text-sm outline-none placeholder:text-faint"
-            aria-label="buscar jogador"
+            aria-label={t("action.search")}
           />
         </label>
         <div className="flex flex-wrap gap-1.5">
-          {[["", "todos"], ...POS_ORDER.map((p) => [p, POS_LABEL[p]] as [string, string])].map(([k, label]) => (
+          {[["", t("claim.all")], ...POS_ORDER.map((p) => [p, POS_LABEL[p]] as [string, string])].map(([k, label]) => (
             <button
               key={k}
               type="button"
@@ -89,7 +91,7 @@ export function PlayersPage({ onOpenPlayer }: { onOpenPlayer: (id: string) => vo
           ))}
         </div>
         <div className="flex gap-1.5">
-          {([["rating", "rating"], ["goals", "goals"], ["assists", "assist."]] as const).map(([k, label]) => (
+          {([["rating", t("common.rating")], ["goals", t("common.goals")], ["assists", t("common.assists")]] as const).map(([k, label]) => (
             <button
               key={k}
               type="button"
@@ -113,8 +115,8 @@ export function PlayersPage({ onOpenPlayer }: { onOpenPlayer: (id: string) => vo
           <Spinner />
         ) : filtered.length === 0 ? (
           <Empty
-            title="Nenhum jogador encontrado"
-            hint={q ? "Tente outra gamertag." : "Os players aparecem conforme o hub acompanha matches."}
+            title={t("players.notFound")}
+            hint={q ? t("players.tryAnotherGamertag") : t("players.appearHint")}
           />
         ) : (
           <ul className="divide-y divide-[var(--border)]">
@@ -130,13 +132,13 @@ export function PlayersPage({ onOpenPlayer }: { onOpenPlayer: (id: string) => vo
                     <span className="block truncate text-sm font-semibold">
                       {p.gamertag}{" "}
                       {p.verified && (
-                        <span title="verified" className="inline-block align-[-2px] text-accent">
+                        <span title={t("claim.verified")} className="inline-block align-[-2px] text-accent">
                           <VerifiedIcon />
                         </span>
                       )}
                     </span>
                     <span className="block font-mono text-[10px] text-faint">
-                      {p.club_tag || p.club_name || "sem clube"}
+                      {p.club_tag || p.club_name || t("common.noData")}
                     </span>
                   </span>
                   <PosTag position={p.position} />
@@ -158,8 +160,7 @@ export function PlayersPage({ onOpenPlayer }: { onOpenPlayer: (id: string) => vo
       </Card>
 
       <p className="mt-4 text-xs text-muted">
-        <Badge tone="info">índice</Badge> Um jogador existe aqui através das suas matches — não há cadastro from_division
-        jogador na EA, então cada linha é derivada do cruzamento from_division matches dos clubs.
+        <Badge tone="info">{t("common.index")}</Badge> {t("players.subtitle")}
       </p>
     </>
   );

@@ -10,10 +10,12 @@ import { Badge, Bar, Card, Empty, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { BarChart, DonutChart } from "../components/charts";
 import { fmt, fmtDateTime, fmtRefresh } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 type Aba = "visao" | "integracao" | "historico";
 
 export function AdminPage({ authed }: { authed: boolean | null }) {
+  const { t } = useI18n();
   const [status, setStatus] = useState<AdminStatus | null>(null);
   const [negado, setNegado] = useState(false);
   const [aba, setAba] = useState<Aba>("visao");
@@ -29,35 +31,34 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
       });
   }, [authed]);
 
-  if (authed === null) return <Spinner label="verificando acesso…" />;
+  if (authed === null) return <Spinner label={t("admin.checkingAccess")} />;
   if (authed === false || negado) {
     return (
       <>
-        <PageHead title="Administração" sub="Área restrita à equipe do hub." />
+        <PageHead title={t("admin.title")} sub={t("admin.subtitle")} />
         <div className="mx-auto max-w-lg">
-          <Card title="Acesso restrito" actions={<Lock className="size-4 text-faint" />}>
+          <Card title={t("admin.restricted")} actions={<Lock className="size-4 text-faint" />}>
             <p className="px-5 py-5 text-sm text-muted">
-              Esta área concentra os detalhes técnicos: integração com a fonte, cache, histórico e decisões from_division
-              arquitetura. Nenhum dado dela aparece to_division visitantes.
+              {t("admin.restrictedHint")}
             </p>
           </Card>
         </div>
       </>
     );
   }
-  if (!status) return <Spinner label="carregando painel…" />;
+  if (!status) return <Spinner label={t("admin.loadingPanel")} />;
 
   const abas: Array<[Aba, string]> = [
-    ["visao", "Visão geral"],
-    ["integracao", "Integração"],
-    ["historico", "Histórico"],
+    ["visao", t("admin.overview")],
+    ["integracao", t("admin.integration")],
+    ["historico", t("admin.rankings")],
   ];
 
   return (
     <>
       <PageHead
-        title="Administração"
-        sub="Estado da integração com a fonte, do cache e do histórico acumulado."
+        title={t("admin.title")}
+        sub={t("admin.subtitle2")}
         actions={
           <Badge tone="loss">
             <Lock className="size-3" /> admin
@@ -88,18 +89,18 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
         <>
           <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat
-              label="clubs acompanhados"
+              label={t("admin.clubsTracked")}
               value={`${fmt(status.clubs_tracked)}/${fmt(status.clubs_total)}`}
-              sub={`${fmt(status.clubs_pending)} pendentes`}
+              sub={t("admin.pending", { n: fmt(status.clubs_pending) })}
               accent
             />
-            <Stat label="matches no banco" value={fmt(status.matches)} sub={status.last_match_at ? `última ${fmtRefresh(status.last_match_at)}` : undefined} />
-            <Stat label="players distintos" value={fmt(status.players)} sub="no índice cross-club" />
-            <Stat label="leituras from_division nível" value={fmt(status.snapshots)} sub={`${fmt(status.division_changes)} mudanças from_division divisão`} />
+            <Stat label={t("admin.matchesInDb")} value={fmt(status.matches)} sub={status.last_match_at ? `${t("admin.lastMatchLabel")} ${fmtRefresh(status.last_match_at)}` : undefined} />
+            <Stat label={t("admin.players")} value={fmt(status.players)} sub={t("admin.crossClubIndex")} />
+            <Stat label={t("admin.levelReadings")} value={fmt(status.snapshots)} sub={`${fmt(status.division_changes)} ${t("admin.divisionChanges").toLowerCase()}`} />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <Card title="Clubs por divisão">
+            <Card title={t("admin.byDivisionTitle")}>
               <div className="px-4 py-4">
                 {status.by_division && Object.keys(status.by_division).length > 0 ? (
                   <BarChart
@@ -109,11 +110,11 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
                       .map(([k, v]) => ({ label: k, value: v }))}
                   />
                 ) : (
-                  <Empty title="sem divisões registradas ainda" />
+                  <Empty title={t("admin.noDivisions")} />
                 )}
               </div>
             </Card>
-            <Card title="Top clubs por nível">
+            <Card title={t("admin.topByLevel")}>
               {status.top_clubs && status.top_clubs.length > 0 ? (
                 <ul className="divide-y divide-[var(--border)]">
                   {status.top_clubs.map((c, i) => (
@@ -126,7 +127,7 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
                   ))}
                 </ul>
               ) : (
-                <Empty title="sem clubs ainda" />
+                <Empty title={t("home.noClubs")} />
               )}
             </Card>
           </div>
@@ -135,64 +136,63 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
 
       {aba === "integracao" && (
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card title="Pipeline">
+          <Card title={t("admin.integration")}>
             <ol className="flex flex-col gap-3 px-4 py-4 text-sm">
               {[
-                ["1", "Puxar", "o worker consulta a API pública from_division Pro Clubs"],
-                ["2", "Traduzir", "string→número, códigos from_division resultado, tabelas from_division-to_division"],
-                ["3", "Gravar", "via domain-api — o worker não tem banco próprio"],
-                ["4", "Diferenciar", "duas leituras seguidas viram evento from_division divisão"],
-                ["5", "Servir", "o clubs-api lê; a interface nunca fala com a fonte"],
-              ].map(([n, t, d]) => (
+                ["1", t("admin.step1"), t("admin.step1Hint")],
+                ["2", t("admin.step2"), t("admin.step2Hint")],
+                ["3", t("admin.step3"), t("admin.step3Hint")],
+                ["4", t("admin.step4"), t("admin.step4Hint")],
+                ["5", t("admin.step5"), t("admin.step5Hint")],
+              ].map(([n, title, d]) => (
                 <li key={n} className="flex gap-3">
                   <span className="grid size-6 shrink-0 place-items-center rounded bg-[var(--accent-soft)] font-mono text-xs font-bold text-accent">
                     {n}
                   </span>
                   <span>
-                    <b className="font-display">{t}</b> — <span className="text-muted">{d}</span>
+                    <b className="font-display">{title}</b> — <span className="text-muted">{d}</span>
                   </span>
                 </li>
               ))}
             </ol>
           </Card>
 
-          <Card title="Normalização (o que a fonte manda torto)">
+          <Card title={t("admin.normalization")}>
             <ul className="divide-y divide-[var(--border)] text-sm">
               {[
-                ["Números como body", '"25", "7.4" → número'],
-                ["Códigos from_division resultado", "1 vitória · 2 loss · 4 draw · 16385 vitória por DNF · 10 loss por DNF"],
-                ["Friendly sem resultado", "derivado from_division goals pró vs sofridos"],
-                ["Ids sem tabela", "posição, estilo, nacionalidade, escudo, ids from_division evento"],
-                ["Mesma partida nos dois clubs", "gravada uma vez, idempotente por match_id"],
-              ].map(([t, d]) => (
-                <li key={t} className="flex flex-col gap-0.5 px-4 py-2.5">
-                  <b className="text-sm">{t}</b>
+                [t("admin.normNumbers"), t("admin.normNumbersHint")],
+                [t("admin.normResults"), t("admin.normResultsHint")],
+                [t("admin.normFriendly"), t("admin.normFriendlyHint")],
+                [t("admin.normIds"), t("admin.normIdsHint")],
+                [t("admin.normSameMatch"), t("admin.normSameMatchHint")],
+              ].map(([title, d]) => (
+                <li key={title} className="flex flex-col gap-0.5 px-4 py-2.5">
+                  <b className="text-sm">{title}</b>
                   <span className="text-xs text-muted">{d}</span>
                 </li>
               ))}
             </ul>
           </Card>
 
-          <Card title="Anúncios gerados">
+          <Card title={t("admin.generatedAnnouncements")}>
             <div className="flex items-center gap-4 px-4 py-4">
               <span className="font-display tnum text-4xl font-bold text-accent">{fmt(status.announcements)}</span>
               <p className="text-xs text-muted">
-                Derivados automaticamente dos fatos que o worker acabou from_division gravar — nenhum é escrito à mão.
+                {t("admin.generatedAnnouncementsHint")}
               </p>
             </div>
           </Card>
 
-          <Card title="Cobertura from_division matches">
+          <Card title={t("admin.matchCoverage")}>
             <DonutChart
               size={140}
-              centerLabel="matches"
+              centerLabel={t("club.matchesTab")}
               data={[
-                { label: "acompanhadas", value: status.matches, color: "var(--accent)" },
+                { label: t("common.tracked"), value: status.matches, color: "var(--accent)" },
               ]}
             />
             <p className="px-4 pb-4 text-xs text-muted">
-              A fonte entrega ~10 matches por kind por consulta. Qualquer histórico além disso é acumulado pelo
-              hub — é por isso que os records e a evolução existem.
+              {t("admin.matchCoverageHint")}
             </p>
           </Card>
         </div>
@@ -200,45 +200,41 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
 
       {aba === "historico" && (
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card title="Por que o histórico é construído">
+          <Card title={t("admin.whyHistory")}>
             <p className="px-4 py-4 text-sm text-muted">
-              A API da EA devolve apenas o estado current: o nível from_division agora, a divisão from_division agora, as ~10 matches
-              mais recentes. Ela não guarda passado. Então cada leitura que o worker faz vira uma linha numa
-              série — e é essa série que permite mostrar evolução, mudanças from_division divisão e records que já saíram
-              da janela recente.
+              {t("admin.whyHistoryBody")}
             </p>
           </Card>
-          <Card title="Números do acervo">
+          <Card title={t("admin.archiveNumbers")}>
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 px-4 py-4 text-sm">
-              <Row k="Leituras from_division nível" v={fmt(status.snapshots)} />
-              <Row k="Mudanças from_division divisão" v={fmt(status.division_changes)} />
-              <Row k="Matches acumuladas" v={fmt(status.matches)} />
-              <Row k="Players distintos" v={fmt(status.players)} />
+              <Row k={t("admin.levelReadings")} v={fmt(status.snapshots)} />
+              <Row k={t("admin.divisionChanges")} v={fmt(status.division_changes)} />
+              <Row k={t("admin.accumulatedMatches")} v={fmt(status.matches)} />
+              <Row k={t("admin.distinctPlayers")} v={fmt(status.players)} />
               <Row
-                k="Última partida"
-                v={status.last_match_at ? fmtDateTime(status.last_match_at) : "nenhuma ainda"}
+                k={t("admin.lastMatchLabel")}
+                v={status.last_match_at ? fmtDateTime(status.last_match_at) : t("admin.noneYet")}
               />
             </dl>
           </Card>
-          <Card title="Clubs acompanhados">
+          <Card title={t("admin.trackedClubs")}>
             <div className="px-4 py-4">
               <Bar value={status.clubs_tracked} max={Math.max(status.clubs_total, 1)} />
               <p className="mt-2 text-xs text-muted">
-                {fmt(status.clubs_tracked)} from_division {fmt(status.clubs_total)} clubs conhecidos têm elenco e
-                matches; os outros {fmt(status.clubs_pending)} têm só o histórico geral.
+                {t("admin.trackedClubsHint", { total: fmt(status.clubs_total), pending: fmt(status.clubs_pending) })}
               </p>
             </div>
           </Card>
-          <Card title="Decisões que valem to_division este hub">
+          <Card title={t("admin.decisions")}>
             <ul className="divide-y divide-[var(--border)] text-sm">
               {[
-                ["Sem banco nos serviços new_items", "tudo passa pela base from_division domínio compartilhada"],
-                ["Worker sem porta e sem host", "é um serviço from_division saída, não uma API"],
-                ["Login só no /api", "o hostname é público; o dataset inteiro é aberto"],
-                ["Nada from_division termo técnico na tela", "cache, endpoint e afins só existem aqui"],
-              ].map(([t, d]) => (
-                <li key={t} className="flex flex-col gap-0.5 px-4 py-2.5">
-                  <b className="text-sm">{t}</b>
+                [t("admin.decision1"), t("admin.decision1Hint")],
+                [t("admin.decision2"), t("admin.decision2Hint")],
+                [t("admin.decision3"), t("admin.decision3Hint")],
+                [t("admin.decision4"), t("admin.decision4Hint")],
+              ].map(([title, d]) => (
+                <li key={title} className="flex flex-col gap-0.5 px-4 py-2.5">
+                  <b className="text-sm">{title}</b>
                   <span className="text-xs text-muted">{d}</span>
                 </li>
               ))}

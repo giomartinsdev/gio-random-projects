@@ -27,6 +27,7 @@ import { PageHead } from "../components/shell";
 import { GoogleSignInButton } from "../components/google-signin";
 import { VerifiedIcon } from "../components/icons";
 import { fmt, POS_ORDER, POS_SHORT, ratingColor } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 /** Os ícones do passo a passo, por chave. Ficam aqui e não em texto com emoji
  * para renderizarem igual em qualquer sistema e herdarem a cor do tema. */
@@ -57,6 +58,7 @@ export function ClaimPage({
   onOpenClub: (id: string) => void;
   onOpenPlayer: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [step, setStep] = useState<Step>(1);
   const [club, setClub] = useState<Club | null>(null);
 
@@ -72,8 +74,8 @@ export function ClaimPage({
   return (
     <>
       <PageHead
-        title="Resgatar meu pro"
-        sub="Encontre seu clube, escolha seu jogador e o hub passa a acompanhar seus clubs, os rivais deles e os rivais dos rivais — sozinho."
+        title={t("claim.title")}
+        sub={t("claim.subtitle")}
       />
       <StepBar step={step} club={club} />
       {step === 1 && <StepBuscar onPick={pickClub} />}
@@ -99,10 +101,11 @@ export function ClaimPage({
 // ---------------------------------------------------------------- step bar
 
 function StepBar({ step, club }: { step: Step; club: Club | null }) {
+  const { t } = useI18n();
   const steps: Array<[Step, string, string]> = [
-    [1, "Encontrar clube", club?.name || "busca por name"],
-    [2, "Escolher jogador", "você marca o seu"],
-    [3, "Pronto", "hub acompanha sozinho"],
+    [1, t("claim.step1"), club?.name || t("claim.step1Hint")],
+    [2, t("claim.step2"), t("claim.step2Hint")],
+    [3, t("claim.step3"), t("claim.step3Hint")],
   ];
   return (
     <div className="surface mb-4 flex flex-wrap items-center gap-2 px-4 py-3">
@@ -141,6 +144,7 @@ function StepBar({ step, club }: { step: Step; club: Club | null }) {
 // ------------------------------------------------------------ passo 1
 
 function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
+  const { t } = useI18n();
   const [q, setQ] = useState("");
   const [list, setList] = useState<Club[] | null>(null);
   const [buscando, setBuscando] = useState(false);
@@ -222,40 +226,39 @@ function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
       <div className="flex flex-col gap-4">
-        <Card title="Qual é o seu clube?">
+        <Card title={t("claim.findClub")}>
           <div className="flex flex-col gap-3 px-4 py-4">
-            <p className="text-xs text-muted">Digite o name. A busca ignora acento e maiúsculas.</p>
+            <p className="text-xs text-muted">{t("claim.findClubHint")}</p>
             <label className="flex items-center gap-2.5 rounded-md px-3.5 py-3" style={{ background: "var(--surface-2)", border: "1.5px solid var(--accent)" }}>
               <span className="text-accent">⌕</span>
               <input
                 autoFocus
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="name do clube…"
+                placeholder={t("claim.clubNamePlaceholder")}
                 className="w-full bg-transparent text-[15px] font-semibold outline-none placeholder:font-normal placeholder:text-faint"
-                aria-label="buscar clube"
+                aria-label={t("action.search")}
               />
               {q && (
                 <button type="button" onClick={() => setQ("")} className="font-mono text-[11px] text-faint hover:text-ink">
-                  limpar
+                  {t("action.clear")}
                 </button>
               )}
             </label>
             <div className="font-mono text-[11px] text-muted">
               {q.trim().length < 2
-                ? "digite ao menos 2 letras"
+                ? t("claim.searchingHint")
                 : buscando
-                  ? "buscando…"
+                  ? t("claim.searching")
                   : buscandoAoVivo
-                    ? "procurando na fonte…"
-                    : `${fmt(list?.length ?? 0)} clubs found to_division “${q.trim()}”`}
+                    ? t("claim.searchingSource")
+                    : `${fmt(list?.length ?? 0)} ${t("common.clubs")} — “${q.trim()}”`}
             </div>
             {buscandoAoVivo && (
               <div className="flex items-start gap-2 rounded-md px-3 py-2.5" style={{ background: "var(--info-soft)" }}>
                 <Radio className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--info)" }} />
                 <p className="text-[11px] text-muted">
-                  O hub ainda não conhecia esse clube, então fomos buscar na fonte.
-                  Isso leva alguns segundos — não precisa recarregar.
+                  {t("claim.liveSearchHint")}
                 </p>
               </div>
             )}
@@ -263,16 +266,16 @@ function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
         </Card>
 
         {list !== null && (
-          <Card title={`${fmt(list.length)} ${list.length === 1 ? "club" : "clubs"}`} actions={<span className="inline-flex items-center gap-1 text-[10px] text-faint">toque to_division ver os players <ArrowRight className="size-3" /></span>}>
+          <Card title={`${fmt(list.length)} ${list.length === 1 ? t("common.club") : t("common.clubs")}`} actions={<span className="inline-flex items-center gap-1 text-[10px] text-faint">{t("claim.tapToSeePlayers")} <ArrowRight className="size-3" /></span>}>
             {list.length === 0 ? (
               <Empty
-                title={buscandoAoVivo ? "Procurando na fonte…" : "Nenhum clube encontrado"}
+                title={buscandoAoVivo ? t("claim.searchingSource") : t("claim.notFound")}
                 hint={
                   buscandoAoVivo
-                    ? "Assim que a fonte responder, os clubs aparecem aqui."
+                    ? t("claim.sourceWillRespond")
                     : aoVivo
-                      ? "A fonte também não devolveu este clube. Confira o name exato — tente a tag."
-                      : "Tente parte do name ou a tag do clube."
+                      ? t("claim.notFoundLive")
+                      : t("claim.tryNameOrTag")
                 }
               />
             ) : (
@@ -292,12 +295,12 @@ function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
                             D{c.division}
                           </span>
                           <span className="text-faint">·</span>
-                          <span>nível {fmt(c.skill_rating)}</span>
+                          <span>{t("common.level")} {fmt(c.skill_rating)}</span>
                           <span className="text-faint">·</span>
-                          <span>{fmt(c.played)} played</span>
+                          <span>{fmt(c.played)} {t("common.played")}</span>
                         </span>
                       </span>
-                      {c.tracked ? <Badge tone="accent">tracked</Badge> : <Badge>não tracked</Badge>}
+                      {c.tracked ? <Badge tone="accent">{t("common.tracked")}</Badge> : <Badge>{t("common.notTracked")}</Badge>}
                       <ArrowRight className="size-3.5 text-faint" />
                     </button>
                   </li>
@@ -309,21 +312,21 @@ function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
       </div>
 
       <div className="flex flex-col gap-4">
-        <Card title="Como funciona">
+        <Card title={t("claim.howItWorks")}>
           <ol className="flex flex-col gap-3.5 px-4 py-4">
             {[
-              ["players", "Achamos os players do clube", "puxamos o elenco direto da fonte, na hora"],
-              ["resgate", "Você resgata o seu", "e ele ganha o selo from_division verified"],
-              ["rivais", "Descobrimos os rivais", "as 10 últimas matches do clube, depois 5 from_division cada rival"],
-            ].map(([icon, t, h]) => {
+              ["players", t("claim.how1"), t("claim.how1Hint")],
+              ["resgate", t("claim.how2"), t("claim.how2Hint")],
+              ["rivais", t("claim.how3"), t("claim.how3Hint")],
+            ].map(([icon, title, h]) => {
               const Icon = FLOW[icon];
               return (
-                <li key={t} className="flex items-start gap-2.5">
+                <li key={title} className="flex items-start gap-2.5">
                   <span className="grid size-7 shrink-0 place-items-center rounded-md" style={{ background: "var(--accent-soft)" }}>
                     <Icon className="size-3.5" style={{ color: "var(--accent)" }} />
                   </span>
                   <span className="flex flex-col">
-                    <span className="text-[12.5px] font-bold">{t}</span>
+                    <span className="text-[12.5px] font-bold">{title}</span>
                     <span className="text-[11px] text-muted">{h}</span>
                   </span>
                 </li>
@@ -334,9 +337,9 @@ function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
         <div className="surface flex items-start gap-2.5 px-3.5 py-3.5">
           <Lightbulb className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--gold)" }} />
           <div>
-            <div className="text-xs font-bold">Não sabe o name exato?</div>
+            <div className="text-xs font-bold">{t("claim.tipTitle")}</div>
             <p className="mt-0.5 text-[11px] text-muted">
-              Busque por parte do name ou pela tag. Clubs que o hub já conhece aparecem primeiro.
+              {t("claim.tipHint")}
             </p>
           </div>
         </div>
@@ -366,6 +369,7 @@ function StepEscolher({
   onOpenPlayer: (id: string) => void;
   onSignedIn: () => void;
 }) {
+  const { t } = useI18n();
   const [squad, setSquad] = useState<SquadMember[] | null>(null);
   const [fetchState, setFetchState] = useState<FetchRun | null>(null);
   const [q, setQ] = useState("");
@@ -395,7 +399,7 @@ function StepEscolher({
         setFetchState(run);
         if (run.finished_at) {
           carregarElenco();
-          return; // pronto: to_division from_division pollar
+          return; // pronto: para de pollar
         }
         pollRef.current = window.setTimeout(tick, 2000);
       } catch {
@@ -433,7 +437,7 @@ function StepEscolher({
       await onClaim(club.club_id, sel.player_id);
       onDone();
     } catch {
-      setErro("Não conseguimos resgatar agora. Tente from_division novo.");
+      setErro(t("claim.failed"));
       setSalvando(false);
     }
   }
@@ -444,11 +448,11 @@ function StepEscolher({
         <div className="flex items-center gap-3">
           <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs font-bold uppercase tracking-wide text-muted" style={{ borderColor: "var(--border-strong)" }}>
             <ChevronLeft className="size-3.5" />
-            trocar clube
+            {t("claim.changeClub")}
           </button>
           <div className="min-w-0 flex-1">
             <div className="text-lg font-bold">{club.name}</div>
-            <div className="font-mono text-[10.5px] text-faint">D{club.division} · nível {fmt(club.skill_rating)}</div>
+            <div className="font-mono text-[10.5px] text-faint">D{club.division} · {t("common.level")} {fmt(club.skill_rating)}</div>
           </div>
         </div>
 
@@ -458,13 +462,13 @@ function StepEscolher({
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="filtrar por gamertag…"
+              placeholder={t("claim.filterPlayer")}
               className="w-full bg-transparent text-sm outline-none placeholder:text-faint"
-              aria-label="filtrar jogador"
+              aria-label={t("claim.filterPlayer")}
             />
           </label>
           <div className="flex flex-wrap gap-1.5">
-            {[["", "todos"], ...POS_ORDER.map((p) => [p, POS_SHORT[p]] as [string, string])].map(([k, label]) => (
+            {[["", t("claim.all")], ...POS_ORDER.map((p) => [p, POS_SHORT[p]] as [string, string])].map(([k, label]) => (
               <button
                 key={k}
                 type="button"
@@ -484,29 +488,29 @@ function StepEscolher({
         </div>
 
         <Card
-          title="Elenco"
+          title={t("claim.squad")}
           actions={
             <span className="font-mono text-[10px] text-faint">
-              {buscando ? "buscando elenco…" : `${fmt(filtered.length)} players`}
+              {buscando ? t("claim.fetchingSquadShort") : `${fmt(filtered.length)} ${t("common.players")}`}
             </span>
           }
         >
           {squad === null ? (
-            <Spinner label="carregando elenco…" />
+            <Spinner label={t("claim.loadingSquad")} />
           ) : buscando ? (
-            <Spinner label="trazendo o elenco da fonte…" />
+            <Spinner label={t("claim.fetchingSquad")} />
           ) : filtered.length === 0 ? (
-            <Empty title="Nenhum jogador aqui" hint="O elenco é montado das matches do clube. Tente limpar o filtro." />
+            <Empty title={t("claim.noPlayers")} hint={t("claim.noPlayersHint")} />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-surface-2 text-faint">
-                    <th className="px-4 py-2.5 text-left font-mono text-[10px] uppercase">jogador</th>
-                    <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase">pos</th>
-                    <th className="px-3 py-2.5 text-right font-mono text-[10px] uppercase">played</th>
-                    <th className="px-3 py-2.5 text-right font-mono text-[10px] uppercase">rating</th>
-                    <th className="px-4 py-2.5 text-right font-mono text-[10px] uppercase">ação</th>
+                    <th className="px-4 py-2.5 text-left font-mono text-[10px] uppercase">{t("common.player")}</th>
+                    <th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase">{t("common.pos")}</th>
+                    <th className="px-3 py-2.5 text-right font-mono text-[10px] uppercase">{t("common.played")}</th>
+                    <th className="px-3 py-2.5 text-right font-mono text-[10px] uppercase">{t("common.rating")}</th>
+                    <th className="px-4 py-2.5 text-right font-mono text-[10px] uppercase">{t("claim.action")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -530,12 +534,12 @@ function StepEscolher({
                               <button type="button" onClick={(e) => { e.stopPropagation(); onOpenPlayer(p.player_id); }} className="text-left font-semibold hover:text-accent">
                                 {p.gamertag}{" "}
                                 {meu && (
-                                  <span title="seu pro" className="inline-block align-[-2px]" style={{ color: "var(--success)" }}>
+                                  <span title={t("claim.yourPro")} className="inline-block align-[-2px]" style={{ color: "var(--success)" }}>
                                     <VerifiedIcon />
                                   </span>
                                 )}
                               </button>
-                              <span className="font-mono text-[10px] text-faint">{fmt(p.goals)} goals · {fmt(p.assists)} assist.</span>
+                              <span className="font-mono text-[10px] text-faint">{fmt(p.goals)} {t("common.goals")} · {fmt(p.assists)} {t("common.assists")}</span>
                             </span>
                           </div>
                         </td>
@@ -545,18 +549,18 @@ function StepEscolher({
                         <td className="px-4 py-2.5 text-right">
                           {meu ? (
                             <span className="rounded-md px-3 py-1.5 font-display text-[10.5px] font-bold uppercase tracking-wide" style={{ background: "var(--success-soft)", color: "var(--success)" }}>
-                              seu pro
+                              {t("claim.yourPro")}
                             </span>
                           ) : bloqueado ? (
                             <span className="rounded-md px-3 py-1.5 font-display text-[10.5px] font-bold uppercase tracking-wide text-faint" style={{ background: "var(--surface-3)" }}>
-                              já resgatado
+                              {t("claim.claimed")}
                             </span>
                           ) : (
                             <span
                               className="rounded-md px-3 py-1.5 font-display text-[10.5px] font-bold uppercase tracking-wide"
                               style={selecionado ? { background: "var(--accent)", color: "var(--accent-ink)" } : { border: "1px solid var(--accent)", color: "var(--accent)" }}
                             >
-                              {selecionado ? "selecionado" : "sou eu"}
+                              {selecionado ? t("common.selected") : t("player.thisIsMe")}
                             </span>
                           )}
                         </td>
@@ -573,7 +577,7 @@ function StepEscolher({
       <div className="flex flex-col gap-4">
         {sel ? (
           <div className="surface flex flex-col gap-3.5 px-4 py-4" style={{ borderColor: "var(--accent)", borderWidth: 1.5 }}>
-            <Badge tone="accent">selecionado</Badge>
+            <Badge tone="accent">{t("common.selected")}</Badge>
             <div className="flex items-center gap-3">
               <span className="grid size-13 shrink-0 place-items-center rounded-md font-display text-lg font-bold" style={{ background: "var(--accent)", color: "var(--accent-ink)", width: 52, height: 52 }}>
                 {sel.gamertag.slice(0, 2).toUpperCase()}
@@ -584,14 +588,14 @@ function StepEscolher({
               </span>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <Stat label="rating" value={fmt(sel.rating, 2)} />
-              <Stat label="goals" value={fmt(sel.goals)} />
-              <Stat label="played" value={fmt(sel.played)} />
+              <Stat label={t("common.rating")} value={fmt(sel.rating, 2)} />
+              <Stat label={t("common.goals")} value={fmt(sel.goals)} />
+              <Stat label={t("common.played")} value={fmt(sel.played)} />
             </div>
             <div className="flex items-start gap-2.5 rounded-md px-3 py-3" style={{ background: "var(--warning-soft)" }}>
               <TriangleAlert className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--warning)" }} />
               <p className="text-[10.5px] text-muted">
-                O resgate é <b>único por conta</b> e não pode ser desfeito. Depois disso o hub segue este clube e seus rivais.
+                {t("claim.confirmHint")}
               </p>
             </div>
             {authed === true ? (
@@ -603,26 +607,26 @@ function StepEscolher({
                 style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
               >
                 {salvando ? (
-                  "resgatando…"
+                  t("claim.claiming")
                 ) : (
                   <>
-                    <Check className="size-3.5" strokeWidth={3} /> resgatar este pro
+                    <Check className="size-3.5" strokeWidth={3} /> {t("claim.claimThis")}
                   </>
                 )}
               </button>
             ) : (
               <div className="flex flex-col items-center gap-2">
                 <GoogleSignInButton onSuccess={() => { onSignedIn(); }} />
-                <p className="text-center text-[10.5px] text-muted">Entre to_division resgatar — é o que league o pro à sua conta.</p>
+                <p className="text-center text-[10.5px] text-muted">{t("claim.signInToClaim")}</p>
               </div>
             )}
             {error && <p className="text-center text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
           </div>
         ) : (
           <div className="surface flex flex-col gap-2 px-4 py-4">
-            <div className="text-sm font-bold">Escolha seu jogador</div>
+            <div className="text-sm font-bold">{t("claim.choosePlayer")}</div>
             <p className="text-xs text-muted">
-              Toque numa linha to_division selecionar. Os que já têm dono ficam bloqueados; o seu aparece com o selo.
+              {t("claim.choosePlayerHint")}
             </p>
           </div>
         )}
@@ -646,6 +650,7 @@ function StepPronto({
   onRestart: () => void;
   onSignedIn: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
       <div className="flex flex-col gap-4">
@@ -655,32 +660,32 @@ function StepPronto({
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-display text-xl font-bold">Pro resgatado</span>
+              <span className="font-display text-xl font-bold">{t("claim.claimed")}</span>
               <Badge tone="accent">
-                <VerifiedIcon /> verified
+                <VerifiedIcon /> {t("claim.verified")}
               </Badge>
             </div>
             <p className="mt-0.5 text-sm text-muted">
-              Seu pro está marcado. O hub já começou a acompanhar <b>{club.name}</b> e os rivais dele em segundo plano — pode navegar à vontade.
+              {t("claim.doneSubtitle")}
             </p>
           </div>
         </div>
 
-        <Card title="Descobrindo seus clubs" actions={<span className="text-[10px] text-faint">roda sozinho, você pode navegar</span>}>
+        <Card title={t("claim.discovering")} actions={<span className="text-[10px] text-faint">{t("claim.discoveringHint")}</span>}>
           <div className="flex flex-col gap-3 px-4 py-4">
             {[
-              ["check", "Você joga aqui", club.name, "done"],
-              ["users", "Rivais diretos", "trazendo as últimas 10 matches do seu clube…", "active"],
-              ["network", "Clubs from_division clubs", "últimas 5 matches from_division cada rival, em fila", "todo"],
-            ].map(([icon, t, h, state]) => {
+              ["check", t("claim.youPlayHere"), club.name, "done"],
+              ["users", t("claim.rivals"), t("claim.rivalsHint"), "active"],
+              ["network", t("claim.rivalsOfRivals"), t("claim.rivalsOfRivalsHint"), "todo"],
+            ].map(([icon, title, h, state]) => {
               const Icon = FLOW[icon as string];
               return (
-                <div key={t as string} className="flex items-center gap-3 rounded-md px-3.5 py-3" style={{ background: "var(--surface-2)" }}>
+                <div key={title as string} className="flex items-center gap-3 rounded-md px-3.5 py-3" style={{ background: "var(--surface-2)" }}>
                   <span className="grid size-7 shrink-0 place-items-center rounded-full" style={{ background: state === "done" ? "var(--success-soft)" : state === "active" ? "var(--accent-soft)" : "var(--surface-3)", color: state === "done" ? "var(--success)" : state === "active" ? "var(--accent)" : "var(--text-faint)" }}>
                     <Icon className="size-3.5" />
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="text-[12.5px] font-bold" style={{ color: state === "todo" ? "var(--text-muted)" : "var(--text)" }}>{t}</span>
+                    <span className="text-[12.5px] font-bold" style={{ color: state === "todo" ? "var(--text-muted)" : "var(--text)" }}>{title}</span>
                     <span className="truncate text-[10.5px] text-faint">{h}</span>
                   </span>
                 </div>
@@ -691,28 +696,28 @@ function StepPronto({
 
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => onOpenClub(club.club_id)} className="rounded-md px-4 py-2.5 font-display text-xs font-bold uppercase tracking-wide" style={{ background: "var(--accent)", color: "var(--accent-ink)" }}>
-            ver meu clube
+            {t("claim.viewMyClub")}
           </button>
           <button type="button" onClick={onRestart} className="rounded-md border px-4 py-2.5 font-display text-xs font-bold uppercase tracking-wide text-muted" style={{ borderColor: "var(--border-strong)" }}>
-            resgatar outro
+            {t("claim.claimAnother")}
           </button>
         </div>
       </div>
 
       <div className="flex flex-col gap-4">
-        <Card title="Próximo passo">
+        <Card title={t("claim.nextStep")}>
           <ul className="flex flex-col gap-3 px-4 py-4">
             {[
-              ["Avisos no Discord", "escolha o que quer receber"],
-              ["Favoritar clubs", "marque os rivais que te interessam"],
-              ["Minha área", "veja o que o login trouxe"],
-            ].map(([t, h]) => (
-              <li key={t} className="flex items-center gap-2.5">
+              [t("claim.discordAlerts"), t("notif.subtitle2")],
+              [t("claim.favoriteClubs"), t("claim.favoritesHint")],
+              [t("nav.myArea"), t("claim.myAreaHint")],
+            ].map(([title, h]) => (
+              <li key={title} className="flex items-center gap-2.5">
                 <span className="grid size-7 place-items-center rounded-md" style={{ background: "var(--surface-2)" }}>
                   <ArrowRight className="size-3.5 text-faint" />
                 </span>
                 <span className="flex flex-col">
-                  <span className="text-[12.5px] font-bold">{t}</span>
+                  <span className="text-[12.5px] font-bold">{title}</span>
                   <span className="text-[10.5px] text-faint">{h}</span>
                 </span>
               </li>
@@ -721,7 +726,7 @@ function StepPronto({
         </Card>
         {authed !== true && (
           <div className="surface flex flex-col items-center gap-2 px-4 py-4">
-            <p className="text-center text-xs text-muted">Entre to_division salvar isso na sua conta.</p>
+            <p className="text-center text-xs text-muted">{t("claim.saveHint")}</p>
             <GoogleSignInButton onSuccess={onSignedIn} />
           </div>
         )}

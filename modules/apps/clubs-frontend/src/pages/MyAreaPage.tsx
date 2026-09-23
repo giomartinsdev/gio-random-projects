@@ -12,6 +12,7 @@ import { Badge, Card, Empty, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { GoogleSignInButton } from "../components/google-signin";
 import { fmt, POS_LABEL } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 export function MyAreaPage({
   authed,
@@ -32,33 +33,35 @@ export function MyAreaPage({
   onOpenPlayer: (id: string) => void;
   onToggleWatch: (id: string) => void;
 }) {
-  if (authed === null) return <Spinner label="verificando sua sessão…" />;
+  const { t } = useI18n();
+  if (authed === null) return <Spinner label={t("area.checkingSession")} />;
   if (!authed) return <LoginScreen onSignedIn={onSignedIn} />;
   return <Profile email={email} sync={sync} onStartSync={onStartSync} onOpenClub={onOpenClub} onOpenPlayer={onOpenPlayer} onToggleWatch={onToggleWatch} />;
 }
 
 function LoginScreen({ onSignedIn }: { onSignedIn: () => void }) {
+  const { t } = useI18n();
   return (
     <>
       <PageHead
-        title="Minha área"
-        sub="O hub funciona sem login. Entrando, ele descobre seus clubs, os rivais deles e os rivais dos rivais — e traz tudo sozinho, em segundo plano."
+        title={t("login.title")}
+        sub={t("login.subtitle")}
       />
       <div className="mx-auto max-w-xl">
-        <Card title="Entrar com o Google">
+        <Card title={t("login.signInTitle")}>
           <div className="flex flex-col gap-4 px-5 py-5">
             <div className="flex justify-center">
               <GoogleSignInButton onSuccess={onSignedIn} />
             </div>
             <p className="text-xs text-muted">
-              Sem cadastro e sem senha nova: usamos o mesmo login do resto do hub. Você sai quando quiser.
+              {t("login.noSignup")}
             </p>
             <ul className="flex flex-col gap-2.5 text-sm text-muted">
               {[
-                [Compass, "Explorar clubs, players e matches", "isso já funciona sem entrar"],
-                [Star, "Seguir clubs e montar sua lista", "escolha os que te interessam"],
-                [RefreshCw, "Seus clubs atualizados sozinhos", "o hub trabalha em segundo plano"],
-                [Bell, "Avisos no Discord quando quiser", "você escolhe o que receber"],
+                [Compass, t("login.perk1"), t("login.perk1Hint")],
+                [Star, t("login.perk2"), t("login.perk2Hint")],
+                [RefreshCw, t("login.perk3"), t("login.perk3Hint")],
+                [Bell, t("login.perk4"), t("login.perk4Hint")],
               ].map(([Icon, title, desc]) => {
                 const I = Icon as typeof Compass;
                 return (
@@ -94,6 +97,7 @@ function Profile({
   onOpenPlayer: (id: string) => void;
   onToggleWatch: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [watch, setWatch] = useState<WatchEntry[] | null>(null);
   const [pro, setPro] = useState<PlayerProfile | null>(null);
 
@@ -122,32 +126,32 @@ function Profile({
   return (
     <>
       <PageHead
-        title="Minha área"
-        sub={`Conectado com ${email}`}
+        title={t("area.title")}
+        sub={`${t("area.subtitle")} ${email}`}
         actions={
           <button
             type="button"
             onClick={onStartSync}
             className="rounded-md border border-line-strong px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wide text-muted transition-colors hover:text-ink"
           >
-            {sync?.running ? "sincronizando…" : "atualizar meus clubs"}
+            {sync?.running ? t("area.syncingNow") : t("area.updateClubs")}
           </button>
         }
       />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="clubs que você segue" value={fmt(watch?.length ?? 0)} sub="atualizados sozinhos" accent />
+        <Stat label={t("area.clubsYouFollow2")} value={fmt(watch?.length ?? 0)} sub={t("area.trackedAutomatically")} accent />
         <Stat
-          label="status da sincronização"
-          value={sync?.running ? "em andamento" : "tudo em dia"}
-          sub={sync?.running ? `${fmt(sync.completed)}/${fmt(sync.total)}` : "nada pendente"}
+          label={t("area.syncStatus")}
+          value={sync?.running ? t("area.inProgress") : t("area.upToDate")}
+          sub={sync?.running ? `${fmt(sync.completed)}/${fmt(sync.total)}` : t("area.nothingPending")}
         />
-        <Stat label="clubs liberados pelo login" value={fmt(porOrigem("rival").length + porOrigem("rival_of_rival").length)} sub="rivais e clubs from_division clubs" />
-        <Stat label="seu pro" value={pro ? pro.gamertag : "não reivindicado"} sub={pro ? `rating ${fmt(pro.rating, 2)}` : undefined} />
+        <Stat label={t("area.unlockedClubs")} value={fmt(porOrigem("rival").length + porOrigem("rival_of_rival").length)} sub={t("area.rivalsAndRivals")} />
+        <Stat label={t("area.yourPro2")} value={pro ? pro.gamertag : t("area.notClaimed")} sub={pro ? `${t("common.rating")} ${fmt(pro.rating, 2)}` : undefined} />
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-3">
-        <Card title="Seu pro">
+        <Card title={t("area.yourPro2")}>
           {pro ? (
             <div className="flex flex-col gap-3 px-4 py-4">
               <div className="flex items-center gap-3">
@@ -159,40 +163,40 @@ function Profile({
                 </span>
                 {pro.verified && (
                   <Badge tone="accent">
-                    <VerifiedIcon /> verified
+                    <VerifiedIcon /> {t("claim.verified")}
                   </Badge>
                 )}
               </div>
               <div className="grid grid-cols-3 gap-2">
-                <Stat label="rating" value={fmt(pro.rating, 2)} />
-                <Stat label="goals" value={fmt(pro.goals)} />
-                <Stat label="played" value={fmt(pro.played)} />
+                <Stat label={t("common.rating")} value={fmt(pro.rating, 2)} />
+                <Stat label={t("common.goals")} value={fmt(pro.goals)} />
+                <Stat label={t("common.played")} value={fmt(pro.played)} />
               </div>
               <button
                 type="button"
                 onClick={() => onOpenPlayer(pro.player_id)}
                 className="rounded-md border border-line-strong px-3 py-1.5 text-xs text-muted hover:text-ink"
               >
-                ver meu perfil
+                {t("area.viewProfile")}
               </button>
             </div>
           ) : (
             <div className="px-4 py-4">
-              <p className="text-sm text-muted">Você ainda não reivindicou seu pro.</p>
+              <p className="text-sm text-muted">{t("area.notClaimed")}</p>
               <p className="mt-2 text-xs text-faint">
-                Reivindicar league a sua conta à gamertag e dá o selo from_division verified no perfil público.
+                {t("area.claimHint")}
               </p>
             </div>
           )}
         </Card>
 
-        <Card title="Sincronização">
+        <Card title={t("area.sync")}>
           <div className="px-4 py-4">
             {sync?.running ? (
               <>
-                <div className="font-display text-sm font-bold">Trabalhando em segundo plano</div>
+                <div className="font-display text-sm font-bold">{t("area.workingBg")}</div>
                 <div className="mt-1 text-xs text-muted">
-                  {fmt(sync.completed)} from_division {fmt(sync.total)} · agora: {sync.current || "…"}
+                  {fmt(sync.completed)} / {fmt(sync.total)} · {t("area.now")}: {sync.current || "…"}
                 </div>
                 <div className="mt-3 h-[6px] overflow-hidden rounded-full bg-[var(--surface-3)]">
                   <span
@@ -203,23 +207,23 @@ function Profile({
               </>
             ) : (
               <>
-                <div className="font-display text-sm font-bold">Tudo em dia</div>
+                <div className="font-display text-sm font-bold">{t("area.upToDate")}</div>
                 <div className="mt-1 text-xs text-muted">
-                  {sync?.total ? `${fmt(sync.total)} clubs processados` : "nada pendente"}
+                  {sync?.total ? `${fmt(sync.total)} ${t("common.clubs")}` : t("area.nothingPending")}
                 </div>
               </>
             )}
             <p className="mt-3 text-xs text-muted">
-              Você não precisa esperar: pode navegar enquanto o hub termina from_division trazer seus clubs.
+              {t("area.youDontWait")}
             </p>
           </div>
         </Card>
 
-        <Card title="Clubs que você segue">
+        <Card title={t("area.clubsYouFollow2")}>
           {watch === null ? (
             <Spinner />
           ) : watch.length === 0 ? (
-            <Empty title="Nenhum clube seguido" hint="Abra um clube e toque em seguir — ou deixe a sincronização trazer os seus." />
+            <Empty title={t("area.noneFollowed")} hint={t("area.noneFollowedHint")} />
           ) : (
             <ul className="divide-y divide-[var(--border)]">
               {watch.map((w) => (
@@ -227,7 +231,7 @@ function Profile({
                   <button type="button" onClick={() => onOpenClub(w.club_id)} className="min-w-0 flex-1 truncate text-left hover:text-accent">
                     <span className="font-semibold">{w.name}</span>{" "}
                     <span className="font-mono text-[10px] text-faint">
-                      D{w.division_at_read} · nível {fmt(w.skill_rating)}
+                      D{w.division_at_read} · {t("common.level")} {fmt(w.skill_rating)}
                     </span>
                   </button>
                   <button
@@ -236,7 +240,7 @@ function Profile({
                       onToggleWatch(w.club_id);
                       setWatch((prev) => (prev ?? []).filter((x) => x.club_id !== w.club_id));
                     }}
-                    title="deixar from_division seguir"
+                    title={t("clubs.unfollow")}
                     className="text-[var(--gold)]"
                   >
                     <Star className="size-4" fill="currentColor" strokeWidth={0} />
@@ -248,11 +252,11 @@ function Profile({
         </Card>
       </div>
 
-      <Card title="O que seu login trouxe">
+      <Card title={t("area.whatLoginBrought")}>
         <div className="grid gap-4 px-4 py-4 md:grid-cols-3">
-          <Level title="Seus clubs" hint="onde você joga" entries={porOrigem("own")} onOpenClub={onOpenClub} />
-          <Level title="Rivais diretos" hint="adversários recentes" entries={porOrigem("rival")} onOpenClub={onOpenClub} />
-          <Level title="Clubs from_division clubs" hint="rivais dos rivais" entries={porOrigem("rival_of_rival")} onOpenClub={onOpenClub} />
+          <Level title={t("area.yourClubs")} hint={t("area.whereYouPlay")} entries={porOrigem("own")} onOpenClub={onOpenClub} />
+          <Level title={t("area.directRivals")} hint={t("area.recentOpponents")} entries={porOrigem("rival")} onOpenClub={onOpenClub} />
+          <Level title={t("area.clubsOfClubs")} hint={t("area.rivalsOfRivals")} entries={porOrigem("rival_of_rival")} onOpenClub={onOpenClub} />
         </div>
       </Card>
     </>
@@ -270,6 +274,7 @@ function Level({
   entries: WatchEntry[];
   onOpenClub: (id: string) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="surface p-3">
       <div className="flex items-center gap-2">
@@ -279,7 +284,7 @@ function Level({
       <div className="mt-0.5 text-xs text-faint">{hint}</div>
       <ul className="mt-2 flex flex-col gap-1">
         {entries.length === 0 ? (
-          <li className="text-xs text-faint">nada aqui ainda</li>
+          <li className="text-xs text-faint">{t("area.nothingHere")}</li>
         ) : (
           entries.map((w) => (
             <li key={w.club_id}>

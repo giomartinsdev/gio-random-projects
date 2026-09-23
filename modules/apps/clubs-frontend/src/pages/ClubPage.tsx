@@ -29,6 +29,7 @@ import {
   resultColor,
   TIPO_LABEL,
 } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 type Tab = "resumo" | "elenco" | "matches" | "numeros";
 
@@ -49,6 +50,7 @@ export function ClubPage({
   onToggleWatch: (id: string) => void;
   authed: boolean | null;
 }) {
+  const { t } = useI18n();
   const [club, setClub] = useState<Club | null>(null);
   const [error, setErro] = useState("");
   const [tab, setTab] = useState<Tab>("resumo");
@@ -63,8 +65,8 @@ export function ClubPage({
       .catch((e) => setErro(String(e)));
   }, [clubId]);
 
-  if (error) return <Empty title="Clube não encontrado" hint={error} />;
-  if (!club) return <Spinner label="carregando clube…" />;
+  if (error) return <Empty title={t("club.notFound")} hint={error} />;
+  if (!club) return <Spinner label={t("club.loading")} />;
 
   const notFollowed = !club.tracked;
 
@@ -74,14 +76,14 @@ export function ClubPage({
         crumb={
           <button type="button" onClick={() => onOpenClub("")} className="inline-flex items-center gap-1 hover:text-accent">
             <ChevronLeft className="size-3.5" />
-            clubs
+            {t("nav.clubs")}
           </button>
         }
         title={club.name}
         sub={
           notFollowed
-            ? "Este clube ainda não é tracked pelo hub — por isso não há elenco nem matches."
-            : [club.stadium, club.division ? `Divisão ${club.division}` : "", club.skill_rating ? `nível ${fmt(club.skill_rating)}` : ""]
+            ? t("club.notTrackedHint")
+            : [club.stadium, club.division ? `${t("club.division")} ${club.division}` : "", club.skill_rating ? `${t("common.level")} ${fmt(club.skill_rating)}` : ""]
                 .filter(Boolean)
                 .join(" · ")
         }
@@ -122,10 +124,10 @@ export function ClubPage({
           <div className="mb-4 flex flex-wrap gap-1.5">
             {(
               [
-                ["resumo", "Resumo"],
-                ["elenco", "Elenco"],
-                ["matches", "Matches"],
-                ["numeros", "Números"],
+                ["resumo", t("club.summaryTab")],
+                ["elenco", t("club.squadTab")],
+                ["matches", t("club.matchesTab")],
+                ["numeros", t("club.statsTab")],
               ] as Array<[Tab, string]>
             ).map(([id, label]) => (
               <button
@@ -158,20 +160,18 @@ export function ClubPage({
 /** O clube conhecido mas não acompanhado: só os totais gerais, com uma
  * explicação de por que o resto não está ali. */
 function NotIndexed({ club }: { club: Club }) {
+  const { t } = useI18n();
   return (
     <>
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="played" value={fmt(club.played)} />
-        <Stat label="campanha" value={`${club.wins}V ${club.draws}E ${club.losses}D`} />
-        <Stat label="goals pró · contra" value={`${fmt(club.goals)}:${fmt(club.goals_conceded)}`} accent />
-        <Stat label="points" value={fmt(club.points)} />
+        <Stat label={t("common.played")} value={fmt(club.played)} />
+        <Stat label={t("club.campaign")} value={`${club.wins}V ${club.draws}E ${club.losses}D`} />
+        <Stat label={t("club.goalsForAgainst")} value={`${fmt(club.goals)}:${fmt(club.goals_conceded)}`} accent />
+        <Stat label={t("common.points")} value={fmt(club.points)} />
       </div>
-      <Card title="Por que não há elenco nem matches">
+      <Card title={t("club.notTrackedTitle")}>
         <p className="px-4 py-3 text-sm text-muted">
-          O hub traz os dados from_division um clube quando ele entra na lista from_division acompanhados. ToDivision este, só existem
-          os totais gerais. {""}
-          Entre com o Google e siga este clube to_division o hub passá-lo a acompanhar — o elenco e as matches
-          aparecem na próxima atualização.
+          {t("club.notTrackedHint2")}
         </p>
       </Card>
     </>
@@ -181,6 +181,7 @@ function NotIndexed({ club }: { club: Club }) {
 // ------------------------------------------------------------------- resumo
 
 function ResumoTab({ club, onOpenMatch }: { club: Club; onOpenMatch: (id: string) => void }) {
+  const { t } = useI18n();
   const [matches, setMatches] = useState<Match[] | null>(null);
   useEffect(() => {
     api.matches(club.club_id, "", 10).then((r) => setMatches(r.matches ?? [])).catch(() => setMatches([]));
@@ -190,22 +191,22 @@ function ResumoTab({ club, onOpenMatch }: { club: Club; onOpenMatch: (id: string
     <>
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
-          label="nível"
+          label={t("common.level")}
           value={fmt(club.skill_rating)}
-          sub={club.updated_at ? `atualizado ${fmtRefresh(club.updated_at)}` : undefined}
+          sub={club.updated_at ? `${t("action.saved")} ${fmtRefresh(club.updated_at)}` : undefined}
           accent
         />
-        <Stat label="divisão" value={`D${club.division}`} sub={`melhor: D${club.best_division}`} />
-        <Stat label="campanha" value={`${club.wins}V ${club.draws}E ${club.losses}D`} sub={`${fmt(club.goals)} goals · ${fmt(club.goals_conceded)} sofridos`} />
-        <Stat label="sequência" value={`${club.streak?.wins ?? 0}V`} sub={`${club.streak?.unbeaten ?? 0} sem perder`} />
+        <Stat label={t("club.division")} value={`D${club.division}`} sub={`${t("club.bestDivision")}: D${club.best_division}`} />
+        <Stat label={t("club.campaign")} value={`${club.wins}V ${club.draws}E ${club.losses}D`} sub={`${fmt(club.goals)} ${t("common.goals")} · ${fmt(club.goals_conceded)}`} />
+        <Stat label={t("club.streak")} value={`${club.streak?.wins ?? 0}V`} sub={`${club.streak?.unbeaten ?? 0}`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <Card title="Últimas matches">
+        <Card title={t("club.recentMatches")}>
           {matches === null ? (
             <Spinner />
           ) : matches.length === 0 ? (
-            <Empty title="Nenhuma partida registrada ainda" hint="O hub traz as matches na próxima atualização." />
+            <Empty title={t("club.noMatchesYet")} hint={t("club.nextUpdateHint")} />
           ) : (
             <ul className="divide-y divide-[var(--border)]">
               {matches.slice(0, 6).map((m) => (
@@ -241,25 +242,25 @@ function ResumoTab({ club, onOpenMatch }: { club: Club; onOpenMatch: (id: string
         </Card>
 
         <div className="flex flex-col gap-4">
-          <Card title="Uniformes">
+          <Card title={t("club.kits")}>
             <div className="flex items-center justify-around px-4 py-4">
               <Kit colors={[club.color_1, club.color_2, club.color_3, club.color_4]} label="home" />
               <div className="text-center">
                 <Crest club={club} size={44} />
-                <div className="label mt-1">escudo</div>
+                <div className="label mt-1">{t("club.crest")}</div>
               </div>
             </div>
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-t border-line px-4 py-3 text-xs">
-              <Row k="Estádio" v={club.stadium || "—"} />
-              <Row k="Divisão" v={`D${club.division}`} />
-              <Row k="Melhor divisão" v={`D${club.best_division}`} />
-              <Row k="Promoções" v={fmt(club.promotions)} />
-              <Row k="Relegations" v={fmt(club.relegations)} />
+              <Row k={t("club.stadium")} v={club.stadium || "—"} />
+              <Row k={t("club.division")} v={`D${club.division}`} />
+              <Row k={t("club.bestDivision")} v={`D${club.best_division}`} />
+              <Row k={t("club.promotions")} v={fmt(club.promotions)} />
+              <Row k={t("club.relegations")} v={fmt(club.relegations)} />
             </dl>
           </Card>
 
           {club.adversarios && club.adversarios.length > 0 && (
-            <Card title="Adversários recentes">
+            <Card title={t("club.opponents")}>
               <ul className="divide-y divide-[var(--border)]">
                 {club.adversarios.slice(0, 5).map((a) => (
                   <li key={a.club_id} className="flex items-center gap-2 px-4 py-2 text-xs">
@@ -290,6 +291,7 @@ function Row({ k, v }: { k: string; v: string }) {
 // ------------------------------------------------------------------- elenco
 
 function ElencoTab({ clubId, onOpenPlayer }: { clubId: string; onOpenPlayer: (id: string) => void }) {
+  const { t } = useI18n();
   const [squad, setSquad] = useState<SquadMember[] | null>(null);
   useEffect(() => {
     api.squad(clubId).then((r) => setSquad(r.players ?? [])).catch(() => setSquad([]));
@@ -297,7 +299,7 @@ function ElencoTab({ clubId, onOpenPlayer }: { clubId: string; onOpenPlayer: (id
 
   if (squad === null) return <Spinner />;
   if (squad.length === 0) {
-    return <Empty title="Elenco ainda não disponível" hint="O elenco é montado a partir das matches acompanhadas." />;
+    return <Empty title={t("club.squadUnavailable")} hint={t("club.squadFromMatches")} />;
   }
 
   const porPosicao = POS_ORDER.map((p) => ({
@@ -308,25 +310,25 @@ function ElencoTab({ clubId, onOpenPlayer }: { clubId: string; onOpenPlayer: (id
   return (
     <>
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="players" value={fmt(squad.length)} sub={porPosicao.map((p) => `${p.value} ${p.label.slice(0, 3).toLowerCase()}`).join(" · ")} />
-        <Stat label="rating média" value={fmt(squad.reduce((a, s) => a + s.rating, 0) / squad.length, 2)} />
-        <Stat label="goals" value={fmt(squad.reduce((a, s) => a + s.goals, 0))} sub={`${fmt(squad.reduce((a, s) => a + s.assists, 0))} assistências`} />
-        <Stat label="melhor em campo" value={fmt(squad.reduce((a, s) => a + s.man_of_the_match, 0))} sub="vezes" accent />
+        <Stat label={t("common.players")} value={fmt(squad.length)} sub={porPosicao.map((p) => `${p.value} ${p.label.slice(0, 3).toLowerCase()}`).join(" · ")} />
+        <Stat label={t("club.ratingAvg")} value={fmt(squad.reduce((a, s) => a + s.rating, 0) / squad.length, 2)} />
+        <Stat label={t("common.goals")} value={fmt(squad.reduce((a, s) => a + s.goals, 0))} sub={`${fmt(squad.reduce((a, s) => a + s.assists, 0))} ${t("common.assists")}`} />
+        <Stat label={t("player.motm")} value={fmt(squad.reduce((a, s) => a + s.man_of_the_match, 0))} sub={t("common.when") && "x"} accent />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <Card title="Players">
+        <Card title={t("common.players")}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-surface-2 text-faint">
-                  <Th>jogador</Th>
-                  <Th>pos.</Th>
-                  <Th right>J</Th>
-                  <Th right>goals</Th>
-                  <Th right>assist.</Th>
-                  <Th right>rating</Th>
-                  <Th right>form</Th>
+                  <Th>{t("common.player")}</Th>
+                  <Th>{t("common.pos")}</Th>
+                  <Th right>{t("common.played")}</Th>
+                  <Th right>{t("common.goals")}</Th>
+                  <Th right>{t("common.assists")}</Th>
+                  <Th right>{t("common.rating")}</Th>
+                  <Th right>{t("club.form")}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -356,9 +358,9 @@ function ElencoTab({ clubId, onOpenPlayer }: { clubId: string; onOpenPlayer: (id
           </div>
         </Card>
 
-        <Card title="Composição">
+        <Card title={t("club.composition")}>
           <div className="px-4 py-4">
-            <DonutChart data={porPosicao} centerLabel="players" size={150} />
+            <DonutChart data={porPosicao} centerLabel={t("common.players")} size={150} />
           </div>
         </Card>
       </div>
@@ -377,6 +379,7 @@ function Th({ children, right = false }: { children: React.ReactNode; right?: bo
 // ----------------------------------------------------------------- partidas
 
 function PartidasTab({ clubId, onOpenMatch }: { clubId: string; onOpenMatch: (id: string) => void }) {
+  const { t } = useI18n();
   const [kind, setTipo] = useState("");
   const [list, setList] = useState<Match[] | null>(null);
 
@@ -389,10 +392,10 @@ function PartidasTab({ clubId, onOpenMatch }: { clubId: string; onOpenMatch: (id
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {[
-          ["", "todas"],
-          ["league", "league"],
-          ["friendly", "amistosos"],
-          ["playoff", "playoffs"],
+          ["", t("claim.all")],
+          ["league", TIPO_LABEL["league"]],
+          ["friendly", TIPO_LABEL["friendly"]],
+          ["playoff", TIPO_LABEL["playoff"]],
         ].map(([k, label]) => (
           <button
             key={k}
@@ -409,13 +412,13 @@ function PartidasTab({ clubId, onOpenMatch }: { clubId: string; onOpenMatch: (id
             {label}
           </button>
         ))}
-        {list && <span className="ml-auto font-mono text-xs text-muted">{fmt(list.length)} matches</span>}
+        {list && <span className="ml-auto font-mono text-xs text-muted">{fmt(list.length)} {t("common.matches")}</span>}
       </div>
 
       {list === null ? (
         <Spinner />
       ) : list.length === 0 ? (
-        <Empty title="Nenhuma partida nesse filtro" hint="Troque o filtro ou aguarde a próxima atualização." />
+        <Empty title={t("club.noMatchFilter")} hint={t("club.changeFilterHint")} />
       ) : (
         <div className="surface overflow-hidden">
           <ul className="divide-y divide-[var(--border)]">
@@ -463,6 +466,7 @@ function NumerosTab({
   onOpenPlayer: (id: string) => void;
   onOpenMatch: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [evo, setEvo] = useState<Evolution | null>(null);
   const [changes, setChanges] = useState<DivisionChange[]>([]);
   const [rec, setRec] = useState<Records | null>(null);
@@ -481,31 +485,31 @@ function NumerosTab({
     <>
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
-          label="nível hoje"
+          label={t("club.levelToday")}
           value={fmt(club.skill_rating)}
-          sub={serie.length >= 2 ? `${serie.length} leituras acumuladas` : "o histórico cresce a cada atualização"}
+          sub={serie.length >= 2 ? `${serie.length} ${t("admin.levelReadings")}` : t("club.historyGrows")}
           accent
         />
-        <Stat label="mudanças de divisão" value={fmt(changes.length)} sub={changes.length ? "detectadas pelo hub" : "ainda nenhuma"} />
-        <Stat label="maior sequência de vitórias" value={`${rec?.longest_win_streak ?? 0}V`} sub="no histórico acumulado" />
-        <Stat label="played sem sofrer gol" value={fmt(rec?.clean_sheets ?? 0)} sub={`de ${fmt(rec?.total_matches ?? 0)} partidas`} />
+        <Stat label={t("club.divisionChanges")} value={fmt(changes.length)} sub={changes.length ? t("common.inferred") : t("admin.noneYet")} />
+        <Stat label={t("club.longestWinStreak")} value={`${rec?.longest_win_streak ?? 0}V`} sub={t("club.accumulatedHistory")} />
+        <Stat label={t("club.cleanSheets")} value={fmt(rec?.clean_sheets ?? 0)} sub={`/ ${fmt(rec?.total_matches ?? 0)} ${t("common.matches")}`} />
       </div>
 
       <div className="mb-4">
-        <Card title="Evolução do nível">
+        <Card title={t("club.levelEvolution")}>
           {evo === null ? (
             <Spinner />
           ) : evo.historico_curto ? (
             <Empty
-              title="O histórico está começando"
-              hint="A EA só informa o nível from_division agora. O hub guarda uma leitura a cada atualização, então este gráfico ganha form com o tempo."
+              title={t("club.historyStarting")}
+              hint={t("club.levelEvolutionHint")}
             />
           ) : (
             <div className="px-2 py-3">
               <LineChart
                 values={serie.map((s) => s.skill_rating)}
                 labels={serie.map((s) => fmtDate(s.read_at))}
-                refLine={{ y: 1600, label: "faixa D2" }}
+                refLine={{ y: 1600, label: "D2" }}
               />
             </div>
           )}
@@ -513,9 +517,9 @@ function NumerosTab({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Mudanças from_division divisão">
+        <Card title={t("club.divisionSteps")}>
           {changes.length === 0 ? (
-            <Empty title="Nenhuma mudança registrada" hint="Subidas e quedas aparecem aqui conforme o hub acumula leituras." />
+            <Empty title={t("club.noDivisionChange")} hint={t("club.divisionChangeHint")} />
           ) : (
             <ul className="divide-y divide-[var(--border)]">
               {changes.map((c, i) => (
@@ -531,7 +535,7 @@ function NumerosTab({
                     )}
                   </span>
                   <span className="flex-1">
-                    {c.kind === "promotion" ? "Subiu" : "Caiu"} da Divisão {c.from_division} to_division a {c.to_division}
+                    {c.kind === "promotion" ? t("club.promoted") : t("club.relegated")} D{c.previous_division} → D{c.new_division}
                   </span>
                   <span className="font-mono text-[10px] text-faint">{fmtDateTime(c.detected_at)}</span>
                 </li>
@@ -540,39 +544,39 @@ function NumerosTab({
           )}
         </Card>
 
-        <Card title="Divisão por leitura">
+        <Card title={t("club.divisionByReading")}>
           <DivisionSteps snapshots={serie.slice(-12)} />
         </Card>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card title="Livro from_division records">
+        <Card title={t("club.recordBook")}>
           {!rec ? (
             <Spinner />
           ) : (
             <ul className="divide-y divide-[var(--border)]">
               {rec.biggest_win && (
-                <RecLine medal={Trophy} title="Maior goleada" value={`${rec.biggest_win.our_goals}–${rec.biggest_win.their_goals}`} detail={`vs ${rec.biggest_win.opponent_name}`} onClick={() => onOpenMatch(rec.biggest_win!.match_id)} />
+                <RecLine medal={Trophy} title={t("club.biggestWin")} value={`${rec.biggest_win.our_goals}–${rec.biggest_win.their_goals}`} detail={`vs ${rec.biggest_win.opponent_name}`} onClick={() => onOpenMatch(rec.biggest_win!.match_id)} />
               )}
               {rec.worst_loss && (
-                <RecLine medal={Skull} title="Pior loss" value={`${rec.worst_loss.our_goals}–${rec.worst_loss.their_goals}`} detail={`vs ${rec.worst_loss.opponent_name}`} onClick={() => onOpenMatch(rec.worst_loss!.match_id)} />
+                <RecLine medal={Skull} title={t("club.worstLoss")} value={`${rec.worst_loss.our_goals}–${rec.worst_loss.their_goals}`} detail={`vs ${rec.worst_loss.opponent_name}`} onClick={() => onOpenMatch(rec.worst_loss!.match_id)} />
               )}
               {rec.highest_scoring_match && (
-                <RecLine medal={Crosshair} title="Jogo com mais goals" value={String(rec.highest_scoring_match.total_goals)} detail={`vs ${rec.highest_scoring_match.opponent_name}`} onClick={() => onOpenMatch(rec.highest_scoring_match!.match_id)} />
+                <RecLine medal={Crosshair} title={t("club.highestScoring")} value={String(rec.highest_scoring_match.total_goals)} detail={`vs ${rec.highest_scoring_match.opponent_name}`} onClick={() => onOpenMatch(rec.highest_scoring_match!.match_id)} />
               )}
               {rec.best_rating && (
-                <RecLine medal={Star} title="Melhor rating individual" value={fmt(rec.best_rating.rating, 2)} detail={`${rec.best_rating.gamertag} vs ${rec.best_rating.opponent_name}`} onClick={() => onOpenPlayer(rec.best_rating!.player_id)} />
+                <RecLine medal={Star} title={t("club.bestRating")} value={fmt(rec.best_rating.rating, 2)} detail={`${rec.best_rating.gamertag} vs ${rec.best_rating.opponent_name}`} onClick={() => onOpenPlayer(rec.best_rating!.player_id)} />
               )}
               {rec.most_goals_in_match && (
-                <RecLine medal={Goal} title="Mais goals em um jogo" value={String(rec.most_goals_in_match.goals)} detail={`${rec.most_goals_in_match.gamertag} vs ${rec.most_goals_in_match.opponent_name}`} onClick={() => onOpenPlayer(rec.most_goals_in_match!.player_id)} />
+                <RecLine medal={Goal} title={t("club.mostGoalsInMatch")} value={String(rec.most_goals_in_match.goals)} detail={`${rec.most_goals_in_match.gamertag} vs ${rec.most_goals_in_match.opponent_name}`} onClick={() => onOpenPlayer(rec.most_goals_in_match!.player_id)} />
               )}
             </ul>
           )}
         </Card>
 
-        <Card title="Artilharia (temporada acompanhada)">
+        <Card title={t("club.scorers")}>
           {squad.length === 0 ? (
-            <Empty title="sem dados ainda" />
+            <Empty title={t("common.noData")} />
           ) : (
             <div className="px-2 py-3">
               <BarChart
@@ -586,12 +590,12 @@ function NumerosTab({
 
       {squad.length > 3 && (
         <div className="mt-4">
-          <Card title="Goals × rating média">
+          <Card title={t("club.goalsVsRating")}>
             <div className="px-2 py-3">
               <Scatter
                 height={260}
-                xLabel="goals"
-                yLabel="rating"
+                xLabel={t("common.goals")}
+                yLabel={t("common.rating")}
                 points={squad.map((s) => ({ x: s.goals, y: s.rating, label: s.gamertag, highlight: s.rating >= 7.8 }))}
               />
             </div>
