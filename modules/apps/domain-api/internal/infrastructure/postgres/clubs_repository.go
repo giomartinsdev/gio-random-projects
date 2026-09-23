@@ -686,7 +686,26 @@ func (r *ClubsRepository) GetPlayer(ctx context.Context, playerID string) (domai
 	if ids, err := r.ClaimedPlayerIDs(ctx); err == nil {
 		verified = ids[playerID]
 	}
-	return buildProfile(playerID, rows, names, verified), nil
+	return r.comCareer(ctx, buildProfile(playerID, rows, names, verified)), nil
+}
+
+// comCareer anexa os totais de carreira aos clubes de um perfil. Existe como
+// passo separado porque DOIS caminhos montam perfil (a ficha e o índice) e o
+// career tem que chegar nos dois -- foi o que faltou: o perfil vinha sem
+// carreira mesmo com os dados gravados.
+//
+// O elo é o gamertag: o endpoint da fonte não traz playerId.
+func (r *ClubsRepository) comCareer(ctx context.Context, p domainclubs.PlayerProfile) domainclubs.PlayerProfile {
+	carreira := r.careerByClubAndTag(ctx)
+	for i := range p.Clubes {
+		if c, ok := carreira[p.Clubes[i].ClubID+"\x00"+p.Gamertag]; ok {
+			p.Clubes[i].Career = &domainclubs.CareerTotais{
+				Jogos: c.Jogos, Gols: c.Gols, Assistencias: c.Assistencias,
+				MelhorEmCampo: c.MelhorEmCampo, Nota: c.Nota,
+			}
+		}
+	}
+	return p
 }
 
 func (r *ClubsRepository) AllPlayers(ctx context.Context) ([]domainclubs.PlayerProfile, error) {
@@ -745,20 +764,8 @@ func (r *ClubsRepository) playersGrouped(ctx context.Context, where string, args
 		grouped[pr.line.PlayerID] = append(grouped[pr.line.PlayerID], pr)
 	}
 	out := make([]domainclubs.PlayerProfile, 0, len(order))
-	// Totais de carreira por (clube, gamertag). O endpoint da fonte não traz
-	// playerId, então o gamertag é o único elo -- e o perfil já tem o dele.
-	carreira := r.careerByClubAndTag(ctx)
 	for _, id := range order {
-		p := buildProfile(id, grouped[id], names, verified[id])
-		for i := range p.Clubes {
-			if c, ok := carreira[p.Clubes[i].ClubID+"\x00"+p.Gamertag]; ok {
-				p.Clubes[i].Career = &domainclubs.CareerTotais{
-					Jogos: c.Jogos, Gols: c.Gols, Assistencias: c.Assistencias,
-					MelhorEmCampo: c.MelhorEmCampo, Nota: c.Nota,
-				}
-			}
-		}
-		out = append(out, p)
+		out = append(out, r.comCareer(ctx, buildProfile(id, grouped[id], names, verified[id])))
 	}
 	return out, nil
 }
