@@ -5,6 +5,7 @@ import type {
   AdminStatus,
   Announcement,
   Club,
+  ClubRef,
   ClaimedPro,
   DivisionChange,
   Evolution,
@@ -129,7 +130,7 @@ const realApi = {
     request<HeadToHead>(`/clubs/${encodeURIComponent(clubId)}/h2h/${encodeURIComponent(rivalId)}`),
 
   rankingClubs: (metric = "skill_rating", limite = 10, offset = 0) =>
-    request<{ metric: string; clubs: Club[]; total: number }>(
+    request<{ metric: string; clubs: ClubRef[]; total: number }>(
       `/rankings/clubs?metric=${encodeURIComponent(metric)}&limite=${limite}&offset=${offset}`,
     ),
 

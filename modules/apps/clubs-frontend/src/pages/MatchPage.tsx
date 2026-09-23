@@ -33,6 +33,9 @@ export function MatchPage({
   if (!m) return <Spinner label={t("match.loading")} />;
 
   // A súmula vem com os dois lados; separa por clube para desenhar cada bloco.
+  // O escudo dos dois lados é semeado pelo club_id -- a súmula não carrega o
+  // clube inteiro, só o nome e a sigla, e o id é o que mantém o mesmo escudo
+  // da lista e do perfil.
   const home = (m.players ?? []).filter((p) => p.club_id === m.home_club_id);
   const away = (m.players ?? []).filter((p) => p.club_id === m.away_club_id);
   const melhor = [...(m.players ?? [])].sort((a, b) => b.rating - a.rating)[0];
@@ -53,7 +56,7 @@ export function MatchPage({
       <Card title={t("common.result")}>
         <div className="grid grid-cols-3 items-center gap-4 px-4 py-6">
           <button type="button" onClick={() => onOpenClub(m.home_club_id)} className="flex flex-col items-center gap-2 hover:text-accent">
-            <Crest club={{ name: m.home_club_name, tag: m.home_club_tag, color_1: 0, color_2: 0, color_3: 0, color_4: 0, crest_asset_id: m.home_club_id, club_id: m.home_club_id }} size={46} />
+            <Crest club={{ name: m.home_club_name, tag: m.home_club_tag, color_1: 0, color_2: 0, color_3: 0, color_4: 0, crest_asset_id: "", club_id: m.home_club_id }} size={46} />
             <span className="text-sm font-semibold">{m.home_club_name}</span>
           </button>
           <div className="text-center">
@@ -71,7 +74,7 @@ export function MatchPage({
             )}
           </div>
           <button type="button" onClick={() => onOpenClub(m.away_club_id)} className="flex flex-col items-center gap-2 hover:text-accent">
-            <Crest club={{ name: m.away_club_name, tag: m.away_club_tag, color_1: 0, color_2: 0, color_3: 0, color_4: 0, crest_asset_id: m.away_club_id, club_id: m.away_club_id }} size={46} />
+            <Crest club={{ name: m.away_club_name, tag: m.away_club_tag, color_1: 0, color_2: 0, color_3: 0, color_4: 0, crest_asset_id: "", club_id: m.away_club_id }} size={46} />
             <span className="text-sm font-semibold">{m.away_club_name}</span>
           </button>
         </div>

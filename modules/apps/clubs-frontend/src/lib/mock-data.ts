@@ -370,12 +370,12 @@ export function h2h(aId: string, bId: string): HeadToHead {
   const a = CLUBS.find((c) => c.club_id === aId) ?? MY_CLUB;
   const b = CLUBS.find((c) => c.club_id === bId) ?? CLUBS[1];
   const ref = (c: Club): ClubRef => ({
-    club_id: c.club_id, name: c.name, tag: c.tag, division: c.division,
-    skill_rating: c.skill_rating, points: c.points, goals: c.goals,
+    club_id: c.club_id, name: c.name, tag: c.tag,
+    crest_asset_id: c.crest_asset_id, color_1: c.color_1, color_2: c.color_2, color_3: c.color_3, color_4: c.color_4,
+    division_at_read: c.division, skill_rating: c.skill_rating, points: c.points, goals: c.goals,
     goals_conceded: c.goals_conceded, clean_sheets: c.clean_sheets,
-    streak: c.streak, tracked: c.tracked, division_at_read: c.division,
-    sequencia_invicta: c.streak?.unbeaten ?? 0,
-  } as unknown as ClubRef);
+    sequencia_invicta: c.streak?.unbeaten ?? 0, tracked: c.tracked,
+  });
   return {
     club_a: ref(a), club_b: ref(b), played: 6, wins_a: 4, draws: 1, losses_a: 1,
     goals_a: 15, goals_b: 7, form_a: ["win", "win", "draw", "win", "loss", "win"],
@@ -400,10 +400,18 @@ export const ANNOUNCEMENTS: Announcement[] = ANNOUNCE_TITLES.map((title, i) => (
   generated_at: iso(0, 18 - i, intBetween(0, 59)),
 }));
 
-export function rankingsClubs(metric: string): Club[] {
+export function rankingsClubs(metric: string): ClubRef[] {
   const key = (c: Club): number =>
     metric === "points" ? c.points : metric === "goals" ? c.goals : metric === "clean_sheets" ? c.clean_sheets : c.skill_rating;
-  return [...CLUBS].sort((a, b) => key(b) - key(a));
+  return [...CLUBS]
+    .sort((a, b) => key(b) - key(a))
+    .map((c) => ({
+      club_id: c.club_id, name: c.name, tag: c.tag,
+      crest_asset_id: c.crest_asset_id, color_1: c.color_1, color_2: c.color_2, color_3: c.color_3, color_4: c.color_4,
+      division_at_read: c.division, skill_rating: c.skill_rating, points: c.points,
+      goals: c.goals, goals_conceded: c.goals_conceded, clean_sheets: c.clean_sheets,
+      sequencia_invicta: c.streak?.unbeaten ?? 0, tracked: c.tracked,
+    }));
 }
 
 export function rankingsPlayers(metric: string): RankPlayer[] {
@@ -461,7 +469,7 @@ export const ADMIN_STATUS: AdminStatus = {
   announcements: ANNOUNCEMENTS.length,
   last_match_at: MATCHES[0]?.timestamp ?? null,
   by_division: { "1": 3, "2": 6, "3": 7 },
-  top_clubs: CLUBS.slice(0, 5) as unknown as ClubRef[],
+  top_clubs: rankingsClubs("skill_rating").slice(0, 5),
 };
 
 export const ADMIN_INGEST = {

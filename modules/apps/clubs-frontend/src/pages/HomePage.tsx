@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { Announcement, Club, RankPlayer } from "../lib/types";
+import type { Announcement, ClubRef, RankPlayer } from "../lib/types";
 import { Badge, Bar, Card, Crest, Empty, Pager, RankMedallion, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { ANUNCIO_ICONS, FLOW_ICONS, VerifiedIcon } from "../components/icons";
@@ -24,7 +24,7 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
   const [tab, setTab] = useState<RankTab>("clubs");
   const [metric, setMetrica] = useState("skill_rating");
   const [page, setPage] = useState(0);
-  const [clubs, setClubes] = useState<Club[] | null>(null);
+  const [clubs, setClubes] = useState<ClubRef[] | null>(null);
   const [players, setJogadores] = useState<RankPlayer[] | null>(null);
   const [totalRanking, setTotalRanking] = useState(0);
   // Os números do cabeçalho são totais, não o tamanho da página: depois de
@@ -237,7 +237,7 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold">{c.name}</span>
                         <span className="block font-mono text-[10px] text-faint">
-                          D{c.division} · {fmt(c.played)} ${t("common.played")}
+                          D{c.division_at_read} · {fmt(c.points)} {t("common.points")}
                         </span>
                       </span>
                       <span className="hidden w-32 sm:block">

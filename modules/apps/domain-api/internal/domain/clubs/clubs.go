@@ -364,6 +364,15 @@ type ClubRef struct {
 	ClubID         string `json:"club_id"`
 	Name           string `json:"name"`
 	Tag          string `json:"tag"`
+	// As cores e o asset id viajam no ref porque é o que desenha o escudo:
+	// sem eles, o ranking teria que escolher uma forma/cor por conta própria
+	// e o mesmo clube apareceria com dois escudos diferentes -- um na lista,
+	// outro no perfil, onde o clube vem inteiro.
+	CrestAssetID  string `json:"crest_asset_id"`
+	Color1          int    `json:"color_1"`
+	Color2          int    `json:"color_2"`
+	Color3          int    `json:"color_3"`
+	Color4          int    `json:"color_4"`
 	DivisionAtRead        int    `json:"division_at_read"`
 	SkillRating          int    `json:"skill_rating"`
 	Points         int    `json:"points"`

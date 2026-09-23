@@ -365,6 +365,7 @@ func (r *ClubsRepository) HeadToHead(ctx context.Context, aID, bID string) (doma
 func ref(c domainclubs.Club) domainclubs.ClubRef {
 	return domainclubs.ClubRef{
 		ClubID: c.ClubID, Name: c.Name, Tag: c.Tag, DivisionAtRead: c.Division,
+		CrestAssetID: c.EscudoAssetID, Color1: c.Color1, Color2: c.Color2, Color3: c.Color3, Color4: c.Color4,
 		SkillRating: c.SkillRating, Points: c.Points, Goals: c.Goals, GoalsConceded: c.GoalsConceded,
 		CleanSheets: c.CleanSheets, Tracked: c.Tracked,
 	}

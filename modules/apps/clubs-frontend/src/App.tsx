@@ -50,9 +50,9 @@ function parseHash(): View {
 
 function hashFor(view: View): string {
   const p = ROUTE_PATHS[view.route];
-  if (view.route === "club" && view.param) return `#/clube?id=${encodeURIComponent(view.param)}`;
-  if (view.route === "match" && view.param) return `#/partida?m=${encodeURIComponent(view.param)}`;
-  if (view.route === "player" && view.param) return `#/jogador?p=${encodeURIComponent(view.param)}`;
+  if (view.route === "club" && view.param) return `#/${p}?id=${encodeURIComponent(view.param)}`;
+  if (view.route === "match" && view.param) return `#/${p}?m=${encodeURIComponent(view.param)}`;
+  if (view.route === "player" && view.param) return `#/${p}?p=${encodeURIComponent(view.param)}`;
   return `#/${p}`;
 }
 

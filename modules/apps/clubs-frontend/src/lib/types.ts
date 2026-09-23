@@ -10,6 +10,14 @@ export interface ClubRef {
   club_id: string;
   name: string;
   tag: string;
+  // O escudo é desenhado a partir destes campos, então eles viajam em
+  // qualquer referência de clube -- sem eles o ranking cairia no hash por
+  // nome/id e o mesmo clube apareceria com dois escudos.
+  crest_asset_id: string;
+  color_1: number;
+  color_2: number;
+  color_3: number;
+  color_4: number;
   division_at_read: number;
   skill_rating: number;
   points: number;

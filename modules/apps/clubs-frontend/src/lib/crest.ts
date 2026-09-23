@@ -27,11 +27,16 @@ function hash32(s: string): number {
   return h >>> 0;
 }
 
-/** A seed do clube, da mais estável para a menos: o asset id é único e não
- * muda quando o clube é renomeado; o id idem; o nome é o que sobra quando a
- * tela só tem o nome (a súmula de uma partida não traz o clube inteiro). */
+/** A seed do clube, da mais estável para a menos.
+ *
+ * O `club_id` vem primeiro porque é o único identificador de fato único: a EA
+ * manda o MESMO `crest_asset_id` para clubes diferentes (medido em produção:
+ * "Bayern" e "20p Tigers" chegam os dois com 99160827), então usá-lo como
+ * chave fazia dois clubes desenharem o mesmo escudo. O nome é o que sobra
+ * quando a tela só tem o nome -- a súmula de uma partida não traz o clube
+ * inteiro. */
 export function crestSeed(club: { crest_asset_id?: string; club_id?: string; name?: string; tag?: string }): string {
-  return club.crest_asset_id || club.club_id || club.name || club.tag || "fc";
+  return club.club_id || club.crest_asset_id || club.name || club.tag || "fc";
 }
 
 export function toHex(decimal: number | undefined | null): string {
@@ -115,19 +120,25 @@ export function clubPalette(
     };
   }
 
+  // Três bits independentes do hash, não um hue só: com 360 valores de matiz
+  // o aniversário ainda colide (3 em 60 clubes medidos com ids reais). Matiz
+  // x saturação x luminosidade dá ~10^5 combinações, todas dentro da faixa
+  // que lê como cor de clube -- nem pastel, nem neon.
   const h = hash32(seed + "|palette");
   const hue = h % 360;
-  const base = hslToHex(hue, 58, 40);
-  const detail = hslToHex((hue + 28) % 360, 66, 22);
+  const sat = 46 + ((h >>> 9) % 26); // 46..71
+  const light = 33 + ((h >>> 17) % 13); // 33..45
+  const base = hslToHex(hue, sat, light);
+  const detail = hslToHex((hue + 28) % 360, Math.min(74, sat + 8), Math.max(18, light - 18));
   return {
     base,
     detail,
     ink: inkOn(base),
     kits: [
-      hslToHex(hue, 58, 44),
-      hslToHex((hue + 28) % 360, 66, 24),
-      hslToHex((hue + 200) % 360, 42, 92),
-      hslToHex((hue + 180) % 360, 48, 30),
+      base,
+      detail,
+      hslToHex((hue + 200) % 360, 40, 92),
+      hslToHex((hue + 180) % 360, Math.min(70, sat), Math.max(22, light - 10)),
     ],
     derived: true,
   };
