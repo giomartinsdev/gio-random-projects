@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	TipoPromocao    = "promocao"
-	TipoRebaixamento = "rebaixamento"
+	TipoPromocao    = "promotion"
+	TipoRebaixamento = "relegation"
 )
 
 var ErrClubIDRequired = errors.New("club_id is required")

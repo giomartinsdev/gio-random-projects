@@ -13,8 +13,8 @@ type Event interface {
 type Upserted struct {
 	PartidaID string    `json:"match_id_uuid"`
 	MatchID   string    `json:"match_id"`
-	CasaID    string    `json:"home_club_id"`
-	ForaID    string    `json:"away_club_id"`
+	HomeID    string    `json:"home_club_id"`
+	AwayID    string    `json:"away_club_id"`
 	HomeGoals  int       `json:"home_goals"`
 	AwayGoals  int       `json:"away_goals"`
 	OccurredAt time.Time `json:"occurred_at"`

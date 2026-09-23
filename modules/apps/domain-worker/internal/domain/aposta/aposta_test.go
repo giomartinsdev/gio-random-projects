@@ -90,7 +90,7 @@ func TestResolver(t *testing.T) {
 	})
 
 	t.Run("negative: status invalido", func(t *testing.T) {
-		_, err := base().Resolver("meio-green", 50, resultado)
+		_, err := base().Resolver("midfielder-green", 50, resultado)
 		if err != ErrStatusInvalido {
 			t.Errorf("err = %v, want ErrStatusInvalido", err)
 		}

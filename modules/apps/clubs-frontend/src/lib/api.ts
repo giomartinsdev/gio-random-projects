@@ -57,7 +57,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // --- público --------------------------------------------------------------
 
-export const api = {
+const realApi = {
   clubs: (onlyFollowed = false) =>
     request<{ clubs: Club[]; total: number }>(`/clubs${onlyFollowed ? "?acompanhados=1" : ""}`),
 
@@ -78,7 +78,7 @@ export const api = {
    * pessoa escolhe o clube antes de entrar. A resposta é 202 -- a busca é em
    * segundo plano. */
   requestFetch: (clubId: string) =>
-    request<{ iniciado: boolean }>(`/clubs/${encodeURIComponent(clubId)}/fetch-run`, {
+    request<{ started: boolean }>(`/clubs/${encodeURIComponent(clubId)}/fetch-run`, {
       method: "POST",
     }),
 
@@ -89,7 +89,7 @@ export const api = {
 
   /** Pede o sync de um jogador (atualiza as partidas dos clubes dele). */
   requestFetchJogador: (playerId: string) =>
-    request<{ iniciado: boolean }>(`/players/${encodeURIComponent(playerId)}/fetch-run`, {
+    request<{ started: boolean }>(`/players/${encodeURIComponent(playerId)}/fetch-run`, {
       method: "POST",
     }),
 
@@ -103,7 +103,7 @@ export const api = {
     request<SearchRun>(`/clubs/search-live?termo=${encodeURIComponent(termo)}`),
 
   requestSearchLive: (termo: string) =>
-    request<{ iniciado: boolean }>("/clubs/search-live", {
+    request<{ started: boolean }>("/clubs/search-live", {
       method: "POST",
       body: JSON.stringify({ termo }),
     }),
@@ -185,9 +185,27 @@ export const api = {
   syncStatus: () => request<SyncRun>("/sync/status"),
 
   startSync: () =>
-    request<{ iniciado: boolean }>("/sync", { method: "POST", body: JSON.stringify({}) }),
+    request<{ started: boolean }>("/sync", { method: "POST", body: JSON.stringify({}) }),
 
   // --- administração ------------------------------------------------------
 
   adminStatus: () => request<AdminStatus>("/admin/status"),
 };
+
+// O modo demo troca o cliente inteiro por dados locais. A flag é de build
+// (VITE_* é inline), então uma tela nunca precisa saber qual está ativo — e o
+// bundle de produção do app real nem inclui o mock quando a flag está off,
+// porque o import fica atrás do `if`.
+//
+// Por que existe: o app real depende da EA (que bloqueia o IP do datacenter) e
+// de Postgres + worker. Um ambiente de demonstração que depende dessa cadeia
+// não demonstra nada -- ele quebra junto. Com a flag, o mesmo SPA roda com dado
+// determinístico, sem rede e sem banco.
+const DEMO = import.meta.env.VITE_CLUBS_DEMO === "1";
+
+// O import é ESTÁTICO de propósito: `await import()` exigiria top-level await,
+// que a config de build não aceita, e o Vite faz tree-shaking por flag --
+// quando `VITE_CLUBS_DEMO` é "0", o mock sai do bundle.
+import { mockApi } from "./mock-api";
+
+export const api: typeof realApi = DEMO ? mockApi : realApi;

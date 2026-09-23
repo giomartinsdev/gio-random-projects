@@ -103,7 +103,7 @@ export function Badge({
 }
 
 export function ResultBadge({ resultado, dnf = false }: { resultado: Resultado; dnf?: boolean }) {
-  const tone = resultado === "vitoria" ? "win" : resultado === "derrota" ? "loss" : "draw";
+  const tone = resultado === "win" ? "win" : resultado === "loss" ? "loss" : "draw";
   return (
     <Badge tone={tone} title={dnf ? `${resultado} (desistência)` : resultado}>
       {RESULT_LETTER[resultado]}

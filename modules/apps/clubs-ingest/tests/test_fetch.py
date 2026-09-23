@@ -206,8 +206,8 @@ def test_announcement_carries_a_semantic_key_not_an_emoji():
     source = FakeSource(info={}, overall={}, matches=[])
     ing = new_ingest(source, D())
     ing._announce_result("1", {
-        "home_goals": 3, "away_goals": 1, "home_result": "vitoria",
-        "kind": "liga", "match_id": "m1",
+        "home_goals": 3, "away_goals": 1, "home_result": "win",
+        "kind": "league", "match_id": "m1",
     }, CycleStats())
 
     assert announcements, "o anúncio precisa ser criado"

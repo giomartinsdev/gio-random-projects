@@ -54,7 +54,7 @@ func TestPartidaUpsertIsIdempotentByMatchID(t *testing.T) {
 	p.HomeGoals, p.AwayGoals = 3, 1
 
 	lines := []domainmatch.LinhaPartida{
-		{ClubID: "T1", PlayerID: "p1", Gamertag: "a", Position: "atacante", Rating: 8.1, Goals: 2},
+		{ClubID: "T1", PlayerID: "p1", Gamertag: "a", Position: "forward", Rating: 8.1, Goals: 2},
 		{ClubID: "T2", PlayerID: "p2", Gamertag: "b", Position: "goalkeeper", Rating: 6.0},
 	}
 

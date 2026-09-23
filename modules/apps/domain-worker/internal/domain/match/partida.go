@@ -16,20 +16,20 @@ import (
 )
 
 const (
-	TipoLiga     = "liga"
-	TipoAmistoso = "amistoso"
+	TipoLiga     = "league"
+	TipoAmistoso = "friendly"
 	TipoPlayoff  = "playoff"
 
-	ResultadoVitoria = "vitoria"
-	ResultadoEmpate  = "empate"
-	ResultadoDerrota = "derrota"
+	ResultadoVitoria = "win"
+	ResultadoEmpate  = "draw"
+	ResultadoDerrota = "loss"
 )
 
 var (
 	ErrMatchIDRequired = errors.New("match_id is required")
 	ErrClubesRequired  = errors.New("home_club_id and away_club_id are required")
-	ErrTipoInvalido    = errors.New("kind must be \"liga\", \"amistoso\" or \"playoff\"")
-	ErrResultadoInvalido = errors.New("resultado must be \"vitoria\", \"empate\" or \"derrota\"")
+	ErrTipoInvalido    = errors.New("kind must be \"league\", \"friendly\" or \"playoff\"")
+	ErrResultadoInvalido = errors.New("resultado must be \"win\", \"draw\" or \"loss\"")
 )
 
 type Partida struct {

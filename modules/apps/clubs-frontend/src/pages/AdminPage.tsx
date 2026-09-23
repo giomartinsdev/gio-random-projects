@@ -160,8 +160,8 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
             <ul className="divide-y divide-[var(--border)] text-sm">
               {[
                 ["Números como body", '"25", "7.4" → número'],
-                ["Códigos from_division resultado", "1 vitória · 2 derrota · 4 empate · 16385 vitória por DNF · 10 derrota por DNF"],
-                ["Amistoso sem resultado", "derivado from_division goals pró vs sofridos"],
+                ["Códigos from_division resultado", "1 vitória · 2 loss · 4 draw · 16385 vitória por DNF · 10 loss por DNF"],
+                ["Friendly sem resultado", "derivado from_division goals pró vs sofridos"],
                 ["Ids sem tabela", "posição, estilo, nacionalidade, escudo, ids from_division evento"],
                 ["Mesma partida nos dois clubs", "gravada uma vez, idempotente por match_id"],
               ].map(([t, d]) => (

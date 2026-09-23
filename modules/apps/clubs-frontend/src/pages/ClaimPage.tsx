@@ -613,7 +613,7 @@ function StepEscolher({
             ) : (
               <div className="flex flex-col items-center gap-2">
                 <GoogleSignInButton onSuccess={() => { onSignedIn(); }} />
-                <p className="text-center text-[10.5px] text-muted">Entre to_division resgatar — é o que liga o pro à sua conta.</p>
+                <p className="text-center text-[10.5px] text-muted">Entre to_division resgatar — é o que league o pro à sua conta.</p>
               </div>
             )}
             {error && <p className="text-center text-xs" style={{ color: "var(--danger)" }}>{error}</p>}

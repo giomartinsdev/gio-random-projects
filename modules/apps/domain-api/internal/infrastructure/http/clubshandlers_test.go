@@ -117,9 +117,9 @@ func TestGetClubFormaUsesResultVocabulary(t *testing.T) {
 		club:     domainclubs.Club{ClubID: "141881", Name: "ACG ZW"},
 		recentNo: 3,
 		matches: []domainclubs.Match{
-			{OurResult: "vitoria"},
-			{OurResult: "derrota"},
-			{OurResult: "empate"},
+			{OurResult: "win"},
+			{OurResult: "loss"},
+			{OurResult: "draw"},
 		},
 	}
 	rec := getJSON(t, clubsRouter(repo), "/clubs/141881")
@@ -130,7 +130,7 @@ func TestGetClubFormaUsesResultVocabulary(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	want := []string{"vitoria", "derrota", "empate"}
+	want := []string{"win", "loss", "draw"}
 	if len(got.Form) != len(want) {
 		t.Fatalf("form = %v; want %v", got.Form, want)
 	}

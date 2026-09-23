@@ -108,7 +108,7 @@ export function PlayerPage({
               </button>
               <span className="text-xs text-muted">
                 Diz ao hub onde você joga: ele passa a acompanhar este clube e a descobrir os rivais
-                dele, em segundo plano. É isso que liga a sua conta ao seu pro.
+                dele, em segundo plano. É isso que league a sua conta ao seu pro.
               </span>
             </div>
           )}

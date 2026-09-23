@@ -375,7 +375,7 @@ CREATE TABLE IF NOT EXISTS clubs_matches (
     id                            UUID PRIMARY KEY,
     match_id                      TEXT NOT NULL UNIQUE,
     timestamp                     TIMESTAMPTZ NOT NULL,
-    kind                          TEXT NOT NULL CHECK (kind IN ('liga','amistoso','playoff')),
+    kind                          TEXT NOT NULL CHECK (kind IN ('league','friendly','playoff')),
     playoff_round                TEXT NOT NULL DEFAULT '',
     home_club_id                 TEXT NOT NULL,
     away_club_id                 TEXT NOT NULL,
@@ -383,7 +383,7 @@ CREATE TABLE IF NOT EXISTS clubs_matches (
     away_goals                     INTEGER NOT NULL DEFAULT 0,
     decided_by_forfeit             BOOLEAN NOT NULL DEFAULT false,
     forfeit_winner_id   TEXT NOT NULL DEFAULT '',
-    home_result                TEXT NOT NULL CHECK (home_result IN ('vitoria','empate','derrota')),
+    home_result                TEXT NOT NULL CHECK (home_result IN ('win','draw','loss')),
     events                        JSONB NOT NULL DEFAULT '[]',
     created_at                     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -401,7 +401,7 @@ CREATE TABLE IF NOT EXISTS clubs_match_players (
     club_id             TEXT NOT NULL,
     player_id           TEXT NOT NULL,
     gamertag            TEXT NOT NULL,
-    position             TEXT NOT NULL CHECK (position IN ('goalkeeper','defensor','meio','atacante')),
+    position             TEXT NOT NULL CHECK (position IN ('goalkeeper','defender','midfielder','forward')),
     rating                NUMERIC(4,2) NOT NULL DEFAULT 0,
     goals                INTEGER NOT NULL DEFAULT 0,
     assists        INTEGER NOT NULL DEFAULT 0,
@@ -468,7 +468,7 @@ CREATE TABLE IF NOT EXISTS clubs_division_changes (
     detected_at TIMESTAMPTZ NOT NULL,
     from_division           INTEGER NOT NULL,
     to_division         INTEGER NOT NULL,
-    kind         TEXT NOT NULL CHECK (kind IN ('promocao','rebaixamento'))
+    kind         TEXT NOT NULL CHECK (kind IN ('promotion','relegation'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_clubs_division_changes_club ON clubs_division_changes(club_id, detected_at DESC);

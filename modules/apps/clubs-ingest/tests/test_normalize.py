@@ -401,7 +401,7 @@ def test_career_line_shape():
     assert line["assists"] == 8
     assert line["man_of_the_match"] == 3
     assert line["rating"] == 8.5
-    assert line["position"] in ("goalkeeper", "defensor", "meio", "atacante")
+    assert line["position"] in ("goalkeeper", "defender", "midfielder", "forward")
 
 
 def test_career_line_without_a_name_is_dropped():

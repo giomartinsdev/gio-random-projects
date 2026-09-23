@@ -353,12 +353,12 @@ class Ingest:
             our = payload["home_goals"]
             theirs = payload["away_goals"]
             result = payload["home_result"]
-            if result == "vitoria":
+            if result == "win":
                 title = f"Vitória por {our}–{theirs}"
-            elif result == "derrota":
-                title = f"Derrota por {our}–{theirs}"
+            elif result == "loss":
+                title = f"Loss por {our}–{theirs}"
             else:
-                title = f"Empate em {our}–{theirs}"
+                title = f"Draw em {our}–{theirs}"
             self.domain.create_announcement({
                 "kind": "resultado",
                 "title": title,

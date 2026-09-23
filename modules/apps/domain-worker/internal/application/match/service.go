@@ -68,7 +68,7 @@ func (s *Service) UpsertMatch(ctx context.Context, in UpsertInput) (domainmatch.
 		return domainmatch.Partida{}, nil, err
 	}
 	return p, &domainmatch.Upserted{
-		MatchID: p.MatchID, CasaID: p.ClubeCasaID, ForaID: p.ClubeForaID,
+		MatchID: p.MatchID, HomeID: p.ClubeCasaID, AwayID: p.ClubeForaID,
 		HomeGoals: p.HomeGoals, AwayGoals: p.AwayGoals, OccurredAt: time.Now().UTC(),
 	}, nil
 }

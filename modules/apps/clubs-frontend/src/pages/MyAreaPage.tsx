@@ -180,7 +180,7 @@ function Profile({
             <div className="px-4 py-4">
               <p className="text-sm text-muted">Você ainda não reivindicou seu pro.</p>
               <p className="mt-2 text-xs text-faint">
-                Reivindicar liga a sua conta à gamertag e dá o selo from_division verified no perfil público.
+                Reivindicar league a sua conta à gamertag e dá o selo from_division verified no perfil público.
               </p>
             </div>
           )}

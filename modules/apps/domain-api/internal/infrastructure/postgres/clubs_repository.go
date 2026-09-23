@@ -199,12 +199,12 @@ func scanMatch(row pgx.Row) (domainclubs.Match, error) {
 // no caller has to work out whether the requested club was home.
 func orient(m domainclubs.Match, clubID string) domainclubs.Match {
 	if m.ClubeCasaID == clubID {
-		m.OurSide = "casa"
+		m.OurSide = "home"
 		m.OurResult = m.HomeResult
 		m.OurGoals, m.TheirGoals = m.HomeGoals, m.AwayGoals
 		m.AdversarioID, m.OpponentName, m.OpponentTag = m.ClubeForaID, m.ForaNome, m.ForaSigla
 	} else {
-		m.OurSide = "fora"
+		m.OurSide = "away"
 		m.OurResult = mirror(m.HomeResult)
 		m.OurGoals, m.TheirGoals = m.AwayGoals, m.HomeGoals
 		m.AdversarioID, m.OpponentName, m.OpponentTag = m.ClubeCasaID, m.CasaNome, m.CasaSigla
@@ -214,12 +214,12 @@ func orient(m domainclubs.Match, clubID string) domainclubs.Match {
 
 func mirror(r string) string {
 	switch r {
-	case "vitoria":
-		return "derrota"
-	case "derrota":
-		return "vitoria"
+	case "win":
+		return "loss"
+	case "loss":
+		return "win"
 	default:
-		return "empate"
+		return "draw"
 	}
 }
 
@@ -345,10 +345,10 @@ func (r *ClubsRepository) HeadToHead(ctx context.Context, aID, bID string) (doma
 		h.GoalsA += m.OurGoals
 		h.GoalsB += m.TheirGoals
 		switch m.OurResult {
-		case "vitoria":
+		case "win":
 			h.V++
 			h.FormA = append(h.FormA, "V")
-		case "derrota":
+		case "loss":
 			h.D++
 			h.FormA = append(h.FormA, "D")
 		default:
@@ -884,7 +884,7 @@ func (r *ClubsRepository) DivisionChanges(ctx context.Context, clubID string) ([
 // NOT from the source's recent window, which is what makes these records
 // meaningful over time.
 func (r *ClubsRepository) Records(ctx context.Context, clubID string) (domainclubs.Records, error) {
-	matches, err := r.ListMatches(ctx, clubID, "liga", 1000)
+	matches, err := r.ListMatches(ctx, clubID, "league", 1000)
 	if err != nil {
 		return domainclubs.Records{}, err
 	}
@@ -933,7 +933,7 @@ func (r *ClubsRepository) Records(ctx context.Context, clubID string) (domainclu
 	sort.SliceStable(chrono, func(i, j int) bool { return chrono[i].Timestamp.Before(chrono[j].Timestamp) })
 	cur, best := 0, 0
 	for _, m := range chrono {
-		if m.OurResult == "vitoria" {
+		if m.OurResult == "win" {
 			cur++
 			if cur > best {
 				best = cur
@@ -1110,12 +1110,12 @@ func (r *ClubsRepository) clubSequence(ctx context.Context, clubID string) (doma
 	}
 	var s domainclubs.Streak
 	for _, m := range matches { // newest first
-		if m.OurResult == "vitoria" {
+		if m.OurResult == "win" {
 			s.Wins++
 			s.Unbeaten++
 			continue
 		}
-		if m.OurResult == "empate" && s.Wins == 0 {
+		if m.OurResult == "draw" && s.Wins == 0 {
 			s.Unbeaten++
 			continue
 		}

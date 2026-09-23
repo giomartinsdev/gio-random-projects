@@ -96,7 +96,7 @@ type Match struct {
 
 	// Which side the requested club was on, and its result — so the caller
 	// never has to figure out "was I home?".
-	OurSide       string `json:"our_side"` // "casa" | "fora"
+	OurSide       string `json:"our_side"` // "home" | "away"
 	OurResult  string `json:"our_result"`
 	OurGoals      int    `json:"our_goals"`
 	TheirGoals       int    `json:"their_goals"`

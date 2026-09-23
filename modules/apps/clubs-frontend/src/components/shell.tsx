@@ -23,6 +23,7 @@ import { Badge } from "./ui";
 import { fmt } from "../lib/format";
 import type { SyncRun } from "../lib/types";
 import type { Theme } from "../lib/hooks";
+import { LOCALE_LABEL, LOCALE_SHORT, LOCALES, useI18n, type Key, type Locale } from "../lib/i18n";
 
 export type RouteId =
   | "home"
@@ -38,7 +39,8 @@ export type RouteId =
 
 interface NavItem {
   id: RouteId;
-  label: string;
+  /** Chave de i18n, não texto: o rótulo muda com o idioma escolhido. */
+  label: Key;
   icon: LucideIcon;
   group: "discover" | "my-hub" | "system";
   requiresAuth?: boolean;
@@ -50,19 +52,19 @@ interface NavItem {
 // Ícones do lucide -- o resto do repo já usa, e emoji como ícone de navegação
 // é o que dava o ar amador.
 const NAV: NavItem[] = [
-  { id: "home", label: "Início", icon: House, group: "discover" },
-  { id: "clubs", label: "Clubs", icon: Shield, group: "discover" },
-  { id: "players", label: "Players", icon: Star, group: "discover" },
-  { id: "claim", label: "Resgatar pro", icon: Target, group: "my-hub" },
-  { id: "my-area", label: "Minha área", icon: User, group: "my-hub" },
-  { id: "notifications", label: "Notificações", icon: Bell, group: "my-hub", requiresAuth: true },
-  { id: "admin", label: "Administração", icon: Lock, group: "system", adminOnly: true },
+  { id: "home", label: "nav.home", icon: House, group: "discover" },
+  { id: "clubs", label: "nav.clubs", icon: Shield, group: "discover" },
+  { id: "players", label: "nav.players", icon: Star, group: "discover" },
+  { id: "claim", label: "nav.claim", icon: Target, group: "my-hub" },
+  { id: "my-area", label: "nav.myArea", icon: User, group: "my-hub" },
+  { id: "notifications", label: "nav.notifications", icon: Bell, group: "my-hub", requiresAuth: true },
+  { id: "admin", label: "nav.admin", icon: Lock, group: "system", adminOnly: true },
 ];
 
-const GROUPS: Array<{ id: NavItem["group"]; label: string }> = [
-  { id: "discover", label: "Explorar" },
-  { id: "my-hub", label: "Meu hub" },
-  { id: "system", label: "Sistema" },
+const GROUPS: Array<{ id: NavItem["group"]; label: Key }> = [
+  { id: "discover", label: "nav.discover" },
+  { id: "my-hub", label: "nav.myHub" },
+  { id: "system", label: "nav.system" },
 ];
 
 export function Shell({
@@ -88,6 +90,8 @@ export function Shell({
   onLogout: () => void;
   children: ReactNode;
 }) {
+  const { t, locale, setLocale } = useI18n();
+
   const visible = NAV.filter((n) => {
     if (n.adminOnly) return isAdmin;
     if (n.requiresAuth) return authed === true;
@@ -102,7 +106,7 @@ export function Shell({
           <div className="font-display text-lg font-bold tracking-tight">
             FC Clubs<span style={{ color: "var(--accent)" }}>.</span>hub
           </div>
-          <div className="label mt-1">rankings · histórico</div>
+          <div className="label mt-1">{t("brand.tagline")}</div>
         </div>
 
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-4">
@@ -111,7 +115,7 @@ export function Shell({
             if (!items.length) return null;
             return (
               <div key={g.id} className="pt-3 first:pt-0">
-                <div className="label px-2.5 pb-1.5">{g.label}</div>
+                <div className="label px-2.5 pb-1.5">{t(g.label)}</div>
                 {items.map((n) => {
                   const active = route === n.id;
                   const Icon = n.icon;
@@ -139,7 +143,7 @@ export function Shell({
                         style={{ color: active ? "var(--accent)" : undefined }}
                         strokeWidth={2}
                       />
-                      <span className="truncate font-display font-semibold tracking-wide">{n.label}</span>
+                      <span className="truncate font-display font-semibold tracking-wide">{t(n.label)}</span>
                     </button>
                   );
                 })}
@@ -175,27 +179,28 @@ export function Shell({
                   onClick={() => onNavigate("my-area")}
                   className="text-xs font-semibold text-muted transition-colors hover:text-ink"
                 >
-                  Entrar com Google
+                  {t("action.signIn")}
                 </button>
               ) : (
-                <span className="text-xs text-faint">sondando…</span>
+                <span className="text-xs text-faint">{t("action.connecting")}</span>
               )}
             </span>
             {authed && (
               <button
                 type="button"
                 onClick={onLogout}
-                title="Sair da conta"
-                aria-label="Sair da conta"
+                title={t("action.signOut")}
+                aria-label={t("action.signOut")}
                 className="shrink-0 rounded-md p-1.5 text-faint transition-colors hover:bg-surface-3 hover:text-ink"
               >
                 <LogOut className="size-3.5" />
               </button>
             )}
+            <LocalePicker locale={locale} onChange={setLocale} />
             <button
               type="button"
               onClick={onToggleTheme}
-              title={`Mudar to_division tema ${theme === "dark" ? "claro" : "escuro"}`}
+              title={`tema: ${theme === "dark" ? "claro" : "escuro"}`}
               aria-label="Alternar tema"
               className="shrink-0 rounded-md p-1.5 text-faint transition-colors hover:bg-surface-3 hover:text-ink"
             >
@@ -220,9 +225,10 @@ export function Shell({
                 onClick={() => onNavigate("my-area")}
                 className="rounded-md border border-line-strong px-2 py-1 text-xs text-muted"
               >
-                Entrar
+                {t("action.connect")}
               </button>
             )}
+            <LocalePicker locale={locale} onChange={setLocale} compact />
             <button
               type="button"
               onClick={onToggleTheme}
@@ -250,7 +256,7 @@ export function Shell({
                 )}
               >
                 <Icon className="size-3.5" />
-                {n.label}
+                {t(n.label)}
               </button>
             );
           })}
@@ -261,6 +267,39 @@ export function Shell({
         <main className="mx-auto w-full max-w-[1180px] flex-1 px-4 py-5 md:px-6">{children}</main>
       </div>
     </div>
+  );
+}
+
+/** Seletor de idioma. Um <select> nativo: abre o menu do sistema, funciona no
+ * toque e no teclado, e não custa um dropdown próprio. */
+function LocalePicker({
+  locale,
+  onChange,
+  compact,
+}: {
+  locale: Locale;
+  onChange: (l: Locale) => void;
+  compact?: boolean;
+}) {
+  return (
+    <label
+      className="shrink-0 rounded-md p-1 text-faint transition-colors hover:text-ink"
+      title={LOCALE_LABEL[locale]}
+    >
+      <select
+        value={locale}
+        onChange={(e) => onChange(e.target.value as Locale)}
+        aria-label="Language"
+        className="cursor-pointer bg-transparent font-mono text-[10px] uppercase outline-none"
+        style={{ color: "inherit" }}
+      >
+        {LOCALES.map((l) => (
+          <option key={l} value={l} style={{ color: "var(--text)" }}>
+            {compact ? LOCALE_SHORT[l] : LOCALE_LABEL[l]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

@@ -55,44 +55,44 @@ export function fmtRefresh(iso: string): string {
 
 export const POS_LABEL: Record<Position, string> = {
   goalkeeper: "Goalkeeper",
-  defensor: "Defensor",
-  meio: "Meio-campista",
-  atacante: "Atacante",
+  defender: "Defender",
+  midfielder: "Midfielder-campista",
+  forward: "Forward",
 };
 
 export const POS_SHORT: Record<Position, string> = {
   goalkeeper: "GK",
-  defensor: "DEF",
-  meio: "MEI",
-  atacante: "ATA",
+  defender: "DEF",
+  midfielder: "MEI",
+  forward: "ATA",
 };
 
-export const POS_ORDER: Position[] = ["goalkeeper", "defensor", "meio", "atacante"];
+export const POS_ORDER: Position[] = ["goalkeeper", "defender", "midfielder", "forward"];
 
 export const RESULT_LETTER: Record<Resultado, string> = {
-  vitoria: "V",
-  empate: "E",
-  derrota: "D",
+  win: "V",
+  draw: "E",
+  loss: "D",
 };
 
 export const RESULT_LABEL: Record<Resultado, string> = {
-  vitoria: "Vitória",
-  empate: "Empate",
-  derrota: "Derrota",
+  win: "Vitória",
+  draw: "Draw",
+  loss: "Loss",
 };
 
 export const TIPO_LABEL: Record<TipoPartida, string> = {
-  liga: "Liga",
-  amistoso: "Amistoso",
+  league: "League",
+  friendly: "Friendly",
   playoff: "Playoff",
 };
 
 /** A cor de um resultado, usando só os tokens de status. */
 export function resultColor(r: Resultado | string): string {
   switch (r) {
-    case "vitoria":
+    case "win":
       return "var(--success)";
-    case "derrota":
+    case "loss":
       return "var(--danger)";
     default:
       return "var(--draw)";
@@ -101,9 +101,9 @@ export function resultColor(r: Resultado | string): string {
 
 export function resultSoft(r: Resultado | string): string {
   switch (r) {
-    case "vitoria":
+    case "win":
       return "var(--success-soft)";
-    case "derrota":
+    case "loss":
       return "var(--danger-soft)";
     default:
       return "var(--draw-soft)";

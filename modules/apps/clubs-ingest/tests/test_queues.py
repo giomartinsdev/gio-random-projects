@@ -120,11 +120,11 @@ def test_empty_fetch_queue_is_a_noop():
 
 
 def test_a_broken_queue_does_not_crash_the_loop():
-    """Se a domain-api estiver fora, a leitura da fila falha -- e o worker
+    """Se a domain-api estiver away, a leitura da fila falha -- e o worker
     precisa seguir alive to_division o próximo tick."""
     class BrokenDomain(FakeDomain):
         def list_pending_fetches(self):
-            raise RuntimeError("domain-api fora")
+            raise RuntimeError("domain-api away")
 
     assert drain_fetch_queue(BrokenDomain(), FakeIngest()) == 0
 

@@ -29,14 +29,14 @@ from typing import Any
 
 # The source's result column. 16385 and 10 are the DNF variants; the API
 # documents them but they read as opaque numbers, so they get names here.
-RESULT_WIN = "vitoria"
-RESULT_DRAW = "empate"
-RESULT_LOSS = "derrota"
+RESULT_WIN = "win"
+RESULT_DRAW = "draw"
+RESULT_LOSS = "loss"
 
 # Match types, as the source spells them in the `matchType` param and in
 # each club's own `matchType` field (`1` league, `5` friendly).
-TYPE_LEAGUE = "liga"
-TYPE_FRIENDLY = "amistoso"
+TYPE_LEAGUE = "league"
+TYPE_FRIENDLY = "friendly"
 TYPE_PLAYOFF = "playoff"
 
 _MATCH_TYPE_PARAM = {
@@ -66,9 +66,9 @@ _RESULT_CODE = {
 # when it is already one of ours, else to "meio" as the least-wrong bucket
 # and is reported by describe_unknown_position().
 POS_GOLEIRO = "goalkeeper"
-POS_DEFENSOR = "defensor"
-POS_MEIO = "meio"
-POS_ATACANTE = "atacante"
+POS_DEFENSOR = "defender"
+POS_MEIO = "midfielder"
+POS_ATACANTE = "forward"
 
 _POSITION_ALIASES = {
     "goalkeeper": POS_GOLEIRO,
@@ -165,7 +165,7 @@ def position(raw: Any) -> str:
     """Map a position to one of the four buckets.
 
     Accepts either the source's own string ("goalkeeper") or its numeric
-    ``proPos`` id. An unknown numeric id lands in ``meio`` -- the least-wrong
+    ``proPos`` id. An unknown numeric id lands in ``midfielder`` -- the least-wrong
     bucket -- because dropping the player entirely would be worse than a
     coarse label.
     """

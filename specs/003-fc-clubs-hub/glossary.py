@@ -212,8 +212,27 @@ QUEUE = {
 }
 
 # --- agregados ------------------------------------------------------------
+# Vocabulário de VALOR (não de nome): aparece no CHECK do banco e nos payloads,
+# e a origem usa códigos numéricos que já são normalizados para isto. Sem
+# traduzir, o CHECK continuaria aceitando 'vitoria' e o contrato ficaria misto.
+VALUES = {
+    "vitoria": "win",
+    "empate": "draw",
+    "derrota": "loss",
+    "liga": "league",
+    "amistoso": "friendly",
+    "playoff": "playoff",
+    "promocao": "promotion",
+    "rebaixamento": "relegation",
+    "defensor": "defender",
+    "meio": "midfielder",
+    "atacante": "forward",
+    "casa": "home",
+    "fora": "away",
+}
+
 ALL = {}
-for _m in (CLUB, TOTALS, MATCH, PLAYER, HISTORY, FEED, PREFS, ADMIN, QUEUE):
+for _m in (CLUB, TOTALS, MATCH, PLAYER, HISTORY, FEED, PREFS, ADMIN, QUEUE, VALUES):
     for _k, _v in _m.items():
         assert _k not in ALL, f"termo pt duplicado no glossário: {_k}"
         ALL[_k] = _v

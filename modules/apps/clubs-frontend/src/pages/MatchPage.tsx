@@ -31,8 +31,8 @@ export function MatchPage({
   if (!m) return <Spinner label="carregando partida…" />;
 
   // A súmula vem com os dois lados; separa por clube para desenhar cada bloco.
-  const casa = (m.players ?? []).filter((p) => p.club_id === m.home_club_id);
-  const fora = (m.players ?? []).filter((p) => p.club_id === m.away_club_id);
+  const home = (m.players ?? []).filter((p) => p.club_id === m.home_club_id);
+  const away = (m.players ?? []).filter((p) => p.club_id === m.away_club_id);
   const melhor = [...(m.players ?? [])].sort((a, b) => b.rating - a.rating)[0];
 
   return (
@@ -76,8 +76,8 @@ export function MatchPage({
       </Card>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Lineup title={m.home_club_name} lines={casa} onOpenPlayer={onOpenPlayer} />
-        <Lineup title={m.away_club_name} lines={fora} onOpenPlayer={onOpenPlayer} />
+        <Lineup title={m.home_club_name} lines={home} onOpenPlayer={onOpenPlayer} />
+        <Lineup title={m.away_club_name} lines={away} onOpenPlayer={onOpenPlayer} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_380px]">
@@ -138,7 +138,7 @@ export function MatchPage({
 }
 
 function Lineup({ title, lines, onOpenPlayer }: { title: string; lines: PlayerLine[]; onOpenPlayer: (id: string) => void }) {
-  const order: Record<string, number> = { goalkeeper: 0, defensor: 1, meio: 2, atacante: 3 };
+  const order: Record<string, number> = { goalkeeper: 0, defender: 1, midfielder: 2, forward: 3 };
   const sorted = [...lines].sort((a, b) => (order[a.position] ?? 4) - (order[b.position] ?? 4));
   return (
     <Card title={title}>

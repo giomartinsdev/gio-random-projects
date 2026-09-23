@@ -114,16 +114,16 @@ func (h *ClubsHandlers) GetClub(w http.ResponseWriter, r *http.Request) {
 			var order []string
 			for i, m := range matches {
 				if i < 30 {
-					if m.OurResult == "vitoria" {
+					if m.OurResult == "win" {
 						win++
 						unbeat++
-					} else if m.OurResult == "empate" && win == 0 {
+					} else if m.OurResult == "draw" && win == 0 {
 						unbeat++
 					} else if i == 0 || win > 0 {
 						// only extend while the run is unbroken
 					}
 				}
-				if m.OurResult == "vitoria" && win == i {
+				if m.OurResult == "win" && win == i {
 					// keep counting
 				}
 				if i < 10 {
@@ -144,9 +144,9 @@ func (h *ClubsHandlers) GetClub(w http.ResponseWriter, r *http.Request) {
 				o.Goals += m.OurGoals
 				o.GoalsAgainst += m.TheirGoals
 				switch m.OurResult {
-				case "vitoria":
+				case "win":
 					o.V++
-				case "derrota":
+				case "loss":
 					o.D++
 				default:
 					o.E++
@@ -159,12 +159,12 @@ func (h *ClubsHandlers) GetClub(w http.ResponseWriter, r *http.Request) {
 			// first break.
 			win, unbeat = 0, 0
 			for _, m := range matches {
-				if m.OurResult == "vitoria" {
+				if m.OurResult == "win" {
 					win++
 					unbeat++
 					continue
 				}
-				if m.OurResult == "empate" && win == 0 {
+				if m.OurResult == "draw" && win == 0 {
 					unbeat++
 					continue
 				}

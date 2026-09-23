@@ -2,9 +2,9 @@
 // carrega termo técnico (sem "snapshot", "ingest", "cache") — a nomenclatura
 // de apresentação é toda daqui para baixo.
 
-export type Position = "goalkeeper" | "defensor" | "meio" | "atacante";
-export type Resultado = "vitoria" | "empate" | "derrota";
-export type TipoPartida = "liga" | "amistoso" | "playoff";
+export type Position = "goalkeeper" | "defender" | "midfielder" | "forward";
+export type Resultado = "win" | "draw" | "loss";
+export type TipoPartida = "league" | "friendly" | "playoff";
 
 export interface ClubRef {
   club_id: string;
@@ -103,7 +103,7 @@ export interface Match {
   away_goals: number;
   decided_by_forfeit: boolean;
   home_result: Resultado;
-  our_side: "casa" | "fora";
+  our_side: "home" | "away";
   our_result: Resultado;
   our_goals: number;
   their_goals: number;
@@ -263,7 +263,7 @@ export interface DivisionChange {
   detected_at: string;
   from_division: number;
   to_division: number;
-  kind: "promocao" | "rebaixamento";
+  kind: "promotion" | "relegation";
 }
 
 export interface RecordMatch {
@@ -292,7 +292,7 @@ export interface Records {
   best_rating: RecordLine | null;
   most_goals_in_match: RecordLine | null;
   longest_win_streak: number;
-  jogos_sem_sofrer_gol: number;
+  clean_sheets: number;
   total_matches: number;
 }
 
@@ -311,7 +311,7 @@ export interface HeadToHead {
 
 export interface Announcement {
   id: string;
-  kind: "resultado" | "ranking" | "player" | "novidade";
+  kind: "result" | "ranking" | "player" | "novelty";
   title: string;
   body: string;
   reference_id: string;

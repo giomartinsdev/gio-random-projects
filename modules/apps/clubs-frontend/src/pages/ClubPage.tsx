@@ -243,7 +243,7 @@ function ResumoTab({ club, onOpenMatch }: { club: Club; onOpenMatch: (id: string
         <div className="flex flex-col gap-4">
           <Card title="Uniformes">
             <div className="flex items-center justify-around px-4 py-4">
-              <Kit colors={[club.color_1, club.color_2, club.color_3, club.color_4]} label="casa" />
+              <Kit colors={[club.color_1, club.color_2, club.color_3, club.color_4]} label="home" />
               <div className="text-center">
                 <Crest club={club} size={44} />
                 <div className="label mt-1">escudo</div>
@@ -390,8 +390,8 @@ function PartidasTab({ clubId, onOpenMatch }: { clubId: string; onOpenMatch: (id
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {[
           ["", "todas"],
-          ["liga", "liga"],
-          ["amistoso", "amistosos"],
+          ["league", "league"],
+          ["friendly", "amistosos"],
           ["playoff", "playoffs"],
         ].map(([k, label]) => (
           <button
@@ -486,9 +486,9 @@ function NumerosTab({
           sub={serie.length >= 2 ? `${serie.length} leituras acumuladas` : "o histórico cresce a cada atualização"}
           accent
         />
-        <Stat label="mudanças from_division divisão" value={fmt(changes.length)} sub={changes.length ? "detectadas pelo hub" : "ainda nenhuma"} />
-        <Stat label="maior sequência from_division vitórias" value={`${rec?.longest_win_streak ?? 0}V`} sub="no histórico acumulado" />
-        <Stat label="played sem sofrer gol" value={fmt(rec?.jogos_sem_sofrer_gol ?? 0)} sub={`from_division ${fmt(rec?.total_matches ?? 0)} matches`} />
+        <Stat label="mudanças de divisão" value={fmt(changes.length)} sub={changes.length ? "detectadas pelo hub" : "ainda nenhuma"} />
+        <Stat label="maior sequência de vitórias" value={`${rec?.longest_win_streak ?? 0}V`} sub="no histórico acumulado" />
+        <Stat label="played sem sofrer gol" value={fmt(rec?.clean_sheets ?? 0)} sub={`de ${fmt(rec?.total_matches ?? 0)} partidas`} />
       </div>
 
       <div className="mb-4">
@@ -522,16 +522,16 @@ function NumerosTab({
                 <li key={i} className="flex items-center gap-3 px-4 py-2.5 text-sm">
                   <span
                     className="shrink-0"
-                    style={{ color: c.kind === "promocao" ? "var(--success)" : "var(--danger)" }}
+                    style={{ color: c.kind === "promotion" ? "var(--success)" : "var(--danger)" }}
                   >
-                    {c.kind === "promocao" ? (
+                    {c.kind === "promotion" ? (
                       <ArrowUp className="size-4" strokeWidth={2.5} />
                     ) : (
                       <ArrowDown className="size-4" strokeWidth={2.5} />
                     )}
                   </span>
                   <span className="flex-1">
-                    {c.kind === "promocao" ? "Subiu" : "Caiu"} da Divisão {c.from_division} to_division a {c.to_division}
+                    {c.kind === "promotion" ? "Subiu" : "Caiu"} da Divisão {c.from_division} to_division a {c.to_division}
                   </span>
                   <span className="font-mono text-[10px] text-faint">{fmtDateTime(c.detected_at)}</span>
                 </li>
@@ -555,7 +555,7 @@ function NumerosTab({
                 <RecLine medal={Trophy} title="Maior goleada" value={`${rec.biggest_win.our_goals}–${rec.biggest_win.their_goals}`} detail={`vs ${rec.biggest_win.opponent_name}`} onClick={() => onOpenMatch(rec.biggest_win!.match_id)} />
               )}
               {rec.worst_loss && (
-                <RecLine medal={Skull} title="Pior derrota" value={`${rec.worst_loss.our_goals}–${rec.worst_loss.their_goals}`} detail={`vs ${rec.worst_loss.opponent_name}`} onClick={() => onOpenMatch(rec.worst_loss!.match_id)} />
+                <RecLine medal={Skull} title="Pior loss" value={`${rec.worst_loss.our_goals}–${rec.worst_loss.their_goals}`} detail={`vs ${rec.worst_loss.opponent_name}`} onClick={() => onOpenMatch(rec.worst_loss!.match_id)} />
               )}
               {rec.highest_scoring_match && (
                 <RecLine medal={Crosshair} title="Jogo com mais goals" value={String(rec.highest_scoring_match.total_goals)} detail={`vs ${rec.highest_scoring_match.opponent_name}`} onClick={() => onOpenMatch(rec.highest_scoring_match!.match_id)} />
