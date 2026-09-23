@@ -602,6 +602,13 @@ BEGIN
     END IF;
 END $$;
 
+-- `CREATE TABLE IF NOT EXISTS` não adiciona colunas a uma tabela que já existe
+-- (ela é um no-op inteiro). Esta linha é para deploys que chegaram a rodar o
+-- formato novo ANTES de a coluna existir -- foi o caso em produção: a tabela
+-- já tinha alvo/alvo_id, mas não `clubes`, e o INSERT do sync de jogador
+-- falharia com "column clubes does not exist".
+ALTER TABLE clubs_fetch_runs ADD COLUMN IF NOT EXISTS clubes INTEGER NOT NULL DEFAULT 0;
+
 CREATE INDEX IF NOT EXISTS idx_clubs_fetch_runs_pendentes ON clubs_fetch_runs(rodando, solicitado_em);
 
 -- ===========================================================================
