@@ -7,10 +7,10 @@ package dashboardlayout
 import "encoding/json"
 
 type SaveInput struct {
-	UserEmail string          `json:"user_email"`
+	UsuarioEmail string          `json:"usuario_email"`
 	Blocos       json.RawMessage `json:"blocos"`
 }
 
 type DeleteInput struct {
-	UserEmail string `json:"user_email"`
+	UsuarioEmail string `json:"usuario_email"`
 }

@@ -22,9 +22,9 @@ func NewLeadRepository(pool *pgxpool.Pool) *LeadRepository {
 // row; either way the address is captured exactly once.
 func (r *LeadRepository) Insert(ctx context.Context, l domainlead.Lead) error {
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO leads (id, email, created_at) VALUES ($1, $2, $3)
+		`INSERT INTO leads (id, email, criado_em) VALUES ($1, $2, $3)
 		 ON CONFLICT (email) DO NOTHING`,
-		l.ID, l.Email, l.CreatedAt,
+		l.ID, l.Email, l.CriadoEm,
 	)
 	if err != nil {
 		return fmt.Errorf("insert lead: %w", err)

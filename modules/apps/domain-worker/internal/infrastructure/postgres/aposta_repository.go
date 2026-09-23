@@ -24,15 +24,15 @@ func NewApostaRepository(pool *pgxpool.Pool) *ApostaRepository {
 	return &ApostaRepository{pool: pool}
 }
 
-const apostaColumns = `id, user_email, conta_id, descricao, valor_apostado, odd, status, retorno_obtido, data_aposta, data_resultado, created_at, updated_at`
+const apostaColumns = `id, usuario_email, conta_id, descricao, valor_apostado, odd, status, retorno_obtido, data_aposta, data_resultado, criado_em, atualizado_em`
 
 func scanAposta(row pgx.Row) (domainaposta.Aposta, error) {
 	var a domainaposta.Aposta
 	var odd, retornoObtido *float64
 	var dataResultado *time.Time
 	err := row.Scan(
-		&a.ID, &a.UserEmail, &a.ContaID, &a.Descricao, &a.ValorApostado, &odd, &a.Status,
-		&retornoObtido, &a.DataAposta, &dataResultado, &a.CreatedAt, &a.UpdatedAt,
+		&a.ID, &a.UsuarioEmail, &a.ContaID, &a.Descricao, &a.ValorApostado, &odd, &a.Status,
+		&retornoObtido, &a.DataAposta, &dataResultado, &a.CriadoEm, &a.AtualizadoEm,
 	)
 	if odd != nil {
 		a.Odd = *odd
@@ -59,12 +59,12 @@ func (r *ApostaRepository) FindByID(ctx context.Context, id string) (domainapost
 }
 
 // An empty contaID means "every conta do usuario".
-func (r *ApostaRepository) ListByUsuario(ctx context.Context, userEmail, contaID string) ([]domainaposta.Aposta, error) {
+func (r *ApostaRepository) ListByUsuario(ctx context.Context, usuarioEmail, contaID string) ([]domainaposta.Aposta, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+apostaColumns+` FROM apostas
-		 WHERE user_email = $1 AND ($2 = '' OR conta_id = $2::uuid)
-		 ORDER BY data_aposta DESC, created_at DESC`,
-		userEmail, contaID,
+		 WHERE usuario_email = $1 AND ($2 = '' OR conta_id = $2::uuid)
+		 ORDER BY data_aposta DESC, criado_em DESC`,
+		usuarioEmail, contaID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list apostas: %w", err)
@@ -88,9 +88,9 @@ func (r *ApostaRepository) Insert(ctx context.Context, a domainaposta.Aposta) er
 		odd = &a.Odd
 	}
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO apostas (id, user_email, conta_id, descricao, valor_apostado, odd, status, data_aposta, created_at, updated_at)
+		`INSERT INTO apostas (id, usuario_email, conta_id, descricao, valor_apostado, odd, status, data_aposta, criado_em, atualizado_em)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		a.ID, a.UserEmail, a.ContaID, a.Descricao, a.ValorApostado, odd, a.Status, a.DataAposta, a.CreatedAt, a.UpdatedAt,
+		a.ID, a.UsuarioEmail, a.ContaID, a.Descricao, a.ValorApostado, odd, a.Status, a.DataAposta, a.CriadoEm, a.AtualizadoEm,
 	)
 	if err != nil {
 		return fmt.Errorf("insert aposta: %w", err)
@@ -108,8 +108,8 @@ func (r *ApostaRepository) Update(ctx context.Context, a domainaposta.Aposta) er
 		dataResultado = &a.DataResultado
 	}
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE apostas SET status = $2, retorno_obtido = $3, data_resultado = $4, updated_at = $5 WHERE id = $1`,
-		a.ID, a.Status, retornoObtido, dataResultado, a.UpdatedAt,
+		`UPDATE apostas SET status = $2, retorno_obtido = $3, data_resultado = $4, atualizado_em = $5 WHERE id = $1`,
+		a.ID, a.Status, retornoObtido, dataResultado, a.AtualizadoEm,
 	)
 	if err != nil {
 		return fmt.Errorf("update aposta: %w", err)

@@ -8,12 +8,12 @@ func TestSave(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if d.UserEmail != "a@example.com" {
-			t.Errorf("usuario = %q", d.UserEmail)
+		if d.UsuarioEmail != "a@example.com" {
+			t.Errorf("usuario = %q", d.UsuarioEmail)
 		}
 	})
 
-	t.Run("negative: missing user_email", func(t *testing.T) {
+	t.Run("negative: missing usuario_email", func(t *testing.T) {
 		_, err := Save("", []byte(`[]`))
 		if err != ErrUsuarioRequired {
 			t.Errorf("err = %v, want ErrUsuarioRequired", err)

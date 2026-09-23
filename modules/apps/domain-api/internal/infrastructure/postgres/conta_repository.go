@@ -21,11 +21,11 @@ func NewContaRepository(pool *pgxpool.Pool) *ContaRepository {
 	return &ContaRepository{pool: pool}
 }
 
-const contaColumns = `id, user_email, name, kind, status, created_at, updated_at`
+const contaColumns = `id, usuario_email, nome, tipo, status, criado_em, atualizado_em`
 
 func scanConta(row pgx.Row) (domainconta.Conta, error) {
 	var c domainconta.Conta
-	err := row.Scan(&c.ID, &c.UserEmail, &c.Name, &c.Kind, &c.Status, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.UsuarioEmail, &c.Nome, &c.Tipo, &c.Status, &c.CriadoEm, &c.AtualizadoEm)
 	return c, err
 }
 
@@ -43,12 +43,12 @@ func (r *ContaRepository) FindByID(ctx context.Context, id string) (domainconta.
 
 // An empty status means "any status" -- the filter collapses out rather
 // than needing a second query string.
-func (r *ContaRepository) ListByUsuario(ctx context.Context, userEmail, status string) ([]domainconta.Conta, error) {
+func (r *ContaRepository) ListByUsuario(ctx context.Context, usuarioEmail, status string) ([]domainconta.Conta, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+contaColumns+` FROM contas
-		 WHERE user_email = $1 AND ($2 = '' OR status = $2)
-		 ORDER BY created_at DESC`,
-		userEmail, status,
+		 WHERE usuario_email = $1 AND ($2 = '' OR status = $2)
+		 ORDER BY criado_em DESC`,
+		usuarioEmail, status,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list contas: %w", err)

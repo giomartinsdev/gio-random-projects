@@ -22,5 +22,5 @@ func (s *Service) Capture(ctx context.Context, id string, in CaptureInput) (doma
 	if err := s.repo.Insert(ctx, l); err != nil {
 		return domainlead.Lead{}, nil, err
 	}
-	return l, domainlead.Captured{LeadID: l.ID, Email: l.Email, OccurredAt: l.CreatedAt}, nil
+	return l, domainlead.Captured{LeadID: l.ID, Email: l.Email, OccurredAt: l.CriadoEm}, nil
 }

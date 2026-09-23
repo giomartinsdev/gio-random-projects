@@ -6,7 +6,7 @@ import "context"
 // implements the write side of -- domain-api only ever calls these.
 type Repository interface {
 	FindByID(ctx context.Context, id string) (Conta, error)
-	ListByUsuario(ctx context.Context, userEmail, status string) ([]Conta, error)
+	ListByUsuario(ctx context.Context, usuarioEmail, status string) ([]Conta, error)
 }
 
 var ErrNotFound = notFoundError{}

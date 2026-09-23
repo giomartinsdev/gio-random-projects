@@ -12,7 +12,7 @@ import (
 )
 
 type DashboardLayout struct {
-	UserEmail string
+	UsuarioEmail string
 	Blocos       json.RawMessage
-	UpdatedAt time.Time
+	AtualizadoEm time.Time
 }

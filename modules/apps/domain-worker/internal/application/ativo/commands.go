@@ -8,7 +8,7 @@ package ativo
 import "time"
 
 type CreateInput struct {
-	UserEmail      string    `json:"user_email"`
+	UsuarioEmail      string    `json:"usuario_email"`
 	ContaID           string    `json:"conta_id"`
 	Ticker            string    `json:"ticker"`
 	QuantidadeInicial float64   `json:"quantidade_inicial"`
@@ -18,7 +18,7 @@ type CreateInput struct {
 
 type RegisterMovementInput struct {
 	AtivoID       string    `json:"ativo_id"`
-	Kind          string    `json:"kind"`
+	Tipo          string    `json:"tipo"`
 	Quantidade    float64   `json:"quantidade,omitempty"`
 	PrecoUnitario float64   `json:"preco_unitario,omitempty"`
 	ValorProvento float64   `json:"valor_provento,omitempty"`

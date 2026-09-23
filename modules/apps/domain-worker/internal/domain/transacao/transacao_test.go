@@ -18,7 +18,7 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("negative: invalid kind", func(t *testing.T) {
+	t.Run("negative: invalid tipo", func(t *testing.T) {
 		_, err := New("id-1", "a@example.com", "conta-1", "transferencia", 50, data, "mercado", "", "")
 		if err != ErrTipoInvalido {
 			t.Errorf("err = %v, want ErrTipoInvalido", err)

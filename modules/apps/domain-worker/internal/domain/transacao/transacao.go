@@ -17,10 +17,10 @@ const (
 )
 
 var (
-	ErrUsuarioRequired   = errors.New("user_email is required")
+	ErrUsuarioRequired   = errors.New("usuario_email is required")
 	ErrContaRequired     = errors.New("conta_id is required")
 	ErrCategoriaRequired = errors.New("categoria is required")
-	ErrTipoInvalido      = errors.New("kind must be \"entrada\" or \"saida\"")
+	ErrTipoInvalido      = errors.New("tipo must be \"entrada\" or \"saida\"")
 	ErrValorInvalido     = errors.New("valor must be greater than zero")
 	ErrDataInvalida      = errors.New("data is required")
 	ErrForbidden         = errors.New("only the owning usuario may modify this transacao")
@@ -28,9 +28,9 @@ var (
 
 type Transacao struct {
 	ID           string
-	UserEmail string
+	UsuarioEmail string
 	ContaID      string
-	Kind         string
+	Tipo         string
 	Valor        float64
 	// Data only carries the calendar date -- New/Edit normalize any
 	// time-of-day component away with time.Date so two transacoes on
@@ -42,8 +42,8 @@ type Transacao struct {
 	// this phase -- same "opaque to the domain" treatment as Room's
 	// DocumentID.
 	AnexoImagem  string
-	CreatedAt     time.Time
-	UpdatedAt time.Time
+	CriadoEm     time.Time
+	AtualizadoEm time.Time
 }
 
 func validTipo(t string) bool { return t == TipoEntrada || t == TipoSaida }
@@ -54,8 +54,8 @@ func dateOnly(t time.Time) time.Time {
 
 // New constructs a Transacao, enforcing the aggregate's invariants at
 // the one place they can't be bypassed.
-func New(id, userEmail, contaID, kind string, valor float64, data time.Time, categoria, descricao, anexoImagem string) (Transacao, error) {
-	if userEmail == "" {
+func New(id, usuarioEmail, contaID, tipo string, valor float64, data time.Time, categoria, descricao, anexoImagem string) (Transacao, error) {
+	if usuarioEmail == "" {
 		return Transacao{}, ErrUsuarioRequired
 	}
 	if contaID == "" {
@@ -64,7 +64,7 @@ func New(id, userEmail, contaID, kind string, valor float64, data time.Time, cat
 	if categoria == "" {
 		return Transacao{}, ErrCategoriaRequired
 	}
-	if !validTipo(kind) {
+	if !validTipo(tipo) {
 		return Transacao{}, ErrTipoInvalido
 	}
 	if valor <= 0 {
@@ -77,31 +77,31 @@ func New(id, userEmail, contaID, kind string, valor float64, data time.Time, cat
 	now := time.Now().UTC()
 	return Transacao{
 		ID:           id,
-		UserEmail: userEmail,
+		UsuarioEmail: usuarioEmail,
 		ContaID:      contaID,
-		Kind:         kind,
+		Tipo:         tipo,
 		Valor:        valor,
 		Data:         dateOnly(data),
 		Categoria:    categoria,
 		Descricao:    descricao,
 		AnexoImagem:  anexoImagem,
-		CreatedAt:     now,
-		UpdatedAt: now,
+		CriadoEm:     now,
+		AtualizadoEm: now,
 	}, nil
 }
 
 // Edit applies a partial update in place -- tipo == "", valor == nil,
 // data == nil, categoria == "", descricao == "" and anexoImagem == ""
 // all mean "leave unchanged", same convention as Room.Edit.
-func (tr *Transacao) Edit(userEmail, kind string, valor *float64, data *time.Time, categoria, descricao, anexoImagem string) error {
-	if userEmail != tr.UserEmail {
+func (tr *Transacao) Edit(usuarioEmail, tipo string, valor *float64, data *time.Time, categoria, descricao, anexoImagem string) error {
+	if usuarioEmail != tr.UsuarioEmail {
 		return ErrForbidden
 	}
-	if kind != "" {
-		if !validTipo(kind) {
+	if tipo != "" {
+		if !validTipo(tipo) {
 			return ErrTipoInvalido
 		}
-		tr.Kind = kind
+		tr.Tipo = tipo
 	}
 	if valor != nil {
 		if *valor <= 0 {
@@ -124,6 +124,6 @@ func (tr *Transacao) Edit(userEmail, kind string, valor *float64, data *time.Tim
 	if anexoImagem != "" {
 		tr.AnexoImagem = anexoImagem
 	}
-	tr.UpdatedAt = time.Now().UTC()
+	tr.AtualizadoEm = time.Now().UTC()
 	return nil
 }

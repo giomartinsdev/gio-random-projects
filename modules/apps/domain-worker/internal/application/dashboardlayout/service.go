@@ -21,22 +21,22 @@ func NewService(repo domaindashboardlayout.Repository) *Service {
 }
 
 func (s *Service) Save(ctx context.Context, in SaveInput) (domaindashboardlayout.Event, error) {
-	d, err := domaindashboardlayout.Save(in.UserEmail, in.Blocos)
+	d, err := domaindashboardlayout.Save(in.UsuarioEmail, in.Blocos)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.repo.Upsert(ctx, d); err != nil {
 		return nil, err
 	}
-	return domaindashboardlayout.Saved{UserEmail: d.UserEmail, OccurredAt: d.UpdatedAt}, nil
+	return domaindashboardlayout.Saved{UsuarioEmail: d.UsuarioEmail, OccurredAt: d.AtualizadoEm}, nil
 }
 
 func (s *Service) Delete(ctx context.Context, in DeleteInput) (domaindashboardlayout.Event, error) {
-	if in.UserEmail == "" {
+	if in.UsuarioEmail == "" {
 		return nil, domaindashboardlayout.ErrUsuarioRequired
 	}
-	if err := s.repo.Delete(ctx, in.UserEmail); err != nil {
+	if err := s.repo.Delete(ctx, in.UsuarioEmail); err != nil {
 		return nil, err
 	}
-	return domaindashboardlayout.Deleted{UserEmail: in.UserEmail, OccurredAt: time.Now().UTC()}, nil
+	return domaindashboardlayout.Deleted{UsuarioEmail: in.UsuarioEmail, OccurredAt: time.Now().UTC()}, nil
 }

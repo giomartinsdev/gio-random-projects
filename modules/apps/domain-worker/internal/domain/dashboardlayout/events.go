@@ -5,14 +5,14 @@ import "time"
 type Event interface{ EventName() string }
 
 type Saved struct {
-	UserEmail string    `json:"user_email"`
+	UsuarioEmail string    `json:"usuario_email"`
 	OccurredAt   time.Time `json:"occurred_at"`
 }
 
 func (Saved) EventName() string { return "dashboardlayout.saved" }
 
 type Deleted struct {
-	UserEmail string    `json:"user_email"`
+	UsuarioEmail string    `json:"usuario_email"`
 	OccurredAt   time.Time `json:"occurred_at"`
 }
 

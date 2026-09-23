@@ -22,7 +22,7 @@ func NewTransacaoRepository(pool *pgxpool.Pool) *TransacaoRepository {
 	return &TransacaoRepository{pool: pool}
 }
 
-const transacaoColumns = `id, user_email, conta_id, kind, categoria, descricao, anexo_imagem, valor, data, created_at, updated_at`
+const transacaoColumns = `id, usuario_email, conta_id, tipo, categoria, descricao, anexo_imagem, valor, data, criado_em, atualizado_em`
 
 func scanTransacao(row pgx.Row) (domaintransacao.Transacao, error) {
 	var t domaintransacao.Transacao
@@ -31,8 +31,8 @@ func scanTransacao(row pgx.Row) (domaintransacao.Transacao, error) {
 	// scanAtivo/scanAtivoMovimento do for their nullable columns.
 	var descricao, anexoImagem *string
 	err := row.Scan(
-		&t.ID, &t.UserEmail, &t.ContaID, &t.Kind, &t.Categoria, &descricao, &anexoImagem,
-		&t.Valor, &t.Data, &t.CreatedAt, &t.UpdatedAt,
+		&t.ID, &t.UsuarioEmail, &t.ContaID, &t.Tipo, &t.Categoria, &descricao, &anexoImagem,
+		&t.Valor, &t.Data, &t.CriadoEm, &t.AtualizadoEm,
 	)
 	if descricao != nil {
 		t.Descricao = *descricao
@@ -58,16 +58,16 @@ func (r *TransacaoRepository) FindByID(ctx context.Context, id string) (domaintr
 // Empty contaID/categoria mean "any"; nil de/ate mean "unbounded" on
 // that side of the range -- every filter collapses out in SQL rather
 // than needing conditional query building.
-func (r *TransacaoRepository) ListByFiltro(ctx context.Context, userEmail, contaID, categoria string, from_division, ate *time.Time) ([]domaintransacao.Transacao, error) {
+func (r *TransacaoRepository) ListByFiltro(ctx context.Context, usuarioEmail, contaID, categoria string, de, ate *time.Time) ([]domaintransacao.Transacao, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+transacaoColumns+` FROM transacoes
-		 WHERE user_email = $1
+		 WHERE usuario_email = $1
 		   AND ($2 = '' OR conta_id = $2::uuid)
 		   AND ($3 = '' OR categoria = $3)
 		   AND ($4::date IS NULL OR data >= $4::date)
 		   AND ($5::date IS NULL OR data <= $5::date)
-		 ORDER BY data DESC, created_at DESC`,
-		userEmail, contaID, categoria, from_division, ate,
+		 ORDER BY data DESC, criado_em DESC`,
+		usuarioEmail, contaID, categoria, de, ate,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list transacoes: %w", err)

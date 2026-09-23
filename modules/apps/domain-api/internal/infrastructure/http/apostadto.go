@@ -8,7 +8,7 @@ import (
 
 type ApostaResponse struct {
 	ID            string    `json:"id"`
-	UserEmail  string    `json:"user_email"`
+	UsuarioEmail  string    `json:"usuario_email"`
 	ContaID       string    `json:"conta_id"`
 	Descricao     string    `json:"descricao"`
 	ValorApostado float64   `json:"valor_apostado"`
@@ -17,16 +17,16 @@ type ApostaResponse struct {
 	RetornoObtido float64   `json:"retorno_obtido,omitempty"`
 	DataAposta    time.Time `json:"data_aposta"`
 	DataResultado time.Time `json:"data_resultado,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	CriadoEm      time.Time `json:"criado_em"`
+	AtualizadoEm  time.Time `json:"atualizado_em"`
 }
 
 func toApostaResponse(a domainaposta.Aposta) ApostaResponse {
 	return ApostaResponse{
-		ID: a.ID, UserEmail: a.UserEmail, ContaID: a.ContaID, Descricao: a.Descricao,
+		ID: a.ID, UsuarioEmail: a.UsuarioEmail, ContaID: a.ContaID, Descricao: a.Descricao,
 		ValorApostado: a.ValorApostado, Odd: a.Odd, Status: a.Status, RetornoObtido: a.RetornoObtido,
 		DataAposta: a.DataAposta, DataResultado: a.DataResultado,
-		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+		CriadoEm: a.CriadoEm, AtualizadoEm: a.AtualizadoEm,
 	}
 }
 

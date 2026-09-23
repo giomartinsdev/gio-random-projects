@@ -13,7 +13,7 @@ import (
 // the BFF, which have the fuller picture; see the spec's own note.
 type AtivoResponse struct {
 	ID                string    `json:"id"`
-	UserEmail      string    `json:"user_email"`
+	UsuarioEmail      string    `json:"usuario_email"`
 	ContaID           string    `json:"conta_id"`
 	Ticker            string    `json:"ticker"`
 	Status            string    `json:"status"`
@@ -22,17 +22,17 @@ type AtivoResponse struct {
 	UltimaCotacao     float64   `json:"ultima_cotacao,omitempty"`
 	UltimaCotacaoEm   time.Time `json:"ultima_cotacao_em,omitempty"`
 	ValorMercadoAtual float64   `json:"valor_mercado_atual"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	CriadoEm          time.Time `json:"criado_em"`
+	AtualizadoEm      time.Time `json:"atualizado_em"`
 }
 
 func toAtivoResponse(a domainativo.Ativo) AtivoResponse {
 	return AtivoResponse{
-		ID: a.ID, UserEmail: a.UserEmail, ContaID: a.ContaID, Ticker: a.Ticker, Status: a.Status,
+		ID: a.ID, UsuarioEmail: a.UsuarioEmail, ContaID: a.ContaID, Ticker: a.Ticker, Status: a.Status,
 		QuantidadeAtual: a.QuantidadeAtual, CustoMedio: a.CustoMedio,
 		UltimaCotacao: a.UltimaCotacao, UltimaCotacaoEm: a.UltimaCotacaoEm,
 		ValorMercadoAtual: a.QuantidadeAtual * a.UltimaCotacao,
-		CreatedAt:          a.CreatedAt, UpdatedAt: a.UpdatedAt,
+		CriadoEm:          a.CriadoEm, AtualizadoEm: a.AtualizadoEm,
 	}
 }
 
@@ -47,20 +47,20 @@ func toAtivoResponses(ativos []domainativo.Ativo) []AtivoResponse {
 type AtivoMovimentoResponse struct {
 	ID                 string    `json:"id"`
 	AtivoID            string    `json:"ativo_id"`
-	Kind               string    `json:"kind"`
+	Tipo               string    `json:"tipo"`
 	Quantidade         float64   `json:"quantidade,omitempty"`
 	PrecoUnitario      float64   `json:"preco_unitario,omitempty"`
 	ValorProvento      float64   `json:"valor_provento,omitempty"`
 	ResultadoRealizado float64   `json:"resultado_realizado,omitempty"`
 	Data               time.Time `json:"data"`
-	CreatedAt           time.Time `json:"created_at"`
+	CriadoEm           time.Time `json:"criado_em"`
 }
 
 func toAtivoMovimentoResponse(m domainativomovimento.AtivoMovimento) AtivoMovimentoResponse {
 	return AtivoMovimentoResponse{
-		ID: m.ID, AtivoID: m.AtivoID, Kind: m.Kind, Quantidade: m.Quantidade,
+		ID: m.ID, AtivoID: m.AtivoID, Tipo: m.Tipo, Quantidade: m.Quantidade,
 		PrecoUnitario: m.PrecoUnitario, ValorProvento: m.ValorProvento, ResultadoRealizado: m.ResultadoRealizado,
-		Data: m.Data, CreatedAt: m.CreatedAt,
+		Data: m.Data, CriadoEm: m.CriadoEm,
 	}
 }
 

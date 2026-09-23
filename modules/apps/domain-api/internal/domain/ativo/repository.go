@@ -6,7 +6,7 @@ import "context"
 // implements the write side of -- domain-api only ever calls these.
 type Repository interface {
 	FindByID(ctx context.Context, id string) (Ativo, error)
-	ListByUsuario(ctx context.Context, userEmail, contaID string) ([]Ativo, error)
+	ListByUsuario(ctx context.Context, usuarioEmail, contaID string) ([]Ativo, error)
 	// ListAtivosComPosicao is cross-user -- the one read here not scoped
 	// to a single person's session, for the proventos-worker's daily
 	// sweep of every position that could still be owed a dividend.

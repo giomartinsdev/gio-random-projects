@@ -9,7 +9,7 @@ type Event interface {
 
 type Registrada struct {
 	ApostaID      string    `json:"aposta_id"`
-	UserEmail  string    `json:"user_email"`
+	UsuarioEmail  string    `json:"usuario_email"`
 	ContaID       string    `json:"conta_id"`
 	ValorApostado float64   `json:"valor_apostado"`
 	OccurredAt    time.Time `json:"occurred_at"`

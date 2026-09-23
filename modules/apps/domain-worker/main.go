@@ -754,9 +754,9 @@ func ativoEntityID(evt domainativo.Event) string {
 func dashboardLayoutEntityID(evt domaindashboardlayout.Event) string {
 	switch e := evt.(type) {
 	case domaindashboardlayout.Saved:
-		return e.UserEmail
+		return e.UsuarioEmail
 	case domaindashboardlayout.Deleted:
-		return e.UserEmail
+		return e.UsuarioEmail
 	default:
 		return ""
 	}

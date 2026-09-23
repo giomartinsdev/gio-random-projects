@@ -14,7 +14,7 @@ import (
 // complete, consistent state on its own.
 type Repository interface {
 	FindByID(ctx context.Context, id string) (Ativo, error)
-	ListByUsuario(ctx context.Context, userEmail, contaID string) ([]Ativo, error)
+	ListByUsuario(ctx context.Context, usuarioEmail, contaID string) ([]Ativo, error)
 	Insert(ctx context.Context, a Ativo, primeiroMovimento ativomovimento.AtivoMovimento) error
 	InsertMovimento(ctx context.Context, a Ativo, mov ativomovimento.AtivoMovimento) error
 	UpdateCotacao(ctx context.Context, ativoID string, cotacao float64, obtidaEm time.Time) error

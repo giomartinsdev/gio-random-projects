@@ -20,7 +20,7 @@ var (
 type Lead struct {
 	ID       string
 	Email    string
-	CreatedAt time.Time
+	CriadoEm time.Time
 }
 
 // New validates just enough to keep garbage out (a real deliverability
@@ -35,5 +35,5 @@ func New(id, email string) (Lead, error) {
 	if at <= 0 || at == len(email)-1 || strings.ContainsRune(email[at+1:], '@') {
 		return Lead{}, ErrEmailInvalido
 	}
-	return Lead{ID: id, Email: email, CreatedAt: time.Now().UTC()}, nil
+	return Lead{ID: id, Email: email, CriadoEm: time.Now().UTC()}, nil
 }

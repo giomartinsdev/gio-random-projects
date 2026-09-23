@@ -8,7 +8,7 @@ import "context"
 // a conta's transacoes and ativos would otherwise dangle.
 type Repository interface {
 	FindByID(ctx context.Context, id string) (Conta, error)
-	ListByUsuario(ctx context.Context, userEmail, status string) ([]Conta, error)
+	ListByUsuario(ctx context.Context, usuarioEmail, status string) ([]Conta, error)
 	Insert(ctx context.Context, c Conta) error
 	Update(ctx context.Context, c Conta) error
 }

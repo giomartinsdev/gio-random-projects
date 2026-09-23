@@ -20,13 +20,13 @@ func NewAtivoMovimentoRepository(pool *pgxpool.Pool) *AtivoMovimentoRepository {
 	return &AtivoMovimentoRepository{pool: pool}
 }
 
-const ativoMovimentoColumns = `id, ativo_id, kind, quantidade, preco_unitario, valor_provento, data, resultado_realizado, created_at`
+const ativoMovimentoColumns = `id, ativo_id, tipo, quantidade, preco_unitario, valor_provento, data, resultado_realizado, criado_em`
 
 func scanAtivoMovimento(row pgx.Row) (domainativomovimento.AtivoMovimento, error) {
 	var m domainativomovimento.AtivoMovimento
 	var quantidade, precoUnitario, valorProvento, resultadoRealizado *float64
 	err := row.Scan(
-		&m.ID, &m.AtivoID, &m.Kind, &quantidade, &precoUnitario, &valorProvento, &m.Data, &resultadoRealizado, &m.CreatedAt,
+		&m.ID, &m.AtivoID, &m.Tipo, &quantidade, &precoUnitario, &valorProvento, &m.Data, &resultadoRealizado, &m.CriadoEm,
 	)
 	if quantidade != nil {
 		m.Quantidade = *quantidade
@@ -45,7 +45,7 @@ func scanAtivoMovimento(row pgx.Row) (domainativomovimento.AtivoMovimento, error
 
 func (r *AtivoMovimentoRepository) ListByAtivo(ctx context.Context, ativoID string) ([]domainativomovimento.AtivoMovimento, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT `+ativoMovimentoColumns+` FROM ativo_movimentos WHERE ativo_id = $1 ORDER BY data DESC, created_at DESC`,
+		`SELECT `+ativoMovimentoColumns+` FROM ativo_movimentos WHERE ativo_id = $1 ORDER BY data DESC, criado_em DESC`,
 		ativoID,
 	)
 	if err != nil {

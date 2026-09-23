@@ -19,7 +19,7 @@ func NewService(repo domainaposta.Repository) *Service {
 }
 
 func (s *Service) Registrar(ctx context.Context, id string, in RegistrarInput) (domainaposta.Aposta, domainaposta.Event, error) {
-	a, err := domainaposta.New(id, in.UserEmail, in.ContaID, in.Descricao, in.ValorApostado, in.Odd, in.Data)
+	a, err := domainaposta.New(id, in.UsuarioEmail, in.ContaID, in.Descricao, in.ValorApostado, in.Odd, in.Data)
 	if err != nil {
 		return domainaposta.Aposta{}, nil, err
 	}
@@ -27,8 +27,8 @@ func (s *Service) Registrar(ctx context.Context, id string, in RegistrarInput) (
 		return domainaposta.Aposta{}, nil, err
 	}
 	return a, domainaposta.Registrada{
-		ApostaID: a.ID, UserEmail: a.UserEmail, ContaID: a.ContaID,
-		ValorApostado: a.ValorApostado, OccurredAt: a.CreatedAt,
+		ApostaID: a.ID, UsuarioEmail: a.UsuarioEmail, ContaID: a.ContaID,
+		ValorApostado: a.ValorApostado, OccurredAt: a.CriadoEm,
 	}, nil
 }
 
@@ -46,6 +46,6 @@ func (s *Service) Resolver(ctx context.Context, in ResolverInput) (domainaposta.
 	}
 	return resolvida, domainaposta.Resolvida{
 		ApostaID: resolvida.ID, Status: resolvida.Status,
-		RetornoObtido: resolvida.RetornoObtido, OccurredAt: resolvida.UpdatedAt,
+		RetornoObtido: resolvida.RetornoObtido, OccurredAt: resolvida.AtualizadoEm,
 	}, nil
 }

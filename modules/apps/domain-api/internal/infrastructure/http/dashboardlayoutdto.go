@@ -8,11 +8,11 @@ import (
 )
 
 type DashboardLayoutResponse struct {
-	UserEmail string          `json:"user_email"`
+	UsuarioEmail string          `json:"usuario_email"`
 	Blocos       json.RawMessage `json:"blocos"`
-	UpdatedAt time.Time       `json:"updated_at"`
+	AtualizadoEm time.Time       `json:"atualizado_em"`
 }
 
 func toDashboardLayoutResponse(l domaindashboardlayout.DashboardLayout) DashboardLayoutResponse {
-	return DashboardLayoutResponse{UserEmail: l.UserEmail, Blocos: l.Blocos, UpdatedAt: l.UpdatedAt}
+	return DashboardLayoutResponse{UsuarioEmail: l.UsuarioEmail, Blocos: l.Blocos, AtualizadoEm: l.AtualizadoEm}
 }

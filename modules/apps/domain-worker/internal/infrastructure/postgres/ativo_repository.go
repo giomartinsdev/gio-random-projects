@@ -27,13 +27,13 @@ func NewAtivoRepository(pool *pgxpool.Pool) *AtivoRepository {
 	return &AtivoRepository{pool: pool}
 }
 
-const ativoColumns = `id, user_email, conta_id, ticker, quantidade_atual, custo_medio, ultima_cotacao, ultima_cotacao_em, status, created_at, updated_at`
+const ativoColumns = `id, usuario_email, conta_id, ticker, quantidade_atual, custo_medio, ultima_cotacao, ultima_cotacao_em, status, criado_em, atualizado_em`
 
 func scanAtivo(row pgx.Row) (domainativo.Ativo, error) {
 	var a domainativo.Ativo
 	var ultimaCotacao *float64
 	var ultimaCotacaoEm *time.Time
-	err := row.Scan(&a.ID, &a.UserEmail, &a.ContaID, &a.Ticker, &a.QuantidadeAtual, &a.CustoMedio, &ultimaCotacao, &ultimaCotacaoEm, &a.Status, &a.CreatedAt, &a.UpdatedAt)
+	err := row.Scan(&a.ID, &a.UsuarioEmail, &a.ContaID, &a.Ticker, &a.QuantidadeAtual, &a.CustoMedio, &ultimaCotacao, &ultimaCotacaoEm, &a.Status, &a.CriadoEm, &a.AtualizadoEm)
 	if ultimaCotacao != nil {
 		a.UltimaCotacao = *ultimaCotacao
 	}
@@ -43,12 +43,12 @@ func scanAtivo(row pgx.Row) (domainativo.Ativo, error) {
 	return a, err
 }
 
-const movimentoColumns = `id, ativo_id, kind, quantidade, preco_unitario, valor_provento, data, resultado_realizado, created_at`
+const movimentoColumns = `id, ativo_id, tipo, quantidade, preco_unitario, valor_provento, data, resultado_realizado, criado_em`
 
 func scanMovimento(row pgx.Row) (ativomovimento.AtivoMovimento, error) {
 	var m ativomovimento.AtivoMovimento
 	var quantidade, precoUnitario, valorProvento, resultadoRealizado *float64
-	err := row.Scan(&m.ID, &m.AtivoID, &m.Kind, &quantidade, &precoUnitario, &valorProvento, &m.Data, &resultadoRealizado, &m.CreatedAt)
+	err := row.Scan(&m.ID, &m.AtivoID, &m.Tipo, &quantidade, &precoUnitario, &valorProvento, &m.Data, &resultadoRealizado, &m.CriadoEm)
 	if quantidade != nil {
 		m.Quantidade = *quantidade
 	}
@@ -79,16 +79,16 @@ func (r *AtivoRepository) FindByID(ctx context.Context, id string) (domainativo.
 // ListByUsuario returns every ativo the usuario holds, optionally
 // scoped to one conta -- an empty contaID means "todas", same
 // "empty = no filter" convention as ContaRepository.ListByUsuario.
-func (r *AtivoRepository) ListByUsuario(ctx context.Context, userEmail, contaID string) ([]domainativo.Ativo, error) {
+func (r *AtivoRepository) ListByUsuario(ctx context.Context, usuarioEmail, contaID string) ([]domainativo.Ativo, error) {
 	var rows pgx.Rows
 	var err error
 	if contaID == "" {
 		rows, err = r.pool.Query(ctx,
-			`SELECT `+ativoColumns+` FROM ativos WHERE user_email = $1 ORDER BY created_at DESC`, userEmail)
+			`SELECT `+ativoColumns+` FROM ativos WHERE usuario_email = $1 ORDER BY criado_em DESC`, usuarioEmail)
 	} else {
 		rows, err = r.pool.Query(ctx,
-			`SELECT `+ativoColumns+` FROM ativos WHERE user_email = $1 AND conta_id = $2 ORDER BY created_at DESC`,
-			userEmail, contaID)
+			`SELECT `+ativoColumns+` FROM ativos WHERE usuario_email = $1 AND conta_id = $2 ORDER BY criado_em DESC`,
+			usuarioEmail, contaID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("list ativos: %w", err)
@@ -117,9 +117,9 @@ func (r *AtivoRepository) Insert(ctx context.Context, a domainativo.Ativo, prime
 	defer tx.Rollback(ctx)
 
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO ativos (id, user_email, conta_id, ticker, quantidade_atual, custo_medio, status, created_at, updated_at)
+		`INSERT INTO ativos (id, usuario_email, conta_id, ticker, quantidade_atual, custo_medio, status, criado_em, atualizado_em)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		a.ID, a.UserEmail, a.ContaID, a.Ticker, a.QuantidadeAtual, a.CustoMedio, a.Status, a.CreatedAt, a.UpdatedAt,
+		a.ID, a.UsuarioEmail, a.ContaID, a.Ticker, a.QuantidadeAtual, a.CustoMedio, a.Status, a.CriadoEm, a.AtualizadoEm,
 	); err != nil {
 		return fmt.Errorf("insert ativo: %w", err)
 	}
@@ -145,8 +145,8 @@ func (r *AtivoRepository) InsertMovimento(ctx context.Context, a domainativo.Ati
 	defer tx.Rollback(ctx)
 
 	tag, err := tx.Exec(ctx,
-		`UPDATE ativos SET quantidade_atual = $2, custo_medio = $3, status = $4, updated_at = $5 WHERE id = $1`,
-		a.ID, a.QuantidadeAtual, a.CustoMedio, a.Status, a.UpdatedAt,
+		`UPDATE ativos SET quantidade_atual = $2, custo_medio = $3, status = $4, atualizado_em = $5 WHERE id = $1`,
+		a.ID, a.QuantidadeAtual, a.CustoMedio, a.Status, a.AtualizadoEm,
 	)
 	if err != nil {
 		return fmt.Errorf("update ativo position: %w", err)
@@ -167,9 +167,9 @@ func (r *AtivoRepository) InsertMovimento(ctx context.Context, a domainativo.Ati
 
 func insertMovimentoTx(ctx context.Context, tx pgx.Tx, mov ativomovimento.AtivoMovimento) error {
 	_, err := tx.Exec(ctx,
-		`INSERT INTO ativo_movimentos (id, ativo_id, kind, quantidade, preco_unitario, valor_provento, data, resultado_realizado, created_at)
+		`INSERT INTO ativo_movimentos (id, ativo_id, tipo, quantidade, preco_unitario, valor_provento, data, resultado_realizado, criado_em)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		mov.ID, mov.AtivoID, mov.Kind, nullifyFloat(mov.Quantidade), nullifyFloat(mov.PrecoUnitario), nullifyFloat(mov.ValorProvento), mov.Data, nullifyFloat(mov.ResultadoRealizado), mov.CreatedAt,
+		mov.ID, mov.AtivoID, mov.Tipo, nullifyFloat(mov.Quantidade), nullifyFloat(mov.PrecoUnitario), nullifyFloat(mov.ValorProvento), mov.Data, nullifyFloat(mov.ResultadoRealizado), mov.CriadoEm,
 	)
 	if err != nil {
 		return fmt.Errorf("insert ativo movimento: %w", err)
@@ -182,7 +182,7 @@ func insertMovimentoTx(ctx context.Context, tx pgx.Tx, mov ativomovimento.AtivoM
 // RegistrarMovimento's business rule (see application/ativo.Service).
 func (r *AtivoRepository) UpdateCotacao(ctx context.Context, ativoID string, cotacao float64, obtidaEm time.Time) error {
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE ativos SET ultima_cotacao = $2, ultima_cotacao_em = $3, updated_at = now() WHERE id = $1`,
+		`UPDATE ativos SET ultima_cotacao = $2, ultima_cotacao_em = $3, atualizado_em = now() WHERE id = $1`,
 		ativoID, cotacao, obtidaEm,
 	)
 	if err != nil {
@@ -196,7 +196,7 @@ func (r *AtivoRepository) UpdateCotacao(ctx context.Context, ativoID string, cot
 
 func (r *AtivoRepository) ListMovimentos(ctx context.Context, ativoID string) ([]ativomovimento.AtivoMovimento, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT `+movimentoColumns+` FROM ativo_movimentos WHERE ativo_id = $1 ORDER BY data DESC, created_at DESC`, ativoID)
+		`SELECT `+movimentoColumns+` FROM ativo_movimentos WHERE ativo_id = $1 ORDER BY data DESC, criado_em DESC`, ativoID)
 	if err != nil {
 		return nil, fmt.Errorf("list ativo movimentos: %w", err)
 	}

@@ -22,15 +22,15 @@ func NewAtivoRepository(pool *pgxpool.Pool) *AtivoRepository {
 	return &AtivoRepository{pool: pool}
 }
 
-const ativoColumns = `id, user_email, conta_id, ticker, quantidade_atual, custo_medio, ultima_cotacao, ultima_cotacao_em, status, created_at, updated_at`
+const ativoColumns = `id, usuario_email, conta_id, ticker, quantidade_atual, custo_medio, ultima_cotacao, ultima_cotacao_em, status, criado_em, atualizado_em`
 
 func scanAtivo(row pgx.Row) (domainativo.Ativo, error) {
 	var a domainativo.Ativo
 	var ultimaCotacao *float64
 	var ultimaCotacaoEm *time.Time
 	err := row.Scan(
-		&a.ID, &a.UserEmail, &a.ContaID, &a.Ticker, &a.QuantidadeAtual, &a.CustoMedio,
-		&ultimaCotacao, &ultimaCotacaoEm, &a.Status, &a.CreatedAt, &a.UpdatedAt,
+		&a.ID, &a.UsuarioEmail, &a.ContaID, &a.Ticker, &a.QuantidadeAtual, &a.CustoMedio,
+		&ultimaCotacao, &ultimaCotacaoEm, &a.Status, &a.CriadoEm, &a.AtualizadoEm,
 	)
 	if ultimaCotacao != nil {
 		a.UltimaCotacao = *ultimaCotacao
@@ -64,7 +64,7 @@ func (r *AtivoRepository) ListAtivosComPosicao(ctx context.Context) ([]domainati
 		 ORDER BY ticker`,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("list ativos com position: %w", err)
+		return nil, fmt.Errorf("list ativos com posicao: %w", err)
 	}
 	defer rows.Close()
 
@@ -80,12 +80,12 @@ func (r *AtivoRepository) ListAtivosComPosicao(ctx context.Context) ([]domainati
 }
 
 // An empty contaID means "every conta of this usuario".
-func (r *AtivoRepository) ListByUsuario(ctx context.Context, userEmail, contaID string) ([]domainativo.Ativo, error) {
+func (r *AtivoRepository) ListByUsuario(ctx context.Context, usuarioEmail, contaID string) ([]domainativo.Ativo, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+ativoColumns+` FROM ativos
-		 WHERE user_email = $1 AND ($2 = '' OR conta_id = $2::uuid)
-		 ORDER BY created_at DESC`,
-		userEmail, contaID,
+		 WHERE usuario_email = $1 AND ($2 = '' OR conta_id = $2::uuid)
+		 ORDER BY criado_em DESC`,
+		usuarioEmail, contaID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list ativos: %w", err)

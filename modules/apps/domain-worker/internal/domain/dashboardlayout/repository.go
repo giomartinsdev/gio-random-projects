@@ -5,9 +5,9 @@ import "context"
 // Repository is a port — domain-worker is the only implementer AND the
 // only caller of the mutating methods.
 type Repository interface {
-	FindByUsuario(ctx context.Context, userEmail string) (DashboardLayout, error)
+	FindByUsuario(ctx context.Context, usuarioEmail string) (DashboardLayout, error)
 	Upsert(ctx context.Context, d DashboardLayout) error
-	Delete(ctx context.Context, userEmail string) error
+	Delete(ctx context.Context, usuarioEmail string) error
 }
 
 var ErrNotFound = notFoundError{}

@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	ErrUsuarioRequired   = errors.New("user_email is required")
+	ErrUsuarioRequired   = errors.New("usuario_email is required")
 	ErrContaRequired     = errors.New("conta_id is required")
 	ErrDescricaoRequired = errors.New("descricao is required")
 	ErrValorInvalido     = errors.New("valor_apostado must be greater than zero")
@@ -35,7 +35,7 @@ var (
 
 type Aposta struct {
 	ID            string
-	UserEmail  string
+	UsuarioEmail  string
 	ContaID       string
 	Descricao     string
 	ValorApostado float64
@@ -47,8 +47,8 @@ type Aposta struct {
 	DataAposta    time.Time
 	// DataResultado's zero value means "still pendente".
 	DataResultado time.Time
-	CreatedAt      time.Time
-	UpdatedAt  time.Time
+	CriadoEm      time.Time
+	AtualizadoEm  time.Time
 }
 
 func validStatusResolucao(s string) bool {
@@ -58,8 +58,8 @@ func validStatusResolucao(s string) bool {
 // New registers a bet, always starting it "pendente" -- there is no way
 // to create an already-resolved Aposta, same reasoning as Ativo always
 // opening "aberta".
-func New(id, userEmail, contaID, descricao string, valorApostado, odd float64, data time.Time) (Aposta, error) {
-	if userEmail == "" {
+func New(id, usuarioEmail, contaID, descricao string, valorApostado, odd float64, data time.Time) (Aposta, error) {
+	if usuarioEmail == "" {
 		return Aposta{}, ErrUsuarioRequired
 	}
 	if contaID == "" {
@@ -78,15 +78,15 @@ func New(id, userEmail, contaID, descricao string, valorApostado, odd float64, d
 	now := time.Now().UTC()
 	return Aposta{
 		ID:            id,
-		UserEmail:  userEmail,
+		UsuarioEmail:  usuarioEmail,
 		ContaID:       contaID,
 		Descricao:     descricao,
 		ValorApostado: valorApostado,
 		Odd:           odd,
 		Status:        StatusPendente,
 		DataAposta:    data,
-		CreatedAt:      now,
-		UpdatedAt:  now,
+		CriadoEm:      now,
+		AtualizadoEm:  now,
 	}, nil
 }
 
@@ -117,6 +117,6 @@ func (a Aposta) Resolver(status string, retornoObtido float64, dataResultado tim
 		a.RetornoObtido = a.ValorApostado
 	}
 	a.DataResultado = dataResultado
-	a.UpdatedAt = time.Now().UTC()
+	a.AtualizadoEm = time.Now().UTC()
 	return a, nil
 }

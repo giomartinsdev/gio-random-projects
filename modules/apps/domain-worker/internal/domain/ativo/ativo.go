@@ -22,12 +22,12 @@ const (
 )
 
 var (
-	ErrUsuarioRequired        = errors.New("user_email is required")
+	ErrUsuarioRequired        = errors.New("usuario_email is required")
 	ErrContaRequired          = errors.New("conta_id is required")
 	ErrTickerRequired         = errors.New("ticker is required")
 	ErrQuantidadeInvalida     = errors.New("quantidade must be greater than zero")
 	ErrPrecoInvalido          = errors.New("preco_unitario must be greater than zero")
-	ErrTipoMovimentoInvalido  = errors.New("kind must be \"compra\", \"venda\" or \"provento\"")
+	ErrTipoMovimentoInvalido  = errors.New("tipo must be \"compra\", \"venda\" or \"provento\"")
 	ErrValorProventoInvalido  = errors.New("valor_provento must be greater than zero")
 	ErrQuantidadeInsuficiente = errors.New("quantidade exceeds the current position")
 	ErrAtivoEncerrado         = errors.New("ativo is encerrada")
@@ -35,7 +35,7 @@ var (
 
 type Ativo struct {
 	ID              string
-	UserEmail    string
+	UsuarioEmail    string
 	ContaID         string
 	Ticker          string
 	QuantidadeAtual float64
@@ -44,8 +44,8 @@ type Ativo struct {
 	// UltimaCotacaoEm's zero value means "never quoted".
 	UltimaCotacaoEm time.Time
 	Status          string
-	CreatedAt        time.Time
-	UpdatedAt    time.Time
+	CriadoEm        time.Time
+	AtualizadoEm    time.Time
 }
 
 func validTipoMovimento(t string) bool {
@@ -57,8 +57,8 @@ func validTipoMovimento(t string) bool {
 // always opening StatusOpen. It returns both the Ativo and the
 // AtivoMovimento that funded it so the caller can persist both in one
 // transaction.
-func New(id, userEmail, contaID, ticker string, quantidadeInicial, precoUnitario float64, data time.Time) (Ativo, ativomovimento.AtivoMovimento, error) {
-	if userEmail == "" {
+func New(id, usuarioEmail, contaID, ticker string, quantidadeInicial, precoUnitario float64, data time.Time) (Ativo, ativomovimento.AtivoMovimento, error) {
+	if usuarioEmail == "" {
 		return Ativo{}, ativomovimento.AtivoMovimento{}, ErrUsuarioRequired
 	}
 	if contaID == "" {
@@ -80,22 +80,22 @@ func New(id, userEmail, contaID, ticker string, quantidadeInicial, precoUnitario
 	now := time.Now().UTC()
 	a := Ativo{
 		ID:              id,
-		UserEmail:    userEmail,
+		UsuarioEmail:    usuarioEmail,
 		ContaID:         contaID,
 		Ticker:          ticker,
 		QuantidadeAtual: quantidadeInicial,
 		CustoMedio:      precoUnitario,
 		Status:          StatusAberta,
-		CreatedAt:        now,
-		UpdatedAt:    now,
+		CriadoEm:        now,
+		AtualizadoEm:    now,
 	}
 	mov := ativomovimento.AtivoMovimento{
 		AtivoID:       id,
-		Kind:          ativomovimento.TipoCompra,
+		Tipo:          ativomovimento.TipoCompra,
 		Quantidade:    quantidadeInicial,
 		PrecoUnitario: precoUnitario,
 		Data:          data,
-		CreatedAt:      now,
+		CriadoEm:      now,
 	}
 	return a, mov, nil
 }
@@ -105,8 +105,8 @@ func New(id, userEmail, contaID, ticker string, quantidadeInicial, precoUnitario
 // Ativo (running quantidade/custo_medio/status) and the resulting
 // AtivoMovimento record -- both are persisted together by the caller,
 // same "return both sides" shape as New.
-func RegistrarMovimento(a Ativo, kind string, quantidade, precoUnitario, valorProvento float64, data time.Time) (Ativo, ativomovimento.AtivoMovimento, error) {
-	if !validTipoMovimento(kind) {
+func RegistrarMovimento(a Ativo, tipo string, quantidade, precoUnitario, valorProvento float64, data time.Time) (Ativo, ativomovimento.AtivoMovimento, error) {
+	if !validTipoMovimento(tipo) {
 		return Ativo{}, ativomovimento.AtivoMovimento{}, ErrTipoMovimentoInvalido
 	}
 	if data.IsZero() {
@@ -116,12 +116,12 @@ func RegistrarMovimento(a Ativo, kind string, quantidade, precoUnitario, valorPr
 	now := time.Now().UTC()
 	mov := ativomovimento.AtivoMovimento{
 		AtivoID:  a.ID,
-		Kind:     kind,
+		Tipo:     tipo,
 		Data:     data,
-		CreatedAt: now,
+		CriadoEm: now,
 	}
 
-	switch kind {
+	switch tipo {
 	case ativomovimento.TipoCompra:
 		if quantidade <= 0 {
 			return Ativo{}, ativomovimento.AtivoMovimento{}, ErrQuantidadeInvalida
@@ -162,7 +162,7 @@ func RegistrarMovimento(a Ativo, kind string, quantidade, precoUnitario, valorPr
 		mov.ValorProvento = valorProvento
 	}
 
-	a.UpdatedAt = now
+	a.AtualizadoEm = now
 	return a, mov, nil
 }
 
@@ -174,5 +174,5 @@ func RegistrarMovimento(a Ativo, kind string, quantidade, precoUnitario, valorPr
 func (a *Ativo) AtualizarCotacao(cotacao float64, obtidaEm time.Time) {
 	a.UltimaCotacao = cotacao
 	a.UltimaCotacaoEm = obtidaEm
-	a.UpdatedAt = time.Now().UTC()
+	a.AtualizadoEm = time.Now().UTC()
 }
