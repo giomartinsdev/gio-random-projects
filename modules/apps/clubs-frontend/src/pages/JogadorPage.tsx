@@ -187,7 +187,9 @@ export function JogadorPage({
         </div>
       )}
 
-      {(p.clubes ?? []).length > 1 && (
+      {/* Aparece com mais de um clube OU quando há carreira -- o acumulado
+          interessa mesmo para quem só passou por um clube. */}
+      {((p.clubes ?? []).length > 1 || (p.clubes ?? []).some((c) => c.career)) && (
         <div className="mb-4">
           <Card title="Clubes por onde passou">
             <ul className="divide-y divide-[var(--border)]">
@@ -198,7 +200,17 @@ export function JogadorPage({
                     onClick={() => onOpenClub(c.club_id)}
                     className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface-3"
                   >
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{c.nome}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{c.nome}</span>
+                      {c.career && (
+                        // A carreira é o ACUMULADO no clube, que a temporada
+                        // (as partidas acompanhadas) não dá. Rotulada para não
+                        // ser lida como o mesmo número da linha acima.
+                        <span className="block font-mono text-[10px] text-faint">
+                          carreira: {fmt(c.career.jogos)}J {fmt(c.career.gols)}G {fmt(c.career.assistencias)}A
+                        </span>
+                      )}
+                    </span>
                     <span className="tnum font-mono text-xs text-muted">
                       {fmt(c.jogos)}J {fmt(c.gols)}G {fmt(c.assistencias)}A
                     </span>

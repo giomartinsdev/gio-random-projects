@@ -179,6 +179,17 @@ export interface PlayerClub {
   gols: number;
   assistencias: number;
   nota: number;
+  /** Totais ACUMULADOS no clube (carreira), quando a fonte os tem. Distinto
+   * dos campos acima, que são a temporada das partidas acompanhadas. */
+  career?: PlayerCareer | null;
+}
+
+export interface PlayerCareer {
+  jogos: number;
+  gols: number;
+  assistencias: number;
+  melhor_em_campo: number;
+  nota: number;
 }
 
 export interface PlayerMatch {
