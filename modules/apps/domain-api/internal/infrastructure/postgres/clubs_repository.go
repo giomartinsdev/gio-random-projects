@@ -745,10 +745,46 @@ func (r *ClubsRepository) playersGrouped(ctx context.Context, where string, args
 		grouped[pr.line.PlayerID] = append(grouped[pr.line.PlayerID], pr)
 	}
 	out := make([]domainclubs.PlayerProfile, 0, len(order))
+	// Totais de carreira por (clube, gamertag). O endpoint da fonte não traz
+	// playerId, então o gamertag é o único elo -- e o perfil já tem o dele.
+	carreira := r.careerByClubAndTag(ctx)
 	for _, id := range order {
-		out = append(out, buildProfile(id, grouped[id], names, verified[id]))
+		p := buildProfile(id, grouped[id], names, verified[id])
+		for i := range p.Clubes {
+			if c, ok := carreira[p.Clubes[i].ClubID+"\x00"+p.Gamertag]; ok {
+				p.Clubes[i].Career = &domainclubs.CareerTotais{
+					Jogos: c.Jogos, Gols: c.Gols, Assistencias: c.Assistencias,
+					MelhorEmCampo: c.MelhorEmCampo, Nota: c.Nota,
+				}
+			}
+		}
+		out = append(out, p)
 	}
 	return out, nil
+}
+
+// careerByClubAndTag lê os totais de carreira num mapa (clube\x00gamertag).
+// Best-effort: se a tabela ainda não existe (deploy sem o schema novo), o
+// perfil sai sem carreira em vez de falhar a leitura inteira.
+func (r *ClubsRepository) careerByClubAndTag(ctx context.Context) map[string]domainclubs.CareerTotais {
+	rows, err := r.pool.Query(ctx, `
+		SELECT club_id, gamertag, jogos, gols, assistencias, melhor_em_campo, nota
+		FROM clubs_player_career`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[string]domainclubs.CareerTotais{}
+	for rows.Next() {
+		var clubID, gamertag string
+		var c domainclubs.CareerTotais
+		if err := rows.Scan(&clubID, &gamertag, &c.Jogos, &c.Gols, &c.Assistencias,
+			&c.MelhorEmCampo, &c.Nota); err != nil {
+			return out
+		}
+		out[clubID+"\x00"+gamertag] = c
+	}
+	return out
 }
 
 // ClaimedPlayerIDs is the set of player ids carrying a verified badge. It
@@ -1191,16 +1227,16 @@ func (r *ClubsRepository) ListPendingSyncs(ctx context.Context) ([]domainclubs.S
 
 // ---------------------------------------------------------------- fetch runs
 
-// GetFetchRun é o estado do fetch sob demanda de um clube. Devolve um run
-// zerado quando nunca foi pedido -- a SPA trata isso como "ainda não busquei",
-// não como erro.
-func (r *ClubsRepository) GetFetchRun(ctx context.Context, clubID string) (domainclubs.FetchRun, error) {
-	run := domainclubs.FetchRun{ClubID: clubID}
+// GetFetchRun é o estado do sync sob demanda de um alvo (clube ou jogador).
+// Devolve um run zerado quando nunca foi pedido -- a SPA trata isso como
+// "ainda não busquei", não como erro.
+func (r *ClubsRepository) GetFetchRun(ctx context.Context, alvo, alvoID string) (domainclubs.FetchRun, error) {
+	run := domainclubs.FetchRun{Alvo: alvo, AlvoID: alvoID}
 	var concluido *time.Time
 	err := r.pool.QueryRow(ctx, `
-		SELECT rodando, jogadores, partidas, erro, concluido_em
-		FROM clubs_fetch_runs WHERE club_id = $1`, clubID).
-		Scan(&run.Rodando, &run.Jogadores, &run.Partidas, &run.Erro, &concluido)
+		SELECT rotulo, rodando, jogadores, partidas, clubes, erro, concluido_em
+		FROM clubs_fetch_runs WHERE alvo = $1 AND alvo_id = $2`, alvo, alvoID).
+		Scan(&run.Rotulo, &run.Rodando, &run.Jogadores, &run.Partidas, &run.Clubes, &run.Erro, &concluido)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return run, nil
 	}
@@ -1211,12 +1247,12 @@ func (r *ClubsRepository) GetFetchRun(ctx context.Context, clubID string) (domai
 	return run, nil
 }
 
-// ListPendingFetches: os clubes que a SPA pediu e o worker ainda não buscou.
-// É a ponte entre o clique na tela de resgate e o poller Python -- nenhum dos
-// dois conhece o outro.
+// ListPendingFetches: os alvos que a SPA pediu e o worker ainda não buscou.
+// É a ponte entre o clique na tela e o poller Python -- nenhum dos dois
+// conhece o outro.
 func (r *ClubsRepository) ListPendingFetches(ctx context.Context) ([]domainclubs.FetchRun, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT club_id, rodando, jogadores, partidas, erro, concluido_em
+		SELECT alvo, alvo_id, rotulo, rodando, jogadores, partidas, clubes, erro, concluido_em
 		FROM clubs_fetch_runs
 		WHERE rodando = true AND concluido_em IS NULL
 		ORDER BY solicitado_em ASC`)
@@ -1229,14 +1265,35 @@ func (r *ClubsRepository) ListPendingFetches(ctx context.Context) ([]domainclubs
 	for rows.Next() {
 		var run domainclubs.FetchRun
 		var concluido *time.Time
-		if err := rows.Scan(&run.ClubID, &run.Rodando, &run.Jogadores, &run.Partidas,
-			&run.Erro, &concluido); err != nil {
+		if err := rows.Scan(&run.Alvo, &run.AlvoID, &run.Rotulo, &run.Rodando, &run.Jogadores,
+			&run.Partidas, &run.Clubes, &run.Erro, &concluido); err != nil {
 			return nil, fmt.Errorf("scan fetch run: %w", err)
 		}
 		run.ConcluidoEm = concluido
 		list = append(list, run)
 	}
 	return list, rows.Err()
+}
+
+// ClubsDoJogador: os clubes onde um jogador apareceu, das partidas já
+// gravadas. É o que traduz "syncar jogador" em trabalho real -- a fonte não
+// tem endpoint de jogador, então o dado dele vem das partidas dos clubes dele.
+func (r *ClubsRepository) ClubsDoJogador(ctx context.Context, playerID string) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT club_id FROM clubs_match_players WHERE player_id = $1`, playerID)
+	if err != nil {
+		return nil, fmt.Errorf("clubes do jogador: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan clube do jogador: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // ---------------------------------------------------------------- busca viva

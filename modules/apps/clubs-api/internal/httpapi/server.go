@@ -116,6 +116,14 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/rankings/players", s.rankingPlayers)
 		r.Get("/players", s.listPlayers)
 		r.Get("/players/{playerId}", s.getPlayer)
+		// Sync sob demanda de um JOGADOR. Público pelo mesmo motivo do clube:
+		// a pessoa quer forçar a atualização do que está olhando, e o dado do
+		// jogador é derivado das partidas dos clubes dele.
+		r.Get("/players/{playerId}/fetch-run", s.getFetchRunJogador)
+		r.Post("/players/{playerId}/fetch-run", s.requestFetchJogador)
+		// O worker Python consulta quais clubes atualizar quando o pedido é um
+		// jogador. Público como o resto do dataset.
+		r.Get("/players/{playerId}/clubs", s.clubsDoJogador)
 		r.Get("/announcements", s.listAnnouncements)
 
 		// --- personal: identity required ------------------------------
@@ -226,17 +234,38 @@ func (s *Server) getFetchRun(w http.ResponseWriter, r *http.Request) {
 	s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/fetch-run")
 }
 
-// requestFetch abre a fila de fetch do elenco de um clube. Público: a pessoa
+// requestFetch abre a fila de sync do elenco de um clube. Público: a pessoa
 // escolhe o clube antes de entrar, e o worker traz o elenco para ela escolher
 // o próprio pro. A resposta é 202 -- a busca acontece em segundo plano.
 func (s *Server) requestFetch(w http.ResponseWriter, r *http.Request) {
-	if err := s.domain.Post(r.Context(), "/fetch-run", map[string]any{
-		"club_id": chi.URLParam(r, "clubId"),
-	}); err != nil {
+	if err := s.domain.Post(r.Context(), "/clubs/"+chi.URLParam(r, "clubId")+"/fetch-run", nil); err != nil {
 		s.syncError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"iniciado": true})
+}
+
+// getFetchRunJogador lê o estado do sync de um jogador.
+func (s *Server) getFetchRunJogador(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/players/"+chi.URLParam(r, "playerId")+"/fetch-run")
+}
+
+// requestFetchJogador abre a fila de sync de um jogador. Público pelo mesmo
+// motivo do clube: a pessoa quer forçar a atualização do que está olhando. O
+// trabalho real é atualizar as partidas dos clubes onde ele jogou -- a fonte
+// não tem endpoint de jogador.
+func (s *Server) requestFetchJogador(w http.ResponseWriter, r *http.Request) {
+	if err := s.domain.Post(r.Context(), "/players/"+chi.URLParam(r, "playerId")+"/fetch-run", nil); err != nil {
+		s.syncError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"iniciado": true})
+}
+
+// clubsDoJogador: os clubes onde um jogador apareceu -- o que o worker consulta
+// para traduzir "syncar jogador" em trabalho.
+func (s *Server) clubsDoJogador(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/players/"+chi.URLParam(r, "playerId")+"/clubs")
 }
 
 // searchLiveStatus lê o estado da busca ao vivo de um termo. A SPA polla isto

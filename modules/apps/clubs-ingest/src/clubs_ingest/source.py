@@ -64,6 +64,24 @@ class SourceClient:
             return [m for m in membros if isinstance(m, dict)]
         return []
 
+    def club_members_career(self, club_id: str) -> list[dict[str, Any]]:
+        """Os totais de CARREIRA de cada membro no clube.
+
+        Diferente de ``club_members`` (temporada corrente), este endpoint dá o
+        acumulado histórico do jogador naquele clube -- e nunca era chamado.
+        Não traz ``playerId``: a única chave é o gamertag, então quem consumir
+        precisa casar por nome.
+        """
+        try:
+            data = self.api.get_json("members/career/stats", {"clubId": club_id})
+        except FC27APIError as err:
+            log.warning("club_members_career %s: %s", club_id, err)
+            return []
+        if isinstance(data, dict):
+            membros = data.get("members") or []
+            return [m for m in membros if isinstance(m, dict)]
+        return []
+
     def club_matches(self, club_id: str, count: int = 10) -> list[dict[str, Any]]:
         try:
             data = self.api.get_json(

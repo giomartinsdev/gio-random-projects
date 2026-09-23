@@ -415,8 +415,8 @@ func (h *ClubsHandlers) GetSyncRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, run)
 }
 
-// ListPendingFetches é consumida pelo worker de ingestão: os clubes que a tela
-// de resgate pediu e ainda não foram buscados.
+// ListPendingFetches é consumida pelo worker de ingestão: os alvos (clube ou
+// jogador) que a SPA pediu e ainda não foram buscados.
 func (h *ClubsHandlers) ListPendingFetches(w http.ResponseWriter, r *http.Request) {
 	list, err := h.clubs.ListPendingFetches(r.Context())
 	if err != nil {
@@ -426,16 +426,41 @@ func (h *ClubsHandlers) ListPendingFetches(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{"pendentes": list, "total": len(list)})
 }
 
-// GetFetchRun é o estado do fetch de um clube, lido pela tela de resgate para
-// saber quando o elenco está pronto -- sem esperar o ciclo do worker.
+// GetFetchRun é o estado do sync de um alvo, lido pela tela para saber quando
+// o dado está pronto -- sem esperar o ciclo do worker.
+//
+// O alvo vem do CAMINHO (`/clubs/{id}/fetch-run` ou `/players/{id}/fetch-run`),
+// e não de um parâmetro: assim o id não pode ser confundido com um tipo, e a
+// rota diz por si o que está sendo sincronizado.
 func (h *ClubsHandlers) GetFetchRun(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "clubId")
-	run, err := h.clubs.GetFetchRun(r.Context(), id)
+	alvo, alvoID := alvoDoPath(r)
+	run, err := h.clubs.GetFetchRun(r.Context(), alvo, alvoID)
 	if err != nil {
 		h.internalError(r, w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, run)
+}
+
+// ClubsDoJogador é o que o worker consulta para saber quais clubes atualizar
+// quando o pedido é um jogador.
+func (h *ClubsHandlers) ClubsDoJogador(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "playerId")
+	ids, err := h.clubs.ClubsDoJogador(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"clubes": ids, "total": len(ids)})
+}
+
+// alvoDoPath lê o (alvo, id) de uma rota de fetch-run. Os dois conjuntos de
+// rotas coexistem -- clube e jogador -- e é o parâmetro presente que diz qual é.
+func alvoDoPath(r *http.Request) (string, string) {
+	if id := chi.URLParam(r, "playerId"); id != "" {
+		return domainclubs.AlvoJogador, id
+	}
+	return domainclubs.AlvoClube, chi.URLParam(r, "clubId")
 }
 
 // GetSearchRun é o estado da busca ao vivo de um termo. A busca do diretório é

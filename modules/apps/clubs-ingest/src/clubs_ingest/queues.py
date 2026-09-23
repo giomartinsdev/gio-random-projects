@@ -18,34 +18,44 @@ log = logging.getLogger("clubs-ingest")
 
 
 def drain_fetch_queue(domain: Any, ingest: Any) -> int:
-    """Busca o elenco de cada clube que a tela de resgate pediu.
+    """Atende os pedidos de sync sob demanda da SPA.
 
-    Devolve quantos clubes foram processados. Cada clube tem seu próprio
-    tratamento de erro: um clube ruim não pode impedir os outros, e a linha da
-    fila é SEMPRE fechada -- inclusive no erro. Fechar é o que impede o pedido
-    de voltar em todo tick e a tela ficar "buscando" para sempre.
+    O alvo pode ser um clube ou um jogador -- a fila é uma só, e é o campo
+    `alvo` que diz qual. Para jogador, o trabalho é atualizar as partidas dos
+    clubes onde ele jogou (a fonte não tem endpoint de jogador).
+
+    Devolve quantos alvos foram processados. Cada um tem seu próprio
+    tratamento de erro: um alvo ruim não impede os outros, e a linha da fila é
+    SEMPRE fechada -- inclusive no erro. Fechar é o que impede o pedido de
+    voltar em todo tick e a tela ficar "buscando" para sempre.
     """
     try:
         pendentes = domain.list_pending_fetches()
     except Exception as err:  # noqa: BLE001 -- a fila indisponível não derruba o loop
-        log.error("leitura da fila de fetch falhou: %s", err)
+        log.error("leitura da fila de sync falhou: %s", err)
         return 0
 
     feitos = 0
     for pedido in pendentes:
-        club_id = str(pedido.get("club_id") or "")
-        if not club_id:
+        alvo = str(pedido.get("alvo") or "clube")
+        alvo_id = str(pedido.get("alvo_id") or "")
+        if not alvo_id:
             continue
-        log.info("fetch sob demanda: clube %s", club_id)
+        log.info("sync sob demanda: %s %s", alvo, alvo_id)
         try:
-            jogadores, partidas = ingest.run_fetch(club_id)
-            domain.save_fetch_run(club_id, rodando=False, jogadores=jogadores,
-                                  partidas=partidas, concluido=True)
+            if alvo == "jogador":
+                clubes, jogadores, partidas = ingest.run_fetch_jogador(alvo_id)
+                domain.save_fetch_run(alvo, alvo_id, rodando=False, jogadores=jogadores,
+                                      partidas=partidas, clubes=clubes, concluido=True)
+            else:
+                jogadores, partidas = ingest.run_fetch(alvo_id)
+                domain.save_fetch_run(alvo, alvo_id, rodando=False, jogadores=jogadores,
+                                      partidas=partidas, concluido=True)
             feitos += 1
-        except Exception as err:  # noqa: BLE001 -- um clube não derruba os outros
-            log.error("fetch de %s falhou: %s", club_id, err)
+        except Exception as err:  # noqa: BLE001 -- um alvo não derruba os outros
+            log.error("sync de %s %s falhou: %s", alvo, alvo_id, err)
             try:
-                domain.save_fetch_run(club_id, rodando=False, jogadores=0,
+                domain.save_fetch_run(alvo, alvo_id, rodando=False, jogadores=0,
                                       partidas=0, erro=str(err)[:300], concluido=True)
             except Exception:  # noqa: BLE001 -- registrar a falha não pode falhar
                 pass

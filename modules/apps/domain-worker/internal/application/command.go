@@ -82,6 +82,7 @@ const (
 	ActionUpsertPartida     Action = "partida.upsert"
 	ActionAppendSnapshot    Action = "clubesnapshot.append"
 	ActionCreateAnuncio     Action = "anuncio.create"
+	ActionSaveCareer        Action = "clubs.careerSave"
 	// Saúde do worker de ingestão (clubs-ingest não serve HTTP).
 	ActionSaveIngestEstado Action = "clubs.ingestEstado"
 

@@ -463,6 +463,28 @@ def merge_club_sources(*fontes: dict[str, Any] | None) -> dict[str, Any]:
     return merged
 
 
+def career_line(row: dict[str, Any], club_id: str) -> dict[str, Any] | None:
+    """Uma linha de totais de CARREIRA, no shape de ``CareerInput``.
+
+    O endpoint ``members/career/stats`` não traz ``playerId`` -- a única chave
+    é o gamertag. Sem nome, não há como casar com o perfil, então a linha é
+    descartada: gravar por gamertag vazio criaria um jogador fantasma.
+    """
+    nome = str(row.get("name") or "").strip()
+    if not nome:
+        return None
+    return {
+        "club_id": str(club_id),
+        "gamertag": nome,
+        "jogos": to_int(row.get("gamesPlayed")),
+        "gols": to_int(row.get("goals")),
+        "assistencias": to_int(row.get("assists")),
+        "melhor_em_campo": to_int(row.get("manOfTheMatch")),
+        "nota": to_float(row.get("ratingAve")),
+        "posicao": position(row.get("proPos")),
+    }
+
+
 def club_totals(row: dict[str, Any]) -> dict[str, Any]:
     """An all-time totals row, in domain-api's ``TotaisInput`` shape.
 

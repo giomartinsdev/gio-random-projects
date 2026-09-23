@@ -164,14 +164,29 @@ type SquadMember struct {
 	Resgatado bool `json:"resgatado"`
 }
 
-// FetchRun é o progresso de um fetch sob demanda de um clube. A tela de
-// resgate grava o pedido, o worker de ingestão busca, e a SPA lê daqui para
-// saber quando o elenco está pronto -- sem esperar o ciclo de 15 min.
+// Alvo de um sync sob demanda. A fila é a mesma para clube e jogador: a
+// pessoa quer forçar a atualização daquilo que está olhando.
+const (
+	AlvoClube   = "clube"
+	AlvoJogador = "jogador"
+)
+
+// FetchRun é o progresso de um sync sob demanda. A SPA grava o pedido, o
+// worker de ingestão busca da fonte, e a SPA lê daqui para saber quando o
+// dado chegou -- sem esperar o ciclo de 15 min.
+//
+// Para jogador a fonte não tem endpoint próprio: o dado dele É derivado das
+// partidas dos clubes onde jogou, então "syncar jogador" atualiza as partidas
+// desses clubes e o perfil se recalcula na leitura. `Clubes` conta quantos
+// clubes foram atualizados nesse caminho.
 type FetchRun struct {
-	ClubID      string     `json:"club_id"`
+	Alvo        string     `json:"alvo"`
+	AlvoID      string     `json:"alvo_id"`
+	Rotulo      string     `json:"rotulo"`
 	Rodando     bool       `json:"rodando"`
 	Jogadores   int        `json:"jogadores"`
 	Partidas    int        `json:"partidas"`
+	Clubes      int        `json:"clubes"`
 	Erro        string     `json:"erro"`
 	ConcluidoEm *time.Time `json:"concluido_em"`
 }
@@ -216,6 +231,20 @@ type PlayerProfile struct {
 	Partidas   []PlayerMatch `json:"partidas,omitempty"`
 }
 
+// PlayerCareer são os totais ACUMULADOS de um jogador num clube, do
+// `members/career/stats` da fonte -- distinto da temporada corrente que as
+// partidas dão. Chave: (club_id, gamertag), porque o endpoint não traz playerId.
+type PlayerCareer struct {
+	ClubID        string  `json:"club_id"`
+	Gamertag      string  `json:"gamertag"`
+	Jogos         int     `json:"jogos"`
+	Gols          int     `json:"gols"`
+	Assistencias  int     `json:"assistencias"`
+	MelhorEmCampo int     `json:"melhor_em_campo"`
+	Nota          float64 `json:"nota"`
+	Posicao       string  `json:"posicao"`
+}
+
 // PlayerClub is one club a player was seen at, with their numbers there.
 type PlayerClub struct {
 	ClubID       string  `json:"club_id"`
@@ -225,6 +254,19 @@ type PlayerClub struct {
 	Gols         int     `json:"gols"`
 	Assistencias int     `json:"assistencias"`
 	Nota         float64 `json:"nota"`
+	// Career são os totais ACUMULADOS neste clube, quando a fonte os tem.
+	// Distinto dos campos acima, que são a temporada das partidas gravadas --
+	// é o que dá ao perfil os números de carreira que a EA não expõe.
+	Career *CareerTotais `json:"career,omitempty"`
+}
+
+// CareerTotais é o acumulado de um jogador num clube (members/career/stats).
+type CareerTotais struct {
+	Jogos         int     `json:"jogos"`
+	Gols          int     `json:"gols"`
+	Assistencias  int     `json:"assistencias"`
+	MelhorEmCampo int     `json:"melhor_em_campo"`
+	Nota          float64 `json:"nota"`
 }
 
 // PlayerMatch is one recent performance of a player.

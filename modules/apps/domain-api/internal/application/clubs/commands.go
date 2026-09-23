@@ -96,6 +96,19 @@ type AnuncioInput struct {
 	ExpiraEmHoras int    `json:"expira_em_horas,omitempty"`
 }
 
+// CareerInput são os totais de carreira de um jogador num clube, do
+// members/career/stats da fonte.
+type CareerInput struct {
+	ClubID        string  `json:"club_id"`
+	Gamertag      string  `json:"gamertag"`
+	Jogos         int     `json:"jogos"`
+	Gols          int     `json:"gols"`
+	Assistencias  int     `json:"assistencias"`
+	MelhorEmCampo int     `json:"melhor_em_campo"`
+	Nota          float64 `json:"nota"`
+	Posicao       string  `json:"posicao"`
+}
+
 type WatchInput struct {
 	UsuarioEmail string `json:"usuario_email"`
 	ClubID       string `json:"club_id"`
@@ -141,13 +154,17 @@ type IngestEstadoInput struct {
 	UltimoErro     string `json:"ultimo_erro,omitempty"`
 }
 
-// FetchRunInput é o pedido de fetch sob demanda de um clube (a tela de resgate
-// grava) e o resultado que o worker de ingestão publica de volta.
+// FetchRunInput é o pedido de sync sob demanda (a SPA grava) e o resultado que
+// o worker de ingestão publica de volta. `alvo` diz se é clube ou jogador --
+// a fila é uma só, e para jogador o worker resolve os clubes dele.
 type FetchRunInput struct {
-	ClubID    string `json:"club_id"`
+	Alvo      string `json:"alvo"`
+	AlvoID    string `json:"alvo_id"`
+	Rotulo    string `json:"rotulo,omitempty"`
 	Rodando   bool   `json:"rodando"`
 	Jogadores int    `json:"jogadores,omitempty"`
 	Partidas  int    `json:"partidas,omitempty"`
+	Clubes    int    `json:"clubes,omitempty"`
 	Erro      string `json:"erro,omitempty"`
 	Concluido bool   `json:"concluido,omitempty"`
 }

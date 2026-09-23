@@ -16,6 +16,7 @@ import type {
 import { Badge, Card, Crest, Empty, FormChips, Kit, PosTag, ResultBadge, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { WatchStar, type LucideIcon } from "../components/icons";
+import { SyncButton } from "../components/sync-button";
 import { BarChart, DivisionSteps, DonutChart, LineChart, Scatter, Spark } from "../components/charts";
 import {
   fmt,
@@ -87,6 +88,7 @@ export function ClubePage({
         actions={
           <>
             <FormChips forma={club.forma} max={10} />
+            <SyncButton alvo="clube" alvoId={club.club_id} />
             {authed && (
               <button
                 type="button"

@@ -205,6 +205,7 @@ func main() {
 		ingestEstado: postgres.NewIngestEstadoRepository(pool),
 		fetchRun:     postgres.NewFetchRunRepository(pool),
 		searchRun:    postgres.NewSearchRunRepository(pool),
+		career:       postgres.NewPlayerCareerRepository(pool),
 	}
 
 	errCh := make(chan error, 1)
@@ -278,6 +279,9 @@ type handlers struct {
 	// Fila de busca ao vivo na fonte: escrita pela tela de resgate para um
 	// clube que o hub ainda não viu, consumida pelo worker de ingestão.
 	searchRun *postgres.SearchRunRepository
+	// Totais de carreira de um jogador num clube (members/career/stats), que
+	// a temporada corrente não dá.
+	career *postgres.PlayerCareerRepository
 }
 
 func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
@@ -457,25 +461,31 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 	case k == clubsKindFetch:
 		entityType = "clubesfetch"
 		var in struct {
-			ClubID string `json:"club_id"`
+			Alvo   string `json:"alvo"`
+			AlvoID string `json:"alvo_id"`
+			Rotulo string `json:"rotulo"`
 		}
 		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
-			id = in.ClubID
-			err = h.fetchRun.Save(ctx, in.ClubID, true, 0, 0, "", false)
+			id = in.AlvoID
+			err = h.fetchRun.Save(ctx, in.Alvo, in.AlvoID, in.Rotulo, true, 0, 0, 0, "", false)
 		}
 	case k == clubsKindFetchSave:
 		entityType = "clubesfetch"
 		var in struct {
-			ClubID    string `json:"club_id"`
+			Alvo      string `json:"alvo"`
+			AlvoID    string `json:"alvo_id"`
+			Rotulo    string `json:"rotulo"`
 			Rodando   bool   `json:"rodando"`
 			Jogadores int    `json:"jogadores"`
 			Partidas  int    `json:"partidas"`
+			Clubes    int    `json:"clubes"`
 			Erro      string `json:"erro"`
 			Concluido bool   `json:"concluido"`
 		}
 		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
-			id = in.ClubID
-			err = h.fetchRun.Save(ctx, in.ClubID, in.Rodando, in.Jogadores, in.Partidas, in.Erro, in.Concluido)
+			id = in.AlvoID
+			err = h.fetchRun.Save(ctx, in.Alvo, in.AlvoID, in.Rotulo, in.Rodando,
+				in.Jogadores, in.Partidas, in.Clubes, in.Erro, in.Concluido)
 		}
 	case k == clubsKindSearch:
 		// A tela de resgate pediu uma busca ao vivo: abre a linha como
@@ -500,6 +510,26 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
 			id = in.Termo
 			err = h.searchRun.Save(ctx, in.Termo, in.Rodando, in.Encontrados, in.Erro, in.Concluido)
+		}
+	case k == clubsKindCareer:
+		// Totais de carreira de um jogador num clube, do members/career/stats.
+		// Alta volumetria e append-only (uma leitura substitui a anterior),
+		// então sem agregado nem evento -- upsert direto.
+		entityType = "clubescarreira"
+		var in struct {
+			ClubID        string  `json:"club_id"`
+			Gamertag      string  `json:"gamertag"`
+			Jogos         int     `json:"jogos"`
+			Gols          int     `json:"gols"`
+			Assistencias  int     `json:"assistencias"`
+			MelhorEmCampo int     `json:"melhor_em_campo"`
+			Nota          float64 `json:"nota"`
+			Posicao       string  `json:"posicao"`
+		}
+		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
+			id = in.ClubID
+			err = h.career.Save(ctx, in.ClubID, in.Gamertag, in.Jogos, in.Gols,
+				in.Assistencias, in.MelhorEmCampo, in.Nota, in.Posicao)
 		}
 	case k == clubsKindIngestHealth:
 		// Saúde do worker de ingestão: um upsert simples, sem agregado nem
@@ -570,6 +600,7 @@ const (
 	clubsKindFetchSave
 	clubsKindSearch
 	clubsKindSearchSave
+	clubsKindCareer
 )
 
 // classifyClubsAction decide PARA ONDE vai uma ação da família clubs.
@@ -591,6 +622,8 @@ func classifyClubsAction(a application.Action) clubsKind {
 		return clubsKindSearch
 	case application.ActionSaveSearchRun:
 		return clubsKindSearchSave
+	case application.ActionSaveCareer:
+		return clubsKindCareer
 	default:
 		return clubsKindOther
 	}

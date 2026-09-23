@@ -15,6 +15,7 @@ import (
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/application"
 	appclubs "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/application/clubs"
+	domainclubs "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/domain/clubs"
 )
 
 type ClubsWriteHandlers struct {
@@ -95,6 +96,23 @@ func (h *ClubsWriteHandlers) CreateAnnouncement(w http.ResponseWriter, r *http.R
 	h.publish(w, r, application.ActionCreateAnuncio, in)
 }
 
+// SaveCareer grava os totais de carreira de um jogador num clube. Alta
+// volumetria e append-only (uma leitura substitui a anterior), então vai pelo
+// caminho assíncrono -- ninguém espera por ela.
+func (h *ClubsWriteHandlers) SaveCareer(w http.ResponseWriter, r *http.Request) {
+	var in appclubs.CareerInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
+		return
+	}
+	in.ClubID = chi.URLParam(r, "clubId")
+	if in.ClubID == "" || in.Gamertag == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "club_id and gamertag are required"})
+		return
+	}
+	h.publish(w, r, application.ActionSaveCareer, in)
+}
+
 // Person writes — clubs-api calls these. Structural (the person expects to
 // see the change), so they travel the sync path.
 
@@ -150,24 +168,28 @@ func (h *ClubsWriteHandlers) SaveSyncRun(w http.ResponseWriter, r *http.Request)
 	h.publish(w, r, application.ActionSaveSyncRun, in)
 }
 
-// RequestFetch grava o pedido de fetch sob demanda de um clube. Caminho
-// assíncrono: a tela de resgate não espera a busca (que envolve a fonte
-// externa) -- ela só abre a fila e passa a ler o estado.
+// RequestFetch grava o pedido de sync sob demanda de um alvo. Caminho
+// assíncrono: a tela não espera a busca (que envolve a fonte externa) -- ela
+// só abre a fila e passa a ler o estado.
+//
+// O alvo vem do CAMINHO da rota (clube ou jogador), nunca do corpo: assim o id
+// não pode ser confundido com um tipo.
 func (h *ClubsWriteHandlers) RequestFetch(w http.ResponseWriter, r *http.Request) {
 	var in appclubs.FetchRunInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
-	if in.ClubID == "" {
-		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "club_id is required"})
+	in.Alvo, in.AlvoID = alvoDoPath(r)
+	if in.AlvoID == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "id is required"})
 		return
 	}
 	in.Rodando = true
 	h.publish(w, r, application.ActionRequestFetch, in)
 }
 
-// SaveFetchRun grava o resultado do fetch. O worker de ingestão (Python) é
+// SaveFetchRun grava o resultado do sync. O worker de ingestão (Python) é
 // quem publica aqui; mesmo caminho assíncrono da saúde dele.
 func (h *ClubsWriteHandlers) SaveFetchRun(w http.ResponseWriter, r *http.Request) {
 	var in appclubs.FetchRunInput
@@ -175,9 +197,12 @@ func (h *ClubsWriteHandlers) SaveFetchRun(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
-	if in.ClubID == "" {
-		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "club_id is required"})
+	if in.AlvoID == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "alvo_id is required"})
 		return
+	}
+	if in.Alvo == "" {
+		in.Alvo = domainclubs.AlvoClube
 	}
 	h.publish(w, r, application.ActionSaveFetch, in)
 }

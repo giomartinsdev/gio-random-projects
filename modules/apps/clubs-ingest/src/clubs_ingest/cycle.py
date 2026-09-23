@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 
 from .client import DomainClient, DomainError, DomainQueued
 from .normalize import (
+    career_line,
     club_identity,
     club_totals,
     match_payload,
@@ -126,7 +127,58 @@ class Ingest:
         # `matches` é o total PROCESSADO (novas + atualizadas), não só as novas:
         # a tela mostra "trouxe N partidas" e um clube já conhecido retornaria
         # 0 se contássemos apenas as novas -- dizendo "nada" depois de buscar 10.
+        self._ingest_career(club_id)
         return players, matches
+
+    def _ingest_career(self, club_id: str) -> None:
+        """Career totals de cada membro, num anexo do perfil do jogador.
+
+        O endpoint `members/career/stats` existe na fonte e nunca era chamado:
+        com ele o perfil de um jogador ganha os números de CARREIRA no clube, e
+        não só a temporada corrente. Best-effort -- um clube sem career não
+        invalida o resto do sync.
+        """
+        try:
+            rows = self.source.club_members_career(club_id)
+        except Exception as err:  # noqa: BLE001 -- career é um extra, não o sync
+            log.debug("career de %s falhou: %s", club_id, err)
+            return
+        for row in rows:
+            line = career_line(row, club_id)
+            if line:
+                try:
+                    self.domain.upsert_career(club_id, line)
+                except Exception as err:  # noqa: BLE001 -- uma linha não derruba o resto
+                    log.debug("career de %s falhou: %s", line.get("gamertag"), err)
+
+    def run_fetch_jogador(self, player_id: str) -> tuple[int, int, int]:
+        """Sincroniza UM jogador: atualiza as partidas dos clubes onde ele jogou.
+
+        A fonte não tem endpoint de jogador -- o dado dele é DERIVADO das
+        partidas. Então o trabalho real é atualizar os clubes dele, e o perfil
+        se recalcula sozinho na leitura (é a mesma agregação que a API faz).
+
+        Devolve (clubes, jogadores, partidas). Erros sobem como exceção: quem
+        chamou registra na linha da fila, onde a tela lê.
+        """
+        clubes = self.domain.clubs_do_jogador(player_id)
+        if not clubes:
+            log.info("sync de jogador %s: nenhum clube conhecido", player_id)
+            return 0, 0, 0
+
+        jogadores = partidas = 0
+        for club_id in clubes[: self.JOGADOR_MAX_CLUBES]:
+            p, m = self.run_fetch(club_id)
+            jogadores += p
+            partidas += m
+        log.info("sync de jogador %s: %d clubes, %d partidas", player_id, len(clubes), partidas)
+        return len(clubes), jogadores, partidas
+
+    # Quantos clubes atualizar num sync de jogador. A fonte é um CDN que
+    # bloqueia rajada; um jogador com histórico longo pode ter aparecido em
+    # dezenas de clubes, e atualizar todos de uma vez é a via rápida para o
+    # bloqueio. Os mais recentes primeiro (é o que a pessoa quer ver).
+    JOGADOR_MAX_CLUBES = 8
 
     # Quantos clubes o bootstrap acompanha. O leaderboard traz 100; acompanhar
     # todos de uma vez significaria 100 consultas de partidas no primeiro ciclo,
@@ -187,6 +239,9 @@ class Ingest:
         if self._expired(self._last_squad_fetch, club_id, now, self.cfg.ttl_squad):
             members = self.source.club_members(club_id)
             team_size = len(members)
+            # Career viaja junto do elenco: é o mesmo tipo de dado (membros) e
+            # o mesmo TTL -- a carreira não muda de minuto a minuto.
+            self._ingest_career(club_id)
             self._last_squad_fetch[club_id] = now
 
         # Matches: the expensive one, on its own shorter TTL.

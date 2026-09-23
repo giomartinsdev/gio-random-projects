@@ -1,11 +1,12 @@
 // Jogador: temporada, forma, gols por jogo, defesas do goleiro e os clubes
 // por onde passou. O selo de verificado só aparece para quem reivindicou o pro.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { api } from "../lib/api";
 import type { ClaimedPro, PlayerProfile } from "../lib/types";
 import { Badge, Card, Empty, PosTag, ResultBadge, Spinner, Stat } from "../components/ui";
+import { SyncButton } from "../components/sync-button";
 import { PageHead } from "../components/shell";
 import { VerifiedIcon } from "../components/icons";
 import { LineChart } from "../components/charts";
@@ -31,6 +32,12 @@ export function JogadorPage({
   const [p, setP] = useState<PlayerProfile | null>(null);
   const [erro, setErro] = useState("");
   const [reivindicando, setReivindicando] = useState(false);
+
+  // Separado do primeiro load para o sync poder recarregar sem apagar a tela:
+  // o perfil é DERIVADO das partidas, então ele muda quando o sync termina.
+  const recarregar = useCallback(() => {
+    api.player(playerId).then(setP).catch(() => {});
+  }, [playerId]);
 
   useEffect(() => {
     setP(null);
@@ -65,6 +72,7 @@ export function JogadorPage({
                 <VerifiedIcon /> verificado
               </Badge>
             )}
+            <SyncButton alvo="jogador" alvoId={playerId} onDone={recarregar} />
             <span className="font-display tnum text-3xl font-bold" style={{ color: ratingColor(p.nota) }}>
               {fmt(p.nota, 2)}
             </span>

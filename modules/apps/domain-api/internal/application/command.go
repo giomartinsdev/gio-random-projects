@@ -57,6 +57,7 @@ const (
 	ActionUpsertPartida     Action = "partida.upsert"
 	ActionAppendSnapshot    Action = "clubesnapshot.append"
 	ActionCreateAnuncio     Action = "anuncio.create"
+	ActionSaveCareer        Action = "clubs.careerSave"
 
 	ActionSetWatch     Action = "preferencia.setWatch"
 	ActionRemoveWatch  Action = "preferencia.removeWatch"

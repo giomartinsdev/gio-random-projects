@@ -23,8 +23,8 @@ class FakeDomain:
     def list_pending_fetches(self):
         return self.pendentes
 
-    def save_fetch_run(self, club_id, **kw):
-        self.saved.append({"club_id": club_id, **kw})
+    def save_fetch_run(self, alvo, alvo_id, **kw):
+        self.saved.append({"alvo": alvo, "alvo_id": alvo_id, **kw})
 
     def list_pending_syncs(self):
         return self.syncs
@@ -38,6 +38,7 @@ class FakeIngest:
         self.result = result
         self.fail_on = fail_on or set()
         self.called: list[str] = []
+        self.called_jogador: list[str] = []
 
     def run_fetch(self, club_id):
         self.called.append(club_id)
@@ -45,25 +46,47 @@ class FakeIngest:
             raise RuntimeError("a fonte bloqueou")
         return self.result
 
+    def run_fetch_jogador(self, player_id):
+        self.called_jogador.append(player_id)
+        if player_id in self.fail_on:
+            raise RuntimeError("a fonte bloqueou")
+        # (clubes, jogadores, partidas)
+        return (4, 30, 40)
+
 
 def test_fetch_queue_processes_and_closes_the_row():
-    domain = FakeDomain(pendentes=[{"club_id": "141881"}])
+    domain = FakeDomain(pendentes=[{"alvo": "clube", "alvo_id": "141881"}])
     ingest = FakeIngest(result=(18, 10))
 
     feitos = drain_fetch_queue(domain, ingest)
 
     assert feitos == 1
     assert ingest.called == ["141881"]
-    assert domain.saved and domain.saved[0]["club_id"] == "141881"
+    assert domain.saved and domain.saved[0]["alvo_id"] == "141881"
     assert domain.saved[0]["concluido"] is True
     assert domain.saved[0]["rodando"] is False
     assert domain.saved[0]["jogadores"] == 18
 
 
+def test_jogador_target_updates_his_clubs_not_a_club_fetch():
+    """Syncar jogador é atualizar as partidas dos clubes dele: a fonte não tem
+    endpoint de jogador. O despacho não pode cair no caminho de clube."""
+    domain = FakeDomain(pendentes=[{"alvo": "jogador", "alvo_id": "p1"}])
+    ingest = FakeIngest()
+
+    feitos = drain_fetch_queue(domain, ingest)
+
+    assert feitos == 1
+    assert ingest.called_jogador == ["p1"], "o alvo jogador tem o seu próprio caminho"
+    assert ingest.called == [], "e não passa pelo fetch de clube"
+    assert domain.saved[0]["alvo"] == "jogador"
+    assert domain.saved[0]["clubes"] == 4, "a contagem de clubes volta para a tela"
+
+
 def test_fetch_failure_still_closes_the_row():
     """O caso que deixaria a tela presa: se a linha não fechasse no erro, o
     pedido voltaria em todo tick e a SPA pollaria "buscando" para sempre."""
-    domain = FakeDomain(pendentes=[{"club_id": "ruim"}])
+    domain = FakeDomain(pendentes=[{"alvo": "clube", "alvo_id": "ruim"}])
     ingest = FakeIngest(fail_on={"ruim"})
 
     feitos = drain_fetch_queue(domain, ingest)
@@ -76,15 +99,18 @@ def test_fetch_failure_still_closes_the_row():
 
 
 def test_one_bad_club_does_not_stop_the_others():
-    domain = FakeDomain(pendentes=[{"club_id": "ruim"}, {"club_id": "bom"}])
+    domain = FakeDomain(pendentes=[
+        {"alvo": "clube", "alvo_id": "ruim"},
+        {"alvo": "clube", "alvo_id": "bom"},
+    ])
     ingest = FakeIngest(fail_on={"ruim"})
 
     drain_fetch_queue(domain, ingest)
 
     assert set(ingest.called) == {"ruim", "bom"}, "o bom precisa ser tentado"
-    por_clube = {s["club_id"]: s for s in domain.saved}
-    assert por_clube["bom"]["concluido"] is True
-    assert not por_clube["bom"].get("erro"), "o clube bom fecha sem erro"
+    por_alvo = {s["alvo_id"]: s for s in domain.saved}
+    assert por_alvo["bom"]["concluido"] is True
+    assert not por_alvo["bom"].get("erro"), "o clube bom fecha sem erro"
 
 
 def test_empty_fetch_queue_is_a_noop():

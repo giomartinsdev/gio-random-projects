@@ -422,6 +422,25 @@ CREATE TABLE IF NOT EXISTS clubs_match_players (
 CREATE INDEX IF NOT EXISTS idx_clubs_match_players_partida ON clubs_match_players(partida_id, club_id);
 CREATE INDEX IF NOT EXISTS idx_clubs_match_players_player ON clubs_match_players(player_id);
 
+-- Totais de CARREIRA de um jogador num clube, do `members/career/stats` da
+-- fonte -- o acumulado histórico, não a temporada corrente. O endpoint nunca
+-- era chamado; com ele o perfil de um jogador ganha os números de carreira.
+--
+-- A chave é (club_id, gamertag): este endpoint NÃO traz playerId, então o
+-- gamertag é o único elo. Quem lê casa com a linha de partida pelo nome.
+CREATE TABLE IF NOT EXISTS clubs_player_career (
+    club_id      TEXT NOT NULL,
+    gamertag     TEXT NOT NULL,
+    jogos        INTEGER NOT NULL DEFAULT 0,
+    gols         INTEGER NOT NULL DEFAULT 0,
+    assistencias INTEGER NOT NULL DEFAULT 0,
+    melhor_em_campo INTEGER NOT NULL DEFAULT 0,
+    nota         NUMERIC(4,2) NOT NULL DEFAULT 0,
+    posicao      TEXT NOT NULL DEFAULT '',
+    lido_em      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (club_id, gamertag)
+);
+
 -- Leitura de nível/divisão num instante. APPEND-ONLY: é o único dado que
 -- torna a evolução possível, já que a origem não guarda histórico.
 CREATE TABLE IF NOT EXISTS clubs_snapshots (
@@ -523,28 +542,64 @@ CREATE TABLE IF NOT EXISTS clubs_sync_runs (
 );
 
 -- ===========================================================================
--- Fila de fetch sob demanda de um clube (clubs_fetch_runs).
+-- Fila de sync sob demanda (clubs_fetch_runs).
 --
--- O sync de três níveis (clubs_sync_runs) só existe depois do login. Mas o
--- momento em que a pessoa mais precisa dos dados é ANTES disso: na tela de
--- resgate ela busca o clube, clica, e quer ver o elenco para escolher o seu
--- pro. Esperar o ciclo do worker (até 15 min) tornaria a tela inútil.
+-- A SPA grava um pedido aqui; o worker de ingestão polla, busca da fonte,
+-- grava pela domain-api e fecha o pedido. A SPA lê o estado para desenhar o
+-- progresso.
 --
--- A SPA grava um pedido aqui; o worker de ingestão polla, busca o elenco e as
--- partidas daquele clube, grava pela domain-api e fecha o pedido. A SPA lê o
--- estado para desenhar o progresso -- mesmo desenho do clubs_sync_runs, uma
--- linha por clube (pedir o mesmo clube duas vezes não duplica trabalho).
+-- O ALVO é genérico (`alvo`: clube | jogador): a pessoa quer forçar a
+-- atualização daquilo que está olhando, e não há motivo para uma fila por tipo
+-- de entidade. Começou só com clube (a tela de resgate); agora aceita um
+-- player_id também.
+--
+-- Para jogador a fonte não tem endpoint próprio -- o dado dele É derivado das
+-- partidas dos clubes onde jogou. Então syncar jogador é atualizar as partidas
+-- desses clubes; o perfil se recalcula sozinho na leitura.
+--
+-- A chave é (alvo, alvo_id): pedir o mesmo duas vezes não duplica trabalho.
 -- ===========================================================================
 
+-- Migração da versão anterior (uma coluna `club_id` como PK). Renomeia a
+-- tabela velha, cria a nova e copia as linhas -- tudo guardado por checagem de
+-- catálogo, então rodar a cada boot é seguro: na segunda vez a antiga já não
+-- existe e nada acontece.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'clubs_fetch_runs' AND column_name = 'club_id'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name = 'clubs_fetch_runs_old'
+    ) THEN
+        ALTER TABLE clubs_fetch_runs RENAME TO clubs_fetch_runs_old;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS clubs_fetch_runs (
-    club_id       TEXT PRIMARY KEY,
+    alvo          TEXT NOT NULL DEFAULT 'clube',
+    alvo_id       TEXT NOT NULL,
+    rotulo        TEXT NOT NULL DEFAULT '',
     rodando       BOOLEAN NOT NULL DEFAULT false,
     jogadores     INTEGER NOT NULL DEFAULT 0,
     partidas      INTEGER NOT NULL DEFAULT 0,
     erro          TEXT NOT NULL DEFAULT '',
     solicitado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
-    concluido_em  TIMESTAMPTZ
+    concluido_em  TIMESTAMPTZ,
+    PRIMARY KEY (alvo, alvo_id)
 );
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'clubs_fetch_runs_old') THEN
+        INSERT INTO clubs_fetch_runs
+            (alvo, alvo_id, rodando, jogadores, partidas, erro, solicitado_em, concluido_em)
+        SELECT 'clube', club_id, rodando, jogadores, partidas, erro, solicitado_em, concluido_em
+        FROM clubs_fetch_runs_old
+        ON CONFLICT DO NOTHING;
+        DROP TABLE clubs_fetch_runs_old;
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_clubs_fetch_runs_pendentes ON clubs_fetch_runs(rodando, solicitado_em);
 

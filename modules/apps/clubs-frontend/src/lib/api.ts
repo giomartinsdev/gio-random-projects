@@ -74,11 +74,22 @@ export const api = {
   fetchRun: (clubId: string) =>
     request<FetchRun>(`/clubs/${encodeURIComponent(clubId)}/fetch-run`),
 
-  /** Pede o fetch do elenco de um clube. Público de propósito: a pessoa
-   * escolhe o clube antes de entrar. A resposta é 202 -- a busca é em
+  /** Pede o sync sob demanda do elenco de um clube. Público de propósito: a
+   * pessoa escolhe o clube antes de entrar. A resposta é 202 -- a busca é em
    * segundo plano. */
   requestFetch: (clubId: string) =>
     request<{ iniciado: boolean }>(`/clubs/${encodeURIComponent(clubId)}/fetch-run`, {
+      method: "POST",
+    }),
+
+  /** O estado do sync de um jogador. A fonte não tem endpoint de jogador -- o
+   * dado dele vem das partidas dos clubes onde jogou. */
+  fetchRunJogador: (playerId: string) =>
+    request<FetchRun>(`/players/${encodeURIComponent(playerId)}/fetch-run`),
+
+  /** Pede o sync de um jogador (atualiza as partidas dos clubes dele). */
+  requestFetchJogador: (playerId: string) =>
+    request<{ iniciado: boolean }>(`/players/${encodeURIComponent(playerId)}/fetch-run`, {
       method: "POST",
     }),
 

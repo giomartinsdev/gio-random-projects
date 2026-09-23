@@ -147,11 +147,16 @@ export interface SquadMember {
 
 /** O estado do fetch sob demanda do elenco de um clube. A tela de resgate
  * grava o pedido e polla isto até `concluido_em` aparecer. */
+/** O estado de um sync sob demanda. A SPA grava o pedido e polla isto até
+ * `concluido_em` aparecer. O alvo pode ser um clube ou um jogador. */
 export interface FetchRun {
-  club_id: string;
+  alvo: "clube" | "jogador";
+  alvo_id: string;
+  rotulo: string;
   rodando: boolean;
   jogadores: number;
   partidas: number;
+  clubes: number;
   erro: string;
   concluido_em: string | null;
 }

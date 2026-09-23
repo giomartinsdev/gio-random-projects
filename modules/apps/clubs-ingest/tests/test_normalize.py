@@ -381,3 +381,31 @@ def test_is_dnf_reads_the_winner_id_from_a_null_safe_details():
     club = {"clubId": "1001", "details": None, "winnerByDnf": "1"}
     _, winner = nz.is_dnf(club, {})
     assert winner == "1001"
+
+
+# ------------------------------------------------ career (members/career/stats)
+
+def test_career_line_shape():
+    """O career vem com os números como TEXTO e a posição como id numérico,
+    igual ao resto da fonte -- o normalizador converte os dois."""
+    line = nz.career_line({
+        "name": "YanisFcz", "proPos": "25", "gamesPlayed": "12",
+        "goals": "21", "assists": "8", "manOfTheMatch": "3", "ratingAve": "8.5",
+    }, "141881")
+
+    assert line is not None
+    assert line["club_id"] == "141881"
+    assert line["gamertag"] == "YanisFcz"
+    assert line["jogos"] == 12
+    assert line["gols"] == 21
+    assert line["assistencias"] == 8
+    assert line["melhor_em_campo"] == 3
+    assert line["nota"] == 8.5
+    assert line["posicao"] in ("goleiro", "defensor", "meio", "atacante")
+
+
+def test_career_line_without_a_name_is_dropped():
+    """O endpoint não traz playerId: o gamertag é o único elo. Sem nome não há
+    como casar com o perfil, e gravar assim criaria um jogador fantasma."""
+    assert nz.career_line({"gamesPlayed": "5"}, "1") is None
+    assert nz.career_line({"name": "   "}, "1") is None

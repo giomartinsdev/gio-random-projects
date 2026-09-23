@@ -109,11 +109,15 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Get("/sync-status", cl.GetSyncRun)
 		// Consumida pelo worker de ingestão: quem pediu sync e ainda não terminou.
 		r.Get("/sync-pending", cl.ListPendingSyncs)
-		// Fila de fetch sob demanda de um clube: a tela de resgate grava o
-		// pedido, o worker de ingestão polla `fetch-pending`, busca o elenco e
-		// publica o resultado em /fetch-run.
+		// Fila de sync sob demanda: a tela grava o pedido, o worker de ingestão
+		// polla `fetch-pending`, busca da fonte e publica o resultado em
+		// /fetch-run. O alvo (clube ou jogador) vem do caminho.
 		r.Get("/fetch-pending", cl.ListPendingFetches)
 		r.Get("/clubs/{clubId}/fetch-run", cl.GetFetchRun)
+		r.Get("/players/{playerId}/fetch-run", cl.GetFetchRun)
+		// O que o worker consulta para traduzir "syncar jogador" em trabalho:
+		// os clubes onde ele apareceu.
+		r.Get("/players/{playerId}/clubs", cl.ClubsDoJogador)
 		// Busca ao vivo na fonte: a busca local é a do diretório; esta é a
 		// saída para um clube que o hub ainda não viu.
 		r.Get("/search-pending", cl.ListPendingSearches)
@@ -126,14 +130,18 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Post("/clubs/{clubId}/totals", clw.UpsertTotais)
 		r.Post("/clubs/{clubId}/matches", clw.UpsertMatch)
 		r.Post("/clubs/{clubId}/snapshots", clw.AppendSnapshot)
+		// Totais de carreira de um jogador num clube (members/career/stats).
+		r.Post("/clubs/{clubId}/career", clw.SaveCareer)
 		r.Post("/announcements", clw.CreateAnnouncement)
 		r.Post("/watchlist", clw.SetWatch)
 		r.Post("/notifications", clw.SaveNotifications)
 		r.Post("/claimed-pro", clw.ClaimPro)
 		r.Post("/sync-status", clw.SaveSyncRun)
 		r.Post("/admin/ingest", clw.SaveIngestEstado)
-		// Fetch sob demanda: a SPA pede, o worker Python busca,
-		r.Post("/fetch-run", clw.RequestFetch)
+		// Sync sob demanda: a SPA pede, o worker Python busca. Um POST por tipo
+		// de alvo (o caminho é o que diz se é clube ou jogador).
+		r.Post("/clubs/{clubId}/fetch-run", clw.RequestFetch)
+		r.Post("/players/{playerId}/fetch-run", clw.RequestFetch)
 		r.Post("/fetch-run/result", clw.SaveFetchRun)
 		r.Post("/search-run", clw.RequestSearch)
 		r.Post("/search-run/result", clw.SaveSearchRun)

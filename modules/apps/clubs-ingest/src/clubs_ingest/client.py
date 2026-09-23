@@ -94,6 +94,14 @@ class DomainClient:
     def create_announcement(self, anuncio: dict[str, Any]) -> None:
         self.post("/announcements", anuncio)
 
+    def upsert_career(self, club_id: str, line: dict[str, Any]) -> None:
+        """Grava os totais de carreira de um jogador num clube.
+
+        Alta volumetria e append-only (uma leitura substitui a anterior), então
+        vai pelo caminho assíncrono -- ninguém espera por ela.
+        """
+        self.post(f"/clubs/{urllib.parse.quote(club_id)}/career", line)
+
     def list_clubs(self, only_followed: bool = True) -> list[dict[str, Any]]:
         path = "/clubs" + ("?acompanhados=1" if only_followed else "")
         data = self.get(path) or {}
@@ -153,22 +161,36 @@ class DomainClient:
     # --- fila de fetch sob demanda ----------------------------------------
 
     def list_pending_fetches(self) -> list[dict[str, Any]]:
-        """Os clubes que a tela de resgate pediu e ninguém buscou ainda.
+        """Os alvos (clube ou jogador) que a SPA pediu e ninguém buscou ainda.
 
         É a ponte entre o clique na tela (que grava o pedido) e este worker:
         nenhum dos dois conhece o outro. É o que faz a tela ser útil -- sem
-        isto ela esperaria o ciclo de 15 min para ver qualquer elenco.
+        isto ela esperaria o ciclo de 15 min para ver qualquer dado.
         """
         data = self.get("/fetch-pending") or {}
         return data.get("pendentes") or []
 
-    def save_fetch_run(self, club_id: str, *, rodando: bool, jogadores: int,
-                       partidas: int, erro: str = "", concluido: bool = False) -> None:
+    def clubs_do_jogador(self, player_id: str) -> list[str]:
+        """Os clubes onde um jogador apareceu.
+
+        A fonte não tem endpoint de jogador: o dado dele vem das partidas dos
+        clubes onde jogou. É esta lista que traduz "syncar jogador" em
+        trabalho real.
+        """
+        data = self.get(f"/players/{urllib.parse.quote(player_id)}/clubs") or {}
+        return [str(c) for c in (data.get("clubes") or [])]
+
+    def save_fetch_run(self, alvo: str, alvo_id: str, *, rodando: bool, jogadores: int,
+                       partidas: int, clubes: int = 0, rotulo: str = "",
+                       erro: str = "", concluido: bool = False) -> None:
         self.post("/fetch-run/result", {
-            "club_id": club_id,
+            "alvo": alvo,
+            "alvo_id": alvo_id,
+            "rotulo": rotulo,
             "rodando": rodando,
             "jogadores": jogadores,
             "partidas": partidas,
+            "clubes": clubes,
             "erro": erro,
             "concluido": concluido,
         })

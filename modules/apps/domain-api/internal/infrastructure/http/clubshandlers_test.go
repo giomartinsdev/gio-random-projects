@@ -33,6 +33,9 @@ type stubClubs struct {
 	squad           []domainclubs.SquadMember
 	fetchRun        domainclubs.FetchRun
 	pending         []domainclubs.FetchRun
+	lastAlvo        string
+	lastAlvoID      string
+	clubesDoJogador []string
 	searchRun       domainclubs.SearchRun
 	pendingSearches []domainclubs.SearchRun
 }
@@ -61,8 +64,12 @@ func (s *stubClubs) AnnouncementCount(context.Context) (int, error) { return s.a
 func (s *stubClubs) Squad(context.Context, string) ([]domainclubs.SquadMember, error) {
 	return s.squad, nil
 }
-func (s *stubClubs) GetFetchRun(context.Context, string) (domainclubs.FetchRun, error) {
+func (s *stubClubs) GetFetchRun(_ context.Context, alvo, alvoID string) (domainclubs.FetchRun, error) {
+	s.lastAlvo, s.lastAlvoID = alvo, alvoID
 	return s.fetchRun, nil
+}
+func (s *stubClubs) ClubsDoJogador(context.Context, string) ([]string, error) {
+	return s.clubesDoJogador, nil
 }
 func (s *stubClubs) ListPendingFetches(context.Context) ([]domainclubs.FetchRun, error) {
 	return s.pending, nil
@@ -82,6 +89,8 @@ func clubsRouter(repo domainclubs.Repository) http.Handler {
 	r.Get("/players", h.ListPlayers)
 	r.Get("/clubs/{clubId}/squad", h.GetSquad)
 	r.Get("/clubs/{clubId}/fetch-run", h.GetFetchRun)
+	r.Get("/players/{playerId}/fetch-run", h.GetFetchRun)
+	r.Get("/players/{playerId}/clubs", h.ClubsDoJogador)
 	r.Get("/fetch-pending", h.ListPendingFetches)
 	r.Get("/search-run", h.GetSearchRun)
 	r.Get("/search-pending", h.ListPendingSearches)
@@ -285,10 +294,10 @@ func TestGetSquadCarriesResgatado(t *testing.T) {
 	}
 }
 
-// A tela polla o estado do fetch até o elenco ficar pronto. Antes do primeiro
+// A tela polla o estado do sync até o dado ficar pronto. Antes do primeiro
 // pedido a linha não existe: isso é "ainda não busquei", não erro.
 func TestGetFetchRunDefaultsToNotStarted(t *testing.T) {
-	repo := &stubClubs{fetchRun: domainclubs.FetchRun{ClubID: "141881"}}
+	repo := &stubClubs{fetchRun: domainclubs.FetchRun{Alvo: "clube", AlvoID: "141881"}}
 	rec := getJSON(t, clubsRouter(repo), "/clubs/141881/fetch-run")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d; want 200", rec.Code)
@@ -302,11 +311,46 @@ func TestGetFetchRunDefaultsToNotStarted(t *testing.T) {
 	}
 }
 
+// O caminho é o que diz o alvo: /clubs/... sincroniza um clube, /players/...
+// um jogador. O id nunca é confundido com um tipo.
+func TestFetchRunReadsTheTargetFromThePath(t *testing.T) {
+	repo := &stubClubs{}
+	clubsRouter(repo) // só para garantir que a rota existe
+	getJSON(t, clubsRouter(repo), "/clubs/141881/fetch-run")
+	if repo.lastAlvo != domainclubs.AlvoClube || repo.lastAlvoID != "141881" {
+		t.Fatalf("clube: got (%q,%q); want (clube,141881)", repo.lastAlvo, repo.lastAlvoID)
+	}
+
+	getJSON(t, clubsRouter(repo), "/players/938806983/fetch-run")
+	if repo.lastAlvo != domainclubs.AlvoJogador || repo.lastAlvoID != "938806983" {
+		t.Fatalf("jogador: got (%q,%q); want (jogador,938806983)", repo.lastAlvo, repo.lastAlvoID)
+	}
+}
+
+// Traduzir "syncar jogador" em trabalho: os clubes onde ele jogou.
+func TestClubsDoJogador(t *testing.T) {
+	repo := &stubClubs{clubesDoJogador: []string{"141881", "234"}}
+	rec := getJSON(t, clubsRouter(repo), "/players/p1/clubs")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	var body struct {
+		Clubes []string `json:"clubes"`
+		Total  int      `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Total != 2 || len(body.Clubes) != 2 {
+		t.Fatalf("got %d clubes (total %d); want 2", len(body.Clubes), body.Total)
+	}
+}
+
 // A fila que o worker de ingestão consome.
 func TestListPendingFetches(t *testing.T) {
 	repo := &stubClubs{pending: []domainclubs.FetchRun{
-		{ClubID: "141881", Rodando: true},
-		{ClubID: "234", Rodando: true},
+		{Alvo: domainclubs.AlvoClube, AlvoID: "141881", Rodando: true},
+		{Alvo: domainclubs.AlvoJogador, AlvoID: "p1", Rodando: true},
 	}}
 	rec := getJSON(t, clubsRouter(repo), "/fetch-pending")
 	if rec.Code != http.StatusOK {
@@ -321,6 +365,10 @@ func TestListPendingFetches(t *testing.T) {
 	}
 	if body.Total != 2 || len(body.Pendentes) != 2 {
 		t.Fatalf("got %d pendentes (total %d); want 2", len(body.Pendentes), body.Total)
+	}
+	// A fila é uma só para os dois alvos -- o worker precisa saber qual é.
+	if body.Pendentes[1].Alvo != domainclubs.AlvoJogador {
+		t.Fatalf("o alvo jogador precisa chegar ao worker: %+v", body.Pendentes[1])
 	}
 }
 

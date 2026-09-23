@@ -57,10 +57,14 @@ type Repository interface {
 	// actual discovering, without either side knowing about the other.
 	ListPendingSyncs(ctx context.Context) ([]SyncRun, error)
 
-	// Fetch sob demanda de um clube: a tela de resgate grava o pedido, o
-	// worker de ingestão polla e busca o elenco, a SPA lê o estado.
-	GetFetchRun(ctx context.Context, clubID string) (FetchRun, error)
+	// Sync sob demanda de um alvo (clube ou jogador): a SPA grava o pedido, o
+	// worker de ingestão polla e busca da fonte, a SPA lê o estado.
+	GetFetchRun(ctx context.Context, alvo, alvoID string) (FetchRun, error)
 	ListPendingFetches(ctx context.Context) ([]FetchRun, error)
+	// ClubsDoJogador traduz "syncar jogador" em trabalho: a fonte não tem
+	// endpoint de jogador, então o dado dele vem das partidas dos clubes onde
+	// ele apareceu.
+	ClubsDoJogador(ctx context.Context, playerID string) ([]string, error)
 
 	// Busca ao vivo na fonte, para um clube que o hub ainda não viu.
 	GetSearchRun(ctx context.Context, termo string) (SearchRun, error)
