@@ -2,11 +2,13 @@
 // e o hub opera normalmente sem canal configurado.
 
 import { useEffect, useState } from "react";
+import { Bell, Megaphone } from "lucide-react";
 import { api } from "../lib/api";
 import type { NotificationPrefs } from "../lib/types";
 import { Badge, Card, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { GoogleSignInButton } from "../components/google-signin";
+import { NOTIFY_ICONS, type LucideIcon } from "../components/icons";
 
 const DEFAULTS: NotificationPrefs = {
   canal: "",
@@ -72,10 +74,10 @@ export function NotificacoesPage({
     }
   };
 
-  const rows: Array<{ key: keyof NotificationPrefs; icon: string; title: string; desc: string }> = [
-    { key: "resumo_periodico", icon: "🗞️", title: "Resumo semanal", desc: "Toda segunda, um resumo com os jogos e destaques" },
-    { key: "recordes_e_divisoes", icon: "🏆", title: "Recordes e divisões", desc: "Aviso quando o clube bate um recorde ou muda de divisão" },
-    { key: "resultado_partidas", icon: "📡", title: "Resultado das partidas", desc: "Ao fim de cada jogo, com quem foi o melhor em campo" },
+  const rows: Array<{ key: keyof NotificationPrefs; icon: LucideIcon; title: string; desc: string }> = [
+    { key: "resumo_periodico", icon: NOTIFY_ICONS.resumo_periodico, title: "Resumo semanal", desc: "Toda segunda, um resumo com os jogos e destaques" },
+    { key: "recordes_e_divisoes", icon: NOTIFY_ICONS.recordes_e_divisoes, title: "Recordes e divisões", desc: "Aviso quando o clube bate um recorde ou muda de divisão" },
+    { key: "resultado_partidas", icon: NOTIFY_ICONS.resultado_partidas, title: "Resultado das partidas", desc: "Ao fim de cada jogo, com quem foi o melhor em campo" },
   ];
 
   return (
@@ -94,9 +96,13 @@ export function NotificacoesPage({
 
       <Card title="O que você quer receber">
         <ul className="divide-y divide-[var(--border)]">
-          {rows.map((r) => (
-            <li key={r.key} className="flex items-center gap-3 px-4 py-3">
-              <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[var(--surface-3)] text-base">{r.icon}</span>
+          {rows.map((r) => {
+            const Icon = r.icon;
+            return (
+              <li key={r.key} className="flex items-center gap-3 px-4 py-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[var(--surface-3)]">
+                  <Icon className="size-4" strokeWidth={2} style={{ color: "var(--text-muted)" }} />
+                </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold">{r.title}</span>
                 <span className="block text-xs text-muted">{r.desc}</span>
@@ -123,7 +129,8 @@ export function NotificacoesPage({
                 />
               </button>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </Card>
 
@@ -149,7 +156,7 @@ export function NotificacoesPage({
               className="mt-1 rounded-md px-4 py-2 font-display text-xs font-bold uppercase tracking-wide disabled:opacity-50"
               style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
             >
-              {saving ? "salvando…" : saved ? "salvo ✓" : "salvar"}
+              {saving ? "salvando…" : saved ? "salvo" : "salvar"}
             </button>
             <p className="text-xs text-muted">
               Deixe em branco para desligar: o hub continua funcionando normalmente, sem erro na tela.
@@ -161,11 +168,11 @@ export function NotificacoesPage({
           <div className="px-4 py-4">
             <div className="surface overflow-hidden">
               <div className="hair-b flex items-center gap-2 px-3 py-2 text-xs text-muted">
-                <span>🔔</span>
+                <Bell className="size-3.5" />
                 <b className="font-display">{prefs.canal || "#seu-clube"}</b>
               </div>
               <div className="flex gap-3 px-3 py-3">
-                <span className="text-lg">🗞️</span>
+                <Megaphone className="size-4 shrink-0" style={{ color: "var(--accent)" }} />
                 <div>
                   <div className="text-sm font-bold">Recap da semana</div>
                   <div className="text-xs text-muted">

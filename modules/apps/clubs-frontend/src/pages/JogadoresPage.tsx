@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import type { PlayerProfile } from "../lib/types";
 import { Badge, Bar, Card, Empty, PosTag, Spinner } from "../components/ui";
 import { PageHead } from "../components/shell";
+import { VerifiedIcon } from "../components/icons";
 import { fmt, POS_ORDER, POS_LABEL, ratingColor } from "../lib/format";
 
 export function JogadoresPage({ onOpenPlayer }: { onOpenPlayer: (id: string) => void }) {
@@ -127,7 +128,12 @@ export function JogadoresPage({ onOpenPlayer }: { onOpenPlayer: (id: string) => 
                   <span className="tnum w-7 shrink-0 text-center font-mono text-xs text-faint">{i + 1}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">
-                      {p.gamertag} {p.verificado && <span title="verificado">✓</span>}
+                      {p.gamertag}{" "}
+                      {p.verificado && (
+                        <span title="verificado" className="inline-block align-[-2px] text-accent">
+                          <VerifiedIcon />
+                        </span>
+                      )}
                     </span>
                     <span className="block font-mono text-[10px] text-faint">
                       {p.club_sigla || p.clube_nome || "sem clube"}

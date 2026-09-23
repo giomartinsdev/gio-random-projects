@@ -1,6 +1,7 @@
 // Partida: a súmula dos dois lados, a linha do tempo e os números do jogo.
 
 import { useEffect, useState } from "react";
+import { ChevronLeft, Flag, Star } from "lucide-react";
 import { api } from "../lib/api";
 import type { Match, PlayerLine } from "../lib/types";
 import { Badge, Card, Crest, Empty, PosTag, Spinner } from "../components/ui";
@@ -38,8 +39,9 @@ export function PartidaPage({
     <>
       <PageHead
         crumb={
-          <button type="button" onClick={onBack} className="hover:text-accent">
-            ← voltar
+          <button type="button" onClick={onBack} className="inline-flex items-center gap-1 hover:text-accent">
+            <ChevronLeft className="size-3.5" />
+            voltar
           </button>
         }
         title={`${m.clube_casa_nome} ${m.gols_casa}–${m.gols_fora} ${m.clube_fora_nome}`}
@@ -60,7 +62,9 @@ export function PartidaPage({
             </div>
             {m.houve_desistencia && (
               <div className="mt-2">
-                <Badge tone="accent">⚑ vitória por desistência</Badge>
+                <Badge tone="accent">
+                  <Flag className="size-3" strokeWidth={2.5} /> vitória por desistência
+                </Badge>
               </div>
             )}
           </div>
@@ -152,7 +156,17 @@ function Lineup({ title, lines, onOpenPlayer }: { title: string; lines: PlayerLi
                 <PosTag posicao={p.posicao} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">
-                    {p.gamertag} {p.melhor_em_campo && <span title="melhor em campo">⭐</span>}
+                    {p.gamertag}{" "}
+                    {p.melhor_em_campo && (
+                      <span title="melhor em campo" className="inline-block align-[-2px]">
+                        <Star
+                          className="size-3.5"
+                          fill="var(--gold)"
+                          strokeWidth={0}
+                          style={{ color: "var(--gold)" }}
+                        />
+                      </span>
+                    )}
                   </span>
                   <span className="block font-mono text-[10px] text-faint">
                     {p.gols}G {p.assistencias}A · {fmt(p.passes_certos)}/{fmt(p.passes_tentados)} passes ·{" "}

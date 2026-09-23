@@ -2,10 +2,12 @@
 // por onde passou. O selo de verificado só aparece para quem reivindicou o pro.
 
 import { useEffect, useState } from "react";
+import { ChevronLeft } from "lucide-react";
 import { api } from "../lib/api";
 import type { ClaimedPro, PlayerProfile } from "../lib/types";
 import { Badge, Card, Empty, PosTag, ResultBadge, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
+import { VerifiedIcon } from "../components/icons";
 import { LineChart } from "../components/charts";
 import { fmt, minutes, POS_LABEL, POS_SHORT, ratingColor, SAVE_LABEL } from "../lib/format";
 
@@ -49,15 +51,20 @@ export function JogadorPage({
     <>
       <PageHead
         crumb={
-          <button type="button" onClick={onBack} className="hover:text-accent">
-            ← voltar
+          <button type="button" onClick={onBack} className="inline-flex items-center gap-1 hover:text-accent">
+            <ChevronLeft className="size-3.5" />
+            voltar
           </button>
         }
         title={p.gamertag}
         sub={`${POS_LABEL[p.posicao]} · ${p.clube_nome || "sem clube principal"}`}
         actions={
           <>
-            {p.verificado && <Badge tone="accent">✓ verificado</Badge>}
+            {p.verificado && (
+              <Badge tone="accent">
+                <VerifiedIcon /> verificado
+              </Badge>
+            )}
             <span className="font-display tnum text-3xl font-bold" style={{ color: ratingColor(p.nota) }}>
               {fmt(p.nota, 2)}
             </span>
@@ -69,7 +76,9 @@ export function JogadorPage({
         <div className="mb-4">
           {meu ? (
             <div className="surface flex flex-wrap items-center gap-3 px-4 py-3">
-              <Badge tone="accent">✓ este pro é seu</Badge>
+              <Badge tone="accent">
+                <VerifiedIcon /> este pro é seu
+              </Badge>
               <span className="text-xs text-muted">
                 Seu perfil carrega o selo de verificado. Seus clubes já estão no hub — a sincronização
                 em segundo plano usa este pro como ponto de partida.

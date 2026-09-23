@@ -5,8 +5,9 @@
 // acrescenta, em vez de sugerir que algo está faltando.
 
 import { useEffect, useState } from "react";
-import { api } from "../lib/api";
-import type { PlayerProfile, SyncRun, WatchEntry } from "../lib/types";
+import { Bell, Compass, RefreshCw, Star } from "lucide-react";
+import { VerifiedIcon } from "../components/icons";
+import { api } from "../lib/api";import type { PlayerProfile, SyncRun, WatchEntry } from "../lib/types";
 import { Badge, Card, Empty, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { GoogleSignInButton } from "../components/google-signin";
@@ -52,11 +53,24 @@ function LoginScreen({ onSignedIn }: { onSignedIn: () => void }) {
             <p className="text-xs text-muted">
               Sem cadastro e sem senha nova: usamos o mesmo login do resto do hub. Você sai quando quiser.
             </p>
-            <ul className="flex flex-col gap-2 text-sm text-muted">
-              <li>✅ Explorar clubes, jogadores e partidas — isso já funciona sem entrar</li>
-              <li>⭐ Seguir clubes e montar sua lista</li>
-              <li>🔄 Seus clubes atualizados sozinhos, sem você pedir</li>
-              <li>🔔 Avisos no Discord quando quiser</li>
+            <ul className="flex flex-col gap-2.5 text-sm text-muted">
+              {[
+                [Compass, "Explorar clubes, jogadores e partidas", "isso já funciona sem entrar"],
+                [Star, "Seguir clubes e montar sua lista", "escolha os que te interessam"],
+                [RefreshCw, "Seus clubes atualizados sozinhos", "o hub trabalha em segundo plano"],
+                [Bell, "Avisos no Discord quando quiser", "você escolhe o que receber"],
+              ].map(([Icon, titulo, desc]) => {
+                const I = Icon as typeof Compass;
+                return (
+                  <li key={titulo as string} className="flex items-start gap-2.5">
+                    <I className="mt-0.5 size-4 shrink-0" strokeWidth={2} style={{ color: "var(--accent)" }} />
+                    <span>
+                      <span className="font-semibold text-ink">{titulo as string}</span>
+                      <span className="block text-xs text-faint">{desc as string}</span>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </Card>
@@ -143,7 +157,11 @@ function Profile({
                     {POS_LABEL[pro.posicao]} · {pro.clube_nome}
                   </span>
                 </span>
-                {pro.verificado && <Badge tone="accent">✓ verificado</Badge>}
+                {pro.verificado && (
+                  <Badge tone="accent">
+                    <VerifiedIcon /> verificado
+                  </Badge>
+                )}
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <Stat label="nota" value={fmt(pro.nota, 2)} />
@@ -221,7 +239,7 @@ function Profile({
                     title="deixar de seguir"
                     className="text-[var(--gold)]"
                   >
-                    ★
+                    <Star className="size-4" fill="currentColor" strokeWidth={0} />
                   </button>
                 </li>
               ))}

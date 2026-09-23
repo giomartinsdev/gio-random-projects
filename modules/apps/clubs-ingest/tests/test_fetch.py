@@ -189,3 +189,28 @@ def test_run_fetch_passes_the_club_name_to_the_search():
     assert ("141881", "ACG ZW") in source.buscas, (
         f"a busca precisa receber o nome; recebeu {source.buscas}"
     )
+
+
+def test_announcement_carries_a_semantic_key_not_an_emoji():
+    """O aviso é gravado com uma CHAVE (`resultado`), não um emoji: quem
+    desenha escolhe o ícone. Emoji no dado obriga a interface a lidar com
+    caractere de apresentação, e cada sistema desenha um diferente."""
+    from clubs_ingest.cycle import CycleStats
+
+    anuncios = []
+
+    class D(FakeDomain):
+        def create_announcement(self, a):
+            anuncios.append(a)
+
+    source = FakeSource(info={}, overall={}, matches=[])
+    ing = new_ingest(source, D())
+    ing._announce_result("1", {
+        "gols_casa": 3, "gols_fora": 1, "resultado_casa": "vitoria",
+        "tipo": "liga", "match_id": "m1",
+    }, CycleStats())
+
+    assert anuncios, "o anúncio precisa ser criado"
+    icone = anuncios[0]["icone"]
+    assert icone == "resultado", f"chave semântica esperada, veio {icone!r}"
+    assert icone.isascii(), "nada de emoji no dado gravado"

@@ -9,12 +9,36 @@
 // sob demanda (não espera o ciclo do worker), então o passo 2 não trava.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowRight,
+  Check,
+  ChevronLeft,
+  Lightbulb,
+  Network,
+  Radio,
+  Target,
+  TriangleAlert,
+  Users,
+} from "lucide-react";
 import { api } from "../lib/api";
 import type { Club, FetchRun, SquadMember } from "../lib/types";
 import { Badge, Card, Crest, Empty, PosTag, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { GoogleSignInButton } from "../components/google-signin";
+import { VerifiedIcon } from "../components/icons";
 import { fmt, POS_ORDER, POS_SHORT, ratingColor } from "../lib/format";
+
+/** Os ícones do passo a passo, por chave. Ficam aqui e não em texto com emoji
+ * para renderizarem igual em qualquer sistema e herdarem a cor do tema. */
+const FLOW: Record<string, typeof Users> = {
+  jogadores: Users,
+  resgate: Target,
+  rivais: Network,
+  fonte: Radio,
+  dica: Lightbulb,
+  alerta: TriangleAlert,
+  check: Check,
+};
 
 type Step = 1 | 2 | 3;
 
@@ -97,7 +121,7 @@ function StepBar({ step, club }: { step: Step; club: Club | null }) {
                       : { background: "var(--surface-2)", color: "var(--text-faint)", border: "1px solid var(--border-strong)" }
                 }
               >
-                {state === "done" ? "✓" : id}
+                {state === "done" ? <Check className="size-3.5" strokeWidth={3} /> : id}
               </span>
               <span className="flex flex-col">
                 <span className="text-sm font-bold" style={{ color: state === "todo" ? "var(--text-muted)" : "var(--text)" }}>
@@ -228,7 +252,7 @@ function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
             </div>
             {buscandoAoVivo && (
               <div className="flex items-start gap-2 rounded-md px-3 py-2.5" style={{ background: "var(--info-soft)" }}>
-                <span>📡</span>
+                <Radio className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--info)" }} />
                 <p className="text-[11px] text-muted">
                   O hub ainda não conhecia esse clube, então fomos buscar na fonte.
                   Isso leva alguns segundos — não precisa recarregar.
@@ -239,7 +263,7 @@ function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
         </Card>
 
         {list !== null && (
-          <Card title={`${fmt(list.length)} ${list.length === 1 ? "clube" : "clubes"}`} actions={<span className="text-[10px] text-faint">toque para ver os jogadores →</span>}>
+          <Card title={`${fmt(list.length)} ${list.length === 1 ? "clube" : "clubes"}`} actions={<span className="inline-flex items-center gap-1 text-[10px] text-faint">toque para ver os jogadores <ArrowRight className="size-3" /></span>}>
             {list.length === 0 ? (
               <Empty
                 title={buscandoAoVivo ? "Procurando na fonte…" : "Nenhum clube encontrado"}
@@ -274,7 +298,7 @@ function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
                         </span>
                       </span>
                       {c.acompanhado ? <Badge tone="accent">acompanhado</Badge> : <Badge>não acompanhado</Badge>}
-                      <span className="text-faint">→</span>
+                      <ArrowRight className="size-3.5 text-faint" />
                     </button>
                   </li>
                 ))}
@@ -288,24 +312,27 @@ function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
         <Card title="Como funciona">
           <ol className="flex flex-col gap-3.5 px-4 py-4">
             {[
-              ["users", "Achamos os jogadores do clube", "puxamos o elenco direto da fonte, na hora"],
-              ["user-check", "Você resgata o seu", "e ele ganha o selo de verificado"],
-              ["network", "Descobrimos os rivais", "as 10 últimas partidas do clube, depois 5 de cada rival"],
-            ].map(([icone, t, h]) => (
-              <li key={t} className="flex items-start gap-2.5">
-                <span className="grid size-7 shrink-0 place-items-center rounded-md text-xs" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
-                  {icone === "users" ? "👥" : icone === "user-check" ? "🎯" : "🕸️"}
-                </span>
-                <span className="flex flex-col">
-                  <span className="text-[12.5px] font-bold">{t}</span>
-                  <span className="text-[11px] text-muted">{h}</span>
-                </span>
-              </li>
-            ))}
+              ["jogadores", "Achamos os jogadores do clube", "puxamos o elenco direto da fonte, na hora"],
+              ["resgate", "Você resgata o seu", "e ele ganha o selo de verificado"],
+              ["rivais", "Descobrimos os rivais", "as 10 últimas partidas do clube, depois 5 de cada rival"],
+            ].map(([icone, t, h]) => {
+              const Icon = FLOW[icone];
+              return (
+                <li key={t} className="flex items-start gap-2.5">
+                  <span className="grid size-7 shrink-0 place-items-center rounded-md" style={{ background: "var(--accent-soft)" }}>
+                    <Icon className="size-3.5" style={{ color: "var(--accent)" }} />
+                  </span>
+                  <span className="flex flex-col">
+                    <span className="text-[12.5px] font-bold">{t}</span>
+                    <span className="text-[11px] text-muted">{h}</span>
+                  </span>
+                </li>
+              );
+            })}
           </ol>
         </Card>
         <div className="surface flex items-start gap-2.5 px-3.5 py-3.5">
-          <span>💡</span>
+          <Lightbulb className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--gold)" }} />
           <div>
             <div className="text-xs font-bold">Não sabe o nome exato?</div>
             <p className="mt-0.5 text-[11px] text-muted">
@@ -415,8 +442,9 @@ function StepEscolher({
     <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
       <div className="flex flex-col gap-3.5">
         <div className="flex items-center gap-3">
-          <button type="button" onClick={onBack} className="flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs font-bold uppercase tracking-wide text-muted" style={{ borderColor: "var(--border-strong)" }}>
-            ← trocar clube
+          <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs font-bold uppercase tracking-wide text-muted" style={{ borderColor: "var(--border-strong)" }}>
+            <ChevronLeft className="size-3.5" />
+            trocar clube
           </button>
           <div className="min-w-0 flex-1">
             <div className="text-lg font-bold">{club.nome}</div>
@@ -500,7 +528,12 @@ function StepEscolher({
                             </span>
                             <span className="flex flex-col">
                               <button type="button" onClick={(e) => { e.stopPropagation(); onOpenPlayer(p.player_id); }} className="text-left font-semibold hover:text-accent">
-                                {p.gamertag} {meu && <span title="seu pro">✓</span>}
+                                {p.gamertag}{" "}
+                                {meu && (
+                                  <span title="seu pro" className="inline-block align-[-2px]" style={{ color: "var(--success)" }}>
+                                    <VerifiedIcon />
+                                  </span>
+                                )}
                               </button>
                               <span className="font-mono text-[10px] text-faint">{fmt(p.gols)} gols · {fmt(p.assistencias)} assist.</span>
                             </span>
@@ -556,7 +589,7 @@ function StepEscolher({
               <Stat label="jogos" value={fmt(sel.jogos)} />
             </div>
             <div className="flex items-start gap-2.5 rounded-md px-3 py-3" style={{ background: "var(--warning-soft)" }}>
-              <span>⚠️</span>
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--warning)" }} />
               <p className="text-[10.5px] text-muted">
                 O resgate é <b>único por conta</b> e não pode ser desfeito. Depois disso o hub segue este clube e seus rivais.
               </p>
@@ -569,7 +602,13 @@ function StepEscolher({
                 className="flex items-center justify-center gap-2 rounded-md px-4 py-3 font-display text-xs font-bold uppercase tracking-wide disabled:opacity-50"
                 style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
               >
-                {salvando ? "resgatando…" : "✓ resgatar este pro"}
+                {salvando ? (
+                  "resgatando…"
+                ) : (
+                  <>
+                    <Check className="size-3.5" strokeWidth={3} /> resgatar este pro
+                  </>
+                )}
               </button>
             ) : (
               <div className="flex flex-col items-center gap-2">
@@ -611,13 +650,15 @@ function StepPronto({
     <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
       <div className="flex flex-col gap-4">
         <div className="surface flex items-center gap-4 px-5 py-5" style={{ borderColor: "var(--success)", borderWidth: 1.5 }}>
-          <span className="grid size-14 shrink-0 place-items-center rounded-md text-2xl" style={{ background: "var(--success-soft)", color: "var(--success)" }}>
-            ✓
+          <span className="grid size-14 shrink-0 place-items-center rounded-md" style={{ background: "var(--success-soft)", color: "var(--success)" }}>
+            <Check className="size-6" strokeWidth={3} />
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="font-display text-xl font-bold">Pro resgatado</span>
-              <Badge tone="accent">✓ verificado</Badge>
+              <Badge tone="accent">
+                <VerifiedIcon /> verificado
+              </Badge>
             </div>
             <p className="mt-0.5 text-sm text-muted">
               Seu pro está marcado. O hub já começou a acompanhar <b>{club.nome}</b> e os rivais dele em segundo plano — pode navegar à vontade.
@@ -631,17 +672,20 @@ function StepPronto({
               ["check", "Você joga aqui", club.nome, "done"],
               ["users", "Rivais diretos", "trazendo as últimas 10 partidas do seu clube…", "active"],
               ["network", "Clubes de clubes", "últimas 5 partidas de cada rival, em fila", "todo"],
-            ].map(([icone, t, h, state]) => (
-              <div key={t as string} className="flex items-center gap-3 rounded-md px-3.5 py-3" style={{ background: "var(--surface-2)" }}>
-                <span className="grid size-7 shrink-0 place-items-center rounded-full text-xs" style={{ background: state === "done" ? "var(--success-soft)" : state === "active" ? "var(--accent-soft)" : "var(--surface-3)", color: state === "done" ? "var(--success)" : state === "active" ? "var(--accent)" : "var(--text-faint)" }}>
-                  {icone === "check" ? "✓" : icone === "users" ? "👥" : "🕸️"}
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-[12.5px] font-bold" style={{ color: state === "todo" ? "var(--text-muted)" : "var(--text)" }}>{t}</span>
-                  <span className="truncate text-[10.5px] text-faint">{h}</span>
-                </span>
-              </div>
-            ))}
+            ].map(([icone, t, h, state]) => {
+              const Icon = FLOW[icone as string];
+              return (
+                <div key={t as string} className="flex items-center gap-3 rounded-md px-3.5 py-3" style={{ background: "var(--surface-2)" }}>
+                  <span className="grid size-7 shrink-0 place-items-center rounded-full" style={{ background: state === "done" ? "var(--success-soft)" : state === "active" ? "var(--accent-soft)" : "var(--surface-3)", color: state === "done" ? "var(--success)" : state === "active" ? "var(--accent)" : "var(--text-faint)" }}>
+                    <Icon className="size-3.5" />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="text-[12.5px] font-bold" style={{ color: state === "todo" ? "var(--text-muted)" : "var(--text)" }}>{t}</span>
+                    <span className="truncate text-[10.5px] text-faint">{h}</span>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </Card>
 
@@ -664,7 +708,9 @@ function StepPronto({
               ["Minha área", "veja o que o login trouxe"],
             ].map(([t, h]) => (
               <li key={t} className="flex items-center gap-2.5">
-                <span className="grid size-7 place-items-center rounded-md text-xs" style={{ background: "var(--surface-2)" }}>›</span>
+                <span className="grid size-7 place-items-center rounded-md" style={{ background: "var(--surface-2)" }}>
+                  <ArrowRight className="size-3.5 text-faint" />
+                </span>
                 <span className="flex flex-col">
                   <span className="text-[12.5px] font-bold">{t}</span>
                   <span className="text-[10.5px] text-faint">{h}</span>

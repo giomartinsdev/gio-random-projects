@@ -3,6 +3,7 @@
 // partidas.
 
 import { useEffect, useState } from "react";
+import { Lock } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import type { AdminStatus } from "../lib/types";
 import { Badge, Bar, Card, Empty, Spinner, Stat } from "../components/ui";
@@ -34,7 +35,7 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
       <>
         <PageHead title="Administração" sub="Área restrita à equipe do hub." />
         <div className="mx-auto max-w-lg">
-          <Card title="🔒 Acesso restrito">
+          <Card title="Acesso restrito" actions={<Lock className="size-4 text-faint" />}>
             <p className="px-5 py-5 text-sm text-muted">
               Esta área concentra os detalhes técnicos: integração com a fonte, cache, histórico e decisões de
               arquitetura. Nenhum dado dela aparece para visitantes.
@@ -57,7 +58,11 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
       <PageHead
         title="Administração"
         sub="Estado da integração com a fonte, do cache e do histórico acumulado."
-        actions={<Badge tone="loss">🔒 admin</Badge>}
+        actions={
+          <Badge tone="loss">
+            <Lock className="size-3" /> admin
+          </Badge>
+        }
       />
 
       <div className="mb-4 flex flex-wrap gap-1.5">

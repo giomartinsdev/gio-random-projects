@@ -4,6 +4,7 @@
 
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
+import { ChevronLeft, ChevronRight, Flag } from "lucide-react";
 import type { Club, Posicao, Resultado } from "../lib/types";
 import { hex, POS_SHORT, RESULT_LETTER, resultColor, resultSoft } from "../lib/format";
 
@@ -106,7 +107,7 @@ export function ResultBadge({ resultado, dnf = false }: { resultado: Resultado; 
   return (
     <Badge tone={tone} title={dnf ? `${resultado} (desistência)` : resultado}>
       {RESULT_LETTER[resultado]}
-      {dnf ? " ⚑" : ""}
+      {dnf && <Flag className="size-3" strokeWidth={2.5} />}
     </Badge>
   );
 }
@@ -252,7 +253,8 @@ export function Pager({
         className={btn}
         style={{ borderColor: "var(--border-strong)", color: "var(--text-muted)" }}
       >
-        ← anterior
+        <ChevronLeft className="size-3.5" />
+        anterior
       </button>
       <span className="font-mono text-[10px] text-faint">
         {label ?? `${page + 1} / ${totalPages}`}
@@ -264,7 +266,8 @@ export function Pager({
         className={btn}
         style={{ borderColor: "var(--border-strong)", color: "var(--text-muted)" }}
       >
-        próxima →
+        próxima
+        <ChevronRight className="size-3.5" />
       </button>
     </div>
   );

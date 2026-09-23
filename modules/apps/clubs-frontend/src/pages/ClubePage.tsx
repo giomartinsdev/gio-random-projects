@@ -3,6 +3,7 @@
 // explicação explícita — nunca uma tela vazia sem motivo.
 
 import { useEffect, useState } from "react";
+import { ArrowDown, ArrowUp, ChevronLeft, Crosshair, Goal, Skull, Star, Trophy } from "lucide-react";
 import { api } from "../lib/api";
 import type {
   Club,
@@ -14,6 +15,7 @@ import type {
 } from "../lib/types";
 import { Badge, Card, Crest, Empty, FormChips, Kit, PosTag, ResultBadge, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
+import { WatchStar, type LucideIcon } from "../components/icons";
 import { BarChart, DivisionSteps, DonutChart, LineChart, Scatter, Spark } from "../components/charts";
 import {
   fmt,
@@ -69,8 +71,9 @@ export function ClubePage({
     <>
       <PageHead
         crumb={
-          <button type="button" onClick={() => onOpenClub("")} className="hover:text-accent">
-            ← clubes
+          <button type="button" onClick={() => onOpenClub("")} className="inline-flex items-center gap-1 hover:text-accent">
+            <ChevronLeft className="size-3.5" />
+            clubes
           </button>
         }
         title={club.nome}
@@ -95,7 +98,15 @@ export function ClubePage({
                     : { borderColor: "var(--border-strong)", color: "var(--text-muted)" }
                 }
               >
-                {isWatched(club.club_id) ? "★ seguindo" : "☆ seguir"}
+                {isWatched(club.club_id) ? (
+                  <>
+                    <WatchStar size={13} filled /> seguindo
+                  </>
+                ) : (
+                  <>
+                    <WatchStar size={13} filled={false} /> seguir
+                  </>
+                )}
               </button>
             )}
           </>
@@ -508,10 +519,14 @@ function NumerosTab({
               {changes.map((c, i) => (
                 <li key={i} className="flex items-center gap-3 px-4 py-2.5 text-sm">
                   <span
-                    className="font-display text-lg font-bold"
+                    className="shrink-0"
                     style={{ color: c.tipo === "promocao" ? "var(--success)" : "var(--danger)" }}
                   >
-                    {c.tipo === "promocao" ? "⬆" : "⬇"}
+                    {c.tipo === "promocao" ? (
+                      <ArrowUp className="size-4" strokeWidth={2.5} />
+                    ) : (
+                      <ArrowDown className="size-4" strokeWidth={2.5} />
+                    )}
                   </span>
                   <span className="flex-1">
                     {c.tipo === "promocao" ? "Subiu" : "Caiu"} da Divisão {c.de} para a {c.para}
@@ -535,19 +550,19 @@ function NumerosTab({
           ) : (
             <ul className="divide-y divide-[var(--border)]">
               {rec.maior_goleada && (
-                <RecLine medal="🏆" title="Maior goleada" value={`${rec.maior_goleada.nossos_gols}–${rec.maior_goleada.gols_deles}`} detail={`vs ${rec.maior_goleada.adversario_nome}`} onClick={() => onOpenMatch(rec.maior_goleada!.match_id)} />
+                <RecLine medal={Trophy} title="Maior goleada" value={`${rec.maior_goleada.nossos_gols}–${rec.maior_goleada.gols_deles}`} detail={`vs ${rec.maior_goleada.adversario_nome}`} onClick={() => onOpenMatch(rec.maior_goleada!.match_id)} />
               )}
               {rec.pior_derrota && (
-                <RecLine medal="💀" title="Pior derrota" value={`${rec.pior_derrota.nossos_gols}–${rec.pior_derrota.gols_deles}`} detail={`vs ${rec.pior_derrota.adversario_nome}`} onClick={() => onOpenMatch(rec.pior_derrota!.match_id)} />
+                <RecLine medal={Skull} title="Pior derrota" value={`${rec.pior_derrota.nossos_gols}–${rec.pior_derrota.gols_deles}`} detail={`vs ${rec.pior_derrota.adversario_nome}`} onClick={() => onOpenMatch(rec.pior_derrota!.match_id)} />
               )}
               {rec.jogo_com_mais_gols && (
-                <RecLine medal="🎯" title="Jogo com mais gols" value={String(rec.jogo_com_mais_gols.total_gols)} detail={`vs ${rec.jogo_com_mais_gols.adversario_nome}`} onClick={() => onOpenMatch(rec.jogo_com_mais_gols!.match_id)} />
+                <RecLine medal={Crosshair} title="Jogo com mais gols" value={String(rec.jogo_com_mais_gols.total_gols)} detail={`vs ${rec.jogo_com_mais_gols.adversario_nome}`} onClick={() => onOpenMatch(rec.jogo_com_mais_gols!.match_id)} />
               )}
               {rec.melhor_nota && (
-                <RecLine medal="⭐" title="Melhor nota individual" value={fmt(rec.melhor_nota.nota, 2)} detail={`${rec.melhor_nota.gamertag} vs ${rec.melhor_nota.adversario_nome}`} onClick={() => onOpenPlayer(rec.melhor_nota!.player_id)} />
+                <RecLine medal={Star} title="Melhor nota individual" value={fmt(rec.melhor_nota.nota, 2)} detail={`${rec.melhor_nota.gamertag} vs ${rec.melhor_nota.adversario_nome}`} onClick={() => onOpenPlayer(rec.melhor_nota!.player_id)} />
               )}
               {rec.mais_gols_em_um_jogo && (
-                <RecLine medal="⚽" title="Mais gols em um jogo" value={String(rec.mais_gols_em_um_jogo.gols)} detail={`${rec.mais_gols_em_um_jogo.gamertag} vs ${rec.mais_gols_em_um_jogo.adversario_nome}`} onClick={() => onOpenPlayer(rec.mais_gols_em_um_jogo!.player_id)} />
+                <RecLine medal={Goal} title="Mais gols em um jogo" value={String(rec.mais_gols_em_um_jogo.gols)} detail={`${rec.mais_gols_em_um_jogo.gamertag} vs ${rec.mais_gols_em_um_jogo.adversario_nome}`} onClick={() => onOpenPlayer(rec.mais_gols_em_um_jogo!.player_id)} />
               )}
             </ul>
           )}
@@ -592,16 +607,19 @@ function RecLine({
   detail,
   onClick,
 }: {
-  medal: string;
+  medal: LucideIcon;
   title: string;
   value: string;
   detail: string;
   onClick: () => void;
 }) {
+  const Icon = medal;
   return (
     <li>
       <button type="button" onClick={onClick} className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface-3">
-        <span className="w-6 text-center text-lg">{medal}</span>
+        <span className="grid size-7 shrink-0 place-items-center rounded-md bg-[var(--accent-soft)]">
+          <Icon className="size-3.5" style={{ color: "var(--accent)" }} />
+        </span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold">{title}</span>
           <span className="block truncate font-mono text-[10px] text-faint">{detail}</span>

@@ -309,7 +309,9 @@ class Ingest:
                 "titulo": titulo,
                 "texto": f"Partida de {payload['tipo']} registrada pelo hub.",
                 "referencia_id": payload["match_id"],
-                "icone": "🏟️",
+                # Chave semântica, não um emoji: quem desenha escolhe o ícone
+                # (emoji muda de cara em cada sistema e ignora o tema).
+                "icone": "resultado",
                 # Result announcements are the most perishable item in the
                 # feed -- a week is plenty.
                 "expira_em_horas": 24 * 7,

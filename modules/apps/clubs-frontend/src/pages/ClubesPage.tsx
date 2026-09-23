@@ -1,10 +1,12 @@
 // Clubes: busca (tolerante a acento, no servidor) + diretório em tabela densa.
 
 import { useEffect, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { api } from "../lib/api";
 import type { Club } from "../lib/types";
 import { Crest, Empty, FormChips, Spinner } from "../components/ui";
 import { PageHead } from "../components/shell";
+import { WatchStar } from "../components/icons";
 import { fmt } from "../lib/format";
 
 export function ClubesPage({
@@ -66,9 +68,9 @@ export function ClubesPage({
               key={c.club_id}
               type="button"
               onClick={() => onOpenClub(c.club_id)}
-              className="rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-bold text-accent"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1 font-mono text-[10px] font-bold text-accent"
             >
-              ★ {c.sigla || c.nome}
+              <WatchStar size={11} filled /> {c.sigla || c.nome}
             </button>
           ))}
         </div>
@@ -141,13 +143,12 @@ export function ClubesPage({
                             onToggleWatch(c.club_id);
                           }}
                           title={isWatched(c.club_id) ? "deixar de seguir" : "seguir clube"}
-                          className="text-base"
                           style={{ color: isWatched(c.club_id) ? "var(--gold)" : "var(--text-faint)" }}
                         >
-                          {isWatched(c.club_id) ? "★" : "☆"}
+                          <WatchStar size={16} filled={isWatched(c.club_id)} />
                         </button>
                       ) : (
-                        <span className="text-faint">›</span>
+                        <ChevronRight className="size-3.5 text-faint" />
                       )}
                     </td>
                   </tr>

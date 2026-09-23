@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import type { Announcement, Club, RankPlayer } from "../lib/types";
 import { Badge, Bar, Card, Crest, Empty, Pager, RankMedallion, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
+import { ANUNCIO_ICONS, FLOW_ICONS, VerifiedIcon } from "../components/icons";
 import { BarChart } from "../components/charts";
 import { fmt, POS_SHORT, timeAgo } from "../lib/format";
 
@@ -127,8 +128,15 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
             <ul className="divide-y divide-[var(--border)]">
               {anuncios.map((a) => (
                 <li key={a.id} className="flex gap-3 px-4 py-3">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[var(--accent-soft)] text-base">
-                    {a.icone || "📣"}
+                  <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[var(--accent-soft)]">
+                    {(() => {
+                      // O aviso chega com uma CHAVE semântica (`resultado`),
+                      // não um emoji: quem desenha escolhe o ícone. O fallback
+                      // pelo tipo cobre avisos gravados antes desta mudança.
+                      const Icon =
+                        ANUNCIO_ICONS[a.icone] ?? ANUNCIO_ICONS[a.tipo] ?? FLOW_ICONS.anuncio;
+                      return <Icon className="size-4" style={{ color: "var(--accent)" }} />;
+                    })()}
                   </span>
                   <div className="min-w-0">
                     <div className="label" style={{ color: "var(--accent)" }}>
@@ -257,7 +265,12 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
                       <RankMedallion pos={posBase + i + 1} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold">
-                        {p.gamertag} {p.verificado && <span title="verificado">✓</span>}
+                        {p.gamertag}{" "}
+                        {p.verificado && (
+                          <span title="verificado" className="inline-block align-[-2px] text-accent">
+                            <VerifiedIcon />
+                          </span>
+                        )}
                       </span>
                       <span className="block font-mono text-[10px] text-faint">
                         {POS_SHORT[p.posicao]} · {p.club_sigla || p.clube_nome}
