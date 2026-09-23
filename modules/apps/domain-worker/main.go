@@ -460,94 +460,55 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 	// engolindo clubs.fetchRun) que fez a fila de fetch nunca ser criada.
 	case k == clubsKindFetch:
 		entityType = "clubesfetch"
-		var in struct {
-			Alvo   string `json:"alvo"`
-			AlvoID string `json:"alvo_id"`
-			Rotulo string `json:"rotulo"`
-		}
+		var in clubsFetchPayload
 		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
-			id = in.AlvoID
-			err = h.fetchRun.Save(ctx, in.Alvo, in.AlvoID, in.Rotulo, true, 0, 0, 0, "", false)
+			id = in.TargetID
+			err = h.fetchRun.Save(ctx, in.Target, in.TargetID, in.Label, true, 0, 0, 0, "", false)
 		}
 	case k == clubsKindFetchSave:
 		entityType = "clubesfetch"
-		var in struct {
-			Alvo      string `json:"alvo"`
-			AlvoID    string `json:"alvo_id"`
-			Rotulo    string `json:"rotulo"`
-			Rodando   bool   `json:"rodando"`
-			Jogadores int    `json:"jogadores"`
-			Partidas  int    `json:"partidas"`
-			Clubes    int    `json:"clubes"`
-			Erro      string `json:"erro"`
-			Concluido bool   `json:"concluido"`
-		}
+		var in clubsFetchSavePayload
 		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
-			id = in.AlvoID
-			err = h.fetchRun.Save(ctx, in.Alvo, in.AlvoID, in.Rotulo, in.Rodando,
-				in.Jogadores, in.Partidas, in.Clubes, in.Erro, in.Concluido)
+			id = in.TargetID
+			err = h.fetchRun.Save(ctx, in.Target, in.TargetID, in.Label, in.Running,
+				in.Players, in.Matches, in.Clubs, in.Error, in.Concluido)
 		}
 	case k == clubsKindSearch:
 		// A tela de resgate pediu uma busca ao vivo: abre a linha como
 		// rodando. O worker Python polla e é ele quem consulta a fonte.
 		entityType = "clubesbusca"
-		var in struct {
-			Termo string `json:"termo"`
-		}
+		var in clubsSearchPayload
 		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
 			id = in.Termo
 			err = h.searchRun.Save(ctx, in.Termo, true, 0, "", false)
 		}
 	case k == clubsKindSearchSave:
 		entityType = "clubesbusca"
-		var in struct {
-			Termo       string `json:"termo"`
-			Rodando     bool   `json:"rodando"`
-			Encontrados int    `json:"encontrados"`
-			Erro        string `json:"erro"`
-			Concluido   bool   `json:"concluido"`
-		}
+		var in clubsSearchSavePayload
 		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
 			id = in.Termo
-			err = h.searchRun.Save(ctx, in.Termo, in.Rodando, in.Encontrados, in.Erro, in.Concluido)
+			err = h.searchRun.Save(ctx, in.Termo, in.Running, in.Found, in.Error, in.Concluido)
 		}
 	case k == clubsKindCareer:
 		// Totais de carreira de um jogador num clube, do members/career/stats.
 		// Alta volumetria e append-only (uma leitura substitui a anterior),
 		// então sem agregado nem evento -- upsert direto.
 		entityType = "clubescarreira"
-		var in struct {
-			ClubID        string  `json:"club_id"`
-			Gamertag      string  `json:"gamertag"`
-			Jogos         int     `json:"jogos"`
-			Gols          int     `json:"gols"`
-			Assistencias  int     `json:"assistencias"`
-			MelhorEmCampo int     `json:"melhor_em_campo"`
-			Nota          float64 `json:"nota"`
-			Posicao       string  `json:"posicao"`
-		}
+		var in clubsCareerPayload
 		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
 			id = in.ClubID
-			err = h.career.Save(ctx, in.ClubID, in.Gamertag, in.Jogos, in.Gols,
-				in.Assistencias, in.MelhorEmCampo, in.Nota, in.Posicao)
+			err = h.career.Save(ctx, in.ClubID, in.Gamertag, in.Played, in.Goals,
+				in.Assists, in.ManOfTheMatch, in.Rating, in.Position)
 		}
 	case k == clubsKindIngestHealth:
 		// Saúde do worker de ingestão: um upsert simples, sem agregado nem
 		// evento. Chega aqui porque o worker não tem host próprio para expor
 		// um /healthz.
 		entityType = "clubesingest"
-		var in struct {
-			Rodadas        int    `json:"rodadas"`
-			ClubesOK       int    `json:"clubes_ok"`
-			ClubesFalhos   int    `json:"clubes_falhos"`
-			PartidasNovas  int    `json:"partidas_novas"`
-			Snapshots      int    `json:"snapshots"`
-			BootstrapFeito bool   `json:"bootstrap_feito"`
-			UltimoErro     string `json:"ultimo_erro"`
-		}
+		var in clubsIngestPayload
 		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
-			err = h.ingestEstado.Save(ctx, in.Rodadas, in.ClubesOK, in.ClubesFalhos,
-				in.PartidasNovas, in.Snapshots, in.BootstrapFeito, in.UltimoErro)
+			err = h.ingestEstado.Save(ctx, in.Cycles, in.ClubsOK, in.ClubsFailed,
+				in.NewMatches, in.Snapshots, in.Bootstrapped, in.LastError)
 		}
 	case strings.HasPrefix(string(cmd.Action), "preferencia."):
 		// Per-person writes, all carrying usuario_email. The API is the
@@ -602,6 +563,65 @@ const (
 	clubsKindSearchSave
 	clubsKindCareer
 )
+
+// Os payloads que chegam pelo barramento. As tags JSON têm que casar com o
+// que os produtores publicam -- domain-api's appclubs.*Input e o
+// clubs-ingest (Python). Ficam como tipos nomeados, e não structs anônimos
+// inline, porque um campo que não casa NÃO dá erro: json.Unmarshal só deixa o
+// campo no zero. Já aconteceu: o codemod renomeou os produtores mas pulou este
+// arquivo (ele está na raiz do módulo, fora de internal/), e a tela de resgate
+// passou a gravar linhas vazias sem sintoma nenhum. main_test.go trava o
+// contrato contra os payloads reais.
+type clubsFetchPayload struct {
+	Target   string `json:"target"`
+	TargetID string `json:"target_id"`
+	Label    string `json:"label"`
+}
+
+type clubsFetchSavePayload struct {
+	Target    string `json:"target"`
+	TargetID  string `json:"target_id"`
+	Label     string `json:"label"`
+	Running   bool   `json:"running"`
+	Players   int    `json:"players"`
+	Matches   int    `json:"matches"`
+	Clubs     int    `json:"clubs"`
+	Error     string `json:"error"`
+	Concluido bool   `json:"concluido"`
+}
+
+type clubsSearchPayload struct {
+	Termo string `json:"termo"`
+}
+
+type clubsSearchSavePayload struct {
+	Termo     string `json:"termo"`
+	Running   bool   `json:"running"`
+	Found     int    `json:"found"`
+	Error     string `json:"error"`
+	Concluido bool   `json:"concluido"`
+}
+
+type clubsCareerPayload struct {
+	ClubID        string  `json:"club_id"`
+	Gamertag      string  `json:"gamertag"`
+	Played        int     `json:"played"`
+	Goals         int     `json:"goals"`
+	Assists       int     `json:"assists"`
+	ManOfTheMatch int     `json:"man_of_the_match"`
+	Rating        float64 `json:"rating"`
+	Position      string  `json:"position"`
+}
+
+type clubsIngestPayload struct {
+	Cycles       int    `json:"cycles"`
+	ClubsOK      int    `json:"clubs_ok"`
+	ClubsFailed  int    `json:"clubs_failed"`
+	NewMatches   int    `json:"new_matches"`
+	Snapshots    int    `json:"snapshots"`
+	Bootstrapped bool   `json:"bootstrapped"`
+	LastError    string `json:"last_error"`
+}
 
 // classifyClubsAction decide PARA ONDE vai uma ação da família clubs.
 //
