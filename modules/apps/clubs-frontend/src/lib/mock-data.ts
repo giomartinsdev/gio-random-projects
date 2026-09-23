@@ -340,8 +340,8 @@ export function evolutionOf(clubId: string): Evolution {
 }
 
 export const DIVISION_CHANGES: DivisionChange[] = [
-  { detected_at: iso(3, 10, 0), from_division: 2, to_division: 1, kind: "promotion" },
-  { detected_at: iso(9, 10, 0), from_division: 3, to_division: 2, kind: "promotion" },
+  { detected_at: iso(3, 10, 0), previous_division: 2, new_division: 1, kind: "promotion" },
+  { detected_at: iso(9, 10, 0), previous_division: 3, new_division: 2, kind: "promotion" },
 ];
 
 export function recordsOf(clubId: string): Records {

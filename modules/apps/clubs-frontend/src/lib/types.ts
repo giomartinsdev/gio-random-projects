@@ -261,8 +261,8 @@ export interface Evolution {
 
 export interface DivisionChange {
   detected_at: string;
-  from_division: number;
-  to_division: number;
+  previous_division: number;
+  new_division: number;
   kind: "promotion" | "relegation";
 }
 

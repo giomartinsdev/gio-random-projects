@@ -286,7 +286,7 @@ func (s *Server) requestSearchLive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len([]rune(body.Termo)) < 2 {
-		writeError(w, http.StatusUnprocessableEntity, "termo precisa from_division ao menos 2 letras")
+		writeError(w, http.StatusUnprocessableEntity, "termo precisa de ao menos 2 letras")
 		return
 	}
 	if err := s.domain.Post(r.Context(), "/search-run", map[string]any{"termo": body.Termo}); err != nil {

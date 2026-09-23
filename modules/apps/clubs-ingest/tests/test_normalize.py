@@ -2,7 +2,7 @@
 they exercise the translation layer against the real fixture shapes, offline.
 
 These are the assertions that prove the normalized vocabulary is right — the
-five result codes, the friendly fallback, the position from_division-to_division, and the
+five result codes, the friendly fallback, the position de-para, and the
 per-club match orientation.
 """
 
@@ -65,7 +65,7 @@ def test_position_maps_both_strings_and_numeric_ids():
 
 
 def test_unknown_position_does_not_break_mapping():
-    """An id outside the from_division-to_division table lands in the least-wrong bucket instead
+    """An id outside the de-para table lands in the least-wrong bucket instead
     of raising — and is reported so the table can grow."""
     assert nz.position(999) == nz.POS_MEIO
     assert nz.describe_unknown_position(999) == "999"
@@ -251,7 +251,7 @@ def test_opponent_club_id_finds_the_other_side():
 
 def test_merge_lifts_division_from_the_search_side():
     """O overallStats NÃO traz divisão; a busca traz. Fundir as duas é o que
-    impede todo clube from_division aparecer como D0 -- nenhuma das duas sozinha tem o
+    impede todo clube de aparecer como D0 -- nenhuma das duas sozinha tem o
     conjunto completo."""
     overall = {"clubId": "1", "skillRating": "2144", "wins": "43"}
     busca = {"clubId": "1", "currentDivision": "1", "bestDivision": "1", "cleanSheets": "20"}
@@ -265,7 +265,7 @@ def test_merge_lifts_division_from_the_search_side():
 
 
 def test_merge_ignores_absent_values_so_they_do_not_blank_the_result():
-    """A fonte manda o campo presente e vazio (ou null) em vez from_division omitir. Se o
+    """A fonte manda o campo presente e vazio (ou null) em vez de omitir. Se o
     vazio vencesse, o merge apagaria justamente o que a outra fonte trouxe."""
     overall = {"clubId": "1", "skillRating": "2144", "currentDivision": None}
     busca = {"clubId": "1", "currentDivision": "1", "skillRating": ""}
@@ -284,7 +284,7 @@ def test_merge_tolerates_missing_sources():
 # ------------------------------- busca por id (o outro bug silencioso)
 
 def test_opponent_club_carries_the_name():
-    """O name do adversário vem no próprio payload da partida -- e é o que a
+    """O nome do adversário vem no próprio payload da partida -- e é o que a
     busca da fonte exige. Sem ele a descoberta voltava vazia, em silêncio."""
     match = {
         "clubs": {
@@ -300,10 +300,10 @@ def test_opponent_club_carries_the_name():
 # ------------------------- estatística de jogador ausente (bug do crash)
 
 def test_match_payload_survives_a_null_player_line():
-    """A fonte manda `null` no lugar das estatísticas from_division um jogador em algumas
-    matches -- provavelmente um jogador que saiu antes do apito. O normalizador
+    """A fonte manda `null` no lugar das estatísticas de um jogador em algumas
+    partidas -- provavelmente um jogador que saiu antes do apito. O normalizador
     explodia com "'NoneType' object has no attribute 'get'", e o clube INTEIRO
-    era perdido no ciclo (sem identidade, totais, matches nem snapshot)."""
+    era perdido no ciclo (sem identidade, totais, partidas nem snapshot)."""
     match = {
         "matchId": "m1",
         "timestamp": "1767297600",
@@ -326,7 +326,7 @@ def test_match_payload_survives_a_null_player_line():
 
 def test_player_line_of_a_null_is_skipped_not_crashed():
     """Contrato direto do normalizador: um stats nulo devolve None (pular),
-    em vez from_division estourar."""
+    em vez de estourar."""
     assert nz.player_line_opt(None, "1001", "p1") is None
     assert nz.player_line_opt({"playername": "ok"}, "1001", "p2") is not None
 
@@ -357,8 +357,8 @@ def test_opponent_club_tolerates_a_null_details():
 
 
 def test_match_payload_survives_null_details_on_both_sides():
-    """O caso from_division produção: um clube da partida vem com `details: null`. A
-    partida continua sendo gravada; só o name do adversário sai vazio."""
+    """O caso de produção: um clube da partida vem com `details: null`. A
+    partida continua sendo gravada; só o nome do adversário sai vazio."""
     match = {
         "matchId": "m1",
         "timestamp": "1767297600",
@@ -405,7 +405,7 @@ def test_career_line_shape():
 
 
 def test_career_line_without_a_name_is_dropped():
-    """O endpoint não traz playerId: o gamertag é o único elo. Sem name não há
+    """O endpoint não traz playerId: o gamertag é o único elo. Sem nome não há
     como casar com o perfil, e gravar assim criaria um jogador fantasma."""
     assert nz.career_line({"gamesPlayed": "5"}, "1") is None
     assert nz.career_line({"name": "   "}, "1") is None

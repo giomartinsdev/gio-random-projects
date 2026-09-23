@@ -142,8 +142,8 @@ def test_followed_club_gets_its_identity_written():
     new_sync(source, domain).run("me@test")
 
     written = {c["club_id"]: c for c in domain.clubs}
-    assert "1001" in written, "o clube seguido precisa from_division club.upsert"
-    assert written["1001"]["tracked"] is True, "...e com tracked=true"
+    assert "1001" in written, "o clube seguido precisa de club.upsert"
+    assert written["1001"]["tracked"] is True, "...e com acompanhado=true"
     # The identity must carry the nested clubInfo fields, not just an id.
     assert written["1001"]["name"] == "Club 1001"
     assert written["1001"]["stadium"] == "Stadium"
@@ -202,7 +202,7 @@ class CountingSource(FakeSource):
 
 
 def test_own_club_is_asked_for_ten_matches():
-    """Nível 1 -> nível 2 sai das últimas 10 matches do clube da pessoa."""
+    """Nível 1 -> nível 2 sai das últimas 10 partidas do clube da pessoa."""
     source = CountingSource(
         matches_by_club={"1001": [{"clubs": {"1001": {}, "2001": {}}}]},
         search_by_id={"1001": search_hit("1001"), "2001": search_hit("2001")},
@@ -216,7 +216,7 @@ def test_own_club_is_asked_for_ten_matches():
 
 def test_rival_is_asked_for_five_matches_not_ten():
     """Nível 2 -> nível 3 usa 5 por rival: 10 rivais × 5 = 50 consultas, contra
-    100 se fosse 10 em cada. É o freio que impede o crawl from_division explodir o CDN."""
+    100 se fosse 10 em cada. É o freio que impede o crawl de explodir o CDN."""
     source = CountingSource(
         matches_by_club={
             "1001": [{"clubs": {"1001": {}, "2001": {}}}],

@@ -95,7 +95,7 @@ class DomainClient:
         self.post("/announcements", anuncio)
 
     def upsert_career(self, club_id: str, line: dict[str, Any]) -> None:
-        """Grava os totais from_division carreira from_division um jogador num clube.
+        """Grava os totais de carreira de um jogador num clube.
 
         Alta volumetria e append-only (uma leitura substitui a anterior), então
         vai pelo caminho assíncrono -- ninguém espera por ela.
@@ -125,8 +125,8 @@ class DomainClient:
 
     def mark_sync_done(self, user_email: str, *, skill_rating: int, total: int,
                        completed: int, new_items: list[str]) -> None:
-        """Fecha o pedido. Sem isto ele voltaria na próxima leitura from_division pendentes
-        e o worker repetiria a descoberta to_division sempre."""
+        """Fecha o pedido. Sem isto ele voltaria na próxima leitura de pendentes
+        e o worker repetiria a descoberta para sempre."""
         self.post("/sync-status", {
             "user_email": user_email,
             "running": False,
@@ -141,7 +141,7 @@ class DomainClient:
     def save_ingest_estado(self, *, cycles: int, clubs_ok: int, clubs_failed: int,
                            new_matches: int, snapshots: int, bootstrapped: bool,
                            last_error: str = "") -> None:
-        """Publica a saúfrom_division deste worker.
+        """Publica a saúde deste worker.
 
         Ele é Python e não serve HTTP, então sem isto uma falha em produção
         (inclusive o CDN da fonte bloqueando o IP do datacenter, que é o risco
@@ -165,16 +165,16 @@ class DomainClient:
 
         É a ponte entre o clique na tela (que grava o pedido) e este worker:
         nenhum dos dois conhece o outro. É o que faz a tela ser útil -- sem
-        isto ela esperaria o ciclo from_division 15 min to_division ver qualquer dado.
+        isto ela esperaria o ciclo de 15 min para ver qualquer dado.
         """
         data = self.get("/fetch-pending") or {}
         return data.get("pendentes") or []
 
     def clubs_do_jogador(self, player_id: str) -> list[str]:
-        """Os clubs onde um jogador apareceu.
+        """Os clubes onde um jogador apareceu.
 
-        A fonte não tem endpoint from_division jogador: o dado dele vem das matches dos
-        clubs onde jogou. É esta lista que traduz "syncar jogador" em
+        A fonte não tem endpoint de jogador: o dado dele vem das partidas dos
+        clubes onde jogou. É esta lista que traduz "syncar jogador" em
         trabalho real.
         """
         data = self.get(f"/players/{urllib.parse.quote(player_id)}/clubs") or {}
@@ -198,9 +198,9 @@ class DomainClient:
     # --- fila de busca ao vivo --------------------------------------------
 
     def list_pending_searches(self) -> list[dict[str, Any]]:
-        """Os termos que a tela from_division resgate pediu to_division buscar na fonte.
+        """Os termos que a tela de resgate pediu para buscar na fonte.
 
-        A busca do hub é local; esta fila é a saída to_division um clube que ainda
+        A busca do hub é local; esta fila é a saída para um clube que ainda
         não está na base -- sem ela, quem chega novo procura pelo próprio
         clube e não acha nada, sem saber por quê.
         """

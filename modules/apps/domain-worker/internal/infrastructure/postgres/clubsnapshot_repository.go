@@ -70,9 +70,9 @@ func (r *ClubSnapshotRepository) Append(ctx context.Context, s domainsnapshot.Sn
 	if change != nil {
 		change.ID = uuid.NewString()
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO clubs_division_changes (id, club_id, detected_at, from_division, to_division, kind)
+			INSERT INTO clubs_division_changes (id, club_id, detected_at, previous_division, new_division, kind)
 			VALUES ($1,$2,$3,$4,$5,$6)`,
-			change.ID, change.ClubID, change.DetectedAt, change.FromDivision, change.ToDivision, change.Kind); err != nil {
+			change.ID, change.ClubID, change.DetectedAt, change.PreviousDivision, change.NewDivision, change.Kind); err != nil {
 			return nil, fmt.Errorf("insert division change: %w", err)
 		}
 	}
@@ -127,7 +127,7 @@ func (r *ClubSnapshotRepository) Series(ctx context.Context, clubID string, sinc
 
 func (r *ClubSnapshotRepository) Changes(ctx context.Context, clubID string) ([]domainsnapshot.MudancaDivisao, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, club_id, detected_at, from_division, to_division, kind
+		SELECT id, club_id, detected_at, previous_division, new_division, kind
 		FROM clubs_division_changes WHERE club_id = $1 ORDER BY detected_at DESC`, clubID)
 	if err != nil {
 		return nil, fmt.Errorf("changes: %w", err)
@@ -137,7 +137,7 @@ func (r *ClubSnapshotRepository) Changes(ctx context.Context, clubID string) ([]
 	var list []domainsnapshot.MudancaDivisao
 	for rows.Next() {
 		var m domainsnapshot.MudancaDivisao
-		if err := rows.Scan(&m.ID, &m.ClubID, &m.DetectedAt, &m.FromDivision, &m.ToDivision, &m.Kind); err != nil {
+		if err := rows.Scan(&m.ID, &m.ClubID, &m.DetectedAt, &m.PreviousDivision, &m.NewDivision, &m.Kind); err != nil {
 			return nil, fmt.Errorf("scan change: %w", err)
 		}
 		list = append(list, m)

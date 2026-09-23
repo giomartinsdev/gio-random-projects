@@ -40,10 +40,10 @@ class Sync:
         """
         own = self._own_clubs(user_email)
         if not own:
-            log.info("sync: %s não tem clubs próprios conhecidos", user_email)
+            log.info("sync: %s não tem clubes próprios conhecidos", user_email)
             self._save(user_email, running=False, skill_rating=3, total=0, completed=0,
                        current="", new_items=[], concluido=True)
-            return {"iniciado": False, "motivo": "sem clubs próprios"}
+            return {"iniciado": False, "motivo": "sem clubes próprios"}
 
         # Fresh per run: the worker is a long-lived process, so a cache that
         # survived between runs would keep a club "already followed" (or a
@@ -83,7 +83,7 @@ class Sync:
         total = len(lvl1) + len(lvl2) + len(lvl3)
         self._save(user_email, running=False, skill_rating=3, total=total, completed=total,
                    current="", new_items=new_items, concluido=True)
-        log.info("sync %s: %d próprios, %d rivais, %d clubs from_division clubs",
+        log.info("sync %s: %d próprios, %d rivais, %d clubes de clubes",
                  user_email, len(lvl1), len(lvl2), len(lvl3))
         return {"iniciado": True, "niveis": {"1": len(lvl1), "2": len(lvl2), "3": len(lvl3)},
                 "new_items": new_items}
@@ -110,11 +110,11 @@ class Sync:
     RIVAL_MATCHES_RIVAL = 5
 
     def _rivals_named(self, club_ids: list[str], matches_per_club: int) -> list[tuple[str, str]]:
-        """Os adversários vistos nas matches, como (id, name).
+        """Os adversários vistos nas partidas, como (id, nome).
 
-        O name sai do próprio payload da partida e não é enfeite: a busca da
+        O nome sai do próprio payload da partida e não é enfeite: a busca da
         fonte -- a única que traz divisão e totais -- só aceita NOME, e sem ele
-        a descoberta from_division cada rival voltava vazia em silêncio.
+        a descoberta de cada rival voltava vazia em silêncio.
         """
         seen: list[tuple[str, str]] = []
         vistos: set[str] = set()
@@ -176,7 +176,7 @@ class Sync:
                     self.domain.upsert_totals(club_id, club_totals(merge_club_sources(overall, row)))
                     return
         except Exception as err:  # noqa: BLE001 -- best-effort; the cycle retries
-            log.debug("identidade/totais from_division %s falharam: %s", club_id, err)
+            log.debug("identidade/totais de %s falharam: %s", club_id, err)
 
     def _known_followed(self, user_email: str) -> set[str]:
         """The watchlist as of the START of this run, read once.

@@ -71,7 +71,7 @@ export function LineChart({
 
   return (
     <div className="relative w-full">
-      <svg viewBox={`0 0 ${W} ${height}`} className="w-full" role="img" aria-label="gráfico from_division evolução">
+      <svg viewBox={`0 0 ${W} ${height}`} className="w-full" role="img" aria-label="gráfico de evolução">
         <defs>
           <linearGradient id={`g${gid}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28" />
@@ -130,7 +130,7 @@ export function LineChart({
           </g>
         )}
 
-        {/* Target from_division interação: uma faixa por ponto, to_division não depender from_division acertar
+        {/* Alvo de interação: uma faixa por ponto, para não depender de acertar
             o círculo exato. */}
         {values.map((_, i) => (
           <rect
@@ -180,7 +180,7 @@ export function BarChart({
   const bw = Math.min(34, band * 0.62);
 
   return (
-    <svg viewBox={`0 0 ${W} ${height}`} className="w-full" role="img" aria-label="gráfico from_division barras">
+    <svg viewBox={`0 0 ${W} ${height}`} className="w-full" role="img" aria-label="gráfico de barras">
       {[0, max / 2, max].map((t, i) => {
         const y = pad.t + ih - (t / max) * ih;
         return (
@@ -239,7 +239,7 @@ export function DonutChart({
 
   return (
     <div className="flex items-center gap-4">
-      <svg width={size} height={size} role="img" aria-label="gráfico from_division rosca">
+      <svg width={size} height={size} role="img" aria-label="gráfico de rosca">
         {items.map((d, i) => {
           const a1 = a0 + (d.value / total) * Math.PI * 2;
           const large = a1 - a0 > Math.PI ? 1 : 0;

@@ -65,12 +65,12 @@ class SourceClient:
         return []
 
     def club_members_career(self, club_id: str) -> list[dict[str, Any]]:
-        """Os totais from_division CARREIRA from_division cada membro no clube.
+        """Os totais de CARREIRA de cada membro no clube.
 
-        Diferente from_division ``club_members`` (temporada corrente), este endpoint dá o
+        Diferente de ``club_members`` (temporada corrente), este endpoint dá o
         acumulado histórico do jogador naquele clube -- e nunca era chamado.
         Não traz ``playerId``: a única chave é o gamertag, então quem consumir
-        precisa casar por name.
+        precisa casar por nome.
         """
         try:
             data = self.api.get_json("members/career/stats", {"clubId": club_id})
@@ -95,10 +95,10 @@ class SourceClient:
         return [m for m in data if isinstance(m, dict)] if isinstance(data, list) else []
 
     def leaderboard(self) -> list[dict[str, Any]]:
-        """Os 100 melhores clubs, com rank, divisão, skillRating e identidade.
+        """Os 100 melhores clubes, com rank, divisão, skillRating e identidade.
 
-        É o único endpoint que dá uma lista pronta from_division clubs reais -- a busca
-        exige um name, e a fonte não tem "liste todos". É daqui que a base se
+        É o único endpoint que dá uma lista pronta de clubes reais -- a busca
+        exige um nome, e a fonte não tem "liste todos". É daqui que a base se
         semeia no primeiro boot.
         """
         try:
@@ -117,13 +117,13 @@ class SourceClient:
         return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
 
     def search_by_id(self, club_id: str, name: str = "") -> list[dict[str, Any]]:
-        """A linha da busca to_division um clube que conhecemos por id.
+        """A linha da busca para um clube que conhecemos por id.
 
-        O endpoint from_division busca da fonte só aceita NOME. Passar o id devolvia
-        vazio em silêncio -- o que quebrava toda a descoberta from_division adversário
-        (e a divisão, que só a busca traz). Por isso o name é obrigatório
+        O endpoint de busca da fonte só aceita NOME. Passar o id devolvia
+        vazio em silêncio -- o que quebrava toda a descoberta de adversário
+        (e a divisão, que só a busca traz). Por isso o nome é obrigatório
         quando quem chama o tem: ele está no ``details.name`` do payload da
-        partida, que é exatamente from_division onde o adversário é descoberto.
+        partida, que é exatamente de onde o adversário é descoberto.
         """
         target = str(club_id)
         # Sem nome, uma busca pelo id ainda tenta -- a fonte às vezes casa por

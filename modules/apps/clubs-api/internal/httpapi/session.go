@@ -84,11 +84,11 @@ func (s *Server) identidadeFromSession(r *http.Request) (Identity, error) {
 		return Identity{}, errors.New("sessão ausente")
 	}
 	if s.sessionSecret == "" {
-		return Identity{}, errors.New("validação from_division sessão indisponível (CLUBS_SESSION_SECRET não configurado)")
+		return Identity{}, errors.New("validação de sessão indisponível (CLUBS_SESSION_SECRET não configurado)")
 	}
 	parsed, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("método from_division assinatura inesperado")
+			return nil, errors.New("método de assinatura inesperado")
 		}
 		return []byte(s.sessionSecret), nil
 	}, jwt.WithValidMethods([]string{"HS256"}))

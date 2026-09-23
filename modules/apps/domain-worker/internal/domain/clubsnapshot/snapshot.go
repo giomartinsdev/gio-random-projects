@@ -51,8 +51,8 @@ type MudancaDivisao struct {
 	ID           string
 	ClubID       string
 	DetectedAt  time.Time
-	FromDivision           int
-	ToDivision         int
+	PreviousDivision           int
+	NewDivision         int
 	Kind         string
 }
 
@@ -71,8 +71,8 @@ func Diff(prev, cur Snapshot) *MudancaDivisao {
 	return &MudancaDivisao{
 		ClubID:      cur.ClubID,
 		DetectedAt: cur.ReadAt,
-		FromDivision:          prev.DivisionAtRead,
-		ToDivision:        cur.DivisionAtRead,
+		PreviousDivision:          prev.DivisionAtRead,
+		NewDivision:        cur.DivisionAtRead,
 		Kind:        kind,
 	}
 }

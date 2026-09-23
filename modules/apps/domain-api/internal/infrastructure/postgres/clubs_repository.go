@@ -862,7 +862,7 @@ func (r *ClubsRepository) LatestSnapshot(ctx context.Context, clubID string) (*d
 
 func (r *ClubsRepository) DivisionChanges(ctx context.Context, clubID string) ([]domainclubs.DivisionChange, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT detected_at, from_division, to_division, kind FROM clubs_division_changes
+		SELECT detected_at, previous_division, new_division, kind FROM clubs_division_changes
 		WHERE club_id = $1 ORDER BY detected_at DESC`, clubID)
 	if err != nil {
 		return nil, fmt.Errorf("division changes: %w", err)
@@ -872,7 +872,7 @@ func (r *ClubsRepository) DivisionChanges(ctx context.Context, clubID string) ([
 	var list []domainclubs.DivisionChange
 	for rows.Next() {
 		var c domainclubs.DivisionChange
-		if err := rows.Scan(&c.DetectedAt, &c.FromDivision, &c.ToDivision, &c.Kind); err != nil {
+		if err := rows.Scan(&c.DetectedAt, &c.PreviousDivision, &c.NewDivision, &c.Kind); err != nil {
 			return nil, fmt.Errorf("scan change: %w", err)
 		}
 		list = append(list, c)

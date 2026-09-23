@@ -315,7 +315,7 @@ func TestGetFetchRunDefaultsToNotStarted(t *testing.T) {
 // um jogador. O id nunca é confundido com um tipo.
 func TestFetchRunReadsTheTargetFromThePath(t *testing.T) {
 	repo := &stubClubs{}
-	clubsRouter(repo) // só to_division garantir que a rota existe
+	clubsRouter(repo) // só para garantir que a rota existe
 	getJSON(t, clubsRouter(repo), "/clubs/141881/fetch-run")
 	if repo.lastAlvo != domainclubs.AlvoClube || repo.lastAlvoID != "141881" {
 		t.Fatalf("clube: got (%q,%q); want (clube,141881)", repo.lastAlvo, repo.lastAlvoID)

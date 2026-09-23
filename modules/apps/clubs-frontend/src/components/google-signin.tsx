@@ -34,7 +34,7 @@ export function GoogleSignInButton({ onSuccess }: { onSuccess?: () => void }) {
               onSuccess?.();
             } catch {
               if (alive) {
-                setErro("Não conseguimos entrar com essa conta. Tente from_division novo.");
+                setErro("Não conseguimos entrar com essa conta. Tente de novo.");
                 setEntrando(false);
               }
             }

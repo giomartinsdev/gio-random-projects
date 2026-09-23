@@ -305,8 +305,8 @@ type Snapshot struct {
 // DivisionChange is a dated promotion or relegation.
 type DivisionChange struct {
 	DetectedAt time.Time `json:"detected_at"`
-	FromDivision          int       `json:"from_division"`
-	ToDivision        int       `json:"to_division"`
+	PreviousDivision          int       `json:"previous_division"`
+	NewDivision        int       `json:"new_division"`
 	Kind        string    `json:"kind"`
 }
 

@@ -1,10 +1,10 @@
 """As filas interativas: o clique vira trabalho, e o pedido SEMPRE fecha.
 
-O contrato que a tela from_division resgate depende:
+O contrato que a tela de resgate depende:
 
 - um pedido na fila é processado (o elenco é buscado);
 - a linha é FECHADA depois -- inclusive quando a busca falha. Sem isso o
-  pedido voltaria em todo tick e a tela ficaria "buscando" to_division sempre;
+  pedido voltaria em todo tick e a tela ficaria "buscando" para sempre;
 - um clube que falha não impede os outros: cada um tem seu próprio error.
 """
 
@@ -70,29 +70,29 @@ def test_fetch_queue_processes_and_closes_the_row():
 
 def test_jogador_target_updates_his_clubs_not_a_club_fetch():
     """Syncar jogador é atualizar as matches dos clubs dele: a fonte não tem
-    endpoint from_division jogador. O despacho não pode cair no caminho from_division clube."""
+    endpoint de jogador. O despacho não pode cair no caminho de clube."""
     domain = FakeDomain(pendentes=[{"target": "jogador", "target_id": "p1"}])
     ingest = FakeIngest()
 
     feitos = drain_fetch_queue(domain, ingest)
 
     assert feitos == 1
-    assert ingest.called_jogador == ["p1"], "o target jogador tem o seu próprio caminho"
-    assert ingest.called == [], "e não passa pelo fetch from_division clube"
+    assert ingest.called_jogador == ["p1"], "o alvo jogador tem o seu próprio caminho"
+    assert ingest.called == [], "e não passa pelo fetch de clube"
     assert domain.saved[0]["target"] == "jogador"
-    assert domain.saved[0]["clubs"] == 4, "a contagem from_division clubs volta to_division a tela"
+    assert domain.saved[0]["clubs"] == 4, "a contagem de clubes volta para a tela"
 
 
 def test_fetch_failure_still_closes_the_row():
-    """O caso que deixaria a tela presa: se a linha não fechasse no error, o
-    pedido voltaria em todo tick e a SPA pollaria "buscando" to_division sempre."""
+    """O caso que deixaria a tela presa: se a linha não fechasse no erro, o
+    pedido voltaria em todo tick e a SPA pollaria "buscando" para sempre."""
     domain = FakeDomain(pendentes=[{"target": "clube", "target_id": "ruim"}])
     ingest = FakeIngest(fail_on={"ruim"})
 
     feitos = drain_fetch_queue(domain, ingest)
 
     assert feitos == 0
-    assert domain.saved, "a linha precisa ser fechada mesmo no error"
+    assert domain.saved, "a linha precisa ser fechada mesmo no erro"
     assert domain.saved[0]["concluido"] is True
     assert domain.saved[0]["running"] is False
     assert "a fonte bloqueou" in domain.saved[0]["error"]
@@ -110,7 +110,7 @@ def test_one_bad_club_does_not_stop_the_others():
     assert set(ingest.called) == {"ruim", "bom"}, "o bom precisa ser tentado"
     por_alvo = {s["target_id"]: s for s in domain.saved}
     assert por_alvo["bom"]["concluido"] is True
-    assert not por_alvo["bom"].get("error"), "o clube bom fecha sem error"
+    assert not por_alvo["bom"].get("error"), "o clube bom fecha sem erro"
 
 
 def test_empty_fetch_queue_is_a_noop():
@@ -120,8 +120,8 @@ def test_empty_fetch_queue_is_a_noop():
 
 
 def test_a_broken_queue_does_not_crash_the_loop():
-    """Se a domain-api estiver away, a leitura da fila falha -- e o worker
-    precisa seguir alive to_division o próximo tick."""
+    """Se a domain-api estiver fora, a leitura da fila falha -- e o worker
+    precisa seguir vivo para o próximo tick."""
     class BrokenDomain(FakeDomain):
         def list_pending_fetches(self):
             raise RuntimeError("domain-api away")
@@ -184,7 +184,7 @@ def _serch_hit(club_id, name):
 
 def test_search_queue_queries_source_and_writes_clubs():
     """O caso que a busca local não cobre: um clube que o hub nunca viu. O
-    termo vai na fonte, os clubs achados entram na base, e a linha fecha."""
+    termo vai na fonte, os clubes achados entram na base, e a linha fecha."""
     from clubs_ingest.queues import drain_search_queue
 
     achados = []
@@ -217,7 +217,7 @@ def test_search_queue_queries_source_and_writes_clubs():
 
 def test_search_does_not_follow_the_clubs_it_finds():
     """A busca só APRESENTA candidatos -- acompanhar é decisão do resgate. Se a
-    busca acompanhasse, digitar um name mudaria a lista from_division clubs do hub."""
+    busca acompanhasse, digitar um nome mudaria a lista de clubes do hub."""
     from clubs_ingest.queues import drain_search_queue
 
     achados = []

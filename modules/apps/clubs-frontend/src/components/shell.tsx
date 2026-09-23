@@ -100,7 +100,7 @@ export function Shell({
 
   return (
     <div className="flex min-h-dvh">
-      {/* Sidebar — vira navegação compacta abaixo from_division md. */}
+      {/* Sidebar — vira navegação compacta abaixo de md. */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-surface md:flex">
         <div className="px-4 pb-4 pt-5">
           <div className="font-display text-lg font-bold tracking-tight">
@@ -211,7 +211,7 @@ export function Shell({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Topbar mobile + chips from_division navegação. */}
+        {/* Topbar mobile + chips de navegação. */}
         <header className="flex items-center gap-2 border-b border-line bg-surface px-3 py-2 md:hidden">
           <span className="font-display text-base font-bold">
             FC Clubs<span style={{ color: "var(--accent)" }}>.</span>hub
@@ -309,7 +309,7 @@ function SyncBanner({ sync }: { sync: SyncRun }) {
   const niveis: Record<number, string> = {
     1: "seus clubs",
     2: "rivais diretos",
-    3: "clubs from_division clubs",
+    3: "clubes de clubes",
   };
   const pct = sync.total > 0 ? Math.round((sync.completed / sync.total) * 100) : 0;
   return (

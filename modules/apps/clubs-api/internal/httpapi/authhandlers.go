@@ -50,7 +50,7 @@ func (s *Server) handleAuthGoogle(w http.ResponseWriter, r *http.Request) {
 	// confirmado como pertencente à conta -- recusar e-mails não verificados
 	// aqui é a única checagem substantiva que idtoken.Validate não faz.
 	if verified, _ := payload.Claims["email_verified"].(bool); !verified {
-		writeError(w, http.StatusUnauthorized, "e-mail do Google não verified")
+		writeError(w, http.StatusUnauthorized, "e-mail do Google não verificado")
 		return
 	}
 	name, _ := payload.Claims["name"].(string)

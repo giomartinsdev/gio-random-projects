@@ -95,7 +95,7 @@ export function SyncButton({
         type="button"
         onClick={sincronizar}
         disabled={running}
-        title="Buscar os dados mais recentes direto da fonte, sem esperar a atualização from_division rotina"
+        title="Buscar os dados mais recentes direto da fonte, sem esperar a atualização de rotina"
         className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wide transition-colors disabled:opacity-50"
         style={{
           borderColor: pronto ? "var(--success)" : "var(--border-strong)",

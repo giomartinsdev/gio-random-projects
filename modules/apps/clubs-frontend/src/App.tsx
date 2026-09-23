@@ -116,7 +116,7 @@ export default function App() {
         await api.setWatch(clubId, seguindo);
         loadWatch();
       } catch {
-        loadWatch(); // reverte to_division o estado do servidor
+        loadWatch(); // reverte para o estado do servidor
       }
     },
     [authed, isWatched, loadWatch],
@@ -149,7 +149,7 @@ export default function App() {
         loadWatch();
         startSync();
       } catch {
-        loadClaimed(); // reverte to_division o estado do servidor
+        loadClaimed(); // reverte para o estado do servidor
         throw new Error("claim failed");
       }
     },

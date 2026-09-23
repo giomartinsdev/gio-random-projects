@@ -152,7 +152,7 @@ def obj(parent: Any, key: str) -> dict[str, Any]:
     clube inteiro no ciclo, logado apenas como "'NoneType' object has no
     attribute 'get'", sem dizer onde.
 
-    Este helper é o único lugar que trata isso, to_division o padrão não voltar
+    Este helper é o único lugar que trata isso, para o padrão não voltar
     espalhado em cada leitura aninhada.
     """
     if not isinstance(parent, dict):
@@ -177,7 +177,7 @@ def position(raw: Any) -> str:
 
 
 def describe_unknown_position(raw: Any) -> str | None:
-    """Return the raw value when it is NOT in our from_division-to_division table, so the worker
+    """Return the raw value when it is NOT in our de-para table, so the worker
     can log it and the table can grow. ``None`` when we recognized it."""
     if raw is None or raw == "":
         return None
@@ -440,7 +440,7 @@ def club_identity(details: dict[str, Any]) -> dict[str, Any]:
 
 
 def merge_club_sources(*fontes: dict[str, Any] | None) -> dict[str, Any]:
-    """Funde as leituras from_division um clube numa só, sem deixar o vazio vencer.
+    """Funde as leituras de um clube numa só, sem deixar o vazio vencer.
 
     Nenhuma fonte sozinha tem o conjunto completo, e é isso que fazia todo
     clube aparecer como D0: o ``overallStats`` traz nível, vitórias e a streaks,
@@ -448,11 +448,11 @@ def merge_club_sources(*fontes: dict[str, Any] | None) -> dict[str, Any]:
     clean sheets, mas não trazem nível. O ciclo usava só o overall -- então
     ``currentDivision`` vinha sempre vazio e virava 0.
 
-    A fusão ignora valores ausentes em vez from_division sobrescrever com eles: a fonte
+    A fusão ignora valores ausentes em vez de sobrescrever com eles: a fonte
     manda campos presentes e vazios (``None``, ``""``) com frequência, e deixar
     o vazio vencer apagaria justamente o dado que a outra fonte trouxe.
 
-    A ordem importa to_division os campos presentes nas duas: a última fonte vence.
+    A ordem importa para os campos presentes nas duas: a última fonte vence.
     """
     merged: dict[str, Any] = {}
     for fonte in fontes:
@@ -464,10 +464,10 @@ def merge_club_sources(*fontes: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def career_line(row: dict[str, Any], club_id: str) -> dict[str, Any] | None:
-    """Uma linha from_division totais from_division CARREIRA, no shape from_division ``CareerInput``.
+    """Uma linha de totais de CARREIRA, no shape de ``CareerInput``.
 
     O endpoint ``members/career/stats`` não traz ``playerId`` -- a única chave
-    é o gamertag. Sem name, não há como casar com o perfil, então a linha é
+    é o gamertag. Sem nome, não há como casar com o perfil, então a linha é
     descartada: gravar por gamertag vazio criaria um jogador fantasma.
     """
     name = str(row.get("name") or "").strip()
@@ -612,10 +612,10 @@ def match_payload(match: dict[str, Any], club_id: str) -> dict[str, Any] | None:
 def player_line_opt(stats: dict[str, Any] | None, club_id: str, player_id: str) -> dict[str, Any] | None:
     """``player_line`` tolerante a estatística ausente.
 
-    A fonte manda ``null`` no lugar das estatísticas from_division um jogador em algumas
-    matches -- provavelmente alguém que saiu antes do apito. Deixar isso
+    A fonte manda ``null`` no lugar das estatísticas de um jogador em algumas
+    partidas -- provavelmente alguém que saiu antes do apito. Deixar isso
     estourar derrubava o clube INTEIRO no ciclo (sem identidade, totais,
-    matches nem snapshot), e o error só aparecia como um AttributeError seco no
+    partidas nem snapshot), e o erro só aparecia como um AttributeError seco no
     log. Um jogador sem dados é um jogador pulado, não uma partida perdida.
     """
     if not isinstance(stats, dict):
@@ -631,14 +631,14 @@ def opponent_club_id(match: dict[str, Any], club_id: str) -> str | None:
 
 
 def opponent_club(match: dict[str, Any], club_id: str) -> tuple[str, str] | None:
-    """O adversário como (id, name).
+    """O adversário como (id, nome).
 
-    O name não é enfeite: a busca da fonte -- a única que traz divisão e os
+    O nome não é enfeite: a busca da fonte -- a única que traz divisão e os
     totais -- só aceita NOME. Descobrir o adversário sem ele deixava a
-    descoberta vazia em silêncio. O name vive no ``details.name`` do próprio
-    payload da partida, então vem from_division graça junto do id.
+    descoberta vazia em silêncio. O nome vive no ``details.name`` do próprio
+    payload da partida, então vem de graça junto do id.
 
-    Devolve None quando o clube pedido não está na partida: dizer "o outro" from_division
+    Devolve None quando o clube pedido não está na partida: dizer "o outro" de
     um clube ausente escolheria um lado arbitrário, e a descoberta gravaria o
     clube errado.
     """

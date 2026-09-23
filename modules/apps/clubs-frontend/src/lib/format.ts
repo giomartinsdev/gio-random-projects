@@ -141,7 +141,7 @@ export const EVENT_LABEL: Record<string, string> = {
   chute: "Shots",
   chute_no_gol: "Shots no gol",
   desarme: "Desarmes",
-  acao_goleiro: "Ações from_division goalkeeper",
+  acao_goleiro: "Ações de goleiro",
   movimentacao: "Movimentação",
-  inicio_periodo: "Início from_division período",
+  inicio_periodo: "Início de período",
 };
