@@ -27,7 +27,7 @@ import (
 // vai em usuario_email na base de domínio); Nome é só exibição.
 type Identity struct {
 	Email string
-	Nome  string
+	Name  string
 }
 
 type identityContextKey struct{}
@@ -56,7 +56,7 @@ func (s *Server) verify(r *http.Request) (Identity, error) {
 		return id, nil
 	}
 	if s.devEmail != "" {
-		return Identity{Email: s.devEmail, Nome: emailLocal(s.devEmail)}, nil
+		return Identity{Email: s.devEmail, Name: emailLocal(s.devEmail)}, nil
 	}
 	return Identity{}, errors.New("não autenticado")
 }

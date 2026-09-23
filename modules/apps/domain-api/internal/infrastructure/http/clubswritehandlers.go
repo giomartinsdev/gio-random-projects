@@ -122,8 +122,8 @@ func (h *ClubsWriteHandlers) SetWatch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
-	if in.UsuarioEmail == "" || in.ClubID == "" {
-		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "usuario_email and club_id are required"})
+	if in.UserEmail == "" || in.ClubID == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "user_email and club_id are required"})
 		return
 	}
 	h.publish(w, r, application.ActionSetWatch, in)
@@ -135,8 +135,8 @@ func (h *ClubsWriteHandlers) SaveNotifications(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
-	if in.UsuarioEmail == "" {
-		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "usuario_email is required"})
+	if in.UserEmail == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "user_email is required"})
 		return
 	}
 	h.publish(w, r, application.ActionSaveNotify, in)
@@ -148,8 +148,8 @@ func (h *ClubsWriteHandlers) ClaimPro(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
-	if in.UsuarioEmail == "" || in.PlayerID == "" {
-		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "usuario_email and player_id are required"})
+	if in.UserEmail == "" || in.PlayerID == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "user_email and player_id are required"})
 		return
 	}
 	h.publish(w, r, application.ActionClaimPro, in)
@@ -161,8 +161,8 @@ func (h *ClubsWriteHandlers) SaveSyncRun(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
-	if in.UsuarioEmail == "" {
-		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "usuario_email is required"})
+	if in.UserEmail == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "user_email is required"})
 		return
 	}
 	h.publish(w, r, application.ActionSaveSyncRun, in)
@@ -180,12 +180,12 @@ func (h *ClubsWriteHandlers) RequestFetch(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
-	in.Alvo, in.AlvoID = alvoDoPath(r)
-	if in.AlvoID == "" {
+	in.Target, in.TargetID = alvoDoPath(r)
+	if in.TargetID == "" {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "id is required"})
 		return
 	}
-	in.Rodando = true
+	in.Running = true
 	h.publish(w, r, application.ActionRequestFetch, in)
 }
 
@@ -197,12 +197,12 @@ func (h *ClubsWriteHandlers) SaveFetchRun(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
-	if in.AlvoID == "" {
-		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "alvo_id is required"})
+	if in.TargetID == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "target_id is required"})
 		return
 	}
-	if in.Alvo == "" {
-		in.Alvo = domainclubs.AlvoClube
+	if in.Target == "" {
+		in.Target = domainclubs.AlvoClube
 	}
 	h.publish(w, r, application.ActionSaveFetch, in)
 }
@@ -220,7 +220,7 @@ func (h *ClubsWriteHandlers) RequestSearch(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "termo is required (min 2 chars)"})
 		return
 	}
-	in.Rodando = true
+	in.Running = true
 	h.publish(w, r, application.ActionRequestSearch, in)
 }
 

@@ -5,10 +5,10 @@ Two production bugs are pinned here, both silent (the sync "succeeded" and
 nothing appeared):
 
 1. `_follow` wrote a club's totals but never its identity, so the club never
-   became `acompanhado` and the cycle -- which lists only followed clubs --
+   became `tracked` and the cycle -- which lists only followed clubs --
    never fetched its squad or matches. The club sat at "totals only" forever.
 2. A claimed pro never became a followed club, so `_own_clubs` (which reads
-   the watchlist's "proprio" entries) started from an empty set and the whole
+   the watchlist's "own" entries) started from an empty set and the whole
    three-level discovery was a no-op.
 
 The fakes record what the sync asked domain-api to write, which is exactly the
@@ -57,7 +57,7 @@ class FakeDomain:
     def sync(self, action, payload):
         if action == "preferencia.setWatch":
             self.watches.append(payload)
-            self._watch.append({"club_id": payload["club_id"], "origem": payload["origem"]})
+            self._watch.append({"club_id": payload["club_id"], "source": payload["source"]})
         elif action == "club.upsert":
             self.clubs.append(payload)
         elif action == "clubetotais.upsert":
@@ -100,9 +100,9 @@ def new_sync(source, domain):
 
 def test_claimed_club_is_the_starting_point():
     """The person claimed a pro at club 1001; that club's watchlist entry has
-    origem "proprio" (written by the claim itself, in domain-worker), so the
+    source "own" (written by the claim itself, in domain-worker), so the
     sync must start there instead of falling back to an empty watchlist."""
-    domain = FakeDomain(watch=[{"club_id": "1001", "origem": "proprio"}])
+    domain = FakeDomain(watch=[{"club_id": "1001", "source": "own"}])
     source = FakeSource(
         matches_by_club={"1001": [{"clubs": {"1001": {}, "2001": {}}}]},
         search_by_id={"1001": search_hit("1001"), "2001": search_hit("2001")},
@@ -114,7 +114,7 @@ def test_claimed_club_is_the_starting_point():
 
 
 def test_rival_of_the_claimed_club_is_discovered():
-    domain = FakeDomain(watch=[{"club_id": "1001", "origem": "proprio"}])
+    domain = FakeDomain(watch=[{"club_id": "1001", "source": "own"}])
     source = FakeSource(
         matches_by_club={"1001": [{"clubs": {"1001": {}, "2001": {}}}]},
         search_by_id={"1001": search_hit("1001"), "2001": search_hit("2001")},
@@ -123,7 +123,7 @@ def test_rival_of_the_claimed_club_is_discovered():
 
     # 1001 is already followed as "proprio" (the claim wrote it), so no
     # re-follow write; the rival 2001 is the new follow.
-    followed = {w["club_id"]: w["origem"] for w in domain.watches}
+    followed = {w["club_id"]: w["source"] for w in domain.watches}
     assert "1001" not in followed, "clube já seguido não é re-seguido"
     assert followed.get("2001") == "rival", "o adversário entra como rival direto"
 
@@ -132,9 +132,9 @@ def test_rival_of_the_claimed_club_is_discovered():
 
 def test_followed_club_gets_its_identity_written():
     """The crux: a club with totals but no `club.upsert` never becomes
-    `acompanhado`, so the cycle -- which lists acompanhado == true -- skips it
+    `tracked`, so the cycle -- which lists tracked == true -- skips it
     and the club never gets squad or matches."""
-    domain = FakeDomain(watch=[{"club_id": "1001", "origem": "proprio"}])
+    domain = FakeDomain(watch=[{"club_id": "1001", "source": "own"}])
     source = FakeSource(
         matches_by_club={},
         search_by_id={"1001": search_hit("1001")},
@@ -142,15 +142,15 @@ def test_followed_club_gets_its_identity_written():
     new_sync(source, domain).run("me@test")
 
     written = {c["club_id"]: c for c in domain.clubs}
-    assert "1001" in written, "o clube seguido precisa de club.upsert"
-    assert written["1001"]["acompanhado"] is True, "...e com acompanhado=true"
+    assert "1001" in written, "o clube seguido precisa from_division club.upsert"
+    assert written["1001"]["tracked"] is True, "...e com tracked=true"
     # The identity must carry the nested clubInfo fields, not just an id.
-    assert written["1001"]["nome"] == "Club 1001"
-    assert written["1001"]["estadio"] == "Stadium"
+    assert written["1001"]["name"] == "Club 1001"
+    assert written["1001"]["stadium"] == "Stadium"
 
 
 def test_followed_club_also_gets_totals_written():
-    domain = FakeDomain(watch=[{"club_id": "1001", "origem": "proprio"}])
+    domain = FakeDomain(watch=[{"club_id": "1001", "source": "own"}])
     source = FakeSource(matches_by_club={}, search_by_id={"1001": search_hit("1001")})
     new_sync(source, domain).run("me@test")
 
@@ -161,7 +161,7 @@ def test_followed_club_also_gets_totals_written():
 
 def test_person_with_no_clubs_closes_the_run_cleanly():
     """No claimed pro and an empty watchlist: the run must close (not stay
-    `rodando` forever), or the SPA's indicator spins and the queue keeps
+    `running` forever), or the SPA's indicator spins and the queue keeps
     handing the same request back."""
     domain = FakeDomain(watch=[])
     out = new_sync(FakeSource(), domain).run("me@test")
@@ -169,13 +169,13 @@ def test_person_with_no_clubs_closes_the_run_cleanly():
     assert out["iniciado"] is False
     assert domain.statuses, "o pedido precisa ser fechado"
     assert domain.statuses[-1]["concluido"] is True
-    assert domain.statuses[-1]["rodando"] is False
+    assert domain.statuses[-1]["running"] is False
 
 
 def test_a_club_already_followed_is_not_re_followed():
     """Idempotency: a second sync must not re-issue the follow write for a club
     already on the watchlist."""
-    domain = FakeDomain(watch=[{"club_id": "1001", "origem": "proprio"}])
+    domain = FakeDomain(watch=[{"club_id": "1001", "source": "own"}])
     source = FakeSource(matches_by_club={}, search_by_id={"1001": search_hit("1001")})
     sync = new_sync(source, domain)
     sync.run("me@test")
@@ -202,12 +202,12 @@ class CountingSource(FakeSource):
 
 
 def test_own_club_is_asked_for_ten_matches():
-    """Nível 1 -> nível 2 sai das últimas 10 partidas do clube da pessoa."""
+    """Nível 1 -> nível 2 sai das últimas 10 matches do clube da pessoa."""
     source = CountingSource(
         matches_by_club={"1001": [{"clubs": {"1001": {}, "2001": {}}}]},
         search_by_id={"1001": search_hit("1001"), "2001": search_hit("2001")},
     )
-    domain = FakeDomain(watch=[{"club_id": "1001", "origem": "proprio"}])
+    domain = FakeDomain(watch=[{"club_id": "1001", "source": "own"}])
     new_sync(source, domain).run("me@test")
 
     asked_of_own = [c for (cid, c) in source.asked if cid == "1001"]
@@ -216,7 +216,7 @@ def test_own_club_is_asked_for_ten_matches():
 
 def test_rival_is_asked_for_five_matches_not_ten():
     """Nível 2 -> nível 3 usa 5 por rival: 10 rivais × 5 = 50 consultas, contra
-    100 se fosse 10 em cada. É o freio que impede o crawl de explodir o CDN."""
+    100 se fosse 10 em cada. É o freio que impede o crawl from_division explodir o CDN."""
     source = CountingSource(
         matches_by_club={
             "1001": [{"clubs": {"1001": {}, "2001": {}}}],
@@ -224,7 +224,7 @@ def test_rival_is_asked_for_five_matches_not_ten():
         },
         search_by_id={"1001": search_hit("1001"), "2001": search_hit("2001"), "3001": search_hit("3001")},
     )
-    domain = FakeDomain(watch=[{"club_id": "1001", "origem": "proprio"}])
+    domain = FakeDomain(watch=[{"club_id": "1001", "source": "own"}])
     new_sync(source, domain).run("me@test")
 
     asked_of_rival = [c for (cid, c) in source.asked if cid == "2001"]
@@ -244,7 +244,7 @@ def test_level3_never_re_asks_a_level1_or_level2_club():
         },
         search_by_id={"1001": search_hit("1001"), "2001": search_hit("2001"), "3001": search_hit("3001")},
     )
-    domain = FakeDomain(watch=[{"club_id": "1001", "origem": "proprio"}])
+    domain = FakeDomain(watch=[{"club_id": "1001", "source": "own"}])
     out = new_sync(source, domain).run("me@test")
 
     followed = [w["club_id"] for w in domain.watches]

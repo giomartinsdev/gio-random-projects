@@ -71,7 +71,7 @@ export function LineChart({
 
   return (
     <div className="relative w-full">
-      <svg viewBox={`0 0 ${W} ${height}`} className="w-full" role="img" aria-label="gráfico de evolução">
+      <svg viewBox={`0 0 ${W} ${height}`} className="w-full" role="img" aria-label="gráfico from_division evolução">
         <defs>
           <linearGradient id={`g${gid}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28" />
@@ -130,7 +130,7 @@ export function LineChart({
           </g>
         )}
 
-        {/* Alvo de interação: uma faixa por ponto, para não depender de acertar
+        {/* Target from_division interação: uma faixa por ponto, to_division não depender from_division acertar
             o círculo exato. */}
         {values.map((_, i) => (
           <rect
@@ -180,7 +180,7 @@ export function BarChart({
   const bw = Math.min(34, band * 0.62);
 
   return (
-    <svg viewBox={`0 0 ${W} ${height}`} className="w-full" role="img" aria-label="gráfico de barras">
+    <svg viewBox={`0 0 ${W} ${height}`} className="w-full" role="img" aria-label="gráfico from_division barras">
       {[0, max / 2, max].map((t, i) => {
         const y = pad.t + ih - (t / max) * ih;
         return (
@@ -239,7 +239,7 @@ export function DonutChart({
 
   return (
     <div className="flex items-center gap-4">
-      <svg width={size} height={size} role="img" aria-label="gráfico de rosca">
+      <svg width={size} height={size} role="img" aria-label="gráfico from_division rosca">
         {items.map((d, i) => {
           const a1 = a0 + (d.value / total) * Math.PI * 2;
           const large = a1 - a0 > Math.PI ? 1 : 0;
@@ -365,19 +365,19 @@ export function DivisionSteps({ snapshots }: { snapshots: Snapshot[] }) {
   if (snapshots.length < 2) {
     return <div className="px-4 py-8 text-center text-sm text-muted">o histórico cresce a cada atualização</div>;
   }
-  const changes: Array<{ at: string; divisao: number }> = [];
+  const changes: Array<{ at: string; division_at_read: number }> = [];
   for (const s of snapshots) {
-    if (!changes.length || changes[changes.length - 1].divisao !== s.divisao) {
-      changes.push({ at: s.lido_em, divisao: s.divisao });
+    if (!changes.length || changes[changes.length - 1].division_at_read !== s.division_at_read) {
+      changes.push({ at: s.read_at, division_at_read: s.division_at_read });
     }
   }
   return (
     <div className="flex flex-col gap-2 px-4 py-3">
       {snapshots.map((s, i) => (
         <div key={i} className="flex items-center gap-3 text-xs">
-          <span className="tnum w-24 shrink-0 font-mono text-[10px] text-faint">{fmtDate(s.lido_em)}</span>
-          <span className="tnum w-10 shrink-0 font-mono font-bold">D{s.divisao}</span>
-          <Bar value={8 - s.divisao} max={7} color="var(--accent-2)" />
+          <span className="tnum w-24 shrink-0 font-mono text-[10px] text-faint">{fmtDate(s.read_at)}</span>
+          <span className="tnum w-10 shrink-0 font-mono font-bold">D{s.division_at_read}</span>
+          <Bar value={8 - s.division_at_read} max={7} color="var(--accent-2)" />
         </div>
       ))}
     </div>

@@ -41,9 +41,9 @@ func (h *TransacaoHandlers) ListTransacoes(w http.ResponseWriter, r *http.Reques
 	conta := r.URL.Query().Get("conta")
 	categoria := r.URL.Query().Get("categoria")
 
-	de, err := parseOptionalDate(r.URL.Query().Get("de"))
+	from_division, err := parseOptionalDate(r.URL.Query().Get("from_division"))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody{Error: "de must be in YYYY-MM-DD format"})
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "from_division must be in YYYY-MM-DD format"})
 		return
 	}
 	ate, err := parseOptionalDate(r.URL.Query().Get("ate"))
@@ -52,7 +52,7 @@ func (h *TransacaoHandlers) ListTransacoes(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	transacoes, err := h.transacoes.ListByFiltro(r.Context(), usuario, conta, categoria, de, ate)
+	transacoes, err := h.transacoes.ListByFiltro(r.Context(), usuario, conta, categoria, from_division, ate)
 	if err != nil {
 		h.internalError(r, w, err)
 		return
@@ -77,8 +77,8 @@ func (h *TransacaoHandlers) CreateTransacao(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid request body"})
 		return
 	}
-	if input.UsuarioEmail == "" || input.ContaID == "" || input.Tipo == "" || input.Categoria == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody{Error: "usuario_email, conta_id, tipo and categoria are required"})
+	if input.UserEmail == "" || input.ContaID == "" || input.Kind == "" || input.Categoria == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "user_email, conta_id, kind and categoria are required"})
 		return
 	}
 	if input.Valor <= 0 {
@@ -99,8 +99,8 @@ func (h *TransacaoHandlers) UpdateTransacao(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	input.ID = chi.URLParam(r, "id")
-	if input.UsuarioEmail == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody{Error: "usuario_email is required"})
+	if input.UserEmail == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "user_email is required"})
 		return
 	}
 	if input.Valor < 0 {
@@ -117,8 +117,8 @@ func (h *TransacaoHandlers) DeleteTransacao(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	input.ID = chi.URLParam(r, "id")
-	if input.UsuarioEmail == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody{Error: "usuario_email is required"})
+	if input.UserEmail == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "user_email is required"})
 		return
 	}
 	h.publish(w, r, application.ActionDeleteTransacao, input)

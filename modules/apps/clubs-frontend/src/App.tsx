@@ -6,14 +6,14 @@ import { sair, useAuth, useSyncStatus, useTheme } from "./lib/hooks";
 import { api } from "./lib/api";
 import type { ClaimedPro, WatchEntry } from "./lib/types";
 import { HomePage } from "./pages/HomePage";
-import { ClubesPage } from "./pages/ClubesPage";
-import { ClubePage } from "./pages/ClubePage";
-import { PartidaPage } from "./pages/PartidaPage";
-import { JogadorPage } from "./pages/JogadorPage";
-import { JogadoresPage } from "./pages/JogadoresPage";
-import { MinhaAreaPage } from "./pages/MinhaAreaPage";
-import { ResgatarPage } from "./pages/ResgatarPage";
-import { NotificacoesPage } from "./pages/NotificacoesPage";
+import { ClubsPage } from "./pages/ClubsPage";
+import { ClubPage } from "./pages/ClubPage";
+import { MatchPage } from "./pages/MatchPage";
+import { PlayerPage } from "./pages/PlayerPage";
+import { PlayersPage } from "./pages/PlayersPage";
+import { MyAreaPage } from "./pages/MyAreaPage";
+import { ClaimPage } from "./pages/ClaimPage";
+import { NotificationsPage } from "./pages/NotificationsPage";
 import { AdminPage } from "./pages/AdminPage";
 
 /** Rotas ocultas (detalhe) também vivem no hash, para o link direto sobreviver
@@ -22,14 +22,14 @@ type View = { route: RouteId; param?: string };
 
 const ROUTE_PATHS: Record<RouteId, string> = {
   home: "",
-  clubes: "clubes",
-  clube: "clube",
-  partida: "partida",
-  jogador: "jogador",
-  jogadores: "jogadores",
-  resgatar: "resgatar",
-  "minha-area": "minha-area",
-  notificacoes: "notificacoes",
+  clubs: "clubs",
+  club: "club",
+  match: "match",
+  player: "player",
+  players: "players",
+  claim: "claim",
+  "my-area": "my-area",
+  notifications: "notifications",
   admin: "admin",
 };
 
@@ -39,9 +39,9 @@ function parseHash(): View {
   const params = new URLSearchParams(query ?? "");
   for (const [route, p] of Object.entries(ROUTE_PATHS) as Array<[RouteId, string]>) {
     if (p === path) {
-      if (route === "clube") return { route, param: params.get("id") ?? "" };
-      if (route === "partida") return { route, param: params.get("m") ?? "" };
-      if (route === "jogador") return { route, param: params.get("p") ?? "" };
+      if (route === "club") return { route, param: params.get("id") ?? "" };
+      if (route === "match") return { route, param: params.get("m") ?? "" };
+      if (route === "player") return { route, param: params.get("p") ?? "" };
       return { route };
     }
   }
@@ -50,9 +50,9 @@ function parseHash(): View {
 
 function hashFor(view: View): string {
   const p = ROUTE_PATHS[view.route];
-  if (view.route === "clube" && view.param) return `#/clube?id=${encodeURIComponent(view.param)}`;
-  if (view.route === "partida" && view.param) return `#/partida?m=${encodeURIComponent(view.param)}`;
-  if (view.route === "jogador" && view.param) return `#/jogador?p=${encodeURIComponent(view.param)}`;
+  if (view.route === "club" && view.param) return `#/clube?id=${encodeURIComponent(view.param)}`;
+  if (view.route === "match" && view.param) return `#/partida?m=${encodeURIComponent(view.param)}`;
+  if (view.route === "player" && view.param) return `#/jogador?p=${encodeURIComponent(view.param)}`;
   return `#/${p}`;
 }
 
@@ -82,16 +82,16 @@ export default function App() {
     }
     api
       .watchlist()
-      .then((r) => setWatch(r.clubes ?? []))
+      .then((r) => setWatch(r.clubs ?? []))
       .catch(() => setWatch([]));
   }, [authed]);
 
   useEffect(loadWatch, [loadWatch]);
   // Quando a sincronização termina, a lista de clubes mudou.
   useEffect(() => {
-    if (sync && !sync.rodando) loadWatch();
+    if (sync && !sync.running) loadWatch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sync?.rodando]);
+  }, [sync?.running]);
 
   const navigate = useCallback((route: RouteId, param?: string) => {
     const target = hashFor({ route, param });
@@ -109,14 +109,14 @@ export default function App() {
       // Optimista: a lista responde na hora e o servidor confirma depois.
       setWatch((prev) =>
         seguindo
-          ? [...prev, { club_id: clubId, nome: "", sigla: "", divisao: 0, nivel: 0, seguindo_desde: new Date().toISOString(), origem: "manual" }]
+          ? [...prev, { club_id: clubId, name: "", tag: "", division_at_read: 0, skill_rating: 0, tracked_since: new Date().toISOString(), source: "manual" }]
           : prev.filter((w) => w.club_id !== clubId),
       );
       try {
         await api.setWatch(clubId, seguindo);
         loadWatch();
       } catch {
-        loadWatch(); // reverte para o estado do servidor
+        loadWatch(); // reverte to_division o estado do servidor
       }
     },
     [authed, isWatched, loadWatch],
@@ -140,7 +140,7 @@ export default function App() {
     async (clubId: string, playerId: string) => {
       if (authed !== true) return;
       // Otimista: o selo aparece na hora; o worker confirma a gravação.
-      setClaimed({ club_id: clubId, player_id: playerId, verificado: true });
+      setClaimed({ club_id: clubId, player_id: playerId, verified: true });
       try {
         await api.claimPro(clubId, playerId);
         // Reivindicar também SEGUE o clube (o worker faz isso), o que muda a
@@ -149,7 +149,7 @@ export default function App() {
         loadWatch();
         startSync();
       } catch {
-        loadClaimed(); // reverte para o estado do servidor
+        loadClaimed(); // reverte to_division o estado do servidor
         throw new Error("claim failed");
       }
     },
@@ -158,86 +158,86 @@ export default function App() {
 
   const body = (() => {
     switch (view.route) {
-      case "clubes":
+      case "clubs":
         return (
-          <ClubesPage
-            onOpenClub={(id) => navigate("clube", id)}
+          <ClubsPage
+            onOpenClub={(id) => navigate("club", id)}
             isWatched={isWatched}
             onToggleWatch={toggleWatch}
             authed={authed}
           />
         );
-      case "clube":
+      case "club":
         return view.param ? (
-          <ClubePage
+          <ClubPage
             clubId={view.param}
-            onOpenMatch={(id) => navigate("partida", id)}
-            onOpenPlayer={(id) => navigate("jogador", id)}
-            onOpenClub={() => navigate("clubes")}
+            onOpenMatch={(id) => navigate("match", id)}
+            onOpenPlayer={(id) => navigate("player", id)}
+            onOpenClub={() => navigate("clubs")}
             isWatched={isWatched}
             onToggleWatch={toggleWatch}
             authed={authed}
           />
         ) : (
-          <HomePage onOpenClub={(id) => navigate("clube", id)} onOpenPlayer={(id) => navigate("jogador", id)} />
+          <HomePage onOpenClub={(id) => navigate("club", id)} onOpenPlayer={(id) => navigate("player", id)} />
         );
-      case "partida":
+      case "match":
         return view.param ? (
-          <PartidaPage
+          <MatchPage
             matchId={view.param}
-            onOpenClub={(id) => navigate("clube", id)}
-            onOpenPlayer={(id) => navigate("jogador", id)}
+            onOpenClub={(id) => navigate("club", id)}
+            onOpenPlayer={(id) => navigate("player", id)}
             onBack={() => window.history.back()}
           />
         ) : (
-          <HomePage onOpenClub={(id) => navigate("clube", id)} onOpenPlayer={(id) => navigate("jogador", id)} />
+          <HomePage onOpenClub={(id) => navigate("club", id)} onOpenPlayer={(id) => navigate("player", id)} />
         );
-      case "jogador":
+      case "player":
         return view.param ? (
-          <JogadorPage
+          <PlayerPage
             playerId={view.param}
             authed={authed}
             claimed={claimed}
             onClaim={claimPro}
-            onOpenClub={(id) => navigate("clube", id)}
-            onOpenMatch={(id) => navigate("partida", id)}
+            onOpenClub={(id) => navigate("club", id)}
+            onOpenMatch={(id) => navigate("match", id)}
             onBack={() => window.history.back()}
           />
         ) : (
-          <JogadoresPage onOpenPlayer={(id) => navigate("jogador", id)} />
+          <PlayersPage onOpenPlayer={(id) => navigate("player", id)} />
         );
-      case "jogadores":
-        return <JogadoresPage onOpenPlayer={(id) => navigate("jogador", id)} />;
-      case "resgatar":
+      case "players":
+        return <PlayersPage onOpenPlayer={(id) => navigate("player", id)} />;
+      case "claim":
         return (
-          <ResgatarPage
+          <ClaimPage
             authed={authed}
             claimed={claimed}
             onClaim={claimPro}
             onSignedIn={refreshAuth}
-            onOpenClub={(id) => navigate("clube", id)}
-            onOpenPlayer={(id) => navigate("jogador", id)}
+            onOpenClub={(id) => navigate("club", id)}
+            onOpenPlayer={(id) => navigate("player", id)}
           />
         );
-      case "minha-area":
+      case "my-area":
         return (
-          <MinhaAreaPage
+          <MyAreaPage
             authed={authed}
             email={email}
             sync={sync}
             onStartSync={startSync}
             onSignedIn={refreshAuth}
-            onOpenClub={(id) => navigate("clube", id)}
-            onOpenPlayer={(id) => navigate("jogador", id)}
+            onOpenClub={(id) => navigate("club", id)}
+            onOpenPlayer={(id) => navigate("player", id)}
             onToggleWatch={toggleWatch}
           />
         );
-      case "notificacoes":
-        return <NotificacoesPage authed={authed} onSignedIn={refreshAuth} />;
+      case "notifications":
+        return <NotificationsPage authed={authed} onSignedIn={refreshAuth} />;
       case "admin":
         return <AdminPage authed={authed} />;
       default:
-        return <HomePage onOpenClub={(id) => navigate("clube", id)} onOpenPlayer={(id) => navigate("jogador", id)} />;
+        return <HomePage onOpenClub={(id) => navigate("club", id)} onOpenPlayer={(id) => navigate("player", id)} />;
     }
   })();
 

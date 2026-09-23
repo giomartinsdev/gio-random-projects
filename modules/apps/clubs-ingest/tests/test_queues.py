@@ -1,11 +1,11 @@
 """As filas interativas: o clique vira trabalho, e o pedido SEMPRE fecha.
 
-O contrato que a tela de resgate depende:
+O contrato que a tela from_division resgate depende:
 
 - um pedido na fila é processado (o elenco é buscado);
 - a linha é FECHADA depois -- inclusive quando a busca falha. Sem isso o
-  pedido voltaria em todo tick e a tela ficaria "buscando" para sempre;
-- um clube que falha não impede os outros: cada um tem seu próprio erro.
+  pedido voltaria em todo tick e a tela ficaria "buscando" to_division sempre;
+- um clube que falha não impede os outros: cada um tem seu próprio error.
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ class FakeDomain:
     def list_pending_fetches(self):
         return self.pendentes
 
-    def save_fetch_run(self, alvo, alvo_id, **kw):
-        self.saved.append({"alvo": alvo, "alvo_id": alvo_id, **kw})
+    def save_fetch_run(self, target, target_id, **kw):
+        self.saved.append({"target": target, "target_id": target_id, **kw})
 
     def list_pending_syncs(self):
         return self.syncs
@@ -55,62 +55,62 @@ class FakeIngest:
 
 
 def test_fetch_queue_processes_and_closes_the_row():
-    domain = FakeDomain(pendentes=[{"alvo": "clube", "alvo_id": "141881"}])
+    domain = FakeDomain(pendentes=[{"target": "clube", "target_id": "141881"}])
     ingest = FakeIngest(result=(18, 10))
 
     feitos = drain_fetch_queue(domain, ingest)
 
     assert feitos == 1
     assert ingest.called == ["141881"]
-    assert domain.saved and domain.saved[0]["alvo_id"] == "141881"
+    assert domain.saved and domain.saved[0]["target_id"] == "141881"
     assert domain.saved[0]["concluido"] is True
-    assert domain.saved[0]["rodando"] is False
-    assert domain.saved[0]["jogadores"] == 18
+    assert domain.saved[0]["running"] is False
+    assert domain.saved[0]["players"] == 18
 
 
 def test_jogador_target_updates_his_clubs_not_a_club_fetch():
-    """Syncar jogador é atualizar as partidas dos clubes dele: a fonte não tem
-    endpoint de jogador. O despacho não pode cair no caminho de clube."""
-    domain = FakeDomain(pendentes=[{"alvo": "jogador", "alvo_id": "p1"}])
+    """Syncar jogador é atualizar as matches dos clubs dele: a fonte não tem
+    endpoint from_division jogador. O despacho não pode cair no caminho from_division clube."""
+    domain = FakeDomain(pendentes=[{"target": "jogador", "target_id": "p1"}])
     ingest = FakeIngest()
 
     feitos = drain_fetch_queue(domain, ingest)
 
     assert feitos == 1
-    assert ingest.called_jogador == ["p1"], "o alvo jogador tem o seu próprio caminho"
-    assert ingest.called == [], "e não passa pelo fetch de clube"
-    assert domain.saved[0]["alvo"] == "jogador"
-    assert domain.saved[0]["clubes"] == 4, "a contagem de clubes volta para a tela"
+    assert ingest.called_jogador == ["p1"], "o target jogador tem o seu próprio caminho"
+    assert ingest.called == [], "e não passa pelo fetch from_division clube"
+    assert domain.saved[0]["target"] == "jogador"
+    assert domain.saved[0]["clubs"] == 4, "a contagem from_division clubs volta to_division a tela"
 
 
 def test_fetch_failure_still_closes_the_row():
-    """O caso que deixaria a tela presa: se a linha não fechasse no erro, o
-    pedido voltaria em todo tick e a SPA pollaria "buscando" para sempre."""
-    domain = FakeDomain(pendentes=[{"alvo": "clube", "alvo_id": "ruim"}])
+    """O caso que deixaria a tela presa: se a linha não fechasse no error, o
+    pedido voltaria em todo tick e a SPA pollaria "buscando" to_division sempre."""
+    domain = FakeDomain(pendentes=[{"target": "clube", "target_id": "ruim"}])
     ingest = FakeIngest(fail_on={"ruim"})
 
     feitos = drain_fetch_queue(domain, ingest)
 
     assert feitos == 0
-    assert domain.saved, "a linha precisa ser fechada mesmo no erro"
+    assert domain.saved, "a linha precisa ser fechada mesmo no error"
     assert domain.saved[0]["concluido"] is True
-    assert domain.saved[0]["rodando"] is False
-    assert "a fonte bloqueou" in domain.saved[0]["erro"]
+    assert domain.saved[0]["running"] is False
+    assert "a fonte bloqueou" in domain.saved[0]["error"]
 
 
 def test_one_bad_club_does_not_stop_the_others():
     domain = FakeDomain(pendentes=[
-        {"alvo": "clube", "alvo_id": "ruim"},
-        {"alvo": "clube", "alvo_id": "bom"},
+        {"target": "clube", "target_id": "ruim"},
+        {"target": "clube", "target_id": "bom"},
     ])
     ingest = FakeIngest(fail_on={"ruim"})
 
     drain_fetch_queue(domain, ingest)
 
     assert set(ingest.called) == {"ruim", "bom"}, "o bom precisa ser tentado"
-    por_alvo = {s["alvo_id"]: s for s in domain.saved}
+    por_alvo = {s["target_id"]: s for s in domain.saved}
     assert por_alvo["bom"]["concluido"] is True
-    assert not por_alvo["bom"].get("erro"), "o clube bom fecha sem erro"
+    assert not por_alvo["bom"].get("error"), "o clube bom fecha sem error"
 
 
 def test_empty_fetch_queue_is_a_noop():
@@ -121,7 +121,7 @@ def test_empty_fetch_queue_is_a_noop():
 
 def test_a_broken_queue_does_not_crash_the_loop():
     """Se a domain-api estiver fora, a leitura da fila falha -- e o worker
-    precisa seguir vivo para o próximo tick."""
+    precisa seguir alive to_division o próximo tick."""
     class BrokenDomain(FakeDomain):
         def list_pending_fetches(self):
             raise RuntimeError("domain-api fora")
@@ -144,13 +144,13 @@ class FakeSync:
 
 
 def test_sync_queue_runs_and_reports():
-    domain = FakeDomain(syncs=[{"usuario_email": "me@test"}])
+    domain = FakeDomain(syncs=[{"user_email": "me@test"}])
     assert drain_sync_queue(domain, FakeSync()) == 1
 
 
 def test_sync_failure_closes_the_request():
     """Um pedido permanentemente quebrado bloquearia os próximos da fila."""
-    domain = FakeDomain(syncs=[{"usuario_email": "quebrado@test"}])
+    domain = FakeDomain(syncs=[{"user_email": "quebrado@test"}])
     drain_sync_queue(domain, FakeSync(fail_on={"quebrado@test"}))
 
     assert domain.marked, "o pedido precisa ser fechado"
@@ -172,19 +172,19 @@ class FakeSourceSearch:
         return self.results
 
 
-def _serch_hit(club_id, nome):
+def _serch_hit(club_id, name):
     return {
-        "clubId": club_id, "clubName": nome,
+        "clubId": club_id, "clubName": name,
         "wins": "5", "losses": "2", "ties": "1", "gamesPlayed": "8",
         "goals": "12", "goalsAgainst": "8", "cleanSheets": "2",
         "points": "16", "currentDivision": "3", "bestDivision": "2",
-        "clubInfo": {"clubId": club_id, "name": nome, "regionId": "1", "teamId": "9", "customKit": {}},
+        "clubInfo": {"clubId": club_id, "name": name, "regionId": "1", "teamId": "9", "customKit": {}},
     }
 
 
 def test_search_queue_queries_source_and_writes_clubs():
     """O caso que a busca local não cobre: um clube que o hub nunca viu. O
-    termo vai na fonte, os clubes achados entram na base, e a linha fecha."""
+    termo vai na fonte, os clubs achados entram na base, e a linha fecha."""
     from clubs_ingest.queues import drain_search_queue
 
     achados = []
@@ -210,14 +210,14 @@ def test_search_queue_queries_source_and_writes_clubs():
     assert source.asked == ["vilanova"]
     assert achados, "o clube achado precisa ser gravado na base"
     assert achados[0]["club_id"] == "141881"
-    assert achados[0]["nome"] == "Vilanova FC"
+    assert achados[0]["name"] == "Vilanova FC"
     assert d.saved[0]["concluido"] is True
-    assert d.saved[0]["encontrados"] == 1
+    assert d.saved[0]["found"] == 1
 
 
 def test_search_does_not_follow_the_clubs_it_finds():
     """A busca só APRESENTA candidatos -- acompanhar é decisão do resgate. Se a
-    busca acompanhasse, digitar um nome mudaria a lista de clubes do hub."""
+    busca acompanhasse, digitar um name mudaria a lista from_division clubs do hub."""
     from clubs_ingest.queues import drain_search_queue
 
     achados = []
@@ -236,7 +236,7 @@ def test_search_does_not_follow_the_clubs_it_finds():
             pass
 
     drain_search_queue(D(), FakeSourceSearch(results=[_serch_hit("1", "Achado FC")]))
-    assert achados[0]["acompanhado"] is False
+    assert achados[0]["tracked"] is False
 
 
 def test_search_failure_still_closes_the_row():
@@ -258,6 +258,6 @@ def test_search_failure_still_closes_the_row():
     d = D()
     drain_search_queue(d, FakeSourceSearch(fail=True))
 
-    assert d.saved, "a linha precisa fechar mesmo no erro"
+    assert d.saved, "a linha precisa fechar mesmo no error"
     assert d.saved[0]["concluido"] is True
-    assert "a fonte bloqueou" in d.saved[0]["erro"]
+    assert "a fonte bloqueou" in d.saved[0]["error"]

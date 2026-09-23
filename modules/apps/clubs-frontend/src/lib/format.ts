@@ -1,7 +1,7 @@
 // Formatadores e rótulos de apresentação. Linguagem de usuário: nada de
 // "snapshot", "ingest", "skillRating" nas telas.
 
-import type { Posicao, Resultado, TipoPartida } from "./types";
+import type { Position, Resultado, TipoPartida } from "./types";
 
 export function fmt(n: number | null | undefined, digits = 0): string {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
@@ -53,21 +53,21 @@ export function fmtRefresh(iso: string): string {
   return timeAgo(iso);
 }
 
-export const POS_LABEL: Record<Posicao, string> = {
-  goleiro: "Goleiro",
+export const POS_LABEL: Record<Position, string> = {
+  goalkeeper: "Goalkeeper",
   defensor: "Defensor",
   meio: "Meio-campista",
   atacante: "Atacante",
 };
 
-export const POS_SHORT: Record<Posicao, string> = {
-  goleiro: "GK",
+export const POS_SHORT: Record<Position, string> = {
+  goalkeeper: "GK",
   defensor: "DEF",
   meio: "MEI",
   atacante: "ATA",
 };
 
-export const POS_ORDER: Posicao[] = ["goleiro", "defensor", "meio", "atacante"];
+export const POS_ORDER: Position[] = ["goalkeeper", "defensor", "meio", "atacante"];
 
 export const RESULT_LETTER: Record<Resultado, string> = {
   vitoria: "V",
@@ -138,10 +138,10 @@ export const EVENT_LABEL: Record<string, string> = {
   passe: "Passes",
   passe_certo: "Passes certos",
   passe_tentado: "Passes tentados",
-  chute: "Chutes",
-  chute_no_gol: "Chutes no gol",
+  chute: "Shots",
+  chute_no_gol: "Shots no gol",
   desarme: "Desarmes",
-  acao_goleiro: "Ações de goleiro",
+  acao_goleiro: "Ações from_division goalkeeper",
   movimentacao: "Movimentação",
-  inicio_periodo: "Início de período",
+  inicio_periodo: "Início from_division período",
 };

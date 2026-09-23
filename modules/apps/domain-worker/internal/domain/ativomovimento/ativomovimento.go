@@ -19,7 +19,7 @@ const (
 type AtivoMovimento struct {
 	ID      string
 	AtivoID string
-	Tipo    string
+	Kind    string
 	// Quantidade and PrecoUnitario are required and > 0 for
 	// compra/venda; both are zero for provento.
 	Quantidade    float64
@@ -29,5 +29,5 @@ type AtivoMovimento struct {
 	Data          time.Time
 	// ResultadoRealizado is only ever non-zero on a venda.
 	ResultadoRealizado float64
-	CriadoEm           time.Time
+	CreatedAt           time.Time
 }

@@ -20,13 +20,13 @@ func NewClubRepository(pool *pgxpool.Pool) *ClubRepository {
 	return &ClubRepository{pool: pool}
 }
 
-const clubColumns = `club_id, nome, sigla, estadio, regiao_id, time_id, escudo_asset_id, cor_1, cor_2, cor_3, cor_4, acompanhado, atualizado_em`
+const clubColumns = `club_id, name, tag, stadium, region_id, team_id, crest_asset_id, color_1, color_2, color_3, color_4, tracked, updated_at`
 
 func scanClub(row pgx.Row) (domainclub.Club, error) {
 	var c domainclub.Club
 	err := row.Scan(
-		&c.ClubID, &c.Nome, &c.Sigla, &c.Estadio, &c.RegiaoID, &c.TimeID,
-		&c.EscudoAssetID, &c.Cor1, &c.Cor2, &c.Cor3, &c.Cor4, &c.Acompanhado, &c.AtualizadoEm,
+		&c.ClubID, &c.Name, &c.Tag, &c.Stadium, &c.RegiaoID, &c.TimeID,
+		&c.EscudoAssetID, &c.Color1, &c.Color2, &c.Color3, &c.Color4, &c.Tracked, &c.UpdatedAt,
 	)
 	return c, err
 }
@@ -44,7 +44,7 @@ func (r *ClubRepository) FindByID(ctx context.Context, clubID string) (domainclu
 }
 
 func (r *ClubRepository) ListAcompanhados(ctx context.Context) ([]domainclub.Club, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+clubColumns+` FROM clubs WHERE acompanhado = true ORDER BY nome`)
+	rows, err := r.pool.Query(ctx, `SELECT `+clubColumns+` FROM clubs WHERE tracked = true ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("list acompanhados: %w", err)
 	}
@@ -67,36 +67,36 @@ func (r *ClubRepository) ListAcompanhados(ctx context.Context) ([]domainclub.Clu
 // its totals, because the squad and matches are still on disk.
 func (r *ClubRepository) Upsert(ctx context.Context, c domainclub.Club) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO clubs (club_id, nome, sigla, estadio, regiao_id, time_id, escudo_asset_id,
-		                   cor_1, cor_2, cor_3, cor_4, acompanhado, atualizado_em)
+		INSERT INTO clubs (club_id, name, tag, stadium, region_id, team_id, crest_asset_id,
+		                   color_1, color_2, color_3, color_4, tracked, updated_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
 		ON CONFLICT (club_id) DO UPDATE SET
-			nome            = CASE WHEN EXCLUDED.nome <> '' THEN EXCLUDED.nome ELSE clubs.nome END,
-			sigla           = CASE WHEN EXCLUDED.sigla <> '' THEN EXCLUDED.sigla ELSE clubs.sigla END,
-			estadio         = CASE WHEN EXCLUDED.estadio <> '' THEN EXCLUDED.estadio ELSE clubs.estadio END,
-			regiao_id       = CASE WHEN EXCLUDED.regiao_id <> '' THEN EXCLUDED.regiao_id ELSE clubs.regiao_id END,
-			time_id         = CASE WHEN EXCLUDED.time_id <> '' THEN EXCLUDED.time_id ELSE clubs.time_id END,
-			escudo_asset_id = CASE WHEN EXCLUDED.escudo_asset_id <> '' THEN EXCLUDED.escudo_asset_id ELSE clubs.escudo_asset_id END,
-			cor_1           = CASE WHEN EXCLUDED.cor_1 <> 0 THEN EXCLUDED.cor_1 ELSE clubs.cor_1 END,
-			cor_2           = CASE WHEN EXCLUDED.cor_2 <> 0 THEN EXCLUDED.cor_2 ELSE clubs.cor_2 END,
-			cor_3           = CASE WHEN EXCLUDED.cor_3 <> 0 THEN EXCLUDED.cor_3 ELSE clubs.cor_3 END,
-			cor_4           = CASE WHEN EXCLUDED.cor_4 <> 0 THEN EXCLUDED.cor_4 ELSE clubs.cor_4 END,
-			acompanhado     = clubs.acompanhado OR EXCLUDED.acompanhado,
-			atualizado_em   = now()
-	`, c.ClubID, c.Nome, c.Sigla, c.Estadio, c.RegiaoID, c.TimeID, c.EscudoAssetID,
-		c.Cor1, c.Cor2, c.Cor3, c.Cor4, c.Acompanhado)
+			name            = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE clubs.name END,
+			tag           = CASE WHEN EXCLUDED.tag <> '' THEN EXCLUDED.tag ELSE clubs.tag END,
+			stadium         = CASE WHEN EXCLUDED.stadium <> '' THEN EXCLUDED.stadium ELSE clubs.stadium END,
+			region_id       = CASE WHEN EXCLUDED.region_id <> '' THEN EXCLUDED.region_id ELSE clubs.region_id END,
+			team_id         = CASE WHEN EXCLUDED.team_id <> '' THEN EXCLUDED.team_id ELSE clubs.team_id END,
+			crest_asset_id = CASE WHEN EXCLUDED.crest_asset_id <> '' THEN EXCLUDED.crest_asset_id ELSE clubs.crest_asset_id END,
+			color_1           = CASE WHEN EXCLUDED.color_1 <> 0 THEN EXCLUDED.color_1 ELSE clubs.color_1 END,
+			color_2           = CASE WHEN EXCLUDED.color_2 <> 0 THEN EXCLUDED.color_2 ELSE clubs.color_2 END,
+			color_3           = CASE WHEN EXCLUDED.color_3 <> 0 THEN EXCLUDED.color_3 ELSE clubs.color_3 END,
+			color_4           = CASE WHEN EXCLUDED.color_4 <> 0 THEN EXCLUDED.color_4 ELSE clubs.color_4 END,
+			tracked     = clubs.tracked OR EXCLUDED.tracked,
+			updated_at   = now()
+	`, c.ClubID, c.Name, c.Tag, c.Stadium, c.RegiaoID, c.TimeID, c.EscudoAssetID,
+		c.Color1, c.Color2, c.Color3, c.Color4, c.Tracked)
 	if err != nil {
 		return fmt.Errorf("upsert club: %w", err)
 	}
 	return nil
 }
 
-func (r *ClubRepository) SetAcompanhado(ctx context.Context, clubID string, acompanhado bool) error {
+func (r *ClubRepository) SetAcompanhado(ctx context.Context, clubID string, tracked bool) error {
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE clubs SET acompanhado = $2, atualizado_em = now() WHERE club_id = $1`,
-		clubID, acompanhado)
+		`UPDATE clubs SET tracked = $2, updated_at = now() WHERE club_id = $1`,
+		clubID, tracked)
 	if err != nil {
-		return fmt.Errorf("set acompanhado: %w", err)
+		return fmt.Errorf("set tracked: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domainclub.ErrNotFound
@@ -108,7 +108,7 @@ func (r *ClubRepository) SetAcompanhado(ctx context.Context, clubID string, acom
 // the global ranking both need the known universe, not just the followed
 // subset.
 func (r *ClubRepository) ListAll(ctx context.Context) ([]domainclub.Club, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+clubColumns+` FROM clubs ORDER BY nome`)
+	rows, err := r.pool.Query(ctx, `SELECT `+clubColumns+` FROM clubs ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("list clubs: %w", err)
 	}

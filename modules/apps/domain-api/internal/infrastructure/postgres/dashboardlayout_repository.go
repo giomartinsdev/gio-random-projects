@@ -21,13 +21,13 @@ func NewDashboardLayoutRepository(pool *pgxpool.Pool) *DashboardLayoutRepository
 	return &DashboardLayoutRepository{pool: pool}
 }
 
-func (r *DashboardLayoutRepository) FindByUsuario(ctx context.Context, usuarioEmail string) (domaindashboardlayout.DashboardLayout, error) {
+func (r *DashboardLayoutRepository) FindByUsuario(ctx context.Context, userEmail string) (domaindashboardlayout.DashboardLayout, error) {
 	row := r.pool.QueryRow(ctx,
-		`SELECT usuario_email, blocos, atualizado_em FROM dashboard_layouts WHERE usuario_email = $1`,
-		usuarioEmail,
+		`SELECT user_email, blocos, updated_at FROM dashboard_layouts WHERE user_email = $1`,
+		userEmail,
 	)
 	var l domaindashboardlayout.DashboardLayout
-	err := row.Scan(&l.UsuarioEmail, &l.Blocos, &l.AtualizadoEm)
+	err := row.Scan(&l.UserEmail, &l.Blocos, &l.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domaindashboardlayout.DashboardLayout{}, domaindashboardlayout.ErrNotFound
 	}

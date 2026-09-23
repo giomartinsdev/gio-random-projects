@@ -8,7 +8,7 @@ import "context"
 // plain single-table writes.
 type Repository interface {
 	FindByID(ctx context.Context, id string) (Aposta, error)
-	ListByUsuario(ctx context.Context, usuarioEmail, contaID string) ([]Aposta, error)
+	ListByUsuario(ctx context.Context, userEmail, contaID string) ([]Aposta, error)
 	Insert(ctx context.Context, a Aposta) error
 	Update(ctx context.Context, a Aposta) error
 }

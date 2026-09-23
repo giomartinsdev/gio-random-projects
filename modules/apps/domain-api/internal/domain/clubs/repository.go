@@ -16,7 +16,7 @@ type Repository interface {
 	SearchClubsLite(ctx context.Context, query string, limit int) ([]Club, error)
 
 	// Partidas
-	ListMatches(ctx context.Context, clubID, tipo string, limit int) ([]Match, error)
+	ListMatches(ctx context.Context, clubID, kind string, limit int) ([]Match, error)
 	GetMatch(ctx context.Context, matchID string) (Match, error)
 	HeadToHead(ctx context.Context, aID, bID string) (HeadToHead, error)
 	RecentMatchCount(ctx context.Context, clubID string) (int, error)
@@ -43,14 +43,14 @@ type Repository interface {
 	// AnnouncementCount is how many announcements are live (not expired) --
 	// the home header's number, independent of how few the feed shows.
 	AnnouncementCount(ctx context.Context) (int, error)
-	RankingClubs(ctx context.Context, metrica string) ([]ClubRef, error)
-	RankingPlayers(ctx context.Context, metrica, posicao string) ([]RankPlayer, error)
+	RankingClubs(ctx context.Context, metric string) ([]ClubRef, error)
+	RankingPlayers(ctx context.Context, metric, position string) ([]RankPlayer, error)
 
 	// Preferências (sempre por usuario_email)
-	ListWatch(ctx context.Context, usuarioEmail string) ([]WatchEntry, error)
-	GetNotificacoes(ctx context.Context, usuarioEmail string) (NotificationPrefs, error)
-	GetClaimed(ctx context.Context, usuarioEmail string) (*ClaimedPro, error)
-	GetSyncRun(ctx context.Context, usuarioEmail string) (SyncRun, error)
+	ListWatch(ctx context.Context, userEmail string) ([]WatchEntry, error)
+	GetNotificacoes(ctx context.Context, userEmail string) (NotificationPrefs, error)
+	GetClaimed(ctx context.Context, userEmail string) (*ClaimedPro, error)
+	GetSyncRun(ctx context.Context, userEmail string) (SyncRun, error)
 	// ListPendingSyncs returns every person whose sync was requested but not
 	// finished (`rodando = true`, no concluido_em). The ingest worker polls
 	// this -- it is how a click in the SPA reaches the worker that does the
@@ -59,7 +59,7 @@ type Repository interface {
 
 	// Sync sob demanda de um alvo (clube ou jogador): a SPA grava o pedido, o
 	// worker de ingestão polla e busca da fonte, a SPA lê o estado.
-	GetFetchRun(ctx context.Context, alvo, alvoID string) (FetchRun, error)
+	GetFetchRun(ctx context.Context, target, alvoID string) (FetchRun, error)
 	ListPendingFetches(ctx context.Context) ([]FetchRun, error)
 	// ClubsDoJogador traduz "syncar jogador" em trabalho: a fonte não tem
 	// endpoint de jogador, então o dado dele vem das partidas dos clubes onde

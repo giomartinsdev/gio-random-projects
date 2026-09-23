@@ -22,15 +22,15 @@ func NewApostaRepository(pool *pgxpool.Pool) *ApostaRepository {
 	return &ApostaRepository{pool: pool}
 }
 
-const apostaColumns = `id, usuario_email, conta_id, descricao, valor_apostado, odd, status, retorno_obtido, data_aposta, data_resultado, criado_em, atualizado_em`
+const apostaColumns = `id, user_email, conta_id, descricao, valor_apostado, odd, status, retorno_obtido, data_aposta, data_resultado, created_at, updated_at`
 
 func scanAposta(row pgx.Row) (domainaposta.Aposta, error) {
 	var a domainaposta.Aposta
 	var odd, retornoObtido *float64
 	var dataResultado *time.Time
 	err := row.Scan(
-		&a.ID, &a.UsuarioEmail, &a.ContaID, &a.Descricao, &a.ValorApostado, &odd, &a.Status,
-		&retornoObtido, &a.DataAposta, &dataResultado, &a.CriadoEm, &a.AtualizadoEm,
+		&a.ID, &a.UserEmail, &a.ContaID, &a.Descricao, &a.ValorApostado, &odd, &a.Status,
+		&retornoObtido, &a.DataAposta, &dataResultado, &a.CreatedAt, &a.UpdatedAt,
 	)
 	if odd != nil {
 		a.Odd = *odd
@@ -57,12 +57,12 @@ func (r *ApostaRepository) FindByID(ctx context.Context, id string) (domainapost
 }
 
 // An empty contaID means "every conta do usuario".
-func (r *ApostaRepository) ListByUsuario(ctx context.Context, usuarioEmail, contaID string) ([]domainaposta.Aposta, error) {
+func (r *ApostaRepository) ListByUsuario(ctx context.Context, userEmail, contaID string) ([]domainaposta.Aposta, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+apostaColumns+` FROM apostas
-		 WHERE usuario_email = $1 AND ($2 = '' OR conta_id = $2::uuid)
-		 ORDER BY data_aposta DESC, criado_em DESC`,
-		usuarioEmail, contaID,
+		 WHERE user_email = $1 AND ($2 = '' OR conta_id = $2::uuid)
+		 ORDER BY data_aposta DESC, created_at DESC`,
+		userEmail, contaID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list apostas: %w", err)

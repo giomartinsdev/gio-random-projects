@@ -7,9 +7,9 @@ package transacao
 import "time"
 
 type CreateInput struct {
-	UsuarioEmail string    `json:"usuario_email"`
+	UserEmail string    `json:"user_email"`
 	ContaID      string    `json:"conta_id"`
-	Tipo         string    `json:"tipo"`
+	Kind         string    `json:"kind"`
 	Valor        float64   `json:"valor"`
 	Data         time.Time `json:"data"`
 	Categoria    string    `json:"categoria"`
@@ -19,8 +19,8 @@ type CreateInput struct {
 
 type UpdateInput struct {
 	ID           string     `json:"id"`
-	UsuarioEmail string     `json:"usuario_email"`
-	Tipo         string     `json:"tipo,omitempty"`
+	UserEmail string     `json:"user_email"`
+	Kind         string     `json:"kind,omitempty"`
 	Valor        *float64   `json:"valor,omitempty"`
 	Data         *time.Time `json:"data,omitempty"`
 	Categoria    string     `json:"categoria,omitempty"`
@@ -30,5 +30,5 @@ type UpdateInput struct {
 
 type DeleteInput struct {
 	ID           string `json:"id"`
-	UsuarioEmail string `json:"usuario_email"`
+	UserEmail string `json:"user_email"`
 }

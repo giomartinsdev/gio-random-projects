@@ -2,7 +2,7 @@
 they exercise the translation layer against the real fixture shapes, offline.
 
 These are the assertions that prove the normalized vocabulary is right — the
-five result codes, the friendly fallback, the position de-para, and the
+five result codes, the friendly fallback, the position from_division-to_division, and the
 per-club match orientation.
 """
 
@@ -65,7 +65,7 @@ def test_position_maps_both_strings_and_numeric_ids():
 
 
 def test_unknown_position_does_not_break_mapping():
-    """An id outside the de-para table lands in the least-wrong bucket instead
+    """An id outside the from_division-to_division table lands in the least-wrong bucket instead
     of raising — and is reported so the table can grow."""
     assert nz.position(999) == nz.POS_MEIO
     assert nz.describe_unknown_position(999) == "999"
@@ -94,18 +94,18 @@ def test_match_payload_is_oriented_to_the_requesting_club():
 
     ours = nz.match_payload(match, "1001")
     assert ours is not None
-    assert ours["clube_casa_id"] == "1001"
-    assert ours["clube_fora_id"] == "2001"
-    assert ours["resultado_casa"] in {nz.RESULT_WIN, nz.RESULT_LOSS, nz.RESULT_DRAW}
+    assert ours["home_club_id"] == "1001"
+    assert ours["away_club_id"] == "2001"
+    assert ours["home_result"] in {nz.RESULT_WIN, nz.RESULT_LOSS, nz.RESULT_DRAW}
 
     # Both sides' players ride in the same payload — that is what makes the
     # cross-club index possible, and what keeps a match's summary atomic.
-    clubs_in_lines = {line["club_id"] for line in ours["jogadores"]}
+    clubs_in_lines = {line["club_id"] for line in ours["players"]}
     assert clubs_in_lines == {"1001", "2001"}
 
     theirs = nz.match_payload(match, "2001")
-    assert theirs["resultado_casa"] == nz.mirror(ours["resultado_casa"])
-    assert theirs["gols_casa"] == ours["gols_fora"]
+    assert theirs["home_result"] == nz.mirror(ours["home_result"])
+    assert theirs["home_goals"] == ours["away_goals"]
 
 
 def test_match_payload_carries_one_match_id_for_both_views():
@@ -119,8 +119,8 @@ def test_dnf_is_detected_and_names_the_winner():
     """A match decided by a quit must be visibly a DNF, not a normal score."""
     match = fixture("matches")[0]  # fixture 1 has winnerByDnf=1 on the 1001 side
     payload = nz.match_payload(match, "1001")
-    assert payload["houve_desistencia"] is True
-    assert payload["vencedor_por_desistencia_id"] == "1001"
+    assert payload["decided_by_forfeit"] is True
+    assert payload["forfeit_winner_id"] == "1001"
 
 
 def test_match_payload_rejects_a_club_not_in_the_match():
@@ -142,29 +142,29 @@ def test_club_identity_from_the_real_info_shape():
     info = next(iter(fixture("info").values()))
     identity = nz.club_identity(info)
     assert identity["club_id"] == "1001"
-    assert identity["nome"] == "Example FC"
-    assert identity["estadio"] == "Example Stadium"
-    assert identity["cor_1"] == 16777215  # decimal RGB stays raw
-    assert identity["acompanhado"] is True
+    assert identity["name"] == "Example FC"
+    assert identity["stadium"] == "Example Stadium"
+    assert identity["color_1"] == 16777215  # decimal RGB stays raw
+    assert identity["tracked"] is True
 
 
 def test_club_totals_derives_points_when_absent():
     """The search endpoint sends points; overallStats may not. Deriving
     three-for-a-win keeps the ranking consistent between the two sources."""
     totals = nz.club_totals({"clubId": "1001", "gamesPlayed": "25", "wins": "20", "ties": "2", "losses": "3"})
-    assert totals["pontos"] == 62
-    assert totals["jogos"] == 25
+    assert totals["points"] == 62
+    assert totals["played"] == 25
 
 
 def test_snapshot_shape_matches_the_append_input():
     overall = fixture("overall")[0]
     snap = nz.snapshot(overall, team_size=14)
     assert snap["club_id"] == "1001"
-    assert snap["nivel"] == 1500
-    assert snap["tamanho_elenco"] == 14
+    assert snap["skill_rating"] == 1500
+    assert snap["squad_size"] == 14
     # The snapshot must carry every field the append input declares.
-    for key in ("nivel", "divisao", "jogos", "vitorias", "empates", "derrotas",
-                "gols", "gols_sofridos", "tamanho_elenco"):
+    for key in ("skill_rating", "division_at_read", "played", "wins", "draws", "losses",
+                "goals", "goals_conceded", "squad_size"):
         assert key in snap
 
 
@@ -176,11 +176,11 @@ def test_player_line_from_the_real_match_shape():
     line = nz.player_line(stats, "1001", "9000004")
     assert line["club_id"] == "1001"
     assert line["player_id"] == "9000004"
-    assert line["posicao"] == nz.POS_MEIO
-    assert line["gols"] == 1
-    assert line["nota"] == pytest.approx(8.1)
-    assert line["passes_certos"] == 3
-    assert line["segundos_jogados"] == 656
+    assert line["position"] == nz.POS_MEIO
+    assert line["goals"] == 1
+    assert line["rating"] == pytest.approx(8.1)
+    assert line["passes_made"] == 3
+    assert line["seconds_played"] == 656
 
 
 def test_goalkeeper_save_breakdown_only_for_keepers():
@@ -229,14 +229,14 @@ def test_timeline_is_marked_as_inferred():
     # Every emitted label must come from the named table — nothing invented.
     for entry in timeline:
         for event in entry["eventos"]:
-            assert event["rotulo"] in set(nz.EVENT_LABELS.values())
+            assert event["label"] in set(nz.EVENT_LABELS.values())
 
 
 def test_match_payload_timeline_is_populated_from_raw_stats():
     """Regression: the payload's timeline must come from the raw dicts, not
     from the normalized lines (which no longer carry the event fields)."""
     payload = nz.match_payload(fixture("matches")[1], "1001")
-    assert payload["lances"], "a match with event aggregates must carry a timeline"
+    assert payload["events"], "a match with event aggregates must carry a timeline"
 
 
 # ---------------------------------------------------------------- discovery
@@ -251,21 +251,21 @@ def test_opponent_club_id_finds_the_other_side():
 
 def test_merge_lifts_division_from_the_search_side():
     """O overallStats NÃO traz divisão; a busca traz. Fundir as duas é o que
-    impede todo clube de aparecer como D0 -- nenhuma das duas sozinha tem o
+    impede todo clube from_division aparecer como D0 -- nenhuma das duas sozinha tem o
     conjunto completo."""
     overall = {"clubId": "1", "skillRating": "2144", "wins": "43"}
     busca = {"clubId": "1", "currentDivision": "1", "bestDivision": "1", "cleanSheets": "20"}
     totals = nz.club_totals(nz.merge_club_sources(overall, busca))
 
-    assert totals["divisao_atual"] == 1, "a divisão vem da busca"
-    assert totals["melhor_divisao"] == 1
-    assert totals["jogos_sem_sofrer"] == 20, "cleanSheets também só existe na busca"
-    assert totals["nivel"] == 2144, "o nível vem do overall"
-    assert totals["vitorias"] == 43
+    assert totals["division"] == 1, "a divisão vem da busca"
+    assert totals["best_division"] == 1
+    assert totals["clean_sheets"] == 20, "cleanSheets também só existe na busca"
+    assert totals["skill_rating"] == 2144, "o nível vem do overall"
+    assert totals["wins"] == 43
 
 
 def test_merge_ignores_absent_values_so_they_do_not_blank_the_result():
-    """A fonte manda o campo presente e vazio (ou null) em vez de omitir. Se o
+    """A fonte manda o campo presente e vazio (ou null) em vez from_division omitir. Se o
     vazio vencesse, o merge apagaria justamente o que a outra fonte trouxe."""
     overall = {"clubId": "1", "skillRating": "2144", "currentDivision": None}
     busca = {"clubId": "1", "currentDivision": "1", "skillRating": ""}
@@ -284,7 +284,7 @@ def test_merge_tolerates_missing_sources():
 # ------------------------------- busca por id (o outro bug silencioso)
 
 def test_opponent_club_carries_the_name():
-    """O nome do adversário vem no próprio payload da partida -- e é o que a
+    """O name do adversário vem no próprio payload da partida -- e é o que a
     busca da fonte exige. Sem ele a descoberta voltava vazia, em silêncio."""
     match = {
         "clubs": {
@@ -300,10 +300,10 @@ def test_opponent_club_carries_the_name():
 # ------------------------- estatística de jogador ausente (bug do crash)
 
 def test_match_payload_survives_a_null_player_line():
-    """A fonte manda `null` no lugar das estatísticas de um jogador em algumas
-    partidas -- provavelmente um jogador que saiu antes do apito. O normalizador
+    """A fonte manda `null` no lugar das estatísticas from_division um jogador em algumas
+    matches -- provavelmente um jogador que saiu antes do apito. O normalizador
     explodia com "'NoneType' object has no attribute 'get'", e o clube INTEIRO
-    era perdido no ciclo (sem identidade, totais, partidas nem snapshot)."""
+    era perdido no ciclo (sem identidade, totais, matches nem snapshot)."""
     match = {
         "matchId": "m1",
         "timestamp": "1767297600",
@@ -319,14 +319,14 @@ def test_match_payload_survives_a_null_player_line():
     payload = nz.match_payload(match, "1001")
 
     assert payload is not None, "a partida não pode ser descartada por um jogador sem dados"
-    ids = [j["player_id"] for j in payload["jogadores"]]
+    ids = [j["player_id"] for j in payload["players"]]
     assert "p2" in ids, "o jogador com dados continua entrando"
     assert "p1" not in ids, "o jogador sem estatística é pulado, não vira linha vazia"
 
 
 def test_player_line_of_a_null_is_skipped_not_crashed():
     """Contrato direto do normalizador: um stats nulo devolve None (pular),
-    em vez de estourar."""
+    em vez from_division estourar."""
     assert nz.player_line_opt(None, "1001", "p1") is None
     assert nz.player_line_opt({"playername": "ok"}, "1001", "p2") is not None
 
@@ -357,8 +357,8 @@ def test_opponent_club_tolerates_a_null_details():
 
 
 def test_match_payload_survives_null_details_on_both_sides():
-    """O caso de produção: um clube da partida vem com `details: null`. A
-    partida continua sendo gravada; só o nome do adversário sai vazio."""
+    """O caso from_division produção: um clube da partida vem com `details: null`. A
+    partida continua sendo gravada; só o name do adversário sai vazio."""
     match = {
         "matchId": "m1",
         "timestamp": "1767297600",
@@ -372,7 +372,7 @@ def test_match_payload_survives_null_details_on_both_sides():
     payload = nz.match_payload(match, "1001")
     assert payload is not None, "a partida não pode ser perdida por um details nulo"
     assert payload["match_id"] == "m1"
-    assert payload["gols_casa"] == 2
+    assert payload["home_goals"] == 2
 
 
 def test_is_dnf_reads_the_winner_id_from_a_null_safe_details():
@@ -396,16 +396,16 @@ def test_career_line_shape():
     assert line is not None
     assert line["club_id"] == "141881"
     assert line["gamertag"] == "YanisFcz"
-    assert line["jogos"] == 12
-    assert line["gols"] == 21
-    assert line["assistencias"] == 8
-    assert line["melhor_em_campo"] == 3
-    assert line["nota"] == 8.5
-    assert line["posicao"] in ("goleiro", "defensor", "meio", "atacante")
+    assert line["played"] == 12
+    assert line["goals"] == 21
+    assert line["assists"] == 8
+    assert line["man_of_the_match"] == 3
+    assert line["rating"] == 8.5
+    assert line["position"] in ("goalkeeper", "defensor", "meio", "atacante")
 
 
 def test_career_line_without_a_name_is_dropped():
-    """O endpoint não traz playerId: o gamertag é o único elo. Sem nome não há
+    """O endpoint não traz playerId: o gamertag é o único elo. Sem name não há
     como casar com o perfil, e gravar assim criaria um jogador fantasma."""
     assert nz.career_line({"gamesPlayed": "5"}, "1") is None
     assert nz.career_line({"name": "   "}, "1") is None

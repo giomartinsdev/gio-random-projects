@@ -23,17 +23,17 @@ func NewSearchRunRepository(pool *pgxpool.Pool) *SearchRunRepository {
 
 // Save é upsert pelo termo normalizado. Idempotente: buscar duas vezes a mesma
 // coisa não duplica trabalho -- o segundo pedido só reabre a linha.
-func (r *SearchRunRepository) Save(ctx context.Context, termo string, rodando bool,
-	encontrados int, erro string, concluido bool) error {
+func (r *SearchRunRepository) Save(ctx context.Context, termo string, running bool,
+	found int, error string, concluido bool) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO clubs_search_runs (termo, rodando, encontrados, erro, solicitado_em, concluido_em)
+		INSERT INTO clubs_search_runs (termo, running, found, error, requested_at, finished_at)
 		VALUES ($1, $2, $3, $4, now(), CASE WHEN $5 THEN now() ELSE NULL END)
 		ON CONFLICT (termo) DO UPDATE SET
-			rodando = EXCLUDED.rodando,
-			encontrados = EXCLUDED.encontrados,
-			erro = EXCLUDED.erro,
-			concluido_em = EXCLUDED.concluido_em`,
-		termo, rodando, encontrados, erro, concluido)
+			running = EXCLUDED.running,
+			found = EXCLUDED.found,
+			error = EXCLUDED.error,
+			finished_at = EXCLUDED.finished_at`,
+		termo, running, found, error, concluido)
 	if err != nil {
 		return fmt.Errorf("save search run: %w", err)
 	}

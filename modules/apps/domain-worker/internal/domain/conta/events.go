@@ -9,9 +9,9 @@ type Event interface {
 
 type Created struct {
 	ContaID      string    `json:"conta_id"`
-	UsuarioEmail string    `json:"usuario_email"`
-	Nome         string    `json:"nome"`
-	Tipo         string    `json:"tipo"`
+	UserEmail string    `json:"user_email"`
+	Name         string    `json:"name"`
+	Kind         string    `json:"kind"`
 	OccurredAt   time.Time `json:"occurred_at"`
 }
 
@@ -22,8 +22,8 @@ func (Created) EventName() string { return "conta.created" }
 // GET to render it.
 type Updated struct {
 	ContaID      string    `json:"conta_id"`
-	UsuarioEmail string    `json:"usuario_email"`
-	Nome         string    `json:"nome"`
+	UserEmail string    `json:"user_email"`
+	Name         string    `json:"name"`
 	Status       string    `json:"status"`
 	OccurredAt   time.Time `json:"occurred_at"`
 }

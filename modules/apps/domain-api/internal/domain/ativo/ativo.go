@@ -10,7 +10,7 @@ import "time"
 
 type Ativo struct {
 	ID              string
-	UsuarioEmail    string
+	UserEmail    string
 	ContaID         string
 	Ticker          string
 	Status          string
@@ -18,6 +18,6 @@ type Ativo struct {
 	CustoMedio      float64
 	UltimaCotacao   float64
 	UltimaCotacaoEm time.Time
-	CriadoEm        time.Time
-	AtualizadoEm    time.Time
+	CreatedAt        time.Time
+	UpdatedAt    time.Time
 }

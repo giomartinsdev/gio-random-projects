@@ -26,26 +26,26 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
-	appanuncio "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/anuncio"
+	appannouncement "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/announcement"
 	appaposta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/aposta"
 	appativo "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/ativo"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
 	appcchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchdeck"
 	appcchroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchroom"
 	appclub "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/club"
-	appclubesnapshot "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/clubesnapshot"
+	appclubsnapshot "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/clubsnapshot"
 	appconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/conta"
 	appdashboardlayout "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/dashboardlayout"
 	appdeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/deal"
 	applead "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/lead"
 	appmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/message"
-	apppartida "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/partida"
+	appmatch "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/match"
 	apppost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/post"
-	apppreferencia "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/preferencia"
+	apppreference "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/preference"
 	approom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/room"
 	apptransacao "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/transacao"
 	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/user"
-	domainanuncio "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/anuncio"
+	domainannouncement "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/announcement"
 	domainaposta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/aposta"
 	domainativo "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/ativo"
 	domaincchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchdeck"
@@ -56,9 +56,9 @@ import (
 	domaindeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/deal"
 	domainlead "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/lead"
 	domainmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/message"
-	domainpartida "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/partida"
+	domainmatch "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/match"
 	domainpost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/post"
-	domainpref "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/preferencia"
+	domainpref "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/preference"
 	domainroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/room"
 	domaintransacao "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/transacao"
 	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
@@ -178,20 +178,20 @@ func main() {
 
 	clubeTotaisRepo := postgres.NewClubeTotaisRepository(pool)
 	partidaRepo := postgres.NewPartidaRepository(pool)
-	partidaService := apppartida.NewService(partidaRepo, clubeTotaisRepo)
-	partidaHandler := apppartida.NewCommandHandler(partidaService)
+	partidaService := appmatch.NewService(partidaRepo, clubeTotaisRepo)
+	partidaHandler := appmatch.NewCommandHandler(partidaService)
 
 	snapshotRepo := postgres.NewClubSnapshotRepository(pool)
-	snapshotService := appclubesnapshot.NewService(snapshotRepo)
-	snapshotHandler := appclubesnapshot.NewCommandHandler(snapshotService)
+	snapshotService := appclubsnapshot.NewService(snapshotRepo)
+	snapshotHandler := appclubsnapshot.NewCommandHandler(snapshotService)
 
 	anuncioRepo := postgres.NewAnuncioRepository(pool)
-	anuncioService := appanuncio.NewService(anuncioRepo)
-	anuncioHandler := appanuncio.NewCommandHandler(anuncioService)
+	anuncioService := appannouncement.NewService(anuncioRepo)
+	anuncioHandler := appannouncement.NewCommandHandler(anuncioService)
 
 	preferenciaRepo := postgres.NewPreferenciaRepository(pool)
-	preferenciaService := apppreferencia.NewService(preferenciaRepo)
-	preferenciaHandler := apppreferencia.NewCommandHandler(preferenciaService)
+	preferenciaService := apppreference.NewService(preferenciaRepo)
+	preferenciaHandler := apppreference.NewCommandHandler(preferenciaService)
 
 	// Every aggregate's handler in one place: process() takes this
 	// struct rather than a growing parameter list.
@@ -264,10 +264,10 @@ type handlers struct {
 	dashboardLayout *appdashboardlayout.CommandHandler
 	lead            *applead.CommandHandler
 	club            *appclub.CommandHandler
-	partida         *apppartida.CommandHandler
-	snapshot        *appclubesnapshot.CommandHandler
-	anuncio         *appanuncio.CommandHandler
-	preferencia     *apppreferencia.CommandHandler
+	partida         *appmatch.CommandHandler
+	snapshot        *appclubsnapshot.CommandHandler
+	anuncio         *appannouncement.CommandHandler
+	preferencia     *apppreference.CommandHandler
 	// Saúde do worker de ingestão: um upsert direto, não um agregado -- o
 	// worker é um poller sem host, e esta é a única forma de a saúde dele
 	// chegar até a API.
@@ -441,7 +441,7 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 		}
 	case strings.HasPrefix(string(cmd.Action), "partida."):
 		entityType = "partida"
-		var pevt domainpartida.Event
+		var pevt domainmatch.Event
 		pevt, err = h.partida.Handle(ctx, cmd)
 		if pevt != nil {
 			evt = pevt
@@ -754,9 +754,9 @@ func ativoEntityID(evt domainativo.Event) string {
 func dashboardLayoutEntityID(evt domaindashboardlayout.Event) string {
 	switch e := evt.(type) {
 	case domaindashboardlayout.Saved:
-		return e.UsuarioEmail
+		return e.UserEmail
 	case domaindashboardlayout.Deleted:
-		return e.UsuarioEmail
+		return e.UserEmail
 	default:
 		return ""
 	}
@@ -780,9 +780,9 @@ func clubEntityID(evt domainclub.Event) string {
 	}
 }
 
-func partidaEntityID(evt domainpartida.Event) string {
+func partidaEntityID(evt domainmatch.Event) string {
 	switch e := evt.(type) {
-	case domainpartida.Upserted:
+	case domainmatch.Upserted:
 		return e.MatchID
 	default:
 		return ""
@@ -792,4 +792,4 @@ func partidaEntityID(evt domainpartida.Event) string {
 // domainpref is imported for the preferencia handler's type; the blank
 // reference keeps the import meaningful even as the aggregate grows.
 var _ = domainpref.OrigemManual
-var _ domainanuncio.Event
+var _ domainannouncement.Event

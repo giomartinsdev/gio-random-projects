@@ -9,7 +9,7 @@ import "time"
 
 type Aposta struct {
 	ID            string
-	UsuarioEmail  string
+	UserEmail  string
 	ContaID       string
 	Descricao     string
 	ValorApostado float64
@@ -18,6 +18,6 @@ type Aposta struct {
 	RetornoObtido float64
 	DataAposta    time.Time
 	DataResultado time.Time
-	CriadoEm      time.Time
-	AtualizadoEm  time.Time
+	CreatedAt      time.Time
+	UpdatedAt  time.Time
 }

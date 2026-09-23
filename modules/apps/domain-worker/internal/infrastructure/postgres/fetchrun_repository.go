@@ -23,21 +23,21 @@ func NewFetchRunRepository(pool *pgxpool.Pool) *FetchRunRepository {
 // Save é upsert por alvo. Idempotente de propósito: a SPA pode pedir o mesmo
 // alvo de novo (reload, clique duplo) sem gerar trabalho duplicado -- o segundo
 // pedido só reabre a linha.
-func (r *FetchRunRepository) Save(ctx context.Context, alvo, alvoID, rotulo string, rodando bool,
-	jogadores, partidas, clubes int, erro string, concluido bool) error {
+func (r *FetchRunRepository) Save(ctx context.Context, target, alvoID, label string, running bool,
+	players, matches, clubs int, error string, concluido bool) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO clubs_fetch_runs
-			(alvo, alvo_id, rotulo, rodando, jogadores, partidas, clubes, erro, solicitado_em, concluido_em)
+			(target, target_id, label, running, players, matches, clubs, error, requested_at, finished_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), CASE WHEN $9 THEN now() ELSE NULL END)
-		ON CONFLICT (alvo, alvo_id) DO UPDATE SET
-			rotulo = EXCLUDED.rotulo,
-			rodando = EXCLUDED.rodando,
-			jogadores = EXCLUDED.jogadores,
-			partidas = EXCLUDED.partidas,
-			clubes = EXCLUDED.clubes,
-			erro = EXCLUDED.erro,
-			concluido_em = EXCLUDED.concluido_em`,
-		alvo, alvoID, rotulo, rodando, jogadores, partidas, clubes, erro, concluido)
+		ON CONFLICT (target, target_id) DO UPDATE SET
+			label = EXCLUDED.label,
+			running = EXCLUDED.running,
+			players = EXCLUDED.players,
+			matches = EXCLUDED.matches,
+			clubs = EXCLUDED.clubs,
+			error = EXCLUDED.error,
+			finished_at = EXCLUDED.finished_at`,
+		target, alvoID, label, running, players, matches, clubs, error, concluido)
 	if err != nil {
 		return fmt.Errorf("save fetch run: %w", err)
 	}

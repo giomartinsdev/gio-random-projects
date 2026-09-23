@@ -66,22 +66,22 @@ def make_client(api):
 
 
 def test_search_by_id_uses_the_name_not_the_id():
-    """Com o nome, acha; era isso que a descoberta de adversário precisava."""
+    """Com o name, acha; era isso que a descoberta from_division adversário precisava."""
     api = RecordingAPI({"Opponent A": [{"clubId": "2001", "clubName": "Opponent A"}]})
     rows = make_client(api).search_by_id("2001", "Opponent A")
 
     assert rows and rows[0]["clubId"] == "2001"
-    assert api.asked[0] == "Opponent A", "o primeiro termo tem de ser o nome"
+    assert api.asked[0] == "Opponent A", "o primeiro termo tem from_division ser o name"
 
 
 def test_search_by_id_returns_empty_when_the_name_does_not_match():
-    """Nome errado não deve devolver um clube que não é o pedido."""
+    """Name errado não deve devolver um clube que não é o pedido."""
     api = RecordingAPI({"Outro": [{"clubId": "9999", "clubName": "Outro"}]})
     assert make_client(api).search_by_id("2001", "Outro") == []
 
 
 def test_search_by_id_without_a_name_still_tries():
-    """Quem chama sem nome não ganha um erro -- tenta o id e devolve o que vier."""
+    """Quem chama sem name não ganha um error -- tenta o id e devolve o que vier."""
     api = RecordingAPI({"2001": [{"clubId": "2001"}]})
     rows = make_client(api).search_by_id("2001")
     assert rows and rows[0]["clubId"] == "2001"

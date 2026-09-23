@@ -2,67 +2,67 @@
 // carrega termo técnico (sem "snapshot", "ingest", "cache") — a nomenclatura
 // de apresentação é toda daqui para baixo.
 
-export type Posicao = "goleiro" | "defensor" | "meio" | "atacante";
+export type Position = "goalkeeper" | "defensor" | "meio" | "atacante";
 export type Resultado = "vitoria" | "empate" | "derrota";
 export type TipoPartida = "liga" | "amistoso" | "playoff";
 
 export interface ClubRef {
   club_id: string;
-  nome: string;
-  sigla: string;
-  divisao: number;
-  nivel: number;
-  pontos: number;
-  gols: number;
-  gols_sofridos: number;
-  jogos_sem_sofrer: number;
+  name: string;
+  tag: string;
+  division_at_read: number;
+  skill_rating: number;
+  points: number;
+  goals: number;
+  goals_conceded: number;
+  clean_sheets: number;
   sequencia_invicta: number;
-  acompanhado: boolean;
+  tracked: boolean;
 }
 
 export interface Adversario {
   club_id: string;
-  nome: string;
-  sigla: string;
-  jogos: number;
-  vitorias: number;
-  empates: number;
-  derrotas: number;
-  gols: number;
-  gols_contra: number;
-  ultimo_jogo: string;
+  name: string;
+  tag: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goals: number;
+  goals_against: number;
+  last_match: string;
 }
 
 export interface Club {
   club_id: string;
-  nome: string;
-  sigla: string;
-  estadio: string;
-  regiao_id: string;
-  time_id: string;
-  escudo_asset_id: string;
-  cor_1: number;
-  cor_2: number;
-  cor_3: number;
-  cor_4: number;
-  acompanhado: boolean;
-  atualizado_em: string;
-  jogos: number;
-  vitorias: number;
-  empates: number;
-  derrotas: number;
-  gols: number;
-  gols_sofridos: number;
-  jogos_sem_sofrer: number;
-  pontos: number;
-  divisao_atual: number;
-  melhor_divisao: number;
-  nivel: number;
-  promocoes: number;
-  rebaixamentos: number;
-  aproveitamento: number;
-  forma: string[] | null;
-  sequencia: { vitorias: number; invicta: number };
+  name: string;
+  tag: string;
+  stadium: string;
+  region_id: string;
+  team_id: string;
+  crest_asset_id: string;
+  color_1: number;
+  color_2: number;
+  color_3: number;
+  color_4: number;
+  tracked: boolean;
+  updated_at: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goals: number;
+  goals_conceded: number;
+  clean_sheets: number;
+  points: number;
+  division: number;
+  best_division: number;
+  skill_rating: number;
+  promotions: number;
+  relegations: number;
+  win_rate: number;
+  form: string[] | null;
+  streak: { wins: number; unbeaten: number };
   adversarios: Adversario[] | null;
 }
 
@@ -70,76 +70,76 @@ export interface PlayerLine {
   club_id: string;
   player_id: string;
   gamertag: string;
-  posicao: Posicao;
-  nota: number;
-  gols: number;
-  assistencias: number;
-  chutes: number;
-  passes_certos: number;
-  passes_tentados: number;
-  desarmes_certos: number;
-  desarmes_tentados: number;
-  defesas: number;
-  defesas_por_tipo?: Record<string, number> | null;
-  segundos_jogados: number;
-  melhor_em_campo: boolean;
-  cartao_vermelho: boolean;
-  jogo_sem_sofrer_gol: boolean;
+  position: Position;
+  rating: number;
+  goals: number;
+  assists: number;
+  shots: number;
+  passes_made: number;
+  passes_attempted: number;
+  tackles_made: number;
+  tackles_attempted: number;
+  saves: number;
+  saves_by_type?: Record<string, number> | null;
+  seconds_played: number;
+  man_of_the_match: boolean;
+  red_card: boolean;
+  clean_sheet: boolean;
 }
 
 export interface Match {
   id: string;
   match_id: string;
   timestamp: string;
-  tipo: TipoPartida;
-  rodada_playoff: string;
-  clube_casa_id: string;
-  clube_fora_id: string;
-  clube_casa_nome: string;
-  clube_casa_sigla: string;
-  clube_fora_nome: string;
-  clube_fora_sigla: string;
-  gols_casa: number;
-  gols_fora: number;
-  houve_desistencia: boolean;
-  resultado_casa: Resultado;
-  nosso_lado: "casa" | "fora";
-  nosso_resultado: Resultado;
-  nossos_gols: number;
-  gols_deles: number;
-  adversario_id: string;
-  adversario_nome: string;
-  adversario_sigla: string;
-  nota_agregada: number;
-  jogadores?: PlayerLine[] | null;
-  lances?: Array<{ player_id: string; gamertag: string; eventos: Array<{ rotulo: string; quantidade: number }>; inferido: boolean }> | null;
+  kind: TipoPartida;
+  playoff_round: string;
+  home_club_id: string;
+  away_club_id: string;
+  home_club_name: string;
+  home_club_tag: string;
+  away_club_name: string;
+  away_club_tag: string;
+  home_goals: number;
+  away_goals: number;
+  decided_by_forfeit: boolean;
+  home_result: Resultado;
+  our_side: "casa" | "fora";
+  our_result: Resultado;
+  our_goals: number;
+  their_goals: number;
+  opponent_id: string;
+  opponent_name: string;
+  opponent_tag: string;
+  avg_rating: number;
+  players?: PlayerLine[] | null;
+  events?: Array<{ player_id: string; gamertag: string; eventos: Array<{ label: string; quantidade: number }>; inferido: boolean }> | null;
 }
 
 export interface SquadMember {
   player_id: string;
   gamertag: string;
-  posicao: Posicao;
-  jogos: number;
-  gols: number;
-  assistencias: number;
-  nota: number;
-  chutes: number;
-  passes_certos: number;
-  passes_tentados: number;
-  desarmes_certos: number;
-  desarmes_tentados: number;
-  defesas: number;
-  melhor_em_campo: number;
-  segundos_jogados: number;
-  forma: number[] | null;
-  gols_por_jogo: number;
-  assistencias_por_jogo: number;
-  passes_precisao: number;
-  desarmes_precisao: number;
+  position: Position;
+  played: number;
+  goals: number;
+  assists: number;
+  rating: number;
+  shots: number;
+  passes_made: number;
+  passes_attempted: number;
+  tackles_made: number;
+  tackles_attempted: number;
+  saves: number;
+  man_of_the_match: number;
+  seconds_played: number;
+  form: number[] | null;
+  goals_per_game: number;
+  assists_per_game: number;
+  pass_accuracy: number;
+  tackle_accuracy: number;
   clean_sheets: number;
-  cartoes_vermelhos: number;
-  goleiro: boolean;
-  defesas_por_tipo?: Record<string, number> | null;
+  red_cards: number;
+  goalkeeper: boolean;
+  saves_by_type?: Record<string, number> | null;
   /** Alguém já reivindicou este pro (o hub não diz quem) — a tela de resgate
    * bloqueia os que já têm dono em vez de oferecer um botão que falharia. */
   resgatado?: boolean;
@@ -150,129 +150,129 @@ export interface SquadMember {
 /** O estado de um sync sob demanda. A SPA grava o pedido e polla isto até
  * `concluido_em` aparecer. O alvo pode ser um clube ou um jogador. */
 export interface FetchRun {
-  alvo: "clube" | "jogador";
-  alvo_id: string;
-  rotulo: string;
-  rodando: boolean;
-  jogadores: number;
-  partidas: number;
-  clubes: number;
-  erro: string;
-  concluido_em: string | null;
+  target: "club" | "player";
+  target_id: string;
+  label: string;
+  running: boolean;
+  players: number;
+  matches: number;
+  clubs: number;
+  error: string;
+  finished_at: string | null;
 }
 
 /** O estado da busca ao vivo de um termo na fonte. A busca do diretório é
  * local; esta alcança um clube que o hub ainda não viu. */
 export interface SearchRun {
   termo: string;
-  rodando: boolean;
-  encontrados: number;
-  erro: string;
-  concluido_em: string | null;
+  running: boolean;
+  found: number;
+  error: string;
+  finished_at: string | null;
 }
 
 export interface PlayerClub {
   club_id: string;
-  nome: string;
-  sigla: string;
-  jogos: number;
-  gols: number;
-  assistencias: number;
-  nota: number;
+  name: string;
+  tag: string;
+  played: number;
+  goals: number;
+  assists: number;
+  rating: number;
   /** Totais ACUMULADOS no clube (carreira), quando a fonte os tem. Distinto
    * dos campos acima, que são a temporada das partidas acompanhadas. */
   career?: PlayerCareer | null;
 }
 
 export interface PlayerCareer {
-  jogos: number;
-  gols: number;
-  assistencias: number;
-  melhor_em_campo: number;
-  nota: number;
+  played: number;
+  goals: number;
+  assists: number;
+  man_of_the_match: number;
+  rating: number;
 }
 
 export interface PlayerMatch {
   match_id: string;
   timestamp: string;
-  adversario_nome: string;
+  opponent_name: string;
   resultado: Resultado;
-  gols_casa: number;
-  gols_fora: number;
-  nota: number;
-  gols: number;
-  assistencias: number;
-  chutes: number;
-  passes_certos: number;
-  passes_tentados: number;
-  desarmes_certos: number;
-  desarmes_tentados: number;
-  segundos_jogados: number;
+  home_goals: number;
+  away_goals: number;
+  rating: number;
+  goals: number;
+  assists: number;
+  shots: number;
+  passes_made: number;
+  passes_attempted: number;
+  tackles_made: number;
+  tackles_attempted: number;
+  seconds_played: number;
 }
 
 export interface PlayerProfile {
   player_id: string;
   gamertag: string;
-  posicao: Posicao;
+  position: Position;
   club_id: string;
-  clube_nome: string;
-  club_sigla: string;
-  jogos: number;
-  gols: number;
-  assistencias: number;
-  nota: number;
-  gols_por_jogo: number;
-  assistencias_por_jogo: number;
-  passes_precisao: number;
-  desarmes_precisao: number;
-  melhor_em_campo: number;
-  segundos_jogados: number;
+  club_name: string;
+  club_tag: string;
+  played: number;
+  goals: number;
+  assists: number;
+  rating: number;
+  goals_per_game: number;
+  assists_per_game: number;
+  pass_accuracy: number;
+  tackle_accuracy: number;
+  man_of_the_match: number;
+  seconds_played: number;
   clean_sheets: number;
-  cartoes_vermelhos: number;
-  goleiro: boolean;
-  forma: number[] | null;
-  defesas_por_tipo?: Record<string, number> | null;
-  clubes: PlayerClub[] | null;
-  verificado: boolean;
-  partidas?: PlayerMatch[] | null;
+  red_cards: number;
+  goalkeeper: boolean;
+  form: number[] | null;
+  saves_by_type?: Record<string, number> | null;
+  clubs: PlayerClub[] | null;
+  verified: boolean;
+  matches?: PlayerMatch[] | null;
 }
 
 export interface Snapshot {
-  lido_em: string;
-  nivel: number;
-  divisao: number;
-  jogos: number;
-  vitorias: number;
-  empates: number;
-  derrotas: number;
-  gols: number;
-  gols_sofridos: number;
-  tamanho_elenco: number;
+  read_at: string;
+  skill_rating: number;
+  division_at_read: number;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goals: number;
+  goals_conceded: number;
+  squad_size: number;
 }
 
 export interface Evolution {
   serie: Snapshot[] | null;
   total: number;
-  atual: Snapshot | null;
+  current: Snapshot | null;
   // Explícito para a UI explicar "o histórico cresce a cada atualização" em
   // vez de desenhar um gráfico de um ponto só.
   historico_curto: boolean;
 }
 
 export interface DivisionChange {
-  detectado_em: string;
-  de: number;
-  para: number;
-  tipo: "promocao" | "rebaixamento";
+  detected_at: string;
+  from_division: number;
+  to_division: number;
+  kind: "promocao" | "rebaixamento";
 }
 
 export interface RecordMatch {
   match_id: string;
   timestamp: string;
-  adversario_nome: string;
-  nossos_gols: number;
-  gols_deles: number;
-  total_gols: number;
+  opponent_name: string;
+  our_goals: number;
+  their_goals: number;
+  total_goals: number;
 }
 
 export interface RecordLine {
@@ -280,104 +280,104 @@ export interface RecordLine {
   gamertag: string;
   match_id: string;
   timestamp: string;
-  adversario_nome: string;
-  nota: number;
-  gols: number;
+  opponent_name: string;
+  rating: number;
+  goals: number;
 }
 
 export interface Records {
-  maior_goleada: RecordMatch | null;
-  pior_derrota: RecordMatch | null;
-  jogo_com_mais_gols: RecordMatch | null;
-  melhor_nota: RecordLine | null;
-  mais_gols_em_um_jogo: RecordLine | null;
-  maior_sequencia_vitorias: number;
+  biggest_win: RecordMatch | null;
+  worst_loss: RecordMatch | null;
+  highest_scoring_match: RecordMatch | null;
+  best_rating: RecordLine | null;
+  most_goals_in_match: RecordLine | null;
+  longest_win_streak: number;
   jogos_sem_sofrer_gol: number;
-  total_partidas: number;
+  total_matches: number;
 }
 
 export interface HeadToHead {
-  clube_a: ClubRef;
-  clube_b: ClubRef;
-  jogos: number;
-  vitorias_a: number;
-  empates: number;
-  derrotas_a: number;
-  gols_a: number;
-  gols_b: number;
-  forma_a: string[] | null;
-  partidas: Match[] | null;
+  club_a: ClubRef;
+  club_b: ClubRef;
+  played: number;
+  wins_a: number;
+  draws: number;
+  losses_a: number;
+  goals_a: number;
+  goals_b: number;
+  form_a: string[] | null;
+  matches: Match[] | null;
 }
 
 export interface Announcement {
   id: string;
-  tipo: "resultado" | "ranking" | "jogador" | "novidade";
-  titulo: string;
-  texto: string;
-  referencia_id: string;
-  icone: string;
-  gerado_em: string;
+  kind: "resultado" | "ranking" | "player" | "novidade";
+  title: string;
+  body: string;
+  reference_id: string;
+  icon: string;
+  generated_at: string;
 }
 
 export interface RankPlayer {
   player_id: string;
   gamertag: string;
-  posicao: Posicao;
+  position: Position;
   club_id: string;
-  clube_nome: string;
-  club_sigla: string;
-  jogos: number;
-  gols: number;
-  assistencias: number;
-  nota: number;
-  gols_por_jogo: number;
-  verificado: boolean;
+  club_name: string;
+  club_tag: string;
+  played: number;
+  goals: number;
+  assists: number;
+  rating: number;
+  goals_per_game: number;
+  verified: boolean;
 }
 
 export interface WatchEntry {
   club_id: string;
-  nome: string;
-  sigla: string;
-  divisao: number;
-  nivel: number;
-  seguindo_desde: string;
-  origem: "proprio" | "rival" | "rival_de_rival" | "manual";
+  name: string;
+  tag: string;
+  division_at_read: number;
+  skill_rating: number;
+  tracked_since: string;
+  source: "own" | "rival" | "rival_of_rival" | "manual";
 }
 
 export interface NotificationPrefs {
-  canal: string;
-  resumo_periodico: boolean;
-  recordes_e_divisoes: boolean;
-  resultado_partidas: boolean;
+  channel: string;
+  weekly_digest: boolean;
+  records_and_divisions: boolean;
+  match_results: boolean;
 }
 
 export interface ClaimedPro {
   club_id: string;
   player_id: string;
-  verificado: boolean;
+  verified: boolean;
 }
 
 export interface SyncRun {
-  rodando: boolean;
-  nivel: number;
+  running: boolean;
+  skill_rating: number;
   total: number;
-  concluidos: number;
-  atual: string;
-  novos: string[] | null;
-  iniciado_em: string;
-  concluido_em: string;
+  completed: number;
+  current: string;
+  new_items: string[] | null;
+  started_at: string;
+  finished_at: string;
 }
 
 export interface AdminStatus {
-  clubes_total: number;
-  clubes_acompanhados: number;
-  clubes_pendentes: number;
-  partidas: number;
-  jogadores: number;
+  clubs_total: number;
+  clubs_tracked: number;
+  clubs_pending: number;
+  matches: number;
+  players: number;
   snapshots: number;
-  mudancas_divisao: number;
-  anuncios: number;
-  ultima_partida: string | null;
-  por_divisao: Record<string, number> | null;
-  top_clubes: ClubRef[] | null;
+  division_changes: number;
+  announcements: number;
+  last_match_at: string | null;
+  by_division: Record<string, number> | null;
+  top_clubs: ClubRef[] | null;
 }

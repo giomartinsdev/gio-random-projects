@@ -27,24 +27,24 @@ func (s *Service) Upsert(ctx context.Context, in UpsertInput) (domainclub.Club, 
 
 	var c domainclub.Club
 	if err == domainclub.ErrNotFound {
-		c, err = domainclub.New(in.ClubID, in.Nome, in.Sigla)
+		c, err = domainclub.New(in.ClubID, in.Name, in.Tag)
 		if err != nil {
 			return domainclub.Club{}, nil, err
 		}
 	} else {
 		c = existing
 	}
-	c.SetIdentity(in.Nome, in.Sigla, in.Estadio, in.RegiaoID, in.TimeID, in.EscudoAssetID)
-	c.SetKit(in.Cor1, in.Cor2, in.Cor3, in.Cor4)
-	if in.Acompanhado {
-		c.Acompanhado = true
+	c.SetIdentity(in.Name, in.Tag, in.Stadium, in.RegiaoID, in.TimeID, in.EscudoAssetID)
+	c.SetKit(in.Color1, in.Color2, in.Color3, in.Color4)
+	if in.Tracked {
+		c.Tracked = true
 	}
 
 	if err := s.repo.Upsert(ctx, c); err != nil {
 		return domainclub.Club{}, nil, err
 	}
 	return c, domainclub.Upserted{
-		ClubID: c.ClubID, Nome: c.Nome, Sigla: c.Sigla,
-		Acompanhado: c.Acompanhado, OccurredAt: c.AtualizadoEm,
+		ClubID: c.ClubID, Name: c.Name, Tag: c.Tag,
+		Tracked: c.Tracked, OccurredAt: c.UpdatedAt,
 	}, nil
 }

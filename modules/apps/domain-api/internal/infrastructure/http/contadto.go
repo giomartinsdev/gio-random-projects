@@ -8,18 +8,18 @@ import (
 
 type ContaResponse struct {
 	ID           string    `json:"id"`
-	UsuarioEmail string    `json:"usuario_email"`
-	Nome         string    `json:"nome"`
-	Tipo         string    `json:"tipo"`
+	UserEmail string    `json:"user_email"`
+	Name         string    `json:"name"`
+	Kind         string    `json:"kind"`
 	Status       string    `json:"status"`
-	CriadoEm     time.Time `json:"criado_em"`
-	AtualizadoEm time.Time `json:"atualizado_em"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func toContaResponse(c domainconta.Conta) ContaResponse {
 	return ContaResponse{
-		ID: c.ID, UsuarioEmail: c.UsuarioEmail, Nome: c.Nome, Tipo: c.Tipo, Status: c.Status,
-		CriadoEm: c.CriadoEm, AtualizadoEm: c.AtualizadoEm,
+		ID: c.ID, UserEmail: c.UserEmail, Name: c.Name, Kind: c.Kind, Status: c.Status,
+		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 }
 

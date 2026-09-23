@@ -22,7 +22,7 @@ func NewService(repo domainativo.Repository) *Service {
 }
 
 func (s *Service) Create(ctx context.Context, id string, in CreateInput) (domainativo.Ativo, domainativo.Event, error) {
-	a, mov, err := domainativo.New(id, in.UsuarioEmail, in.ContaID, in.Ticker, in.QuantidadeInicial, in.PrecoUnitario, in.Data)
+	a, mov, err := domainativo.New(id, in.UserEmail, in.ContaID, in.Ticker, in.QuantidadeInicial, in.PrecoUnitario, in.Data)
 	if err != nil {
 		return domainativo.Ativo{}, nil, err
 	}
@@ -31,7 +31,7 @@ func (s *Service) Create(ctx context.Context, id string, in CreateInput) (domain
 		return domainativo.Ativo{}, nil, err
 	}
 	return a, domainativo.Created{
-		AtivoID: a.ID, UsuarioEmail: a.UsuarioEmail, ContaID: a.ContaID, Ticker: a.Ticker, OccurredAt: a.CriadoEm,
+		AtivoID: a.ID, UserEmail: a.UserEmail, ContaID: a.ContaID, Ticker: a.Ticker, OccurredAt: a.CreatedAt,
 	}, nil
 }
 
@@ -40,7 +40,7 @@ func (s *Service) RegisterMovement(ctx context.Context, in RegisterMovementInput
 	if err != nil {
 		return domainativo.Ativo{}, nil, err
 	}
-	updated, mov, err := domainativo.RegistrarMovimento(a, in.Tipo, in.Quantidade, in.PrecoUnitario, in.ValorProvento, in.Data)
+	updated, mov, err := domainativo.RegistrarMovimento(a, in.Kind, in.Quantidade, in.PrecoUnitario, in.ValorProvento, in.Data)
 	if err != nil {
 		return domainativo.Ativo{}, nil, err
 	}
@@ -51,7 +51,7 @@ func (s *Service) RegisterMovement(ctx context.Context, in RegisterMovementInput
 	return updated, domainativo.MovimentoRegistrado{
 		AtivoID:            updated.ID,
 		MovimentoID:        mov.ID,
-		Tipo:               mov.Tipo,
+		Kind:               mov.Kind,
 		QuantidadeAtual:    updated.QuantidadeAtual,
 		CustoMedio:         updated.CustoMedio,
 		Status:             updated.Status,

@@ -8,7 +8,7 @@ type Event interface {
 
 type Created struct {
 	AtivoID      string    `json:"ativo_id"`
-	UsuarioEmail string    `json:"usuario_email"`
+	UserEmail string    `json:"user_email"`
 	ContaID      string    `json:"conta_id"`
 	Ticker       string    `json:"ticker"`
 	OccurredAt   time.Time `json:"occurred_at"`
@@ -22,7 +22,7 @@ func (Created) EventName() string { return "ativo.created" }
 type MovimentoRegistrado struct {
 	AtivoID            string    `json:"ativo_id"`
 	MovimentoID        string    `json:"movimento_id"`
-	Tipo               string    `json:"tipo"`
+	Kind               string    `json:"kind"`
 	QuantidadeAtual    float64   `json:"quantidade_atual"`
 	CustoMedio         float64   `json:"custo_medio"`
 	Status             string    `json:"status"`

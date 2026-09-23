@@ -22,12 +22,12 @@ func NewTransacaoRepository(pool *pgxpool.Pool) *TransacaoRepository {
 	return &TransacaoRepository{pool: pool}
 }
 
-const transacaoColumns = `id, usuario_email, conta_id, tipo, valor, data, categoria, descricao, anexo_imagem, criado_em, atualizado_em`
+const transacaoColumns = `id, user_email, conta_id, kind, valor, data, categoria, descricao, anexo_imagem, created_at, updated_at`
 
 func scanTransacao(row pgx.Row) (domaintransacao.Transacao, error) {
 	var t domaintransacao.Transacao
 	var descricao, anexoImagem *string
-	err := row.Scan(&t.ID, &t.UsuarioEmail, &t.ContaID, &t.Tipo, &t.Valor, &t.Data, &t.Categoria, &descricao, &anexoImagem, &t.CriadoEm, &t.AtualizadoEm)
+	err := row.Scan(&t.ID, &t.UserEmail, &t.ContaID, &t.Kind, &t.Valor, &t.Data, &t.Categoria, &descricao, &anexoImagem, &t.CreatedAt, &t.UpdatedAt)
 	if descricao != nil {
 		t.Descricao = *descricao
 	}
@@ -53,9 +53,9 @@ func (r *TransacaoRepository) FindByID(ctx context.Context, id string) (domaintr
 // categoria, de and ate are all optional beyond the required
 // usuarioEmail, same "nil/empty = no filter" convention as
 // ContaRepository.ListByUsuario's status argument.
-func (r *TransacaoRepository) ListByFiltro(ctx context.Context, usuarioEmail, contaID, categoria string, de, ate *time.Time) ([]domaintransacao.Transacao, error) {
-	query := `SELECT ` + transacaoColumns + ` FROM transacoes WHERE usuario_email = $1`
-	args := []any{usuarioEmail}
+func (r *TransacaoRepository) ListByFiltro(ctx context.Context, userEmail, contaID, categoria string, from_division, ate *time.Time) ([]domaintransacao.Transacao, error) {
+	query := `SELECT ` + transacaoColumns + ` FROM transacoes WHERE user_email = $1`
+	args := []any{userEmail}
 
 	if contaID != "" {
 		args = append(args, contaID)
@@ -65,15 +65,15 @@ func (r *TransacaoRepository) ListByFiltro(ctx context.Context, usuarioEmail, co
 		args = append(args, categoria)
 		query += fmt.Sprintf(" AND categoria = $%d", len(args))
 	}
-	if de != nil {
-		args = append(args, *de)
+	if from_division != nil {
+		args = append(args, *from_division)
 		query += fmt.Sprintf(" AND data >= $%d", len(args))
 	}
 	if ate != nil {
 		args = append(args, *ate)
 		query += fmt.Sprintf(" AND data <= $%d", len(args))
 	}
-	query += " ORDER BY data DESC, criado_em DESC"
+	query += " ORDER BY data DESC, created_at DESC"
 
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -94,9 +94,9 @@ func (r *TransacaoRepository) ListByFiltro(ctx context.Context, usuarioEmail, co
 
 func (r *TransacaoRepository) Insert(ctx context.Context, t domaintransacao.Transacao) error {
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO transacoes (id, usuario_email, conta_id, tipo, valor, data, categoria, descricao, anexo_imagem, criado_em, atualizado_em)
+		`INSERT INTO transacoes (id, user_email, conta_id, kind, valor, data, categoria, descricao, anexo_imagem, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		t.ID, t.UsuarioEmail, t.ContaID, t.Tipo, t.Valor, t.Data, t.Categoria, nullify(t.Descricao), nullify(t.AnexoImagem), t.CriadoEm, t.AtualizadoEm,
+		t.ID, t.UserEmail, t.ContaID, t.Kind, t.Valor, t.Data, t.Categoria, nullify(t.Descricao), nullify(t.AnexoImagem), t.CreatedAt, t.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert transacao: %w", err)
@@ -106,8 +106,8 @@ func (r *TransacaoRepository) Insert(ctx context.Context, t domaintransacao.Tran
 
 func (r *TransacaoRepository) Update(ctx context.Context, t domaintransacao.Transacao) error {
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE transacoes SET tipo = $2, valor = $3, data = $4, categoria = $5, descricao = $6, anexo_imagem = $7, atualizado_em = $8 WHERE id = $1`,
-		t.ID, t.Tipo, t.Valor, t.Data, t.Categoria, nullify(t.Descricao), nullify(t.AnexoImagem), t.AtualizadoEm,
+		`UPDATE transacoes SET kind = $2, valor = $3, data = $4, categoria = $5, descricao = $6, anexo_imagem = $7, updated_at = $8 WHERE id = $1`,
+		t.ID, t.Kind, t.Valor, t.Data, t.Categoria, nullify(t.Descricao), nullify(t.AnexoImagem), t.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("update transacao: %w", err)

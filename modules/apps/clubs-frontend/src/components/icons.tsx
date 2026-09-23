@@ -48,14 +48,14 @@ export function WatchStar({ size = 16, filled }: { size?: number; filled: boolea
 
 /** O ícone de cada tipo de aviso que a pessoa pode escolher receber. */
 export const NOTIFY_ICONS: Record<string, LucideIcon> = {
-  resumo_periodico: RefreshCw,
-  recordes_e_divisoes: Trophy,
-  resultado_partidas: Radio,
+  weekly_digest: RefreshCw,
+  records_and_divisions: Trophy,
+  match_results: Radio,
 };
 
 /** Passos/resumo do resgate — o mesmo trio de ícones em toda a jornada. */
 export const FLOW_ICONS = {
-  jogadores: Users,
+  players: Users,
   resgate: Target,
   rivais: Network,
   fonte: Radio,

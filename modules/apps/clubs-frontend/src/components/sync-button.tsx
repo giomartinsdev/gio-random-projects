@@ -12,28 +12,28 @@ import { api } from "../lib/api";
 import type { FetchRun } from "../lib/types";
 import { fmt } from "../lib/format";
 
-type Alvo = "clube" | "jogador";
+type Target = "club" | "player";
 
 export function SyncButton({
-  alvo,
-  alvoId,
+  target,
+  targetId,
   onDone,
 }: {
-  alvo: Alvo;
-  alvoId: string;
+  target: Target;
+  targetId: string;
   onDone?: () => void;
 }) {
   const [run, setRun] = useState<FetchRun | null>(null);
-  const [erro, setErro] = useState("");
+  const [error, setErro] = useState("");
   const poll = useRef<number | null>(null);
 
   // O estado pode já existir (um pedido anterior, ou o ciclo já trouxe os
   // dados): mostrar antes de qualquer clique evita dizer "sincronizar" quando
   // o dado é recente.
   const carregar = useCallback(() => {
-    const pedido = alvo === "jogador" ? api.fetchRunJogador(alvoId) : api.fetchRun(alvoId);
+    const pedido = target === "player" ? api.fetchRunJogador(targetId) : api.fetchRun(targetId);
     pedido.then(setRun).catch(() => setRun(null));
-  }, [alvo, alvoId]);
+  }, [target, targetId]);
 
   useEffect(() => {
     carregar();
@@ -44,13 +44,13 @@ export function SyncButton({
 
   const sincronizar = useCallback(async () => {
     setErro("");
-    setRun((r) => (r ? { ...r, rodando: true, erro: "" } : r));
+    setRun((r) => (r ? { ...r, running: true, error: "" } : r));
     try {
-      if (alvo === "jogador") await api.requestFetchJogador(alvoId);
-      else await api.requestFetch(alvoId);
+      if (target === "player") await api.requestFetchJogador(targetId);
+      else await api.requestFetch(targetId);
     } catch {
       setErro("Não conseguimos pedir a atualização.");
-      setRun((r) => (r ? { ...r, rodando: false } : r));
+      setRun((r) => (r ? { ...r, running: false } : r));
       return;
     }
 
@@ -58,9 +58,9 @@ export function SyncButton({
     // intervalo curto dá a sensação de "pedi e está vindo".
     const tick = async () => {
       try {
-        const st = alvo === "jogador" ? await api.fetchRunJogador(alvoId) : await api.fetchRun(alvoId);
+        const st = target === "player" ? await api.fetchRunJogador(targetId) : await api.fetchRun(targetId);
         setRun(st);
-        if (!st.concluido_em) {
+        if (!st.finished_at) {
           poll.current = window.setTimeout(tick, 2000);
         } else {
           // O dado chegou: quem embute pode querer recarregar o que mostra (o
@@ -72,21 +72,21 @@ export function SyncButton({
       }
     };
     tick();
-  }, [alvo, alvoId, onDone]);
+  }, [target, targetId, onDone]);
 
-  const rodando = run?.rodando ?? false;
-  const pronto = !!run?.concluido_em;
+  const running = run?.running ?? false;
+  const pronto = !!run?.finished_at;
 
   // A frase do resultado diz o que ACONTECEU, não "sucesso": syncar um clube
   // traz jogadores e partidas; syncar um jogador atualiza os clubes dele.
   let resumo = "";
-  if (rodando) resumo = "buscando na fonte…";
-  else if (run?.erro) resumo = "a fonte recusou esta atualização";
+  if (running) resumo = "buscando na fonte…";
+  else if (run?.error) resumo = "a fonte recusou esta atualização";
   else if (pronto) {
     resumo =
-      alvo === "jogador"
-        ? `${fmt(run!.clubes)} clubes · ${fmt(run!.partidas)} partidas`
-        : `${fmt(run!.jogadores)} jogadores · ${fmt(run!.partidas)} partidas`;
+      target === "player"
+        ? `${fmt(run!.clubs)} clubs · ${fmt(run!.matches)} matches`
+        : `${fmt(run!.players)} players · ${fmt(run!.matches)} matches`;
   }
 
   return (
@@ -94,8 +94,8 @@ export function SyncButton({
       <button
         type="button"
         onClick={sincronizar}
-        disabled={rodando}
-        title="Buscar os dados mais recentes direto da fonte, sem esperar a atualização de rotina"
+        disabled={running}
+        title="Buscar os dados mais recentes direto da fonte, sem esperar a atualização from_division rotina"
         className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wide transition-colors disabled:opacity-50"
         style={{
           borderColor: pronto ? "var(--success)" : "var(--border-strong)",
@@ -103,15 +103,15 @@ export function SyncButton({
           color: pronto ? "var(--success)" : "var(--text-muted)",
         }}
       >
-        <RefreshCw className={`size-3.5 ${rodando ? "animate-spin" : ""}`} />
-        {rodando ? "sincronizando" : "sincronizar"}
+        <RefreshCw className={`size-3.5 ${running ? "animate-spin" : ""}`} />
+        {running ? "sincronizando" : "sincronizar"}
       </button>
-      {(resumo || erro) && (
+      {(resumo || error) && (
         <span
           className="font-mono text-[10px]"
-          style={{ color: run?.erro || erro ? "var(--danger)" : "var(--text-faint)" }}
+          style={{ color: run?.error || error ? "var(--danger)" : "var(--text-faint)" }}
         >
-          {erro || resumo}
+          {error || resumo}
         </span>
       )}
     </div>

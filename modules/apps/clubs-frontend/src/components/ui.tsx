@@ -5,19 +5,19 @@
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { ChevronLeft, ChevronRight, Flag } from "lucide-react";
-import type { Club, Posicao, Resultado } from "../lib/types";
+import type { Club, Position, Resultado } from "../lib/types";
 import { hex, POS_SHORT, RESULT_LETTER, resultColor, resultSoft } from "../lib/format";
 
 // ------------------------------------------------------------------ escudo
 
 /** O escudo é desenhado do zero a partir de crest_asset_id — a EA não publica
  * uma tabela de imagens, então a forma vem da de-para por inferência. */
-export function Crest({ club, size = 34 }: { club: Pick<Club, "nome" | "sigla" | "cor_1" | "cor_2" | "cor_3" | "escudo_asset_id">; size?: number }) {
-  const c1 = hex(club.cor_1) === "#000000" ? "var(--accent)" : hex(club.cor_1);
-  const c2 = hex(club.cor_2) === "#000000" ? "var(--text)" : hex(club.cor_2);
-  const id = `crest-${club.sigla || "x"}-${size}`;
+export function Crest({ club, size = 34 }: { club: Pick<Club, "name" | "tag" | "color_1" | "color_2" | "color_3" | "crest_asset_id">; size?: number }) {
+  const c1 = hex(club.color_1) === "#000000" ? "var(--accent)" : hex(club.color_1);
+  const c2 = hex(club.color_2) === "#000000" ? "var(--text)" : hex(club.color_2);
+  const id = `crest-${club.tag || "x"}-${size}`;
   return (
-    <svg width={size} height={size} viewBox="0 0 100 110" aria-label={`escudo ${club.nome}`}>
+    <svg width={size} height={size} viewBox="0 0 100 110" aria-label={`escudo ${club.name}`}>
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="0.4" y2="1">
           <stop offset="0%" stopColor={c1} />
@@ -43,7 +43,7 @@ export function Crest({ club, size = 34 }: { club: Pick<Club, "nome" | "sigla" |
         stroke="rgba(0,0,0,.35)"
         strokeWidth="1.6"
       >
-        {club.sigla || "FC"}
+        {club.tag || "FC"}
       </text>
     </svg>
   );
@@ -112,16 +112,16 @@ export function ResultBadge({ resultado, dnf = false }: { resultado: Resultado; 
   );
 }
 
-export function PosTag({ posicao }: { posicao: Posicao }) {
-  return <Badge title={posicao}>{POS_SHORT[posicao]}</Badge>;
+export function PosTag({ position }: { position: Position }) {
+  return <Badge title={position}>{POS_SHORT[position]}</Badge>;
 }
 
 /** Os últimos resultados, mais recente à esquerda. */
-export function FormChips({ forma, max = 10 }: { forma: string[] | null; max?: number }) {
-  if (!forma?.length) return <span className="text-faint text-xs">sem jogos</span>;
+export function FormChips({ form, max = 10 }: { form: string[] | null; max?: number }) {
+  if (!form?.length) return <span className="text-faint text-xs">sem played</span>;
   return (
     <span className="flex gap-1" title="últimos resultados, mais recente à esquerda">
-      {forma.slice(0, max).map((r, i) => (
+      {form.slice(0, max).map((r, i) => (
         <span
           key={i}
           className="grid size-[18px] place-items-center rounded-sm font-mono text-[10px] font-bold"

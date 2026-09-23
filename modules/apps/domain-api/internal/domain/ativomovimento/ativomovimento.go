@@ -9,11 +9,11 @@ import "time"
 type AtivoMovimento struct {
 	ID                 string
 	AtivoID            string
-	Tipo               string
+	Kind               string
 	Quantidade         float64
 	PrecoUnitario      float64
 	ValorProvento      float64
 	ResultadoRealizado float64
 	Data               time.Time
-	CriadoEm           time.Time
+	CreatedAt           time.Time
 }

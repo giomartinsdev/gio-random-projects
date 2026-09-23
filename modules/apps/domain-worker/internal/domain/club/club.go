@@ -16,14 +16,14 @@ import (
 
 var (
 	ErrClubIDRequired = errors.New("club_id is required")
-	ErrNomeRequired   = errors.New("nome is required")
+	ErrNomeRequired   = errors.New("name is required")
 )
 
 type Club struct {
 	ClubID   string
-	Nome     string
-	Sigla    string
-	Estadio  string
+	Name     string
+	Tag    string
+	Stadium  string
 	RegiaoID string
 	TimeID   string
 	// EscudoAssetID has no published lookup table on the source side —
@@ -31,25 +31,25 @@ type Club struct {
 	EscudoAssetID string
 	// Kit colours arrive as decimal RGB (16777215 = #FFFFFF). Conversion
 	// to hex belongs to the presentation layer, so the raw value is kept.
-	Cor1, Cor2, Cor3, Cor4 int
-	Acompanhado            bool
-	AtualizadoEm           time.Time
+	Color1, Color2, Color3, Color4 int
+	Tracked            bool
+	UpdatedAt           time.Time
 }
 
 // New constructs a Club. acompanhado always starts false — a club becomes
 // followed only when the ingest cycle succeeds at fetching its squad and
 // matches, never at discovery time.
-func New(clubID, nome, sigla string) (Club, error) {
+func New(clubID, name, tag string) (Club, error) {
 	if clubID == "" {
 		return Club{}, ErrClubIDRequired
 	}
-	if nome == "" {
+	if name == "" {
 		return Club{}, ErrNomeRequired
 	}
 	return Club{
 		ClubID: clubID,
-		Nome:   nome,
-		Sigla:  sigla,
+		Name:   name,
+		Tag:  tag,
 	}, nil
 }
 
@@ -57,15 +57,15 @@ func New(clubID, nome, sigla string) (Club, error) {
 // Empty values mean "leave unchanged", the same convention as
 // conta.Edit — the source sometimes omits a field rather than sending an
 // empty one.
-func (c *Club) SetIdentity(nome, sigla, estadio, regiaoID, timeID, escudoAssetID string) {
-	if nome != "" {
-		c.Nome = nome
+func (c *Club) SetIdentity(name, tag, stadium, regiaoID, timeID, escudoAssetID string) {
+	if name != "" {
+		c.Name = name
 	}
-	if sigla != "" {
-		c.Sigla = sigla
+	if tag != "" {
+		c.Tag = tag
 	}
-	if estadio != "" {
-		c.Estadio = estadio
+	if stadium != "" {
+		c.Stadium = stadium
 	}
 	if regiaoID != "" {
 		c.RegiaoID = regiaoID
@@ -80,9 +80,9 @@ func (c *Club) SetIdentity(nome, sigla, estadio, regiaoID, timeID, escudoAssetID
 
 // SetKit records the four decimal RGB colours. A zero means "the source
 // sent nothing", so an all-zero call is a no-op rather than a wipe.
-func (c *Club) SetKit(cor1, cor2, cor3, cor4 int) {
-	if cor1 == 0 && cor2 == 0 && cor3 == 0 && cor4 == 0 {
+func (c *Club) SetKit(color1, color2, color3, color4 int) {
+	if color1 == 0 && color2 == 0 && color3 == 0 && color4 == 0 {
 		return
 	}
-	c.Cor1, c.Cor2, c.Cor3, c.Cor4 = cor1, cor2, cor3, cor4
+	c.Color1, c.Color2, c.Color3, c.Color4 = color1, color2, color3, color4
 }

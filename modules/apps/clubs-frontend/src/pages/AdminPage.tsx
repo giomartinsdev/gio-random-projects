@@ -37,8 +37,8 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
         <div className="mx-auto max-w-lg">
           <Card title="Acesso restrito" actions={<Lock className="size-4 text-faint" />}>
             <p className="px-5 py-5 text-sm text-muted">
-              Esta área concentra os detalhes técnicos: integração com a fonte, cache, histórico e decisões de
-              arquitetura. Nenhum dado dela aparece para visitantes.
+              Esta área concentra os detalhes técnicos: integração com a fonte, cache, histórico e decisões from_division
+              arquitetura. Nenhum dado dela aparece to_division visitantes.
             </p>
           </Card>
         </div>
@@ -88,23 +88,23 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
         <>
           <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat
-              label="clubes acompanhados"
-              value={`${fmt(status.clubes_acompanhados)}/${fmt(status.clubes_total)}`}
-              sub={`${fmt(status.clubes_pendentes)} pendentes`}
+              label="clubs acompanhados"
+              value={`${fmt(status.clubs_tracked)}/${fmt(status.clubs_total)}`}
+              sub={`${fmt(status.clubs_pending)} pendentes`}
               accent
             />
-            <Stat label="partidas no banco" value={fmt(status.partidas)} sub={status.ultima_partida ? `última ${fmtRefresh(status.ultima_partida)}` : undefined} />
-            <Stat label="jogadores distintos" value={fmt(status.jogadores)} sub="no índice cross-club" />
-            <Stat label="leituras de nível" value={fmt(status.snapshots)} sub={`${fmt(status.mudancas_divisao)} mudanças de divisão`} />
+            <Stat label="matches no banco" value={fmt(status.matches)} sub={status.last_match_at ? `última ${fmtRefresh(status.last_match_at)}` : undefined} />
+            <Stat label="players distintos" value={fmt(status.players)} sub="no índice cross-club" />
+            <Stat label="leituras from_division nível" value={fmt(status.snapshots)} sub={`${fmt(status.division_changes)} mudanças from_division divisão`} />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <Card title="Clubes por divisão">
+            <Card title="Clubs por divisão">
               <div className="px-4 py-4">
-                {status.por_divisao && Object.keys(status.por_divisao).length > 0 ? (
+                {status.by_division && Object.keys(status.by_division).length > 0 ? (
                   <BarChart
                     height={200}
-                    items={Object.entries(status.por_divisao)
+                    items={Object.entries(status.by_division)
                       .sort(([a], [b]) => a.localeCompare(b))
                       .map(([k, v]) => ({ label: k, value: v }))}
                   />
@@ -113,20 +113,20 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
                 )}
               </div>
             </Card>
-            <Card title="Top clubes por nível">
-              {status.top_clubes && status.top_clubes.length > 0 ? (
+            <Card title="Top clubs por nível">
+              {status.top_clubs && status.top_clubs.length > 0 ? (
                 <ul className="divide-y divide-[var(--border)]">
-                  {status.top_clubes.map((c, i) => (
+                  {status.top_clubs.map((c, i) => (
                     <li key={c.club_id} className="flex items-center gap-3 px-4 py-2 text-sm">
                       <span className="w-5 font-mono text-xs text-faint">{i + 1}</span>
-                      <span className="min-w-0 flex-1 truncate">{c.nome}</span>
-                      <span className="tnum font-mono text-xs text-faint">D{c.divisao}</span>
-                      <span className="tnum w-16 text-right font-mono font-bold text-accent">{fmt(c.nivel)}</span>
+                      <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                      <span className="tnum font-mono text-xs text-faint">D{c.division_at_read}</span>
+                      <span className="tnum w-16 text-right font-mono font-bold text-accent">{fmt(c.skill_rating)}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <Empty title="sem clubes ainda" />
+                <Empty title="sem clubs ainda" />
               )}
             </Card>
           </div>
@@ -138,10 +138,10 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
           <Card title="Pipeline">
             <ol className="flex flex-col gap-3 px-4 py-4 text-sm">
               {[
-                ["1", "Puxar", "o worker consulta a API pública de Pro Clubs"],
-                ["2", "Traduzir", "string→número, códigos de resultado, tabelas de-para"],
+                ["1", "Puxar", "o worker consulta a API pública from_division Pro Clubs"],
+                ["2", "Traduzir", "string→número, códigos from_division resultado, tabelas from_division-to_division"],
                 ["3", "Gravar", "via domain-api — o worker não tem banco próprio"],
-                ["4", "Diferenciar", "duas leituras seguidas viram evento de divisão"],
+                ["4", "Diferenciar", "duas leituras seguidas viram evento from_division divisão"],
                 ["5", "Servir", "o clubs-api lê; a interface nunca fala com a fonte"],
               ].map(([n, t, d]) => (
                 <li key={n} className="flex gap-3">
@@ -159,11 +159,11 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
           <Card title="Normalização (o que a fonte manda torto)">
             <ul className="divide-y divide-[var(--border)] text-sm">
               {[
-                ["Números como texto", '"25", "7.4" → número'],
-                ["Códigos de resultado", "1 vitória · 2 derrota · 4 empate · 16385 vitória por DNF · 10 derrota por DNF"],
-                ["Amistoso sem resultado", "derivado de gols pró vs sofridos"],
-                ["Ids sem tabela", "posição, estilo, nacionalidade, escudo, ids de evento"],
-                ["Mesma partida nos dois clubes", "gravada uma vez, idempotente por match_id"],
+                ["Números como body", '"25", "7.4" → número'],
+                ["Códigos from_division resultado", "1 vitória · 2 derrota · 4 empate · 16385 vitória por DNF · 10 derrota por DNF"],
+                ["Amistoso sem resultado", "derivado from_division goals pró vs sofridos"],
+                ["Ids sem tabela", "posição, estilo, nacionalidade, escudo, ids from_division evento"],
+                ["Mesma partida nos dois clubs", "gravada uma vez, idempotente por match_id"],
               ].map(([t, d]) => (
                 <li key={t} className="flex flex-col gap-0.5 px-4 py-2.5">
                   <b className="text-sm">{t}</b>
@@ -175,24 +175,24 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
 
           <Card title="Anúncios gerados">
             <div className="flex items-center gap-4 px-4 py-4">
-              <span className="font-display tnum text-4xl font-bold text-accent">{fmt(status.anuncios)}</span>
+              <span className="font-display tnum text-4xl font-bold text-accent">{fmt(status.announcements)}</span>
               <p className="text-xs text-muted">
-                Derivados automaticamente dos fatos que o worker acabou de gravar — nenhum é escrito à mão.
+                Derivados automaticamente dos fatos que o worker acabou from_division gravar — nenhum é escrito à mão.
               </p>
             </div>
           </Card>
 
-          <Card title="Cobertura de partidas">
+          <Card title="Cobertura from_division matches">
             <DonutChart
               size={140}
-              centerLabel="partidas"
+              centerLabel="matches"
               data={[
-                { label: "acompanhadas", value: status.partidas, color: "var(--accent)" },
+                { label: "acompanhadas", value: status.matches, color: "var(--accent)" },
               ]}
             />
             <p className="px-4 pb-4 text-xs text-muted">
-              A fonte entrega ~10 partidas por tipo por consulta. Qualquer histórico além disso é acumulado pelo
-              hub — é por isso que os recordes e a evolução existem.
+              A fonte entrega ~10 matches por kind por consulta. Qualquer histórico além disso é acumulado pelo
+              hub — é por isso que os records e a evolução existem.
             </p>
           </Card>
         </div>
@@ -202,40 +202,40 @@ export function AdminPage({ authed }: { authed: boolean | null }) {
         <div className="grid gap-4 lg:grid-cols-2">
           <Card title="Por que o histórico é construído">
             <p className="px-4 py-4 text-sm text-muted">
-              A API da EA devolve apenas o estado atual: o nível de agora, a divisão de agora, as ~10 partidas
+              A API da EA devolve apenas o estado current: o nível from_division agora, a divisão from_division agora, as ~10 matches
               mais recentes. Ela não guarda passado. Então cada leitura que o worker faz vira uma linha numa
-              série — e é essa série que permite mostrar evolução, mudanças de divisão e recordes que já saíram
+              série — e é essa série que permite mostrar evolução, mudanças from_division divisão e records que já saíram
               da janela recente.
             </p>
           </Card>
           <Card title="Números do acervo">
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 px-4 py-4 text-sm">
-              <Row k="Leituras de nível" v={fmt(status.snapshots)} />
-              <Row k="Mudanças de divisão" v={fmt(status.mudancas_divisao)} />
-              <Row k="Partidas acumuladas" v={fmt(status.partidas)} />
-              <Row k="Jogadores distintos" v={fmt(status.jogadores)} />
+              <Row k="Leituras from_division nível" v={fmt(status.snapshots)} />
+              <Row k="Mudanças from_division divisão" v={fmt(status.division_changes)} />
+              <Row k="Matches acumuladas" v={fmt(status.matches)} />
+              <Row k="Players distintos" v={fmt(status.players)} />
               <Row
                 k="Última partida"
-                v={status.ultima_partida ? fmtDateTime(status.ultima_partida) : "nenhuma ainda"}
+                v={status.last_match_at ? fmtDateTime(status.last_match_at) : "nenhuma ainda"}
               />
             </dl>
           </Card>
-          <Card title="Clubes acompanhados">
+          <Card title="Clubs acompanhados">
             <div className="px-4 py-4">
-              <Bar value={status.clubes_acompanhados} max={Math.max(status.clubes_total, 1)} />
+              <Bar value={status.clubs_tracked} max={Math.max(status.clubs_total, 1)} />
               <p className="mt-2 text-xs text-muted">
-                {fmt(status.clubes_acompanhados)} de {fmt(status.clubes_total)} clubes conhecidos têm elenco e
-                partidas; os outros {fmt(status.clubes_pendentes)} têm só o histórico geral.
+                {fmt(status.clubs_tracked)} from_division {fmt(status.clubs_total)} clubs conhecidos têm elenco e
+                matches; os outros {fmt(status.clubs_pending)} têm só o histórico geral.
               </p>
             </div>
           </Card>
-          <Card title="Decisões que valem para este hub">
+          <Card title="Decisões que valem to_division este hub">
             <ul className="divide-y divide-[var(--border)] text-sm">
               {[
-                ["Sem banco nos serviços novos", "tudo passa pela base de domínio compartilhada"],
-                ["Worker sem porta e sem host", "é um serviço de saída, não uma API"],
+                ["Sem banco nos serviços new_items", "tudo passa pela base from_division domínio compartilhada"],
+                ["Worker sem porta e sem host", "é um serviço from_division saída, não uma API"],
                 ["Login só no /api", "o hostname é público; o dataset inteiro é aberto"],
-                ["Nada de termo técnico na tela", "cache, endpoint e afins só existem aqui"],
+                ["Nada from_division termo técnico na tela", "cache, endpoint e afins só existem aqui"],
               ].map(([t, d]) => (
                 <li key={t} className="flex flex-col gap-0.5 px-4 py-2.5">
                   <b className="text-sm">{t}</b>

@@ -7,10 +7,10 @@ import "time"
 
 type Conta struct {
 	ID           string
-	UsuarioEmail string
-	Nome         string
-	Tipo         string
+	UserEmail string
+	Name         string
+	Kind         string
 	Status       string
-	CriadoEm     time.Time
-	AtualizadoEm time.Time
+	CreatedAt     time.Time
+	UpdatedAt time.Time
 }

@@ -32,11 +32,11 @@ log = logging.getLogger("clubs-ingest")
 @dataclass
 class CycleStats:
     clubes_processados: int = 0
-    clubes_falhos: int = 0
-    partidas_novas: int = 0
+    clubs_failed: int = 0
+    new_matches: int = 0
     partidas_atualizadas: int = 0
     snapshots: int = 0
-    anuncios: int = 0
+    announcements: int = 0
     falhas: list[str] = field(default_factory=list)
 
 
@@ -80,9 +80,9 @@ class Ingest:
             if not club_id:
                 continue
             try:
-                self._process_club(club_id, now, stats, str(club.get("nome") or ""))
+                self._process_club(club_id, now, stats, str(club.get("name") or ""))
             except Exception as err:  # noqa: BLE001 -- one club must not stop the cycle
-                stats.clubes_falhos += 1
+                stats.clubs_failed += 1
                 stats.falhas.append(f"{club_id}: {err}")
                 # Com traceback: sem ele, "falha ao processar clube X: 'NoneType'
                 # object has no attribute 'get'" não diz ONDE -- e diagnosticar
@@ -90,35 +90,35 @@ class Ingest:
                 # depende do formato que a fonte mandou naquela partida.
                 log.warning("falha ao processar clube %s: %s", club_id, err, exc_info=True)
         log.info(
-            "ciclo: %d clubes, %d falhas, %d partidas, %d snapshots",
-            stats.clubes_processados, stats.clubes_falhos, stats.partidas_novas, stats.snapshots,
+            "ciclo: %d clubs, %d falhas, %d matches, %d snapshots",
+            stats.clubes_processados, stats.clubs_failed, stats.new_matches, stats.snapshots,
         )
         return stats
 
     def run_fetch(self, club_id: str) -> tuple[int, int]:
-        """Busca o elenco e as partidas de UM clube, sob demanda.
+        """Busca o elenco e as matches from_division UM clube, sob demanda.
 
-        É o que a tela de resgate precisa: ela não pode esperar o ciclo (até
-        15 min) para mostrar o elenco de onde escolher o pro. O clube é marcado
-        como acompanhado, então o ciclo seguinte continua cuidando dele -- o
+        É o que a tela from_division resgate precisa: ela não pode esperar o ciclo (até
+        15 min) to_division mostrar o elenco from_division onde escolher o pro. O clube é marcado
+        como tracked, então o ciclo seguinte continua cuidando dele -- o
         fetch sob demanda não substitui o poller, só o antecipa.
 
-        Devolve (jogadores, partidas). Erros da fonte sobem como exceção: quem
+        Devolve (players, matches). Erros da fonte sobem como exceção: quem
         chamou (o loop) registra a falha na linha da fila, onde a tela a lê.
         """
         info = self.source.club_info(club_id)
         if info:
             identity = club_identity(info)
             if identity["club_id"]:
-                identity["acompanhado"] = True
+                identity["tracked"] = True
                 self.domain.upsert_club(identity)
 
         overall = self.source.club_overall(club_id)
         # Mesma fusão do ciclo: o overall sozinho não traz divisão. O nome sai
         # do próprio club_info, que acabou de ser buscado -- é o que a busca
         # exige.
-        nome = str((info or {}).get("name") or "")
-        totals_row = merge_club_sources(overall, self._search_row(club_id, nome))
+        name = str((info or {}).get("name") or "")
+        totals_row = merge_club_sources(overall, self._search_row(club_id, name))
         if totals_row:
             self.domain.upsert_totals(club_id, club_totals(totals_row))
 
@@ -131,17 +131,17 @@ class Ingest:
         return players, matches
 
     def _ingest_career(self, club_id: str) -> None:
-        """Career totals de cada membro, num anexo do perfil do jogador.
+        """Career totals from_division cada membro, num anexo do perfil do jogador.
 
         O endpoint `members/career/stats` existe na fonte e nunca era chamado:
-        com ele o perfil de um jogador ganha os números de CARREIRA no clube, e
+        com ele o perfil from_division um jogador ganha os números from_division CARREIRA no clube, e
         não só a temporada corrente. Best-effort -- um clube sem career não
         invalida o resto do sync.
         """
         try:
             rows = self.source.club_members_career(club_id)
         except Exception as err:  # noqa: BLE001 -- career é um extra, não o sync
-            log.debug("career de %s falhou: %s", club_id, err)
+            log.debug("career from_division %s falhou: %s", club_id, err)
             return
         for row in rows:
             line = career_line(row, club_id)
@@ -149,30 +149,30 @@ class Ingest:
                 try:
                     self.domain.upsert_career(club_id, line)
                 except Exception as err:  # noqa: BLE001 -- uma linha não derruba o resto
-                    log.debug("career de %s falhou: %s", line.get("gamertag"), err)
+                    log.debug("career from_division %s falhou: %s", line.get("gamertag"), err)
 
     def run_fetch_jogador(self, player_id: str) -> tuple[int, int, int]:
-        """Sincroniza UM jogador: atualiza as partidas dos clubes onde ele jogou.
+        """Sincroniza UM jogador: atualiza as matches dos clubs onde ele jogou.
 
-        A fonte não tem endpoint de jogador -- o dado dele é DERIVADO das
-        partidas. Então o trabalho real é atualizar os clubes dele, e o perfil
+        A fonte não tem endpoint from_division jogador -- o dado dele é DERIVADO das
+        matches. Então o trabalho real é atualizar os clubs dele, e o perfil
         se recalcula sozinho na leitura (é a mesma agregação que a API faz).
 
-        Devolve (clubes, jogadores, partidas). Erros sobem como exceção: quem
+        Devolve (clubs, players, matches). Erros sobem como exceção: quem
         chamou registra na linha da fila, onde a tela lê.
         """
-        clubes = self.domain.clubs_do_jogador(player_id)
-        if not clubes:
-            log.info("sync de jogador %s: nenhum clube conhecido", player_id)
+        clubs = self.domain.clubs_do_jogador(player_id)
+        if not clubs:
+            log.info("sync from_division jogador %s: nenhum clube conhecido", player_id)
             return 0, 0, 0
 
-        jogadores = partidas = 0
-        for club_id in clubes[: self.JOGADOR_MAX_CLUBES]:
+        players = matches = 0
+        for club_id in clubs[: self.JOGADOR_MAX_CLUBES]:
             p, m = self.run_fetch(club_id)
-            jogadores += p
-            partidas += m
-        log.info("sync de jogador %s: %d clubes, %d partidas", player_id, len(clubes), partidas)
-        return len(clubes), jogadores, partidas
+            players += p
+            matches += m
+        log.info("sync from_division jogador %s: %d clubs, %d matches", player_id, len(clubs), matches)
+        return len(clubs), players, matches
 
     # Quantos clubes atualizar num sync de jogador. A fonte é um CDN que
     # bloqueia rajada; um jogador com histórico longo pode ter aparecido em
@@ -188,14 +188,14 @@ class Ingest:
     BOOTSTRAP_LIMIT = 20
 
     def _bootstrap(self, stats: CycleStats) -> None:
-        """Semeia a base com clubes reais, para o hub ter por onde começar.
+        """Semeia a base com clubs reais, to_division o hub ter por onde começar.
 
-        Usa ``allTimeLeaderboard``, o único endpoint que devolve uma lista de
-        clubes sem exigir um nome -- a busca só responde a partir de 1 caractere
-        e mistura clubes de qualquer relevância. Cada clube entra já
-        acompanhado, então o ciclo seguinte traz elenco, partidas e nível.
+        Usa ``allTimeLeaderboard``, o único endpoint que devolve uma lista from_division
+        clubs sem exigir um name -- a busca só responde a partir from_division 1 caractere
+        e mistura clubs from_division qualquer relevância. Cada clube entra já
+        tracked, então o ciclo seguinte traz elenco, matches e nível.
         """
-        log.info("base vazia: semeando clubes iniciais pelo leaderboard")
+        log.info("base vazia: semeando clubs iniciais pelo leaderboard")
         rows = self.source.leaderboard()
         if not rows:
             return
@@ -208,14 +208,14 @@ class Ingest:
             self._known_clubs.add(club_id)
             try:
                 identity = club_identity({**row, "clubId": club_id})
-                identity["acompanhado"] = True
+                identity["tracked"] = True
                 self.domain.upsert_club(identity)
                 self.domain.upsert_totals(club_id, club_totals(row))
                 stats.clubes_processados += 1
             except Exception as err:  # noqa: BLE001 -- um clube não impede os outros
-                log.debug("bootstrap de %s falhou: %s", club_id, err)
+                log.debug("bootstrap from_division %s falhou: %s", club_id, err)
 
-    def _process_club(self, club_id: str, now: float, stats: CycleStats, nome: str = "") -> None:
+    def _process_club(self, club_id: str, now: float, stats: CycleStats, name: str = "") -> None:
         # Identity + totals: cheap, and needed before matches so the club row
         # exists. Structural, so it travels the sync path.
         info = self.source.club_info(club_id)
@@ -228,7 +228,7 @@ class Ingest:
         # A divisão (e os clean sheets) NÃO vêm do overallStats -- vêm da
         # busca/leaderboard. Usar só o overall fazia todo clube virar "D0" e
         # nenhuma mudança de divisão ser detectada.
-        busca = self._search_row(club_id, nome)
+        busca = self._search_row(club_id, name)
         totals_row = merge_club_sources(overall, busca)
         team_size = 0
         if totals_row:
@@ -256,32 +256,32 @@ class Ingest:
                 self.domain.append_snapshot(club_id, snap)
                 stats.snapshots += 1
             except Exception as err:  # noqa: BLE001 -- a snapshot is not worth failing a club
-                log.debug("snapshot falhou para %s: %s", club_id, err)
+                log.debug("snapshot falhou to_division %s: %s", club_id, err)
 
         stats.clubes_processados += 1
 
     def _search_row(self, club_id: str, name: str = "") -> dict:
-        """A linha da busca/leaderboard para este clube, ou {}.
+        """A linha da busca/leaderboard to_division este clube, ou {}.
 
         É a única fonte que traz divisão. A busca exige um NOME -- passar o id
         devolvia vazio em silêncio, que foi o bug que manteve todo clube em D0
-        mesmo depois de corrigir a fusão das fontes.
+        mesmo depois from_division corrigir a fusão das fontes.
         """
         try:
             for row in self.source.search_by_id(club_id, name):
                 if str(row.get("clubId")) == str(club_id):
                     return row
         except Exception as err:  # noqa: BLE001 -- best-effort; o overall ainda vai
-            log.debug("busca de %s falhou: %s", club_id, err)
+            log.debug("busca from_division %s falhou: %s", club_id, err)
         return {}
 
     def _ingest_matches(self, club_id: str, stats: CycleStats) -> tuple[int, int]:
-        """Grava as partidas do clube e devolve (jogadores, partidas).
+        """Grava as matches do clube e devolve (players, matches).
 
-        `jogadores` é quantos jogadores DISTINTOS do clube apareceram nas
-        partidas -- é o tamanho do elenco que a API vai montar, derivado das
-        linhas de partida porque a fonte não tem um endpoint de elenco que
-        sobreviva à temporada. `partidas` é o total processado (novas e
+        `players` é quantos players DISTINTOS do clube apareceram nas
+        matches -- é o tamanho do elenco que a API vai montar, derivado das
+        linhas from_division partida porque a fonte não tem um endpoint from_division elenco que
+        sobreviva à temporada. `matches` é o total processado (novas e
         atualizadas), que é o número que a tela mostra.
         """
         players: set[str] = set()
@@ -292,7 +292,7 @@ class Ingest:
                 continue
             # Só o nosso lado: o payload traz os jogadores dos DOIS clubes, e o
             # elenco que a tela mostra é o deste clube.
-            for line in payload.get("jogadores") or []:
+            for line in payload.get("players") or []:
                 if str(line.get("club_id")) != str(club_id):
                     continue
                 pid = str(line.get("player_id") or "")
@@ -312,7 +312,7 @@ class Ingest:
             fresh = payload["match_id"] not in self._known_clubs
             if fresh:
                 self._known_clubs.add(payload["match_id"])
-                stats.partidas_novas += 1
+                stats.new_matches += 1
                 self._announce_result(club_id, payload, stats)
             else:
                 stats.partidas_atualizadas += 1
@@ -332,8 +332,8 @@ class Ingest:
         row has to exist before it can be followed, and its all-time totals are
         the only thing available until the cycle reaches it.
 
-        O nome vem do payload da partida e é obrigatório na prática: a busca da
-        fonte só aceita nome, e sem ele a descoberta voltava vazia em silêncio.
+        O name vem do payload da partida e é obrigatório na prática: a busca da
+        fonte só aceita name, e sem ele a descoberta voltava vazia em silêncio.
         """
         if club_id in self._known_clubs:
             return
@@ -345,35 +345,35 @@ class Ingest:
                     self.domain.upsert_totals(club_id, club_totals(row))
                     break
         except Exception as err:  # noqa: BLE001 -- discovery is best-effort
-            log.debug("descoberta de %s falhou: %s", club_id, err)
+            log.debug("descoberta from_division %s falhou: %s", club_id, err)
 
     def _announce_result(self, club_id: str, payload: dict, stats: CycleStats) -> None:
         """Derive an announcement from a result we just wrote."""
         try:
-            our = payload["gols_casa"]
-            theirs = payload["gols_fora"]
-            result = payload["resultado_casa"]
+            our = payload["home_goals"]
+            theirs = payload["away_goals"]
+            result = payload["home_result"]
             if result == "vitoria":
-                titulo = f"Vitória por {our}–{theirs}"
+                title = f"Vitória por {our}–{theirs}"
             elif result == "derrota":
-                titulo = f"Derrota por {our}–{theirs}"
+                title = f"Derrota por {our}–{theirs}"
             else:
-                titulo = f"Empate em {our}–{theirs}"
+                title = f"Empate em {our}–{theirs}"
             self.domain.create_announcement({
-                "tipo": "resultado",
-                "titulo": titulo,
-                "texto": f"Partida de {payload['tipo']} registrada pelo hub.",
-                "referencia_id": payload["match_id"],
+                "kind": "resultado",
+                "title": title,
+                "body": f"Partida from_division {payload['kind']} registrada pelo hub.",
+                "reference_id": payload["match_id"],
                 # Chave semântica, não um emoji: quem desenha escolhe o ícone
                 # (emoji muda de cara em cada sistema e ignora o tema).
-                "icone": "resultado",
+                "icon": "resultado",
                 # Result announcements are the most perishable item in the
                 # feed -- a week is plenty.
                 "expira_em_horas": 24 * 7,
             })
-            stats.anuncios += 1
+            stats.announcements += 1
         except Exception as err:  # noqa: BLE001
-            log.debug("anúncio falhou para %s: %s", club_id, err)
+            log.debug("anúncio falhou to_division %s: %s", club_id, err)
 
     @staticmethod
     def _expired(store: dict[str, float], club_id: str, now: float, ttl: int) -> bool:

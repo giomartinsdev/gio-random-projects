@@ -78,8 +78,8 @@ def main() -> int:
     log.info("clubs-ingest iniciado (poll=%ss, ttl_matches=%ss, ttl_squad=%ss)",
              poll_seconds, cfg.ttl_matches, cfg.ttl_squad)
 
-    rodadas = 0
-    bootstrap_feito = False
+    cycles = 0
+    bootstrapped = False
 
     # Próximo ciclo completo. As filas rodam a cada tick curto; o ciclo, no
     # intervalo longo (ele é caro: dezenas de consultas à fonte).
@@ -95,31 +95,31 @@ def main() -> int:
         if time.monotonic() >= proximo_ciclo:
             try:
                 st = ingest.run_cycle()
-                rodadas += 1
+                cycles += 1
                 if st.clubes_processados:
-                    bootstrap_feito = True
+                    bootstrapped = True
                 # Publica a saúde DEPOIS do ciclo: é o que o painel lê, e a única
                 # janela para ver uma falha em produção sem SSH.
                 domain.save_ingest_estado(
-                    rodadas=rodadas,
-                    clubes_ok=st.clubes_processados,
-                    clubes_falhos=st.clubes_falhos,
-                    partidas_novas=st.partidas_novas,
+                    cycles=cycles,
+                    clubs_ok=st.clubes_processados,
+                    clubs_failed=st.clubs_failed,
+                    new_matches=st.new_matches,
                     snapshots=st.snapshots,
-                    bootstrap_feito=bootstrap_feito,
-                    ultimo_erro="; ".join(st.falhas[:3]),
+                    bootstrapped=bootstrapped,
+                    last_error="; ".join(st.falhas[:3]),
                 )
             except Exception as err:  # noqa: BLE001 -- a whole-cycle failure must not kill the loop
                 # The in-memory source client is deliberately kept alive across
                 # failures: its CDN challenge token has to survive, which is why
                 # this is a loop and not a one-shot job.
                 log.error("ciclo falhou: %s", err)
-                rodadas += 1
+                cycles += 1
                 try:
                     domain.save_ingest_estado(
-                        rodadas=rodadas, clubes_ok=0, clubes_falhos=0,
-                        partidas_novas=0, snapshots=0, bootstrap_feito=bootstrap_feito,
-                        ultimo_erro=str(err)[:400],
+                        cycles=cycles, clubs_ok=0, clubs_failed=0,
+                        new_matches=0, snapshots=0, bootstrapped=bootstrapped,
+                        last_error=str(err)[:400],
                     )
                 except Exception:  # noqa: BLE001 -- registrar a falha não pode falhar
                     pass

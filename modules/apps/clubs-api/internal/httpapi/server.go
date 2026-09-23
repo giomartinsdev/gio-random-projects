@@ -286,7 +286,7 @@ func (s *Server) requestSearchLive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len([]rune(body.Termo)) < 2 {
-		writeError(w, http.StatusUnprocessableEntity, "termo precisa de ao menos 2 letras")
+		writeError(w, http.StatusUnprocessableEntity, "termo precisa from_division ao menos 2 letras")
 		return
 	}
 	if err := s.domain.Post(r.Context(), "/search-run", map[string]any{"termo": body.Termo}); err != nil {
@@ -298,7 +298,7 @@ func (s *Server) requestSearchLive(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listMatches(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/matches?tipo="+domainclient.Escape(q.Get("tipo"))+"&limite="+limitParam(q.Get("limite"), "25"))
+	s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/matches?kind="+domainclient.Escape(q.Get("kind"))+"&limite="+limitParam(q.Get("limite"), "25"))
 }
 
 func (s *Server) getEvolution(w http.ResponseWriter, r *http.Request) {
@@ -323,13 +323,13 @@ func (s *Server) getMatch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) rankingClubs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	s.proxyGet(w, r, "/rankings/clubs?metrica="+domainclient.Escape(q.Get("metrica"))+
+	s.proxyGet(w, r, "/rankings/clubs?metric="+domainclient.Escape(q.Get("metric"))+
 		"&limite="+limitParam(q.Get("limite"), "10")+"&offset="+limitParam(q.Get("offset"), "0"))
 }
 
 func (s *Server) rankingPlayers(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	s.proxyGet(w, r, "/rankings/players?metrica="+domainclient.Escape(q.Get("metrica"))+"&posicao="+domainclient.Escape(q.Get("posicao"))+
+	s.proxyGet(w, r, "/rankings/players?metric="+domainclient.Escape(q.Get("metric"))+"&position="+domainclient.Escape(q.Get("position"))+
 		"&limite="+limitParam(q.Get("limite"), "10")+"&offset="+limitParam(q.Get("offset"), "0"))
 }
 
@@ -373,7 +373,7 @@ func (s *Server) setWatch(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ClubID   string `json:"club_id"`
 		Seguindo *bool  `json:"seguindo"`
-		Origem   string `json:"origem"`
+		Source   string `json:"source"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
@@ -388,7 +388,7 @@ func (s *Server) setWatch(w http.ResponseWriter, r *http.Request) {
 		action = "preferencia.removeWatch"
 	}
 	if err := s.domain.Sync(r.Context(), action, map[string]any{
-		"usuario_email": id.Email, "club_id": body.ClubID, "seguindo": seguindo, "origem": body.Origem,
+		"user_email": id.Email, "club_id": body.ClubID, "seguindo": seguindo, "source": body.Source,
 	}); err != nil {
 		s.syncError(w, r, err)
 		return
@@ -399,19 +399,19 @@ func (s *Server) setWatch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) saveNotifications(w http.ResponseWriter, r *http.Request) {
 	id, _ := IdentityFrom(r.Context())
 	var body struct {
-		Canal             string `json:"canal"`
-		ResumoPeriodico   bool   `json:"resumo_periodico"`
-		RecordesEDivisoes bool   `json:"recordes_e_divisoes"`
-		ResultadoPartidas bool   `json:"resultado_partidas"`
+		Channel             string `json:"channel"`
+		WeeklyDigest   bool   `json:"weekly_digest"`
+		RecordsAndDivisions bool   `json:"records_and_divisions"`
+		MatchResults bool   `json:"match_results"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
 	}
 	if err := s.domain.Sync(r.Context(), "preferencia.saveNotificacoes", map[string]any{
-		"usuario_email": id.Email, "canal": body.Canal,
-		"resumo_periodico": body.ResumoPeriodico, "recordes_e_divisoes": body.RecordesEDivisoes,
-		"resultado_partidas": body.ResultadoPartidas,
+		"user_email": id.Email, "channel": body.Channel,
+		"weekly_digest": body.WeeklyDigest, "records_and_divisions": body.RecordsAndDivisions,
+		"match_results": body.MatchResults,
 	}); err != nil {
 		s.syncError(w, r, err)
 		return
@@ -434,12 +434,12 @@ func (s *Server) claimPro(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.domain.Sync(r.Context(), "preferencia.claimPro", map[string]any{
-		"usuario_email": id.Email, "club_id": body.ClubID, "player_id": body.PlayerID, "verificado": true,
+		"user_email": id.Email, "club_id": body.ClubID, "player_id": body.PlayerID, "verified": true,
 	}); err != nil {
 		s.syncError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"player_id": body.PlayerID, "verificado": true})
+	writeJSON(w, http.StatusOK, map[string]any{"player_id": body.PlayerID, "verified": true})
 }
 
 // startSync kicks the worker's three-level discovery. The worker polls its
@@ -447,8 +447,8 @@ func (s *Server) claimPro(w http.ResponseWriter, r *http.Request) {
 func (s *Server) startSync(w http.ResponseWriter, r *http.Request) {
 	id, _ := IdentityFrom(r.Context())
 	if err := s.domain.Post(r.Context(), "/sync-status", map[string]any{
-		"usuario_email": id.Email, "rodando": true, "nivel": 1, "total": 0, "concluidos": 0,
-		"atual": "", "novos": []string{},
+		"user_email": id.Email, "running": true, "skill_rating": 1, "total": 0, "completed": 0,
+		"current": "", "new_items": []string{},
 	}); err != nil {
 		s.syncError(w, r, err)
 		return
@@ -476,8 +476,8 @@ func (s *Server) proxyGet(w http.ResponseWriter, r *http.Request, path string) {
 		// No persistence wired (local dev): serve an honest empty state
 		// rather than a 500 — the UI's empty-state path is worth testing.
 		writeJSON(w, http.StatusOK, map[string]any{
-			"aviso": "sem persistência configurada", "clubes": []any{}, "jogadores": []any{},
-			"partidas": []any{}, "anuncios": []any{}, "total": 0,
+			"aviso": "sem persistência configurada", "clubs": []any{}, "players": []any{},
+			"matches": []any{}, "announcements": []any{}, "total": 0,
 		})
 		return
 	}
@@ -525,5 +525,5 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"erro": msg})
+	writeJSON(w, status, map[string]string{"error": msg})
 }

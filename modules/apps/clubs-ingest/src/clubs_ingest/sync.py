@@ -2,7 +2,7 @@
 their rivals' rivals.
 
 This is what makes logging in worth it. The three levels are enqueued in order
-and each discovered club is followed with the ``origem`` that found it, so the
+and each discovered club is followed with the ``source`` that found it, so the
 Minha Área screen can show what the login unlocked.
 
 Like everything else here, it goes through domain-api and never touches a
@@ -19,9 +19,9 @@ from .normalize import club_identity, club_totals, merge_club_sources
 
 log = logging.getLogger("clubs-ingest")
 
-ORIGEM_PROPRIO = "proprio"
+ORIGEM_PROPRIO = "own"
 ORIGEM_RIVAL = "rival"
-ORIGEM_RIVAL_DE_RIVAL = "rival_de_rival"
+ORIGEM_RIVAL_DE_RIVAL = "rival_of_rival"
 
 
 class Sync:
@@ -32,18 +32,18 @@ class Sync:
         self.domain = domain
         self.ingest = ingest
 
-    def run(self, usuario_email: str) -> dict[str, Any]:
+    def run(self, user_email: str) -> dict[str, Any]:
         """Discover and follow everything reachable from this person's clubs.
 
         Returns the sync run payload, which is also persisted so the SPA's
         polling indicator can render progress without blocking navigation.
         """
-        own = self._own_clubs(usuario_email)
+        own = self._own_clubs(user_email)
         if not own:
-            log.info("sync: %s não tem clubes próprios conhecidos", usuario_email)
-            self._save(usuario_email, rodando=False, nivel=3, total=0, concluidos=0,
-                       atual="", novos=[], concluido=True)
-            return {"iniciado": False, "motivo": "sem clubes próprios"}
+            log.info("sync: %s não tem clubs próprios conhecidos", user_email)
+            self._save(user_email, running=False, skill_rating=3, total=0, completed=0,
+                       current="", new_items=[], concluido=True)
+            return {"iniciado": False, "motivo": "sem clubs próprios"}
 
         # Fresh per run: the worker is a long-lived process, so a cache that
         # survived between runs would keep a club "already followed" (or a
@@ -55,46 +55,46 @@ class Sync:
         self._nomes: dict[str, str] = {}
 
         # Level 1: the person's own clubs.
-        self._save(usuario_email, rodando=True, nivel=1, total=len(own), concluidos=0,
-                   atual=own[0] if own else "", novos=[])
-        novos: list[str] = []
-        lvl1 = self._follow(usuario_email, own, ORIGEM_PROPRIO, novos)
+        self._save(user_email, running=True, skill_rating=1, total=len(own), completed=0,
+                   current=own[0] if own else "", new_items=[])
+        new_items: list[str] = []
+        lvl1 = self._follow(user_email, own, ORIGEM_PROPRIO, new_items)
 
         # Level 2: their direct rivals — as últimas 10 partidas do clube da
         # pessoa é que revelam quem são.
         rivais1 = self._rivals_named(lvl1, self.RIVAL_MATCHES_OWN)
-        self._nomes.update({cid: nome for cid, nome in rivais1 if nome})
+        self._nomes.update({cid: name for cid, name in rivais1 if name})
         lvl2 = [cid for cid, _ in rivais1]
-        self._save(usuario_email, rodando=True, nivel=2, total=len(lvl2),
-                   concluidos=len(lvl1), atual=lvl2[0] if lvl2 else "", novos=novos)
+        self._save(user_email, running=True, skill_rating=2, total=len(lvl2),
+                   completed=len(lvl1), current=lvl2[0] if lvl2 else "", new_items=new_items)
         lvl2 = [c for c in lvl2 if c not in lvl1]
-        self._follow(usuario_email, lvl2, ORIGEM_RIVAL, novos)
+        self._follow(user_email, lvl2, ORIGEM_RIVAL, new_items)
 
         # Level 3: the rivals of the rivals — 5 partidas de cada rival, para o
         # crawl não multiplicar: 10 rivais × 5 = 50 consultas, contra 100.
         rivais2 = self._rivals_named(lvl2, self.RIVAL_MATCHES_RIVAL)
-        self._nomes.update({cid: nome for cid, nome in rivais2 if nome})
+        self._nomes.update({cid: name for cid, name in rivais2 if name})
         lvl3 = [cid for cid, _ in rivais2]
-        self._save(usuario_email, rodando=True, nivel=3, total=len(lvl3),
-                   concluidos=len(lvl1) + len(lvl2), atual=lvl3[0] if lvl3 else "", novos=novos)
+        self._save(user_email, running=True, skill_rating=3, total=len(lvl3),
+                   completed=len(lvl1) + len(lvl2), current=lvl3[0] if lvl3 else "", new_items=new_items)
         lvl3 = [c for c in lvl3 if c not in lvl1 and c not in lvl2]
-        self._follow(usuario_email, lvl3, ORIGEM_RIVAL_DE_RIVAL, novos)
+        self._follow(user_email, lvl3, ORIGEM_RIVAL_DE_RIVAL, new_items)
 
         total = len(lvl1) + len(lvl2) + len(lvl3)
-        self._save(usuario_email, rodando=False, nivel=3, total=total, concluidos=total,
-                   atual="", novos=novos, concluido=True)
-        log.info("sync %s: %d próprios, %d rivais, %d clubes de clubes",
-                 usuario_email, len(lvl1), len(lvl2), len(lvl3))
+        self._save(user_email, running=False, skill_rating=3, total=total, completed=total,
+                   current="", new_items=new_items, concluido=True)
+        log.info("sync %s: %d próprios, %d rivais, %d clubs from_division clubs",
+                 user_email, len(lvl1), len(lvl2), len(lvl3))
         return {"iniciado": True, "niveis": {"1": len(lvl1), "2": len(lvl2), "3": len(lvl3)},
-                "novos": novos}
+                "new_items": new_items}
 
     # --- levels -----------------------------------------------------------
 
-    def _own_clubs(self, usuario_email: str) -> list[str]:
+    def _own_clubs(self, user_email: str) -> list[str]:
         """The clubs the person plays at. The person's watchlist carries them
-        with origem == "proprio"; anything else was discovered."""
-        watched = self.domain.list_watch(usuario_email)
-        own = [str(w.get("club_id")) for w in watched if w.get("origem") == ORIGEM_PROPRIO]
+        with source == "own"; anything else was discovered."""
+        watched = self.domain.list_watch(user_email)
+        own = [str(w.get("club_id")) for w in watched if w.get("source") == ORIGEM_PROPRIO]
         # A person who never marked one still gets the whole watchlist walked,
         # which is the honest fallback: we cannot know which is "their" club.
         if not own:
@@ -110,11 +110,11 @@ class Sync:
     RIVAL_MATCHES_RIVAL = 5
 
     def _rivals_named(self, club_ids: list[str], matches_per_club: int) -> list[tuple[str, str]]:
-        """Os adversários vistos nas partidas, como (id, nome).
+        """Os adversários vistos nas matches, como (id, name).
 
-        O nome sai do próprio payload da partida e não é enfeite: a busca da
+        O name sai do próprio payload da partida e não é enfeite: a busca da
         fonte -- a única que traz divisão e totais -- só aceita NOME, e sem ele
-        a descoberta de cada rival voltava vazia em silêncio.
+        a descoberta from_division cada rival voltava vazia em silêncio.
         """
         seen: list[tuple[str, str]] = []
         vistos: set[str] = set()
@@ -126,13 +126,13 @@ class Sync:
                         continue
                     vistos.add(oid)
                     bloco = (match.get("clubs") or {}).get(other) or {}
-                    nome = str((bloco.get("details") or {}).get("name") or "")
-                    seen.append((oid, nome))
+                    name = str((bloco.get("details") or {}).get("name") or "")
+                    seen.append((oid, name))
         return seen
 
-    def _follow(self, usuario_email: str, club_ids: list[str], origem: str,
-                novos: list[str]) -> list[str]:
-        known = self._known_followed(usuario_email)
+    def _follow(self, user_email: str, club_ids: list[str], source: str,
+                new_items: list[str]) -> list[str]:
+        known = self._known_followed(user_email)
         followed: list[str] = []
         for club_id in club_ids:
             if not club_id:
@@ -143,13 +143,13 @@ class Sync:
                     # Structural write through the sync path: the person must be
                     # able to reload and still see the club followed.
                     self.domain.sync("preferencia.setWatch", {
-                        "usuario_email": usuario_email,
+                        "user_email": user_email,
                         "club_id": club_id,
-                        "origem": origem,
+                        "source": source,
                         "seguindo": True,
                     })
                     known.add(club_id)
-                    novos.append(club_id)
+                    new_items.append(club_id)
                 except Exception as err:  # noqa: BLE001 -- one club must not stop the sync
                     log.debug("seguir %s falhou: %s", club_id, err)
             # Ensure the club is ingestable, ALWAYS -- not only when the follow
@@ -167,7 +167,7 @@ class Sync:
             for row in self.source.search_by_id(club_id, self._nomes.get(club_id, "")):
                 if str(row.get("clubId")) == club_id:
                     identity = club_identity(row)
-                    identity["acompanhado"] = True
+                    identity["tracked"] = True
                     self.domain.upsert_club(identity)
                     # O overall completa o que a busca não traz (nível), e a
                     # busca completa o que o overall não traz (divisão). Só um
@@ -176,9 +176,9 @@ class Sync:
                     self.domain.upsert_totals(club_id, club_totals(merge_club_sources(overall, row)))
                     return
         except Exception as err:  # noqa: BLE001 -- best-effort; the cycle retries
-            log.debug("identidade/totais de %s falharam: %s", club_id, err)
+            log.debug("identidade/totais from_division %s falharam: %s", club_id, err)
 
-    def _known_followed(self, usuario_email: str) -> set[str]:
+    def _known_followed(self, user_email: str) -> set[str]:
         """The watchlist as of the START of this run, read once.
 
         Scoped to the run (self._known), not the class: a cache on the class
@@ -187,11 +187,11 @@ class Sync:
         later run -- the sync silently stopped discovering.
         """
         if self._known is None:
-            self._known = {str(w.get("club_id")) for w in self.domain.list_watch(usuario_email)}
+            self._known = {str(w.get("club_id")) for w in self.domain.list_watch(user_email)}
         return self._known
 
-    def _save(self, usuario_email: str, **kwargs: Any) -> None:
-        payload = {"usuario_email": usuario_email}
+    def _save(self, user_email: str, **kwargs: Any) -> None:
+        payload = {"user_email": user_email}
         payload.update(kwargs)
         try:
             # The progress row is cosmetic -- losing an update only makes the

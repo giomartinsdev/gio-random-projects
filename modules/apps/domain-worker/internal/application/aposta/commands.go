@@ -7,7 +7,7 @@ package aposta
 import "time"
 
 type RegistrarInput struct {
-	UsuarioEmail  string    `json:"usuario_email"`
+	UserEmail  string    `json:"user_email"`
 	ContaID       string    `json:"conta_id"`
 	Descricao     string    `json:"descricao"`
 	ValorApostado float64   `json:"valor_apostado"`

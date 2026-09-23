@@ -64,8 +64,8 @@ func (s *stubClubs) AnnouncementCount(context.Context) (int, error) { return s.a
 func (s *stubClubs) Squad(context.Context, string) ([]domainclubs.SquadMember, error) {
 	return s.squad, nil
 }
-func (s *stubClubs) GetFetchRun(_ context.Context, alvo, alvoID string) (domainclubs.FetchRun, error) {
-	s.lastAlvo, s.lastAlvoID = alvo, alvoID
+func (s *stubClubs) GetFetchRun(_ context.Context, target, alvoID string) (domainclubs.FetchRun, error) {
+	s.lastAlvo, s.lastAlvoID = target, alvoID
 	return s.fetchRun, nil
 }
 func (s *stubClubs) ClubsDoJogador(context.Context, string) ([]string, error) {
@@ -114,12 +114,12 @@ func getJSON(t *testing.T, handler http.Handler, path string) *httptest.Response
 // on the club page while the same club read correctly in the list.
 func TestGetClubFormaUsesResultVocabulary(t *testing.T) {
 	repo := &stubClubs{
-		club:     domainclubs.Club{ClubID: "141881", Nome: "ACG ZW"},
+		club:     domainclubs.Club{ClubID: "141881", Name: "ACG ZW"},
 		recentNo: 3,
 		matches: []domainclubs.Match{
-			{NossoResultado: "vitoria"},
-			{NossoResultado: "derrota"},
-			{NossoResultado: "empate"},
+			{OurResult: "vitoria"},
+			{OurResult: "derrota"},
+			{OurResult: "empate"},
 		},
 	}
 	rec := getJSON(t, clubsRouter(repo), "/clubs/141881")
@@ -131,12 +131,12 @@ func TestGetClubFormaUsesResultVocabulary(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	want := []string{"vitoria", "derrota", "empate"}
-	if len(got.Forma) != len(want) {
-		t.Fatalf("forma = %v; want %v", got.Forma, want)
+	if len(got.Form) != len(want) {
+		t.Fatalf("form = %v; want %v", got.Form, want)
 	}
 	for i := range want {
-		if got.Forma[i] != want[i] {
-			t.Fatalf("forma = %v; want %v", got.Forma, want)
+		if got.Form[i] != want[i] {
+			t.Fatalf("form = %v; want %v", got.Form, want)
 		}
 	}
 }
@@ -154,14 +154,14 @@ func TestListPlayersTotalIsTheWholeIndex(t *testing.T) {
 		t.Fatalf("status = %d, body = %s; want 200", rec.Code, rec.Body)
 	}
 	var body struct {
-		Jogadores []domainclubs.PlayerProfile `json:"jogadores"`
+		Players []domainclubs.PlayerProfile `json:"players"`
 		Total     int                         `json:"total"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(body.Jogadores) != 1 {
-		t.Fatalf("returned %d players; want 1 (the page)", len(body.Jogadores))
+	if len(body.Players) != 1 {
+		t.Fatalf("returned %d players; want 1 (the page)", len(body.Players))
 	}
 	if body.Total != 1249 {
 		t.Fatalf("total = %d; want 1249 (the whole index)", body.Total)
@@ -171,7 +171,7 @@ func TestListPlayersTotalIsTheWholeIndex(t *testing.T) {
 // A club with totals but no persisted matches must not panic the profile
 // builder -- the forma/opponents block is skipped entirely.
 func TestGetClubWithoutMatches(t *testing.T) {
-	repo := &stubClubs{club: domainclubs.Club{ClubID: "1", Nome: "Sem Jogos"}}
+	repo := &stubClubs{club: domainclubs.Club{ClubID: "1", Name: "Sem Played"}}
 	rec := getJSON(t, clubsRouter(repo), "/clubs/1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s; want 200", rec.Code, rec.Body)
@@ -192,29 +192,29 @@ func rankPlayers(n int) []domainclubs.RankPlayer {
 func TestRankingPlayersPaginates(t *testing.T) {
 	repo := &stubClubs{rankPlayers: rankPlayers(25)}
 
-	rec := getJSON(t, clubsRouter(repo), "/rankings/players?metrica=nota&limite=10&offset=0")
+	rec := getJSON(t, clubsRouter(repo), "/rankings/players?metric=rating&limite=10&offset=0")
 	var first struct {
-		Jogadores []domainclubs.RankPlayer `json:"jogadores"`
+		Players []domainclubs.RankPlayer `json:"players"`
 		Total     int                      `json:"total"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &first); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(first.Jogadores) != 10 || first.Total != 25 {
-		t.Fatalf("page0: got %d of total %d; want 10 of 25", len(first.Jogadores), first.Total)
+	if len(first.Players) != 10 || first.Total != 25 {
+		t.Fatalf("page0: got %d of total %d; want 10 of 25", len(first.Players), first.Total)
 	}
 
 	// The last page is partial, not empty: offset 20 of 25 -> 5 rows.
-	rec = getJSON(t, clubsRouter(repo), "/rankings/players?metrica=nota&limite=10&offset=20")
+	rec = getJSON(t, clubsRouter(repo), "/rankings/players?metric=rating&limite=10&offset=20")
 	var last struct {
-		Jogadores []domainclubs.RankPlayer `json:"jogadores"`
+		Players []domainclubs.RankPlayer `json:"players"`
 		Total     int                      `json:"total"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &last); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(last.Jogadores) != 5 {
-		t.Fatalf("last page: got %d; want 5", len(last.Jogadores))
+	if len(last.Players) != 5 {
+		t.Fatalf("last page: got %d; want 5", len(last.Players))
 	}
 	if last.Total != 25 {
 		t.Fatalf("last page total = %d; want 25", last.Total)
@@ -224,16 +224,16 @@ func TestRankingPlayersPaginates(t *testing.T) {
 // An offset past the end is an empty page, not a panic.
 func TestRankingPlayersOffsetPastEnd(t *testing.T) {
 	repo := &stubClubs{rankPlayers: rankPlayers(3)}
-	rec := getJSON(t, clubsRouter(repo), "/rankings/players?metrica=nota&limite=10&offset=99")
+	rec := getJSON(t, clubsRouter(repo), "/rankings/players?metric=rating&limite=10&offset=99")
 	var body struct {
-		Jogadores []domainclubs.RankPlayer `json:"jogadores"`
+		Players []domainclubs.RankPlayer `json:"players"`
 		Total     int                      `json:"total"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(body.Jogadores) != 0 || body.Total != 3 {
-		t.Fatalf("got %d of total %d; want 0 of 3", len(body.Jogadores), body.Total)
+	if len(body.Players) != 0 || body.Total != 3 {
+		t.Fatalf("got %d of total %d; want 0 of 3", len(body.Players), body.Total)
 	}
 }
 
@@ -249,14 +249,14 @@ func TestAnnouncementsTotalIsNotTheFeedLength(t *testing.T) {
 		t.Fatalf("status = %d, body = %s; want 200", rec.Code, rec.Body)
 	}
 	var body struct {
-		Anuncios []domainclubs.Announcement `json:"anuncios"`
+		Announcements []domainclubs.Announcement `json:"announcements"`
 		Total    int                        `json:"total"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(body.Anuncios) != 3 {
-		t.Fatalf("feed: got %d; want 3", len(body.Anuncios))
+	if len(body.Announcements) != 3 {
+		t.Fatalf("feed: got %d; want 3", len(body.Announcements))
 	}
 	if body.Total != 200 {
 		t.Fatalf("total = %d; want 200 (all live, not the feed page)", body.Total)
@@ -276,28 +276,28 @@ func TestGetSquadCarriesResgatado(t *testing.T) {
 		t.Fatalf("status = %d; want 200", rec.Code)
 	}
 	var body struct {
-		Jogadores []domainclubs.SquadMember `json:"jogadores"`
+		Players []domainclubs.SquadMember `json:"players"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(body.Jogadores) != 2 {
-		t.Fatalf("got %d players; want 2", len(body.Jogadores))
+	if len(body.Players) != 2 {
+		t.Fatalf("got %d players; want 2", len(body.Players))
 	}
 	// O campo precisa chegar ao JSON -- sem `json:"resgatado"` ele sumiria e a
 	// tela bloquearia (ou deixaria de bloquear) errado.
-	if body.Jogadores[1].PlayerID != "taken" || !body.Jogadores[1].Resgatado {
-		t.Fatalf("o pro com dono deve vir resgatado=true: %+v", body.Jogadores[1])
+	if body.Players[1].PlayerID != "taken" || !body.Players[1].Resgatado {
+		t.Fatalf("o pro com dono deve vir resgatado=true: %+v", body.Players[1])
 	}
-	if body.Jogadores[0].Resgatado {
-		t.Fatalf("o pro livre não deve vir resgatado: %+v", body.Jogadores[0])
+	if body.Players[0].Resgatado {
+		t.Fatalf("o pro livre não deve vir resgatado: %+v", body.Players[0])
 	}
 }
 
 // A tela polla o estado do sync até o dado ficar pronto. Antes do primeiro
 // pedido a linha não existe: isso é "ainda não busquei", não erro.
 func TestGetFetchRunDefaultsToNotStarted(t *testing.T) {
-	repo := &stubClubs{fetchRun: domainclubs.FetchRun{Alvo: "clube", AlvoID: "141881"}}
+	repo := &stubClubs{fetchRun: domainclubs.FetchRun{Target: "clube", TargetID: "141881"}}
 	rec := getJSON(t, clubsRouter(repo), "/clubs/141881/fetch-run")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d; want 200", rec.Code)
@@ -306,7 +306,7 @@ func TestGetFetchRunDefaultsToNotStarted(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &run); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if run.Rodando || run.ConcluidoEm != nil {
+	if run.Running || run.FinishedAt != nil {
 		t.Fatalf("run não iniciado deve vir zerado: %+v", run)
 	}
 }
@@ -315,7 +315,7 @@ func TestGetFetchRunDefaultsToNotStarted(t *testing.T) {
 // um jogador. O id nunca é confundido com um tipo.
 func TestFetchRunReadsTheTargetFromThePath(t *testing.T) {
 	repo := &stubClubs{}
-	clubsRouter(repo) // só para garantir que a rota existe
+	clubsRouter(repo) // só to_division garantir que a rota existe
 	getJSON(t, clubsRouter(repo), "/clubs/141881/fetch-run")
 	if repo.lastAlvo != domainclubs.AlvoClube || repo.lastAlvoID != "141881" {
 		t.Fatalf("clube: got (%q,%q); want (clube,141881)", repo.lastAlvo, repo.lastAlvoID)
@@ -335,22 +335,22 @@ func TestClubsDoJogador(t *testing.T) {
 		t.Fatalf("status = %d; want 200", rec.Code)
 	}
 	var body struct {
-		Clubes []string `json:"clubes"`
+		Clubs []string `json:"clubs"`
 		Total  int      `json:"total"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body.Total != 2 || len(body.Clubes) != 2 {
-		t.Fatalf("got %d clubes (total %d); want 2", len(body.Clubes), body.Total)
+	if body.Total != 2 || len(body.Clubs) != 2 {
+		t.Fatalf("got %d clubs (total %d); want 2", len(body.Clubs), body.Total)
 	}
 }
 
 // A fila que o worker de ingestão consome.
 func TestListPendingFetches(t *testing.T) {
 	repo := &stubClubs{pending: []domainclubs.FetchRun{
-		{Alvo: domainclubs.AlvoClube, AlvoID: "141881", Rodando: true},
-		{Alvo: domainclubs.AlvoJogador, AlvoID: "p1", Rodando: true},
+		{Target: domainclubs.AlvoClube, TargetID: "141881", Running: true},
+		{Target: domainclubs.AlvoJogador, TargetID: "p1", Running: true},
 	}}
 	rec := getJSON(t, clubsRouter(repo), "/fetch-pending")
 	if rec.Code != http.StatusOK {
@@ -367,8 +367,8 @@ func TestListPendingFetches(t *testing.T) {
 		t.Fatalf("got %d pendentes (total %d); want 2", len(body.Pendentes), body.Total)
 	}
 	// A fila é uma só para os dois alvos -- o worker precisa saber qual é.
-	if body.Pendentes[1].Alvo != domainclubs.AlvoJogador {
-		t.Fatalf("o alvo jogador precisa chegar ao worker: %+v", body.Pendentes[1])
+	if body.Pendentes[1].Target != domainclubs.AlvoJogador {
+		t.Fatalf("o target jogador precisa chegar ao worker: %+v", body.Pendentes[1])
 	}
 }
 
@@ -402,7 +402,7 @@ func TestGetSearchRunDefaultsToNotStarted(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &run); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if run.Rodando || run.ConcluidoEm != nil {
+	if run.Running || run.FinishedAt != nil {
 		t.Fatalf("run não iniciado deve vir zerado: %+v", run)
 	}
 }
@@ -410,8 +410,8 @@ func TestGetSearchRunDefaultsToNotStarted(t *testing.T) {
 // A fila que o worker de ingestão consome para buscar na fonte.
 func TestListPendingSearches(t *testing.T) {
 	repo := &stubClubs{pendingSearches: []domainclubs.SearchRun{
-		{Termo: "vila", Rodando: true},
-		{Termo: "sporting", Rodando: true},
+		{Termo: "vila", Running: true},
+		{Termo: "sporting", Running: true},
 	}}
 	rec := getJSON(t, clubsRouter(repo), "/search-pending")
 	if rec.Code != http.StatusOK {

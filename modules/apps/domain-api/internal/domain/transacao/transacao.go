@@ -8,14 +8,14 @@ import "time"
 
 type Transacao struct {
 	ID           string
-	UsuarioEmail string
+	UserEmail string
 	ContaID      string
-	Tipo         string
+	Kind         string
 	Categoria    string
 	Descricao    string
 	AnexoImagem  string
 	Valor        float64
 	Data         time.Time
-	CriadoEm     time.Time
-	AtualizadoEm time.Time
+	CreatedAt     time.Time
+	UpdatedAt time.Time
 }

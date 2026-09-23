@@ -26,21 +26,21 @@ import type { Theme } from "../lib/hooks";
 
 export type RouteId =
   | "home"
-  | "clubes"
-  | "clube"
-  | "partida"
-  | "jogador"
-  | "jogadores"
-  | "resgatar"
-  | "minha-area"
-  | "notificacoes"
+  | "clubs"
+  | "club"
+  | "match"
+  | "player"
+  | "players"
+  | "claim"
+  | "my-area"
+  | "notifications"
   | "admin";
 
 interface NavItem {
   id: RouteId;
   label: string;
   icon: LucideIcon;
-  group: "principal" | "meu hub" | "sistema";
+  group: "discover" | "my-hub" | "system";
   requiresAuth?: boolean;
   adminOnly?: boolean;
 }
@@ -50,19 +50,19 @@ interface NavItem {
 // Ícones do lucide -- o resto do repo já usa, e emoji como ícone de navegação
 // é o que dava o ar amador.
 const NAV: NavItem[] = [
-  { id: "home", label: "Início", icon: House, group: "principal" },
-  { id: "clubes", label: "Clubes", icon: Shield, group: "principal" },
-  { id: "jogadores", label: "Jogadores", icon: Star, group: "principal" },
-  { id: "resgatar", label: "Resgatar pro", icon: Target, group: "meu hub" },
-  { id: "minha-area", label: "Minha área", icon: User, group: "meu hub" },
-  { id: "notificacoes", label: "Notificações", icon: Bell, group: "meu hub", requiresAuth: true },
-  { id: "admin", label: "Administração", icon: Lock, group: "sistema", adminOnly: true },
+  { id: "home", label: "Início", icon: House, group: "discover" },
+  { id: "clubs", label: "Clubs", icon: Shield, group: "discover" },
+  { id: "players", label: "Players", icon: Star, group: "discover" },
+  { id: "claim", label: "Resgatar pro", icon: Target, group: "my-hub" },
+  { id: "my-area", label: "Minha área", icon: User, group: "my-hub" },
+  { id: "notifications", label: "Notificações", icon: Bell, group: "my-hub", requiresAuth: true },
+  { id: "admin", label: "Administração", icon: Lock, group: "system", adminOnly: true },
 ];
 
 const GROUPS: Array<{ id: NavItem["group"]; label: string }> = [
-  { id: "principal", label: "Explorar" },
-  { id: "meu hub", label: "Meu hub" },
-  { id: "sistema", label: "Sistema" },
+  { id: "discover", label: "Explorar" },
+  { id: "my-hub", label: "Meu hub" },
+  { id: "system", label: "Sistema" },
 ];
 
 export function Shell({
@@ -96,7 +96,7 @@ export function Shell({
 
   return (
     <div className="flex min-h-dvh">
-      {/* Sidebar — vira navegação compacta abaixo de md. */}
+      {/* Sidebar — vira navegação compacta abaixo from_division md. */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-surface md:flex">
         <div className="px-4 pb-4 pt-5">
           <div className="font-display text-lg font-bold tracking-tight">
@@ -172,7 +172,7 @@ export function Shell({
               ) : authed === false ? (
                 <button
                   type="button"
-                  onClick={() => onNavigate("minha-area")}
+                  onClick={() => onNavigate("my-area")}
                   className="text-xs font-semibold text-muted transition-colors hover:text-ink"
                 >
                   Entrar com Google
@@ -195,7 +195,7 @@ export function Shell({
             <button
               type="button"
               onClick={onToggleTheme}
-              title={`Mudar para tema ${theme === "dark" ? "claro" : "escuro"}`}
+              title={`Mudar to_division tema ${theme === "dark" ? "claro" : "escuro"}`}
               aria-label="Alternar tema"
               className="shrink-0 rounded-md p-1.5 text-faint transition-colors hover:bg-surface-3 hover:text-ink"
             >
@@ -206,7 +206,7 @@ export function Shell({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Topbar mobile + chips de navegação. */}
+        {/* Topbar mobile + chips from_division navegação. */}
         <header className="flex items-center gap-2 border-b border-line bg-surface px-3 py-2 md:hidden">
           <span className="font-display text-base font-bold">
             FC Clubs<span style={{ color: "var(--accent)" }}>.</span>hub
@@ -217,7 +217,7 @@ export function Shell({
             ) : (
               <button
                 type="button"
-                onClick={() => onNavigate("minha-area")}
+                onClick={() => onNavigate("my-area")}
                 className="rounded-md border border-line-strong px-2 py-1 text-xs text-muted"
               >
                 Entrar
@@ -256,7 +256,7 @@ export function Shell({
           })}
         </div>
 
-        {sync?.rodando && <SyncBanner sync={sync} />}
+        {sync?.running && <SyncBanner sync={sync} />}
 
         <main className="mx-auto w-full max-w-[1180px] flex-1 px-4 py-5 md:px-6">{children}</main>
       </div>
@@ -268,11 +268,11 @@ export function Shell({
  * nada — a pessoa continua navegando enquanto o hub busca os clubes dela. */
 function SyncBanner({ sync }: { sync: SyncRun }) {
   const niveis: Record<number, string> = {
-    1: "seus clubes",
+    1: "seus clubs",
     2: "rivais diretos",
-    3: "clubes de clubes",
+    3: "clubs from_division clubs",
   };
-  const pct = sync.total > 0 ? Math.round((sync.concluidos / sync.total) * 100) : 0;
+  const pct = sync.total > 0 ? Math.round((sync.completed / sync.total) * 100) : 0;
   return (
     <div
       className="flex items-center gap-3 border-b border-line px-4 py-2 text-xs"
@@ -281,11 +281,11 @@ function SyncBanner({ sync }: { sync: SyncRun }) {
       <span className="size-2 animate-pulse rounded-full" style={{ background: "var(--accent)" }} />
       <span className="font-display font-bold">Sincronizando</span>
       <span className="text-muted">
-        {niveis[sync.nivel] ?? ""}
-        {sync.atual ? ` · ${sync.atual}` : ""}
+        {niveis[sync.skill_rating] ?? ""}
+        {sync.current ? ` · ${sync.current}` : ""}
       </span>
       <span className="tnum ml-auto font-mono text-muted">
-        {sync.total > 0 ? `${fmt(sync.concluidos)}/${fmt(sync.total)}` : "…"}
+        {sync.total > 0 ? `${fmt(sync.completed)}/${fmt(sync.total)}` : "…"}
       </span>
       <span className="h-[3px] w-24 overflow-hidden rounded-full bg-[var(--surface-3)]">
         <span className="block h-full rounded-full transition-[width]" style={{ width: `${pct}%`, background: "var(--accent)" }} />

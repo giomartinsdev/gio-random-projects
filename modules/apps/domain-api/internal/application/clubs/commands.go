@@ -7,92 +7,92 @@ package clubs
 
 type UpsertClubInput struct {
 	ClubID        string `json:"club_id"`
-	Nome          string `json:"nome"`
-	Sigla         string `json:"sigla,omitempty"`
-	Estadio       string `json:"estadio,omitempty"`
-	RegiaoID      string `json:"regiao_id,omitempty"`
-	TimeID        string `json:"time_id,omitempty"`
-	EscudoAssetID string `json:"escudo_asset_id,omitempty"`
-	Cor1          int    `json:"cor_1,omitempty"`
-	Cor2          int    `json:"cor_2,omitempty"`
-	Cor3          int    `json:"cor_3,omitempty"`
-	Cor4          int    `json:"cor_4,omitempty"`
-	Acompanhado   bool   `json:"acompanhado,omitempty"`
+	Name          string `json:"name"`
+	Tag         string `json:"tag,omitempty"`
+	Stadium       string `json:"stadium,omitempty"`
+	RegiaoID      string `json:"region_id,omitempty"`
+	TimeID        string `json:"team_id,omitempty"`
+	EscudoAssetID string `json:"crest_asset_id,omitempty"`
+	Color1          int    `json:"color_1,omitempty"`
+	Color2          int    `json:"color_2,omitempty"`
+	Color3          int    `json:"color_3,omitempty"`
+	Color4          int    `json:"color_4,omitempty"`
+	Tracked   bool   `json:"tracked,omitempty"`
 }
 
 type TotaisInput struct {
 	ClubID         string `json:"club_id"`
-	Jogos          int    `json:"jogos"`
-	Vitorias       int    `json:"vitorias"`
-	Empates        int    `json:"empates"`
-	Derrotas       int    `json:"derrotas"`
-	Gols           int    `json:"gols"`
-	GolsSofridos   int    `json:"gols_sofridos"`
-	JogosSemSofrer int    `json:"jogos_sem_sofrer"`
-	Pontos         int    `json:"pontos"`
-	DivisaoAtual   int    `json:"divisao_atual"`
-	MelhorDivisao  int    `json:"melhor_divisao"`
-	Nivel          int    `json:"nivel"`
-	Promocoes      int    `json:"promocoes"`
-	Rebaixamentos  int    `json:"rebaixamentos"`
+	Played          int    `json:"played"`
+	Wins       int    `json:"wins"`
+	Draws        int    `json:"draws"`
+	Losses       int    `json:"losses"`
+	Goals           int    `json:"goals"`
+	GoalsConceded   int    `json:"goals_conceded"`
+	CleanSheets int    `json:"clean_sheets"`
+	Points         int    `json:"points"`
+	Division   int    `json:"division"`
+	BestDivision  int    `json:"best_division"`
+	SkillRating          int    `json:"skill_rating"`
+	Promotions      int    `json:"promotions"`
+	Relegations  int    `json:"relegations"`
 }
 
 type PlayerLineInput struct {
 	ClubID           string         `json:"club_id"`
 	PlayerID         string         `json:"player_id"`
 	Gamertag         string         `json:"gamertag"`
-	Posicao          string         `json:"posicao"`
-	Nota             float64        `json:"nota"`
-	Gols             int            `json:"gols"`
-	Assistencias     int            `json:"assistencias"`
-	Chutes           int            `json:"chutes"`
-	PassesCertos     int            `json:"passes_certos"`
-	PassesTentados   int            `json:"passes_tentados"`
-	DesarmesCertos   int            `json:"desarmes_certos"`
-	DesarmesTentados int            `json:"desarmes_tentados"`
-	Defesas          int            `json:"defesas"`
-	DefesasPorTipo   map[string]int `json:"defesas_por_tipo,omitempty"`
-	SegundosJogados  int            `json:"segundos_jogados"`
-	MelhorEmCampo    bool           `json:"melhor_em_campo"`
-	CartaoVermelho   bool           `json:"cartao_vermelho"`
-	JogoSemSofrerGol bool           `json:"jogo_sem_sofrer_gol"`
+	Position          string         `json:"position"`
+	Rating             float64        `json:"rating"`
+	Goals             int            `json:"goals"`
+	Assists     int            `json:"assists"`
+	Shots           int            `json:"shots"`
+	PassesMade     int            `json:"passes_made"`
+	PassesAttempted   int            `json:"passes_attempted"`
+	TacklesMade   int            `json:"tackles_made"`
+	TacklesAttempted int            `json:"tackles_attempted"`
+	Saves          int            `json:"saves"`
+	SavesByType   map[string]int `json:"saves_by_type,omitempty"`
+	SecondsPlayed  int            `json:"seconds_played"`
+	ManOfTheMatch    bool           `json:"man_of_the_match"`
+	RedCard   bool           `json:"red_card"`
+	CleanSheet bool           `json:"clean_sheet"`
 }
 
 type PartidaInput struct {
 	MatchID                  string            `json:"match_id"`
 	Timestamp                string            `json:"timestamp"`
-	Tipo                     string            `json:"tipo"`
-	RodadaPlayoff            string            `json:"rodada_playoff,omitempty"`
-	ClubeCasaID              string            `json:"clube_casa_id"`
-	ClubeForaID              string            `json:"clube_fora_id"`
-	GolsCasa                 int               `json:"gols_casa"`
-	GolsFora                 int               `json:"gols_fora"`
-	HouveDesistencia         bool              `json:"houve_desistencia"`
-	VencedorPorDesistenciaID string            `json:"vencedor_por_desistencia_id,omitempty"`
-	ResultadoCasa            string            `json:"resultado_casa"`
-	Lances                   []any             `json:"lances,omitempty"`
-	Jogadores                []PlayerLineInput `json:"jogadores"`
+	Kind                     string            `json:"kind"`
+	PlayoffRound            string            `json:"playoff_round,omitempty"`
+	ClubeCasaID              string            `json:"home_club_id"`
+	ClubeForaID              string            `json:"away_club_id"`
+	HomeGoals                 int               `json:"home_goals"`
+	AwayGoals                 int               `json:"away_goals"`
+	DecidedByForfeit         bool              `json:"decided_by_forfeit"`
+	VencedorPorDesistenciaID string            `json:"forfeit_winner_id,omitempty"`
+	HomeResult            string            `json:"home_result"`
+	Events                   []any             `json:"events,omitempty"`
+	Players                []PlayerLineInput `json:"players"`
 }
 
 type SnapshotInput struct {
 	ClubID        string `json:"club_id"`
-	Nivel         int    `json:"nivel"`
-	Divisao       int    `json:"divisao"`
-	Jogos         int    `json:"jogos"`
-	Vitorias      int    `json:"vitorias"`
-	Empates       int    `json:"empates"`
-	Derrotas      int    `json:"derrotas"`
-	Gols          int    `json:"gols"`
-	GolsSofridos  int    `json:"gols_sofridos"`
-	TamanhoElenco int    `json:"tamanho_elenco"`
+	SkillRating         int    `json:"skill_rating"`
+	DivisionAtRead       int    `json:"division_at_read"`
+	Played         int    `json:"played"`
+	Wins      int    `json:"wins"`
+	Draws       int    `json:"draws"`
+	Losses      int    `json:"losses"`
+	Goals          int    `json:"goals"`
+	GoalsConceded  int    `json:"goals_conceded"`
+	SquadSize int    `json:"squad_size"`
 }
 
 type AnuncioInput struct {
-	Tipo          string `json:"tipo"`
-	Titulo        string `json:"titulo"`
-	Texto         string `json:"texto,omitempty"`
-	ReferenciaID  string `json:"referencia_id,omitempty"`
-	Icone         string `json:"icone,omitempty"`
+	Kind          string `json:"kind"`
+	Title        string `json:"title"`
+	Body         string `json:"body,omitempty"`
+	ReferenciaID  string `json:"reference_id,omitempty"`
+	Icon         string `json:"icon,omitempty"`
 	ExpiraEmHoras int    `json:"expira_em_horas,omitempty"`
 }
 
@@ -101,71 +101,71 @@ type AnuncioInput struct {
 type CareerInput struct {
 	ClubID        string  `json:"club_id"`
 	Gamertag      string  `json:"gamertag"`
-	Jogos         int     `json:"jogos"`
-	Gols          int     `json:"gols"`
-	Assistencias  int     `json:"assistencias"`
-	MelhorEmCampo int     `json:"melhor_em_campo"`
-	Nota          float64 `json:"nota"`
-	Posicao       string  `json:"posicao"`
+	Played         int     `json:"played"`
+	Goals          int     `json:"goals"`
+	Assists  int     `json:"assists"`
+	ManOfTheMatch int     `json:"man_of_the_match"`
+	Rating          float64 `json:"rating"`
+	Position       string  `json:"position"`
 }
 
 type WatchInput struct {
-	UsuarioEmail string `json:"usuario_email"`
+	UserEmail string `json:"user_email"`
 	ClubID       string `json:"club_id"`
-	Origem       string `json:"origem,omitempty"`
+	Source       string `json:"source,omitempty"`
 	Seguindo     bool   `json:"seguindo"`
 }
 
 type NotifyInput struct {
-	UsuarioEmail      string `json:"usuario_email"`
-	Canal             string `json:"canal,omitempty"`
-	ResumoPeriodico   bool   `json:"resumo_periodico"`
-	RecordesEDivisoes bool   `json:"recordes_e_divisoes"`
-	ResultadoPartidas bool   `json:"resultado_partidas"`
+	UserEmail      string `json:"user_email"`
+	Channel             string `json:"channel,omitempty"`
+	WeeklyDigest   bool   `json:"weekly_digest"`
+	RecordsAndDivisions bool   `json:"records_and_divisions"`
+	MatchResults bool   `json:"match_results"`
 }
 
 type ClaimInput struct {
-	UsuarioEmail string `json:"usuario_email"`
+	UserEmail string `json:"user_email"`
 	ClubID       string `json:"club_id"`
 	PlayerID     string `json:"player_id"`
-	Verificado   bool   `json:"verificado"`
+	Verified   bool   `json:"verified"`
 }
 
 type SyncRunInput struct {
-	UsuarioEmail string   `json:"usuario_email"`
-	Rodando      bool     `json:"rodando"`
-	Nivel        int      `json:"nivel"`
+	UserEmail string   `json:"user_email"`
+	Running      bool     `json:"running"`
+	SkillRating        int      `json:"skill_rating"`
 	Total        int      `json:"total"`
-	Concluidos   int      `json:"concluidos"`
-	Atual        string   `json:"atual,omitempty"`
-	Novos        []string `json:"novos,omitempty"`
+	Completed   int      `json:"completed"`
+	Current        string   `json:"current,omitempty"`
+	NewItems        []string `json:"new_items,omitempty"`
 	Concluido    bool     `json:"concluido,omitempty"`
 }
 
 // IngestEstadoInput é o que o worker de ingestão publica a cada ciclo. Ele não
 // tem host nem porta, então este é o canal para a saúde dele chegar até a API.
 type IngestEstadoInput struct {
-	Rodadas        int    `json:"rodadas"`
-	ClubesOK       int    `json:"clubes_ok"`
-	ClubesFalhos   int    `json:"clubes_falhos"`
-	PartidasNovas  int    `json:"partidas_novas"`
+	Cycles        int    `json:"cycles"`
+	ClubesOK       int    `json:"clubs_ok"`
+	ClubsFailed   int    `json:"clubs_failed"`
+	NewMatches  int    `json:"new_matches"`
 	Snapshots      int    `json:"snapshots"`
-	BootstrapFeito bool   `json:"bootstrap_feito"`
-	UltimoErro     string `json:"ultimo_erro,omitempty"`
+	Bootstrapped bool   `json:"bootstrapped"`
+	LastError     string `json:"last_error,omitempty"`
 }
 
 // FetchRunInput é o pedido de sync sob demanda (a SPA grava) e o resultado que
 // o worker de ingestão publica de volta. `alvo` diz se é clube ou jogador --
 // a fila é uma só, e para jogador o worker resolve os clubes dele.
 type FetchRunInput struct {
-	Alvo      string `json:"alvo"`
-	AlvoID    string `json:"alvo_id"`
-	Rotulo    string `json:"rotulo,omitempty"`
-	Rodando   bool   `json:"rodando"`
-	Jogadores int    `json:"jogadores,omitempty"`
-	Partidas  int    `json:"partidas,omitempty"`
-	Clubes    int    `json:"clubes,omitempty"`
-	Erro      string `json:"erro,omitempty"`
+	Target      string `json:"target"`
+	TargetID    string `json:"target_id"`
+	Label    string `json:"label,omitempty"`
+	Running   bool   `json:"running"`
+	Players int    `json:"players,omitempty"`
+	Matches  int    `json:"matches,omitempty"`
+	Clubs    int    `json:"clubs,omitempty"`
+	Error      string `json:"error,omitempty"`
 	Concluido bool   `json:"concluido,omitempty"`
 }
 
@@ -174,8 +174,8 @@ type FetchRunInput struct {
 // um clube que o hub ainda não viu.
 type SearchRunInput struct {
 	Termo       string `json:"termo"`
-	Rodando     bool   `json:"rodando"`
-	Encontrados int    `json:"encontrados,omitempty"`
-	Erro        string `json:"erro,omitempty"`
+	Running     bool   `json:"running"`
+	Found int    `json:"found,omitempty"`
+	Error        string `json:"error,omitempty"`
 	Concluido   bool   `json:"concluido,omitempty"`
 }

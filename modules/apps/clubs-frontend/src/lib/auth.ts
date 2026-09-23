@@ -52,7 +52,7 @@ export function loadGoogleIdentityScript(): Promise<void> {
 /** Manda o ID token para o clubs-api verificar e trocar pela sessão. O
  * credentials:"include" é o que deixa o browser guardar o cookie que vem
  * no Set-Cookie desta mesma resposta. */
-export async function signInWithGoogle(credential: string): Promise<{ email: string; nome: string }> {
+export async function signInWithGoogle(credential: string): Promise<{ email: string; name: string }> {
   const res = await fetch(`${apiUrl("/api/auth/google")}`, {
     method: "POST",
     credentials: "include",

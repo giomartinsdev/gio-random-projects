@@ -23,23 +23,23 @@ const (
 )
 
 var (
-	ErrUsuarioRequired = errors.New("usuario_email is required")
-	ErrNomeRequired    = errors.New("nome is required")
-	ErrTipoInvalido    = errors.New("tipo must be \"corrente\", \"investimento\" or \"aposta\"")
+	ErrUsuarioRequired = errors.New("user_email is required")
+	ErrNomeRequired    = errors.New("name is required")
+	ErrTipoInvalido    = errors.New("kind must be \"corrente\", \"investimento\" or \"aposta\"")
 	ErrStatusInvalido  = errors.New("status must be \"ativa\" or \"arquivada\"")
 	ErrForbidden       = errors.New("only the owning usuario may modify this conta")
 )
 
 type Conta struct {
 	ID           string
-	UsuarioEmail string
-	Nome         string
+	UserEmail string
+	Name         string
 	// Tipo is immutable after creation -- moving money between account
 	// kinds is a transacao between two contas, not a change to this one.
-	Tipo         string
+	Kind         string
 	Status       string
-	CriadoEm     time.Time
-	AtualizadoEm time.Time
+	CreatedAt     time.Time
+	UpdatedAt time.Time
 }
 
 func validTipo(t string) bool {
@@ -50,38 +50,38 @@ func validStatus(s string) bool { return s == StatusAtiva || s == StatusArquivad
 // New constructs a Conta, always starting it "ativa" -- there's no way
 // to create an already-archived account, same as Room always opening
 // StatusOpen.
-func New(id, usuarioEmail, nome, tipo string) (Conta, error) {
-	if usuarioEmail == "" {
+func New(id, userEmail, name, kind string) (Conta, error) {
+	if userEmail == "" {
 		return Conta{}, ErrUsuarioRequired
 	}
-	if nome == "" {
+	if name == "" {
 		return Conta{}, ErrNomeRequired
 	}
-	if !validTipo(tipo) {
+	if !validTipo(kind) {
 		return Conta{}, ErrTipoInvalido
 	}
 
 	now := time.Now().UTC()
 	return Conta{
 		ID:           id,
-		UsuarioEmail: usuarioEmail,
-		Nome:         nome,
-		Tipo:         tipo,
+		UserEmail: userEmail,
+		Name:         name,
+		Kind:         kind,
 		Status:       StatusAtiva,
-		CriadoEm:     now,
-		AtualizadoEm: now,
+		CreatedAt:     now,
+		UpdatedAt: now,
 	}, nil
 }
 
 // Edit applies a partial update in place -- nome == "" and status == ""
 // both mean "leave unchanged", same convention as Room.Edit. Tipo is
 // never editable here since it's immutable after creation.
-func (c *Conta) Edit(usuarioEmail, nome, status string) error {
-	if usuarioEmail != c.UsuarioEmail {
+func (c *Conta) Edit(userEmail, name, status string) error {
+	if userEmail != c.UserEmail {
 		return ErrForbidden
 	}
-	if nome != "" {
-		c.Nome = nome
+	if name != "" {
+		c.Name = name
 	}
 	if status != "" {
 		if !validStatus(status) {
@@ -89,6 +89,6 @@ func (c *Conta) Edit(usuarioEmail, nome, status string) error {
 		}
 		c.Status = status
 	}
-	c.AtualizadoEm = time.Now().UTC()
+	c.UpdatedAt = time.Now().UTC()
 	return nil
 }

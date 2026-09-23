@@ -8,15 +8,15 @@ package club
 // source returned it.
 type UpsertInput struct {
 	ClubID        string `json:"club_id"`
-	Nome          string `json:"nome"`
-	Sigla         string `json:"sigla,omitempty"`
-	Estadio       string `json:"estadio,omitempty"`
-	RegiaoID      string `json:"regiao_id,omitempty"`
-	TimeID        string `json:"time_id,omitempty"`
-	EscudoAssetID string `json:"escudo_asset_id,omitempty"`
-	Cor1          int    `json:"cor_1,omitempty"`
-	Cor2          int    `json:"cor_2,omitempty"`
-	Cor3          int    `json:"cor_3,omitempty"`
-	Cor4          int    `json:"cor_4,omitempty"`
-	Acompanhado   bool   `json:"acompanhado,omitempty"`
+	Name          string `json:"name"`
+	Tag         string `json:"tag,omitempty"`
+	Stadium       string `json:"stadium,omitempty"`
+	RegiaoID      string `json:"region_id,omitempty"`
+	TimeID        string `json:"team_id,omitempty"`
+	EscudoAssetID string `json:"crest_asset_id,omitempty"`
+	Color1          int    `json:"color_1,omitempty"`
+	Color2          int    `json:"color_2,omitempty"`
+	Color3          int    `json:"color_3,omitempty"`
+	Color4          int    `json:"color_4,omitempty"`
+	Tracked   bool   `json:"tracked,omitempty"`
 }

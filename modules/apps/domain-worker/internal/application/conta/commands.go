@@ -5,14 +5,14 @@
 package conta
 
 type CreateInput struct {
-	UsuarioEmail string `json:"usuario_email"`
-	Nome         string `json:"nome"`
-	Tipo         string `json:"tipo"`
+	UserEmail string `json:"user_email"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
 }
 
 type UpdateInput struct {
 	ID           string `json:"id"`
-	UsuarioEmail string `json:"usuario_email"`
-	Nome         string `json:"nome,omitempty"`
+	UserEmail string `json:"user_email"`
+	Name         string `json:"name,omitempty"`
 	Status       string `json:"status,omitempty"`
 }

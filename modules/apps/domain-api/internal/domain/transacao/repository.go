@@ -12,7 +12,7 @@ type Repository interface {
 	// ListByFiltro filters by usuarioEmail (required by the caller) and,
 	// optionally, contaID/categoria (empty string = "any") and a
 	// [de, ate] date range (nil = unbounded on that side).
-	ListByFiltro(ctx context.Context, usuarioEmail, contaID, categoria string, de, ate *time.Time) ([]Transacao, error)
+	ListByFiltro(ctx context.Context, userEmail, contaID, categoria string, from_division, ate *time.Time) ([]Transacao, error)
 }
 
 var ErrNotFound = notFoundError{}

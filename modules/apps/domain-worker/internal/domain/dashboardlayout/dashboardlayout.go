@@ -15,14 +15,14 @@ import (
 )
 
 var (
-	ErrUsuarioRequired = errors.New("usuario_email is required")
+	ErrUsuarioRequired = errors.New("user_email is required")
 	ErrBlocosInvalido  = errors.New("blocos must be a valid JSON array")
 )
 
 type DashboardLayout struct {
-	UsuarioEmail string
+	UserEmail string
 	Blocos       json.RawMessage
-	AtualizadoEm time.Time
+	UpdatedAt time.Time
 }
 
 func validBlocos(b json.RawMessage) bool {
@@ -37,16 +37,16 @@ func validBlocos(b json.RawMessage) bool {
 // there's no separate New/Edit split here since this aggregate is a
 // single upsertable row per usuario_email, not a lifecycle with
 // distinct create/update rules.
-func Save(usuarioEmail string, blocos json.RawMessage) (DashboardLayout, error) {
-	if usuarioEmail == "" {
+func Save(userEmail string, blocos json.RawMessage) (DashboardLayout, error) {
+	if userEmail == "" {
 		return DashboardLayout{}, ErrUsuarioRequired
 	}
 	if !validBlocos(blocos) {
 		return DashboardLayout{}, ErrBlocosInvalido
 	}
 	return DashboardLayout{
-		UsuarioEmail: usuarioEmail,
+		UserEmail: userEmail,
 		Blocos:       blocos,
-		AtualizadoEm: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}, nil
 }

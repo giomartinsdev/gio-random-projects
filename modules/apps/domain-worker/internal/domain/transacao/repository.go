@@ -11,7 +11,7 @@ import (
 // allows removing one outright.
 type Repository interface {
 	FindByID(ctx context.Context, id string) (Transacao, error)
-	ListByFiltro(ctx context.Context, usuarioEmail, contaID, categoria string, de, ate *time.Time) ([]Transacao, error)
+	ListByFiltro(ctx context.Context, userEmail, contaID, categoria string, from_division, ate *time.Time) ([]Transacao, error)
 	Insert(ctx context.Context, t Transacao) error
 	Update(ctx context.Context, t Transacao) error
 	Delete(ctx context.Context, id string) error

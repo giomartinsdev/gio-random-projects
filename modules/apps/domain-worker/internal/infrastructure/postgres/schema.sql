@@ -199,12 +199,12 @@ CREATE TABLE IF NOT EXISTS cch_custom_decks (
 -- same role host_id plays for rooms above.
 CREATE TABLE IF NOT EXISTS contas (
     id UUID PRIMARY KEY,
-    usuario_email TEXT NOT NULL,
-    nome TEXT NOT NULL,
-    tipo TEXT NOT NULL CHECK (tipo IN ('corrente','investimento','aposta')),
+    user_email TEXT NOT NULL,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('corrente','investimento','aposta')),
     status TEXT NOT NULL DEFAULT 'ativa' CHECK (status IN ('ativa','arquivada')),
-    criado_em TIMESTAMPTZ NOT NULL,
-    atualizado_em TIMESTAMPTZ NOT NULL
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
 );
 
 -- "aposta" (betting-house wallet) is a tipo added after this table
@@ -214,9 +214,9 @@ CREATE TABLE IF NOT EXISTS contas (
 -- contas_tipo_check is Postgres's default auto-generated name for an
 -- inline column CHECK (<table>_<column>_check).
 ALTER TABLE contas DROP CONSTRAINT IF EXISTS contas_tipo_check;
-ALTER TABLE contas ADD CONSTRAINT contas_tipo_check CHECK (tipo IN ('corrente','investimento','aposta'));
+ALTER TABLE contas ADD CONSTRAINT contas_tipo_check CHECK (kind IN ('corrente','investimento','aposta'));
 
-CREATE INDEX IF NOT EXISTS idx_contas_usuario_email ON contas(usuario_email);
+CREATE INDEX IF NOT EXISTS idx_contas_usuario_email ON contas(user_email);
 
 -- conta_id is an opaque foreign key from this table's perspective (no
 -- FK constraint) -- the application layer, not Postgres, checks that
@@ -224,19 +224,19 @@ CREATE INDEX IF NOT EXISTS idx_contas_usuario_email ON contas(usuario_email);
 -- inserting a transacao against it.
 CREATE TABLE IF NOT EXISTS transacoes (
     id UUID PRIMARY KEY,
-    usuario_email TEXT NOT NULL,
+    user_email TEXT NOT NULL,
     conta_id UUID NOT NULL,
-    tipo TEXT NOT NULL CHECK (tipo IN ('entrada','saida')),
+    kind TEXT NOT NULL CHECK (kind IN ('entrada','saida')),
     valor NUMERIC(14,2) NOT NULL CHECK (valor > 0),
     data DATE NOT NULL,
     categoria TEXT NOT NULL,
     descricao TEXT,
     anexo_imagem TEXT,
-    criado_em TIMESTAMPTZ NOT NULL,
-    atualizado_em TIMESTAMPTZ NOT NULL
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_transacoes_usuario_conta ON transacoes(usuario_email, conta_id);
+CREATE INDEX IF NOT EXISTS idx_transacoes_usuario_conta ON transacoes(user_email, conta_id);
 CREATE INDEX IF NOT EXISTS idx_transacoes_data ON transacoes(data);
 
 -- One ativos row per position (a ticker held inside one investimento
@@ -247,7 +247,7 @@ CREATE INDEX IF NOT EXISTS idx_transacoes_data ON transacoes(data);
 -- than recomputed on every read.
 CREATE TABLE IF NOT EXISTS ativos (
     id UUID PRIMARY KEY,
-    usuario_email TEXT NOT NULL,
+    user_email TEXT NOT NULL,
     conta_id UUID NOT NULL,
     ticker TEXT NOT NULL,
     quantidade_atual NUMERIC(18,6) NOT NULL DEFAULT 0,
@@ -255,22 +255,22 @@ CREATE TABLE IF NOT EXISTS ativos (
     ultima_cotacao NUMERIC(14,4),
     ultima_cotacao_em TIMESTAMPTZ,
     status TEXT NOT NULL DEFAULT 'aberta' CHECK (status IN ('aberta','encerrada')),
-    criado_em TIMESTAMPTZ NOT NULL,
-    atualizado_em TIMESTAMPTZ NOT NULL
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_ativos_usuario_conta ON ativos(usuario_email, conta_id);
+CREATE INDEX IF NOT EXISTS idx_ativos_usuario_conta ON ativos(user_email, conta_id);
 
 CREATE TABLE IF NOT EXISTS ativo_movimentos (
     id UUID PRIMARY KEY,
     ativo_id UUID NOT NULL REFERENCES ativos(id),
-    tipo TEXT NOT NULL CHECK (tipo IN ('compra','venda','provento')),
+    kind TEXT NOT NULL CHECK (kind IN ('compra','venda','provento')),
     quantidade NUMERIC(18,6),
     preco_unitario NUMERIC(14,4),
     valor_provento NUMERIC(14,2),
     data DATE NOT NULL,
     resultado_realizado NUMERIC(14,2),
-    criado_em TIMESTAMPTZ NOT NULL
+    created_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_ativo_movimentos_ativo ON ativo_movimentos(ativo_id);
@@ -281,7 +281,7 @@ CREATE INDEX IF NOT EXISTS idx_ativo_movimentos_ativo ON ativo_movimentos(ativo_
 -- wallet), opaque FK like every other conta_id in this schema.
 CREATE TABLE IF NOT EXISTS apostas (
     id UUID PRIMARY KEY,
-    usuario_email TEXT NOT NULL,
+    user_email TEXT NOT NULL,
     conta_id UUID NOT NULL,
     descricao TEXT NOT NULL,
     valor_apostado NUMERIC(14,2) NOT NULL CHECK (valor_apostado > 0),
@@ -290,20 +290,20 @@ CREATE TABLE IF NOT EXISTS apostas (
     retorno_obtido NUMERIC(14,2),
     data_aposta DATE NOT NULL,
     data_resultado DATE,
-    criado_em TIMESTAMPTZ NOT NULL,
-    atualizado_em TIMESTAMPTZ NOT NULL
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_apostas_usuario_conta ON apostas(usuario_email, conta_id);
+CREATE INDEX IF NOT EXISTS idx_apostas_usuario_conta ON apostas(user_email, conta_id);
 
 -- One row per usuario -- dashboard-api's frontend saves its whole
 -- "blocos" array wholesale on every layout edit, so a plain upsertable
 -- singleton keyed by usuario_email is all this needs, same
 -- storage-shaped treatment as cch_custom_decks.
 CREATE TABLE IF NOT EXISTS dashboard_layouts (
-    usuario_email TEXT PRIMARY KEY,
+    user_email TEXT PRIMARY KEY,
     blocos JSONB NOT NULL DEFAULT '[]',
-    atualizado_em TIMESTAMPTZ NOT NULL
+    updated_at TIMESTAMPTZ NOT NULL
 );
 
 -- E-mails capturados na landing page pública do financas-frontend,
@@ -313,7 +313,7 @@ CREATE TABLE IF NOT EXISTS dashboard_layouts (
 CREATE TABLE IF NOT EXISTS leads (
     id UUID PRIMARY KEY,
     email TEXT NOT NULL UNIQUE,
-    criado_em TIMESTAMPTZ NOT NULL
+    created_at TIMESTAMPTZ NOT NULL
 );
 
 -- ===========================================================================
@@ -331,40 +331,40 @@ CREATE TABLE IF NOT EXISTS leads (
 -- o ciclo de ingestão traz elenco e partidas.
 CREATE TABLE IF NOT EXISTS clubs (
     club_id         TEXT PRIMARY KEY,
-    nome            TEXT NOT NULL,
-    sigla           TEXT NOT NULL DEFAULT '',
-    estadio         TEXT NOT NULL DEFAULT '',
-    regiao_id       TEXT NOT NULL DEFAULT '',
-    time_id         TEXT NOT NULL DEFAULT '',
-    escudo_asset_id TEXT NOT NULL DEFAULT '',
-    cor_1           INTEGER NOT NULL DEFAULT 0,
-    cor_2           INTEGER NOT NULL DEFAULT 0,
-    cor_3           INTEGER NOT NULL DEFAULT 0,
-    cor_4           INTEGER NOT NULL DEFAULT 0,
-    acompanhado     BOOLEAN NOT NULL DEFAULT false,
-    atualizado_em   TIMESTAMPTZ NOT NULL DEFAULT now()
+    name            TEXT NOT NULL,
+    tag           TEXT NOT NULL DEFAULT '',
+    stadium         TEXT NOT NULL DEFAULT '',
+    region_id       TEXT NOT NULL DEFAULT '',
+    team_id         TEXT NOT NULL DEFAULT '',
+    crest_asset_id TEXT NOT NULL DEFAULT '',
+    color_1           INTEGER NOT NULL DEFAULT 0,
+    color_2           INTEGER NOT NULL DEFAULT 0,
+    color_3           INTEGER NOT NULL DEFAULT 0,
+    color_4           INTEGER NOT NULL DEFAULT 0,
+    tracked     BOOLEAN NOT NULL DEFAULT false,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_clubs_acompanhado ON clubs(acompanhado);
+CREATE INDEX IF NOT EXISTS idx_clubs_acompanhado ON clubs(tracked);
 
 -- Totais gerais que a origem devolve mesmo para clube não acompanhado.
 -- Separado de clubs porque existe justamente para quem nunca terá elenco.
 CREATE TABLE IF NOT EXISTS clubs_totais (
     club_id          TEXT PRIMARY KEY,
-    jogos            INTEGER NOT NULL DEFAULT 0,
-    vitorias         INTEGER NOT NULL DEFAULT 0,
-    empates          INTEGER NOT NULL DEFAULT 0,
-    derrotas         INTEGER NOT NULL DEFAULT 0,
-    gols             INTEGER NOT NULL DEFAULT 0,
-    gols_sofridos    INTEGER NOT NULL DEFAULT 0,
-    jogos_sem_sofrer INTEGER NOT NULL DEFAULT 0,
-    pontos           INTEGER NOT NULL DEFAULT 0,
-    divisao_atual    INTEGER NOT NULL DEFAULT 0,
-    melhor_divisao   INTEGER NOT NULL DEFAULT 0,
-    nivel            INTEGER NOT NULL DEFAULT 0,
-    promocoes        INTEGER NOT NULL DEFAULT 0,
-    rebaixamentos    INTEGER NOT NULL DEFAULT 0,
-    lido_em          TIMESTAMPTZ NOT NULL DEFAULT now()
+    played            INTEGER NOT NULL DEFAULT 0,
+    wins         INTEGER NOT NULL DEFAULT 0,
+    draws          INTEGER NOT NULL DEFAULT 0,
+    losses         INTEGER NOT NULL DEFAULT 0,
+    goals             INTEGER NOT NULL DEFAULT 0,
+    goals_conceded    INTEGER NOT NULL DEFAULT 0,
+    clean_sheets INTEGER NOT NULL DEFAULT 0,
+    points           INTEGER NOT NULL DEFAULT 0,
+    division    INTEGER NOT NULL DEFAULT 0,
+    best_division   INTEGER NOT NULL DEFAULT 0,
+    skill_rating            INTEGER NOT NULL DEFAULT 0,
+    promotions        INTEGER NOT NULL DEFAULT 0,
+    relegations    INTEGER NOT NULL DEFAULT 0,
+    read_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Uma partida, vista UMA ÚNICA VEZ mesmo quando os dois clubes jogaram
@@ -375,21 +375,21 @@ CREATE TABLE IF NOT EXISTS clubs_matches (
     id                            UUID PRIMARY KEY,
     match_id                      TEXT NOT NULL UNIQUE,
     timestamp                     TIMESTAMPTZ NOT NULL,
-    tipo                          TEXT NOT NULL CHECK (tipo IN ('liga','amistoso','playoff')),
-    rodada_playoff                TEXT NOT NULL DEFAULT '',
-    clube_casa_id                 TEXT NOT NULL,
-    clube_fora_id                 TEXT NOT NULL,
-    gols_casa                     INTEGER NOT NULL DEFAULT 0,
-    gols_fora                     INTEGER NOT NULL DEFAULT 0,
-    houve_desistencia             BOOLEAN NOT NULL DEFAULT false,
-    vencedor_por_desistencia_id   TEXT NOT NULL DEFAULT '',
-    resultado_casa                TEXT NOT NULL CHECK (resultado_casa IN ('vitoria','empate','derrota')),
-    lances                        JSONB NOT NULL DEFAULT '[]',
-    criado_em                     TIMESTAMPTZ NOT NULL DEFAULT now()
+    kind                          TEXT NOT NULL CHECK (kind IN ('liga','amistoso','playoff')),
+    playoff_round                TEXT NOT NULL DEFAULT '',
+    home_club_id                 TEXT NOT NULL,
+    away_club_id                 TEXT NOT NULL,
+    home_goals                     INTEGER NOT NULL DEFAULT 0,
+    away_goals                     INTEGER NOT NULL DEFAULT 0,
+    decided_by_forfeit             BOOLEAN NOT NULL DEFAULT false,
+    forfeit_winner_id   TEXT NOT NULL DEFAULT '',
+    home_result                TEXT NOT NULL CHECK (home_result IN ('vitoria','empate','derrota')),
+    events                        JSONB NOT NULL DEFAULT '[]',
+    created_at                     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_clubs_matches_casa ON clubs_matches(clube_casa_id, timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_clubs_matches_fora ON clubs_matches(clube_fora_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_clubs_matches_casa ON clubs_matches(home_club_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_clubs_matches_fora ON clubs_matches(away_club_id, timestamp DESC);
 
 -- Atuação de um jogador numa partida. Uma linha por jogador por partida,
 -- dos DOIS times -- é daqui que sai o índice cross-club que a origem não
@@ -397,29 +397,29 @@ CREATE INDEX IF NOT EXISTS idx_clubs_matches_fora ON clubs_matches(clube_fora_id
 -- vazias para todo mundo).
 CREATE TABLE IF NOT EXISTS clubs_match_players (
     id                  UUID PRIMARY KEY,
-    partida_id          UUID NOT NULL REFERENCES clubs_matches(id) ON DELETE CASCADE,
+    match_id_uuid          UUID NOT NULL REFERENCES clubs_matches(id) ON DELETE CASCADE,
     club_id             TEXT NOT NULL,
     player_id           TEXT NOT NULL,
     gamertag            TEXT NOT NULL,
-    posicao             TEXT NOT NULL CHECK (posicao IN ('goleiro','defensor','meio','atacante')),
-    nota                NUMERIC(4,2) NOT NULL DEFAULT 0,
-    gols                INTEGER NOT NULL DEFAULT 0,
-    assistencias        INTEGER NOT NULL DEFAULT 0,
-    chutes              INTEGER NOT NULL DEFAULT 0,
-    passes_certos       INTEGER NOT NULL DEFAULT 0,
-    passes_tentados     INTEGER NOT NULL DEFAULT 0,
-    desarmes_certos     INTEGER NOT NULL DEFAULT 0,
-    desarmes_tentados   INTEGER NOT NULL DEFAULT 0,
-    defesas             INTEGER NOT NULL DEFAULT 0,
-    defesas_por_tipo    JSONB,
-    segundos_jogados    INTEGER NOT NULL DEFAULT 0,
-    melhor_em_campo     BOOLEAN NOT NULL DEFAULT false,
-    cartao_vermelho     BOOLEAN NOT NULL DEFAULT false,
-    jogo_sem_sofrer_gol BOOLEAN NOT NULL DEFAULT false,
-    UNIQUE (partida_id, player_id)
+    position             TEXT NOT NULL CHECK (position IN ('goalkeeper','defensor','meio','atacante')),
+    rating                NUMERIC(4,2) NOT NULL DEFAULT 0,
+    goals                INTEGER NOT NULL DEFAULT 0,
+    assists        INTEGER NOT NULL DEFAULT 0,
+    shots              INTEGER NOT NULL DEFAULT 0,
+    passes_made       INTEGER NOT NULL DEFAULT 0,
+    passes_attempted     INTEGER NOT NULL DEFAULT 0,
+    tackles_made     INTEGER NOT NULL DEFAULT 0,
+    tackles_attempted   INTEGER NOT NULL DEFAULT 0,
+    saves             INTEGER NOT NULL DEFAULT 0,
+    saves_by_type    JSONB,
+    seconds_played    INTEGER NOT NULL DEFAULT 0,
+    man_of_the_match     BOOLEAN NOT NULL DEFAULT false,
+    red_card     BOOLEAN NOT NULL DEFAULT false,
+    clean_sheet BOOLEAN NOT NULL DEFAULT false,
+    UNIQUE (match_id_uuid, player_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_clubs_match_players_partida ON clubs_match_players(partida_id, club_id);
+CREATE INDEX IF NOT EXISTS idx_clubs_match_players_partida ON clubs_match_players(match_id_uuid, club_id);
 CREATE INDEX IF NOT EXISTS idx_clubs_match_players_player ON clubs_match_players(player_id);
 
 -- Totais de CARREIRA de um jogador num clube, do `members/career/stats` da
@@ -431,13 +431,13 @@ CREATE INDEX IF NOT EXISTS idx_clubs_match_players_player ON clubs_match_players
 CREATE TABLE IF NOT EXISTS clubs_player_career (
     club_id      TEXT NOT NULL,
     gamertag     TEXT NOT NULL,
-    jogos        INTEGER NOT NULL DEFAULT 0,
-    gols         INTEGER NOT NULL DEFAULT 0,
-    assistencias INTEGER NOT NULL DEFAULT 0,
-    melhor_em_campo INTEGER NOT NULL DEFAULT 0,
-    nota         NUMERIC(4,2) NOT NULL DEFAULT 0,
-    posicao      TEXT NOT NULL DEFAULT '',
-    lido_em      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    played        INTEGER NOT NULL DEFAULT 0,
+    goals         INTEGER NOT NULL DEFAULT 0,
+    assists INTEGER NOT NULL DEFAULT 0,
+    man_of_the_match INTEGER NOT NULL DEFAULT 0,
+    rating         NUMERIC(4,2) NOT NULL DEFAULT 0,
+    position      TEXT NOT NULL DEFAULT '',
+    read_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (club_id, gamertag)
 );
 
@@ -446,77 +446,77 @@ CREATE TABLE IF NOT EXISTS clubs_player_career (
 CREATE TABLE IF NOT EXISTS clubs_snapshots (
     id             UUID PRIMARY KEY,
     club_id        TEXT NOT NULL,
-    lido_em        TIMESTAMPTZ NOT NULL,
-    nivel          INTEGER NOT NULL DEFAULT 0,
-    divisao        INTEGER NOT NULL DEFAULT 0,
-    jogos          INTEGER NOT NULL DEFAULT 0,
-    vitorias       INTEGER NOT NULL DEFAULT 0,
-    empates        INTEGER NOT NULL DEFAULT 0,
-    derrotas       INTEGER NOT NULL DEFAULT 0,
-    gols           INTEGER NOT NULL DEFAULT 0,
-    gols_sofridos  INTEGER NOT NULL DEFAULT 0,
-    tamanho_elenco INTEGER NOT NULL DEFAULT 0
+    read_at        TIMESTAMPTZ NOT NULL,
+    skill_rating          INTEGER NOT NULL DEFAULT 0,
+    division_at_read        INTEGER NOT NULL DEFAULT 0,
+    played          INTEGER NOT NULL DEFAULT 0,
+    wins       INTEGER NOT NULL DEFAULT 0,
+    draws        INTEGER NOT NULL DEFAULT 0,
+    losses       INTEGER NOT NULL DEFAULT 0,
+    goals           INTEGER NOT NULL DEFAULT 0,
+    goals_conceded  INTEGER NOT NULL DEFAULT 0,
+    squad_size INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_clubs_snapshots_club ON clubs_snapshots(club_id, lido_em DESC);
+CREATE INDEX IF NOT EXISTS idx_clubs_snapshots_club ON clubs_snapshots(club_id, read_at DESC);
 
 -- Evento datado de subida/queda, derivado do diff entre dois snapshots.
 -- para < de = promoção.
 CREATE TABLE IF NOT EXISTS clubs_division_changes (
     id           UUID PRIMARY KEY,
     club_id      TEXT NOT NULL,
-    detectado_em TIMESTAMPTZ NOT NULL,
-    de           INTEGER NOT NULL,
-    para         INTEGER NOT NULL,
-    tipo         TEXT NOT NULL CHECK (tipo IN ('promocao','rebaixamento'))
+    detected_at TIMESTAMPTZ NOT NULL,
+    from_division           INTEGER NOT NULL,
+    to_division         INTEGER NOT NULL,
+    kind         TEXT NOT NULL CHECK (kind IN ('promocao','rebaixamento'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_clubs_division_changes_club ON clubs_division_changes(club_id, detectado_em DESC);
+CREATE INDEX IF NOT EXISTS idx_clubs_division_changes_club ON clubs_division_changes(club_id, detected_at DESC);
 
 -- Feed da home: derivado pelo próprio ingest dos fatos que acabou de
 -- gravar (resultado novo, recorde batido, mudança de divisão). Não é
 -- curado à mão e não tem endpoint de escrita pública.
 CREATE TABLE IF NOT EXISTS clubs_announcements (
     id            UUID PRIMARY KEY,
-    tipo          TEXT NOT NULL CHECK (tipo IN ('resultado','ranking','jogador','novidade')),
-    titulo        TEXT NOT NULL,
-    texto         TEXT NOT NULL DEFAULT '',
-    referencia_id TEXT NOT NULL DEFAULT '',
-    icone         TEXT NOT NULL DEFAULT '',
-    gerado_em     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expira_em     TIMESTAMPTZ
+    kind          TEXT NOT NULL CHECK (kind IN ('resultado','ranking','jogador','novidade')),
+    title        TEXT NOT NULL,
+    body         TEXT NOT NULL DEFAULT '',
+    reference_id TEXT NOT NULL DEFAULT '',
+    icon         TEXT NOT NULL DEFAULT '',
+    generated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at     TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_clubs_announcements_gerado ON clubs_announcements(gerado_em DESC);
+CREATE INDEX IF NOT EXISTS idx_clubs_announcements_gerado ON clubs_announcements(generated_at DESC);
 
 -- Preferências por pessoa: watchlist, pro reivindicado e avisos. É a
 -- ÚNICA parte particionada por usuario_email -- o resto do schema de
 -- clubs é dado público. Toda leitura filtra por esse campo.
 CREATE TABLE IF NOT EXISTS clubs_preferences (
-    usuario_email      TEXT PRIMARY KEY,
-    canal              TEXT NOT NULL DEFAULT '',
-    resumo_periodico   BOOLEAN NOT NULL DEFAULT true,
-    recordes_e_divisoes BOOLEAN NOT NULL DEFAULT true,
-    resultado_partidas BOOLEAN NOT NULL DEFAULT true,
-    atualizado_em      TIMESTAMPTZ NOT NULL DEFAULT now()
+    user_email      TEXT PRIMARY KEY,
+    channel              TEXT NOT NULL DEFAULT '',
+    weekly_digest   BOOLEAN NOT NULL DEFAULT true,
+    records_and_divisions BOOLEAN NOT NULL DEFAULT true,
+    match_results BOOLEAN NOT NULL DEFAULT true,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS clubs_watchlist (
-    usuario_email   TEXT NOT NULL,
+    user_email   TEXT NOT NULL,
     club_id         TEXT NOT NULL,
-    seguindo_desde  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    origem          TEXT NOT NULL DEFAULT 'manual' CHECK (origem IN ('proprio','rival','rival_de_rival','manual')),
-    PRIMARY KEY (usuario_email, club_id)
+    tracked_since  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    source          TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('own','rival','rival_of_rival','manual')),
+    PRIMARY KEY (user_email, club_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_clubs_watchlist_usuario ON clubs_watchlist(usuario_email);
+CREATE INDEX IF NOT EXISTS idx_clubs_watchlist_usuario ON clubs_watchlist(user_email);
 
 CREATE TABLE IF NOT EXISTS clubs_claimed_pros (
-    usuario_email  TEXT PRIMARY KEY,
+    user_email  TEXT PRIMARY KEY,
     club_id        TEXT NOT NULL,
     player_id      TEXT NOT NULL,
-    verificado     BOOLEAN NOT NULL DEFAULT false,
-    reivindicado_em TIMESTAMPTZ NOT NULL DEFAULT now()
+    verified     BOOLEAN NOT NULL DEFAULT false,
+    claimed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_clubs_claimed_pros_player ON clubs_claimed_pros(player_id);
@@ -530,15 +530,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_clubs_claimed_pros_player ON clubs_claimed_
 -- Estado da última sincronização de uma pessoa, para a SPA desenhar o
 -- progresso por nível sem bloquear a navegação.
 CREATE TABLE IF NOT EXISTS clubs_sync_runs (
-    usuario_email TEXT PRIMARY KEY,
-    rodando       BOOLEAN NOT NULL DEFAULT false,
-    nivel         INTEGER NOT NULL DEFAULT 0,
+    user_email TEXT PRIMARY KEY,
+    running       BOOLEAN NOT NULL DEFAULT false,
+    skill_rating         INTEGER NOT NULL DEFAULT 0,
     total         INTEGER NOT NULL DEFAULT 0,
-    concluidos    INTEGER NOT NULL DEFAULT 0,
-    atual         TEXT NOT NULL DEFAULT '',
-    novos         JSONB NOT NULL DEFAULT '[]',
-    iniciado_em   TIMESTAMPTZ,
-    concluido_em  TIMESTAMPTZ
+    completed    INTEGER NOT NULL DEFAULT 0,
+    current         TEXT NOT NULL DEFAULT '',
+    new_items         JSONB NOT NULL DEFAULT '[]',
+    started_at   TIMESTAMPTZ,
+    finished_at  TIMESTAMPTZ
 );
 
 -- ===========================================================================
@@ -577,25 +577,25 @@ BEGIN
 END $$;
 
 CREATE TABLE IF NOT EXISTS clubs_fetch_runs (
-    alvo          TEXT NOT NULL DEFAULT 'clube',
-    alvo_id       TEXT NOT NULL,
-    rotulo        TEXT NOT NULL DEFAULT '',
-    rodando       BOOLEAN NOT NULL DEFAULT false,
-    jogadores     INTEGER NOT NULL DEFAULT 0,
-    partidas      INTEGER NOT NULL DEFAULT 0,
-    clubes        INTEGER NOT NULL DEFAULT 0,
-    erro          TEXT NOT NULL DEFAULT '',
-    solicitado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
-    concluido_em  TIMESTAMPTZ,
-    PRIMARY KEY (alvo, alvo_id)
+    target          TEXT NOT NULL DEFAULT 'clube',
+    target_id       TEXT NOT NULL,
+    label        TEXT NOT NULL DEFAULT '',
+    running       BOOLEAN NOT NULL DEFAULT false,
+    players     INTEGER NOT NULL DEFAULT 0,
+    matches      INTEGER NOT NULL DEFAULT 0,
+    clubs        INTEGER NOT NULL DEFAULT 0,
+    error          TEXT NOT NULL DEFAULT '',
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at  TIMESTAMPTZ,
+    PRIMARY KEY (target, target_id)
 );
 
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'clubs_fetch_runs_old') THEN
         INSERT INTO clubs_fetch_runs
-            (alvo, alvo_id, rodando, jogadores, partidas, erro, solicitado_em, concluido_em)
-        SELECT 'clube', club_id, rodando, jogadores, partidas, erro, solicitado_em, concluido_em
+            (target, target_id, running, players, matches, error, requested_at, finished_at)
+        SELECT 'clube', club_id, running, players, matches, error, requested_at, finished_at
         FROM clubs_fetch_runs_old
         ON CONFLICT DO NOTHING;
         DROP TABLE clubs_fetch_runs_old;
@@ -607,9 +607,9 @@ END $$;
 -- formato novo ANTES de a coluna existir -- foi o caso em produção: a tabela
 -- já tinha alvo/alvo_id, mas não `clubes`, e o INSERT do sync de jogador
 -- falharia com "column clubes does not exist".
-ALTER TABLE clubs_fetch_runs ADD COLUMN IF NOT EXISTS clubes INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE clubs_fetch_runs ADD COLUMN IF NOT EXISTS clubs INTEGER NOT NULL DEFAULT 0;
 
-CREATE INDEX IF NOT EXISTS idx_clubs_fetch_runs_pendentes ON clubs_fetch_runs(rodando, solicitado_em);
+CREATE INDEX IF NOT EXISTS idx_clubs_fetch_runs_pendentes ON clubs_fetch_runs(running, requested_at);
 
 -- ===========================================================================
 -- Fila de busca ao vivo na fonte (clubs_search_runs).
@@ -629,14 +629,14 @@ CREATE INDEX IF NOT EXISTS idx_clubs_fetch_runs_pendentes ON clubs_fetch_runs(ro
 
 CREATE TABLE IF NOT EXISTS clubs_search_runs (
     termo         TEXT PRIMARY KEY,
-    rodando       BOOLEAN NOT NULL DEFAULT false,
-    encontrados   INTEGER NOT NULL DEFAULT 0,
-    erro          TEXT NOT NULL DEFAULT '',
-    solicitado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
-    concluido_em  TIMESTAMPTZ
+    running       BOOLEAN NOT NULL DEFAULT false,
+    found   INTEGER NOT NULL DEFAULT 0,
+    error          TEXT NOT NULL DEFAULT '',
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at  TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_clubs_search_runs_pendentes ON clubs_search_runs(rodando, solicitado_em);
+CREATE INDEX IF NOT EXISTS idx_clubs_search_runs_pendentes ON clubs_search_runs(running, requested_at);
 
 -- ===========================================================================
 -- Estado do worker de ingestão (clubs-ingest).
@@ -652,14 +652,14 @@ CREATE INDEX IF NOT EXISTS idx_clubs_search_runs_pendentes ON clubs_search_runs(
 
 CREATE TABLE IF NOT EXISTS clubs_ingest_estado (
     id                INTEGER PRIMARY KEY DEFAULT 1,
-    ultimo_ciclo_em   TIMESTAMPTZ,
-    rodadas           INTEGER NOT NULL DEFAULT 0,
-    clubes_ok         INTEGER NOT NULL DEFAULT 0,
-    clubes_falhos     INTEGER NOT NULL DEFAULT 0,
-    partidas_novas    INTEGER NOT NULL DEFAULT 0,
+    last_cycle_at   TIMESTAMPTZ,
+    cycles           INTEGER NOT NULL DEFAULT 0,
+    clubs_ok         INTEGER NOT NULL DEFAULT 0,
+    clubs_failed     INTEGER NOT NULL DEFAULT 0,
+    new_matches    INTEGER NOT NULL DEFAULT 0,
     snapshots         INTEGER NOT NULL DEFAULT 0,
-    bootstrap_feito   BOOLEAN NOT NULL DEFAULT false,
-    ultimo_erro       TEXT NOT NULL DEFAULT '',
-    ultimo_erro_em    TIMESTAMPTZ,
+    bootstrapped   BOOLEAN NOT NULL DEFAULT false,
+    last_error       TEXT NOT NULL DEFAULT '',
+    last_error_at    TIMESTAMPTZ,
     CONSTRAINT clubs_ingest_estado_single CHECK (id = 1)
 );

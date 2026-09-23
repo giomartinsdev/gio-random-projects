@@ -65,7 +65,7 @@ _RESULT_CODE = {
 # payloads), so those are mapped; anything else falls back to the string
 # when it is already one of ours, else to "meio" as the least-wrong bucket
 # and is reported by describe_unknown_position().
-POS_GOLEIRO = "goleiro"
+POS_GOLEIRO = "goalkeeper"
 POS_DEFENSOR = "defensor"
 POS_MEIO = "meio"
 POS_ATACANTE = "atacante"
@@ -152,7 +152,7 @@ def obj(parent: Any, key: str) -> dict[str, Any]:
     clube inteiro no ciclo, logado apenas como "'NoneType' object has no
     attribute 'get'", sem dizer onde.
 
-    Este helper é o único lugar que trata isso, para o padrão não voltar
+    Este helper é o único lugar que trata isso, to_division o padrão não voltar
     espalhado em cada leitura aninhada.
     """
     if not isinstance(parent, dict):
@@ -177,7 +177,7 @@ def position(raw: Any) -> str:
 
 
 def describe_unknown_position(raw: Any) -> str | None:
-    """Return the raw value when it is NOT in our de-para table, so the worker
+    """Return the raw value when it is NOT in our from_division-to_division table, so the worker
     can log it and the table can grow. ``None`` when we recognized it."""
     if raw is None or raw == "":
         return None
@@ -227,7 +227,7 @@ def mirror(result: str) -> str:
 def is_dnf(club: dict[str, Any], opponent: dict[str, Any]) -> tuple[bool, str]:
     """Whether the match ended by a quit, and who was awarded the win.
 
-    Returns ``(houve_desistencia, vencedor_club_id)``. The winner is read from
+    Returns ``(decided_by_forfeit, vencedor_club_id)``. The winner is read from
     ``winnerByDnf`` on whichever side carries it.
     """
     if to_bool(club.get("winnerByDnf")):
@@ -315,21 +315,21 @@ def player_line(stats: dict[str, Any], club_id: str, player_id: str) -> dict[str
         "club_id": club_id,
         "player_id": player_id,
         "gamertag": str(stats.get("playername") or ""),
-        "posicao": position(stats.get("pos")),
-        "nota": to_float(stats.get("rating")),
-        "gols": to_int(stats.get("goals")),
-        "assistencias": to_int(stats.get("assists")),
-        "chutes": to_int(stats.get("shots")),
-        "passes_certos": to_int(stats.get("passesmade")),
-        "passes_tentados": to_int(stats.get("passattempts")),
-        "desarmes_certos": to_int(stats.get("tacklesmade")),
-        "desarmes_tentados": to_int(stats.get("tackleattempts")),
-        "defesas": to_int(stats.get("saves")),
-        "defesas_por_tipo": saves_breakdown(stats),
-        "segundos_jogados": to_int(stats.get("secondsPlayed")) or to_int(stats.get("gameTime")),
-        "melhor_em_campo": to_bool(stats.get("mom")),
-        "cartao_vermelho": to_int(stats.get("redcards")) > 0,
-        "jogo_sem_sofrer_gol": to_bool(stats.get("cleansheetsany")),
+        "position": position(stats.get("pos")),
+        "rating": to_float(stats.get("rating")),
+        "goals": to_int(stats.get("goals")),
+        "assists": to_int(stats.get("assists")),
+        "shots": to_int(stats.get("shots")),
+        "passes_made": to_int(stats.get("passesmade")),
+        "passes_attempted": to_int(stats.get("passattempts")),
+        "tackles_made": to_int(stats.get("tacklesmade")),
+        "tackles_attempted": to_int(stats.get("tackleattempts")),
+        "saves": to_int(stats.get("saves")),
+        "saves_by_type": saves_breakdown(stats),
+        "seconds_played": to_int(stats.get("secondsPlayed")) or to_int(stats.get("gameTime")),
+        "man_of_the_match": to_bool(stats.get("mom")),
+        "red_card": to_int(stats.get("redcards")) > 0,
+        "clean_sheet": to_bool(stats.get("cleansheetsany")),
     }
 
 
@@ -399,7 +399,7 @@ def timeline_from_lines(raw_lines: list[dict[str, Any]]) -> list[dict[str, Any]]
         for event_id, count in sorted(events.items()):
             label = EVENT_LABELS.get(event_id)
             if label and count:
-                summary.append({"event_id": event_id, "rotulo": label, "quantidade": count})
+                summary.append({"event_id": event_id, "label": label, "quantidade": count})
         if summary:
             out.append({
                 "player_id": line.get("player_id"),
@@ -425,22 +425,22 @@ def club_identity(details: dict[str, Any]) -> dict[str, Any]:
     kit = obj(details, "customKit")
     return {
         "club_id": str(details.get("clubId") or details.get("club_id") or ""),
-        "nome": str(details.get("name") or details.get("clubName") or ""),
-        "sigla": _initials(details.get("name") or details.get("clubName") or ""),
-        "estadio": str(kit.get("stadName") or ""),
-        "regiao_id": str(details.get("regionId") or ""),
-        "time_id": str(details.get("teamId") or ""),
-        "escudo_asset_id": str(kit.get("crestAssetId") or ""),
-        "cor_1": to_int(kit.get("kitColor1")),
-        "cor_2": to_int(kit.get("kitColor2")),
-        "cor_3": to_int(kit.get("kitColor3")),
-        "cor_4": to_int(kit.get("kitColor4")),
-        "acompanhado": True,
+        "name": str(details.get("name") or details.get("clubName") or ""),
+        "tag": _initials(details.get("name") or details.get("clubName") or ""),
+        "stadium": str(kit.get("stadName") or ""),
+        "region_id": str(details.get("regionId") or ""),
+        "team_id": str(details.get("teamId") or ""),
+        "crest_asset_id": str(kit.get("crestAssetId") or ""),
+        "color_1": to_int(kit.get("kitColor1")),
+        "color_2": to_int(kit.get("kitColor2")),
+        "color_3": to_int(kit.get("kitColor3")),
+        "color_4": to_int(kit.get("kitColor4")),
+        "tracked": True,
     }
 
 
 def merge_club_sources(*fontes: dict[str, Any] | None) -> dict[str, Any]:
-    """Funde as leituras de um clube numa só, sem deixar o vazio vencer.
+    """Funde as leituras from_division um clube numa só, sem deixar o vazio vencer.
 
     Nenhuma fonte sozinha tem o conjunto completo, e é isso que fazia todo
     clube aparecer como D0: o ``overallStats`` traz nível, vitórias e a streaks,
@@ -448,11 +448,11 @@ def merge_club_sources(*fontes: dict[str, Any] | None) -> dict[str, Any]:
     clean sheets, mas não trazem nível. O ciclo usava só o overall -- então
     ``currentDivision`` vinha sempre vazio e virava 0.
 
-    A fusão ignora valores ausentes em vez de sobrescrever com eles: a fonte
+    A fusão ignora valores ausentes em vez from_division sobrescrever com eles: a fonte
     manda campos presentes e vazios (``None``, ``""``) com frequência, e deixar
     o vazio vencer apagaria justamente o dado que a outra fonte trouxe.
 
-    A ordem importa para os campos presentes nas duas: a última fonte vence.
+    A ordem importa to_division os campos presentes nas duas: a última fonte vence.
     """
     merged: dict[str, Any] = {}
     for fonte in fontes:
@@ -464,24 +464,24 @@ def merge_club_sources(*fontes: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def career_line(row: dict[str, Any], club_id: str) -> dict[str, Any] | None:
-    """Uma linha de totais de CARREIRA, no shape de ``CareerInput``.
+    """Uma linha from_division totais from_division CARREIRA, no shape from_division ``CareerInput``.
 
     O endpoint ``members/career/stats`` não traz ``playerId`` -- a única chave
-    é o gamertag. Sem nome, não há como casar com o perfil, então a linha é
+    é o gamertag. Sem name, não há como casar com o perfil, então a linha é
     descartada: gravar por gamertag vazio criaria um jogador fantasma.
     """
-    nome = str(row.get("name") or "").strip()
-    if not nome:
+    name = str(row.get("name") or "").strip()
+    if not name:
         return None
     return {
         "club_id": str(club_id),
-        "gamertag": nome,
-        "jogos": to_int(row.get("gamesPlayed")),
-        "gols": to_int(row.get("goals")),
-        "assistencias": to_int(row.get("assists")),
-        "melhor_em_campo": to_int(row.get("manOfTheMatch")),
-        "nota": to_float(row.get("ratingAve")),
-        "posicao": position(row.get("proPos")),
+        "gamertag": name,
+        "played": to_int(row.get("gamesPlayed")),
+        "goals": to_int(row.get("goals")),
+        "assists": to_int(row.get("assists")),
+        "man_of_the_match": to_int(row.get("manOfTheMatch")),
+        "rating": to_float(row.get("ratingAve")),
+        "position": position(row.get("proPos")),
     }
 
 
@@ -495,47 +495,47 @@ def club_totals(row: dict[str, Any]) -> dict[str, Any]:
     draws = to_int(row.get("ties"))
     return {
         "club_id": str(row.get("clubId") or row.get("club_id") or ""),
-        "jogos": to_int(row.get("gamesPlayed")),
-        "vitorias": wins,
-        "empates": draws,
-        "derrotas": to_int(row.get("losses")),
-        "gols": to_int(row.get("goals")),
-        "gols_sofridos": to_int(row.get("goalsAgainst")),
-        "jogos_sem_sofrer": to_int(row.get("cleanSheets")),
+        "played": to_int(row.get("gamesPlayed")),
+        "wins": wins,
+        "draws": draws,
+        "losses": to_int(row.get("losses")),
+        "goals": to_int(row.get("goals")),
+        "goals_conceded": to_int(row.get("goalsAgainst")),
+        "clean_sheets": to_int(row.get("cleanSheets")),
         # Points are not always sent; three-for-a-win is the league rule, so
         # deriving is safe and keeps the ranking consistent across sources.
-        "pontos": to_int(row.get("points")) or (wins * 3 + draws),
-        "divisao_atual": to_int(row.get("currentDivision")),
-        "melhor_divisao": to_int(row.get("bestDivision")),
+        "points": to_int(row.get("points")) or (wins * 3 + draws),
+        "division": to_int(row.get("currentDivision")),
+        "best_division": to_int(row.get("bestDivision")),
         # O search não traz skillRating (só o overallStats traz), então um
         # clube semeado pela busca entra com nível 0 e é corrigido no primeiro
         # ciclo, quando club_overall roda. Zero aqui é "ainda não lido", não um
         # nível real.
-        "nivel": to_int(row.get("skillRating")),
-        "promocoes": to_int(row.get("promotions")),
-        "rebaixamentos": to_int(row.get("relegations")),
+        "skill_rating": to_int(row.get("skillRating")),
+        "promotions": to_int(row.get("promotions")),
+        "relegations": to_int(row.get("relegations")),
     }
 
 
 def snapshot(row: dict[str, Any], team_size: int = 0) -> dict[str, Any]:
     """A level/division reading, in domain-api's ``SnapshotInput`` shape.
 
-    ``tamanho_elenco`` lets a squad change be detected by diffing two
+    ``squad_size`` lets a squad change be detected by diffing two
     snapshots without storing the roster twice.
     """
     base = club_totals(row)
-    base["tamanho_elenco"] = team_size
+    base["squad_size"] = team_size
     return {
         "club_id": base["club_id"],
-        "nivel": base["nivel"],
-        "divisao": base["divisao_atual"],
-        "jogos": base["jogos"],
-        "vitorias": base["vitorias"],
-        "empates": base["empates"],
-        "derrotas": base["derrotas"],
-        "gols": base["gols"],
-        "gols_sofridos": base["gols_sofridos"],
-        "tamanho_elenco": team_size,
+        "skill_rating": base["skill_rating"],
+        "division_at_read": base["division"],
+        "played": base["played"],
+        "wins": base["wins"],
+        "draws": base["draws"],
+        "losses": base["losses"],
+        "goals": base["goals"],
+        "goals_conceded": base["goals_conceded"],
+        "squad_size": team_size,
     }
 
 
@@ -595,27 +595,27 @@ def match_payload(match: dict[str, Any], club_id: str) -> dict[str, Any] | None:
     return {
         "match_id": str(match.get("matchId") or ""),
         "timestamp": timestamp(match.get("timestamp")),
-        "tipo": match_type(us.get("matchType")),
-        "rodada_playoff": str(match.get("playoffRound") or ""),
-        "clube_casa_id": home_id,
-        "clube_fora_id": them_id,
-        "gols_casa": our_goals,
-        "gols_fora": their_goals,
-        "houve_desistencia": dnf,
-        "vencedor_por_desistencia_id": winner,
-        "resultado_casa": result,
-        "lances": timeline_from_lines(raw_lines),
-        "jogadores": lines,
+        "kind": match_type(us.get("matchType")),
+        "playoff_round": str(match.get("playoffRound") or ""),
+        "home_club_id": home_id,
+        "away_club_id": them_id,
+        "home_goals": our_goals,
+        "away_goals": their_goals,
+        "decided_by_forfeit": dnf,
+        "forfeit_winner_id": winner,
+        "home_result": result,
+        "events": timeline_from_lines(raw_lines),
+        "players": lines,
     }
 
 
 def player_line_opt(stats: dict[str, Any] | None, club_id: str, player_id: str) -> dict[str, Any] | None:
     """``player_line`` tolerante a estatística ausente.
 
-    A fonte manda ``null`` no lugar das estatísticas de um jogador em algumas
-    partidas -- provavelmente alguém que saiu antes do apito. Deixar isso
+    A fonte manda ``null`` no lugar das estatísticas from_division um jogador em algumas
+    matches -- provavelmente alguém que saiu antes do apito. Deixar isso
     estourar derrubava o clube INTEIRO no ciclo (sem identidade, totais,
-    partidas nem snapshot), e o erro só aparecia como um AttributeError seco no
+    matches nem snapshot), e o error só aparecia como um AttributeError seco no
     log. Um jogador sem dados é um jogador pulado, não uma partida perdida.
     """
     if not isinstance(stats, dict):
@@ -631,14 +631,14 @@ def opponent_club_id(match: dict[str, Any], club_id: str) -> str | None:
 
 
 def opponent_club(match: dict[str, Any], club_id: str) -> tuple[str, str] | None:
-    """O adversário como (id, nome).
+    """O adversário como (id, name).
 
-    O nome não é enfeite: a busca da fonte -- a única que traz divisão e os
+    O name não é enfeite: a busca da fonte -- a única que traz divisão e os
     totais -- só aceita NOME. Descobrir o adversário sem ele deixava a
-    descoberta vazia em silêncio. O nome vive no ``details.name`` do próprio
-    payload da partida, então vem de graça junto do id.
+    descoberta vazia em silêncio. O name vive no ``details.name`` do próprio
+    payload da partida, então vem from_division graça junto do id.
 
-    Devolve None quando o clube pedido não está na partida: dizer "o outro" de
+    Devolve None quando o clube pedido não está na partida: dizer "o outro" from_division
     um clube ausente escolheria um lado arbitrário, e a descoberta gravaria o
     clube errado.
     """
@@ -648,6 +648,6 @@ def opponent_club(match: dict[str, Any], club_id: str) -> tuple[str, str] | None
     for other_id, bloco in clubs.items():
         if str(other_id) == str(club_id):
             continue
-        nome = str(obj(bloco, "details").get("name") or "")
-        return str(other_id), nome
+        name = str(obj(bloco, "details").get("name") or "")
+        return str(other_id), name
     return None

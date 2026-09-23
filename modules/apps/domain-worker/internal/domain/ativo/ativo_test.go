@@ -21,8 +21,8 @@ func TestNew(t *testing.T) {
 		if a.QuantidadeAtual != 100 || a.CustoMedio != 20 {
 			t.Errorf("got quantidade=%v custoMedio=%v", a.QuantidadeAtual, a.CustoMedio)
 		}
-		if mov.Tipo != ativomovimento.TipoCompra {
-			t.Errorf("mov.Tipo = %q, want compra", mov.Tipo)
+		if mov.Kind != ativomovimento.TipoCompra {
+			t.Errorf("mov.Kind = %q, want compra", mov.Kind)
 		}
 	})
 
@@ -53,8 +53,8 @@ func TestRegistrarMovimento(t *testing.T) {
 		if updated.CustoMedio != wantCusto {
 			t.Errorf("custoMedio = %v, want %v", updated.CustoMedio, wantCusto)
 		}
-		if mov.Tipo != ativomovimento.TipoCompra {
-			t.Errorf("mov.Tipo = %q", mov.Tipo)
+		if mov.Kind != ativomovimento.TipoCompra {
+			t.Errorf("mov.Kind = %q", mov.Kind)
 		}
 	})
 
@@ -84,7 +84,7 @@ func TestRegistrarMovimento(t *testing.T) {
 		}
 	})
 
-	t.Run("positive: venda total zera posicao e encerra ativo", func(t *testing.T) {
+	t.Run("positive: venda total zera position e encerra ativo", func(t *testing.T) {
 		a := base()
 		updated, _, err := RegistrarMovimento(a, ativomovimento.TipoVenda, 100, 25, 0, data)
 		if err != nil {
@@ -105,14 +105,14 @@ func TestRegistrarMovimento(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if updated.QuantidadeAtual != 100 || updated.CustoMedio != 20 {
-			t.Errorf("provento alterou posicao: %+v", updated)
+			t.Errorf("provento alterou position: %+v", updated)
 		}
 		if mov.ValorProvento != 15.5 {
 			t.Errorf("valorProvento = %v, want 15.5", mov.ValorProvento)
 		}
 	})
 
-	t.Run("negative: tipo invalido", func(t *testing.T) {
+	t.Run("negative: kind invalido", func(t *testing.T) {
 		a := base()
 		_, _, err := RegistrarMovimento(a, "resgate", 1, 1, 0, data)
 		if err != ErrTipoMovimentoInvalido {

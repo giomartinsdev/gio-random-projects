@@ -87,7 +87,7 @@ export function useSyncStatus(enabled: boolean) {
         if (cancelled) return;
         setRun(s);
         // Continua pollando enquanto houver trabalho; para quando termina.
-        if (s.rodando) {
+        if (s.running) {
           timer.current = window.setTimeout(tick, 1500);
         }
       } catch {
@@ -105,7 +105,7 @@ export function useSyncStatus(enabled: boolean) {
   const start = useCallback(async () => {
     try {
       await api.startSync();
-      setRun((prev) => (prev ? { ...prev, rodando: true, nivel: 1 } : prev));
+      setRun((prev) => (prev ? { ...prev, running: true, skill_rating: 1 } : prev));
     } catch {
       // idem
     }

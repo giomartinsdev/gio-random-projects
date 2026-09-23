@@ -59,15 +59,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   clubs: (onlyFollowed = false) =>
-    request<{ clubes: Club[]; total: number }>(`/clubs${onlyFollowed ? "?acompanhados=1" : ""}`),
+    request<{ clubs: Club[]; total: number }>(`/clubs${onlyFollowed ? "?acompanhados=1" : ""}`),
 
   searchClubs: (q: string) =>
-    request<{ clubes: Club[]; total: number; termo: string }>(`/clubs/search?q=${encodeURIComponent(q)}`),
+    request<{ clubs: Club[]; total: number; termo: string }>(`/clubs/search?q=${encodeURIComponent(q)}`),
 
   club: (clubId: string) => request<Club>(`/clubs/${encodeURIComponent(clubId)}`),
 
   squad: (clubId: string) =>
-    request<{ jogadores: SquadMember[]; total: number }>(`/clubs/${encodeURIComponent(clubId)}/squad`),
+    request<{ players: SquadMember[]; total: number }>(`/clubs/${encodeURIComponent(clubId)}/squad`),
 
   /** O estado do fetch sob demanda do elenco. A tela de resgate polla isto
    * depois de pedir, para saber quando mostrar os jogadores. */
@@ -108,9 +108,9 @@ export const api = {
       body: JSON.stringify({ termo }),
     }),
 
-  matches: (clubId: string, tipo = "", limite = 25) =>
-    request<{ partidas: Match[]; total: number }>(
-      `/clubs/${encodeURIComponent(clubId)}/matches?tipo=${encodeURIComponent(tipo)}&limite=${limite}`,
+  matches: (clubId: string, kind = "", limite = 25) =>
+    request<{ matches: Match[]; total: number }>(
+      `/clubs/${encodeURIComponent(clubId)}/matches?kind=${encodeURIComponent(kind)}&limite=${limite}`,
     ),
 
   match: (matchId: string) => request<Match>(`/matches/${encodeURIComponent(matchId)}`),
@@ -128,18 +128,18 @@ export const api = {
   h2h: (clubId: string, rivalId: string) =>
     request<HeadToHead>(`/clubs/${encodeURIComponent(clubId)}/h2h/${encodeURIComponent(rivalId)}`),
 
-  rankingClubs: (metrica = "nivel", limite = 10, offset = 0) =>
-    request<{ metrica: string; clubes: Club[]; total: number }>(
-      `/rankings/clubs?metrica=${encodeURIComponent(metrica)}&limite=${limite}&offset=${offset}`,
+  rankingClubs: (metric = "skill_rating", limite = 10, offset = 0) =>
+    request<{ metric: string; clubs: Club[]; total: number }>(
+      `/rankings/clubs?metric=${encodeURIComponent(metric)}&limite=${limite}&offset=${offset}`,
     ),
 
-  rankingPlayers: (metrica = "nota", limite = 10, offset = 0, posicao = "") =>
-    request<{ metrica: string; jogadores: RankPlayer[]; total: number }>(
-      `/rankings/players?metrica=${encodeURIComponent(metrica)}&limite=${limite}&offset=${offset}&posicao=${encodeURIComponent(posicao)}`,
+  rankingPlayers: (metric = "rating", limite = 10, offset = 0, position = "") =>
+    request<{ metric: string; players: RankPlayer[]; total: number }>(
+      `/rankings/players?metric=${encodeURIComponent(metric)}&limite=${limite}&offset=${offset}&position=${encodeURIComponent(position)}`,
     ),
 
   players: (q = "", limite = 60) =>
-    request<{ jogadores: PlayerProfile[]; total: number; termo: string }>(
+    request<{ players: PlayerProfile[]; total: number; termo: string }>(
       `/players?q=${encodeURIComponent(q)}&limite=${limite}`,
     ),
 
@@ -147,7 +147,7 @@ export const api = {
    * cabeçalho da home mostra. Pede 1 registro só para ler o `total`, que é o
    * índice inteiro, não a página. */
   playerCount: () =>
-    request<{ jogadores: PlayerProfile[]; total: number; termo: string }>(
+    request<{ players: PlayerProfile[]; total: number; termo: string }>(
       "/players?limite=1",
     ).then((r) => r.total ?? 0),
 
@@ -155,18 +155,18 @@ export const api = {
     request<PlayerProfile>(`/players/${encodeURIComponent(playerId)}`),
 
   announcements: (limite = 12) =>
-    request<{ anuncios: Announcement[]; total: number }>(`/announcements?limite=${limite}`),
+    request<{ announcements: Announcement[]; total: number }>(`/announcements?limite=${limite}`),
 
   // --- pessoal (exige login) ---------------------------------------------
 
   me: () => request<{ email: string; autenticado: boolean }>("/me"),
 
-  watchlist: () => request<{ clubes: WatchEntry[]; total: number }>("/watchlist"),
+  watchlist: () => request<{ clubs: WatchEntry[]; total: number }>("/watchlist"),
 
-  setWatch: (clubId: string, seguindo: boolean, origem = "manual") =>
+  setWatch: (clubId: string, seguindo: boolean, source = "manual") =>
     request<{ club_id: string; seguindo: boolean }>("/watchlist", {
       method: "POST",
-      body: JSON.stringify({ club_id: clubId, seguindo, origem }),
+      body: JSON.stringify({ club_id: clubId, seguindo, source }),
     }),
 
   notifications: () => request<NotificationPrefs>("/notifications"),
@@ -177,7 +177,7 @@ export const api = {
   claimedPro: () => request<{ pro: ClaimedPro | null }>("/claimed-pro"),
 
   claimPro: (clubId: string, playerId: string) =>
-    request<{ player_id: string; verificado: boolean }>("/claimed-pro", {
+    request<{ player_id: string; verified: boolean }>("/claimed-pro", {
       method: "POST",
       body: JSON.stringify({ club_id: clubId, player_id: playerId }),
     }),

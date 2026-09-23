@@ -11,9 +11,9 @@ type Event interface {
 // conta.Updated — a subscriber never needs a follow-up GET to render it.
 type Upserted struct {
 	ClubID       string    `json:"club_id"`
-	Nome         string    `json:"nome"`
-	Sigla        string    `json:"sigla"`
-	Acompanhado  bool      `json:"acompanhado"`
+	Name         string    `json:"name"`
+	Tag        string    `json:"tag"`
+	Tracked  bool      `json:"tracked"`
 	OccurredAt   time.Time `json:"occurred_at"`
 }
 

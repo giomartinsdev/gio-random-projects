@@ -78,7 +78,7 @@ func (h *ClubsHandlers) ListClubs(w http.ResponseWriter, r *http.Request) {
 		h.internalError(r, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"clubes": list, "total": len(list)})
+	writeJSON(w, http.StatusOK, map[string]any{"clubs": list, "total": len(list)})
 }
 
 // SearchClubs is the public search — tolerant of accents and case.
@@ -89,7 +89,7 @@ func (h *ClubsHandlers) SearchClubs(w http.ResponseWriter, r *http.Request) {
 		h.internalError(r, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"clubes": list, "total": len(list), "termo": q})
+	writeJSON(w, http.StatusOK, map[string]any{"clubs": list, "total": len(list), "termo": q})
 }
 
 func (h *ClubsHandlers) GetClub(w http.ResponseWriter, r *http.Request) {
@@ -114,16 +114,16 @@ func (h *ClubsHandlers) GetClub(w http.ResponseWriter, r *http.Request) {
 			var order []string
 			for i, m := range matches {
 				if i < 30 {
-					if m.NossoResultado == "vitoria" {
+					if m.OurResult == "vitoria" {
 						win++
 						unbeat++
-					} else if m.NossoResultado == "empate" && win == 0 {
+					} else if m.OurResult == "empate" && win == 0 {
 						unbeat++
 					} else if i == 0 || win > 0 {
 						// only extend while the run is unbroken
 					}
 				}
-				if m.NossoResultado == "vitoria" && win == i {
+				if m.OurResult == "vitoria" && win == i {
 					// keep counting
 				}
 				if i < 10 {
@@ -132,18 +132,18 @@ func (h *ClubsHandlers) GetClub(w http.ResponseWriter, r *http.Request) {
 					// "vitoria"/"empate"/"derrota". Emitting "V" here made
 					// the profile header render "?" for every chip while the
 					// same club read correctly in the list.
-					c.Forma = append(c.Forma, m.NossoResultado)
+					c.Form = append(c.Form, m.OurResult)
 				}
 				o, ok := opponents[m.AdversarioID]
 				if !ok {
-					o = &domainclubs.Adversario{ClubID: m.AdversarioID, Nome: m.AdversarioNome, Sigla: m.AdversarioSigla}
+					o = &domainclubs.Adversario{ClubID: m.AdversarioID, Name: m.OpponentName, Tag: m.OpponentTag}
 					opponents[m.AdversarioID] = o
 					order = append(order, m.AdversarioID)
 				}
-				o.Jogos++
-				o.Gols += m.NossosGols
-				o.GolsContra += m.GolsDeles
-				switch m.NossoResultado {
+				o.Played++
+				o.Goals += m.OurGoals
+				o.GoalsAgainst += m.TheirGoals
+				switch m.OurResult {
 				case "vitoria":
 					o.V++
 				case "derrota":
@@ -151,26 +151,26 @@ func (h *ClubsHandlers) GetClub(w http.ResponseWriter, r *http.Request) {
 				default:
 					o.E++
 				}
-				if m.Timestamp.After(o.UltimoJogo) {
-					o.UltimoJogo = m.Timestamp
+				if m.Timestamp.After(o.LastMatch) {
+					o.LastMatch = m.Timestamp
 				}
 			}
 			// Recompute the runs properly: scan newest-first and stop at the
 			// first break.
 			win, unbeat = 0, 0
 			for _, m := range matches {
-				if m.NossoResultado == "vitoria" {
+				if m.OurResult == "vitoria" {
 					win++
 					unbeat++
 					continue
 				}
-				if m.NossoResultado == "empate" && win == 0 {
+				if m.OurResult == "empate" && win == 0 {
 					unbeat++
 					continue
 				}
 				break
 			}
-			c.Sequencia = domainclubs.Sequencia{Vitorias: win, Invicta: unbeat}
+			c.Streak = domainclubs.Streak{Wins: win, Unbeaten: unbeat}
 			for _, id := range order {
 				c.Adversarios = append(c.Adversarios, *opponents[id])
 			}
@@ -186,21 +186,21 @@ func (h *ClubsHandlers) GetSquad(w http.ResponseWriter, r *http.Request) {
 		h.internalError(r, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"jogadores": list, "total": len(list)})
+	writeJSON(w, http.StatusOK, map[string]any{"players": list, "total": len(list)})
 }
 
 // ---------------------------------------------------------------- partidas
 
 func (h *ClubsHandlers) ListMatches(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "clubId")
-	tipo := r.URL.Query().Get("tipo")
+	kind := r.URL.Query().Get("kind")
 	limit := intParam(r, "limite", 25, 200)
-	list, err := h.clubs.ListMatches(r.Context(), id, tipo, limit)
+	list, err := h.clubs.ListMatches(r.Context(), id, kind, limit)
 	if err != nil {
 		h.internalError(r, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"partidas": list, "total": len(list)})
+	writeJSON(w, http.StatusOK, map[string]any{"matches": list, "total": len(list)})
 }
 
 func (h *ClubsHandlers) GetMatch(w http.ResponseWriter, r *http.Request) {
@@ -246,7 +246,7 @@ func (h *ClubsHandlers) GetEvolution(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"serie": series,
 		"total": len(series),
-		"atual": latest,
+		"current": latest,
 		// Explicit so the UI can explain "history grows with every sync"
 		// instead of drawing a degenerate one-point chart.
 		"historico_curto": len(series) < 2,
@@ -276,8 +276,8 @@ func (h *ClubsHandlers) GetRecords(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------ rankings
 
 func (h *ClubsHandlers) RankingClubs(w http.ResponseWriter, r *http.Request) {
-	metrica := r.URL.Query().Get("metrica")
-	list, err := h.clubs.RankingClubs(r.Context(), metrica)
+	metric := r.URL.Query().Get("metric")
+	list, err := h.clubs.RankingClubs(r.Context(), metric)
 	if err != nil {
 		h.internalError(r, w, err)
 		return
@@ -287,20 +287,20 @@ func (h *ClubsHandlers) RankingClubs(w http.ResponseWriter, r *http.Request) {
 	// only pays for what it shows.
 	total := len(list)
 	list = page(list, r)
-	writeJSON(w, http.StatusOK, map[string]any{"metrica": metrica, "clubes": list, "total": total})
+	writeJSON(w, http.StatusOK, map[string]any{"metric": metric, "clubs": list, "total": total})
 }
 
 func (h *ClubsHandlers) RankingPlayers(w http.ResponseWriter, r *http.Request) {
-	metrica := r.URL.Query().Get("metrica")
-	posicao := r.URL.Query().Get("posicao")
-	list, err := h.clubs.RankingPlayers(r.Context(), metrica, posicao)
+	metric := r.URL.Query().Get("metric")
+	position := r.URL.Query().Get("position")
+	list, err := h.clubs.RankingPlayers(r.Context(), metric, position)
 	if err != nil {
 		h.internalError(r, w, err)
 		return
 	}
 	total := len(list)
 	list = page(list, r)
-	writeJSON(w, http.StatusOK, map[string]any{"metrica": metrica, "jogadores": list, "total": total})
+	writeJSON(w, http.StatusOK, map[string]any{"metric": metric, "players": list, "total": total})
 }
 
 // ------------------------------------------------------------------ jogadores
@@ -321,7 +321,7 @@ func (h *ClubsHandlers) ListPlayers(w http.ResponseWriter, r *http.Request) {
 		h.internalError(r, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"jogadores": list, "total": total, "termo": q})
+	writeJSON(w, http.StatusOK, map[string]any{"players": list, "total": total, "termo": q})
 }
 
 func (h *ClubsHandlers) GetPlayer(w http.ResponseWriter, r *http.Request) {
@@ -354,7 +354,7 @@ func (h *ClubsHandlers) ListAnnouncements(w http.ResponseWriter, r *http.Request
 		h.internalError(r, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"anuncios": list, "total": total})
+	writeJSON(w, http.StatusOK, map[string]any{"announcements": list, "total": total})
 }
 
 // -------------------------------------------------------------- preferências
@@ -366,7 +366,7 @@ func (h *ClubsHandlers) ListWatch(w http.ResponseWriter, r *http.Request) {
 		h.internalError(r, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"clubes": list, "total": len(list)})
+	writeJSON(w, http.StatusOK, map[string]any{"clubs": list, "total": len(list)})
 }
 
 func (h *ClubsHandlers) GetNotificacoes(w http.ResponseWriter, r *http.Request) {
@@ -433,8 +433,8 @@ func (h *ClubsHandlers) ListPendingFetches(w http.ResponseWriter, r *http.Reques
 // e não de um parâmetro: assim o id não pode ser confundido com um tipo, e a
 // rota diz por si o que está sendo sincronizado.
 func (h *ClubsHandlers) GetFetchRun(w http.ResponseWriter, r *http.Request) {
-	alvo, alvoID := alvoDoPath(r)
-	run, err := h.clubs.GetFetchRun(r.Context(), alvo, alvoID)
+	target, alvoID := alvoDoPath(r)
+	run, err := h.clubs.GetFetchRun(r.Context(), target, alvoID)
 	if err != nil {
 		h.internalError(r, w, err)
 		return
@@ -451,7 +451,7 @@ func (h *ClubsHandlers) ClubsDoJogador(w http.ResponseWriter, r *http.Request) {
 		h.internalError(r, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"clubes": ids, "total": len(ids)})
+	writeJSON(w, http.StatusOK, map[string]any{"clubs": ids, "total": len(ids)})
 }
 
 // alvoDoPath lê o (alvo, id) de uma rota de fetch-run. Os dois conjuntos de

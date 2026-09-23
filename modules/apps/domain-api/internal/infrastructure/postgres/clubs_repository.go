@@ -30,24 +30,24 @@ func NewClubsRepository(pool *pgxpool.Pool) *ClubsRepository {
 // ---------------------------------------------------------------- clubes
 
 const clubJoin = `
-	SELECT c.club_id, c.nome, c.sigla, c.estadio, c.regiao_id, c.time_id, c.escudo_asset_id,
-	       c.cor_1, c.cor_2, c.cor_3, c.cor_4, c.acompanhado, c.atualizado_em,
-	       COALESCE(t.jogos,0), COALESCE(t.vitorias,0), COALESCE(t.empates,0), COALESCE(t.derrotas,0),
-	       COALESCE(t.gols,0), COALESCE(t.gols_sofridos,0), COALESCE(t.jogos_sem_sofrer,0),
-	       COALESCE(t.pontos,0), COALESCE(t.divisao_atual,0), COALESCE(t.melhor_divisao,0),
-	       COALESCE(t.nivel,0), COALESCE(t.promocoes,0), COALESCE(t.rebaixamentos,0)
+	SELECT c.club_id, c.name, c.tag, c.stadium, c.region_id, c.team_id, c.crest_asset_id,
+	       c.color_1, c.color_2, c.color_3, c.color_4, c.tracked, c.updated_at,
+	       COALESCE(t.played,0), COALESCE(t.wins,0), COALESCE(t.draws,0), COALESCE(t.losses,0),
+	       COALESCE(t.goals,0), COALESCE(t.goals_conceded,0), COALESCE(t.clean_sheets,0),
+	       COALESCE(t.points,0), COALESCE(t.division,0), COALESCE(t.best_division,0),
+	       COALESCE(t.skill_rating,0), COALESCE(t.promotions,0), COALESCE(t.relegations,0)
 	FROM clubs c
 	LEFT JOIN clubs_totais t ON t.club_id = c.club_id`
 
 func scanClub(row pgx.Row) (domainclubs.Club, error) {
 	var c domainclubs.Club
 	err := row.Scan(
-		&c.ClubID, &c.Nome, &c.Sigla, &c.Estadio, &c.RegiaoID, &c.TimeID, &c.EscudoAssetID,
-		&c.Cor1, &c.Cor2, &c.Cor3, &c.Cor4, &c.Acompanhado, &c.AtualizadoEm,
-		&c.Jogos, &c.Vitorias, &c.Empates, &c.Derrotas,
-		&c.Gols, &c.GolsSofridos, &c.JogosSemSofrer,
-		&c.Pontos, &c.DivisaoAtual, &c.MelhorDivisao,
-		&c.Nivel, &c.Promocoes, &c.Rebaixamentos,
+		&c.ClubID, &c.Name, &c.Tag, &c.Stadium, &c.RegiaoID, &c.TimeID, &c.EscudoAssetID,
+		&c.Color1, &c.Color2, &c.Color3, &c.Color4, &c.Tracked, &c.UpdatedAt,
+		&c.Played, &c.Wins, &c.Draws, &c.Losses,
+		&c.Goals, &c.GoalsConceded, &c.CleanSheets,
+		&c.Points, &c.Division, &c.BestDivision,
+		&c.SkillRating, &c.Promotions, &c.Relegations,
 	)
 	return c, err
 }
@@ -55,8 +55,8 @@ func scanClub(row pgx.Row) (domainclubs.Club, error) {
 // withAproveitamento fills the derived win-rate the ranking and the profile
 // header both use.
 func withAproveitamento(c domainclubs.Club) domainclubs.Club {
-	if c.Jogos > 0 {
-		c.Aproveitamento = float64(c.Pontos) / float64(c.Jogos*3) * 100
+	if c.Played > 0 {
+		c.WinRate = float64(c.Points) / float64(c.Played*3) * 100
 	}
 	return c
 }
@@ -73,9 +73,9 @@ func (r *ClubsRepository) withForm(ctx context.Context, clubs []domainclubs.Club
 		}
 		form := make([]string, 0, len(matches))
 		for _, m := range matches {
-			form = append(form, m.NossoResultado)
+			form = append(form, m.OurResult)
 		}
-		clubs[i].Forma = form
+		clubs[i].Form = form
 	}
 	return clubs
 }
@@ -83,9 +83,9 @@ func (r *ClubsRepository) withForm(ctx context.Context, clubs []domainclubs.Club
 func (r *ClubsRepository) ListClubs(ctx context.Context, onlyFollowed bool) ([]domainclubs.Club, error) {
 	q := clubJoin
 	if onlyFollowed {
-		q += ` WHERE c.acompanhado = true`
+		q += ` WHERE c.tracked = true`
 	}
-	q += ` ORDER BY COALESCE(t.nivel,0) DESC, c.nome`
+	q += ` ORDER BY COALESCE(t.skill_rating,0) DESC, c.name`
 	rows, err := r.pool.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("list clubs: %w", err)
@@ -125,7 +125,7 @@ func (r *ClubsRepository) GetClub(ctx context.Context, clubID string) (domainclu
 // SearchClubs is accent- and case-insensitive (unaccent-style folding done
 // in Go, since the dataset is small enough to filter after the SQL LIKE).
 func (r *ClubsRepository) SearchClubs(ctx context.Context, query string) ([]domainclubs.Club, error) {
-	rows, err := r.pool.Query(ctx, clubJoin+` ORDER BY COALESCE(t.nivel,0) DESC, c.nome`)
+	rows, err := r.pool.Query(ctx, clubJoin+` ORDER BY COALESCE(t.skill_rating,0) DESC, c.name`)
 	if err != nil {
 		return nil, fmt.Errorf("search clubs: %w", err)
 	}
@@ -138,7 +138,7 @@ func (r *ClubsRepository) SearchClubs(ctx context.Context, query string) ([]doma
 		if err != nil {
 			return nil, fmt.Errorf("scan club: %w", err)
 		}
-		if needle == "" || strings.Contains(foldAccents(c.Nome), needle) {
+		if needle == "" || strings.Contains(foldAccents(c.Name), needle) {
 			list = append(list, withAproveitamento(c))
 		}
 	}
@@ -164,33 +164,33 @@ func (r *ClubsRepository) SearchClubsLite(ctx context.Context, query string, lim
 // --------------------------------------------------------------- partidas
 
 const matchSelect = `
-	SELECT m.id, m.match_id, m.timestamp, m.tipo, m.rodada_playoff,
-	       m.clube_casa_id, m.clube_fora_id, m.gols_casa, m.gols_fora,
-	       m.houve_desistencia, m.vencedor_por_desistencia_id, m.resultado_casa, m.lances,
-	       COALESCE(cc.nome,''), COALESCE(cc.sigla,''), COALESCE(cf.nome,''), COALESCE(cf.sigla,''),
-	       COALESCE(ag.nota, 0)
+	SELECT m.id, m.match_id, m.timestamp, m.kind, m.playoff_round,
+	       m.home_club_id, m.away_club_id, m.home_goals, m.away_goals,
+	       m.decided_by_forfeit, m.forfeit_winner_id, m.home_result, m.events,
+	       COALESCE(cc.name,''), COALESCE(cc.tag,''), COALESCE(cf.name,''), COALESCE(cf.tag,''),
+	       COALESCE(ag.rating, 0)
 	FROM clubs_matches m
-	LEFT JOIN clubs cc ON cc.club_id = m.clube_casa_id
-	LEFT JOIN clubs cf ON cf.club_id = m.clube_fora_id
+	LEFT JOIN clubs cc ON cc.club_id = m.home_club_id
+	LEFT JOIN clubs cf ON cf.club_id = m.away_club_id
 	LEFT JOIN (
-		SELECT partida_id, round(avg(nota)::numeric, 2) AS nota
-		FROM clubs_match_players GROUP BY partida_id
-	) ag ON ag.partida_id = m.id`
+		SELECT match_id_uuid, round(avg(rating)::numeric, 2) AS rating
+		FROM clubs_match_players GROUP BY match_id_uuid
+	) ag ON ag.match_id_uuid = m.id`
 
 func scanMatch(row pgx.Row) (domainclubs.Match, error) {
 	var m domainclubs.Match
-	var lances []byte
+	var events []byte
 	err := row.Scan(
-		&m.ID, &m.MatchID, &m.Timestamp, &m.Tipo, &m.RodadaPlayoff,
-		&m.ClubeCasaID, &m.ClubeForaID, &m.GolsCasa, &m.GolsFora,
-		&m.HouveDesistencia, &m.VencedorPorDesistenciaID, &m.ResultadoCasa, &lances,
-		&m.CasaNome, &m.CasaSigla, &m.ForaNome, &m.ForaSigla, &m.NotaAgregada,
+		&m.ID, &m.MatchID, &m.Timestamp, &m.Kind, &m.PlayoffRound,
+		&m.ClubeCasaID, &m.ClubeForaID, &m.HomeGoals, &m.AwayGoals,
+		&m.DecidedByForfeit, &m.VencedorPorDesistenciaID, &m.HomeResult, &events,
+		&m.CasaNome, &m.CasaSigla, &m.ForaNome, &m.ForaSigla, &m.AvgRating,
 	)
 	if err != nil {
 		return m, err
 	}
-	if len(lances) > 0 {
-		_ = json.Unmarshal(lances, &m.Lances)
+	if len(events) > 0 {
+		_ = json.Unmarshal(events, &m.Events)
 	}
 	return m, nil
 }
@@ -199,15 +199,15 @@ func scanMatch(row pgx.Row) (domainclubs.Match, error) {
 // no caller has to work out whether the requested club was home.
 func orient(m domainclubs.Match, clubID string) domainclubs.Match {
 	if m.ClubeCasaID == clubID {
-		m.NossoLado = "casa"
-		m.NossoResultado = m.ResultadoCasa
-		m.NossosGols, m.GolsDeles = m.GolsCasa, m.GolsFora
-		m.AdversarioID, m.AdversarioNome, m.AdversarioSigla = m.ClubeForaID, m.ForaNome, m.ForaSigla
+		m.OurSide = "casa"
+		m.OurResult = m.HomeResult
+		m.OurGoals, m.TheirGoals = m.HomeGoals, m.AwayGoals
+		m.AdversarioID, m.OpponentName, m.OpponentTag = m.ClubeForaID, m.ForaNome, m.ForaSigla
 	} else {
-		m.NossoLado = "fora"
-		m.NossoResultado = mirror(m.ResultadoCasa)
-		m.NossosGols, m.GolsDeles = m.GolsFora, m.GolsCasa
-		m.AdversarioID, m.AdversarioNome, m.AdversarioSigla = m.ClubeCasaID, m.CasaNome, m.CasaSigla
+		m.OurSide = "fora"
+		m.OurResult = mirror(m.HomeResult)
+		m.OurGoals, m.TheirGoals = m.AwayGoals, m.HomeGoals
+		m.AdversarioID, m.OpponentName, m.OpponentTag = m.ClubeCasaID, m.CasaNome, m.CasaSigla
 	}
 	return m
 }
@@ -223,20 +223,20 @@ func mirror(r string) string {
 	}
 }
 
-func (r *ClubsRepository) ListMatches(ctx context.Context, clubID, tipo string, limit int) ([]domainclubs.Match, error) {
+func (r *ClubsRepository) ListMatches(ctx context.Context, clubID, kind string, limit int) ([]domainclubs.Match, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	var rows pgx.Rows
 	var err error
-	if tipo == "" {
+	if kind == "" {
 		rows, err = r.pool.Query(ctx, matchSelect+`
-			WHERE m.clube_casa_id = $1 OR m.clube_fora_id = $1
+			WHERE m.home_club_id = $1 OR m.away_club_id = $1
 			ORDER BY m.timestamp DESC LIMIT $2`, clubID, limit)
 	} else {
 		rows, err = r.pool.Query(ctx, matchSelect+`
-			WHERE (m.clube_casa_id = $1 OR m.clube_fora_id = $1) AND m.tipo = $2
-			ORDER BY m.timestamp DESC LIMIT $3`, clubID, tipo, limit)
+			WHERE (m.home_club_id = $1 OR m.away_club_id = $1) AND m.kind = $2
+			ORDER BY m.timestamp DESC LIMIT $3`, clubID, kind, limit)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("list matches: %w", err)
@@ -267,7 +267,7 @@ func (r *ClubsRepository) GetMatch(ctx context.Context, matchID string) (domainc
 	if err != nil {
 		return domainclubs.Match{}, err
 	}
-	m.Jogadores = linhas
+	m.Players = linhas
 	// A match detail is shown without a "requested club", so orient from the
 	// home side so the fields are always populated.
 	return orient(m, m.ClubeCasaID), nil
@@ -275,10 +275,10 @@ func (r *ClubsRepository) GetMatch(ctx context.Context, matchID string) (domainc
 
 func (r *ClubsRepository) matchLines(ctx context.Context, partidaID string) ([]domainclubs.PlayerLine, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT club_id, player_id, gamertag, posicao, nota, gols, assistencias, chutes,
-		       passes_certos, passes_tentados, desarmes_certos, desarmes_tentados, defesas,
-		       defesas_por_tipo, segundos_jogados, melhor_em_campo, cartao_vermelho, jogo_sem_sofrer_gol
-		FROM clubs_match_players WHERE partida_id = $1 ORDER BY nota DESC`, partidaID)
+		SELECT club_id, player_id, gamertag, position, rating, goals, assists, shots,
+		       passes_made, passes_attempted, tackles_made, tackles_attempted, saves,
+		       saves_by_type, seconds_played, man_of_the_match, red_card, clean_sheet
+		FROM clubs_match_players WHERE match_id_uuid = $1 ORDER BY rating DESC`, partidaID)
 	if err != nil {
 		return nil, fmt.Errorf("match lines: %w", err)
 	}
@@ -287,15 +287,15 @@ func (r *ClubsRepository) matchLines(ctx context.Context, partidaID string) ([]d
 	var list []domainclubs.PlayerLine
 	for rows.Next() {
 		var l domainclubs.PlayerLine
-		var tipo []byte
-		if err := rows.Scan(&l.ClubID, &l.PlayerID, &l.Gamertag, &l.Posicao, &l.Nota, &l.Gols,
-			&l.Assistencias, &l.Chutes, &l.PassesCertos, &l.PassesTentados, &l.DesarmesCertos,
-			&l.DesarmesTentados, &l.Defesas, &tipo, &l.SegundosJogados, &l.MelhorEmCampo,
-			&l.CartaoVermelho, &l.JogoSemSofrerGol); err != nil {
+		var kind []byte
+		if err := rows.Scan(&l.ClubID, &l.PlayerID, &l.Gamertag, &l.Position, &l.Rating, &l.Goals,
+			&l.Assists, &l.Shots, &l.PassesMade, &l.PassesAttempted, &l.TacklesMade,
+			&l.TacklesAttempted, &l.Saves, &kind, &l.SecondsPlayed, &l.ManOfTheMatch,
+			&l.RedCard, &l.CleanSheet); err != nil {
 			return nil, fmt.Errorf("scan line: %w", err)
 		}
-		if len(tipo) > 0 {
-			_ = json.Unmarshal(tipo, &l.DefesasPorTipo)
+		if len(kind) > 0 {
+			_ = json.Unmarshal(kind, &l.SavesByType)
 		}
 		list = append(list, l)
 	}
@@ -305,7 +305,7 @@ func (r *ClubsRepository) matchLines(ctx context.Context, partidaID string) ([]d
 func (r *ClubsRepository) RecentMatchCount(ctx context.Context, clubID string) (int, error) {
 	var n int
 	err := r.pool.QueryRow(ctx,
-		`SELECT count(*) FROM clubs_matches WHERE clube_casa_id = $1 OR clube_fora_id = $1`,
+		`SELECT count(*) FROM clubs_matches WHERE home_club_id = $1 OR away_club_id = $1`,
 		clubID).Scan(&n)
 	return n, err
 }
@@ -335,28 +335,28 @@ func (r *ClubsRepository) HeadToHead(ctx context.Context, aID, bID string) (doma
 	}
 
 	h := domainclubs.HeadToHead{
-		ClubeA: ref(a), ClubeB: ref(b),
+		ClubA: ref(a), ClubB: ref(b),
 	}
 	for _, m := range matches {
 		if m.AdversarioID != bID {
 			continue
 		}
-		h.Jogos++
-		h.GolsA += m.NossosGols
-		h.GolsB += m.GolsDeles
-		switch m.NossoResultado {
+		h.Played++
+		h.GoalsA += m.OurGoals
+		h.GoalsB += m.TheirGoals
+		switch m.OurResult {
 		case "vitoria":
 			h.V++
-			h.FormaA = append(h.FormaA, "V")
+			h.FormA = append(h.FormA, "V")
 		case "derrota":
 			h.D++
-			h.FormaA = append(h.FormaA, "D")
+			h.FormA = append(h.FormA, "D")
 		default:
 			h.E++
-			h.FormaA = append(h.FormaA, "E")
+			h.FormA = append(h.FormA, "E")
 		}
-		if len(h.Partidas) < 10 {
-			h.Partidas = append(h.Partidas, m)
+		if len(h.Matches) < 10 {
+			h.Matches = append(h.Matches, m)
 		}
 	}
 	return h, nil
@@ -364,9 +364,9 @@ func (r *ClubsRepository) HeadToHead(ctx context.Context, aID, bID string) (doma
 
 func ref(c domainclubs.Club) domainclubs.ClubRef {
 	return domainclubs.ClubRef{
-		ClubID: c.ClubID, Nome: c.Nome, Sigla: c.Sigla, Divisao: c.DivisaoAtual,
-		Nivel: c.Nivel, Pontos: c.Pontos, Gols: c.Gols, GolsSofridos: c.GolsSofridos,
-		JogosSemSofrer: c.JogosSemSofrer, Acompanhado: c.Acompanhado,
+		ClubID: c.ClubID, Name: c.Name, Tag: c.Tag, DivisionAtRead: c.Division,
+		SkillRating: c.SkillRating, Points: c.Points, Goals: c.Goals, GoalsConceded: c.GoalsConceded,
+		CleanSheets: c.CleanSheets, Tracked: c.Tracked,
 	}
 }
 
@@ -377,12 +377,12 @@ func ref(c domainclubs.Club) domainclubs.ClubRef {
 // season, so this is built from what the ingest accumulated.
 func (r *ClubsRepository) Squad(ctx context.Context, clubID string) ([]domainclubs.SquadMember, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT l.player_id, l.gamertag, l.posicao, l.nota, l.gols, l.assistencias, l.chutes,
-		       l.passes_certos, l.passes_tentados, l.desarmes_certos, l.desarmes_tentados,
-		       l.defesas, l.melhor_em_campo, l.segundos_jogados, l.jogo_sem_sofrer_gol,
-		       l.cartao_vermelho, l.defesas_por_tipo, m.timestamp
+		SELECT l.player_id, l.gamertag, l.position, l.rating, l.goals, l.assists, l.shots,
+		       l.passes_made, l.passes_attempted, l.tackles_made, l.tackles_attempted,
+		       l.saves, l.man_of_the_match, l.seconds_played, l.clean_sheet,
+		       l.red_card, l.saves_by_type, m.timestamp
 		FROM clubs_match_players l
-		JOIN clubs_matches m ON m.id = l.partida_id
+		JOIN clubs_matches m ON m.id = l.match_id_uuid
 		WHERE l.club_id = $1
 		ORDER BY m.timestamp ASC`, clubID)
 	if err != nil {
@@ -399,62 +399,62 @@ func (r *ClubsRepository) Squad(ctx context.Context, clubID string) ([]domainclu
 
 	for rows.Next() {
 		var (
-			playerID, gamertag, posicao                             string
-			nota                                                    float64
-			gols, assist, chutes, pc, pt, dc, dt, defesas, segundos int
+			playerID, gamertag, position                             string
+			rating                                                    float64
+			goals, assist, shots, pc, pt, dc, dt, saves, segundos int
 			// melhor_em_campo is a real boolean column -- scanning it into an
 			// int fails in binary format.
 			melhor bool
 			cs, cv bool
-			tipo   []byte
+			kind   []byte
 			ts     time.Time
 		)
-		if err := rows.Scan(&playerID, &gamertag, &posicao, &nota, &gols, &assist, &chutes,
-			&pc, &pt, &dc, &dt, &defesas, &melhor, &segundos, &cs, &cv, &tipo, &ts); err != nil {
+		if err := rows.Scan(&playerID, &gamertag, &position, &rating, &goals, &assist, &shots,
+			&pc, &pt, &dc, &dt, &saves, &melhor, &segundos, &cs, &cv, &kind, &ts); err != nil {
 			return nil, fmt.Errorf("scan squad row: %w", err)
 		}
 		a := byPlayer[playerID]
 		if a == nil {
-			a = &acc{member: domainclubs.SquadMember{PlayerID: playerID, Gamertag: gamertag, Posicao: posicao,
-				Goleiro: posicao == "goleiro"}}
+			a = &acc{member: domainclubs.SquadMember{PlayerID: playerID, Gamertag: gamertag, Position: position,
+				Goalkeeper: position == "goalkeeper"}}
 			byPlayer[playerID] = a
 			order = append(order, playerID)
 		}
 		m := &a.member
-		m.Jogos++
-		m.Gols += gols
-		m.Assistencias += assist
-		m.Chutes += chutes
-		m.PassesCertos += pc
-		m.PassesTentados += pt
-		m.DesarmesCertos += dc
-		m.DesarmesTentados += dt
-		m.Defesas += defesas
-		m.SegundosJogados += segundos
+		m.Played++
+		m.Goals += goals
+		m.Assists += assist
+		m.Shots += shots
+		m.PassesMade += pc
+		m.PassesAttempted += pt
+		m.TacklesMade += dc
+		m.TacklesAttempted += dt
+		m.Saves += saves
+		m.SecondsPlayed += segundos
 		if melhor {
-			m.MelhorEmCampo++
+			m.ManOfTheMatch++
 		}
 		if cs {
 			m.CleanSheets++
 		}
 		if cv {
-			m.CartoesVermelhos++
+			m.RedCards++
 		}
-		m.Nota += nota
-		a.notas = append(a.notas, nota)
-		if len(tipo) > 0 {
+		m.Rating += rating
+		a.notas = append(a.notas, rating)
+		if len(kind) > 0 {
 			var d map[string]int
-			if json.Unmarshal(tipo, &d) == nil {
-				if m.DefesasPorTipo == nil {
-					m.DefesasPorTipo = map[string]int{}
+			if json.Unmarshal(kind, &d) == nil {
+				if m.SavesByType == nil {
+					m.SavesByType = map[string]int{}
 				}
 				for k, v := range d {
-					m.DefesasPorTipo[k] += v
+					m.SavesByType[k] += v
 				}
 			}
 		}
-		if len(m.Forma) < 8 {
-			m.Forma = append(m.Forma, nota)
+		if len(m.Form) < 8 {
+			m.Form = append(m.Form, rating)
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -464,16 +464,16 @@ func (r *ClubsRepository) Squad(ctx context.Context, clubID string) ([]domainclu
 	out := make([]domainclubs.SquadMember, 0, len(order))
 	for _, id := range order {
 		m := byPlayer[id].member
-		if m.Jogos > 0 {
-			m.Nota = round2(m.Nota / float64(m.Jogos))
-			m.GolsPorJogo = round2(float64(m.Gols) / float64(m.Jogos))
-			m.AssistenciasPorJogo = round2(float64(m.Assistencias) / float64(m.Jogos))
-			m.PassesPrecisao = pct(m.PassesCertos, m.PassesTentados)
-			m.DesarmesPrecisao = pct(m.DesarmesCertos, m.DesarmesTentados)
+		if m.Played > 0 {
+			m.Rating = round2(m.Rating / float64(m.Played))
+			m.GoalsPerGame = round2(float64(m.Goals) / float64(m.Played))
+			m.AssistsPerGame = round2(float64(m.Assists) / float64(m.Played))
+			m.PassAccuracy = pct(m.PassesMade, m.PassesAttempted)
+			m.TackleAccuracy = pct(m.TacklesMade, m.TacklesAttempted)
 		}
 		out = append(out, m)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Nota > out[j].Nota })
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Rating > out[j].Rating })
 	// Which of these pros already have an owner. The claim is global (a person
 	// claims across all clubs), so this is a set lookup, not a per-club query.
 	if claimed, err := r.ClaimedPlayerIDs(ctx); err == nil {
@@ -504,16 +504,16 @@ type playerRow struct {
 
 func (r *ClubsRepository) allPlayerRows(ctx context.Context, where string, args ...any) ([]playerRow, error) {
 	q := `
-		SELECT l.club_id, l.player_id, l.gamertag, l.posicao, l.nota, l.gols, l.assistencias,
-		       l.chutes, l.passes_certos, l.passes_tentados, l.desarmes_certos, l.desarmes_tentados,
-		       l.defesas, l.defesas_por_tipo, l.segundos_jogados, l.melhor_em_campo,
-		       l.cartao_vermelho, l.jogo_sem_sofrer_gol,
-		       m.id, m.match_id, m.timestamp, m.tipo, m.clube_casa_id, m.clube_fora_id,
-		       m.gols_casa, m.gols_fora, m.resultado_casa, COALESCE(cc.nome,''), COALESCE(cf.nome,'')
+		SELECT l.club_id, l.player_id, l.gamertag, l.position, l.rating, l.goals, l.assists,
+		       l.shots, l.passes_made, l.passes_attempted, l.tackles_made, l.tackles_attempted,
+		       l.saves, l.saves_by_type, l.seconds_played, l.man_of_the_match,
+		       l.red_card, l.clean_sheet,
+		       m.id, m.match_id, m.timestamp, m.kind, m.home_club_id, m.away_club_id,
+		       m.home_goals, m.away_goals, m.home_result, COALESCE(cc.name,''), COALESCE(cf.name,'')
 		FROM clubs_match_players l
-		JOIN clubs_matches m ON m.id = l.partida_id
-		LEFT JOIN clubs cc ON cc.club_id = m.clube_casa_id
-		LEFT JOIN clubs cf ON cf.club_id = m.clube_fora_id ` + where + `
+		JOIN clubs_matches m ON m.id = l.match_id_uuid
+		LEFT JOIN clubs cc ON cc.club_id = m.home_club_id
+		LEFT JOIN clubs cf ON cf.club_id = m.away_club_id ` + where + `
 		ORDER BY m.timestamp ASC`
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
@@ -524,21 +524,21 @@ func (r *ClubsRepository) allPlayerRows(ctx context.Context, where string, args 
 	var out []playerRow
 	for rows.Next() {
 		var pr playerRow
-		var tipo []byte
+		var kind []byte
 		if err := rows.Scan(
-			&pr.line.ClubID, &pr.line.PlayerID, &pr.line.Gamertag, &pr.line.Posicao, &pr.line.Nota,
-			&pr.line.Gols, &pr.line.Assistencias, &pr.line.Chutes, &pr.line.PassesCertos,
-			&pr.line.PassesTentados, &pr.line.DesarmesCertos, &pr.line.DesarmesTentados,
-			&pr.line.Defesas, &tipo, &pr.line.SegundosJogados, &pr.line.MelhorEmCampo,
-			&pr.line.CartaoVermelho, &pr.line.JogoSemSofrerGol,
-			&pr.match.ID, &pr.match.MatchID, &pr.match.Timestamp, &pr.match.Tipo,
-			&pr.match.ClubeCasaID, &pr.match.ClubeForaID, &pr.match.GolsCasa, &pr.match.GolsFora,
-			&pr.match.ResultadoCasa, &pr.match.CasaNome, &pr.match.ForaNome,
+			&pr.line.ClubID, &pr.line.PlayerID, &pr.line.Gamertag, &pr.line.Position, &pr.line.Rating,
+			&pr.line.Goals, &pr.line.Assists, &pr.line.Shots, &pr.line.PassesMade,
+			&pr.line.PassesAttempted, &pr.line.TacklesMade, &pr.line.TacklesAttempted,
+			&pr.line.Saves, &kind, &pr.line.SecondsPlayed, &pr.line.ManOfTheMatch,
+			&pr.line.RedCard, &pr.line.CleanSheet,
+			&pr.match.ID, &pr.match.MatchID, &pr.match.Timestamp, &pr.match.Kind,
+			&pr.match.ClubeCasaID, &pr.match.ClubeForaID, &pr.match.HomeGoals, &pr.match.AwayGoals,
+			&pr.match.HomeResult, &pr.match.CasaNome, &pr.match.ForaNome,
 		); err != nil {
 			return nil, fmt.Errorf("scan player row: %w", err)
 		}
-		if len(tipo) > 0 {
-			_ = json.Unmarshal(tipo, &pr.line.DefesasPorTipo)
+		if len(kind) > 0 {
+			_ = json.Unmarshal(kind, &pr.line.SavesByType)
 		}
 		out = append(out, pr)
 	}
@@ -547,7 +547,7 @@ func (r *ClubsRepository) allPlayerRows(ctx context.Context, where string, args 
 
 // buildProfile derives every aggregate number for one player from their rows.
 func buildProfile(playerID string, rows []playerRow, clubNames map[string]string, verified bool) domainclubs.PlayerProfile {
-	p := domainclubs.PlayerProfile{PlayerID: playerID, Verificado: verified, Forma: []float64{}}
+	p := domainclubs.PlayerProfile{PlayerID: playerID, Verified: verified, Form: []float64{}}
 	byClub := map[string]*domainclubs.PlayerClub{}
 	var order []string
 	var notaSum float64
@@ -556,116 +556,116 @@ func buildProfile(playerID string, rows []playerRow, clubNames map[string]string
 	for _, pr := range rows {
 		if p.Gamertag == "" {
 			p.Gamertag = pr.line.Gamertag
-			p.Posicao = pr.line.Posicao
-			p.Goleiro = pr.line.Posicao == "goleiro"
+			p.Position = pr.line.Position
+			p.Goalkeeper = pr.line.Position == "goalkeeper"
 		}
-		p.Jogos++
-		p.Gols += pr.line.Gols
-		p.Assistencias += pr.line.Assistencias
-		p.SegundosJogados += pr.line.SegundosJogados
-		if pr.line.MelhorEmCampo {
-			p.MelhorEmCampo++
+		p.Played++
+		p.Goals += pr.line.Goals
+		p.Assists += pr.line.Assists
+		p.SecondsPlayed += pr.line.SecondsPlayed
+		if pr.line.ManOfTheMatch {
+			p.ManOfTheMatch++
 		}
-		if pr.line.JogoSemSofrerGol {
+		if pr.line.CleanSheet {
 			p.CleanSheets++
 		}
-		if pr.line.CartaoVermelho {
-			p.CartoesVermelhos++
+		if pr.line.RedCard {
+			p.RedCards++
 		}
-		notaSum += pr.line.Nota
-		pc += pr.line.PassesCertos
-		pt += pr.line.PassesTentados
-		dc += pr.line.DesarmesCertos
-		dt += pr.line.DesarmesTentados
-		if len(p.Forma) < 8 {
-			p.Forma = append(p.Forma, pr.line.Nota)
+		notaSum += pr.line.Rating
+		pc += pr.line.PassesMade
+		pt += pr.line.PassesAttempted
+		dc += pr.line.TacklesMade
+		dt += pr.line.TacklesAttempted
+		if len(p.Form) < 8 {
+			p.Form = append(p.Form, pr.line.Rating)
 		}
-		if len(pr.line.DefesasPorTipo) > 0 {
-			if p.DefesasPorTipo == nil {
-				p.DefesasPorTipo = map[string]int{}
+		if len(pr.line.SavesByType) > 0 {
+			if p.SavesByType == nil {
+				p.SavesByType = map[string]int{}
 			}
-			for k, v := range pr.line.DefesasPorTipo {
-				p.DefesasPorTipo[k] += v
+			for k, v := range pr.line.SavesByType {
+				p.SavesByType[k] += v
 			}
 		}
 		// Per-club cluster.
 		c, ok := byClub[pr.line.ClubID]
 		if !ok {
-			c = &domainclubs.PlayerClub{ClubID: pr.line.ClubID, Nome: clubNames[pr.line.ClubID]}
+			c = &domainclubs.PlayerClub{ClubID: pr.line.ClubID, Name: clubNames[pr.line.ClubID]}
 			byClub[pr.line.ClubID] = c
 			order = append(order, pr.line.ClubID)
 		}
-		c.Jogos++
-		c.Gols += pr.line.Gols
-		c.Assistencias += pr.line.Assistencias
-		c.Nota += pr.line.Nota
+		c.Played++
+		c.Goals += pr.line.Goals
+		c.Assists += pr.line.Assists
+		c.Rating += pr.line.Rating
 
 		// Recent performances, newest last in this ASC scan; keep the tail.
 		pm := domainclubs.PlayerMatch{
 			MatchID: pr.match.MatchID, Timestamp: pr.match.Timestamp,
-			Nota: pr.line.Nota, Gols: pr.line.Gols, Assistencias: pr.line.Assistencias,
-			Chutes: pr.line.Chutes, PassesCertos: pr.line.PassesCertos,
-			PassesTentados: pr.line.PassesTentados, DesarmesCertos: pr.line.DesarmesCertos,
-			DesarmesTentados: pr.line.DesarmesTentados, SegundosJogados: pr.line.SegundosJogados,
-			GolsCasa: pr.match.GolsCasa, GolsFora: pr.match.GolsFora,
+			Rating: pr.line.Rating, Goals: pr.line.Goals, Assists: pr.line.Assists,
+			Shots: pr.line.Shots, PassesMade: pr.line.PassesMade,
+			PassesAttempted: pr.line.PassesAttempted, TacklesMade: pr.line.TacklesMade,
+			TacklesAttempted: pr.line.TacklesAttempted, SecondsPlayed: pr.line.SecondsPlayed,
+			HomeGoals: pr.match.HomeGoals, AwayGoals: pr.match.AwayGoals,
 		}
 		if pr.match.ClubeCasaID == pr.line.ClubID {
-			pm.Resultado = pr.match.ResultadoCasa
-			pm.AdversarioNome = pr.match.ForaNome
+			pm.Resultado = pr.match.HomeResult
+			pm.OpponentName = pr.match.ForaNome
 		} else {
-			pm.Resultado = mirror(pr.match.ResultadoCasa)
-			pm.AdversarioNome = pr.match.CasaNome
+			pm.Resultado = mirror(pr.match.HomeResult)
+			pm.OpponentName = pr.match.CasaNome
 		}
-		p.Partidas = append(p.Partidas, pm)
+		p.Matches = append(p.Matches, pm)
 	}
 
-	if p.Jogos > 0 {
-		p.Nota = round2(notaSum / float64(p.Jogos))
-		p.GolsPorJogo = round2(float64(p.Gols) / float64(p.Jogos))
-		p.AssistenciasPorJogo = round2(float64(p.Assistencias) / float64(p.Jogos))
-		p.PassesPrecisao = pct(pc, pt)
-		p.DesarmesPrecisao = pct(dc, dt)
+	if p.Played > 0 {
+		p.Rating = round2(notaSum / float64(p.Played))
+		p.GoalsPerGame = round2(float64(p.Goals) / float64(p.Played))
+		p.AssistsPerGame = round2(float64(p.Assists) / float64(p.Played))
+		p.PassAccuracy = pct(pc, pt)
+		p.TackleAccuracy = pct(dc, dt)
 	}
 	for _, id := range order {
 		c := byClub[id]
-		if c.Jogos > 0 {
-			c.Nota = round2(c.Nota / float64(c.Jogos))
+		if c.Played > 0 {
+			c.Rating = round2(c.Rating / float64(c.Played))
 		}
-		p.Clubes = append(p.Clubes, *c)
+		p.Clubs = append(p.Clubs, *c)
 	}
 	// Main club = the one with the most appearances.
-	if len(p.Clubes) > 0 {
-		best := p.Clubes[0]
-		for _, c := range p.Clubes[1:] {
-			if c.Jogos > best.Jogos {
+	if len(p.Clubs) > 0 {
+		best := p.Clubs[0]
+		for _, c := range p.Clubs[1:] {
+			if c.Played > best.Played {
 				best = c
 			}
 		}
-		p.ClubeID, p.ClubeNome = best.ClubID, best.Nome
+		p.ClubeID, p.ClubName = best.ClubID, best.Name
 	}
 	// Most recent 12 performances, newest first.
-	if len(p.Partidas) > 12 {
-		p.Partidas = p.Partidas[len(p.Partidas)-12:]
+	if len(p.Matches) > 12 {
+		p.Matches = p.Matches[len(p.Matches)-12:]
 	}
-	for i, j := 0, len(p.Partidas)-1; i < j; i, j = i+1, j-1 {
-		p.Partidas[i], p.Partidas[j] = p.Partidas[j], p.Partidas[i]
+	for i, j := 0, len(p.Matches)-1; i < j; i, j = i+1, j-1 {
+		p.Matches[i], p.Matches[j] = p.Matches[j], p.Matches[i]
 	}
 	return p
 }
 
 func (r *ClubsRepository) clubNameMap(ctx context.Context) (map[string]string, error) {
-	rows, err := r.pool.Query(ctx, `SELECT club_id, nome FROM clubs`)
+	rows, err := r.pool.Query(ctx, `SELECT club_id, name FROM clubs`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	m := map[string]string{}
 	for rows.Next() {
-		var id, nome string
-		if err := rows.Scan(&id, &nome); err != nil {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
 			return nil, err
 		}
-		m[id] = nome
+		m[id] = name
 	}
 	return m, rows.Err()
 }
@@ -697,11 +697,11 @@ func (r *ClubsRepository) GetPlayer(ctx context.Context, playerID string) (domai
 // O elo é o gamertag: o endpoint da fonte não traz playerId.
 func (r *ClubsRepository) comCareer(ctx context.Context, p domainclubs.PlayerProfile) domainclubs.PlayerProfile {
 	carreira := r.careerByClubAndTag(ctx)
-	for i := range p.Clubes {
-		if c, ok := carreira[p.Clubes[i].ClubID+"\x00"+p.Gamertag]; ok {
-			p.Clubes[i].Career = &domainclubs.CareerTotais{
-				Jogos: c.Jogos, Gols: c.Gols, Assistencias: c.Assistencias,
-				MelhorEmCampo: c.MelhorEmCampo, Nota: c.Nota,
+	for i := range p.Clubs {
+		if c, ok := carreira[p.Clubs[i].ClubID+"\x00"+p.Gamertag]; ok {
+			p.Clubs[i].Career = &domainclubs.CareerTotais{
+				Played: c.Played, Goals: c.Goals, Assists: c.Assists,
+				ManOfTheMatch: c.ManOfTheMatch, Rating: c.Rating,
 			}
 		}
 	}
@@ -775,7 +775,7 @@ func (r *ClubsRepository) playersGrouped(ctx context.Context, where string, args
 // perfil sai sem carreira em vez de falhar a leitura inteira.
 func (r *ClubsRepository) careerByClubAndTag(ctx context.Context) map[string]domainclubs.CareerTotais {
 	rows, err := r.pool.Query(ctx, `
-		SELECT club_id, gamertag, jogos, gols, assistencias, melhor_em_campo, nota
+		SELECT club_id, gamertag, played, goals, assists, man_of_the_match, rating
 		FROM clubs_player_career`)
 	if err != nil {
 		return nil
@@ -785,8 +785,8 @@ func (r *ClubsRepository) careerByClubAndTag(ctx context.Context) map[string]dom
 	for rows.Next() {
 		var clubID, gamertag string
 		var c domainclubs.CareerTotais
-		if err := rows.Scan(&clubID, &gamertag, &c.Jogos, &c.Gols, &c.Assistencias,
-			&c.MelhorEmCampo, &c.Nota); err != nil {
+		if err := rows.Scan(&clubID, &gamertag, &c.Played, &c.Goals, &c.Assists,
+			&c.ManOfTheMatch, &c.Rating); err != nil {
 			return out
 		}
 		out[clubID+"\x00"+gamertag] = c
@@ -797,7 +797,7 @@ func (r *ClubsRepository) careerByClubAndTag(ctx context.Context) map[string]dom
 // ClaimedPlayerIDs is the set of player ids carrying a verified badge. It
 // deliberately exposes nothing about WHO claimed them.
 func (r *ClubsRepository) ClaimedPlayerIDs(ctx context.Context) (map[string]bool, error) {
-	rows, err := r.pool.Query(ctx, `SELECT player_id FROM clubs_claimed_pros WHERE verificado = true`)
+	rows, err := r.pool.Query(ctx, `SELECT player_id FROM clubs_claimed_pros WHERE verified = true`)
 	if err != nil {
 		return nil, fmt.Errorf("claimed ids: %w", err)
 	}
@@ -820,12 +820,12 @@ func (r *ClubsRepository) Snapshots(ctx context.Context, clubID string, since ti
 	var err error
 	if since.IsZero() {
 		rows, err = r.pool.Query(ctx, `
-			SELECT lido_em, nivel, divisao, jogos, vitorias, empates, derrotas, gols, gols_sofridos, tamanho_elenco
-			FROM clubs_snapshots WHERE club_id = $1 ORDER BY lido_em ASC`, clubID)
+			SELECT read_at, skill_rating, division_at_read, played, wins, draws, losses, goals, goals_conceded, squad_size
+			FROM clubs_snapshots WHERE club_id = $1 ORDER BY read_at ASC`, clubID)
 	} else {
 		rows, err = r.pool.Query(ctx, `
-			SELECT lido_em, nivel, divisao, jogos, vitorias, empates, derrotas, gols, gols_sofridos, tamanho_elenco
-			FROM clubs_snapshots WHERE club_id = $1 AND lido_em >= $2 ORDER BY lido_em ASC`, clubID, since)
+			SELECT read_at, skill_rating, division_at_read, played, wins, draws, losses, goals, goals_conceded, squad_size
+			FROM clubs_snapshots WHERE club_id = $1 AND read_at >= $2 ORDER BY read_at ASC`, clubID, since)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("snapshots: %w", err)
@@ -835,8 +835,8 @@ func (r *ClubsRepository) Snapshots(ctx context.Context, clubID string, since ti
 	var list []domainclubs.Snapshot
 	for rows.Next() {
 		var s domainclubs.Snapshot
-		if err := rows.Scan(&s.LidoEm, &s.Nivel, &s.Divisao, &s.Jogos, &s.Vitorias,
-			&s.Empates, &s.Derrotas, &s.Gols, &s.GolsSofridos, &s.TamanhoElenco); err != nil {
+		if err := rows.Scan(&s.ReadAt, &s.SkillRating, &s.DivisionAtRead, &s.Played, &s.Wins,
+			&s.Draws, &s.Losses, &s.Goals, &s.GoalsConceded, &s.SquadSize); err != nil {
 			return nil, fmt.Errorf("scan snapshot: %w", err)
 		}
 		list = append(list, s)
@@ -847,10 +847,10 @@ func (r *ClubsRepository) Snapshots(ctx context.Context, clubID string, since ti
 func (r *ClubsRepository) LatestSnapshot(ctx context.Context, clubID string) (*domainclubs.Snapshot, error) {
 	var s domainclubs.Snapshot
 	err := r.pool.QueryRow(ctx, `
-		SELECT lido_em, nivel, divisao, jogos, vitorias, empates, derrotas, gols, gols_sofridos, tamanho_elenco
-		FROM clubs_snapshots WHERE club_id = $1 ORDER BY lido_em DESC LIMIT 1`, clubID).
-		Scan(&s.LidoEm, &s.Nivel, &s.Divisao, &s.Jogos, &s.Vitorias, &s.Empates,
-			&s.Derrotas, &s.Gols, &s.GolsSofridos, &s.TamanhoElenco)
+		SELECT read_at, skill_rating, division_at_read, played, wins, draws, losses, goals, goals_conceded, squad_size
+		FROM clubs_snapshots WHERE club_id = $1 ORDER BY read_at DESC LIMIT 1`, clubID).
+		Scan(&s.ReadAt, &s.SkillRating, &s.DivisionAtRead, &s.Played, &s.Wins, &s.Draws,
+			&s.Losses, &s.Goals, &s.GoalsConceded, &s.SquadSize)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -862,8 +862,8 @@ func (r *ClubsRepository) LatestSnapshot(ctx context.Context, clubID string) (*d
 
 func (r *ClubsRepository) DivisionChanges(ctx context.Context, clubID string) ([]domainclubs.DivisionChange, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT detectado_em, de, para, tipo FROM clubs_division_changes
-		WHERE club_id = $1 ORDER BY detectado_em DESC`, clubID)
+		SELECT detected_at, from_division, to_division, kind FROM clubs_division_changes
+		WHERE club_id = $1 ORDER BY detected_at DESC`, clubID)
 	if err != nil {
 		return nil, fmt.Errorf("division changes: %w", err)
 	}
@@ -872,7 +872,7 @@ func (r *ClubsRepository) DivisionChanges(ctx context.Context, clubID string) ([
 	var list []domainclubs.DivisionChange
 	for rows.Next() {
 		var c domainclubs.DivisionChange
-		if err := rows.Scan(&c.DetectadoEm, &c.De, &c.Para, &c.Tipo); err != nil {
+		if err := rows.Scan(&c.DetectedAt, &c.FromDivision, &c.ToDivision, &c.Kind); err != nil {
 			return nil, fmt.Errorf("scan change: %w", err)
 		}
 		list = append(list, c)
@@ -895,22 +895,22 @@ func (r *ClubsRepository) Records(ctx context.Context, clubID string) (domainclu
 		}
 	}
 
-	rec := domainclubs.Records{TotalPartidas: len(matches)}
+	rec := domainclubs.Records{TotalMatches: len(matches)}
 	var bestWin, worstLoss, mostGoals *domainclubs.Match
 	for i := range matches {
 		m := &matches[i]
-		diff := m.NossosGols - m.GolsDeles
-		if bestWin == nil || diff > bestWin.NossosGols-bestWin.GolsDeles {
+		diff := m.OurGoals - m.TheirGoals
+		if bestWin == nil || diff > bestWin.OurGoals-bestWin.TheirGoals {
 			bestWin = m
 		}
-		if worstLoss == nil || diff < worstLoss.NossosGols-worstLoss.GolsDeles {
+		if worstLoss == nil || diff < worstLoss.OurGoals-worstLoss.TheirGoals {
 			worstLoss = m
 		}
-		if mostGoals == nil || (m.NossosGols+m.GolsDeles) > (mostGoals.NossosGols+mostGoals.GolsDeles) {
+		if mostGoals == nil || (m.OurGoals+m.TheirGoals) > (mostGoals.OurGoals+mostGoals.TheirGoals) {
 			mostGoals = m
 		}
-		if m.GolsDeles == 0 {
-			rec.JogosSemSofrer++
+		if m.TheirGoals == 0 {
+			rec.CleanSheets++
 		}
 	}
 	toRecord := func(m *domainclubs.Match) *domainclubs.RecordMatch {
@@ -918,13 +918,13 @@ func (r *ClubsRepository) Records(ctx context.Context, clubID string) (domainclu
 			return nil
 		}
 		return &domainclubs.RecordMatch{
-			MatchID: m.MatchID, Timestamp: m.Timestamp, AdversarioNome: m.AdversarioNome,
-			NossosGols: m.NossosGols, GolsDeles: m.GolsDeles,
-			Total: m.NossosGols + m.GolsDeles,
+			MatchID: m.MatchID, Timestamp: m.Timestamp, OpponentName: m.OpponentName,
+			OurGoals: m.OurGoals, TheirGoals: m.TheirGoals,
+			Total: m.OurGoals + m.TheirGoals,
 		}
 	}
-	rec.MaiorGoleada = toRecord(bestWin)
-	rec.PiorDerrota = toRecord(worstLoss)
+	rec.BiggestWin = toRecord(bestWin)
+	rec.WorstLoss = toRecord(worstLoss)
 	rec.MaisGols = toRecord(mostGoals)
 
 	// Longest win streak, in chronological order.
@@ -933,7 +933,7 @@ func (r *ClubsRepository) Records(ctx context.Context, clubID string) (domainclu
 	sort.SliceStable(chrono, func(i, j int) bool { return chrono[i].Timestamp.Before(chrono[j].Timestamp) })
 	cur, best := 0, 0
 	for _, m := range chrono {
-		if m.NossoResultado == "vitoria" {
+		if m.OurResult == "vitoria" {
 			cur++
 			if cur > best {
 				best = cur
@@ -950,20 +950,20 @@ func (r *ClubsRepository) Records(ctx context.Context, clubID string) (domainclu
 		return domainclubs.Records{}, err
 	}
 	for _, pr := range lines {
-		if rec.MelhorNota == nil || pr.line.Nota > rec.MelhorNota.Nota {
-			rec.MelhorNota = &domainclubs.RecordLine{
+		if rec.BestRating == nil || pr.line.Rating > rec.BestRating.Rating {
+			rec.BestRating = &domainclubs.RecordLine{
 				PlayerID: pr.line.PlayerID, Gamertag: pr.line.Gamertag,
 				MatchID: pr.match.MatchID, Timestamp: pr.match.Timestamp,
-				Nota: pr.line.Nota, Gols: pr.line.Gols,
-				AdversarioNome: adversaryOf(pr.match, pr.line.ClubID),
+				Rating: pr.line.Rating, Goals: pr.line.Goals,
+				OpponentName: adversaryOf(pr.match, pr.line.ClubID),
 			}
 		}
-		if rec.MaisGolsJogo == nil || pr.line.Gols > rec.MaisGolsJogo.Gols {
+		if rec.MaisGolsJogo == nil || pr.line.Goals > rec.MaisGolsJogo.Goals {
 			rec.MaisGolsJogo = &domainclubs.RecordLine{
 				PlayerID: pr.line.PlayerID, Gamertag: pr.line.Gamertag,
 				MatchID: pr.match.MatchID, Timestamp: pr.match.Timestamp,
-				Nota: pr.line.Nota, Gols: pr.line.Gols,
-				AdversarioNome: adversaryOf(pr.match, pr.line.ClubID),
+				Rating: pr.line.Rating, Goals: pr.line.Goals,
+				OpponentName: adversaryOf(pr.match, pr.line.ClubID),
 			}
 		}
 	}
@@ -984,10 +984,10 @@ func (r *ClubsRepository) RecentAnnouncements(ctx context.Context, limit int) ([
 		limit = 12
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, tipo, titulo, texto, referencia_id, icone, gerado_em
+		SELECT id, kind, title, body, reference_id, icon, generated_at
 		FROM clubs_announcements
-		WHERE expira_em IS NULL OR expira_em > now()
-		ORDER BY gerado_em DESC LIMIT $1`, limit)
+		WHERE expires_at IS NULL OR expires_at > now()
+		ORDER BY generated_at DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("announcements: %w", err)
 	}
@@ -996,8 +996,8 @@ func (r *ClubsRepository) RecentAnnouncements(ctx context.Context, limit int) ([
 	var list []domainclubs.Announcement
 	for rows.Next() {
 		var a domainclubs.Announcement
-		if err := rows.Scan(&a.ID, &a.Tipo, &a.Titulo, &a.Texto, &a.ReferenciaID, &a.Icone,
-			&a.GeradoEm); err != nil {
+		if err := rows.Scan(&a.ID, &a.Kind, &a.Title, &a.Body, &a.ReferenciaID, &a.Icon,
+			&a.GeneratedAt); err != nil {
 			return nil, fmt.Errorf("scan announcement: %w", err)
 		}
 		list = append(list, a)
@@ -1011,7 +1011,7 @@ func (r *ClubsRepository) AnnouncementCount(ctx context.Context) (int, error) {
 	var n int
 	if err := r.pool.QueryRow(ctx, `
 		SELECT count(*) FROM clubs_announcements
-		WHERE expira_em IS NULL OR expira_em > now()`).Scan(&n); err != nil {
+		WHERE expires_at IS NULL OR expires_at > now()`).Scan(&n); err != nil {
 		return 0, fmt.Errorf("announcement count: %w", err)
 	}
 	return n, nil
@@ -1019,14 +1019,14 @@ func (r *ClubsRepository) AnnouncementCount(ctx context.Context) (int, error) {
 
 // ------------------------------------------------------------------ rankings
 
-func (r *ClubsRepository) RankingClubs(ctx context.Context, metrica string) ([]domainclubs.ClubRef, error) {
+func (r *ClubsRepository) RankingClubs(ctx context.Context, metric string) ([]domainclubs.ClubRef, error) {
 	clubs, err := r.ListClubs(ctx, false)
 	if err != nil {
 		return nil, err
 	}
 	refs := make([]domainclubs.ClubRef, 0, len(clubs))
 	for _, c := range clubs {
-		if c.Jogos == 0 && c.Nivel == 0 {
+		if c.Played == 0 && c.SkillRating == 0 {
 			continue // never fetched at all — nothing to rank on
 		}
 		refs = append(refs, ref(c))
@@ -1035,88 +1035,88 @@ func (r *ClubsRepository) RankingClubs(ctx context.Context, metrica string) ([]d
 	// it is filled here rather than in every ListClubs caller.
 	for i := range refs {
 		if seq, err := r.clubSequence(ctx, refs[i].ClubID); err == nil {
-			refs[i].Invicta = seq.Invicta
+			refs[i].Unbeaten = seq.Unbeaten
 		}
 	}
-	sortRefs(refs, metrica)
+	sortRefs(refs, metric)
 	return refs, nil
 }
 
-func sortRefs(refs []domainclubs.ClubRef, metrica string) {
-	less := func(i, j int) bool { return refs[i].Nivel > refs[j].Nivel }
-	switch metrica {
-	case "pontos":
-		less = func(i, j int) bool { return refs[i].Pontos > refs[j].Pontos }
-	case "gols":
-		less = func(i, j int) bool { return refs[i].Gols > refs[j].Gols }
-	case "jogos_sem_sofrer":
-		less = func(i, j int) bool { return refs[i].JogosSemSofrer > refs[j].JogosSemSofrer }
-	case "aproveitamento", "aproveitamento_pct", "winrate":
+func sortRefs(refs []domainclubs.ClubRef, metric string) {
+	less := func(i, j int) bool { return refs[i].SkillRating > refs[j].SkillRating }
+	switch metric {
+	case "points":
+		less = func(i, j int) bool { return refs[i].Points > refs[j].Points }
+	case "goals":
+		less = func(i, j int) bool { return refs[i].Goals > refs[j].Goals }
+	case "clean_sheets":
+		less = func(i, j int) bool { return refs[i].CleanSheets > refs[j].CleanSheets }
+	case "win_rate", "aproveitamento_pct", "winrate":
 		less = func(i, j int) bool {
-			return pct(refs[i].Pontos, refs[i].Pontos+refs[i].Gols) > pct(refs[j].Pontos, refs[j].Pontos+refs[j].Gols)
+			return pct(refs[i].Points, refs[i].Points+refs[i].Goals) > pct(refs[j].Points, refs[j].Points+refs[j].Goals)
 		}
 	}
 	sort.SliceStable(refs, less)
 }
 
-func (r *ClubsRepository) RankingPlayers(ctx context.Context, metrica, posicao string) ([]domainclubs.RankPlayer, error) {
+func (r *ClubsRepository) RankingPlayers(ctx context.Context, metric, position string) ([]domainclubs.RankPlayer, error) {
 	players, err := r.AllPlayers(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]domainclubs.RankPlayer, 0, len(players))
 	for _, p := range players {
-		if posicao != "" && p.Posicao != posicao {
+		if position != "" && p.Position != position {
 			continue
 		}
-		if p.Jogos == 0 {
+		if p.Played == 0 {
 			continue
 		}
 		out = append(out, domainclubs.RankPlayer{
-			PlayerID: p.PlayerID, Gamertag: p.Gamertag, Posicao: p.Posicao,
-			ClubID: p.ClubeID, ClubeNome: p.ClubeNome, ClubeSigla: p.ClubeSigla,
-			Jogos: p.Jogos, Gols: p.Gols, Assistencias: p.Assistencias, Nota: p.Nota,
-			GolsPorJogo: p.GolsPorJogo, Verificado: p.Verificado,
+			PlayerID: p.PlayerID, Gamertag: p.Gamertag, Position: p.Position,
+			ClubID: p.ClubeID, ClubName: p.ClubName, ClubeSigla: p.ClubeSigla,
+			Played: p.Played, Goals: p.Goals, Assists: p.Assists, Rating: p.Rating,
+			GoalsPerGame: p.GoalsPerGame, Verified: p.Verified,
 		})
 	}
-	sortPlayers(out, metrica)
+	sortPlayers(out, metric)
 	// Deliberately NOT capped here: the handler paginates, so the last page
 	// has to be reachable. Capping at 100 made "até o último" impossible --
 	// a ranking 1,288 players deep stopped at 100 with no way past it.
 	return out, nil
 }
 
-func sortPlayers(list []domainclubs.RankPlayer, metrica string) {
-	less := func(i, j int) bool { return list[i].Nota > list[j].Nota }
-	switch metrica {
-	case "gols":
-		less = func(i, j int) bool { return list[i].Gols > list[j].Gols }
-	case "assistencias":
-		less = func(i, j int) bool { return list[i].Assistencias > list[j].Assistencias }
-	case "gols_por_jogo", "gols_por_partida":
-		less = func(i, j int) bool { return list[i].GolsPorJogo > list[j].GolsPorJogo }
-	case "jogos":
-		less = func(i, j int) bool { return list[i].Jogos > list[j].Jogos }
+func sortPlayers(list []domainclubs.RankPlayer, metric string) {
+	less := func(i, j int) bool { return list[i].Rating > list[j].Rating }
+	switch metric {
+	case "goals":
+		less = func(i, j int) bool { return list[i].Goals > list[j].Goals }
+	case "assists":
+		less = func(i, j int) bool { return list[i].Assists > list[j].Assists }
+	case "goals_per_game", "gols_por_partida":
+		less = func(i, j int) bool { return list[i].GoalsPerGame > list[j].GoalsPerGame }
+	case "played":
+		less = func(i, j int) bool { return list[i].Played > list[j].Played }
 	}
 	sort.SliceStable(list, less)
 }
 
 // clubSequence computes the current win and unbeaten runs from persisted
 // matches — the source only reports these for its own recent window.
-func (r *ClubsRepository) clubSequence(ctx context.Context, clubID string) (domainclubs.Sequencia, error) {
+func (r *ClubsRepository) clubSequence(ctx context.Context, clubID string) (domainclubs.Streak, error) {
 	matches, err := r.ListMatches(ctx, clubID, "", 100)
 	if err != nil {
-		return domainclubs.Sequencia{}, err
+		return domainclubs.Streak{}, err
 	}
-	var s domainclubs.Sequencia
+	var s domainclubs.Streak
 	for _, m := range matches { // newest first
-		if m.NossoResultado == "vitoria" {
-			s.Vitorias++
-			s.Invicta++
+		if m.OurResult == "vitoria" {
+			s.Wins++
+			s.Unbeaten++
 			continue
 		}
-		if m.NossoResultado == "empate" && s.Vitorias == 0 {
-			s.Invicta++
+		if m.OurResult == "empate" && s.Wins == 0 {
+			s.Unbeaten++
 			continue
 		}
 		break
@@ -1126,15 +1126,15 @@ func (r *ClubsRepository) clubSequence(ctx context.Context, clubID string) (doma
 
 // --------------------------------------------------------------- preferências
 
-func (r *ClubsRepository) ListWatch(ctx context.Context, usuarioEmail string) ([]domainclubs.WatchEntry, error) {
+func (r *ClubsRepository) ListWatch(ctx context.Context, userEmail string) ([]domainclubs.WatchEntry, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT w.club_id, COALESCE(c.nome,''), COALESCE(c.sigla,''),
-		       COALESCE(t.divisao_atual,0), COALESCE(t.nivel,0), w.seguindo_desde, w.origem
+		SELECT w.club_id, COALESCE(c.name,''), COALESCE(c.tag,''),
+		       COALESCE(t.division,0), COALESCE(t.skill_rating,0), w.tracked_since, w.source
 		FROM clubs_watchlist w
 		LEFT JOIN clubs c ON c.club_id = w.club_id
 		LEFT JOIN clubs_totais t ON t.club_id = w.club_id
-		WHERE w.usuario_email = $1
-		ORDER BY w.seguindo_desde DESC`, usuarioEmail)
+		WHERE w.user_email = $1
+		ORDER BY w.tracked_since DESC`, userEmail)
 	if err != nil {
 		return nil, fmt.Errorf("list watch: %w", err)
 	}
@@ -1143,8 +1143,8 @@ func (r *ClubsRepository) ListWatch(ctx context.Context, usuarioEmail string) ([
 	var list []domainclubs.WatchEntry
 	for rows.Next() {
 		var e domainclubs.WatchEntry
-		if err := rows.Scan(&e.ClubID, &e.Nome, &e.Sigla, &e.Divisao, &e.Nivel,
-			&e.SeguindoDesde, &e.Origem); err != nil {
+		if err := rows.Scan(&e.ClubID, &e.Name, &e.Tag, &e.DivisionAtRead, &e.SkillRating,
+			&e.TrackedSince, &e.Source); err != nil {
 			return nil, fmt.Errorf("scan watch: %w", err)
 		}
 		list = append(list, e)
@@ -1152,15 +1152,15 @@ func (r *ClubsRepository) ListWatch(ctx context.Context, usuarioEmail string) ([
 	return list, rows.Err()
 }
 
-func (r *ClubsRepository) GetNotificacoes(ctx context.Context, usuarioEmail string) (domainclubs.NotificationPrefs, error) {
+func (r *ClubsRepository) GetNotificacoes(ctx context.Context, userEmail string) (domainclubs.NotificationPrefs, error) {
 	var p domainclubs.NotificationPrefs
 	err := r.pool.QueryRow(ctx, `
-		SELECT canal, resumo_periodico, recordes_e_divisoes, resultado_partidas
-		FROM clubs_preferences WHERE usuario_email = $1`, usuarioEmail).
-		Scan(&p.Canal, &p.ResumoPeriodico, &p.RecordesEDivisoes, &p.ResultadoPartidas)
+		SELECT channel, weekly_digest, records_and_divisions, match_results
+		FROM clubs_preferences WHERE user_email = $1`, userEmail).
+		Scan(&p.Channel, &p.WeeklyDigest, &p.RecordsAndDivisions, &p.MatchResults)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Defaults with no channel — nothing is sent until one is set.
-		return domainclubs.NotificationPrefs{ResumoPeriodico: true, RecordesEDivisoes: true, ResultadoPartidas: true}, nil
+		return domainclubs.NotificationPrefs{WeeklyDigest: true, RecordsAndDivisions: true, MatchResults: true}, nil
 	}
 	if err != nil {
 		return domainclubs.NotificationPrefs{}, fmt.Errorf("get notificacoes: %w", err)
@@ -1168,11 +1168,11 @@ func (r *ClubsRepository) GetNotificacoes(ctx context.Context, usuarioEmail stri
 	return p, nil
 }
 
-func (r *ClubsRepository) GetClaimed(ctx context.Context, usuarioEmail string) (*domainclubs.ClaimedPro, error) {
+func (r *ClubsRepository) GetClaimed(ctx context.Context, userEmail string) (*domainclubs.ClaimedPro, error) {
 	var p domainclubs.ClaimedPro
 	err := r.pool.QueryRow(ctx, `
-		SELECT club_id, player_id, verificado FROM clubs_claimed_pros WHERE usuario_email = $1`,
-		usuarioEmail).Scan(&p.ClubID, &p.PlayerID, &p.Verificado)
+		SELECT club_id, player_id, verified FROM clubs_claimed_pros WHERE user_email = $1`,
+		userEmail).Scan(&p.ClubID, &p.PlayerID, &p.Verified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -1182,23 +1182,23 @@ func (r *ClubsRepository) GetClaimed(ctx context.Context, usuarioEmail string) (
 	return &p, nil
 }
 
-func (r *ClubsRepository) GetSyncRun(ctx context.Context, usuarioEmail string) (domainclubs.SyncRun, error) {
+func (r *ClubsRepository) GetSyncRun(ctx context.Context, userEmail string) (domainclubs.SyncRun, error) {
 	var run domainclubs.SyncRun
-	var novos []byte
+	var new_items []byte
 	err := r.pool.QueryRow(ctx, `
-		SELECT rodando, nivel, total, concluidos, atual, novos,
-		       COALESCE(iniciado_em, 'epoch'::timestamptz), COALESCE(concluido_em, 'epoch'::timestamptz)
-		FROM clubs_sync_runs WHERE usuario_email = $1`, usuarioEmail).
-		Scan(&run.Rodando, &run.Nivel, &run.Total, &run.Concluidos, &run.Atual, &novos,
-			&run.IniciadoEm, &run.ConcluidoEm)
+		SELECT running, skill_rating, total, completed, current, new_items,
+		       COALESCE(started_at, 'epoch'::timestamptz), COALESCE(finished_at, 'epoch'::timestamptz)
+		FROM clubs_sync_runs WHERE user_email = $1`, userEmail).
+		Scan(&run.Running, &run.SkillRating, &run.Total, &run.Completed, &run.Current, &new_items,
+			&run.StartedAt, &run.FinishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domainclubs.SyncRun{Novos: []string{}}, nil
+		return domainclubs.SyncRun{NewItems: []string{}}, nil
 	}
 	if err != nil {
 		return domainclubs.SyncRun{}, fmt.Errorf("get sync run: %w", err)
 	}
-	if len(novos) > 0 {
-		_ = json.Unmarshal(novos, &run.Novos)
+	if len(new_items) > 0 {
+		_ = json.Unmarshal(new_items, &run.NewItems)
 	}
 	return run, nil
 }
@@ -1206,11 +1206,11 @@ func (r *ClubsRepository) GetSyncRun(ctx context.Context, usuarioEmail string) (
 // ListPendingSyncs: quem pediu sincronização e ainda não terminou.
 func (r *ClubsRepository) ListPendingSyncs(ctx context.Context) ([]domainclubs.SyncRun, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT usuario_email, rodando, nivel, total, concluidos, atual, novos,
-		       COALESCE(iniciado_em, 'epoch'::timestamptz), COALESCE(concluido_em, 'epoch'::timestamptz)
+		SELECT user_email, running, skill_rating, total, completed, current, new_items,
+		       COALESCE(started_at, 'epoch'::timestamptz), COALESCE(finished_at, 'epoch'::timestamptz)
 		FROM clubs_sync_runs
-		WHERE rodando = true AND concluido_em IS NULL
-		ORDER BY iniciado_em ASC`)
+		WHERE running = true AND finished_at IS NULL
+		ORDER BY started_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list pending syncs: %w", err)
 	}
@@ -1219,13 +1219,13 @@ func (r *ClubsRepository) ListPendingSyncs(ctx context.Context) ([]domainclubs.S
 	var list []domainclubs.SyncRun
 	for rows.Next() {
 		var run domainclubs.SyncRun
-		var novos []byte
-		if err := rows.Scan(&run.UsuarioEmail, &run.Rodando, &run.Nivel, &run.Total,
-			&run.Concluidos, &run.Atual, &novos, &run.IniciadoEm, &run.ConcluidoEm); err != nil {
+		var new_items []byte
+		if err := rows.Scan(&run.UserEmail, &run.Running, &run.SkillRating, &run.Total,
+			&run.Completed, &run.Current, &new_items, &run.StartedAt, &run.FinishedAt); err != nil {
 			return nil, fmt.Errorf("scan pending sync: %w", err)
 		}
-		if len(novos) > 0 {
-			_ = json.Unmarshal(novos, &run.Novos)
+		if len(new_items) > 0 {
+			_ = json.Unmarshal(new_items, &run.NewItems)
 		}
 		list = append(list, run)
 	}
@@ -1237,20 +1237,20 @@ func (r *ClubsRepository) ListPendingSyncs(ctx context.Context) ([]domainclubs.S
 // GetFetchRun é o estado do sync sob demanda de um alvo (clube ou jogador).
 // Devolve um run zerado quando nunca foi pedido -- a SPA trata isso como
 // "ainda não busquei", não como erro.
-func (r *ClubsRepository) GetFetchRun(ctx context.Context, alvo, alvoID string) (domainclubs.FetchRun, error) {
-	run := domainclubs.FetchRun{Alvo: alvo, AlvoID: alvoID}
+func (r *ClubsRepository) GetFetchRun(ctx context.Context, target, alvoID string) (domainclubs.FetchRun, error) {
+	run := domainclubs.FetchRun{Target: target, TargetID: alvoID}
 	var concluido *time.Time
 	err := r.pool.QueryRow(ctx, `
-		SELECT rotulo, rodando, jogadores, partidas, clubes, erro, concluido_em
-		FROM clubs_fetch_runs WHERE alvo = $1 AND alvo_id = $2`, alvo, alvoID).
-		Scan(&run.Rotulo, &run.Rodando, &run.Jogadores, &run.Partidas, &run.Clubes, &run.Erro, &concluido)
+		SELECT label, running, players, matches, clubs, error, finished_at
+		FROM clubs_fetch_runs WHERE target = $1 AND target_id = $2`, target, alvoID).
+		Scan(&run.Label, &run.Running, &run.Players, &run.Matches, &run.Clubs, &run.Error, &concluido)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return run, nil
 	}
 	if err != nil {
 		return domainclubs.FetchRun{}, fmt.Errorf("get fetch run: %w", err)
 	}
-	run.ConcluidoEm = concluido
+	run.FinishedAt = concluido
 	return run, nil
 }
 
@@ -1259,10 +1259,10 @@ func (r *ClubsRepository) GetFetchRun(ctx context.Context, alvo, alvoID string) 
 // conhece o outro.
 func (r *ClubsRepository) ListPendingFetches(ctx context.Context) ([]domainclubs.FetchRun, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT alvo, alvo_id, rotulo, rodando, jogadores, partidas, clubes, erro, concluido_em
+		SELECT target, target_id, label, running, players, matches, clubs, error, finished_at
 		FROM clubs_fetch_runs
-		WHERE rodando = true AND concluido_em IS NULL
-		ORDER BY solicitado_em ASC`)
+		WHERE running = true AND finished_at IS NULL
+		ORDER BY requested_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list pending fetches: %w", err)
 	}
@@ -1272,11 +1272,11 @@ func (r *ClubsRepository) ListPendingFetches(ctx context.Context) ([]domainclubs
 	for rows.Next() {
 		var run domainclubs.FetchRun
 		var concluido *time.Time
-		if err := rows.Scan(&run.Alvo, &run.AlvoID, &run.Rotulo, &run.Rodando, &run.Jogadores,
-			&run.Partidas, &run.Clubes, &run.Erro, &concluido); err != nil {
+		if err := rows.Scan(&run.Target, &run.TargetID, &run.Label, &run.Running, &run.Players,
+			&run.Matches, &run.Clubs, &run.Error, &concluido); err != nil {
 			return nil, fmt.Errorf("scan fetch run: %w", err)
 		}
-		run.ConcluidoEm = concluido
+		run.FinishedAt = concluido
 		list = append(list, run)
 	}
 	return list, rows.Err()
@@ -1289,7 +1289,7 @@ func (r *ClubsRepository) ClubsDoJogador(ctx context.Context, playerID string) (
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT club_id FROM clubs_match_players WHERE player_id = $1`, playerID)
 	if err != nil {
-		return nil, fmt.Errorf("clubes do jogador: %w", err)
+		return nil, fmt.Errorf("clubs do jogador: %w", err)
 	}
 	defer rows.Close()
 	var ids []string
@@ -1311,26 +1311,26 @@ func (r *ClubsRepository) GetSearchRun(ctx context.Context, termo string) (domai
 	run := domainclubs.SearchRun{Termo: termo}
 	var concluido *time.Time
 	err := r.pool.QueryRow(ctx, `
-		SELECT rodando, encontrados, erro, concluido_em
+		SELECT running, found, error, finished_at
 		FROM clubs_search_runs WHERE termo = $1`, termo).
-		Scan(&run.Rodando, &run.Encontrados, &run.Erro, &concluido)
+		Scan(&run.Running, &run.Found, &run.Error, &concluido)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return run, nil
 	}
 	if err != nil {
 		return domainclubs.SearchRun{}, fmt.Errorf("get search run: %w", err)
 	}
-	run.ConcluidoEm = concluido
+	run.FinishedAt = concluido
 	return run, nil
 }
 
 // ListPendingSearches: os termos que a SPA pediu e o worker ainda não buscou.
 func (r *ClubsRepository) ListPendingSearches(ctx context.Context) ([]domainclubs.SearchRun, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT termo, rodando, encontrados, erro, concluido_em
+		SELECT termo, running, found, error, finished_at
 		FROM clubs_search_runs
-		WHERE rodando = true AND concluido_em IS NULL
-		ORDER BY solicitado_em ASC`)
+		WHERE running = true AND finished_at IS NULL
+		ORDER BY requested_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list pending searches: %w", err)
 	}
@@ -1340,10 +1340,10 @@ func (r *ClubsRepository) ListPendingSearches(ctx context.Context) ([]domainclub
 	for rows.Next() {
 		var run domainclubs.SearchRun
 		var concluido *time.Time
-		if err := rows.Scan(&run.Termo, &run.Rodando, &run.Encontrados, &run.Erro, &concluido); err != nil {
+		if err := rows.Scan(&run.Termo, &run.Running, &run.Found, &run.Error, &concluido); err != nil {
 			return nil, fmt.Errorf("scan search run: %w", err)
 		}
-		run.ConcluidoEm = concluido
+		run.FinishedAt = concluido
 		list = append(list, run)
 	}
 	return list, rows.Err()
@@ -1353,45 +1353,45 @@ func (r *ClubsRepository) ListPendingSearches(ctx context.Context) ([]domainclub
 
 func (r *ClubsRepository) AdminStatus(ctx context.Context) (domainclubs.AdminStatus, error) {
 	var st domainclubs.AdminStatus
-	st.PorDivisao = map[string]int{}
+	st.ByDivision = map[string]int{}
 
 	if err := r.pool.QueryRow(ctx, `
 		SELECT
 			(SELECT count(*) FROM clubs),
-			(SELECT count(*) FROM clubs WHERE acompanhado = true),
+			(SELECT count(*) FROM clubs WHERE tracked = true),
 			(SELECT count(*) FROM clubs_matches),
 			(SELECT count(DISTINCT player_id) FROM clubs_match_players),
 			(SELECT count(*) FROM clubs_snapshots),
 			(SELECT count(*) FROM clubs_division_changes),
 			(SELECT count(*) FROM clubs_announcements)`).
-		Scan(&st.ClubesTotal, &st.ClubesAcompanhados, &st.Partidas, &st.Jogadores,
-			&st.Snapshots, &st.MudancasDivisao, &st.Anuncios); err != nil {
+		Scan(&st.ClubsTotal, &st.ClubsTracked, &st.Matches, &st.Players,
+			&st.Snapshots, &st.DivisionChanges, &st.Announcements); err != nil {
 		return st, fmt.Errorf("admin counters: %w", err)
 	}
-	st.ClubesPendentes = st.ClubesTotal - st.ClubesAcompanhados
+	st.ClubsPending = st.ClubsTotal - st.ClubsTracked
 
 	if t, err := r.LastMatchAt(ctx); err == nil {
-		st.UltimaPartida = t
+		st.LastMatchAt = t
 	}
 
 	rows, err := r.pool.Query(ctx, `
-		SELECT divisao_atual, count(*) FROM clubs_totais
-		WHERE divisao_atual > 0 GROUP BY divisao_atual ORDER BY divisao_atual`)
+		SELECT division, count(*) FROM clubs_totais
+		WHERE division > 0 GROUP BY division ORDER BY division`)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
 			var d, n int
 			if err := rows.Scan(&d, &n); err == nil {
-				st.PorDivisao[fmt.Sprintf("D%d", d)] = n
+				st.ByDivision[fmt.Sprintf("D%d", d)] = n
 			}
 		}
 	}
 
-	top, err := r.RankingClubs(ctx, "nivel")
+	top, err := r.RankingClubs(ctx, "skill_rating")
 	if err == nil && len(top) > 8 {
 		top = top[:8]
 	}
-	st.TopClubes = top
+	st.TopClubs = top
 	return st, nil
 }
 
@@ -1399,11 +1399,11 @@ func (r *ClubsRepository) AdminStatus(ctx context.Context) (domainclubs.AdminSta
 func (r *ClubsRepository) IngestEstado(ctx context.Context) (domainclubs.IngestEstado, error) {
 	var e domainclubs.IngestEstado
 	err := r.pool.QueryRow(ctx, `
-		SELECT ultimo_ciclo_em, rodadas, clubes_ok, clubes_falhos, partidas_novas,
-		       snapshots, bootstrap_feito, ultimo_erro, ultimo_erro_em
+		SELECT last_cycle_at, cycles, clubs_ok, clubs_failed, new_matches,
+		       snapshots, bootstrapped, last_error, last_error_at
 		FROM clubs_ingest_estado WHERE id = 1`).
-		Scan(&e.UltimoCicloEm, &e.Rodadas, &e.ClubesOK, &e.ClubesFalhos, &e.PartidasNovas,
-			&e.Snapshots, &e.BootstrapFeito, &e.UltimoErro, &e.UltimoErroEm)
+		Scan(&e.LastCycleAt, &e.Cycles, &e.ClubesOK, &e.ClubsFailed, &e.NewMatches,
+			&e.Snapshots, &e.Bootstrapped, &e.LastError, &e.LastErrorAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Nunca rodou: não é erro, é o estado inicial.
 		return domainclubs.IngestEstado{}, nil
@@ -1411,8 +1411,8 @@ func (r *ClubsRepository) IngestEstado(ctx context.Context) (domainclubs.IngestE
 	if err != nil {
 		return domainclubs.IngestEstado{}, fmt.Errorf("ingest estado: %w", err)
 	}
-	if e.UltimoCicloEm != nil {
-		e.Vivo = time.Since(*e.UltimoCicloEm) < 3*time.Hour
+	if e.LastCycleAt != nil {
+		e.Alive = time.Since(*e.LastCycleAt) < 3*time.Hour
 	}
 	return e, nil
 }

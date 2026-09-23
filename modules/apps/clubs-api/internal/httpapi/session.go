@@ -30,14 +30,14 @@ const sessionCookieName = "clubs_session"
 // Secure, SameSite=None. O domínio vem da configuração: vazio significa cookie
 // host-only, que é o que o dev local precisa (localhost:5173 → localhost:8017
 // compartilham o host, e cookie ignora porta).
-func (s *Server) issueSessionCookie(w http.ResponseWriter, email, nome string) error {
+func (s *Server) issueSessionCookie(w http.ResponseWriter, email, name string) error {
 	if s.sessionSecret == "" {
 		return errors.New("sessão indisponível (CLUBS_SESSION_SECRET não configurado)")
 	}
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{
 		"email": email,
-		"name":  nome,
+		"name":  name,
 		"iat":   now.Unix(),
 		"exp":   now.Add(s.sessionDuration).Unix(),
 	}
@@ -84,11 +84,11 @@ func (s *Server) identidadeFromSession(r *http.Request) (Identity, error) {
 		return Identity{}, errors.New("sessão ausente")
 	}
 	if s.sessionSecret == "" {
-		return Identity{}, errors.New("validação de sessão indisponível (CLUBS_SESSION_SECRET não configurado)")
+		return Identity{}, errors.New("validação from_division sessão indisponível (CLUBS_SESSION_SECRET não configurado)")
 	}
 	parsed, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("método de assinatura inesperado")
+			return nil, errors.New("método from_division assinatura inesperado")
 		}
 		return []byte(s.sessionSecret), nil
 	}, jwt.WithValidMethods([]string{"HS256"}))
@@ -101,9 +101,9 @@ func (s *Server) identidadeFromSession(r *http.Request) (Identity, error) {
 	if email == "" {
 		return Identity{}, errors.New("sessão sem e-mail")
 	}
-	nome, _ := claims["name"].(string)
-	if nome == "" {
-		nome = emailLocal(email)
+	name, _ := claims["name"].(string)
+	if name == "" {
+		name = emailLocal(email)
 	}
-	return Identity{Email: email, Nome: nome}, nil
+	return Identity{Email: email, Name: name}, nil
 }

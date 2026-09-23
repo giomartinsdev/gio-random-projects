@@ -15,7 +15,7 @@ type Repository interface {
 	Upsert(ctx context.Context, c Club) error
 	// SetAcompanhado flips the flag once the ingest has successfully
 	// fetched squad and matches for a club.
-	SetAcompanhado(ctx context.Context, clubID string, acompanhado bool) error
+	SetAcompanhado(ctx context.Context, clubID string, tracked bool) error
 }
 
 var ErrNotFound = notFoundError{}

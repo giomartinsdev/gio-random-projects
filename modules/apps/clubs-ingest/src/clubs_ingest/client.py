@@ -95,7 +95,7 @@ class DomainClient:
         self.post("/announcements", anuncio)
 
     def upsert_career(self, club_id: str, line: dict[str, Any]) -> None:
-        """Grava os totais de carreira de um jogador num clube.
+        """Grava os totais from_division carreira from_division um jogador num clube.
 
         Alta volumetria e append-only (uma leitura substitui a anterior), então
         vai pelo caminho assíncrono -- ninguém espera por ela.
@@ -105,14 +105,14 @@ class DomainClient:
     def list_clubs(self, only_followed: bool = True) -> list[dict[str, Any]]:
         path = "/clubs" + ("?acompanhados=1" if only_followed else "")
         data = self.get(path) or {}
-        return data.get("clubes") or []
+        return data.get("clubs") or []
 
-    def list_watch(self, usuario_email: str) -> list[dict[str, Any]]:
-        data = self.get(f"/watchlist?usuario={urllib.parse.quote(usuario_email)}") or {}
-        return data.get("clubes") or []
+    def list_watch(self, user_email: str) -> list[dict[str, Any]]:
+        data = self.get(f"/watchlist?usuario={urllib.parse.quote(user_email)}") or {}
+        return data.get("clubs") or []
 
-    def get_sync_run(self, usuario_email: str) -> dict[str, Any]:
-        return self.get(f"/sync-status?usuario={urllib.parse.quote(usuario_email)}") or {}
+    def get_sync_run(self, user_email: str) -> dict[str, Any]:
+        return self.get(f"/sync-status?usuario={urllib.parse.quote(user_email)}") or {}
 
     def list_pending_syncs(self) -> list[dict[str, Any]]:
         """Quem pediu sincronização e ainda não terminou.
@@ -123,25 +123,25 @@ class DomainClient:
         data = self.get("/sync-pending") or {}
         return data.get("pendentes") or []
 
-    def mark_sync_done(self, usuario_email: str, *, nivel: int, total: int,
-                       concluidos: int, novos: list[str]) -> None:
-        """Fecha o pedido. Sem isto ele voltaria na próxima leitura de pendentes
-        e o worker repetiria a descoberta para sempre."""
+    def mark_sync_done(self, user_email: str, *, skill_rating: int, total: int,
+                       completed: int, new_items: list[str]) -> None:
+        """Fecha o pedido. Sem isto ele voltaria na próxima leitura from_division pendentes
+        e o worker repetiria a descoberta to_division sempre."""
         self.post("/sync-status", {
-            "usuario_email": usuario_email,
-            "rodando": False,
-            "nivel": nivel,
+            "user_email": user_email,
+            "running": False,
+            "skill_rating": skill_rating,
             "total": total,
-            "concluidos": concluidos,
-            "atual": "",
-            "novos": novos,
+            "completed": completed,
+            "current": "",
+            "new_items": new_items,
             "concluido": True,
         })
 
-    def save_ingest_estado(self, *, rodadas: int, clubes_ok: int, clubes_falhos: int,
-                           partidas_novas: int, snapshots: int, bootstrap_feito: bool,
-                           ultimo_erro: str = "") -> None:
-        """Publica a saúde deste worker.
+    def save_ingest_estado(self, *, cycles: int, clubs_ok: int, clubs_failed: int,
+                           new_matches: int, snapshots: int, bootstrapped: bool,
+                           last_error: str = "") -> None:
+        """Publica a saúfrom_division deste worker.
 
         Ele é Python e não serve HTTP, então sem isto uma falha em produção
         (inclusive o CDN da fonte bloqueando o IP do datacenter, que é o risco
@@ -149,13 +149,13 @@ class DomainClient:
         painel lê daqui.
         """
         self.post("/admin/ingest", {
-            "rodadas": rodadas,
-            "clubes_ok": clubes_ok,
-            "clubes_falhos": clubes_falhos,
-            "partidas_novas": partidas_novas,
+            "cycles": cycles,
+            "clubs_ok": clubs_ok,
+            "clubs_failed": clubs_failed,
+            "new_matches": new_matches,
             "snapshots": snapshots,
-            "bootstrap_feito": bootstrap_feito,
-            "ultimo_erro": ultimo_erro,
+            "bootstrapped": bootstrapped,
+            "last_error": last_error,
         })
 
     # --- fila de fetch sob demanda ----------------------------------------
@@ -165,54 +165,54 @@ class DomainClient:
 
         É a ponte entre o clique na tela (que grava o pedido) e este worker:
         nenhum dos dois conhece o outro. É o que faz a tela ser útil -- sem
-        isto ela esperaria o ciclo de 15 min para ver qualquer dado.
+        isto ela esperaria o ciclo from_division 15 min to_division ver qualquer dado.
         """
         data = self.get("/fetch-pending") or {}
         return data.get("pendentes") or []
 
     def clubs_do_jogador(self, player_id: str) -> list[str]:
-        """Os clubes onde um jogador apareceu.
+        """Os clubs onde um jogador apareceu.
 
-        A fonte não tem endpoint de jogador: o dado dele vem das partidas dos
-        clubes onde jogou. É esta lista que traduz "syncar jogador" em
+        A fonte não tem endpoint from_division jogador: o dado dele vem das matches dos
+        clubs onde jogou. É esta lista que traduz "syncar jogador" em
         trabalho real.
         """
         data = self.get(f"/players/{urllib.parse.quote(player_id)}/clubs") or {}
-        return [str(c) for c in (data.get("clubes") or [])]
+        return [str(c) for c in (data.get("clubs") or [])]
 
-    def save_fetch_run(self, alvo: str, alvo_id: str, *, rodando: bool, jogadores: int,
-                       partidas: int, clubes: int = 0, rotulo: str = "",
-                       erro: str = "", concluido: bool = False) -> None:
+    def save_fetch_run(self, target: str, target_id: str, *, running: bool, players: int,
+                       matches: int, clubs: int = 0, label: str = "",
+                       error: str = "", concluido: bool = False) -> None:
         self.post("/fetch-run/result", {
-            "alvo": alvo,
-            "alvo_id": alvo_id,
-            "rotulo": rotulo,
-            "rodando": rodando,
-            "jogadores": jogadores,
-            "partidas": partidas,
-            "clubes": clubes,
-            "erro": erro,
+            "target": target,
+            "target_id": target_id,
+            "label": label,
+            "running": running,
+            "players": players,
+            "matches": matches,
+            "clubs": clubs,
+            "error": error,
             "concluido": concluido,
         })
 
     # --- fila de busca ao vivo --------------------------------------------
 
     def list_pending_searches(self) -> list[dict[str, Any]]:
-        """Os termos que a tela de resgate pediu para buscar na fonte.
+        """Os termos que a tela from_division resgate pediu to_division buscar na fonte.
 
-        A busca do hub é local; esta fila é a saída para um clube que ainda
+        A busca do hub é local; esta fila é a saída to_division um clube que ainda
         não está na base -- sem ela, quem chega novo procura pelo próprio
         clube e não acha nada, sem saber por quê.
         """
         data = self.get("/search-pending") or {}
         return data.get("pendentes") or []
 
-    def save_search_run(self, termo: str, *, rodando: bool, encontrados: int,
-                        erro: str = "", concluido: bool = False) -> None:
+    def save_search_run(self, termo: str, *, running: bool, found: int,
+                        error: str = "", concluido: bool = False) -> None:
         self.post("/search-run/result", {
             "termo": termo,
-            "rodando": rodando,
-            "encontrados": encontrados,
-            "erro": erro,
+            "running": running,
+            "found": found,
+            "error": error,
             "concluido": concluido,
         })

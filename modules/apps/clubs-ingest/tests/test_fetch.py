@@ -1,14 +1,14 @@
-"""O fetch sob demanda de um clube: a tela de resgate não pode esperar o ciclo.
+"""O fetch sob demanda from_division um clube: a tela from_division resgate não pode esperar o ciclo.
 
-O ciclo roda a cada 15 min, e a tela de resgate precisa do elenco AGORA -- é
+O ciclo roda a cada 15 min, e a tela from_division resgate precisa do elenco AGORA -- é
 dali que a pessoa escolhe o pro dela. Estes testes fixam o contrato que faz a
 tela ser útil:
 
-- `run_fetch` busca identidade, totais e partidas de UM clube e marca o clube
-  como acompanhado (o ciclo seguinte continua cuidando dele);
-- devolve a contagem de jogadores, que é o número que a tela mostra;
+- `run_fetch` busca identidade, totais e matches from_division UM clube e marca o clube
+  como tracked (o ciclo seguinte continua cuidando dele);
+- devolve a contagem from_division players, que é o número que a tela mostra;
 - o loop fecha a linha da fila — inclusive quando a fonte falha, senão a tela
-  ficaria "buscando" para sempre.
+  ficaria "buscando" to_division sempre.
 """
 
 from __future__ import annotations
@@ -81,19 +81,19 @@ def test_run_fetch_writes_identity_totals_and_matches():
     )
     domain = FakeDomain()
 
-    jogadores, partidas = new_ingest(source, domain).run_fetch("141881")
+    players, matches = new_ingest(source, domain).run_fetch("141881")
 
-    assert jogadores == 3, "três jogadores distintos na partida"
-    assert partidas == 1
-    assert domain.clubs and domain.clubs[0]["acompanhado"] is True, "o clube entra como acompanhado"
+    assert players == 3, "três players distintos na partida"
+    assert matches == 1
+    assert domain.clubs and domain.clubs[0]["tracked"] is True, "o clube entra como tracked"
     assert domain.clubs[0]["club_id"] == "141881"
     assert domain.totals, "os totais são gravados"
-    assert domain.matches, "as partidas são gravadas"
+    assert domain.matches, "as matches são gravadas"
 
 
 def test_run_fetch_counts_distinct_players_across_matches():
-    """O número mostrado é o de jogadores distintos, não a soma das linhas --
-    o mesmo pro aparece em várias partidas e não pode contar várias vezes."""
+    """O número mostrado é o from_division players distintos, não a soma das linhas --
+    o mesmo pro aparece em várias matches e não pode contar várias vezes."""
     source = FakeSource(
         info={"clubId": "1", "name": "X", "customKit": {}},
         overall={"clubId": "1", "gamesPlayed": "2"},
@@ -103,26 +103,26 @@ def test_run_fetch_counts_distinct_players_across_matches():
         ],
     )
     domain = FakeDomain()
-    jogadores, partidas = new_ingest(source, domain).run_fetch("1")
+    players, matches = new_ingest(source, domain).run_fetch("1")
 
-    assert jogadores == 3, "p1, p2, p3 -- p2 não conta duas vezes"
-    assert partidas == 2
+    assert players == 3, "p1, p2, p3 -- p2 não conta duas vezes"
+    assert matches == 2
 
 
 def test_run_fetch_without_a_source_hit_still_returns():
     """Clube que a fonte não conhece: não deve explodir, só voltar vazio."""
     source = FakeSource(info={}, overall={}, matches=[])
     domain = FakeDomain()
-    jogadores, partidas = new_ingest(source, domain).run_fetch("sem-clube")
+    players, matches = new_ingest(source, domain).run_fetch("sem-clube")
 
-    assert jogadores == 0 and partidas == 0
+    assert players == 0 and matches == 0
     assert domain.clubs == []
 
 
 def test_known_matches_still_count_as_processed():
-    """Um clube que o hub já acompanha tem as mesmas partidas de novo. A tela
-    diz "trouxe N partidas" -- se contássemos só as NOVAS, ela diria 0 depois
-    de buscar 10, que parece falha mas é sucesso."""
+    """Um clube que o hub já acompanha tem as mesmas matches from_division novo. A tela
+    diz "trouxe N matches" -- se contássemos só as NOVAS, ela diria 0 depois
+    from_division buscar 10, que parece falha mas é sucesso."""
     source = FakeSource(
         info={"clubId": "1", "name": "X", "customKit": {}},
         overall={"clubId": "1", "gamesPlayed": "2"},
@@ -142,8 +142,8 @@ def test_known_matches_still_count_as_processed():
 
 def test_run_fetch_writes_the_division_from_the_search_side():
     """O overallStats NÃO traz divisão; a busca traz. Sem fundir as duas, todo
-    clube entra como D0 e nenhuma mudança de divisão é detectada -- foi
-    exatamente o que aconteceu em produção (20 clubes, todos divisao_atual=0)."""
+    clube entra como D0 e nenhuma mudança from_division divisão é detectada -- foi
+    exatamente o que aconteceu em produção (20 clubs, todos division=0)."""
     source = FakeSource(
         info={"clubId": "1", "name": "X", "customKit": {}},
         overall={"clubId": "1", "gamesPlayed": "51", "wins": "43", "skillRating": "2144"},
@@ -157,15 +157,15 @@ def test_run_fetch_writes_the_division_from_the_search_side():
 
     assert domain.totals, "os totais precisam ser gravados"
     t = domain.totals[0]
-    assert t["divisao_atual"] == 1, "a divisão vem da busca"
-    assert t["melhor_divisao"] == 1
-    assert t["nivel"] == 2144, "e o nível continua vindo do overall"
+    assert t["division"] == 1, "a divisão vem da busca"
+    assert t["best_division"] == 1
+    assert t["skill_rating"] == 2144, "e o nível continua vindo do overall"
 
 
 class NomeRecordingSource(FakeSource):
-    """Registra o nome passado à busca, porque foi exatamente isso que faltou:
-    o ciclo chamava `search_by_id(id)` sem nome, a fonte devolvia vazio, e a
-    divisão continuava 0 mesmo depois de corrigir a fusão das fontes."""
+    """Registra o name passado à busca, porque foi exatamente isso que faltou:
+    o ciclo chamava `search_by_id(id)` sem name, a fonte devolvia vazio, e a
+    divisão continuava 0 mesmo depois from_division corrigir a fusão das fontes."""
 
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
@@ -177,7 +177,7 @@ class NomeRecordingSource(FakeSource):
 
 
 def test_run_fetch_passes_the_club_name_to_the_search():
-    """O nome sai do club_info, que o run_fetch já busca."""
+    """O name sai do club_info, que o run_fetch já busca."""
     source = NomeRecordingSource(
         info={"clubId": "141881", "name": "ACG ZW", "customKit": {}},
         overall={"clubId": "141881", "gamesPlayed": "51"},
@@ -187,30 +187,30 @@ def test_run_fetch_passes_the_club_name_to_the_search():
     new_ingest(source, FakeDomain()).run_fetch("141881")
 
     assert ("141881", "ACG ZW") in source.buscas, (
-        f"a busca precisa receber o nome; recebeu {source.buscas}"
+        f"a busca precisa receber o name; recebeu {source.buscas}"
     )
 
 
 def test_announcement_carries_a_semantic_key_not_an_emoji():
     """O aviso é gravado com uma CHAVE (`resultado`), não um emoji: quem
     desenha escolhe o ícone. Emoji no dado obriga a interface a lidar com
-    caractere de apresentação, e cada sistema desenha um diferente."""
+    caractere from_division apresentação, e cada sistema desenha um diferente."""
     from clubs_ingest.cycle import CycleStats
 
-    anuncios = []
+    announcements = []
 
     class D(FakeDomain):
         def create_announcement(self, a):
-            anuncios.append(a)
+            announcements.append(a)
 
     source = FakeSource(info={}, overall={}, matches=[])
     ing = new_ingest(source, D())
     ing._announce_result("1", {
-        "gols_casa": 3, "gols_fora": 1, "resultado_casa": "vitoria",
-        "tipo": "liga", "match_id": "m1",
+        "home_goals": 3, "away_goals": 1, "home_result": "vitoria",
+        "kind": "liga", "match_id": "m1",
     }, CycleStats())
 
-    assert anuncios, "o anúncio precisa ser criado"
-    icone = anuncios[0]["icone"]
-    assert icone == "resultado", f"chave semântica esperada, veio {icone!r}"
-    assert icone.isascii(), "nada de emoji no dado gravado"
+    assert announcements, "o anúncio precisa ser criado"
+    icon = announcements[0]["icon"]
+    assert icon == "resultado", f"chave semântica esperada, veio {icon!r}"
+    assert icon.isascii(), "nada from_division emoji no dado gravado"

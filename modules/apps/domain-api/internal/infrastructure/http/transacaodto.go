@@ -8,23 +8,23 @@ import (
 
 type TransacaoResponse struct {
 	ID           string    `json:"id"`
-	UsuarioEmail string    `json:"usuario_email"`
+	UserEmail string    `json:"user_email"`
 	ContaID      string    `json:"conta_id"`
-	Tipo         string    `json:"tipo"`
+	Kind         string    `json:"kind"`
 	Categoria    string    `json:"categoria"`
 	Descricao    string    `json:"descricao,omitempty"`
 	AnexoImagem  string    `json:"anexo_imagem,omitempty"`
 	Valor        float64   `json:"valor"`
 	Data         time.Time `json:"data"`
-	CriadoEm     time.Time `json:"criado_em"`
-	AtualizadoEm time.Time `json:"atualizado_em"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func toTransacaoResponse(t domaintransacao.Transacao) TransacaoResponse {
 	return TransacaoResponse{
-		ID: t.ID, UsuarioEmail: t.UsuarioEmail, ContaID: t.ContaID, Tipo: t.Tipo, Categoria: t.Categoria,
+		ID: t.ID, UserEmail: t.UserEmail, ContaID: t.ContaID, Kind: t.Kind, Categoria: t.Categoria,
 		Descricao: t.Descricao, AnexoImagem: t.AnexoImagem, Valor: t.Valor, Data: t.Data,
-		CriadoEm: t.CriadoEm, AtualizadoEm: t.AtualizadoEm,
+		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
 	}
 }
 

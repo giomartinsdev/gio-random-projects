@@ -8,9 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	domainsnapshot "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/clubesnapshot"
-	domainpartida "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/partida"
-	domainpref "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/preferencia"
+	domainsnapshot "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/clubsnapshot"
+	domainmatch "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/match"
+	domainpref "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/preference"
 )
 
 // Integration tests against a real Postgres — opt-in via TEST_DATABASE_URL,
@@ -47,15 +47,15 @@ func TestPartidaUpsertIsIdempotentByMatchID(t *testing.T) {
 	matchID := "test-match-" + time.Now().Format("150405.000000000")
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM clubs_matches WHERE match_id = $1`, matchID) })
 
-	p, err := domainpartida.New(matchID, "T1", "T2", domainpartida.TipoLiga, domainpartida.ResultadoVitoria, time.Now().UTC())
+	p, err := domainmatch.New(matchID, "T1", "T2", domainmatch.TipoLiga, domainmatch.ResultadoVitoria, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("new partida: %v", err)
 	}
-	p.GolsCasa, p.GolsFora = 3, 1
+	p.HomeGoals, p.AwayGoals = 3, 1
 
-	lines := []domainpartida.LinhaPartida{
-		{ClubID: "T1", PlayerID: "p1", Gamertag: "a", Posicao: "atacante", Nota: 8.1, Gols: 2},
-		{ClubID: "T2", PlayerID: "p2", Gamertag: "b", Posicao: "goleiro", Nota: 6.0},
+	lines := []domainmatch.LinhaPartida{
+		{ClubID: "T1", PlayerID: "p1", Gamertag: "a", Position: "atacante", Rating: 8.1, Goals: 2},
+		{ClubID: "T2", PlayerID: "p2", Gamertag: "b", Position: "goalkeeper", Rating: 6.0},
 	}
 
 	inserted, err := repo.UpsertByMatchID(ctx, p, lines)
@@ -79,8 +79,8 @@ func TestPartidaUpsertIsIdempotentByMatchID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find: %v", err)
 	}
-	if got.GolsCasa != 3 || got.GolsFora != 1 {
-		t.Fatalf("score drifted: %d-%d", got.GolsCasa, got.GolsFora)
+	if got.HomeGoals != 3 || got.AwayGoals != 1 {
+		t.Fatalf("score drifted: %d-%d", got.HomeGoals, got.AwayGoals)
 	}
 	// Idempotency must extend to the lines: replaced, not appended.
 	if len(gotLines) != len(lines) {
@@ -106,7 +106,7 @@ func TestSnapshotDiffRaisesDivisionChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new snapshot: %v", err)
 	}
-	first.Divisao, first.Nivel = 5, 1200
+	first.DivisionAtRead, first.SkillRating = 5, 1200
 	change, err := repo.Append(ctx, first)
 	if err != nil {
 		t.Fatalf("first append: %v", err)
@@ -117,7 +117,7 @@ func TestSnapshotDiffRaisesDivisionChange(t *testing.T) {
 
 	// Division 5 -> 4 is a promotion (1 is the top).
 	second, _ := domainsnapshot.New(clubID, time.Now().UTC().Add(time.Hour))
-	second.Divisao, second.Nivel = 4, 1330
+	second.DivisionAtRead, second.SkillRating = 4, 1330
 	change, err = repo.Append(ctx, second)
 	if err != nil {
 		t.Fatalf("second append: %v", err)
@@ -125,8 +125,8 @@ func TestSnapshotDiffRaisesDivisionChange(t *testing.T) {
 	if change == nil {
 		t.Fatal("a division move must raise a change")
 	}
-	if change.Tipo != domainsnapshot.TipoPromocao {
-		t.Fatalf("want promoção, got %q", change.Tipo)
+	if change.Kind != domainsnapshot.TipoPromocao {
+		t.Fatalf("want promoção, got %q", change.Kind)
 	}
 
 	// And it must be readable back, which is what the API serves.
@@ -140,7 +140,7 @@ func TestSnapshotDiffRaisesDivisionChange(t *testing.T) {
 
 	// A third reading in the same division raises nothing.
 	third, _ := domainsnapshot.New(clubID, time.Now().UTC().Add(2*time.Hour))
-	third.Divisao, third.Nivel = 4, 1350
+	third.DivisionAtRead, third.SkillRating = 4, 1350
 	if change, err = repo.Append(ctx, third); err != nil {
 		t.Fatalf("third append: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestPreferenciaIsScopedByUsuario(t *testing.T) {
 	alice := "alice-" + time.Now().Format("150405.000000000") + "@test"
 	bob := "bob-" + time.Now().Format("150405.000000000") + "@test"
 	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, `DELETE FROM clubs_watchlist WHERE usuario_email IN ($1,$2)`, alice, bob)
+		_, _ = pool.Exec(ctx, `DELETE FROM clubs_watchlist WHERE user_email IN ($1,$2)`, alice, bob)
 	})
 
 	entry, err := domainpref.NewWatch(alice, "T1", domainpref.OrigemProprio)

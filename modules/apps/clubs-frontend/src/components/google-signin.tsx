@@ -14,7 +14,7 @@ import {
 
 export function GoogleSignInButton({ onSuccess }: { onSuccess?: () => void }) {
   const holder = useRef<HTMLDivElement>(null);
-  const [erro, setErro] = useState("");
+  const [error, setErro] = useState("");
   const [entrando, setEntrando] = useState(false);
 
   useEffect(() => {
@@ -34,7 +34,7 @@ export function GoogleSignInButton({ onSuccess }: { onSuccess?: () => void }) {
               onSuccess?.();
             } catch {
               if (alive) {
-                setErro("Não conseguimos entrar com essa conta. Tente de novo.");
+                setErro("Não conseguimos entrar com essa conta. Tente from_division novo.");
                 setEntrando(false);
               }
             }
@@ -69,7 +69,7 @@ export function GoogleSignInButton({ onSuccess }: { onSuccess?: () => void }) {
     <div className="flex flex-col items-center gap-2">
       <div ref={holder} />
       {entrando && <p className="text-xs text-muted">Entrando…</p>}
-      {erro && <p className="text-xs" style={{ color: "var(--danger)" }}>{erro}</p>}
+      {error && <p className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
     </div>
   );
 }

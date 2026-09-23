@@ -24,23 +24,23 @@ func NewPlayerCareerRepository(pool *pgxpool.Pool) *PlayerCareerRepository {
 // Save é upsert por (clube, gamertag): uma leitura nova substitui a anterior,
 // que é o que "carreira" significa -- o acumulado, não um histórico de leituras.
 func (r *PlayerCareerRepository) Save(ctx context.Context, clubID, gamertag string,
-	jogos, gols, assistencias, melhorEmCampo int, nota float64, posicao string) error {
+	played, goals, assists, manOfTheMatch int, rating float64, position string) error {
 	if clubID == "" || gamertag == "" {
 		return fmt.Errorf("career: club_id e gamertag são obrigatórios")
 	}
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO clubs_player_career
-			(club_id, gamertag, jogos, gols, assistencias, melhor_em_campo, nota, posicao, lido_em)
+			(club_id, gamertag, played, goals, assists, man_of_the_match, rating, position, read_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now())
 		ON CONFLICT (club_id, gamertag) DO UPDATE SET
-			jogos = EXCLUDED.jogos,
-			gols = EXCLUDED.gols,
-			assistencias = EXCLUDED.assistencias,
-			melhor_em_campo = EXCLUDED.melhor_em_campo,
-			nota = EXCLUDED.nota,
-			posicao = EXCLUDED.posicao,
-			lido_em = now()`,
-		clubID, gamertag, jogos, gols, assistencias, melhorEmCampo, nota, posicao)
+			played = EXCLUDED.played,
+			goals = EXCLUDED.goals,
+			assists = EXCLUDED.assists,
+			man_of_the_match = EXCLUDED.man_of_the_match,
+			rating = EXCLUDED.rating,
+			position = EXCLUDED.position,
+			read_at = now()`,
+		clubID, gamertag, played, goals, assists, manOfTheMatch, rating, position)
 	if err != nil {
 		return fmt.Errorf("save career: %w", err)
 	}
