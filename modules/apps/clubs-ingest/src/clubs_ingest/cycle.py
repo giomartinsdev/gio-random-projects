@@ -44,7 +44,11 @@ class CycleStats:
 class IngestConfig:
     ttl_matches: int = 300
     ttl_squad: int = 3600
-    max_matches: int = 10
+    # Partidas por TIPO, não no total: a fonte capa em 10 por consulta e o
+    # cliente une liga + amistoso + playoff, então o histórico de um clube
+    # chega a ~20-30 partidas. O nome fala "por tipo" para o número não
+    # prometer um teto que não é real.
+    max_matches_per_type: int = 10
 
 
 class Ingest:
@@ -286,7 +290,7 @@ class Ingest:
         """
         players: set[str] = set()
         processadas = 0
-        for match in self.source.club_matches(club_id, self.cfg.max_matches):
+        for match in self.source.club_matches(club_id, self.cfg.max_matches_per_type):
             payload = match_payload(match, club_id)
             if not payload or not payload["match_id"]:
                 continue

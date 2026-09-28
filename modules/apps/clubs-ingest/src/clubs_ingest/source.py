@@ -82,17 +82,57 @@ class SourceClient:
             return [m for m in membros if isinstance(m, dict)]
         return []
 
-    def club_matches(self, club_id: str, count: int = 10) -> list[dict[str, Any]]:
-        try:
-            data = self.api.get_json(
-                "clubs/matches",
-                {"clubIds": club_id, "matchType": "leagueMatch", "maxResultCount": count},
-            )
-        except FC27APIError as err:
-            log.warning("club_matches %s: %s", club_id, err)
-            return []
-        # Idem: item nulo na lista não é uma partida.
-        return [m for m in data if isinstance(m, dict)] if isinstance(data, list) else []
+    # A fonte capa `maxResultCount` em 10 por consulta (pedir 20 devolve 10, e
+    # não há cursor para paginar). O que ela tem é um tipo por consulta, e os
+    # conjuntos não se sobrepõem: liga + amistoso + playoff dá ~20 partidas
+    # distintas do mesmo clube. Olhar só a liga -- como era antes -- é por que
+    # o clube parecia ter 10 e a série de temporada parava aí.
+    MATCH_TYPES = ("leagueMatch", "friendlyMatch", "playoffMatch")
+
+    def club_matches(
+        self,
+        club_id: str,
+        count: int = 10,
+        match_types: tuple[str, ...] = MATCH_TYPES,
+    ) -> list[dict[str, Any]]:
+        """As últimas partidas do clube, de todos os tipos pedidos, sem duplicata.
+
+        `count` é o teto POR TIPO, não o total: é o que a fonte aceita por
+        consulta. O total é até `len(match_types) * count`.
+
+        `match_types` existe porque nem todo chamador quer o histórico: a
+        descoberta de rivais (``sync``) só precisa de QUEM o clube enfrentou, e
+        ali cada tipo a mais multiplica o crawl (o nível 3 já limita a 5
+        partidas por rival para o crawl não explodir). Quem grava o histórico
+        -- o ciclo e o fetch sob demanda -- quer os três.
+        """
+        out: list[dict[str, Any]] = []
+        vistos: set[str] = set()
+        for match_type in match_types:
+            try:
+                data = self.api.get_json(
+                    "clubs/matches",
+                    {"clubIds": club_id, "matchType": match_type, "maxResultCount": count},
+                )
+            except FC27APIError as err:
+                # Um tipo bloqueado não pode custar os outros: a fonte bloqueia
+                # por IP às vezes, e perder a liga por causa do playoff seria
+                # trocar dez partidas por nenhuma.
+                log.warning("club_matches %s [%s]: %s", club_id, match_type, err)
+                continue
+            if not isinstance(data, list):
+                continue
+            for m in data:
+                # Item nulo na lista não é uma partida; e a mesma partida pode
+                # aparecer em dois tipos -- o matchId é a chave.
+                if not isinstance(m, dict):
+                    continue
+                mid = str(m.get("matchId") or "")
+                if not mid or mid in vistos:
+                    continue
+                vistos.add(mid)
+                out.append(m)
+        return out
 
     def leaderboard(self) -> list[dict[str, Any]]:
         """Os 100 melhores clubes, com rank, divisão, skillRating e identidade.

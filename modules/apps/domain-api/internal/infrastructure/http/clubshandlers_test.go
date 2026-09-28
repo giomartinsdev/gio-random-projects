@@ -428,3 +428,31 @@ func TestListPendingSearches(t *testing.T) {
 		t.Fatalf("total = %d; want 2", body.Total)
 	}
 }
+
+// A forma do clube não pode parar em 10: a fonte entrega ~10 partidas por TIPO
+// (liga, amistoso, playoff) e o ingest une os três, então o clube acumula ~20
+// partidas recentes. Uma janela de 10 na exibição jogaria fora metade do que
+// o ingest acabou de trazer -- o teto de exibição tem que acompanhar o de
+// ingestão, senão o trabalho de unir os tipos não aparece na tela.
+func TestGetClubFormaCarriesTheFullRecentWindow(t *testing.T) {
+	matches := make([]domainclubs.Match, 20)
+	for i := range matches {
+		matches[i].OurResult = "win"
+	}
+	repo := &stubClubs{
+		club:     domainclubs.Club{ClubID: "141881", Name: "ACG ZW"},
+		recentNo: len(matches),
+		matches:  matches,
+	}
+	rec := getJSON(t, clubsRouter(repo), "/clubs/141881")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	var got domainclubs.Club
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Form) != 20 {
+		t.Fatalf("forma = %d resultados; want 20 (a janela toda)", len(got.Form))
+	}
+}

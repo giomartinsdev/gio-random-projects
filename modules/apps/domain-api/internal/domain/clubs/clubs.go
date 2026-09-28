@@ -171,6 +171,18 @@ const (
 	AlvoJogador = "jogador"
 )
 
+// RecentMatchWindow é quantas partidas recentes alimentam a forma, a
+// retrospectiva e o H2H do clube.
+//
+// O número acompanha o que o ingest consegue trazer, não um teto de tela
+// escolhido a esmo: a fonte entrega ~10 partidas por TIPO (liga, amistoso,
+// playoff) e o worker une os três, então o clube acumula ~20 partidas
+// recentes. Uma janela menor aqui jogaria fora metade do que o ingest trouxe.
+// Vive no domínio para as três camadas (repositório, handler e o corte do
+// perfil do jogador) usarem o MESMO número -- foi a divergência entre eles
+// que fazia a lista mostrar 5 chips e o perfil 10 com dados para 20.
+const RecentMatchWindow = 20
+
 // FetchRun é o progresso de um sync sob demanda. A SPA grava o pedido, o
 // worker de ingestão busca da fonte, e a SPA lê daqui para saber quando o
 // dado chegou -- sem esperar o ciclo de 15 min.

@@ -67,7 +67,7 @@ func withAproveitamento(c domainclubs.Club) domainclubs.Club {
 // rather than as "no matches in this window".
 func (r *ClubsRepository) withForm(ctx context.Context, clubs []domainclubs.Club) []domainclubs.Club {
 	for i := range clubs {
-		matches, err := r.ListMatches(ctx, clubs[i].ClubID, "", 10)
+		matches, err := r.ListMatches(ctx, clubs[i].ClubID, "", domainclubs.RecentMatchWindow)
 		if err != nil {
 			continue
 		}
@@ -355,7 +355,7 @@ func (r *ClubsRepository) HeadToHead(ctx context.Context, aID, bID string) (doma
 			h.E++
 			h.FormA = append(h.FormA, "E")
 		}
-		if len(h.Matches) < 10 {
+		if len(h.Matches) < domainclubs.RecentMatchWindow {
 			h.Matches = append(h.Matches, m)
 		}
 	}
@@ -700,9 +700,10 @@ func buildProfile(playerID string, rows []playerRow, clubNames map[string]string
 		}
 		p.ClubeID, p.ClubName = best.ClubID, best.Name
 	}
-	// Most recent 12 performances, newest first.
-	if len(p.Matches) > 12 {
-		p.Matches = p.Matches[len(p.Matches)-12:]
+	// Most recent performances, newest first -- a mesma janela da forma do
+	// clube, senão o perfil do jogador mostra menos que a lista.
+	if len(p.Matches) > domainclubs.RecentMatchWindow {
+		p.Matches = p.Matches[len(p.Matches)-domainclubs.RecentMatchWindow:]
 	}
 	for i, j := 0, len(p.Matches)-1; i < j; i, j = i+1, j-1 {
 		p.Matches[i], p.Matches[j] = p.Matches[j], p.Matches[i]

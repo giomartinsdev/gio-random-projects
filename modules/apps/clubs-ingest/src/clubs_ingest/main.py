@@ -54,7 +54,9 @@ def main() -> int:
     cfg = IngestConfig(
         ttl_matches=int(os.environ.get("CLUBS_INGEST_TTL_MATCHES", "300")),
         ttl_squad=int(os.environ.get("CLUBS_INGEST_TTL_SQUAD", "3600")),
-        max_matches=int(os.environ.get("CLUBS_INGEST_MAX_MATCHES", "10")),
+        # Por tipo: a fonte capa em 10 por consulta e o cliente une os três
+        # tipos, então este número rende ~3x em partidas de histórico.
+        max_matches_per_type=int(os.environ.get("CLUBS_INGEST_MAX_MATCHES", "10")),
     )
     poll_seconds = int(os.environ.get("CLUBS_INGEST_POLL_SECONDS", "900"))
     # As filas interativas (sync e fetch sob demanda) têm seu próprio ritmo.

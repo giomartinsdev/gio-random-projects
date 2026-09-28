@@ -91,7 +91,7 @@ export function ClubPage({
         }
         actions={
           <>
-            <FormChips form={club.form} max={10} />
+            <FormChips form={club.form} max={20} />
             <SyncButton target="club" targetId={club.club_id} />
             {authed && (
               <button
@@ -190,7 +190,10 @@ function ResumoTab({ club, onOpenMatch }: { club: Club; onOpenMatch: (id: string
   const { t } = useI18n();
   const [matches, setMatches] = useState<Match[] | null>(null);
   useEffect(() => {
-    api.matches(club.club_id, "", 10).then((r) => setMatches(r.matches ?? [])).catch(() => setMatches([]));
+    // A janela recente toda, como o resto das telas: o clube acumula ~20
+    // partidas (a fonte dá 10 por tipo e o ingest une os três), então pedir 10
+    // aqui mostrava menos do que existe.
+    api.matches(club.club_id, "", 20).then((r) => setMatches(r.matches ?? [])).catch(() => setMatches([]));
   }, [club.club_id]);
 
   return (

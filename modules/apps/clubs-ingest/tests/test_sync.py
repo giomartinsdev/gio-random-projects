@@ -27,7 +27,9 @@ class FakeSource:
         self.matches_by_club = matches_by_club or {}
         self.search_by_id_map = search_by_id or {}
 
-    def club_matches(self, club_id, count=10):
+    def club_matches(self, club_id, count=10, match_types=None):
+        # O sync passa match_types=("leagueMatch",) para conter o crawl; o fake
+        # ignora e devolve o mapa, como já fazia com o count.
         return self.matches_by_club.get(str(club_id), [])
 
     def search_by_id(self, club_id, name=""):
@@ -196,7 +198,7 @@ class CountingSource(FakeSource):
         super().__init__(matches_by_club, search_by_id)
         self.asked: list[tuple[str, int]] = []
 
-    def club_matches(self, club_id, count=10):
+    def club_matches(self, club_id, count=10, match_types=None):
         self.asked.append((str(club_id), count))
         return self.matches_by_club.get(str(club_id), [])
 

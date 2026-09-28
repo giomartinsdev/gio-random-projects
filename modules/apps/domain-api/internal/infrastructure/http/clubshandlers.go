@@ -126,7 +126,7 @@ func (h *ClubsHandlers) GetClub(w http.ResponseWriter, r *http.Request) {
 				if m.OurResult == "win" && win == i {
 					// keep counting
 				}
-				if i < 10 {
+				if i < domainclubs.RecentMatchWindow {
 					// Vocabulary, not letter: every other forma path
 					// (withForm) and the frontend's FormChips map on
 					// "vitoria"/"empate"/"derrota". Emitting "V" here made

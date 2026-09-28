@@ -119,7 +119,10 @@ class Sync:
         seen: list[tuple[str, str]] = []
         vistos: set[str] = set()
         for club_id in club_ids:
-            for match in self.source.club_matches(club_id, matches_per_club):
+            # Só a liga: a descoberta precisa de QUEM o clube enfrentou, não do
+            # histórico, e cada tipo a mais triplica o crawl (o nível 3 já usa
+            # 5 partidas por rival para não explodir).
+            for match in self.source.club_matches(club_id, matches_per_club, ("leagueMatch",)):
                 for other in (match.get("clubs") or {}):
                     oid = str(other)
                     if oid == str(club_id) or oid in vistos:
