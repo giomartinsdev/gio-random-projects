@@ -110,6 +110,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/clubs/{clubId}/evolution", s.getEvolution)
 		r.Get("/clubs/{clubId}/division-changes", s.getDivisionChanges)
 		r.Get("/clubs/{clubId}/records", s.getRecords)
+		r.Get("/records/global", s.getGlobalRecords)
 		r.Get("/clubs/{clubId}/h2h/{rivalId}", s.headToHead)
 		r.Get("/matches/{matchId}", s.getMatch)
 		r.Get("/rankings/clubs", s.rankingClubs)
@@ -311,6 +312,10 @@ func (s *Server) getDivisionChanges(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getRecords(w http.ResponseWriter, r *http.Request) {
 	s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/records")
+}
+
+func (s *Server) getGlobalRecords(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/records/global")
 }
 
 func (s *Server) headToHead(w http.ResponseWriter, r *http.Request) {

@@ -19,6 +19,8 @@ import type {
   ClubRef,
   DivisionChange,
   Evolution,
+  GlobalRecordClub,
+  GlobalRecords,
   HeadToHead,
   Match,
   NotificationPrefs,
@@ -430,6 +432,49 @@ export const DIVISION_CHANGES: DivisionChange[] = [
   { detected_at: iso(3, 10, 0), previous_division: 2, new_division: 1, kind: "promotion" },
   { detected_at: iso(9, 10, 0), previous_division: 3, new_division: 2, kind: "promotion" },
 ];
+
+/** Os recordes do hub inteiro, derivados das partidas de todos os clubes --
+ * como o backend faz. O clube "dono" de cada recorde é o lado vencedor. */
+export function globalRecordsOf(): GlobalRecords {
+  const ref = (c: Club | undefined): GlobalRecordClub => ({
+    club_id: c?.club_id ?? "", name: c?.name ?? "", tag: c?.tag ?? "",
+  });
+  const clubOf = (id: string) => CLUBS.find((c) => c.club_id === id);
+  const all = MATCHES;
+  const byMargin = [...all].sort((a, b) => Math.abs(b.home_goals - b.away_goals) - Math.abs(a.home_goals - a.away_goals));
+  const byTotal = [...all].sort((a, b) => b.home_goals + b.away_goals - (a.home_goals + a.away_goals));
+  const win = byMargin.find((m) => m.home_goals !== m.away_goals);
+  const top = byTotal[0];
+  const winHome = (win?.home_goals ?? 0) >= (win?.away_goals ?? 0);
+  const scorer = [...PLAYERS].sort((a, b) => b.goals - a.goals)[0];
+  return {
+    biggest_win: win ? {
+      match_id: win.match_id, timestamp: win.timestamp,
+      club: ref(clubOf(winHome ? win.home_club_id : win.away_club_id)),
+      opponent: ref(clubOf(winHome ? win.away_club_id : win.home_club_id)),
+      club_goals: winHome ? win.home_goals : win.away_goals,
+      opp_goals: winHome ? win.away_goals : win.home_goals,
+      total_goals: win.home_goals + win.away_goals,
+    } : null,
+    highest_scoring_match: top ? {
+      match_id: top.match_id, timestamp: top.timestamp,
+      club: ref(clubOf(top.home_club_id)), opponent: ref(clubOf(top.away_club_id)),
+      club_goals: top.home_goals, opp_goals: top.away_goals,
+      total_goals: top.home_goals + top.away_goals,
+    } : null,
+    best_rating: scorer ? {
+      player_id: scorer.player_id, gamertag: scorer.gamertag,
+      club: ref(clubOf(scorer.club_id)), opponent_name: "",
+      match_id: top?.match_id ?? "", timestamp: top?.timestamp ?? new Date().toISOString(), rating: 9.9,
+    } : null,
+    top_scorer: scorer ? {
+      player_id: scorer.player_id, gamertag: scorer.gamertag,
+      club: ref(clubOf(scorer.club_id)), goals: scorer.goals, assists: scorer.assists, played: scorer.played,
+    } : null,
+    total_matches: all.length,
+    total_clubs: CLUBS.filter((c) => c.tracked).length,
+  };
+}
 
 export function recordsOf(clubId: string): Records {
   const club = CLUBS.find((c) => c.club_id === clubId) ?? MY_CLUB;

@@ -1,11 +1,12 @@
 // Home: anúncios + rankings globais. É a porta de entrada e funciona sem login.
 
 import { useEffect, useState } from "react";
+import { Crosshair, Goal, Star, Trophy } from "lucide-react";
 import { api } from "../lib/api";
-import type { Announcement, ClubRef, RankPlayer } from "../lib/types";
+import type { Announcement, ClubRef, GlobalRecords, RankPlayer } from "../lib/types";
 import { Badge, Bar, Card, Crest, Empty, Pager, RankMedallion, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
-import { ANUNCIO_ICONS, FLOW_ICONS, VerifiedIcon } from "../components/icons";
+import { ANUNCIO_ICONS, FLOW_ICONS, VerifiedIcon, type LucideIcon } from "../components/icons";
 import { BarChart } from "../components/charts";
 import { fmt, POS_SHORT, timeAgo } from "../lib/format";
 import { useI18n, type Key } from "../lib/i18n";
@@ -37,6 +38,37 @@ type RankTab = "clubs" | "players";
 // A home não é o arquivo: o feed mostra os últimos 3 e o ranking, 10 por
 // página. Quem quer tudo vai para Clubes/Jogadores.
 const FEED = 3;
+
+/** Um recorde do hub inteiro: o valor grande e quem o detém. Clicar leva ao
+ * clube (ou ao jogador), porque o recorde é a porta de entrada para o dado. */
+function GlobalRecord({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  detail: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col gap-1 rounded-md border border-line px-3 py-3 text-left transition-colors hover:border-[var(--accent)]"
+    >
+      <span className="flex items-center gap-1.5 text-faint">
+        <Icon className="size-3.5" strokeWidth={2.5} />
+        <span className="label">{label}</span>
+      </span>
+      <span className="font-display tnum text-2xl font-bold text-accent">{value}</span>
+      <span className="truncate text-[11px] text-muted">{detail}</span>
+    </button>
+  );
+}
 const PER_PAGE = 10;
 
 export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string) => void; onOpenPlayer: (id: string) => void }) {
@@ -57,6 +89,11 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
   // ranking carrega só ao abrir a aba, então usá-lo aqui mostrava 0 na home.
   const [totalJogadores, setTotalJogadores] = useState<number | null>(null);
   const [error, setErro] = useState("");
+  const [globalRecs, setGlobalRecs] = useState<GlobalRecords | null>(null);
+
+  useEffect(() => {
+    api.globalRecords().then(setGlobalRecs).catch(() => setGlobalRecs(null));
+  }, []);
 
   useEffect(() => {
     api
@@ -188,6 +225,51 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
           </div>
         </Card>
       </div>
+
+      {globalRecs && (
+        <div className="mt-4">
+          <Card title={t("home.globalRecords")}>
+            <div className="grid gap-3 px-4 py-4 sm:grid-cols-2 lg:grid-cols-4">
+              {globalRecs.biggest_win && (
+                <GlobalRecord
+                  icon={Trophy}
+                  label={t("club.biggestWin")}
+                  value={`${globalRecs.biggest_win.club_goals}–${globalRecs.biggest_win.opp_goals}`}
+                  detail={`${globalRecs.biggest_win.club.name} vs ${globalRecs.biggest_win.opponent.name}`}
+                  onClick={() => onOpenClub(globalRecs.biggest_win!.club.club_id)}
+                />
+              )}
+              {globalRecs.highest_scoring_match && (
+                <GlobalRecord
+                  icon={Crosshair}
+                  label={t("club.highestScoring")}
+                  value={String(globalRecs.highest_scoring_match.total_goals)}
+                  detail={`${globalRecs.highest_scoring_match.club.name} vs ${globalRecs.highest_scoring_match.opponent.name}`}
+                  onClick={() => onOpenClub(globalRecs.highest_scoring_match!.club.club_id)}
+                />
+              )}
+              {globalRecs.best_rating && (
+                <GlobalRecord
+                  icon={Star}
+                  label={t("club.bestRating")}
+                  value={fmt(globalRecs.best_rating.rating, 2)}
+                  detail={globalRecs.best_rating.gamertag}
+                  onClick={() => onOpenPlayer(globalRecs.best_rating!.player_id)}
+                />
+              )}
+              {globalRecs.top_scorer && (
+                <GlobalRecord
+                  icon={Goal}
+                  label={t("home.topScorer")}
+                  value={fmt(globalRecs.top_scorer.goals)}
+                  detail={`${globalRecs.top_scorer.gamertag} · ${globalRecs.top_scorer.club.name}`}
+                  onClick={() => onOpenPlayer(globalRecs.top_scorer!.player_id)}
+                />
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
 
       <div className="mt-4">
         <Card

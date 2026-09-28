@@ -12,6 +12,7 @@ import type {
   HeadToHead,
   Match,
   Records,
+  Snapshot,
   SquadMember,
 } from "../lib/types";
 import { Card, Crest, Empty, FormChips, Kit, MatchKindBadge, PosTag, ResultBadge, Spinner, Stat } from "../components/ui";
@@ -29,7 +30,7 @@ import {
   ratingColor,
   resultColor,
 } from "../lib/format";
-import { useI18n } from "../lib/i18n";
+import { useI18n, type Key } from "../lib/i18n";
 import { clubPalette, crestSeed } from "../lib/crest";
 
 type Tab = "resumo" | "elenco" | "matches" | "numeros" | "confronto";
@@ -398,6 +399,49 @@ function ConfrontoTab({
             </div>
           </Card>
 
+          {/* A comparação lado a lado: o retrospecto diz quem ganhou os
+              confrontos, mas não COMO os dois clubes estão hoje. Os dois
+              `ClubRef` já vêm no H2H, então não custa uma consulta nova. */}
+          <div className="mt-4">
+            <Card title={t("club.h2hCompare")}>
+              <ul className="divide-y divide-[var(--border)]">
+                {(
+                  [
+                    [t("common.level"), h2h.club_a.skill_rating, h2h.club_b.skill_rating, false],
+                    [t("common.division"), h2h.club_a.division_at_read, h2h.club_b.division_at_read, true],
+                    [t("common.points"), h2h.club_a.points, h2h.club_b.points, false],
+                    [t("common.goals"), h2h.club_a.goals, h2h.club_b.goals, false],
+                    [t("club.goalsAgainst"), h2h.club_a.goals_conceded, h2h.club_b.goals_conceded, true],
+                    [t("club.cleanSheets"), h2h.club_a.clean_sheets, h2h.club_b.clean_sheets, false],
+                    [t("club.streak"), h2h.club_a.sequencia_invicta, h2h.club_b.sequencia_invicta, false],
+                  ] as Array<[string, number, number, boolean]>
+                ).map(([label, a, b, invert]) => {
+                  // Menor é melhor para divisão e gols sofridos; maior para o
+                  // resto. Marcar o melhor dos dois é o ponto da comparação.
+                  const aWins = invert ? a < b : a > b;
+                  const bWins = invert ? b < a : b > a;
+                  return (
+                    <li key={label} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                      <span
+                        className="tnum w-12 text-right font-mono font-bold"
+                        style={{ color: aWins ? "var(--success)" : undefined }}
+                      >
+                        {fmt(a)}
+                      </span>
+                      <span className="flex-1 text-center text-[11px] text-faint">{label}</span>
+                      <span
+                        className="tnum w-12 font-mono font-bold"
+                        style={{ color: bWins ? "var(--success)" : undefined }}
+                      >
+                        {fmt(b)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          </div>
+
           <div className="mt-4">
             <Card title={t("club.h2hLastMeetings")}>
               {!h2h.matches || h2h.matches.length === 0 ? (
@@ -597,6 +641,27 @@ function PartidasTab({ clubId, onOpenMatch }: { clubId: string; onOpenMatch: (id
 
 // ------------------------------------------------------------------ números
 
+/** As séries que os snapshots alimentam. Cada leitura grava o retrato inteiro
+ * do clube, então o mesmo dado rende várias linhas: nível, gols, saldo,
+ * elenco, aproveitamento. Antes só o nível era desenhado, e o resto do
+ * snapshot (acumulado a cada ciclo) ficava no banco sem chegar à tela. */
+type EvolutionMetric = "skill_rating" | "goals" | "goals_conceded" | "squad_size" | "points";
+
+const EVOLUTION_METRICS: Array<{ id: EvolutionMetric; label: Key }> = [
+  { id: "skill_rating", label: "common.level" },
+  { id: "goals", label: "common.goals" },
+  { id: "goals_conceded", label: "club.goalsAgainst" },
+  { id: "squad_size", label: "club.squadSize" },
+  { id: "points", label: "common.points" },
+];
+
+/** O valor de uma métrica num snapshot. `points` não vem gravado -- é derivado
+ * de V/E/D (3 por vitória, 1 por empate), a mesma conta do resto do app. */
+function metricValue(s: Snapshot, metric: EvolutionMetric): number {
+  if (metric === "points") return s.wins * 3 + s.draws;
+  return s[metric] ?? 0;
+}
+
 function NumerosTab({
   clubId,
   club,
@@ -613,6 +678,7 @@ function NumerosTab({
   const [changes, setChanges] = useState<DivisionChange[]>([]);
   const [rec, setRec] = useState<Records | null>(null);
   const [squad, setSquad] = useState<SquadMember[]>([]);
+  const [metric, setMetric] = useState<EvolutionMetric>("skill_rating");
 
   useEffect(() => {
     api.evolution(clubId).then(setEvo).catch(() => setEvo({ serie: [], total: 0, current: null, historico_curto: true }));
@@ -638,20 +704,39 @@ function NumerosTab({
       </div>
 
       <div className="mb-4">
-        <Card title={t("club.levelEvolution")}>
+        <Card
+          title={t("club.evolution")}
+          actions={
+            <div className="flex flex-wrap gap-1.5">
+              {EVOLUTION_METRICS.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setMetric(m.id)}
+                  aria-pressed={metric === m.id}
+                  className="rounded-full border px-3 py-1 text-xs font-semibold transition-colors"
+                  style={
+                    metric === m.id
+                      ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" }
+                      : { borderColor: "var(--border)", background: "var(--surface-2)", color: "var(--text-muted)" }
+                  }
+                >
+                  {t(m.label)}
+                </button>
+              ))}
+            </div>
+          }
+        >
           {evo === null ? (
             <Spinner />
           ) : evo.historico_curto ? (
-            <Empty
-              title={t("club.historyStarting")}
-              hint={t("club.levelEvolutionHint")}
-            />
+            <Empty title={t("club.historyStarting")} hint={t("club.evolutionHint")} />
           ) : (
             <div className="px-2 py-3">
               <LineChart
-                values={serie.map((s) => s.skill_rating)}
+                values={serie.map((s) => metricValue(s, metric))}
                 labels={serie.map((s) => fmtDate(s.read_at))}
-                refLine={{ y: 1600, label: "D2" }}
+                refLine={metric === "skill_rating" ? { y: 1600, label: "D2" } : undefined}
               />
             </div>
           )}

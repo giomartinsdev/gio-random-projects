@@ -1038,6 +1038,127 @@ func adversaryOf(m domainclubs.Match, clubID string) string {
 	return m.CasaNome
 }
 
+// GlobalRecords agrega os recordes do hub inteiro. Ao contrário de Records
+// (que olha um clube), cruza todas as partidas acompanhadas -- é o que a fonte
+// não faz, porque ela só conhece a janela recente de cada clube isolado.
+//
+// A orientação importa: a maior goleada tem um vencedor, e a linha "do clube"
+// é a do vencedor, não a do mandante. Sem normalizar isso, uma vitória de 7x0
+// fora de casa viraria "0x7" e nunca seria a maior goleada.
+func (r *ClubsRepository) GlobalRecords(ctx context.Context) (domainclubs.GlobalRecords, error) {
+	var out domainclubs.GlobalRecords
+
+	if err := r.pool.QueryRow(ctx, `
+		SELECT (SELECT count(*) FROM clubs_matches),
+		       (SELECT count(*) FROM clubs WHERE tracked)`).Scan(&out.TotalMatches, &out.TotalClubs); err != nil {
+		return out, fmt.Errorf("global records counts: %w", err)
+	}
+
+	// Maior goleada: o vencedor por margem. A linha "do clube" é a do
+	// vencedor, então uma vitória fora de casa não vira "0xN".
+	{
+		var r1 domainclubs.GlobalRecordMatch
+		err := r.pool.QueryRow(ctx, `
+			SELECT m.match_id, m.timestamp,
+			       wc.club_id, wc.name, COALESCE(wc.tag,''),
+			       oc.club_id, oc.name, COALESCE(oc.tag,''),
+			       CASE WHEN m.home_goals >= m.away_goals THEN m.home_goals ELSE m.away_goals END,
+			       CASE WHEN m.home_goals >= m.away_goals THEN m.away_goals ELSE m.home_goals END
+			FROM clubs_matches m
+			JOIN clubs wc ON wc.club_id = CASE WHEN m.home_goals >= m.away_goals THEN m.home_club_id ELSE m.away_club_id END
+			JOIN clubs oc ON oc.club_id = CASE WHEN m.home_goals >= m.away_goals THEN m.away_club_id ELSE m.home_club_id END
+			WHERE m.home_goals <> m.away_goals
+			ORDER BY abs(m.home_goals - m.away_goals) DESC, (m.home_goals + m.away_goals) DESC
+			LIMIT 1`).Scan(
+			&r1.MatchID, &r1.Timestamp,
+			&r1.Club.ClubID, &r1.Club.Name, &r1.Club.Tag,
+			&r1.Opponent.ClubID, &r1.Opponent.Name, &r1.Opponent.Tag,
+			&r1.ClubGoals, &r1.OppGoals)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return out, fmt.Errorf("global biggest win: %w", err)
+		}
+		if err == nil {
+			r1.TotalGoals = r1.ClubGoals + r1.OppGoals
+			out.BiggestWin = &r1
+		}
+	}
+
+	// Jogo com mais gols, independente de quem venceu.
+	{
+		var r2 domainclubs.GlobalRecordMatch
+		err := r.pool.QueryRow(ctx, `
+			SELECT m.match_id, m.timestamp,
+			       hc.club_id, hc.name, COALESCE(hc.tag,''),
+			       ac.club_id, ac.name, COALESCE(ac.tag,''),
+			       m.home_goals, m.away_goals
+			FROM clubs_matches m
+			JOIN clubs hc ON hc.club_id = m.home_club_id
+			JOIN clubs ac ON ac.club_id = m.away_club_id
+			ORDER BY (m.home_goals + m.away_goals) DESC, m.timestamp DESC
+			LIMIT 1`).Scan(
+			&r2.MatchID, &r2.Timestamp,
+			&r2.Club.ClubID, &r2.Club.Name, &r2.Club.Tag,
+			&r2.Opponent.ClubID, &r2.Opponent.Name, &r2.Opponent.Tag,
+			&r2.ClubGoals, &r2.OppGoals)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return out, fmt.Errorf("global highest scoring: %w", err)
+		}
+		if err == nil {
+			r2.TotalGoals = r2.ClubGoals + r2.OppGoals
+			out.HighestScoringMatch = &r2
+		}
+	}
+
+	// Melhor atuação individual.
+	{
+		var r3 domainclubs.GlobalRecordLine
+		err := r.pool.QueryRow(ctx, `
+			SELECT l.player_id, l.gamertag, c.club_id, c.name, COALESCE(c.tag,''),
+			       COALESCE(CASE WHEN m.home_club_id = l.club_id THEN ac.name ELSE hc.name END, ''),
+			       m.match_id, m.timestamp, l.rating
+			FROM clubs_match_players l
+			JOIN clubs c ON c.club_id = l.club_id
+			JOIN clubs_matches m ON m.id = l.match_id_uuid
+			LEFT JOIN clubs hc ON hc.club_id = m.home_club_id
+			LEFT JOIN clubs ac ON ac.club_id = m.away_club_id
+			ORDER BY l.rating DESC, m.timestamp DESC
+			LIMIT 1`).Scan(
+			&r3.PlayerID, &r3.Gamertag,
+			&r3.Club.ClubID, &r3.Club.Name, &r3.Club.Tag,
+			&r3.Opponent, &r3.MatchID, &r3.Timestamp, &r3.Rating)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return out, fmt.Errorf("global best rating: %w", err)
+		}
+		if err == nil {
+			out.BestRating = &r3
+		}
+	}
+
+	// Artilheiro geral: soma de toda a base acumulada, não a janela de um clube.
+	{
+		var r4 domainclubs.GlobalRecordPlayer
+		err := r.pool.QueryRow(ctx, `
+			SELECT l.player_id, l.gamertag, c.club_id, c.name, COALESCE(c.tag,''),
+			       sum(l.goals)::int, sum(l.assists)::int, count(*)::int
+			FROM clubs_match_players l
+			JOIN clubs c ON c.club_id = l.club_id
+			GROUP BY l.player_id, l.gamertag, c.club_id, c.name, c.tag
+			HAVING sum(l.goals) > 0
+			ORDER BY sum(l.goals) DESC, count(*) DESC
+			LIMIT 1`).Scan(
+			&r4.PlayerID, &r4.Gamertag,
+			&r4.Club.ClubID, &r4.Club.Name, &r4.Club.Tag,
+			&r4.Goals, &r4.Assists, &r4.Played)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return out, fmt.Errorf("global top scorer: %w", err)
+		}
+		if err == nil {
+			out.TopScorer = &r4
+		}
+	}
+	return out, nil
+}
+
 // ------------------------------------------------------------------- feed
 
 func (r *ClubsRepository) RecentAnnouncements(ctx context.Context, limit int) ([]domainclubs.Announcement, error) {

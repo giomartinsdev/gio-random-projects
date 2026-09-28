@@ -273,6 +273,18 @@ func (h *ClubsHandlers) GetRecords(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rec)
 }
 
+// GetGlobalRecords são os recordes do hub inteiro (FR-011): a maior goleada
+// entre quaisquer dois clubes acompanhados, o jogo com mais gols e a melhor
+// atuação. É o que a fonte não dá, porque nunca cruza dois clubes.
+func (h *ClubsHandlers) GetGlobalRecords(w http.ResponseWriter, r *http.Request) {
+	rec, err := h.clubs.GlobalRecords(r.Context())
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rec)
+}
+
 // ------------------------------------------------------------------ rankings
 
 func (h *ClubsHandlers) RankingClubs(w http.ResponseWriter, r *http.Request) {

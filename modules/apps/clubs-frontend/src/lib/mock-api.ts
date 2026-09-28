@@ -14,6 +14,7 @@ import type {
   DivisionChange,
   Evolution,
   FetchRun,
+  GlobalRecords,
   HeadToHead,
   Match,
   NotificationPrefs,
@@ -97,6 +98,8 @@ export const mockApi = {
     later<{ mudancas: DivisionChange[]; total: number }>({ mudancas: D.DIVISION_CHANGES, total: D.DIVISION_CHANGES.length }),
 
   records: (clubId: string) => later<Records>(D.recordsOf(clubId)),
+
+  globalRecords: () => later<GlobalRecords>(D.globalRecordsOf()),
 
   h2h: (clubId: string, rivalId: string) => later<HeadToHead>(D.h2h(clubId, rivalId)),
 

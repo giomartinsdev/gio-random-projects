@@ -264,9 +264,9 @@ export type Key =
   | "club.divisionChanges"
   | "club.longestWinStreak"
   | "club.accumulatedHistory"
-  | "club.levelEvolution"
+  | "club.evolution"
   | "club.historyStarting"
-  | "club.levelEvolutionHint"
+  | "club.evolutionHint"
   | "club.divisionSteps"
   | "club.noDivisionChange"
   | "club.divisionChangeHint"
@@ -281,7 +281,8 @@ export type Key =
   | "match.league" | "match.friendly" | "match.playoff"
   | "result.win" | "result.draw" | "result.loss"
   | "feed.result.win" | "feed.result.draw" | "feed.result.loss"
-  | "feed.kind.resultado" | "feed.kind.ranking" | "feed.kind.jogador" | "feed.kind.novidade";
+  | "feed.kind.resultado" | "feed.kind.ranking" | "feed.kind.jogador" | "feed.kind.novidade"
+  | "club.goalsAgainst" | "club.squadSize" | "home.globalRecords" | "home.topScorer" | "club.h2hCompare";
 
 type Dict = Record<Key, string>;
 
@@ -565,9 +566,9 @@ const en_US: Dict = {
   "club.divisionChanges": "division changes",
   "club.longestWinStreak": "longest win streak",
   "club.accumulatedHistory": "in the accumulated history",
-  "club.levelEvolution": "Level evolution",
+  "club.evolution": "Evolution",
   "club.historyStarting": "The history is starting",
-  "club.levelEvolutionHint": "EA only reports the level now. The hub keeps a reading per update, so this chart takes shape over time.",
+  "club.evolutionHint": "EA only reports the current state. The hub keeps a reading per update, so these series take shape over time.",
   "club.divisionSteps": "Division change",
   "club.noDivisionChange": "No change recorded",
   "club.divisionChangeHint": "Promotions and relegations show up here as the hub accumulates readings.",
@@ -627,6 +628,11 @@ const en_US: Dict = {
   "feed.kind.ranking": "Ranking",
   "feed.kind.jogador": "Player",
   "feed.kind.novidade": "News",
+  "club.goalsAgainst": "Goals conceded",
+  "club.squadSize": "Squad size",
+  "home.globalRecords": "Hub records",
+  "home.topScorer": "Top scorer",
+  "club.h2hCompare": "Side by side",
 };
 
 const pt_BR: Dict = {
@@ -902,9 +908,9 @@ const pt_BR: Dict = {
   "club.divisionChanges": "mudanças de divisão",
   "club.longestWinStreak": "maior sequência de vitórias",
   "club.accumulatedHistory": "no histórico acumulado",
-  "club.levelEvolution": "Evolução do nível",
+  "club.evolution": "Evolução",
   "club.historyStarting": "O histórico está começando",
-  "club.levelEvolutionHint": "A EA só informa o nível de agora. O hub guarda uma leitura a cada atualização, então este gráfico ganha forma com o tempo.",
+  "club.evolutionHint": "A EA só informa o estado de agora. O hub guarda uma leitura a cada atualização, então estas séries ganham forma com o tempo.",
   "club.divisionSteps": "Mudanças de divisão",
   "club.noDivisionChange": "Nenhuma mudança registrada",
   "club.divisionChangeHint": "Subidas e quedas aparecem aqui conforme o hub acumula leituras.",
@@ -964,6 +970,11 @@ const pt_BR: Dict = {
   "feed.kind.ranking": "Ranking",
   "feed.kind.jogador": "Jogador",
   "feed.kind.novidade": "Novidade",
+  "club.goalsAgainst": "Gols sofridos",
+  "club.squadSize": "Tamanho do elenco",
+  "home.globalRecords": "Recordes do hub",
+  "home.topScorer": "Artilheiro",
+  "club.h2hCompare": "Lado a lado",
 };
 
 const es_ES: Dict = {
@@ -1246,9 +1257,9 @@ const es_ES: Dict = {
   "club.divisionChanges": "cambios de división",
   "club.longestWinStreak": "mayor racha de victorias",
   "club.accumulatedHistory": "en el historial acumulado",
-  "club.levelEvolution": "Evolución del nivel",
+  "club.evolution": "Evolución",
   "club.historyStarting": "El historial está comenzando",
-  "club.levelEvolutionHint": "EA solo informa el nivel de ahora. El hub guarda una lectura por actualización, así que este gráfico toma forma con el tiempo.",
+  "club.evolutionHint": "EA solo informa el estado actual. El hub guarda una lectura por actualización, así que estas series toman forma con el tiempo.",
   "club.divisionSteps": "Cambios de división",
   "club.noDivisionChange": "Ningún cambio registrado",
   "club.divisionChangeHint": "Los ascensos y descensos aparecen aquí a medida que el hub acumula lecturas.",
@@ -1308,6 +1319,11 @@ const es_ES: Dict = {
   "feed.kind.ranking": "Ranking",
   "feed.kind.jogador": "Jugador",
   "feed.kind.novidade": "Novedad",
+  "club.goalsAgainst": "Goles encajados",
+  "club.squadSize": "Tamaño de la plantilla",
+  "home.globalRecords": "Récords del hub",
+  "home.topScorer": "Goleador",
+  "club.h2hCompare": "Lado a lado",
 };
 
 const fr_FR: Dict = {
@@ -1588,9 +1604,9 @@ const fr_FR: Dict = {
   "club.divisionChanges": "changements de division",
   "club.longestWinStreak": "plus longue série de victoires",
   "club.accumulatedHistory": "dans l'historique accumulé",
-  "club.levelEvolution": "Évolution du niveau",
+  "club.evolution": "Évolution",
   "club.historyStarting": "L'historique commence",
-  "club.levelEvolutionHint": "EA ne rapporte que le niveau actuel. Le hub garde une lecture par mise à jour, donc ce graphique prend forme avec le temps.",
+  "club.evolutionHint": "EA ne rapporte que l'état actuel. Le hub garde une lecture par mise à jour, donc ces séries prennent forme avec le temps.",
   "club.divisionSteps": "Changements de division",
   "club.noDivisionChange": "Aucun changement enregistré",
   "club.divisionChangeHint": "Montées et descentes apparaissent ici au fur et à mesure que le hub accumule des lectures.",
@@ -1650,6 +1666,11 @@ const fr_FR: Dict = {
   "feed.kind.ranking": "Classement",
   "feed.kind.jogador": "Joueur",
   "feed.kind.novidade": "Nouveauté",
+  "club.goalsAgainst": "Buts encaissés",
+  "club.squadSize": "Taille de l'effectif",
+  "home.globalRecords": "Records du hub",
+  "home.topScorer": "Meilleur buteur",
+  "club.h2hCompare": "Côte à côte",
 };
 
 const de_DE: Dict = {
@@ -1930,9 +1951,9 @@ const de_DE: Dict = {
   "club.divisionChanges": "Divisionswechsel",
   "club.longestWinStreak": "längste Siegesserie",
   "club.accumulatedHistory": "in der angesammelten Historie",
-  "club.levelEvolution": "Niveauentwicklung",
+  "club.evolution": "Entwicklung",
   "club.historyStarting": "Die Historie beginnt",
-  "club.levelEvolutionHint": "EA meldet nur das aktuelle Niveau. Der Hub speichert eine Messung pro Update, daher nimmt dieses Diagramm mit der Zeit Gestalt an.",
+  "club.evolutionHint": "EA meldet nur den aktuellen Zustand. Der Hub speichert eine Messung pro Update, daher nehmen diese Reihen mit der Zeit Gestalt an.",
   "club.divisionSteps": "Divisionswechsel",
   "club.noDivisionChange": "Keine Änderung erfasst",
   "club.divisionChangeHint": "Auf- und Abstiege erscheinen hier, während der Hub Messungen sammelt.",
@@ -1992,6 +2013,11 @@ const de_DE: Dict = {
   "feed.kind.ranking": "Ranking",
   "feed.kind.jogador": "Spieler",
   "feed.kind.novidade": "Neuigkeit",
+  "club.goalsAgainst": "Gegentore",
+  "club.squadSize": "Kadergröße",
+  "home.globalRecords": "Hub-Rekorde",
+  "home.topScorer": "Torschützenkönig",
+  "club.h2hCompare": "Direktvergleich",
 };
 
 const DICTS: Record<Locale, Dict> = {

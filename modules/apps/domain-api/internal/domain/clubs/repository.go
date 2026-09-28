@@ -37,6 +37,9 @@ type Repository interface {
 	DivisionChanges(ctx context.Context, clubID string) ([]DivisionChange, error)
 	LatestSnapshot(ctx context.Context, clubID string) (*Snapshot, error)
 	Records(ctx context.Context, clubID string) (Records, error)
+	// GlobalRecords cruza TODAS as partidas acompanhadas -- o que a fonte não
+	// faz, porque só conhece a janela recente de cada clube isolado (FR-011).
+	GlobalRecords(ctx context.Context) (GlobalRecords, error)
 
 	// Feed e rankings
 	RecentAnnouncements(ctx context.Context, limit int) ([]Announcement, error)

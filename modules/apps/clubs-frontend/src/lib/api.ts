@@ -11,6 +11,7 @@ import type {
   Evolution,
   FetchRun,
   HeadToHead,
+  GlobalRecords,
   Match,
   NotificationPrefs,
   PlayerProfile,
@@ -125,6 +126,8 @@ const realApi = {
     ),
 
   records: (clubId: string) => request<Records>(`/clubs/${encodeURIComponent(clubId)}/records`),
+
+  globalRecords: () => request<GlobalRecords>("/records/global"),
 
   h2h: (clubId: string, rivalId: string) =>
     request<HeadToHead>(`/clubs/${encodeURIComponent(clubId)}/h2h/${encodeURIComponent(rivalId)}`),

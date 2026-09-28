@@ -96,6 +96,7 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Get("/clubs/{clubId}/evolution", cl.GetEvolution)
 		r.Get("/clubs/{clubId}/division-changes", cl.GetDivisionChanges)
 		r.Get("/clubs/{clubId}/records", cl.GetRecords)
+		r.Get("/records/global", cl.GetGlobalRecords)
 		r.Get("/clubs/{clubId}/h2h/{rivalId}", cl.HeadToHead)
 		r.Get("/matches/{matchId}", cl.GetMatch)
 		r.Get("/rankings/clubs", cl.RankingClubs)

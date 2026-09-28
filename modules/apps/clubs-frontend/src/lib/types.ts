@@ -295,6 +295,52 @@ export interface RecordMatch {
   total_goals: number;
 }
 
+/** O clube dono de um recorde global, com o suficiente para desenhar o escudo. */
+export interface GlobalRecordClub {
+  club_id: string;
+  name: string;
+  tag: string;
+}
+
+export interface GlobalRecordMatch {
+  match_id: string;
+  timestamp: string;
+  club: GlobalRecordClub;
+  opponent: GlobalRecordClub;
+  club_goals: number;
+  opp_goals: number;
+  total_goals: number;
+}
+
+export interface GlobalRecordLine {
+  player_id: string;
+  gamertag: string;
+  club: GlobalRecordClub;
+  opponent_name: string;
+  match_id: string;
+  timestamp: string;
+  rating: number;
+}
+
+export interface GlobalRecordPlayer {
+  player_id: string;
+  gamertag: string;
+  club: GlobalRecordClub;
+  goals: number;
+  assists: number;
+  played: number;
+}
+
+/** Os recordes do hub inteiro (FR-011): cruzam todos os clubes acompanhados. */
+export interface GlobalRecords {
+  biggest_win: GlobalRecordMatch | null;
+  highest_scoring_match: GlobalRecordMatch | null;
+  best_rating: GlobalRecordLine | null;
+  top_scorer: GlobalRecordPlayer | null;
+  total_matches: number;
+  total_clubs: number;
+}
+
 export interface RecordLine {
   player_id: string;
   gamertag: string;
