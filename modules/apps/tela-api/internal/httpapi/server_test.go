@@ -19,22 +19,63 @@ import (
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/clips"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/httpapi"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/mediamtx"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/sfu"
 )
 
+// fakeMediaMTX answers a WHIP/WHEP offer with a real pion answer, so the
+// proxy round trip and the browser's SDP state machine are both exercised
+// end to end -- a canned answer string would make the browser reject it.
+func fakeMediaMTX(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		defer pc.Close()
+		if err := pc.SetRemoteDescription(webrtc.SessionDescription{
+			Type: webrtc.SDPTypeOffer,
+			SDP:  string(body),
+		}); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		answer, err := pc.CreateAnswer(nil)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if err := pc.SetLocalDescription(answer); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		<-webrtc.GatheringCompletePromise(pc)
+		w.Header().Set("Location", r.URL.Path+"/sessao")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(pc.LocalDescription().SDP))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
 // Everything below runs against a real HTTP server over a real
-// WebSocket -- the signalling relay is the whole product, so faking
-// the transport would test nothing worth testing.
+// WebSocket, with a real MediaMTX stand-in -- the signalling relay is the
+// whole product, so faking the transport would test nothing worth
+// testing.
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	// A real SFU on an OS-assigned port: the signalling handler now owns
-	// publisher/subscriber connections, so handing it nil would leave
-	// half the paths under test unexercised.
-	media, err := sfu.New(sfu.Options{UDPPort: 0})
-	if err != nil {
-		t.Fatalf("sfu: %v", err)
-	}
+	media := mediamtx.NewProxy(fakeMediaMTX(t).URL)
 	api := httpapi.New(rooms.NewRegistry(""), media,
 		[]string{"http://example.com"}, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil)
 	api.RegisterClips(clips.NewMemoryStore(), 24*time.Hour)
@@ -620,10 +661,30 @@ func TestPeerRenameIgnoresAnEmptyName(t *testing.T) {
 }
 
 // A real publish handshake: a peer connection with a real track, an
-// offer over the WebSocket, and the SFU's answer. Publishing state is a
-// consequence of media actually being accepted now, not a flag the
-// client asserts, so there's no shortcut worth taking here.
+// offer sent to the server, and the answer relayed from MediaMTX.
+// Publishing state is a consequence of media actually being accepted
+// now, not a flag the client asserts, so there's no shortcut worth
+// taking here.
 func publish(t *testing.T, conn *websocket.Conn) *webrtc.PeerConnection {
+	t.Helper()
+	pc := newOfferer(t)
+
+	write(t, conn, map[string]any{"type": "publish:offer", "seq": 1, "sdp": pc.LocalDescription().SDP})
+
+	answer := readUntil(t, conn, "publish:answer")
+	sdp, _ := answer["sdp"].(string)
+	if sdp == "" {
+		t.Fatalf("publish:answer carried no sdp: %v", answer)
+	}
+	if err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: sdp}); err != nil {
+		t.Fatalf("set remote: %v", err)
+	}
+	return pc
+}
+
+// newOfferer builds a peer connection that has a real video track and a
+// gathered local offer -- the browser half of a WHIP handshake.
+func newOfferer(t *testing.T) *webrtc.PeerConnection {
 	t.Helper()
 	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
@@ -648,21 +709,6 @@ func publish(t *testing.T, conn *websocket.Conn) *webrtc.PeerConnection {
 		t.Fatalf("set local: %v", err)
 	}
 	<-webrtc.GatheringCompletePromise(pc)
-
-	write(t, conn, map[string]any{"type": "publish:offer", "sdp": pc.LocalDescription()})
-
-	answer := readUntil(t, conn, "publish:answer")
-	raw, err := json.Marshal(answer["sdp"])
-	if err != nil {
-		t.Fatalf("marshal answer: %v", err)
-	}
-	var sdp webrtc.SessionDescription
-	if err := json.Unmarshal(raw, &sdp); err != nil {
-		t.Fatalf("unmarshal answer: %v", err)
-	}
-	if err := pc.SetRemoteDescription(sdp); err != nil {
-		t.Fatalf("set remote: %v", err)
-	}
 	return pc
 }
 
@@ -931,5 +977,113 @@ func TestClipDownloadRejectsAMalformedID(t *testing.T) {
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("malformed id: status %d, want 404", res.StatusCode)
+	}
+}
+
+// A viewer pulls one publisher's share by sending its own WHEP offer,
+// which the server proxies to MediaMTX for that publisher's path. The
+// path must never reach the client -- it names the raw MediaMTX stream.
+func TestViewerPullsOnePublishersShare(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	pub, pubID := join(t, srv, roomID)
+	publish(t, pub)
+
+	viewer, _ := join(t, srv, roomID)
+	// The viewer's welcome already lists the publisher as publishing.
+
+	pc := newOfferer(t)
+	write(t, viewer, map[string]any{
+		"type":        "subscribe:offer",
+		"seq":         1,
+		"publisherId": pubID,
+		"sdp":         pc.LocalDescription().SDP,
+	})
+
+	answer := readUntil(t, viewer, "subscribe:answer")
+	if answer["publisherId"] != pubID {
+		t.Fatalf("subscribe:answer for %v, want %s", answer["publisherId"], pubID)
+	}
+	sdp, _ := answer["sdp"].(string)
+	if sdp == "" {
+		t.Fatalf("subscribe:answer carried no sdp: %v", answer)
+	}
+	if strings.Contains(sdp, "tela-") {
+		t.Fatal("the MediaMTX path leaked into the viewer's SDP")
+	}
+	if err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: sdp}); err != nil {
+		t.Fatalf("set remote: %v", err)
+	}
+}
+
+// Pulling a publisher who isn't live is refused in a way the client can
+// retry, not silently ignored -- the viewer's tile would otherwise spin
+// on "connecting" forever.
+func TestViewerPullingAStoppedPublisherIsToldToRetry(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	pub, pubID := join(t, srv, roomID)
+	publish(t, pub)
+	write(t, pub, map[string]any{"type": "publish:stop"})
+
+	viewer, _ := join(t, srv, roomID)
+
+	pc := newOfferer(t)
+	write(t, viewer, map[string]any{"type": "subscribe:offer", "seq": 1, "publisherId": pubID, "sdp": pc.LocalDescription().SDP})
+
+	err := readUntil(t, viewer, "subscribe:error")
+	if err["publisherId"] != pubID {
+		t.Fatalf("subscribe:error for %v, want %s", err["publisherId"], pubID)
+	}
+}
+
+// Stop releases the publisher's MediaMTX session and tells the room --
+// a tile left up on a stopped share is the failure this guards.
+func TestPublishStopReleasesTheShare(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, aID := join(t, srv, roomID)
+	b, _ := join(t, srv, roomID)
+	readUntil(t, a, "peer:join")
+
+	publish(t, a)
+	readUntil(t, b, "publish:start")
+
+	write(t, a, map[string]any{"type": "publish:stop"})
+	stopped := readUntil(t, b, "publish:stop")
+	if stopped["peerId"] != aID {
+		t.Fatalf("b expected a's stop, got %v", stopped)
+	}
+
+	// The path is gone: a viewer can no longer pull it.
+	pc := newOfferer(t)
+	write(t, b, map[string]any{"type": "subscribe:offer", "seq": 1, "publisherId": aID, "sdp": pc.LocalDescription().SDP})
+	if err := readUntil(t, b, "subscribe:error"); err["publisherId"] != aID {
+		t.Fatalf("a stopped share must not be pullable, got %v", err)
+	}
+}
+
+// A peer that disconnects while sharing must not leave its MediaMTX
+// path publishing off-roster.
+func TestDisconnectTearsDownTheShare(t *testing.T) {
+	srv := newServer(t)
+	roomID := createRoom(t, srv, "segredo123")
+
+	a, aID := join(t, srv, roomID)
+	b, _ := join(t, srv, roomID)
+	readUntil(t, a, "peer:join")
+	publish(t, a)
+	readUntil(t, b, "publish:start")
+
+	_ = a.Close(websocket.StatusNormalClosure, "")
+	readUntil(t, b, "peer:leave")
+
+	pc := newOfferer(t)
+	write(t, b, map[string]any{"type": "subscribe:offer", "seq": 1, "publisherId": aID, "sdp": pc.LocalDescription().SDP})
+	if err := readUntil(t, b, "subscribe:error"); err["publisherId"] != aID {
+		t.Fatalf("a disconnected publisher's path should no longer be pullable, got %v", err)
 	}
 }

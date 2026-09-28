@@ -1,12 +1,12 @@
-// tela-api: the signalling/SFU backend for screen sharing with a link
-// and a password. No accounts, no database -- a room is a code, a
-// password and whoever is connected to it right now. The React
-// frontend is a separate app (tela-frontend, its own container and
-// origin) that talks to this one over CORS -- see internal/httpapi.
+// tela-api: the signalling backend for screen sharing with a link and a
+// password. No accounts, no database -- a room is a code, a password and
+// whoever is connected to it right now. The React frontend is a separate
+// app (tela-frontend, its own container and origin) that talks to this
+// one over CORS -- see internal/httpapi.
 //
-// Video never passes through this process. Browsers connect to each
-// other directly over WebRTC; all this server does is hand offers,
-// answers and ICE candidates between them (see internal/httpapi/ws.go).
+// Media never passes through this process. It proxies the SDP handshake
+// to MediaMTX (WHIP to publish, WHEP to read); browsers then exchange
+// media directly with MediaMTX's ICE/DTLS port (see internal/mediamtx).
 package main
 
 import (
@@ -21,12 +21,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/cluster"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/clips"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/cluster"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/httpapi"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/mediamtx"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/metrics"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/sfu"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/telemetry"
 )
 
@@ -65,30 +65,18 @@ func main() {
 	// production this should point at a volume.
 	statePath := env("STATE_FILE", "")
 
-	// Media is forwarded by the SFU rather than meshed between browsers,
-	// so this process is a WebRTC endpoint now: it needs a UDP port
-	// browsers can reach, and it has to advertise an address they can
-	// actually get to. Inside Docker that's the HOST's address, not the
-	// container's. A hostname works and is resolved at startup -- but it
-	// must resolve to this machine, so a proxied record (which resolves
-	// to the proxy) is exactly the wrong thing to point at it.
-	sfuPort := envInt("SFU_UDP_PORT", 7881)
-	media, err := sfu.New(sfu.Options{
-		PublicHost: os.Getenv("SFU_PUBLIC_HOST"),
-		UDPPort:    sfuPort,
-		STUNURLs:   []string{"stun:stun.l.google.com:19302"},
-	})
-	if err != nil {
-		log.Error("could not start the SFU", "error", err)
-		os.Exit(1)
-	}
-	if media.PublicIP() == "" {
-		// Worth shouting about: without this the SFU advertises the
-		// container's private address and no browser can connect, which
-		// otherwise shows up only as video that never starts.
-		log.Warn("SFU_PUBLIC_HOST is not set -- browsers will not be able to reach the SFU")
+	// Media is proxied through MediaMTX (WHIP to publish, WHEP to read):
+	// this process only relays the SDP, the browser exchanges media
+	// directly with MediaMTX's ICE/DTLS port. The base URL is
+	// Docker-internal (http://mediamtx:8889); empty disables the
+	// transport, and publishing is then refused with a clear message.
+	media := mediamtx.NewProxy(os.Getenv("MEDIAMTX_INTERNAL_URL"))
+	if media.Configured() {
+		log.Info("mediamtx transport on", "base_url", os.Getenv("MEDIAMTX_INTERNAL_URL"))
 	} else {
-		log.Info("sfu started", "udp_port", sfuPort, "public_ip", media.PublicIP(), "public_host", os.Getenv("SFU_PUBLIC_HOST"))
+		// Worth shouting about: without this, screen sharing is refused
+		// entirely -- the rooms, chat and presence still work.
+		log.Warn("MEDIAMTX_INTERNAL_URL is not set -- screen sharing is disabled")
 	}
 
 	registry := rooms.NewRegistry(statePath)

@@ -1,9 +1,8 @@
 # tela-api
 
-O backend de sinalização/SFU do compartilhamento de tela. A página em
-si é um app separado, [`tela-frontend`](../tela-frontend/README.md) —
-os dois eram um container só até essa separação; veja por quê logo
-abaixo.
+O backend de sinalização do compartilhamento de tela. A página em si é
+um app separado, [`tela-frontend`](../tela-frontend/README.md) — os dois
+eram um container só até essa separação; veja por quê logo abaixo.
 
 Alguém cria uma sala com uma senha e passa o código; quem entra vê um
 grid com todas as telas sendo compartilhadas e pode abrir qualquer uma
@@ -31,37 +30,45 @@ mesmo do JS ver.
 
 ## Como funciona
 
-O vídeo passa por um **SFU** (`internal/sfu`): quem compartilha manda
-**um** stream para o servidor, e o servidor repassa os pacotes para
-todo mundo que está assistindo. Nada é transcodificado — pacote entra,
-pacote sai — então o custo do servidor é contabilidade por pacote, não
-codificação por quadro.
+A mídia passa por um **MediaMTX** auto-hospedado: quem compartilha manda
+o stream para ele via **WHIP** e quem assiste puxa via **WHEP** — uma
+subida só por compartilhamento, e o MediaMTX reparte para os
+espectadores. Nada é transcodificado.
+
+O servidor Go (`internal/mediamtx`) só faz o **proxy do SDP**: recebe o
+offer cru do navegador e repassa para o MediaMTX, devolve a answer. O
+navegador nunca vê a porta HTTP do MediaMTX nem o nome do path — a mídia
+em si vai direto do navegador para a porta ICE/DTLS do MediaMTX.
 
 Antes isso era uma malha, e quem compartilhava codificava um stream
 separado por espectador: duas pessoas assistindo eram dois encodes e o
 dobro de upload, que era exatamente o que travava tudo. Agora o custo de
 quem transmite não cresce com a plateia.
 
-Cada navegador mantém duas conexões com o servidor, não importa o tamanho
-da sala: uma **publicando** (o navegador oferta, porque é ele quem sabe o
-que vai mandar) e uma **assinando** (o *servidor* oferta, porque tracks
-aparecem e somem conforme as pessoas começam e param, e cada mudança
-exige um offer novo).
+Cada pessoa publica no seu **próprio path** do MediaMTX (um por peer),
+então várias pessoas podem compartilhar ao mesmo tempo, e cada
+espectador puxa cada transmissão com sua própria conexão WHEP. O
+servidor nunca toca nos pacotes.
 
 ### A mídia não passa pelo ingress
 
-Isto é o que decide se funciona. O servidor é um endpoint WebRTC: os
-navegadores mandam UDP direto para ele, numa porta só (`SFU_UDP_PORT`,
-padrão 7881, multiplexada por ICE) — o ingress nginx só carrega HTTP
-(a API, o WebSocket de sinalização), **a mídia nunca passa por ele**.
+Isto é o que decide se funciona. O MediaMTX é o endpoint WebRTC: os
+navegadores mandam UDP direto para ele, numa porta só
+(`mediamtx_udp_port`, padrão 8217, UDP+TCP, para ICE/DTLS) — o ingress
+nginx só carrega HTTP (a API, o WebSocket de sinalização), **a mídia
+nunca passa por ele**.
 
-`SFU_PUBLIC_HOST` é o endereço que o SFU anuncia nos candidatos ICE
-(um IP ou hostname resolvido uma vez no boot — candidatos ICE carregam
-endereços, não nomes). Na VPS isso é simplesmente `var.server_ip` (o
-IP público dela, passado pelo root `main.tf`) — sem indireção de DNS,
-já que é o mesmo host o tempo todo. Sem `SFU_PUBLIC_HOST` o servidor
-anuncia o endereço privado do container e ninguém conecta; ele grita
-isso no log ao subir.
+`MTX_WEBRTCADDITIONALHOSTS` (Terraform: `mediamtx_public_host`) é o
+endereço que o MediaMTX anuncia nos candidatos ICE. Na VPS isso é
+simplesmente `var.server_ip` (o IP público dela, passado pelo root
+`main.tf`) — sem indireção de DNS, já que é o mesmo host o tempo todo.
+Sem ele o MediaMTX anuncia endereços internos e ninguém conecta.
+
+O `tela-api` fala com o MediaMTX por loopback
+(`MEDIAMTX_INTERNAL_URL=http://127.0.0.1:8889`): os dois rodam com
+`network_mode = host`, então o nome `mediamtx` da rede docker não
+resolve. `MEDIAMTX_INTERNAL_URL` vazio desliga o compartilhamento de
+tela por completo — as salas, o chat e a presença continuam funcionando.
 
 Só há STUN público, sem TURN — numa rede que bloqueia UDP a conexão não
 estabelece.
@@ -81,11 +88,12 @@ tudo fica só em memória — é o modo de desenvolvimento local.
 
 ## Deploy sem interromper quem está usando
 
-O ponto de partida é que **o vídeo não passa por este servidor**. Uma vez
-que a conexão WebRTC existe, o stream vai direto entre navegadores: se o
-container morrer agora, quem está assistindo continua assistindo. O
-servidor só carrega sinalização. Então o problema não é zero downtime, e
-sim tornar a lacuna de alguns segundos invisível.
+O ponto de partida é que **a mídia não passa por este servidor**. Uma vez
+que as conexões com o MediaMTX existem, os streams vão direto entre cada
+navegador e o MediaMTX: se o container do `tela-api` morrer agora, quem
+está assistindo continua assistindo. O `tela-api` só carrega
+sinalização. Então o problema não é zero downtime, e sim tornar a lacuna
+de alguns segundos invisível.
 
 Três peças fazem isso:
 
@@ -94,18 +102,17 @@ Três peças fazem isso:
    servidor que acabou de subir).
 2. **A identidade sobrevive.** Na primeira entrada o servidor emite um
    token de retomada (HMAC de uma chave por sala); o cliente guarda e
-   reapresenta ao reconectar. Voltar com o mesmo `peerId` é o que faz as
-   conexões WebRTC existentes continuarem valendo — sem isso cada
-   reconexão seria uma pessoa nova e tudo seria renegociado. O token é
-   exigido em vez de confiar no id porque, só com o id, um membro da sala
-   poderia se passar por outro.
+   reapresenta ao reconectar. Voltar com o mesmo `peerId` é o que mantém
+   a sala coerente — sem isso cada reconexão seria uma pessoa nova e
+   tudo seria renegociado. O token é exigido em vez de confiar no id
+   porque, só com o id, um membro da sala poderia se passar por outro.
 3. **Período de graça de 12s** antes de derrubar o vídeo de quem sumiu.
    Cobre o caso de um cliente só piscando (wifi ruim, reload): se voltar
    dentro da janela com a mesma identidade, o teardown é cancelado.
 
 O `welcome` já carrega o estado completo da sala, então a reconexão
-ressincroniza sozinha — quem estava publicando se re-anuncia e oferece
-apenas para quem ainda não tem conexão.
+ressincroniza sozinha — quem estava publicando re-oferece ao MediaMTX, e
+o cliente reconstrói uma conexão WHEP para cada transmissão no ar.
 
 ### Fazendo o deploy
 
@@ -130,6 +137,9 @@ curl -s https://tela-api.giomartins.dev/healthz   # {"rooms":N,...}
 - Se o volume for perdido, as salas somem e ninguém consegue voltar.
 - Um restart que passe de ~12s estoura o período de graça e o vídeo cai
   (embora a sala e a senha continuem funcionando).
+- **O MediaMTX também pode ser reiniciado**; um restart dele derruba as
+  transmissões no ar, e os clientes reconectam ao path na próxima
+  publicação. Ele guarda estado só em memória.
 
 ## Senha
 
@@ -164,17 +174,29 @@ abre o WebSocket no lugar da senha de verdade, que essa pessoa nunca
 chega a saber.
 
 ## Rodando local
-
 ```bash
-# terminal 1 — esta API
-go run .
+# terminal 1 — MediaMTX (WHIP/WHEP), com SDP em :8889 e mídia em :8217
+docker run --rm --network host \
+  -e MTX_WEBRTCADDRESS=127.0.0.1:8889 \
+  -e MTX_WEBRTCLOCALUDPADDRESS=:8217 \
+  -e MTX_WEBRTCLOCALTCPADDRESS=:8217 \
+  -e MTX_WEBRTCADDITIONALHOSTS=127.0.0.1 \
+  -e MTX_RTSP=no -e MTX_RTMP=no -e MTX_HLS=no -e MTX_SRT=no \
+  -e MTX_MOQ=no -e MTX_API=no -e MTX_METRICS=no \
+  bluenviron/mediamtx:1
 
-# terminal 2 — tela-frontend com hot reload (proxia /api e /ws para :8000)
+# terminal 2 — esta API (aponta para o MediaMTX por loopback)
+MEDIAMTX_INTERNAL_URL=http://127.0.0.1:8889 go run .
+
+# terminal 3 — tela-frontend com hot reload (proxia /api e /ws para :8000)
 cd ../tela-frontend && npm install && npm run dev
 ```
 
+Sem `MEDIAMTX_INTERNAL_URL` as salas funcionam, mas o compartilhamento de
+tela é recusado com uma mensagem clara.
+
 ```bash
-go test ./...   # relay de sinalização, autorização, ciclo de vida da sala
+go test ./...   # proxy MediaMTX, autorização, ciclo de vida da sala
 ```
 
 ## API
@@ -192,11 +214,12 @@ go test ./...   # relay de sinalização, autorização, ciclo de vida da sala
 
 Mensagens do WebSocket: `welcome` (com a lista de quem já está na sala,
 quem já está compartilhando e qualquer pedido de entrada ainda sem
-resposta), `peer:join`, `peer:leave`, `publish:start`, `publish:stop`,
-`knock:request`, `knock:resolved` e `signal`. O servidor nunca olha
-dentro do `payload` de um `signal` — SDP e ICE são assunto dos
-navegadores. Ele só confere que o destinatário está na mesma sala e
-carimba quem realmente enviou (ver `Room.Relay`).
+resposta), `peer:join`, `peer:leave`, `peer:rename`, `publish:start`,
+`publish:stop`, `publish:offer`/`publish:answer`, `subscribe:offer`/
+`subscribe:answer`, `room:reset`, `spotlight:set`, `knock:request` e
+`knock:resolved`. Nos quatro de oferta/answer o servidor só repassa o
+SDP cru para o MediaMTX e devolve a resposta — nunca olha dentro do SDP
+(ver `internal/mediamtx` e `internal/httpapi/ws.go`).
 
 Quem entra pode digitar um nome; quem deixa em branco recebe uma
 palavra pequena e aleatória em português (“Abacate”, “Girafa”…) em vez

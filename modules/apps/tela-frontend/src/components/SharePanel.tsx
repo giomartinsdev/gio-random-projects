@@ -1,13 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppWindow, Camera, Info, Monitor, PanelTop, X } from "lucide-react";
-import { FPS_OPTIONS, QUALITY_OPTIONS, type DisplaySurface, type Fps, type Quality, type Source } from "@/lib/useRoom";
+import type { DisplaySurface, Source } from "@/lib/useRoom";
+import {
+  SCREEN_MODE_FPS,
+  SCREEN_MODE_LABELS,
+  SCREEN_RESOLUTIONS,
+  sanitizeScreenQuality,
+  type ScreenMode,
+  type ScreenQualityConfig,
+} from "@/lib/screenQuality";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { loadingIcon } from "@/lib/lottie-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export type ShareChoice = { source: Source; quality: Quality; fps: Fps; surface: DisplaySurface };
+export type ShareChoice = { source: Source; quality: ScreenQualityConfig; surface: DisplaySurface };
 
 // The picker's first row is one flat choice: three screen surfaces plus
 // the camera. The labels for the screen surfaces come from useRoom's
@@ -196,46 +204,56 @@ export function SharePanel({
 
             <section className="space-y-3">
               <div>
-                <SectionLabel>Qualidade</SectionLabel>
-                {/* Short labels: the raw tables say "1080p"/"30 fps",
-                    which wraps badly five-across in a 25rem drawer. The
-                    row label already says what the numbers mean. */}
+                <SectionLabel>Tipo de conteúdo</SectionLabel>
                 <Segments
-                  ariaLabel="Qualidade"
-                  options={QUALITY_OPTIONS.map((o) => ({
-                    value: o.value,
-                    label: o.value === "source" ? "Orig" : o.value.replace("p", ""),
+                  ariaLabel="Tipo de conteúdo"
+                  options={(Object.keys(SCREEN_MODE_LABELS) as ScreenMode[]).map((mode) => ({
+                    value: mode,
+                    label: SCREEN_MODE_LABELS[mode].label,
                   }))}
-                  value={choice.quality}
-                  onChange={(quality) => setChoice((c) => ({ ...c, quality }))}
+                  value={choice.quality.mode}
+                  onChange={(mode) => {
+                    const fps = SCREEN_MODE_FPS[mode][0];
+                    setChoice((c) => ({ ...c, quality: sanitizeScreenQuality({ ...c.quality, mode, fps }) }));
+                  }}
+                />
+                <p className="mt-1.5 text-xs text-muted-foreground">{SCREEN_MODE_LABELS[choice.quality.mode].hint}</p>
+              </div>
+              <div>
+                <SectionLabel>Resolução</SectionLabel>
+                <Segments
+                  ariaLabel="Resolução"
+                  options={SCREEN_RESOLUTIONS.map((resolution) => ({
+                    value: resolution,
+                    label: `${resolution}p`,
+                  }))}
+                  value={choice.quality.resolution}
+                  onChange={(resolution) => setChoice((c) => ({ ...c, quality: { ...c.quality, resolution } }))}
                 />
               </div>
               <div>
                 <SectionLabel>Quadros por segundo</SectionLabel>
                 <Segments
                   ariaLabel="Quadros por segundo"
-                  options={FPS_OPTIONS.map((o) => ({
-                    value: o.value,
-                    label: o.value === "source" ? "Orig" : String(o.value),
+                  options={SCREEN_MODE_FPS[choice.quality.mode].map((fps) => ({
+                    value: fps,
+                    label: String(fps),
                   }))}
-                  value={choice.fps}
-                  onChange={(fps) => setChoice((c) => ({ ...c, fps }))}
+                  value={choice.quality.fps}
+                  onChange={(fps) =>
+                    setChoice((c) => ({ ...c, quality: sanitizeScreenQuality({ ...c.quality, fps }) }))
+                  }
                 />
               </div>
             </section>
 
             {/* One line that restates the pick in plain words -- the
                 instant feedback a settings panel owes: change anything
-                and this sentence changes with it. "source" is the
-                don't-constrain sentinel; in prose it reads "original". */}
+                and this sentence changes with it. */}
             <p className="text-sm text-muted-foreground">
-              Vai no ar com{" "}
+              Vai no ar em{" "}
               <span className="font-medium text-foreground">
-                {choice.quality === "source" ? "qualidade original" : choice.quality}
-              </span>{" "}
-              a{" "}
-              <span className="font-medium text-foreground">
-                {choice.fps === "source" ? "fps originais" : `${choice.fps} fps`}
+                {choice.quality.resolution}p a {choice.quality.fps} fps
               </span>
               {choice.source === "camera" ? ", da câmera" : ""}.
             </p>
@@ -258,8 +276,8 @@ export function SharePanel({
 
             {sharing && (
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Trocar a fonte reinicia a transmissão por alguns instantes. Reduções de qualidade/FPS aplicam na hora, sem
-                recapturar ou cortar a transmissão. Aumentos (ou "Original") valem a partir do próximo compartilhamento.
+                Trocar a fonte reinicia a transmissão por alguns instantes. Reduções de resolução/FPS aplicam na hora,
+                sem recapturar ou cortar a transmissão. Aumentos valem a partir do próximo compartilhamento.
               </p>
             )}
 

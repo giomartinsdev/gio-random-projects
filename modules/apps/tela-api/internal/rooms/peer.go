@@ -36,14 +36,23 @@ type Peer struct {
 
 	// Guarded by the owning Room's mutex.
 	publishing bool
+	// The MediaMTX target of this peer's current share: the path it
+	// publishes to and the WHIP session Location used to tear it down.
+	// Empty path means "not sharing". Guards the media half of the
+	// presence/media link -- see SetPublishTarget.
+	publishPath     string
+	publishLocation string
+	publishHasAudio bool
 }
 
 // PeerInfo is the public view of a peer: what everyone else is told
-// about it.
+// about it. HasAudio is only meaningful while publishing -- it tells a
+// viewer whether to ask MediaMTX for an audio m-line.
 type PeerInfo struct {
 	ID         string `json:"peerId"`
 	Name       string `json:"name"`
 	Publishing bool   `json:"publishing"`
+	HasAudio   bool   `json:"hasAudio"`
 }
 
 const sendBuffer = 32
@@ -161,6 +170,64 @@ func (room *Room) Leave(p *Peer) {
 	room.Broadcast(map[string]any{"type": "peer:leave", "peerId": p.ID}, p.ID)
 }
 
+// SetPublishTarget records the MediaMTX path a peer is publishing to,
+// the session Location to tear it down, and whether its feed carries
+// audio (viewers need the last one to decide whether to ask MediaMTX for
+// an audio m-line). Called once a WHIP publish has succeeded, so the
+// presence flag (SetPublishing) and the media target stay in lockstep: a
+// peer shown as sharing always has a path to pull.
+func (room *Room) SetPublishTarget(p *Peer, path, location string, hasAudio bool) {
+	room.mu.Lock()
+	if peer, ok := room.peers[p.ID]; ok {
+		peer.publishPath = path
+		peer.publishLocation = location
+		peer.publishHasAudio = hasAudio
+	}
+	room.mu.Unlock()
+}
+
+// ClearPublishTarget forgets a peer's MediaMTX target without touching
+// the publishing flag (SetPublishing(false) does that and broadcasts).
+// Returns the Location it dropped so the caller can tear the session
+// down outside the lock.
+func (room *Room) ClearPublishTarget(p *Peer) string {
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	if peer, ok := room.peers[p.ID]; ok {
+		location := peer.publishLocation
+		peer.publishPath = ""
+		peer.publishLocation = ""
+		peer.publishHasAudio = false
+		return location
+	}
+	return ""
+}
+
+// PublishTarget reports the MediaMTX path and session Location a peer is
+// publishing to, and whether it currently has a live target.
+func (room *Room) PublishTarget(peerID string) (path, location string, ok bool) {
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	peer, found := room.peers[peerID]
+	if !found || peer.publishPath == "" {
+		return "", "", false
+	}
+	return peer.publishPath, peer.publishLocation, true
+}
+
+// PublishTargetInfo reports everything a viewer needs to pull a peer's
+// share: its path and whether the feed carries audio. ok is false when
+// the peer has no live target.
+func (room *Room) PublishTargetInfo(peerID string) (path string, hasAudio, ok bool) {
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	peer, found := room.peers[peerID]
+	if !found || peer.publishPath == "" {
+		return "", false, false
+	}
+	return peer.publishPath, peer.publishHasAudio, true
+}
+
 // SetPublishing records that a peer started or stopped sharing and
 // tells everyone else. Publishing is announced rather than inferred so
 // a viewer knows to expect an offer (or to drop a tile) without
@@ -182,7 +249,18 @@ func (room *Room) SetPublishing(p *Peer, publishing bool) {
 	if publishing {
 		event = "publish:start"
 	}
-	room.Broadcast(map[string]any{"type": event, "peerId": p.ID}, p.ID)
+	room.Broadcast(map[string]any{"type": event, "peerId": p.ID, "hasAudio": peerHasAudio(room, p.ID)}, p.ID)
+}
+
+// peerHasAudio reads the audio flag off a peer's publish target. Caller
+// must NOT hold room.mu (it locks here).
+func peerHasAudio(room *Room, peerID string) bool {
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	if peer, ok := room.peers[peerID]; ok {
+		return peer.publishHasAudio
+	}
+	return false
 }
 
 // SetSpotlight pins one publisher as the stage everyone watches -- a
@@ -347,7 +425,7 @@ func (room *Room) RandomName() (string, error) {
 func (room *Room) peerInfosLocked() []PeerInfo {
 	out := make([]PeerInfo, 0, len(room.peers))
 	for _, p := range room.peers {
-		out = append(out, PeerInfo{ID: p.ID, Name: p.Name, Publishing: p.publishing})
+		out = append(out, PeerInfo{ID: p.ID, Name: p.Name, Publishing: p.publishing, HasAudio: p.publishHasAudio})
 	}
 	return out
 }

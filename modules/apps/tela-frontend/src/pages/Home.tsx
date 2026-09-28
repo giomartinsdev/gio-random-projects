@@ -447,7 +447,7 @@ export default function Home() {
               </p>
               <ul className="mt-5 flex flex-wrap gap-2 text-xs text-muted-foreground">
                 {[
-                  { icon: Zap, label: "SFU — uma subida só, o servidor reparte" },
+                  { icon: Zap, label: "uma subida só — o servidor reparte pra sala" },
                   { icon: Lock, label: "senha por sala, nada salvo" },
                   { icon: Clapperboard, label: "clips dos últimos 5 minutos" },
                 ].map(({ icon: Icon, label }) => (

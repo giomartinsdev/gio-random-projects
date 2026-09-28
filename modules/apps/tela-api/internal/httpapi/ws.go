@@ -8,53 +8,48 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/pion/webrtc/v4"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/mediamtx"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/sfu"
 )
 
 const (
 	// Signalling messages are SDP offers/answers -- a few KB at most.
 	maxMessageBytes = 256 * 1024
-	writeTimeout    = 10 * time.Second
-	pingInterval    = 30 * time.Second
+	// An SDP larger than this is not a real offer; refusing early keeps a
+	// hostile client from forwarding megabytes to MediaMTX.
+	maxSDPBytes  = 200 * 1024
+	writeTimeout = 10 * time.Second
+	pingInterval = 30 * time.Second
 )
 
 type clientMessage struct {
-	Type      string                     `json:"type"`
-	SDP       *webrtc.SessionDescription `json:"sdp,omitempty"`
-	Candidate *webrtc.ICECandidateInit   `json:"candidate,omitempty"`
-	RequestID string                     `json:"requestId,omitempty"`
-	// Which publish offer this message is about. The client numbers its
-	// offers and matches replies by number -- an answer that belongs to a
-	// discarded connection (a fast re-share) must not be applied to the
-	// replacement's description. Echoed verbatim in publish:answer.
+	Type string `json:"type"`
+	// Raw SDP for a publish or subscribe handshake. Sent raw to MediaMTX
+	// by the server -- never inspected or munged.
+	SDP string `json:"sdp,omitempty"`
+	// Which publisher a subscribe:offer wants to pull.
+	PublisherID string `json:"publisherId,omitempty"`
+	// For knock:approve / knock:deny, which request is being answered.
+	RequestID string `json:"requestId,omitempty"`
+	// Which publish/subscribe offer this message is about. The client
+	// numbers its offers and matches replies by number -- an answer that
+	// belongs to a discarded connection (a fast re-share) must not be
+	// applied to the replacement's description. Echoed verbatim.
 	Seq int `json:"seq,omitempty"`
 	// For peer:rename, the requested new display name.
 	Name string `json:"name,omitempty"`
-	// For subscribe:video, which publisher's video this viewer wants gone
-	// (enabled=false) or back (enabled=true).
-	PublisherID string `json:"publisherId,omitempty"`
-	Enabled     bool   `json:"enabled,omitempty"`
-	// For subscribe:layer, which simulcast layer ("high"/"low") of
-	// PublisherID's video this viewer wants.
-	Rid string `json:"rid,omitempty"`
 }
 
-// The WebSocket carries signalling only; the media itself rides the
-// SFU's own UDP connections (internal/sfu).
+// The WebSocket carries signalling only; the media itself is exchanged
+// directly between the browser and MediaMTX (WHIP to publish, WHEP to
+// read). This process proxies the SDP handshake and never touches media
+// packets -- see internal/mediamtx.
 //
-// Each person has up to two peer connections with the server: one
-// publishing, created when they start sharing, and one subscribing,
-// opened as soon as they join so anything already being shared reaches
-// them immediately. That's a fixed cost per person no matter how many
-// people are watching -- the mesh this replaced made whoever shared
-// encode once per viewer.
-//
-// Everyone in a room is the same kind of participant: the password is
+// Every person in a room is the same kind of participant: the password is
 // the only credential, and any peer may start publishing at any time
-// while receiving whatever the others publish.
+// while receiving whatever the others publish. Each publisher gets its
+// own MediaMTX path, so a room can carry several simultaneous shares.
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	roomID := strings.ToLower(q.Get("room"))
@@ -161,7 +156,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	go writeLoop(ctx, conn, peer)
 
 	// Everyone already here, and which of them are publishing -- enough
-	// for the newcomer to render the grid and know whose offer to expect.
+	// for the newcomer to render the grid and know whose path to expect.
 	peer.Send(map[string]any{
 		"type":   "welcome",
 		"peerId": peerID,
@@ -184,31 +179,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		"pendingKnocks": room.PendingKnocks(),
 	})
 
-	// Subscribing from the moment they join means whatever is already
-	// being shared reaches them without waiting for the next change.
-	var subscriber *sfu.Subscriber
-	if s.sfu != nil {
-		subscriber, err = s.sfu.Subscribe(room.ID, peerID,
-			func(c webrtc.ICECandidateInit) {
-				peer.Send(map[string]any{"type": "subscribe:ice", "candidate": c})
-			},
-			func(offer webrtc.SessionDescription) {
-				peer.Send(map[string]any{"type": "subscribe:offer", "sdp": offer})
-			},
-			func(code string) {
-				peer.Send(map[string]any{"type": "subscribe:error", "error": code})
-			},
-		)
-		if err != nil {
-			s.log.ErrorContext(r.Context(), "subscribe failed", "peer_id", peerID, "room_id", room.ID, "error", err)
-		}
-	}
-
-	// Kept for logging after the upgrade: the request context (and the
-	// GET /ws span riding in it) lives as long as the connection does,
-	// so error lines from the read loop and the publisher carry the
-	// same trace_id as the connection's span.
-	session := &wsSession{server: s, room: room, peer: peer, subscriber: subscriber, ctx: ctx}
+	session := &wsSession{server: s, room: room, peer: peer, ctx: ctx}
 	session.readLoop(ctx, conn)
 
 	session.close()
@@ -217,35 +188,35 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	_ = conn.Close(websocket.StatusNormalClosure, "")
 }
 
-// wsSession is one person's connection: the signalling socket plus the
-// two media connections hanging off it.
+// wsSession is one person's connection: the signalling socket, plus the
+// MediaMTX target of their own share (if any) so it can be torn down.
 type wsSession struct {
-	server     *Server
-	room       *rooms.Room
-	peer       *rooms.Peer
-	subscriber *sfu.Subscriber
-	publisher  *sfu.Publisher
+	server *Server
+	room   *rooms.Room
+	peer   *rooms.Peer
 	// The connection's lifetime context (see the constructor) -- what
 	// makes log lines from handlers that predate the read loop carry
 	// trace_id too.
 	ctx context.Context
 }
 
+// close tears down this peer's own MediaMTX session (if it was
+// publishing) so a disconnect doesn't leave a path publishing off-roster.
 func (w *wsSession) close() {
-	if w.publisher != nil {
-		w.publisher.Close()
-	}
-	if w.subscriber != nil {
-		w.subscriber.Close()
+	if location := w.room.ClearPublishTarget(w.peer); location != "" {
+		if err := w.server.media.Close(location); err != nil {
+			w.server.log.WarnContext(w.ctx, "mediamtx teardown failed", "peer_id", w.peer.ID, "error", err)
+		}
 	}
 }
 
 // stopPublishing tears down the send side without touching the receive
 // side -- someone who stops sharing keeps watching.
 func (w *wsSession) stopPublishing() {
-	if w.publisher != nil {
-		w.publisher.Close()
-		w.publisher = nil
+	if location := w.room.ClearPublishTarget(w.peer); location != "" {
+		if err := w.server.media.Close(location); err != nil {
+			w.server.log.WarnContext(w.ctx, "mediamtx teardown failed", "peer_id", w.peer.ID, "error", err)
+		}
 	}
 	w.room.SetPublishing(w.peer, false)
 }
@@ -264,57 +235,20 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 
 		switch msg.Type {
 		// Starting to share. The browser offers because it's the one
-		// that knows what it's about to send.
+		// that knows what it's about to send; the server forwards that
+		// raw offer to MediaMTX's WHIP endpoint and relays the answer.
 		case "publish:offer":
 			w.handlePublishOffer(msg)
-
-		case "publish:ice":
-			if msg.Candidate != nil && w.publisher != nil {
-				_ = w.publisher.AddICECandidate(*msg.Candidate)
-			}
 
 		case "publish:stop":
 			w.stopPublishing()
 
-		// The reply to an offer the server made (see sfu.Subscriber:
-		// the server offers on the receive side, because tracks come and
-		// go as people start and stop sharing).
-		case "subscribe:answer":
-			if msg.SDP != nil && w.subscriber != nil {
-				if err := w.subscriber.Answer(*msg.SDP); err != nil {
-					w.server.log.ErrorContext(ctx, "subscribe answer failed", "peer_id", w.peer.ID, "error", err)
-				}
-			}
-
-		case "subscribe:ice":
-			if msg.Candidate != nil && w.subscriber != nil {
-				_ = w.subscriber.AddICECandidate(*msg.Candidate)
-			}
-
-		// One viewer's choice to stop (or restore) one publisher's video.
-		// Private on purpose -- nobody else is told; each viewer's grid
-		// reflects its own choices. Audio keeps flowing regardless; only
-		// the video track is removed and renegotiated away.
-		case "subscribe:video":
-			if w.subscriber == nil || msg.PublisherID == "" || msg.PublisherID == w.peer.ID {
-				continue // no SFU, junk, or a no-op: nobody subscribes to their own share
-			}
-			if err := w.subscriber.SetPublisherVideoEnabled(msg.PublisherID, msg.Enabled); err != nil {
-				w.server.log.ErrorContext(ctx, "subscribe video toggle failed", "peer_id", w.peer.ID, "publisher_id", msg.PublisherID, "error", err)
-				w.peer.Send(map[string]any{"type": "subscribe:error", "error": err.Error()})
-			}
-
-			// A client-side quality heuristic switching this viewer between
-			// a publisher's simulcast layers (see useRoom.ts) -- same shape
-			// and same privacy as subscribe:video above.
-			case "subscribe:layer":
-				if w.subscriber == nil || msg.PublisherID == "" || msg.PublisherID == w.peer.ID || msg.Rid == "" {
-					continue
-				}
-				if err := w.subscriber.SetPublisherVideoLayer(msg.PublisherID, msg.Rid); err != nil {
-					w.server.log.ErrorContext(ctx, "subscribe layer switch failed", "peer_id", w.peer.ID, "publisher_id", msg.PublisherID, "error", err)
-					w.peer.Send(map[string]any{"type": "subscribe:error", "error": err.Error()})
-				}
+		// A viewer pulling one publisher's share. The viewer builds a
+		// recvonly offer and the server forwards it to MediaMTX's WHEP
+		// endpoint for that publisher's path -- the viewer never learns
+		// the path.
+		case "subscribe:offer":
+			w.handleSubscribeOffer(msg)
 
 		// Changing your own label. The room hands back a fresh resume
 		// token in the direct reply (see rooms.Room.Rename) -- the old
@@ -330,12 +264,9 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 		// media connection in the room should be rebuilt from zero. The
 		// server's part is only relaying the instruction to everyone, the
 		// sender included -- each client then drops its own WebSocket,
-		// and the reconnect (same resume identity) replays the
-		// server-restart recovery: this session's publisher and
-		// subscriber are closed on the way out, a fresh Subscriber is
-		// offered on the way in, and the capture that never stopped is
-		// re-offered as-is. Nobody re-picks their window; see useRoom's
-		// room:reset case.
+		// and the reconnect (same resume identity) rebuilds every WHEP
+		// publisher and re-offers the capture that never stopped. Nobody
+		// re-picks their window; see useRoom's room:reset case.
 		case "room:reset":
 			w.room.Broadcast(map[string]any{"type": "room:reset"}, "")
 
@@ -367,37 +298,82 @@ func (w *wsSession) readLoop(ctx context.Context, conn *websocket.Conn) {
 	}
 }
 
+// handlePublishOffer relays one publisher's raw WHIP offer to MediaMTX
+// and answers with its SDP. Publishing state is a consequence of media
+// actually being accepted: the target and the roster flag are only set
+// once MediaMTX has answered.
 func (w *wsSession) handlePublishOffer(msg clientMessage) {
-	if msg.SDP == nil {
+	if msg.SDP == "" {
 		return
 	}
-	if w.server.sfu == nil {
-		w.peer.Send(map[string]any{"type": "publish:error", "error": "servidor sem SFU configurado"})
+	if w.server.media == nil || !w.server.media.Configured() {
+		w.peer.Send(map[string]any{"type": "publish:error", "error": "servidor sem MediaMTX configurado", "retryable": false})
+		return
+	}
+	if len(msg.SDP) > maxSDPBytes {
+		w.peer.Send(map[string]any{"type": "publish:error", "error": "SDP grande demais", "retryable": false})
 		return
 	}
 	// Re-publishing (switching from screen to camera, say) replaces the
-	// previous connection rather than stacking a second one.
-	if w.publisher != nil {
-		w.publisher.Close()
-		w.publisher = nil
-	}
+	// previous share rather than stacking a second one.
+	w.stopPublishing()
 
-	publisher, answer, err := w.server.sfu.Publish(w.room.ID, w.peer.ID, *msg.SDP,
-		func(c webrtc.ICECandidateInit) {
-			w.peer.Send(map[string]any{"type": "publish:ice", "candidate": c})
-		},
-	)
+	path := mediamtx.PathFor(w.room.ID, w.peer.ID)
+	result, err := w.server.media.Publish(path, msg.SDP)
 	if err != nil {
-		w.server.log.ErrorContext(w.ctx, "publish failed", "peer_id", w.peer.ID, "room_id", w.room.ID, "error", err)
-		w.peer.Send(map[string]any{"type": "publish:error", "error": "não foi possível iniciar a transmissão"})
+		w.server.log.ErrorContext(w.ctx, "mediamtx publish failed", "peer_id", w.peer.ID, "room_id", w.room.ID, "error", err)
+		// A transient handshake miss to MediaMTX is worth a retry; the
+		// client retries a bounded number of times.
+		w.peer.Send(map[string]any{"type": "publish:error", "error": "não foi possível iniciar a transmissão", "retryable": true})
 		return
 	}
 
-	w.publisher = publisher
-	w.peer.Send(map[string]any{"type": "publish:answer", "seq": msg.Seq, "sdp": answer})
+	// The audio flag comes from the publisher's own SDP, never a client
+	// claim -- viewers read it to decide whether to ask MediaMTX for an
+	// audio m-line.
+	w.room.SetPublishTarget(w.peer, path, result.Location, mediamtx.OfferHasAudio(msg.SDP))
+	w.peer.Send(map[string]any{"type": "publish:answer", "seq": msg.Seq, "sdp": result.SDP})
 	// Announced separately from the media so the grid can show someone
 	// as sharing while their connection is still negotiating.
 	w.room.SetPublishing(w.peer, true)
+}
+
+// handleSubscribeOffer relays a viewer's raw WHEP offer to MediaMTX for
+// one publisher's path and answers with the SDP. The path never reaches
+// the client.
+func (w *wsSession) handleSubscribeOffer(msg clientMessage) {
+	if msg.SDP == "" || msg.PublisherID == "" {
+		return
+	}
+	if w.server.media == nil || !w.server.media.Configured() {
+		w.peer.Send(map[string]any{"type": "subscribe:error", "publisherId": msg.PublisherID, "error": "servidor sem MediaMTX configurado", "retryable": false})
+		return
+	}
+	if len(msg.SDP) > maxSDPBytes {
+		w.peer.Send(map[string]any{"type": "subscribe:error", "publisherId": msg.PublisherID, "error": "SDP grande demais", "retryable": false})
+		return
+	}
+	if msg.PublisherID == w.peer.ID {
+		return // nobody pulls their own share: they already have the local one
+	}
+	path, _, ok := w.room.PublishTarget(msg.PublisherID)
+	if !ok {
+		// The publisher's path isn't live (or already stopped). Not
+		// retryable: retrying against a stopped share just loops.
+		w.peer.Send(map[string]any{"type": "subscribe:error", "publisherId": msg.PublisherID, "error": "essa transmissão ainda não está no ar", "retryable": false})
+		return
+	}
+
+	result, err := w.server.media.Subscribe(path, msg.SDP)
+	if err != nil {
+		w.server.log.ErrorContext(w.ctx, "mediamtx subscribe failed", "peer_id", w.peer.ID, "publisher_id", msg.PublisherID, "error", err)
+		// The path is live but MediaMTX may not have registered it yet
+		// (the publisher's ICE/DTLS can lag the WHIP answer), so this
+		// is worth a bounded retry.
+		w.peer.Send(map[string]any{"type": "subscribe:error", "publisherId": msg.PublisherID, "error": "falha ao receber essa transmissão", "retryable": true})
+		return
+	}
+	w.peer.Send(map[string]any{"type": "subscribe:answer", "seq": msg.Seq, "publisherId": msg.PublisherID, "sdp": result.SDP})
 }
 
 const maxNameLength = 30

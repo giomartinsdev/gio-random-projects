@@ -4,9 +4,11 @@ A página em `tela.giomartins.dev` — SPA React estática. Não roda como
 container: o build (`dist/`) é espelhado direto num bucket do MinIO, e
 `compute/services/ingress` serve esse bucket pela API S3 do MinIO —
 veja `modules/infra/terraform/static_sites.tf` e o README do módulo
-`ingress`. Toda a lógica de sinalização/SFU/salas mora em
+`ingress`. Toda a lógica de sinalização/salas mora em
 [`tela-api`](../tela-api/README.md), um app separado que esta fala por
-CORS (`VITE_TELA_API_URL`, ver `src/lib/api.ts`).
+CORS (`VITE_TELA_API_URL`, ver `src/lib/api.ts`). A mídia vai direto do
+navegador para o MediaMTX via WHIP/WHEP — o `tela-api` só faz o proxy do
+SDP (`src/lib/screenPublisher.ts`, `src/lib/screenViewer.ts`).
 
 ## Rodando local
 

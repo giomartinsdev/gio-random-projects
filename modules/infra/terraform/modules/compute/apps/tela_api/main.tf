@@ -1,10 +1,11 @@
-# tela-api: the signalling/SFU backend for tela-frontend
-# (tela.giomartins.dev). Split from it (this container used to serve
-# both the API and the React bundle) so each can deploy independently
-# and scale/restart on its own schedule -- tela-frontend is a static
-# nginx container with none of tela-api's host-networking/SFU needs.
-# Neither app shares anything with the rest of this repo -- no
-# Postgres, no Better Auth, no domain-api.
+# tela-api: the signalling backend for tela-frontend
+# (tela.giomartins.dev). Screen-share media is proxied through a
+# self-hosted MediaMTX (WHIP to publish, WHEP to read): this container
+# only relays the SDP, the browser exchanges media directly with
+# MediaMTX's ICE/DTLS port. See modules/apps/tela-api/internal/mediamtx.
+#
+# Neither app shares anything with the rest of this repo -- no Postgres,
+# no Better Auth, no domain-api.
 locals {
   watchtower_label = var.watchtower_enabled ? [{
     label = "com.centurylinklabs.watchtower.enable"
@@ -16,23 +17,66 @@ resource "docker_volume" "tela_state" {
   name = "tela-state"
 }
 
+# MediaMTX: the WebRTC SFU the browsers publish to and read from. Host
+# networking, same as tela-api below, for the same reason -- it must
+# advertise an address browsers can reach, and it binds the media port
+# directly (no port mapping, since the port number is baked into the ICE
+# candidates it advertises). Config is passed as MTX_* env vars so no
+# file has to already exist on the host.
+resource "docker_container" "mediamtx" {
+  name    = "tela-mediamtx"
+  image   = "bluenviron/mediamtx:1"
+  restart = "unless-stopped"
+
+  network_mode = "host"
+
+  env = [
+    # HTTP side of WHIP/WHEP. tela-api reaches it over the host's
+    # loopback (both are host-networked, so docker DNS doesn't exist).
+    "MTX_WEBRTCADDRESS=127.0.0.1:8889",
+    # The single UDP/TCP port browsers connect to for ICE/DTLS. It has to
+    # be reachable from the internet and must match what browsers are
+    # told, so it binds unmapped on the host.
+    "MTX_WEBRTCLOCALUDPADDRESS=:${var.mediamtx_udp_port}",
+    "MTX_WEBRTCLOCALTCPADDRESS=:${var.mediamtx_udp_port}",
+    # The address MediaMTX advertises in its ICE candidates. Empty leaves
+    # it advertising container/host-internal addresses no browser can
+    # reach, which shows up only as video that never starts.
+    "MTX_WEBRTCADDITIONALHOSTS=${var.mediamtx_public_host}",
+    # Nothing else MediaMTX can speak is used -- WebRTC only. (MoQ
+    # otherwise binds :8892 by default in MediaMTX 1.x.)
+    "MTX_RTSP=no",
+    "MTX_RTMP=no",
+    "MTX_HLS=no",
+    "MTX_SRT=no",
+    "MTX_MOQ=no",
+    "MTX_API=no",
+    "MTX_METRICS=no",
+    "MTX_LOGLEVEL=info",
+    "MTX_LOGDESTINATIONS=stdout",
+    # No `paths` block: one path per publisher is created on demand
+    # (see mediamtx.PathFor).
+  ]
+
+  dynamic "labels" {
+    for_each = local.watchtower_label
+    content {
+      label = labels.value.label
+      value = labels.value.value
+    }
+  }
+}
+
 resource "docker_container" "tela_api" {
   name    = "tela-api"
   image   = "${var.registry_host}/tela-api:latest"
   restart = "unless-stopped"
 
-  # Host networking, unlike every other app here. The SFU has to
-  # advertise an address browsers can reach, and inside a bridge network
-  # the only address it can see is the container's private one -- which
-  # would need the real address pasted into a variable to work around.
-  # On the host network it sees the machine's actual interfaces and
-  # advertises the VPS's public IP by itself.
-  #
-  # The cost is isolation: the container shares the host's network
-  # namespace. That also means no port mapping -- the app binds
-  # var.external_port directly (the HTTP side), and the UDP port binds
-  # unmapped (it must, since its number is baked into the ICE
-  # candidates the SFU advertises).
+  # Host networking, unlike most apps here. tela-api proxies MediaMTX's
+  # SDP over loopback and MediaMTX binds the media port directly, so
+  # both need the host's network namespace -- and no port mapping: the
+  # app binds var.external_port directly (the HTTP side), and MediaMTX's
+  # UDP/TCP media port binds unmapped on the host.
   network_mode = "host"
 
   env = [
@@ -40,19 +84,14 @@ resource "docker_container" "tela_api" {
     # The ingress (compute/services/ingress) is the only thing meant to
     # reach the HTTP side directly -- it runs on the host network too
     # and proxies by Host header to 127.0.0.1:${var.external_port}.
-    # The UDP media port below is unaffected: it has to stay reachable
-    # from the internet directly, since it's WebRTC media, not HTTP.
+    # The media port above is unaffected: it has to stay reachable from
+    # the internet directly, since it's WebRTC media, not HTTP.
     "BIND_HOST=127.0.0.1",
     "STATE_FILE=/data/rooms.json",
-    # The SFU is a WebRTC endpoint, so browsers connect to it directly
-    # over UDP -- plain HTTP proxies don't carry media. This is the
-    # address it advertises, and inside Docker it has to be the HOST's,
-    # not the container's. On the VPS that's simply its static public
-    # IP (var.server_ip) -- no DNS indirection needed anymore, the old
-    # home-setup media hostname was for an address that changed without
-    # warning.
-    "SFU_PUBLIC_HOST=${var.sfu_public_host}",
-    "SFU_UDP_PORT=${var.sfu_udp_port}",
+    # MediaMTX over the host's loopback (both containers are
+    # host-networked, so the docker-network name `mediamtx` doesn't
+    # resolve). Empty disables screen sharing entirely.
+    "MEDIAMTX_INTERNAL_URL=http://127.0.0.1:8889",
     # Now a cross-origin caller (tela-frontend's own hostname/container)
     # instead of same-origin -- see internal/httpapi's AllowedOrigins.
     "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",
@@ -74,6 +113,12 @@ resource "docker_container" "tela_api" {
     volume_name    = docker_volume.tela_state.name
     container_path = "/data"
   }
+
+  # The HTTP side answers immediately; MediaMTX may still be starting, but
+  # that only affects a share, not the room, so a soft dependency is
+  # enough (and a hard one would restart tela-api whenever MediaMTX
+  # changed). Ordering just keeps `terraform apply` readable.
+  depends_on = [docker_container.mediamtx]
 
   dynamic "labels" {
     for_each = local.watchtower_label

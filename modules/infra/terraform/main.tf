@@ -172,9 +172,10 @@ module "compute_apps_tela_api" {
     docker = docker
   }
 
-  registry_host    = var.registry_host
-  sfu_public_host  = var.server_ip
-  frontend_origins = ["https://tela.giomartins.dev"]
+  registry_host        = var.registry_host
+  sfu_public_host      = var.server_ip
+  mediamtx_public_host = var.server_ip
+  frontend_origins     = ["https://tela.giomartins.dev"]
   # Host-networked container — loopback endpoint, not the docker-network one.
   otlp_endpoint = module.compute_services_observability.otlp_endpoint_loopback
 }

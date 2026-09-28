@@ -11,6 +11,16 @@ export type Release = {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "1.6.0",
+    date: "2026-09-27",
+    items: [
+      "Transmissão de tela reconstruída sobre o MediaMTX: quem compartilha sobe o stream uma vez (WHIP) e cada pessoa assiste puxando direto do servidor de mídia (WHEP) — sem depender de negociar uma conexão com cada espectador.",
+      "Várias pessoas podem compartilhar ao mesmo tempo, cada uma no seu próprio stream, sem uma derrubar a outra.",
+      "Qualidade reformulada: escolha o tipo de conteúdo (Documento ou Mídia), a resolução (480p/720p/1080p) e os quadros por segundo (5/30/60) — direto, sem combinações que saíam pela culatra.",
+      "Reduções de resolução/FPS aplicam na hora, sem recapturar nem cortar a transmissão.",
+    ],
+  },
+  {
     version: "1.5.1",
     date: "2026-09-18",
     items: [

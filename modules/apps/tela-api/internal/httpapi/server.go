@@ -16,10 +16,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/cluster"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/clips"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/cluster"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/mediamtx"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/sfu"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
@@ -28,10 +28,11 @@ type Server struct {
 	registry *rooms.Registry
 	limiter  *attemptLimiter
 	mux      *http.ServeMux
-	// Forwards media between peers. Nil means no SFU configured, in
-	// which case publishing is refused with a clear message rather than
-	// failing halfway through a handshake.
-	sfu *sfu.Server
+	// Proxies screen-share media through MediaMTX (WHIP to publish, WHEP
+	// to read). Nil means no MediaMTX configured, in which case
+	// publishing is refused with a clear message rather than failing
+	// halfway through a handshake.
+	media *mediamtx.Proxy
 	// tela-frontend's own origin(s) -- the only ones the REST API sends
 	// CORS headers for and the WebSocket accepts a connection from. See
 	// ws.go's use of this for why it can't just trust r.Host anymore.
@@ -51,12 +52,12 @@ type Server struct {
 // The metrics handler is optional (nil = the /metrics route doesn't
 // exist at all) because scraping is a deployment's choice, not the
 // app's: TELA_METRICS=1 in main is what turns it on.
-func New(registry *rooms.Registry, media *sfu.Server, allowedOrigins []string, log *slog.Logger, metrics http.Handler) *Server {
+func New(registry *rooms.Registry, media *mediamtx.Proxy, allowedOrigins []string, log *slog.Logger, metrics http.Handler) *Server {
 	s := &Server{
 		registry:       registry,
 		limiter:        newAttemptLimiter(),
 		mux:            http.NewServeMux(),
-		sfu:            media,
+		media:          media,
 		AllowedOrigins: allowedOrigins,
 		log:            log,
 	}

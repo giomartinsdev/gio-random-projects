@@ -12,11 +12,11 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/cluster"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/clips"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/cluster"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/httpapi"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/mediamtx"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/sfu"
 )
 
 // Two real nodes, each wired to the other as its only peer -- the whole
@@ -27,10 +27,7 @@ func newClusteredServers(t *testing.T) (a, b *httptest.Server) {
 	t.Helper()
 
 	build := func() (*httptest.Server, *httpapi.Server) {
-		media, err := sfu.New(sfu.Options{UDPPort: 0})
-		if err != nil {
-			t.Fatalf("sfu: %v", err)
-		}
+		media := mediamtx.NewProxy(fakeMediaMTX(t).URL)
 		api := httpapi.New(rooms.NewRegistry(""), media,
 			[]string{"http://example.com"}, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil)
 		api.RegisterClips(clips.NewMemoryStore(), 24*time.Hour)

@@ -24,24 +24,28 @@ variable "watchtower_enabled" {
 
 variable "sfu_public_host" {
   description = <<-EOT
-    Where browsers should send media -- an IP or a hostname (resolved
-    once at startup). Media is WebRTC: UDP straight to this host, so
-    whatever goes here must route to the machine itself. On the VPS
-    that's simply its static public IP (the root module passes
-    var.server_ip) -- no DNS indirection needed.
+    Where browsers should send media -- an IP or a hostname. Media is
+    WebRTC: UDP straight to this host, so whatever goes here must route
+    to the machine itself. On the VPS that's simply its static public IP
+    (the root module passes var.server_ip) -- no DNS indirection needed.
 
-    Empty means the SFU advertises the container's private address and
-    no browser can connect -- the app logs a warning at startup when
-    that happens.
+    Empty makes MediaMTX advertise internal addresses and no browser can
+    connect, which shows up only as video that never starts.
   EOT
   type        = string
   default     = ""
 }
 
-variable "sfu_udp_port" {
-  description = "Single UDP port carrying all media (ICE mux). Published unmapped, since the port number is baked into the ICE candidates the SFU advertises."
+variable "mediamtx_udp_port" {
+  description = "Single UDP+TCP port carrying all MediaMTX media (ICE/DTLS). Binds unmapped on the host, since the port number is baked into the ICE candidates MediaMTX advertises. Matches the VPS security list's TCP+UDP opening."
   type        = number
-  default     = 7881
+  default     = 8217
+}
+
+variable "mediamtx_public_host" {
+  description = "Address MediaMTX advertises in its ICE candidates. Same value as sfu_public_host on the VPS (the machine's static public IP)."
+  type        = string
+  default     = ""
 }
 
 variable "otlp_endpoint" {

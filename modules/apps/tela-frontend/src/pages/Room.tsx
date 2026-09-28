@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { Activity, Airplay, AlertTriangle, ArrowLeft, Check, Clapperboard, Copy, Crop, Film, Link2, Mic, MicOff, MonitorUp, Pencil, PictureInPicture2, RotateCcw, SlidersHorizontal, Square, Star, Trash2, Users, Video, VideoOff, Volume2, VolumeX, X } from "lucide-react";
 import { api } from "@/lib/api";
-import { canShareScreen, useRoom, type Credential, QUALITY_OPTIONS } from "@/lib/useRoom";
+import { canShareScreen, useRoom, type Credential } from "@/lib/useRoom";
 import { ClipRecorder, clipSupported } from "@/lib/clipRecorder";
 import { usePeerStats } from "@/lib/usePeerStats";
 import { useWakeLock } from "@/lib/useWakeLock";
@@ -486,13 +486,11 @@ function LiveRoom({
     room.setPublisherVideo(peerId, room.videoOffPeers.has(peerId));
   };
 
-  // Stable accessors for the per-tile stats reader: the refs are stable,
-  // the peer connections inside them are replaced on every re-share, and
-  // only reading at poll time gets the current one.
-  const publishPcRef = room.publishPcRef;
-  const subscribePcRef = room.subscribePcRef;
-  const getPublishPc = useCallback(() => publishPcRef.current, [publishPcRef]);
-  const getSubscribePc = useCallback(() => subscribePcRef.current, [subscribePcRef]);
+  // Stable accessors for the per-tile stats reader: the publisher's
+  // connection is replaced on every re-share, and only reading at poll
+  // time gets the current one. Each remote tile reads its own WHEP PC.
+  const getPublishPc = useCallback(() => room.getPublishPc(), [room.getPublishPc]);
+  const getViewerPc = useCallback((peerId: string) => room.getViewerPc(peerId), [room.getViewerPc]);
 
   // Everyone currently publishing, me included. A tile can exist before
   // its stream arrives (the peer announced publishing but WebRTC is
@@ -702,7 +700,7 @@ function LiveRoom({
       setStarting(true);
       setShareError(null);
       try {
-        const res = await room.startSharing(choice.source, choice.quality, choice.fps, surface);
+        const res = await room.startSharing(choice.source, choice.quality, surface);
         if (res.error) setShareError(res.error);
         else setSharePanelOpen(false);
       } finally {
@@ -718,7 +716,7 @@ function LiveRoom({
         await start();
         return;
       }
-      room.applyQuality(choice.quality, choice.fps);
+      room.applyQuality(choice.quality);
       setSharePanelOpen(false);
       return;
     }
@@ -727,7 +725,10 @@ function LiveRoom({
 
   // Label for the live "Qualidade" button, showing what's actually
   // being sent right now.
-  const qualityLabel = QUALITY_OPTIONS.find((o) => o.value === room.quality)?.label ?? String(room.quality);
+  const qualityLabel =
+    room.source === "camera"
+      ? "Câmera"
+      : `${room.quality.resolution}p ${room.quality.fps}fps`;
 
   // The transmission controls, shared between their two homes: on a
   // phone they sit in the fixed bottom bar (48px, thumb-sized), on the
@@ -1091,7 +1092,7 @@ function LiveRoom({
             aspectMode={aspectMode}
             onAspectModeChange={setAspectMode}
             getPublishPc={getPublishPc}
-            getSubscribePc={getSubscribePc}
+            getViewerPc={getViewerPc}
           />
         ) : theater && tiles.length > 0 ? (
           <TheaterView
@@ -1107,7 +1108,7 @@ function LiveRoom({
             spotlight={room.spotlight}
             onToggleSpotlight={(peerId) => room.setSpotlightPeer(room.spotlight === peerId ? null : peerId)}
             getPublishPc={getPublishPc}
-            getSubscribePc={getSubscribePc}
+            getViewerPc={getViewerPc}
           />
         ) : tiles.length === 0 ? (
           <Empty roomId={roomId} password={password} />
@@ -1124,7 +1125,7 @@ function LiveRoom({
             onToggleSpotlight={(peerId) => room.setSpotlightPeer(room.spotlight === peerId ? null : peerId)}
             onSelect={openFullscreenTile}
             getPublishPc={getPublishPc}
-            getSubscribePc={getSubscribePc}
+            getViewerPc={getViewerPc}
           />
         )}
 
@@ -1151,7 +1152,6 @@ function LiveRoom({
           initial={{
             source: room.source ?? (canShareScreen ? "screen" : "camera"),
             quality: room.quality,
-            fps: room.fps,
             surface: room.surface,
           }}
           onOpenChange={setSharePanelOpen}
@@ -1174,7 +1174,7 @@ function Grid({
   onToggleSpotlight,
   onSelect,
   getPublishPc,
-  getSubscribePc,
+  getViewerPc,
 }: {
   tiles: Tile[];
   mutedPeers: Set<string>;
@@ -1187,7 +1187,7 @@ function Grid({
   onToggleSpotlight: (peerId: string) => void;
   onSelect: (peerId: string) => void;
   getPublishPc: () => RTCPeerConnection | null;
-  getSubscribePc: () => RTCPeerConnection | null;
+  getViewerPc: (peerId: string) => RTCPeerConnection | null;
 }) {
   return (
     <div
@@ -1282,7 +1282,7 @@ function Grid({
               <StatsButton getPc={getPublishPc} stream={tile.stream} own className="absolute right-2 top-2 z-20" />
             )}
             {!tile.isYou && tile.stream && (
-              <StatsButton getPc={getSubscribePc} stream={tile.stream} own={false} className="absolute right-12 top-2 z-20" />
+              <StatsButton getPc={() => getViewerPc(tile.peerId)} stream={tile.stream} own={false} className="absolute right-12 top-2 z-20" />
             )}
             {/* The room's shared stage pin. To the left of the stats
                 button when there's a stream to have stats for, alone
@@ -1465,7 +1465,7 @@ function FullscreenTile({
   aspectMode,
   onAspectModeChange,
   getPublishPc,
-  getSubscribePc,
+  getViewerPc,
 }: {
   tile: Tile;
   muted: boolean;
@@ -1480,7 +1480,7 @@ function FullscreenTile({
   aspectMode: AspectMode;
   onAspectModeChange: (mode: AspectMode) => void;
   getPublishPc: () => RTCPeerConnection | null;
-  getSubscribePc: () => RTCPeerConnection | null;
+  getViewerPc: (peerId: string) => RTCPeerConnection | null;
 }) {
   return (
     <div className="absolute inset-0 flex flex-col bg-black" data-tile="1">
@@ -1502,7 +1502,7 @@ function FullscreenTile({
       </div>
       <div className="absolute right-3 top-3 z-20 flex gap-2">
         {tile.stream && (
-          <StatsButton getPc={tile.isYou ? getPublishPc : getSubscribePc} stream={tile.stream} own={tile.isYou} />
+          <StatsButton getPc={tile.isYou ? getPublishPc : () => getViewerPc(tile.peerId)} stream={tile.stream} own={tile.isYou} />
         )}
         <AspectModeButton mode={aspectMode} onChange={onAspectModeChange} />
         {tile.stream && <PipButton />}
@@ -1543,7 +1543,7 @@ function TheaterView({
   spotlight,
   onToggleSpotlight,
   getPublishPc,
-  getSubscribePc,
+  getViewerPc,
 }: {
   tiles: Tile[];
   stage: string | null;
@@ -1557,7 +1557,7 @@ function TheaterView({
   spotlight: string | null;
   onToggleSpotlight: (peerId: string) => void;
   getPublishPc: () => RTCPeerConnection | null;
-  getSubscribePc: () => RTCPeerConnection | null;
+  getViewerPc: (peerId: string) => RTCPeerConnection | null;
 }) {
   // Pinned stage when it's still here, else the same automatic choice
   // the single-key shortcuts use: first remote stream, else the first
@@ -1594,7 +1594,7 @@ function TheaterView({
           <div className="absolute right-3 top-3 z-20 flex gap-2">
             {stageTile.stream && (
               <StatsButton
-                getPc={stageTile.isYou ? getPublishPc : getSubscribePc}
+                getPc={stageTile.isYou ? getPublishPc : () => getViewerPc(stageTile.peerId)}
                 stream={stageTile.stream}
                 own={stageTile.isYou}
               />
