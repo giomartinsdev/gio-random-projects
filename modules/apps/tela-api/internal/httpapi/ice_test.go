@@ -43,10 +43,10 @@ func TestIceEndpointStunOnlyWhenUnconfigured(t *testing.T) {
 // With TURN configured, the browser gets the relay and is pinned to it.
 func TestIceEndpointForcesRelayWhenTurnConfigured(t *testing.T) {
 	srv := newServerWithTurn(t, turn.New(turn.Options{
-		STUNURLs:   []string{"stun:stun.example.org:3478"},
-		StaticURLs: []string{"turn:turn.example.org:3478?transport=udp"},
-		Username:   "u",
-		Credential: "p",
+		STUNURLs:     []string{"stun:stun.example.org:3478"},
+		TurnURLs:     []string{"turn:turn.example.org:3478?transport=udp"},
+		TurnUsername: "u",
+		TurnPassword: "p",
 	}))
 
 	res, err := srv.Client().Get(srv.URL + "/api/rtc/ice")

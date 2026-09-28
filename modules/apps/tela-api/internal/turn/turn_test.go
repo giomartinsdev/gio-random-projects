@@ -2,12 +2,17 @@ package turn_test
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/turn"
 )
@@ -33,10 +38,10 @@ func TestUnconfiguredOffersOnlyStun(t *testing.T) {
 // relay is that the direct path is not usable.
 func TestStaticTurnIsOfferedWithCredentials(t *testing.T) {
 	p := turn.New(turn.Options{
-		STUNURLs:   []string{"stun:stun.example.org:3478"},
-		StaticURLs: []string{"turn:turn.example.org:3478?transport=udp", "turn:turn.example.org:3478?transport=tcp"},
-		Username:   "user",
-		Credential: "pass",
+		STUNURLs:     []string{"stun:stun.example.org:3478"},
+		TurnURLs:     []string{"turn:turn.example.org:3478?transport=udp", "turn:turn.example.org:3478?transport=tcp"},
+		TurnUsername: "user",
+		TurnPassword: "pass",
 	})
 	servers, forceRelay, err := p.IceServers(context.Background())
 	if err != nil {
@@ -150,11 +155,11 @@ func TestCloudflareFailureFallsBackToStun(t *testing.T) {
 func TestForceRelayCanBeTurnedOffExplicitly(t *testing.T) {
 	off := false
 	p := turn.New(turn.Options{
-		STUNURLs:   []string{"stun:stun.example.org:3478"},
-		StaticURLs: []string{"turn:turn.example.org:3478"},
-		Username:   "u",
-		Credential: "p",
-		ForceRelay: &off,
+		STUNURLs:     []string{"stun:stun.example.org:3478"},
+		TurnURLs:     []string{"turn:turn.example.org:3478"},
+		TurnUsername: "u",
+		TurnPassword: "p",
+		ForceRelay:   &off,
 	})
 	servers, forceRelay, err := p.IceServers(context.Background())
 	if err != nil {
@@ -199,5 +204,105 @@ func TestDefaultSTUNWhenUnset(t *testing.T) {
 	}
 	if len(servers) == 0 {
 		t.Fatal("expected a default STUN server when none is configured")
+	}
+}
+
+// Self-hosted coturn with `use-auth-secret`: the app mints a short-lived
+// credential per request (the TURN REST API), so no fixed password sits
+// in the browser and the relay can't be abused as an open relay. The
+// username embeds the expiry; the credential is HMAC-SHA1(secret, user).
+func TestCoturnSharedSecretMintsEphemeralCredentials(t *testing.T) {
+	p := turn.New(turn.Options{
+		STUNURLs:   []string{"stun:stun.example.org:3478"},
+		TurnURLs:   []string{"turn:turn.example.org:3478?transport=udp", "turn:turn.example.org:3478?transport=tcp"},
+		TurnSecret: "segredo-coturn",
+		TurnTTL:    3600,
+		TurnUserID: "tela",
+	})
+	servers, forceRelay, err := p.IceServers(context.Background())
+	if err != nil {
+		t.Fatalf("ice: %v", err)
+	}
+	if !forceRelay {
+		t.Fatal("a configured coturn must force relay")
+	}
+	if len(servers) != 2 {
+		t.Fatalf("servers = %+v, want STUN + coturn", servers)
+	}
+	entry := servers[1]
+	if len(entry.URLs) != 2 {
+		t.Fatalf("coturn urls = %v", entry.URLs)
+	}
+	// username is "<expiry>:<id>", expiry being a unix timestamp in the
+	// future (roughly now+TTL).
+	parts := strings.SplitN(entry.Username, ":", 2)
+	if len(parts) != 2 {
+		t.Fatalf("username %q is not <expiry>:<id>", entry.Username)
+	}
+	exp, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		t.Fatalf("expiry not an int: %v", err)
+	}
+	now := time.Now().Unix()
+	if exp < now+3000 || exp > now+3700 {
+		t.Fatalf("expiry %d not ~now+3600 (%d)", exp, now)
+	}
+	// credential must be base64(HMAC-SHA1(secret, username)).
+	mac := hmac.New(sha1.New, []byte("segredo-coturn"))
+	mac.Write([]byte(entry.Username))
+	want := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	if entry.Credential != want {
+		t.Fatalf("credential = %q, want %q", entry.Credential, want)
+	}
+}
+
+// Two calls get fresh (distinct) credentials -- a leaked one expires
+// and can't be reused indefinitely.
+func TestCoturnCredentialsArePerRequest(t *testing.T) {
+	p := turn.New(turn.Options{
+		TurnURLs:   []string{"turn:turn.example.org:3478"},
+		TurnSecret: "s",
+		TurnTTL:    3600,
+	})
+	a, _, _ := p.IceServers(context.Background())
+	time.Sleep(1100 * time.Millisecond)
+	b, _, _ := p.IceServers(context.Background())
+	if a[1].Username == b[1].Username {
+		t.Fatal("expected the expiry to advance between calls")
+	}
+}
+
+// A coturn with no secret falls back to a plain static entry (no auth
+// mint) -- for an unprotected internal relay.
+func TestCoturnWithoutSecretIsPlainStatic(t *testing.T) {
+	p := turn.New(turn.Options{
+		TurnURLs: []string{"turn:turn.example.org:3478"},
+	})
+	servers, forceRelay, err := p.IceServers(context.Background())
+	if err != nil {
+		t.Fatalf("ice: %v", err)
+	}
+	if !forceRelay || len(servers) != 2 {
+		t.Fatalf("servers=%+v forceRelay=%v", servers, forceRelay)
+	}
+	if servers[1].Username != "" || servers[1].Credential != "" {
+		t.Fatalf("no secret should mean no credentials, got %+v", servers[1])
+	}
+}
+
+func TestNewFromEnvCoturn(t *testing.T) {
+	t.Setenv("TELA_TURN_URLS", "turn:t:3478")
+	t.Setenv("TELA_TURN_SECRET", "shh")
+	t.Setenv("TELA_TURN_TTL", "600")
+	p := turn.NewFromEnv()
+	servers, forceRelay, err := p.IceServers(context.Background())
+	if err != nil {
+		t.Fatalf("ice: %v", err)
+	}
+	if !forceRelay || len(servers) != 2 {
+		t.Fatalf("servers=%+v forceRelay=%v", servers, forceRelay)
+	}
+	if servers[1].Credential == "" {
+		t.Fatal("expected a minted credential")
 	}
 }

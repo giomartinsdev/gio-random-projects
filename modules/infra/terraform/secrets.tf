@@ -237,6 +237,16 @@ resource "random_password" "runner_api_key" {
   special = false
 }
 
+# coturn's `static-auth-secret`: tela-api uses it to mint short-lived TURN
+# credentials (the TURN REST API -- hmac(secret, "<expiry>:<id>")) that
+# coturn independently verifies. Nothing long-lived reaches a browser,
+# and the relay can't be used by anyone tela-api didn't hand a credential
+# to. Rotating it invalidates every outstanding credential immediately.
+resource "random_password" "tela_turn_secret" {
+  length  = 48
+  special = false
+}
+
 # Postgres only applies POSTGRES_PASSWORD on first init of an empty
 # data volume -- changing the env var alone does nothing once the
 # volume already has data, and would leave domain-api/domain-worker

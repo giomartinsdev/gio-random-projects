@@ -97,6 +97,18 @@ variable "server_ip" {
   type        = string
 }
 
+variable "server_private_ip" {
+  description = <<-EOT
+    The VPS's private address on its VCN. Needed only by tela's co-located
+    coturn relay: the relay can't reach the host's own public IP (Oracle
+    doesn't hairpin), so MediaMTX also advertises the private address for
+    the relay to deliver to. Empty disables the self-hosted coturn.
+    Discovered by CI as TF_VAR_server_private_ip.
+  EOT
+  type        = string
+  default     = ""
+}
+
 # --- docker provider connection ---
 
 variable "docker_host" {

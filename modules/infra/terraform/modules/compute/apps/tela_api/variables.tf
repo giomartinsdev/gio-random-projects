@@ -48,6 +48,48 @@ variable "mediamtx_public_host" {
   default     = ""
 }
 
+variable "mediamtx_private_host" {
+  description = <<-EOT
+    The host's private address, also advertised by MediaMTX. Needed so the
+    coturn relay -- which runs on the SAME host and therefore can't reach
+    the public IP (Oracle doesn't hairpin) -- can deliver media to
+    MediaMTX over the private address. Empty means it isn't advertised
+    (no relay on this host, or relay handled elsewhere).
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "coturn_enabled" {
+  description = "Run a self-hosted coturn (free TURN relay) alongside MediaMTX. Off means STUN-only unless another TURN is configured."
+  type        = bool
+  default     = false
+}
+
+variable "coturn_public_host" {
+  description = "Public address coturn advertises to browsers (its external-ip). Same public IP as the host."
+  type        = string
+  default     = ""
+}
+
+variable "coturn_listen_port" {
+  description = "coturn's STUN/TURN listener port (udp+tcp). Must be open in the VPS firewall."
+  type        = number
+  default     = 3478
+}
+
+variable "coturn_relay_min_port" {
+  description = "First UDP port of coturn's relay allocation range. The whole range must be open in the VPS firewall."
+  type        = number
+  default     = 49160
+}
+
+variable "coturn_relay_max_port" {
+  description = "Last UDP port of coturn's relay allocation range."
+  type        = number
+  default     = 49200
+}
+
 variable "otlp_endpoint" {
   description = <<-EOT
     module.compute_services_observability's otlp_endpoint_loopback

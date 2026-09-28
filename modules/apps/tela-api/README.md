@@ -75,15 +75,25 @@ num caminho que descarta os pacotes grandes do handshake DTLS, a conexão
 não estabelece. Para esses casos há um **relay TURN** opcional
 (`GET /api/rtc/ice`): o navegador recebe os servidores ICE do servidor e,
 quando um TURN existe, é fixado nele (`iceTransportPolicy: relay`). Como
-o MediaMTX tem IP público, só o lado do navegador precisa do relay — o
-que torna um TURN gerenciado (Cloudflare) suficiente. Configuração por
-env var (todas opcionais, vazio = STUN-only):
+o MediaMTX tem IP público, só o lado do navegador precisa do relay.
+
+O deploy de produção usa um **coturn auto-hospedado** (grátis: a banda sai
+do egress da própria VPS), com `--use-auth-secret`: o tela-api gera uma
+credencial curta por requisição (`hmac(segredo, "<expiracao>:<id>")`) que
+o coturn verifica sozinho — nada de senha fixa no navegador, e o relay não
+vira um relay aberto. Como coturn e MediaMTX ficam no mesmo host, e a
+Oracle não faz hairpin para o próprio IP público, o MediaMTX anuncia
+**os dois** endereços (público e privado) e uma regra de NAT redireciona o
+tráfego do próprio host ao IP público de volta para a interface privada.
+Alternativas por env var (todas opcionais; vazio = STUN-only):
 
 | Env | O quê |
 | --- | --- |
 | `TELA_STUN_URLS` | STUN (espaço/vírgula). Vazio usa o padrão (Google STUN). |
-| `TELA_TURN_URLS` + `TELA_TURN_USERNAME` + `TELA_TURN_PASSWORD` | TURN estático (ex.: coturn). |
-| `TELA_TURN_CF_KEY_ID` + `TELA_TURN_CF_API_TOKEN` | Cloudflare Realtime TURN: as credenciais são geradas no servidor e cacheadas; o token da conta nunca chega ao navegador. Tem prioridade sobre o TURN estático. |
+| `TELA_TURN_URLS` | Endereços TURN (ex.: `turn:host:3478?transport=udp`). |
+| `TELA_TURN_SECRET` + `TELA_TURN_USERID` + `TELA_TURN_TTL` | coturn `use-auth-secret`: credenciais efêmeras geradas por requisição. **Preferido.** |
+| `TELA_TURN_USERNAME` + `TELA_TURN_PASSWORD` | TURN com credencial fixa (passada como está). |
+| `TELA_TURN_CF_KEY_ID` + `TELA_TURN_CF_API_TOKEN` | Cloudflare Realtime TURN (gerenciado, pago fora do SFU deles). Usado só se não houver coturn. |
 
 ## Estado
 

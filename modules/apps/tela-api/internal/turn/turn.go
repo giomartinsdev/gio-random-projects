@@ -16,10 +16,14 @@ package turn
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -41,11 +45,22 @@ type IceServer struct {
 // configured".
 type Options struct {
 	STUNURLs []string
-	// A static TURN: coturn, say. When set, credentials are passed
-	// through verbatim.
-	StaticURLs []string
-	Username   string
-	Credential string
+	// TURN endpoints. How they are authenticated depends on which
+	// credential is present:
+	//   - TurnSecret set  -> coturn `use-auth-secret`: a short-lived,
+	//     per-request credential is minted (the TURN REST API), so no
+	//     long-lived password reaches the browser. Preferred.
+	//   - TurnUsername/TurnPassword set -> a fixed credential, passed
+	//     through verbatim (a coturn with lt-cred-mech, say).
+	//   - neither -> plain entries, no credentials (an open internal
+	//     relay).
+	TurnURLs     []string
+	TurnUsername string
+	TurnPassword string
+	// coturn shared secret + tuning.
+	TurnSecret string
+	TurnTTL    int
+	TurnUserID string
 	// Cloudflare TURN. CFAPIBase is overridable for tests.
 	CFAPIBase     string
 	CFKeyID       string
@@ -76,6 +91,9 @@ func New(opts Options) *Proxy {
 		// Refresh well before the 24h TTL.
 		opts.CFCachePeriod = 6 * 60 * 60
 	}
+	if opts.TurnTTL <= 0 {
+		opts.TurnTTL = 3600
+	}
 	return &Proxy{opts: opts, client: &http.Client{Timeout: 4 * time.Second}}
 }
 
@@ -84,9 +102,12 @@ func New(opts Options) *Proxy {
 func NewFromEnv() *Proxy {
 	return New(Options{
 		STUNURLs:     splitList(os.Getenv("TELA_STUN_URLS")),
-		StaticURLs:   splitList(os.Getenv("TELA_TURN_URLS")),
-		Username:     os.Getenv("TELA_TURN_USERNAME"),
-		Credential:   os.Getenv("TELA_TURN_PASSWORD"),
+		TurnURLs:     splitList(os.Getenv("TELA_TURN_URLS")),
+		TurnUsername: os.Getenv("TELA_TURN_USERNAME"),
+		TurnPassword: os.Getenv("TELA_TURN_PASSWORD"),
+		TurnSecret:   os.Getenv("TELA_TURN_SECRET"),
+		TurnTTL:      envInt("TELA_TURN_TTL", 3600),
+		TurnUserID:   os.Getenv("TELA_TURN_USERID"),
 		CFKeyID:      os.Getenv("TELA_TURN_CF_KEY_ID"),
 		CFAPIToken:   os.Getenv("TELA_TURN_CF_API_TOKEN"),
 		CFTTLSeconds: envInt("TELA_TURN_CF_TTL", 86400),
@@ -104,9 +125,9 @@ type Proxy struct {
 	cacheExp time.Time
 }
 
-// HasRelay reports whether any TURN is configured (Cloudflare or static).
+// HasRelay reports whether any TURN is configured (coturn or Cloudflare).
 func (p *Proxy) HasRelay() bool {
-	return p != nil && (len(p.opts.StaticURLs) > 0 || (p.opts.CFKeyID != "" && p.opts.CFAPIToken != ""))
+	return p != nil && (len(p.opts.TurnURLs) > 0 || (p.opts.CFKeyID != "" && p.opts.CFAPIToken != ""))
 }
 
 // IceServers returns the STUN entries followed by at most one TURN entry,
@@ -122,7 +143,9 @@ func (p *Proxy) IceServers(ctx context.Context) ([]IceServer, bool, error) {
 		servers = append(servers, IceServer{URLs: []string{u}})
 	}
 
-	relay, ok := p.staticRelay()
+	// Priority: a self-hosted coturn (free, no egress bill) wins over the
+	// managed one; then Cloudflare.
+	relay, ok := p.coturn()
 	if !ok && p.cfConfigured() {
 		minted, err := p.cloudflare(ctx)
 		if err != nil {
@@ -138,11 +161,39 @@ func (p *Proxy) IceServers(ctx context.Context) ([]IceServer, bool, error) {
 	return servers, p.forceRelay(ok), nil
 }
 
-func (p *Proxy) staticRelay() (IceServer, bool) {
-	if len(p.opts.StaticURLs) == 0 {
+// coturn builds the TURN entry from the deployment's coturn config. With
+// a shared secret it mints a fresh, expiring credential (TURN REST API);
+// with a fixed user/pass it passes them through; with neither it emits
+// bare URLs.
+func (p *Proxy) coturn() (IceServer, bool) {
+	if len(p.opts.TurnURLs) == 0 {
 		return IceServer{}, false
 	}
-	return IceServer{URLs: p.opts.StaticURLs, Username: p.opts.Username, Credential: p.opts.Credential}, true
+	if p.opts.TurnSecret != "" {
+		return p.mintCoturn(), true
+	}
+	return IceServer{
+		URLs:       p.opts.TurnURLs,
+		Username:   p.opts.TurnUsername,
+		Credential: p.opts.TurnPassword,
+	}, true
+}
+
+// mintCoturn builds a TURN REST API credential: username is
+// "<unix-expiry>:<id>" and the credential is base64(HMAC-SHA1(secret,
+// username)). coturn recomputes the same HMAC from its `static-auth-secret`,
+// so the secret itself never leaves the server and each credential dies at
+// its expiry.
+func (p *Proxy) mintCoturn() IceServer {
+	expiry := time.Now().Add(time.Duration(p.opts.TurnTTL) * time.Second).Unix()
+	username := strconv.FormatInt(expiry, 10)
+	if p.opts.TurnUserID != "" {
+		username += ":" + p.opts.TurnUserID
+	}
+	mac := hmac.New(sha1.New, []byte(p.opts.TurnSecret))
+	mac.Write([]byte(username))
+	credential := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	return IceServer{URLs: p.opts.TurnURLs, Username: username, Credential: credential}
 }
 
 func (p *Proxy) cfConfigured() bool {
