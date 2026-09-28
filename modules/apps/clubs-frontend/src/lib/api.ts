@@ -5,6 +5,7 @@ import type {
   AdminStatus,
   Announcement,
   Club,
+  ClubDeltas,
   ClubRef,
   ClaimedPro,
   DivisionChange,
@@ -18,8 +19,10 @@ import type {
   RankPlayer,
   Records,
   SearchRun,
+  SourceStatus,
   SquadMember,
   SyncRun,
+  TimelineEntry,
   WatchEntry,
 } from "./types";
 
@@ -127,6 +130,15 @@ const realApi = {
 
   records: (clubId: string) => request<Records>(`/clubs/${encodeURIComponent(clubId)}/records`),
 
+  /** A linha do tempo do clube -- divisões, recordes e marcos num fio datado.
+   * É o acervo do hub, que a fonte não tem. */
+  timeline: (clubId: string) =>
+    request<{ eventos: TimelineEntry[]; total: number }>(`/clubs/${encodeURIComponent(clubId)}/timeline`),
+
+  /** A mudança desde a primeira leitura guardada: "o que aconteceu com o meu
+   * clube desde que comecei a acompanhar". */
+  deltas: (clubId: string) => request<ClubDeltas>(`/clubs/${encodeURIComponent(clubId)}/deltas`),
+
   globalRecords: () => request<GlobalRecords>("/records/global"),
 
   h2h: (clubId: string, rivalId: string) =>
@@ -160,6 +172,11 @@ const realApi = {
 
   announcements: (limite = 12) =>
     request<{ announcements: Announcement[]; total: number }>(`/announcements?limite=${limite}`),
+
+  /** A saúde da fonte (EA/CDN). Público: qualquer tela avisa que há
+   * dificuldade de falar com a fornecedora dos dados, e quando ela volta o
+   * dado sincroniza sozinho. */
+  sourceStatus: () => request<SourceStatus>("/source-status"),
 
   // --- pessoal (exige login) ---------------------------------------------
 

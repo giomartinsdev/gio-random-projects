@@ -5,12 +5,18 @@
 // polla o estado, e mostra o que veio. A diferença entre os alvos está só na
 // frase do resultado, porque "syncar jogador" atualiza as partidas dos clubes
 // dele (a fonte não tem endpoint de jogador).
+//
+// Quando a fonte está fora, o pedido NÃO é dado por falho: ele continua
+// pendente no backend, e a frase explica que é a fornecedora dos dados que
+// está com problema e que o dado sincroniza sozinho quando ela voltar.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { api } from "../lib/api";
 import type { FetchRun } from "../lib/types";
 import { fmt } from "../lib/format";
+import { useI18n } from "../lib/i18n";
+import { useSourceStatus } from "../lib/hooks";
 
 type Target = "club" | "player";
 
@@ -23,6 +29,8 @@ export function SyncButton({
   targetId: string;
   onDone?: () => void;
 }) {
+  const { t } = useI18n();
+  const source = useSourceStatus();
   const [run, setRun] = useState<FetchRun | null>(null);
   const [error, setErro] = useState("");
   const poll = useRef<number | null>(null);
@@ -49,7 +57,7 @@ export function SyncButton({
       if (target === "player") await api.requestFetchJogador(targetId);
       else await api.requestFetch(targetId);
     } catch {
-      setErro("Não conseguimos pedir a atualização.");
+      setErro(t("claim.failed"));
       setRun((r) => (r ? { ...r, running: false } : r));
       return;
     }
@@ -72,22 +80,28 @@ export function SyncButton({
       }
     };
     tick();
-  }, [target, targetId, onDone]);
+  }, [target, targetId, onDone, t]);
 
   const running = run?.running ?? false;
   const pronto = !!run?.finished_at;
+  // A fonte fora é passageira, não um erro do alvo: o pedido segue pendente e
+  // será atendido sozinho. Por isso tem frase própria, e não a de falha.
+  const fonteFora = source?.available === false;
 
   // A frase do resultado diz o que ACONTECEU, não "sucesso": syncar um clube
   // traz jogadores e partidas; syncar um jogador atualiza os clubes dele.
   let resumo = "";
-  if (running) resumo = "buscando na fonte…";
-  else if (run?.error) resumo = "a fonte recusou esta atualização";
+  if (fonteFora) resumo = t("source.syncPending");
+  else if (running) resumo = t("claim.searchingSource");
+  else if (run?.error) resumo = t("sync.sourceRefused");
   else if (pronto) {
     resumo =
       target === "player"
-        ? `${fmt(run!.clubs)} clubs · ${fmt(run!.matches)} matches`
-        : `${fmt(run!.players)} players · ${fmt(run!.matches)} matches`;
+        ? `${fmt(run!.clubs)} ${t("common.clubs")} · ${fmt(run!.matches)} ${t("common.matches")}`
+        : `${fmt(run!.players)} ${t("common.players")} · ${fmt(run!.matches)} ${t("common.matches")}`;
   }
+
+  const danger = !!run?.error || !!error;
 
   return (
     <div className="flex flex-col items-end gap-1">
@@ -95,7 +109,7 @@ export function SyncButton({
         type="button"
         onClick={sincronizar}
         disabled={running}
-        title="Buscar os dados mais recentes direto da fonte, sem esperar a atualização de rotina"
+        title={t("area.updateClubs")}
         className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wide transition-colors disabled:opacity-50"
         style={{
           borderColor: pronto ? "var(--success)" : "var(--border-strong)",
@@ -104,12 +118,12 @@ export function SyncButton({
         }}
       >
         <RefreshCw className={`size-3.5 ${running ? "animate-spin" : ""}`} />
-        {running ? "sincronizando" : "sincronizar"}
+        {running ? t("sync.syncing") : t("sync.sync")}
       </button>
       {(resumo || error) && (
         <span
           className="font-mono text-[10px]"
-          style={{ color: run?.error || error ? "var(--danger)" : "var(--text-faint)" }}
+          style={{ color: danger ? "var(--danger)" : fonteFora ? "var(--warning)" : "var(--text-faint)" }}
         >
           {error || resumo}
         </span>

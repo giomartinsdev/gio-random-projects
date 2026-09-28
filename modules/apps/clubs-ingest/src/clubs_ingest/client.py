@@ -140,13 +140,18 @@ class DomainClient:
 
     def save_ingest_estado(self, *, cycles: int, clubs_ok: int, clubs_failed: int,
                            new_matches: int, snapshots: int, bootstrapped: bool,
-                           last_error: str = "") -> None:
-        """Publica a saúde deste worker.
+                           last_error: str = "", source_available: bool = True,
+                           source_error: str = "") -> None:
+        """Publica a saúde deste worker e a da FONTE.
 
         Ele é Python e não serve HTTP, então sem isto uma falha em produção
         (inclusive o CDN da fonte bloqueando o IP do datacenter, que é o risco
         do ADR#4) fica invisível: o log vive no container, atrás do SSH. O
         painel lê daqui.
+
+        `source_available` é o que a interface usa para dizer "estamos com
+        problemas para falar com a fornecedora dos dados" em vez de mostrar o
+        dado vazio como se fosse resposta.
         """
         self.post("/admin/ingest", {
             "cycles": cycles,
@@ -156,6 +161,8 @@ class DomainClient:
             "snapshots": snapshots,
             "bootstrapped": bootstrapped,
             "last_error": last_error,
+            "source_available": source_available,
+            "source_error": source_error,
         })
 
     # --- fila de fetch sob demanda ----------------------------------------

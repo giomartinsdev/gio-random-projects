@@ -313,6 +313,13 @@ locals {
       # no Cloudflare Access application at all.
       hostname = "clubs.giomartins.dev"
       bucket   = "clubs-frontend"
+      # clubs-api serve o preview de link (Open Graph) das páginas de detalhe
+      # neste host: um crawler pedindo /club/:id, /player/:id ou /match/:id
+      # recebe HTML com título, descrição e placar em vez do index.html sem
+      # metadados. A porta é a mesma que o ingress usa para clubs-api
+      # (locals.services); sem ela, link de clube compartilhado em Discord
+      # apareceria pelado.
+      og_api   = 8017
     },
     {
       # financas-frontend: the single SPA for the personal-finance

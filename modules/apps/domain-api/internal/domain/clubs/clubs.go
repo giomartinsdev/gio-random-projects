@@ -339,6 +339,44 @@ type DivisionChange struct {
 	Kind             string    `json:"kind"`
 }
 
+// TimelineEntry é um evento datado da história de um clube -- a linha do tempo
+// que cruza o que o hub acumulou: divisão mudou, recorde batido, marco (100
+// jogos, 500 gols), entrada na lista de acompanhados. É o que a fonte NÃO tem:
+// a EA só conhece o estado atual e a janela recente; a série dessas leituras é
+// o acervo que dá valor ao hub ao longo do tempo.
+//
+// `Kind` é uma chave semântica (`divisao`, `recorde`, `marco`, `seguido`), não
+// texto pronto: quem desenha monta a frase no idioma escolhido, como no feed.
+type TimelineEntry struct {
+	At     time.Time      `json:"at"`
+	Kind   string         `json:"kind"`
+	Title  string         `json:"title"`
+	Detail string         `json:"detail,omitempty"`
+	// Data são os fatos para a UI traduzir/renderizar (ex.: nova divisão,
+	// placar do recorde, contagem do marco). O Title é o fallback textual.
+	Data map[string]any `json:"data,omitempty"`
+}
+
+// ClubDeltas é a mudança desde que a pessoa passou a acompanhar o clube --
+// "o que aconteceu com o MEU clube desde que segui". Distinto dos totais
+// absolutos: estes são a diferença entre a primeira leitura guardada e a
+// última, que só existe porque o hub acumula leituras.
+type ClubDeltas struct {
+	// Since é quando o acompanhamento começou (a primeira leitura guardada).
+	Since time.Time `json:"since"`
+	// Matches/Wins/Draws/Losses/Goals são a diferença no período.
+	Matches int `json:"matches"`
+	Wins    int `json:"wins"`
+	Draws   int `json:"draws"`
+	Losses  int `json:"losses"`
+	Goals   int `json:"goals"`
+	// SkillDelta é a variação do nível no período (pode ser negativa).
+	SkillDelta int `json:"skill_delta"`
+	// DivisionFrom/To descrevem a divisão no início e agora (0 = desconhecida).
+	DivisionFrom int `json:"division_from"`
+	DivisionTo   int `json:"division_to"`
+}
+
 // Records is the club's record book, computed from the persisted history —
 // which is the whole point: the source's window is ~10 matches, these are
 // not.
@@ -580,4 +618,10 @@ type IngestEstado struct {
 	LastErrorAt  *time.Time `json:"last_error_at"`
 	// Vivo é derivado: um ciclo nos últimos 3 intervalos esperados.
 	Alive bool `json:"alive"`
+	// SourceAvailable é a saúde da FONTE agora (EA/CDN), separada do erro do
+	// ciclo: um clube ruim não derruba a fonte inteira. É o que a interface lê
+	// para avisar "estamos com problemas para falar com a fornecedora dos
+	// dados" em vez de mostrar o vazio como resposta.
+	SourceAvailable bool   `json:"source_available"`
+	SourceError     string `json:"source_error"`
 }

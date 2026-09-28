@@ -59,8 +59,38 @@ outro backend: `VITE_CLUBS_API_URL=http://localhost:9000 npm run dev`.
 ```sh
 npm run build     # tsc -b && vite build
 npm run typecheck # tsc --noEmit
-npm test          # hoje um no-op (o repo não tem suíte de SPA)
 ```
+
+## Testes
+
+Três camadas, cada uma para o que ela faz melhor:
+
+```sh
+npm test           # Vitest (jsdom): funções puras e comportamento de componente
+npm run test:e2e   # BDD/e2e num navegador real (playwright-bdd)
+npm run bdd        # = bddgen + playwright test (o mesmo, com o codegen explícito)
+```
+
+**BDD é a fonte de verdade.** Os cenários vivem em `tests/features/*.feature`
+(Gherkin em português: Funcionalidade/Cenário/Dado/Quando/Então) e os passos em
+`tests/steps/`. O `bddgen` gera os specs do Playwright a partir deles — os
+arquivos gerados (`.features-gen/`) não são versionados: editar o gerado seria
+editar a saída, não o contrato.
+
+Por que duas ferramentas e não uma:
+
+- **Vitest** é o lugar certo para as asserções que não merecem uma frase de
+  negócio — a paridade `parse(pathFor(view)) === view` é uma propriedade, testada
+  melhor numa tabela do que em sete cenários; e o roteamento é função pura, então
+  `routing.test.ts` o cobre sem subir navegador.
+- **Playwright/BDD** é o lugar certo para o que depende de navegador de verdade:
+  navegar, clicar, voltar, o HTML que o crawler lê. O e2e roda contra o **build de
+  produção em modo demo** (`VITE_CLUBS_DEMO=1`), então não depende de Postgres,
+  do worker nem da EA — verifica a interface, não a cadeia inteira.
+
+Em CI (onde não há Chrome de sistema) a pipeline seta `CLUBS_PW_CHANNEL=chromium`
+para o Playwright usar o Chromium que ela instala; localmente o padrão é o Chrome
+do sistema.
 
 ## Deploy
 

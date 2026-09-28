@@ -16,26 +16,18 @@ import {
   Star,
   Sun,
   Target,
+  TriangleAlert,
   User,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "./ui";
 import { fmt } from "../lib/format";
-import type { SyncRun } from "../lib/types";
+import type { SourceStatus, SyncRun } from "../lib/types";
 import type { Theme } from "../lib/hooks";
 import { LOCALE_LABEL, LOCALE_SHORT, LOCALES, useI18n, type Key, type Locale } from "../lib/i18n";
+import type { RouteId } from "../lib/routing";
 
-export type RouteId =
-  | "home"
-  | "clubs"
-  | "club"
-  | "match"
-  | "player"
-  | "players"
-  | "claim"
-  | "my-area"
-  | "notifications"
-  | "admin";
+export type { RouteId } from "../lib/routing";
 
 interface NavItem {
   id: RouteId;
@@ -75,6 +67,7 @@ export function Shell({
   theme,
   onToggleTheme,
   sync,
+  source,
   isAdmin,
   onLogout,
   children,
@@ -86,6 +79,7 @@ export function Shell({
   theme: Theme;
   onToggleTheme: () => void;
   sync: SyncRun | null;
+  source: SourceStatus | null;
   isAdmin: boolean;
   onLogout: () => void;
   children: ReactNode;
@@ -262,6 +256,7 @@ export function Shell({
           })}
         </div>
 
+        {source && !source.available && <SourceDownBanner />}
         {sync?.running && <SyncBanner sync={sync} />}
 
         <main className="mx-auto w-full max-w-[1180px] flex-1 px-4 py-5 md:px-6">{children}</main>
@@ -328,6 +323,29 @@ function SyncBanner({ sync }: { sync: SyncRun }) {
       </span>
       <span className="h-[3px] w-24 overflow-hidden rounded-full bg-[var(--surface-3)]">
         <span className="block h-full rounded-full transition-[width]" style={{ width: `${pct}%`, background: "var(--accent)" }} />
+      </span>
+    </div>
+  );
+}
+
+/** O aviso de fonte fora: a fornecedora dos dados não responde no momento.
+ *
+ * Existe para não deixar o vazio passar por resposta. Sem ele, um sync com a
+ * EA fora mostra "0 players · 0 matches" e quem lê entende "este clube não tem
+ * dados". A frase diz o que É (a fonte caiu), que é passageiro (o resto
+ * funciona) e que não exige ação (sincroniza sozinho quando voltar). */
+function SourceDownBanner() {
+  const { t } = useI18n();
+  return (
+    <div
+      className="flex items-start gap-2.5 border-b border-line px-4 py-2 text-xs"
+      style={{ background: "linear-gradient(180deg, var(--warning-soft, var(--accent-soft)), transparent)" }}
+      role="status"
+    >
+      <TriangleAlert className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--warning)" }} />
+      <span className="min-w-0">
+        <span className="font-display font-bold">{t("source.down")}</span>{" "}
+        <span className="text-muted">{t("source.downHint")}</span>
       </span>
     </div>
   );

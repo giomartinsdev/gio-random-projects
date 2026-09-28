@@ -3,6 +3,19 @@ map $http_upgrade $connection_upgrade {
   ''      close;
 }
 
+# Crawlers que desenham o cartão de preview de link (Open Graph). O SPA é
+# estático e nenhum deles roda JavaScript, então um link de clube/partida/
+# jogador chegaria sem título nem descrição. Para essas requisições, os
+# detalhes abaixo mandam para o backend de preview (var.og_api do site) em vez
+# do MinIO. A lista é de bots, não de humanos: qualquer outro User-Agent segue
+# para o SPA normal.
+#   discord: "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)"
+#   whatsapp: "WhatsApp/2.x"  |  telegram: "TelegramBot (like TwitterBot)"
+map $http_user_agent $is_crawler {
+  default 0;
+  ~*(facebookexternalhit|Facebot|Twitterbot|Discordbot|WhatsApp|Slackbot|TelegramBot|LinkedInBot|Pinterest|redditbot|Googlebot|bingbot|Applebot|AhrefsBot|GPTBot|ClaudeBot|Embedly|vkShare|W3C_Validator|Mastodon|Bluesky) 1;
+}
+
 client_max_body_size 50m;
 
 # Anything with no matching server_name below (a raw IP hit, a
@@ -41,6 +54,32 @@ server {
 server {
   listen 80;
   server_name ${s.hostname};
+
+%{ if try(s.og_api, 0) > 0 ~}
+  # Preview de link: um crawler pedindo uma página de detalhe (/club/:id,
+  # /match/:id, /player/:id) recebe o HTML com as meta tags do backend
+  # (og_api), que é quem tem o dado. Humanos seguem para o SPA no `location /`
+  # abaixo -- só o User-Agent de bot casa aqui, então a experiência normal não
+  # muda. Sem isto, nenhum dos três tipos de página teria preview em
+  # Discord/WhatsApp/X (o SPA é estático e nenhum scraper roda JavaScript).
+  #
+  # O destino é montado numa variável porque `proxy_pass` com URI dentro de um
+  # `if` é o caso que o próprio nginx desaconselha (o if vira uma location
+  # aninhada e a URI é tratada de forma não óbvia). Com a URL inteira na
+  # variável, `proxy_pass $var` passa exatamente o que está nela -- sem
+  # reescrever nada por trás.
+  location ~ ^/(club|player|match)/([^/]+)/?$ {
+    set $og_route "";
+    if ($is_crawler) {
+      set $og_route "http://127.0.0.1:${s.og_api}/og/$1/$2";
+    }
+    if ($og_route = "") {
+      set $og_route "http://127.0.0.1:${minio_port}/${s.bucket}/index.html";
+    }
+    proxy_pass $og_route;
+    proxy_set_header Host $host;
+  }
+%{ endif ~}
 
   # Static SPA served straight out of MinIO's S3 API (bucket
   # "${s.bucket}"), path-style -- no container behind this hostname at

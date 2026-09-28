@@ -10,6 +10,7 @@ import * as D from "./mock-data";
 import type {
   AdminStatus,
   Club,
+  ClubDeltas,
   ClaimedPro,
   DivisionChange,
   Evolution,
@@ -20,8 +21,10 @@ import type {
   NotificationPrefs,
   Records,
   SearchRun,
+  SourceStatus,
   SquadMember,
   SyncRun,
+  TimelineEntry,
   WatchEntry,
 } from "./types";
 
@@ -99,6 +102,11 @@ export const mockApi = {
 
   records: (clubId: string) => later<Records>(D.recordsOf(clubId)),
 
+  timeline: (clubId: string) =>
+    later<{ eventos: TimelineEntry[]; total: number }>({ eventos: D.timelineOf(clubId), total: D.timelineOf(clubId).length }),
+
+  deltas: (clubId: string) => later<ClubDeltas>(D.deltasOf(clubId)),
+
   globalRecords: () => later<GlobalRecords>(D.globalRecordsOf()),
 
   h2h: (clubId: string, rivalId: string) => later<HeadToHead>(D.h2h(clubId, rivalId)),
@@ -164,6 +172,10 @@ export const mockApi = {
   // --- administração ------------------------------------------------------
 
   adminStatus: () => later<AdminStatus>(D.ADMIN_STATUS),
+
+  // No demo a fonte está sempre de pé: um demo não demonstra nada se quebrar
+  // junto com a cadeia que ele existe para ilustrar.
+  sourceStatus: () => later<SourceStatus>({ available: true, error: "", checked_at: null }),
 };
 
 export type MockApi = typeof mockApi;

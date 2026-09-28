@@ -37,6 +37,12 @@ type Repository interface {
 	DivisionChanges(ctx context.Context, clubID string) ([]DivisionChange, error)
 	LatestSnapshot(ctx context.Context, clubID string) (*Snapshot, error)
 	Records(ctx context.Context, clubID string) (Records, error)
+	// Timeline cruza divisões, recordes e marcos num só fio datado -- o acervo
+	// do hub, que a fonte não tem (ela só conhece a janela recente).
+	Timeline(ctx context.Context, clubID string) ([]TimelineEntry, error)
+	// ClubDeltas é a mudança desde a primeira leitura guardada: "o que
+	// aconteceu com o meu clube desde que comecei a acompanhar".
+	ClubDeltas(ctx context.Context, clubID string) (ClubDeltas, error)
 	// GlobalRecords cruza TODAS as partidas acompanhadas -- o que a fonte não
 	// faz, porque só conhece a janela recente de cada clube isolado (FR-011).
 	GlobalRecords(ctx context.Context) (GlobalRecords, error)

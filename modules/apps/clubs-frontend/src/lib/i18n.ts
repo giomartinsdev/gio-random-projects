@@ -282,7 +282,12 @@ export type Key =
   | "result.win" | "result.draw" | "result.loss"
   | "feed.result.win" | "feed.result.draw" | "feed.result.loss"
   | "feed.kind.resultado" | "feed.kind.ranking" | "feed.kind.jogador" | "feed.kind.novidade"
-  | "club.goalsAgainst" | "club.squadSize" | "home.globalRecords" | "home.topScorer" | "club.h2hCompare";
+  | "club.goalsAgainst" | "club.squadSize" | "home.globalRecords" | "home.topScorer" | "club.h2hCompare"
+  | "source.down" | "source.downHint" | "source.syncPending" | "source.searchPending"
+  | "home.thinTitle" | "home.thinHint" | "home.claimCta" | "home.browseClubs"
+  | "claim.campaignHint"
+  | "club.timelineTab" | "club.sinceYouFollow" | "club.evtDivision" | "club.evtRecord"
+  | "club.evtMilestone" | "club.evtFollowed";
 
 type Dict = Record<Key, string>;
 
@@ -633,6 +638,21 @@ const en_US: Dict = {
   "home.globalRecords": "Hub records",
   "home.topScorer": "Top scorer",
   "club.h2hCompare": "Side by side",
+  "source.down": "We're having trouble reaching the data provider",
+  "source.downHint": "The rest of the hub keeps working with the data already stored. As soon as the provider is back, your data syncs on its own — no need to do anything.",
+  "source.syncPending": "the provider is down — we'll sync as soon as it's back",
+  "source.searchPending": "the provider is down — keep this open, or try again shortly",
+  "home.thinTitle": "Follow your club",
+  "home.thinHint": "The hub works without signing in — but following a club brings its squad, matches and history on its own.",
+  "home.claimCta": "Find my club",
+  "home.browseClubs": "Browse clubs",
+  "claim.campaignHint": "Campaign so far",
+  "club.timelineTab": "History",
+  "club.sinceYouFollow": "Since you started following",
+  "club.evtDivision": "Division change",
+  "club.evtRecord": "Record",
+  "club.evtMilestone": "Milestone",
+  "club.evtFollowed": "Added to the hub",
 };
 
 const pt_BR: Dict = {
@@ -975,6 +995,21 @@ const pt_BR: Dict = {
   "home.globalRecords": "Recordes do hub",
   "home.topScorer": "Artilheiro",
   "club.h2hCompare": "Lado a lado",
+  "source.down": "Estamos com problemas para conversar com a fornecedora dos dados",
+  "source.downHint": "O resto do hub continua funcionando com o que já está guardado. Assim que a fornecedora voltar, o seu dado sincroniza automaticamente — você não precisa fazer nada.",
+  "source.syncPending": "a fornecedora está fora — sincronizamos assim que ela voltar",
+  "source.searchPending": "a fornecedora está fora — deixe esta tela aberta ou tente de novo em instantes",
+  "home.thinTitle": "Acompanhe seu clube",
+  "home.thinHint": "O hub funciona sem entrar — mas seguir um clube traz o elenco, as partidas e o histórico dele sozinho.",
+  "home.claimCta": "Encontrar meu clube",
+  "home.browseClubs": "Ver clubes",
+  "claim.campaignHint": "Campanha até agora",
+  "club.timelineTab": "História",
+  "club.sinceYouFollow": "Desde que você acompanha",
+  "club.evtDivision": "Mudança de divisão",
+  "club.evtRecord": "Recorde",
+  "club.evtMilestone": "Marco",
+  "club.evtFollowed": "Entrou no hub",
 };
 
 const es_ES: Dict = {
@@ -1324,6 +1359,21 @@ const es_ES: Dict = {
   "home.globalRecords": "Récords del hub",
   "home.topScorer": "Goleador",
   "club.h2hCompare": "Lado a lado",
+  "source.down": "Tenemos problemas para comunicarnos con el proveedor de datos",
+  "source.downHint": "El resto del hub sigue funcionando con lo que ya está guardado. Cuando el proveedor vuelva, tus datos se sincronizan solos — no tienes que hacer nada.",
+  "source.syncPending": "el proveedor está caído — sincronizamos en cuanto vuelva",
+  "source.searchPending": "el proveedor está caído — deja esta pantalla abierta o inténtalo de nuevo en un momento",
+  "home.thinTitle": "Sigue a tu club",
+  "home.thinHint": "El hub funciona sin iniciar sesión — pero seguir un club trae su plantilla, sus partidos y su historial por sí solo.",
+  "home.claimCta": "Encontrar mi club",
+  "home.browseClubs": "Ver clubes",
+  "claim.campaignHint": "Campaña hasta ahora",
+  "club.timelineTab": "Historial",
+  "club.sinceYouFollow": "Desde que lo sigues",
+  "club.evtDivision": "Cambio de división",
+  "club.evtRecord": "Récord",
+  "club.evtMilestone": "Hito",
+  "club.evtFollowed": "Añadido al hub",
 };
 
 const fr_FR: Dict = {
@@ -1671,6 +1721,21 @@ const fr_FR: Dict = {
   "home.globalRecords": "Records du hub",
   "home.topScorer": "Meilleur buteur",
   "club.h2hCompare": "Côte à côte",
+  "source.down": "Nous avons du mal à joindre le fournisseur des données",
+  "source.downHint": "Le reste du hub continue de fonctionner avec ce qui est déjà enregistré. Dès que le fournisseur revient, tes données se synchronisent toutes seules — rien à faire.",
+  "source.syncPending": "le fournisseur est indisponible — on synchronise dès son retour",
+  "source.searchPending": "le fournisseur est indisponible — garde cet écran ouvert ou réessaie dans un instant",
+  "home.thinTitle": "Suis ton club",
+  "home.thinHint": "Le hub fonctionne sans connexion — mais suivre un club apporte son effectif, ses matchs et son historique tout seul.",
+  "home.claimCta": "Trouver mon club",
+  "home.browseClubs": "Voir les clubs",
+  "claim.campaignHint": "Bilan jusqu'ici",
+  "club.timelineTab": "Historique",
+  "club.sinceYouFollow": "Depuis que tu suis",
+  "club.evtDivision": "Changement de division",
+  "club.evtRecord": "Record",
+  "club.evtMilestone": "Jalon",
+  "club.evtFollowed": "Ajouté au hub",
 };
 
 const de_DE: Dict = {
@@ -2018,6 +2083,21 @@ const de_DE: Dict = {
   "home.globalRecords": "Hub-Rekorde",
   "home.topScorer": "Torschützenkönig",
   "club.h2hCompare": "Direktvergleich",
+  "source.down": "Wir haben Probleme, den Datenanbieter zu erreichen",
+  "source.downHint": "Der Rest des Hubs läuft mit den bereits gespeicherten Daten weiter. Sobald der Anbieter wieder da ist, synchronisieren deine Daten automatisch — du musst nichts tun.",
+  "source.syncPending": "der Anbieter ist nicht erreichbar — wir synchronisieren, sobald er zurück ist",
+  "source.searchPending": "der Anbieter ist nicht erreichbar — lass diesen Bildschirm offen oder versuch es gleich noch einmal",
+  "home.thinTitle": "Folge deinem Verein",
+  "home.thinHint": "Der Hub funktioniert ohne Anmeldung — aber einem Verein zu folgen bringt Kader, Spiele und Verlauf von selbst.",
+  "home.claimCta": "Meinen Verein finden",
+  "home.browseClubs": "Vereine ansehen",
+  "claim.campaignHint": "Bilanz bisher",
+  "club.timelineTab": "Verlauf",
+  "club.sinceYouFollow": "Seit du folgst",
+  "club.evtDivision": "Divisionswechsel",
+  "club.evtRecord": "Rekord",
+  "club.evtMilestone": "Meilenstein",
+  "club.evtFollowed": "Zum Hub hinzugefügt",
 };
 
 const DICTS: Record<Locale, Dict> = {

@@ -96,6 +96,10 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Get("/clubs/{clubId}/evolution", cl.GetEvolution)
 		r.Get("/clubs/{clubId}/division-changes", cl.GetDivisionChanges)
 		r.Get("/clubs/{clubId}/records", cl.GetRecords)
+		// A linha do tempo do clube (o acervo do hub) e a mudança desde que a
+		// pessoa começou a acompanhar. Nenhuma das duas existe na fonte.
+		r.Get("/clubs/{clubId}/timeline", cl.GetTimeline)
+		r.Get("/clubs/{clubId}/deltas", cl.GetClubDeltas)
 		r.Get("/records/global", cl.GetGlobalRecords)
 		r.Get("/clubs/{clubId}/h2h/{rivalId}", cl.HeadToHead)
 		r.Get("/matches/{matchId}", cl.GetMatch)
@@ -126,6 +130,10 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Get("/admin/status", cl.AdminStatus)
 		// Saúde do worker de ingestão (ele não tem host próprio).
 		r.Get("/admin/ingest", cl.GetIngestEstado)
+		// Recorte PÚBLICO da saúde da fonte: só "a EA está respondendo?". É o
+		// que qualquer tela consulta para avisar da dificuldade de falar com a
+		// fornecedora dos dados, sem exigir login (a tela de resgate é pública).
+		r.Get("/source-status", cl.GetSourceStatus)
 
 		r.Post("/clubs", clw.UpsertClub)
 		r.Post("/clubs/{clubId}/totals", clw.UpsertTotais)

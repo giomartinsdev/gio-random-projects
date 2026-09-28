@@ -273,6 +273,34 @@ func (h *ClubsHandlers) GetRecords(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rec)
 }
 
+// GetTimeline devolve a história do clube como um fio datado -- divisões,
+// recordes e marcos. É o acervo do hub: a fonte só conhece o estado atual e a
+// janela recente, então esta linha do tempo é o que não existe em lugar nenhum.
+func (h *ClubsHandlers) GetTimeline(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "clubId")
+	entries, err := h.clubs.Timeline(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	if entries == nil {
+		entries = []domainclubs.TimelineEntry{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"eventos": entries, "total": len(entries)})
+}
+
+// GetClubDeltas devolve a mudança desde a primeira leitura guardada: "o que
+// aconteceu com o meu clube desde que comecei a acompanhar".
+func (h *ClubsHandlers) GetClubDeltas(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "clubId")
+	d, err := h.clubs.ClubDeltas(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deltas": d})
+}
+
 // GetGlobalRecords são os recordes do hub inteiro (FR-011): a maior goleada
 // entre quaisquer dois clubes acompanhados, o jogo com mais gols e a melhor
 // atuação. É o que a fonte não dá, porque nunca cruza dois clubes.
@@ -516,6 +544,27 @@ func (h *ClubsHandlers) GetIngestEstado(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, e)
+}
+
+// GetSourceStatus é a versão PÚBLICA da saúde da fonte: só "a EA está
+// respondendo?" e, quando não, por quê. O painel de administração lê o estado
+// inteiro em /admin/ingest; este recorte é o que qualquer tela pode consultar
+// para avisar que há dificuldade de falar com a fornecedora dos dados.
+//
+// Não leva chave nem login porque não revela nada do acervo: é um booleano e a
+// mensagem do CDN. E é justamente quem NÃO está logado que mais precisa dele --
+// a tela de resgate mostra o elenco antes de a pessoa entrar.
+func (h *ClubsHandlers) GetSourceStatus(w http.ResponseWriter, r *http.Request) {
+	e, err := h.clubs.IngestEstado(r.Context())
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"available":  e.SourceAvailable,
+		"error":      e.SourceError,
+		"checked_at": e.LastCycleAt,
+	})
 }
 
 func (h *ClubsHandlers) AdminStatus(w http.ResponseWriter, r *http.Request) {

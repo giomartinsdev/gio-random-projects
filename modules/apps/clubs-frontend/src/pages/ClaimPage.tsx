@@ -28,6 +28,7 @@ import { GoogleSignInButton } from "../components/google-signin";
 import { VerifiedIcon } from "../components/icons";
 import { fmt, POS_ORDER, POS_SHORT, ratingColor } from "../lib/format";
 import { useI18n } from "../lib/i18n";
+import { useSourceStatus } from "../lib/hooks";
 
 /** Os ícones do passo a passo, por chave. Ficam aqui e não em texto com emoji
  * para renderizarem igual em qualquer sistema e herdarem a cor do tema. */
@@ -145,6 +146,7 @@ function StepBar({ step, club }: { step: Step; club: Club | null }) {
 
 function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
   const { t } = useI18n();
+  const source = useSourceStatus();
   const [q, setQ] = useState("");
   const [list, setList] = useState<Club[] | null>(null);
   const [buscando, setBuscando] = useState(false);
@@ -262,6 +264,14 @@ function StepBuscar({ onPick }: { onPick: (c: Club) => void }) {
                 </p>
               </div>
             )}
+            {source?.available === false && (
+              <div className="flex items-start gap-2 rounded-md px-3 py-2.5" style={{ background: "var(--warning-soft, var(--info-soft))" }}>
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--warning)" }} />
+                <p className="text-[11px] text-muted">
+                  <span className="font-semibold">{t("source.down")}</span> {t("source.searchPending")}
+                </p>
+              </div>
+            )}
           </div>
         </Card>
 
@@ -370,6 +380,7 @@ function StepEscolher({
   onSignedIn: () => void;
 }) {
   const { t } = useI18n();
+  const source = useSourceStatus();
   const [squad, setSquad] = useState<SquadMember[] | null>(null);
   const [fetchState, setFetchState] = useState<FetchRun | null>(null);
   const [q, setQ] = useState("");
@@ -456,6 +467,17 @@ function StepEscolher({
           </div>
         </div>
 
+        {/* Campanha do clube, visível ENQUANTO o elenco é buscado na fonte. Um
+            spinner sozinho não confirma "é este o clube certo?" -- e a busca do
+            elenco pode demorar. Estes números o hub já tem, então mostrá-los
+            aqui faz a espera ter conteúdo em vez de ser um vazio girando. */}
+        <div className="flex flex-wrap gap-2">
+          <Stat label={t("claim.campaignHint")} value={`${fmt(club.played)} ${t("common.played")}`} sub={`${fmt(club.wins)}V ${fmt(club.draws)}E ${fmt(club.losses)}D`} accent />
+          <Stat label={t("common.goals")} value={`${fmt(club.goals)}–${fmt(club.goals_conceded)}`} sub={t("club.goalsForAgainst")} />
+          <Stat label={t("common.division")} value={`D${club.division}`} sub={`${t("club.bestDivision")} D${club.best_division}`} />
+          <Stat label={t("common.level")} value={fmt(club.skill_rating)} sub={t("club.levelToday")} />
+        </div>
+
         <div className="flex flex-wrap items-center gap-2.5">
           <label className="surface flex min-w-[220px] flex-1 items-center gap-2 px-3 py-2">
             <span className="text-faint">⌕</span>
@@ -498,7 +520,14 @@ function StepEscolher({
           {squad === null ? (
             <Spinner label={t("claim.loadingSquad")} />
           ) : buscando ? (
-            <Spinner label={t("claim.fetchingSquad")} />
+            <div className="flex flex-col gap-3 px-4 py-4">
+              <Spinner label={t("claim.fetchingSquad")} />
+              {source?.available === false && (
+                <p className="text-center text-[11px] text-muted">
+                  <span className="font-semibold">{t("source.down")}</span> {t("source.syncPending")}
+                </p>
+              )}
+            </div>
           ) : filtered.length === 0 ? (
             <Empty title={t("claim.noPlayers")} hint={t("claim.noPlayersHint")} />
           ) : (

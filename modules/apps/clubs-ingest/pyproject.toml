@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "pytest-bdd>=8.0", "testcontainers>=4.0", "docker>=7.0"]
 
 [tool.hatch.build.targets.wheel]
 # The vendored MIT client ships inside the package (clubs_ingest/fc27_api.py)

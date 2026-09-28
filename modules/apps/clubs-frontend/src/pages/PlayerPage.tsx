@@ -12,6 +12,7 @@ import { VerifiedIcon } from "../components/icons";
 import { BarChart, LineChart } from "../components/charts";
 import { fmt, minutes, POS_LABEL, POS_SHORT, ratingColor, SAVE_LABEL } from "../lib/format";
 import { useI18n } from "../lib/i18n";
+import { DocumentMeta } from "../lib/document-meta";
 
 export function PlayerPage({
   playerId,
@@ -59,6 +60,18 @@ export function PlayerPage({
 
   return (
     <>
+      <DocumentMeta
+        title={p.gamertag}
+        description={[
+          POS_LABEL[p.position],
+          p.club_name,
+          `${p.played} ${t("common.played")}`,
+          `${p.goals} ${t("common.goals")}`,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+        path={`/player/${p.player_id}`}
+      />
       <PageHead
         crumb={
           <button type="button" onClick={onBack} className="inline-flex items-center gap-1 hover:text-accent">

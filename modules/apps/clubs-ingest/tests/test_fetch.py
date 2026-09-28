@@ -14,25 +14,45 @@ tela ser útil:
 from __future__ import annotations
 
 from clubs_ingest.cycle import Ingest, IngestConfig
+from clubs_ingest.source import SourceUnavailable
 
 
 class FakeSource:
-    def __init__(self, info=None, overall=None, matches=None, search=None):
+    def __init__(self, info=None, overall=None, matches=None, search=None, down=False):
         self._info = info or {}
         self._overall = overall or {}
         self._matches = matches or []
         self.search_by_id_map = search or {}
+        # `down=True` simula a fonte fora (rede/CDN/403): todo método levanta,
+        # como o SourceClient faz de verdade.
+        self.down = down
+
+    def _guard(self):
+        if self.down:
+            raise SourceUnavailable("a fonte não respondeu")
 
     def club_info(self, club_id):
+        self._guard()
         return self._info
 
     def club_overall(self, club_id):
+        self._guard()
         return self._overall
 
-    def club_matches(self, club_id, count=10):
+    def club_matches(self, club_id, count=10, match_types=None):
+        self._guard()
         return self._matches
 
+    def club_members(self, club_id=""):
+        self._guard()
+        return []
+
+    def club_members_career(self, club_id=""):
+        self._guard()
+        return []
+
     def search_by_id(self, club_id, name=""):
+        self._guard()
         return self.search_by_id_map.get(str(club_id), [])
 
 
@@ -269,3 +289,42 @@ def test_announcement_title_is_one_language_no_mix():
         assert not re.search(r"\bLoss\b|\bDraw\b|\bWin\b", title), (
             f"palavra em inglês no título: {title!r}"
         )
+
+
+def test_run_fetch_raises_when_the_source_is_down():
+    """Fonte fora NÃO pode virar "sync concluído, 0 jogadores".
+
+    Era o bug: o cliente engolia o erro da fonte e devolvia vazio, então a
+    linha da fila fechava com sucesso e a tela mostrava "0 players · 0
+    matches" em verde -- lê como "este clube não tem dados", não como "a
+    fonte caiu". Quem pediu fica sem saber que pode tentar de novo.
+
+    A exceção sobe para o chamador (a fila) marcar a falha na linha, que é
+    onde a tela lê.
+    """
+    import pytest
+
+    source = FakeSource(down=True)
+    with pytest.raises(SourceUnavailable):
+        new_ingest(source, FakeDomain()).run_fetch("141881")
+
+
+def test_run_fetch_without_a_source_hit_is_not_a_failure():
+    """O contraste que separa os dois casos: clube que a fonte conhece e
+    responde vazio é sucesso (0, 0); fonte fora é erro. Sem a distinção, os
+    dois eram a mesma coisa."""
+    source = FakeSource(info={}, overall={}, matches=[])
+    players, matches = new_ingest(source, FakeDomain()).run_fetch("sem-clube")
+    assert players == 0 and matches == 0
+
+
+def test_run_fetch_jogador_raises_when_the_source_is_down():
+    """Mesma regra no sync de jogador: a fonte fora sobe, não vira sucesso."""
+    import pytest
+
+    class D(FakeDomain):
+        def clubs_do_jogador(self, player_id):
+            return ["1"]
+
+    with pytest.raises(SourceUnavailable):
+        new_ingest(FakeSource(down=True), D()).run_fetch_jogador("p1")

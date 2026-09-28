@@ -73,6 +73,8 @@ export const ANUNCIO_ICONS: Record<string, LucideIcon> = {
   ranking: Trophy,
   jogador: Users,
   novidade: Megaphone,
+  // Marcos (100 jogos, 500 gols) têm ícone próprio: são conquista, não notícia.
+  marco: Trophy,
 };
 
 /** O ícone de cada tipo de partida. A distinção é o que o tipo significa, não

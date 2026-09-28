@@ -1,13 +1,14 @@
 // Home: anúncios + rankings globais. É a porta de entrada e funciona sem login.
 
 import { useEffect, useState } from "react";
-import { Crosshair, Goal, Star, Trophy } from "lucide-react";
+import { ArrowRight, Crosshair, Goal, Star, Target, Trophy } from "lucide-react";
 import { api } from "../lib/api";
 import type { Announcement, ClubRef, GlobalRecords, RankPlayer } from "../lib/types";
 import { Badge, Bar, Card, Crest, Empty, Pager, RankMedallion, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { ANUNCIO_ICONS, FLOW_ICONS, VerifiedIcon, type LucideIcon } from "../components/icons";
 import { BarChart } from "../components/charts";
+import { DocumentMeta } from "../lib/document-meta";
 import { fmt, POS_SHORT, timeAgo } from "../lib/format";
 import { useI18n, type Key } from "../lib/i18n";
 
@@ -71,7 +72,89 @@ function GlobalRecord({
 }
 const PER_PAGE = 10;
 
-export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string) => void; onOpenPlayer: (id: string) => void }) {
+/** O convite de ativação da home.
+ *
+ * Existe porque uma home magra -- sem feed, sem clube conhecido -- é lida como
+ * "produto vazio", não como "comece por aqui". Ele aparece sempre, mas o texto
+ * muda com o estado: com feed vivo, é um convite discreto; sem feed, ele assume
+ * o lugar principal para que a primeira dobra tenha uma AÇÃO, não um vazio.
+ *
+ * Os dois botões cobrem as duas intenções de quem chega: quem já sabe o clube
+ * (resgatar) e quem quer explorar primeiro (ver clubes). */
+function ThinHubHero({
+  thin,
+  onClaim,
+  onBrowse,
+}: {
+  /** true quando a home está magra (sem feed): aí o convite explica por quê. */
+  thin: boolean;
+  onClaim?: () => void;
+  onBrowse?: () => void;
+}) {
+  const { t } = useI18n();
+  if (!onClaim && !onBrowse) return null;
+  return (
+    <div
+      className="mb-4 flex flex-wrap items-center gap-4 rounded-lg border p-4"
+      style={{
+        borderColor: "var(--border-strong)",
+        background: "linear-gradient(135deg, var(--accent-soft), transparent 60%)",
+      }}
+    >
+      <span
+        className="grid size-11 shrink-0 place-items-center rounded-lg"
+        style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
+      >
+        <Target className="size-5" strokeWidth={2.5} />
+      </span>
+      <div className="min-w-[220px] flex-1">
+        <div className="font-display text-base font-bold">{t("home.thinTitle")}</div>
+        {/* Com o feed vivo, o convite é discreto (só o título e os botões); com
+            a base magra, ele explica por que vale seguir um clube -- é a
+            primeira dobra e não pode ser um vazio sem contexto. */}
+        {thin && <p className="text-xs text-muted">{t("home.thinHint")}</p>}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {onClaim && (
+          <button
+            type="button"
+            onClick={onClaim}
+            className="inline-flex items-center gap-2 rounded-md px-4 py-2 font-display text-xs font-bold uppercase tracking-wide"
+            style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
+          >
+            <Target className="size-3.5" strokeWidth={2.5} />
+            {t("home.claimCta")}
+          </button>
+        )}
+        {onBrowse && (
+          <button
+            type="button"
+            onClick={onBrowse}
+            className="inline-flex items-center gap-2 rounded-md border px-4 py-2 font-display text-xs font-bold uppercase tracking-wide text-muted transition-colors hover:text-ink"
+            style={{ borderColor: "var(--border-strong)" }}
+          >
+            {t("home.browseClubs")}
+            <ArrowRight className="size-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function HomePage({
+  onOpenClub,
+  onOpenPlayer,
+  onClaim,
+  onBrowseClubs,
+}: {
+  onOpenClub: (id: string) => void;
+  onOpenPlayer: (id: string) => void;
+  /** Leva ao resgate; é o passo de ativação a partir da home. */
+  onClaim?: () => void;
+  /** Leva ao diretório de clubes, para quem quer só explorar. */
+  onBrowseClubs?: () => void;
+}) {
   const { t } = useI18n();
   const [announcements, setAnuncios] = useState<Announcement[] | null>(null);
   const [totalAnuncios, setTotalAnuncios] = useState(0);
@@ -163,10 +246,21 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
 
   return (
     <>
+      <DocumentMeta title={t("home.title")} description={t("home.subtitle")} path="/" />
       <PageHead
         title={t("home.title")}
         sub={t("home.subtitle")}
         actions={<Badge tone="accent">pro clubs · ea fc 27</Badge>}
+      />
+
+      {/* Ativação: sem login, sem clubes seguidos e com o feed magro, a home
+          ainda oferece o caminho de trazer o próprio clube. O convite fica
+          ACIMA do feed porque é o passo que muda o produto para quem chegou
+          agora -- o feed e o ranking são o que ele vê DEPOIS de seguir algo. */}
+      <ThinHubHero
+        thin={totalAnuncios === 0 || (announcements?.length ?? 0) === 0}
+        onClaim={onClaim}
+        onBrowse={onBrowseClubs}
       />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

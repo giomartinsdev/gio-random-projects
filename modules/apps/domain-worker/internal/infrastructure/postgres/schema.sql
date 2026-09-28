@@ -635,5 +635,16 @@ CREATE TABLE IF NOT EXISTS clubs_ingest_estado (
     bootstrapped   BOOLEAN NOT NULL DEFAULT false,
     last_error       TEXT NOT NULL DEFAULT '',
     last_error_at    TIMESTAMPTZ,
+    -- Se a fonte (EA/CDN) está conversável AGORA. Distinto de last_error: um
+    -- erro pode ser de um clube só; source_available=false é a fonte inteira
+    -- recusando (403 do CDN, rede). É o que a interface lê para dizer "estamos
+    -- com problemas para falar com a fornecedora dos dados" em vez de mostrar
+    -- o vazio como resposta.
+    source_available BOOLEAN NOT NULL DEFAULT true,
+    source_error     TEXT NOT NULL DEFAULT '',
     CONSTRAINT clubs_ingest_estado_single CHECK (id = 1)
 );
+
+-- Bancos criados antes da coluna de saúde da fonte.
+ALTER TABLE clubs_ingest_estado ADD COLUMN IF NOT EXISTS source_available BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE clubs_ingest_estado ADD COLUMN IF NOT EXISTS source_error TEXT NOT NULL DEFAULT '';

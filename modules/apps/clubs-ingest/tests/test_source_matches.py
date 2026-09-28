@@ -15,7 +15,7 @@ vezes; perder um tipo não pode custar a consulta inteira).
 from __future__ import annotations
 
 from clubs_ingest.fc27_api import FC27APIError
-from clubs_ingest.source import SourceClient
+from clubs_ingest.source import SourceClient, health
 
 
 class FakeAPI:
@@ -87,3 +87,37 @@ def test_non_dict_rows_are_dropped():
     api = FakeAPI({"leagueMatch": [match("a"), None, "lixo"]})
     got = make_client(api).club_matches("1001")
     assert [m["matchId"] for m in got] == ["a"]
+
+
+def test_every_type_failing_is_source_unavailable():
+    """Os três tipos bloqueados não é "clube sem partidas": é a fonte fora.
+
+    Antes isto voltava `[]` e o sync "concluía" com 0 -- a tela mostrava
+    "0 players · 0 matches" em verde, que lê como "este clube não tem dados".
+    """
+    import pytest
+    from clubs_ingest.source import SourceUnavailable
+
+    api = FakeAPI({}, fail_types={"leagueMatch", "friendlyMatch", "playoffMatch"})
+    with pytest.raises(SourceUnavailable):
+        make_client(api).club_matches("1001")
+
+
+def test_health_records_the_source_down_and_back():
+    """A saúde da fonte acompanha cada chamada: é o que a interface lê para
+    avisar que é a fornecedora dos dados que está fora, não o clube."""
+    import pytest
+    from clubs_ingest.source import SourceUnavailable
+
+    api = FakeAPI({}, fail_types={"leagueMatch", "friendlyMatch", "playoffMatch"})
+    health.ok()
+    with pytest.raises(SourceUnavailable):
+        make_client(api).club_matches("1001")
+    assert health.available is False, "fonte fora precisa marcar a saúde como indisponível"
+    assert health.error, "o motivo vai junto para a tela poder explicar"
+
+    api.fail_types = set()
+    api.by_type = {"leagueMatch": [match("a")]}
+    make_client(api).club_matches("1001")
+    assert health.available is True, "uma resposta marca a fonte como de volta"
+    assert health.error == ""

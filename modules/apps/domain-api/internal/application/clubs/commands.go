@@ -155,6 +155,8 @@ type IngestEstadoInput struct {
 	Snapshots      int    `json:"snapshots"`
 	Bootstrapped bool   `json:"bootstrapped"`
 	LastError     string `json:"last_error,omitempty"`
+	SourceAvailable bool   `json:"source_available"`
+	SourceError     string `json:"source_error,omitempty"`
 }
 
 // FetchRunInput é o pedido de sync sob demanda (a SPA grava) e o resultado que

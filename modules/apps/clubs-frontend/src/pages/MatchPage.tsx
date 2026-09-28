@@ -8,6 +8,7 @@ import { Badge, Card, Crest, Empty, MatchKindBadge, PosTag, Spinner } from "../c
 import { PageHead } from "../components/shell";
 import { EVENT_LABEL, fmt, fmtDateTime, minutes, POS_SHORT, ratingColor, resultColor } from "../lib/format";
 import { useI18n } from "../lib/i18n";
+import { DocumentMeta } from "../lib/document-meta";
 
 export function MatchPage({
   matchId,
@@ -42,6 +43,11 @@ export function MatchPage({
 
   return (
     <>
+      <DocumentMeta
+        title={`${m.home_club_name} ${m.home_goals}–${m.away_goals} ${m.away_club_name}`}
+        description={`${fmtDateTime(m.timestamp)}${m.playoff_round ? ` · ${m.playoff_round}` : ""}`}
+        path={`/match/${m.match_id}`}
+      />
       <PageHead
         crumb={
           <button type="button" onClick={onBack} className="inline-flex items-center gap-1 hover:text-accent">

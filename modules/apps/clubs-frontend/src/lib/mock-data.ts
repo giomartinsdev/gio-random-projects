@@ -16,6 +16,7 @@ import type {
   Adversario,
   Announcement,
   Club,
+  ClubDeltas,
   ClubRef,
   DivisionChange,
   Evolution,
@@ -32,6 +33,7 @@ import type {
   Records,
   SquadMember,
   SyncRun,
+  TimelineEntry,
   WatchEntry,
 } from "./types";
 
@@ -495,6 +497,61 @@ export function recordsOf(clubId: string): Records {
     longest_win_streak: 8,
     clean_sheets: club.clean_sheets,
     total_matches: club.played,
+  };
+}
+
+/** A linha do tempo do clube no demo: divisões, recordes e a entrada no hub,
+ * montados do mesmo dado dos recordes/snapshots -- como o backend deriva. */
+export function timelineOf(clubId: string): TimelineEntry[] {
+  const club = CLUBS.find((c) => c.club_id === clubId) ?? MY_CLUB;
+  const rec = recordsOf(club.club_id);
+  const entries: TimelineEntry[] = [
+    { at: iso(20, 10, 0), kind: "seguido", title: "Clube entrou no hub", data: {} },
+  ];
+  for (const ch of DIVISION_CHANGES) {
+    entries.push({
+      at: ch.detected_at,
+      kind: "divisao",
+      title: ch.kind === "promotion" ? "Promovido" : "Rebaixado",
+      data: { previous_division: ch.previous_division, new_division: ch.new_division, change_kind: ch.kind },
+    });
+  }
+  if (rec.biggest_win) {
+    entries.push({
+      at: rec.biggest_win.timestamp, kind: "recorde", title: "Maior goleada",
+      detail: rec.biggest_win.opponent_name,
+      data: { record: "biggest_win", our_goals: rec.biggest_win.our_goals, their_goals: rec.biggest_win.their_goals },
+    });
+  }
+  if (rec.highest_scoring_match) {
+    entries.push({
+      at: rec.highest_scoring_match.timestamp, kind: "recorde", title: "Jogo com mais gols",
+      detail: rec.highest_scoring_match.opponent_name,
+      data: { record: "highest_scoring", total_goals: rec.highest_scoring_match.total_goals },
+    });
+  }
+  void club;
+  return entries.sort((a, b) => +new Date(b.at) - +new Date(a.at));
+}
+
+/** A mudança desde a primeira leitura, derivada da série de snapshots. */
+export function deltasOf(clubId: string): ClubDeltas {
+  const ev = evolutionOf(clubId);
+  const serie = ev.serie ?? [];
+  if (serie.length === 0) {
+    return { since: null, matches: 0, wins: 0, draws: 0, losses: 0, goals: 0, skill_delta: 0, division_from: 0, division_to: 0 };
+  }
+  const first = serie[0], last = serie[serie.length - 1];
+  return {
+    since: first.read_at,
+    matches: last.played - first.played,
+    wins: last.wins - first.wins,
+    draws: last.draws - first.draws,
+    losses: last.losses - first.losses,
+    goals: last.goals - first.goals,
+    skill_delta: last.skill_rating - first.skill_rating,
+    division_from: first.division_at_read,
+    division_to: last.division_at_read,
   };
 }
 

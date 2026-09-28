@@ -508,7 +508,8 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 		var in clubsIngestPayload
 		if err = json.Unmarshal(cmd.Payload, &in); err == nil {
 			err = h.ingestEstado.Save(ctx, in.Cycles, in.ClubsOK, in.ClubsFailed,
-				in.NewMatches, in.Snapshots, in.Bootstrapped, in.LastError)
+				in.NewMatches, in.Snapshots, in.Bootstrapped, in.LastError,
+				in.SourceAvailable, in.SourceError)
 		}
 	case strings.HasPrefix(string(cmd.Action), "preferencia."):
 		// Per-person writes, all carrying usuario_email. The API is the
@@ -621,6 +622,11 @@ type clubsIngestPayload struct {
 	Snapshots    int    `json:"snapshots"`
 	Bootstrapped bool   `json:"bootstrapped"`
 	LastError    string `json:"last_error"`
+	// Saúde da fonte, separada do erro do ciclo: source_available=false é a
+	// fonte inteira fora (403/CDN), o que a interface traduz no aviso de
+	// dificuldade de falar com a fornecedora dos dados.
+	SourceAvailable bool   `json:"source_available"`
+	SourceError     string `json:"source_error"`
 }
 
 // classifyClubsAction decide PARA ONDE vai uma ação da família clubs.

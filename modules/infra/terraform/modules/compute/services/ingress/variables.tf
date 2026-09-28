@@ -13,10 +13,11 @@ variable "nginx_version" {
 }
 
 variable "static_sites" {
-  description = "hostname/bucket pairs served straight out of MinIO -- no container behind these at all. See root locals.tf's static_sites."
+  description = "hostname/bucket pairs served straight out of MinIO -- no container behind these at all. See root locals.tf's static_sites. `og_api` é a porta local do backend de preview de link: quando > 0, requisições de crawler a /club/:id, /player/:id e /match/:id vão para ele em vez do index.html, para o cartão do link ter metadados (Open Graph). 0 = sem preview."
   type = list(object({
     hostname = string
     bucket   = string
+    og_api   = optional(number, 0)
   }))
   default = []
 }

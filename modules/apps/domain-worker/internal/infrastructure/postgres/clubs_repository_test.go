@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -13,27 +12,12 @@ import (
 	domainpref "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/preference"
 )
 
-// Integration tests against a real Postgres — opt-in via TEST_DATABASE_URL,
-// same convention as deal_repository_test.go (unset just skips). Needs the
-// schema applied first:
-//
-//	TEST_DATABASE_URL=postgres://... go test ./internal/infrastructure/postgres/ -run TestPartida
+// Integration tests against a real Postgres. O harness (harness_test.go) sobe o
+// container e aplica o schema; TEST_DATABASE_URL continua funcionando quando
+// alguém aponta para um banco quente. Sem Docker, testPool pula.
 func clubsTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set; skipping clubs repository tests")
-	}
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	if err := Migrate(ctx, pool); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return pool
+	return testPool(t)
 }
 
 // TestPartidaUpsertIsIdempotentByMatchID is the assertion that proves a match

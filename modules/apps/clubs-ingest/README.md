@@ -73,6 +73,29 @@ Cobrem os cinco códigos de resultado, o amistoso derivado, o código de posiç�
 desconhecido que não quebra, a orientação da partida para o clube requisitante,
 e a idempotência por `match_id`.
 
+### BDD e integração com container
+
+Duas camadas a mais:
+
+- **BDD (pytest-bdd)**: os cenários de integração vivem em
+  `tests/features/*.feature` (Gherkin em português) com os passos em
+  `tests/steps/`. O primeiro é `source_down.feature` — o que o worker faz quando
+  a fonte começa a devolver 403.
+- **Container real (testcontainers)**: os cenários de integração sobem um
+  container com um domain-api de mentira (`tests/fixtures/domain_stub.py`) e
+  apontam o `DomainClient` de verdade para ele. A travessia de rede e o contrato
+  de payload passam a ser testados de fato — foi um rename de payload que passou
+  batido por testes de mock (o `json.Unmarshal` ignora chave desconhecida, e o
+  campo vira zero em silêncio).
+
+```sh
+.venv/bin/python -m pytest -q          # tudo
+.venv/bin/python -m pytest tests/steps # só os cenários BDD (usam Docker)
+```
+
+Sem Docker, os cenários que precisam de container se pulam e o resto roda.
+
+
 ## Variáveis de ambiente
 
 | Variável | Obrigatória | O que é |

@@ -921,6 +921,144 @@ func (r *ClubsRepository) LatestSnapshot(ctx context.Context, clubID string) (*d
 	return &s, nil
 }
 
+// Timeline cruza o acervo do hub num fio datado. Não há uma tabela de eventos:
+// os eventos SÃO as linhas que já existem (snapshots, mudanças de divisão,
+// partidas), remontadas em ordem. É o que a fonte não dá -- a EA só conhece o
+// agora, e a série dessas leituras é o produto ao longo do tempo.
+//
+// Tudo é derivado de leitura; nada é gravado aqui. Um tipo de evento novo entra
+// como mais uma fonte e um sort, não como mais uma tabela.
+func (r *ClubsRepository) Timeline(ctx context.Context, clubID string) ([]domainclubs.TimelineEntry, error) {
+	var out []domainclubs.TimelineEntry
+
+	// 1. Mudanças de divisão -- o evento mais significativo da história.
+	changes, err := r.DivisionChanges(ctx, clubID)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range changes {
+		out = append(out, domainclubs.TimelineEntry{
+			At:    c.DetectedAt,
+			Kind:  "divisao",
+			Title: divisionTitle(c),
+			Data: map[string]any{
+				"previous_division": c.PreviousDivision,
+				"new_division":      c.NewDivision,
+				"change_kind":       c.Kind,
+			},
+		})
+	}
+
+	// 2. Entrada no hub: a primeira leitura guardada é, na prática, quando o
+	// hub passou a seguir o clube.
+	var primeira *time.Time
+	if err := r.pool.QueryRow(ctx,
+		`SELECT min(read_at) FROM clubs_snapshots WHERE club_id = $1`, clubID).Scan(&primeira); err != nil {
+		return nil, fmt.Errorf("timeline primeira leitura: %w", err)
+	}
+	if primeira != nil {
+		out = append(out, domainclubs.TimelineEntry{
+			At:    *primeira,
+			Kind:  "seguido",
+			Title: "Clube entrou no hub",
+			Data:  map[string]any{},
+		})
+	}
+
+	// 3. Recordes: marcos que a janela recente não guarda, derivados das
+	// partidas acumuladas.
+	rec, err := r.Records(ctx, clubID)
+	if err != nil {
+		return nil, err
+	}
+	if rec.BiggestWin != nil {
+		out = append(out, domainclubs.TimelineEntry{
+			At:     rec.BiggestWin.Timestamp,
+			Kind:   "recorde",
+			Title:  "Maior goleada",
+			Detail: rec.BiggestWin.OpponentName,
+			Data: map[string]any{
+				"record":      "biggest_win",
+				"our_goals":   rec.BiggestWin.OurGoals,
+				"their_goals": rec.BiggestWin.TheirGoals,
+			},
+		})
+	}
+	if rec.MaisGols != nil {
+		out = append(out, domainclubs.TimelineEntry{
+			At:     rec.MaisGols.Timestamp,
+			Kind:   "recorde",
+			Title:  "Jogo com mais gols",
+			Detail: rec.MaisGols.OpponentName,
+			Data: map[string]any{
+				"record":      "highest_scoring",
+				"total_goals": rec.MaisGols.Total,
+			},
+		})
+	}
+
+	// Ordena do mais recente para o mais antigo -- a linha do tempo se lê de
+	// cima para baixo, como um feed.
+	sort.Slice(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
+	return out, nil
+}
+
+// ClubDeltas compara a primeira leitura guardada com a última: "o que mudou
+// desde que você acompanha". Só existe porque o hub acumula leituras -- é a
+// diferença que a fonte não tem como responder.
+func (r *ClubsRepository) ClubDeltas(ctx context.Context, clubID string) (domainclubs.ClubDeltas, error) {
+	var d domainclubs.ClubDeltas
+	rows, err := r.pool.Query(ctx, `
+		SELECT read_at, skill_rating, division_at_read, played, wins, draws, losses, goals
+		FROM clubs_snapshots WHERE club_id = $1
+		ORDER BY read_at ASC`, clubID)
+	if err != nil {
+		return d, fmt.Errorf("club deltas: %w", err)
+	}
+	defer rows.Close()
+
+	var snaps []domainclubs.Snapshot
+	for rows.Next() {
+		var s domainclubs.Snapshot
+		if err := rows.Scan(&s.ReadAt, &s.SkillRating, &s.DivisionAtRead, &s.Played,
+			&s.Wins, &s.Draws, &s.Losses, &s.Goals); err != nil {
+			return d, fmt.Errorf("scan delta snapshot: %w", err)
+		}
+		snaps = append(snaps, s)
+	}
+	if err := rows.Err(); err != nil {
+		return d, err
+	}
+	if len(snaps) == 0 {
+		// Sem histórico: delta zerado é "ainda não acompanhamos o suficiente",
+		// não erro.
+		return d, nil
+	}
+	first, last := snaps[0], snaps[len(snaps)-1]
+	d.Since = first.ReadAt
+	d.Matches = last.Played - first.Played
+	d.Wins = last.Wins - first.Wins
+	d.Draws = last.Draws - first.Draws
+	d.Losses = last.Losses - first.Losses
+	d.Goals = last.Goals - first.Goals
+	d.SkillDelta = last.SkillRating - first.SkillRating
+	d.DivisionFrom = first.DivisionAtRead
+	d.DivisionTo = last.DivisionAtRead
+	return d, nil
+}
+
+// divisionTitle é o texto de fallback do evento de divisão; a UI prefere `Data`.
+func divisionTitle(c domainclubs.DivisionChange) string {
+	switch c.Kind {
+	case "promotion":
+		return "Promovido"
+	case "relegation":
+		return "Rebaixado"
+	default:
+		return "Mudança de divisão"
+	}
+}
+
 func (r *ClubsRepository) DivisionChanges(ctx context.Context, clubID string) ([]domainclubs.DivisionChange, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT detected_at, previous_division, new_division, kind FROM clubs_division_changes
@@ -1586,10 +1724,12 @@ func (r *ClubsRepository) IngestEstado(ctx context.Context) (domainclubs.IngestE
 	var e domainclubs.IngestEstado
 	err := r.pool.QueryRow(ctx, `
 		SELECT last_cycle_at, cycles, clubs_ok, clubs_failed, new_matches,
-		       snapshots, bootstrapped, last_error, last_error_at
+		       snapshots, bootstrapped, last_error, last_error_at,
+		       source_available, source_error
 		FROM clubs_ingest_estado WHERE id = 1`).
 		Scan(&e.LastCycleAt, &e.Cycles, &e.ClubesOK, &e.ClubsFailed, &e.NewMatches,
-			&e.Snapshots, &e.Bootstrapped, &e.LastError, &e.LastErrorAt)
+			&e.Snapshots, &e.Bootstrapped, &e.LastError, &e.LastErrorAt,
+			&e.SourceAvailable, &e.SourceError)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Nunca rodou: não é erro, é o estado inicial.
 		return domainclubs.IngestEstado{}, nil

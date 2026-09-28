@@ -7,6 +7,7 @@ import { ArrowDown, ArrowUp, ChevronLeft, Crosshair, Goal, Skull, Star, Trophy }
 import { api } from "../lib/api";
 import type {
   Club,
+  ClubDeltas,
   DivisionChange,
   Evolution,
   HeadToHead,
@@ -14,6 +15,7 @@ import type {
   Records,
   Snapshot,
   SquadMember,
+  TimelineEntry,
 } from "../lib/types";
 import { Card, Crest, Empty, FormChips, Kit, MatchKindBadge, PosTag, ResultBadge, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
@@ -31,9 +33,10 @@ import {
   resultColor,
 } from "../lib/format";
 import { useI18n, type Key } from "../lib/i18n";
+import { DocumentMeta } from "../lib/document-meta";
 import { clubPalette, crestSeed } from "../lib/crest";
 
-type Tab = "resumo" | "elenco" | "matches" | "numeros" | "confronto";
+type Tab = "resumo" | "elenco" | "matches" | "numeros" | "historia" | "confronto";
 
 export function ClubPage({
   clubId,
@@ -74,6 +77,13 @@ export function ClubPage({
 
   return (
     <>
+      <DocumentMeta
+        title={club.name}
+        description={[club.tag, club.division ? `D${club.division}` : "", `${club.played} ${t("common.played")}`]
+          .filter(Boolean)
+          .join(" · ")}
+        path={`/club/${club.club_id}`}
+      />
       <PageHead
         crumb={
           <button type="button" onClick={() => onOpenClub("")} className="inline-flex items-center gap-1 hover:text-accent">
@@ -130,6 +140,7 @@ export function ClubPage({
                 ["elenco", t("club.squadTab")],
                 ["matches", t("club.matchesTab")],
                 ["numeros", t("club.statsTab")],
+                ["historia", t("club.timelineTab")],
                 ["confronto", t("club.h2h")],
               ] as Array<[Tab, string]>
             ).map(([id, label]) => (
@@ -154,6 +165,7 @@ export function ClubPage({
           {tab === "elenco" && <ElencoTab clubId={club.club_id} onOpenPlayer={onOpenPlayer} />}
           {tab === "matches" && <PartidasTab clubId={club.club_id} onOpenMatch={onOpenMatch} />}
           {tab === "numeros" && <NumerosTab clubId={club.club_id} club={club} onOpenPlayer={onOpenPlayer} onOpenMatch={onOpenMatch} />}
+          {tab === "historia" && <HistoriaTab club={club} />}
           {tab === "confronto" && (
             <ConfrontoTab club={club} onOpenClub={onOpenClub} onOpenMatch={onOpenMatch} />
           )}
@@ -296,6 +308,119 @@ function Row({ k, v }: { k: string; v: string }) {
       <dd className="tnum text-right font-mono">{v}</dd>
     </>
   );
+}
+
+// ------------------------------------------------------------------ história
+
+/** A linha do tempo do clube: o acervo que a fonte não guarda.
+ *
+ * A EA só conhece o agora (nível atual, divisão atual, ~10 partidas recentes).
+ * Esta tela mostra o que o hub ACUMULOU -- quando o clube entrou, as divisões
+ * que mudou, os recordes que bateu -- e a mudança desde que a pessoa começou a
+ * acompanhar. É o motivo de voltar: o dado aqui cresce a cada atualização, e
+ * nenhum outro lugar o tem. */
+function HistoriaTab({ club }: { club: Club }) {
+  const { t } = useI18n();
+  const [entries, setEntries] = useState<TimelineEntry[] | null>(null);
+  const [deltas, setDeltas] = useState<ClubDeltas | null>(null);
+
+  useEffect(() => {
+    setEntries(null);
+    setDeltas(null);
+    api.timeline(club.club_id).then((r) => setEntries(r.eventos ?? [])).catch(() => setEntries([]));
+    api.deltas(club.club_id).then(setDeltas).catch(() => setDeltas(null));
+  }, [club.club_id]);
+
+  const desde = deltas?.since ? fmtDate(deltas.since) : null;
+
+  return (
+    <>
+      {/* A mudança desde que a pessoa acompanha -- só o hub pode responder. */}
+      {deltas && deltas.since && (
+        <div className="mb-4">
+          <Card title={`${t("club.sinceYouFollow")}${desde ? ` · ${desde}` : ""}`}>
+            <div className="grid gap-3 px-4 py-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat label={t("common.matches")} value={fmt(deltas.matches)} sub={`${deltas.wins}V ${deltas.draws}E ${deltas.losses}D`} accent />
+              <Stat label={t("common.goals")} value={fmt(deltas.goals)} sub={t("club.goalsForAgainst")} />
+              <Stat
+                label={t("common.level")}
+                value={`${deltas.skill_delta >= 0 ? "+" : ""}${fmt(deltas.skill_delta)}`}
+                sub={`${t("club.levelToday")}: ${fmt(club.skill_rating)}`}
+              />
+              <Stat
+                label={t("common.division")}
+                value={deltas.division_from > 0 ? `D${deltas.division_from} → D${deltas.division_to}` : `D${deltas.division_to}`}
+                sub={t("club.divisionByReading")}
+              />
+            </div>
+          </Card>
+        </div>
+      )}
+
+      <Card title={t("club.accumulatedHistory")}>
+        {entries === null ? (
+          <Spinner />
+        ) : entries.length === 0 ? (
+          <Empty title={t("club.historyStarting")} hint={t("club.evolutionHint")} />
+        ) : (
+          <ol className="relative px-4 py-3">
+            {entries.map((e, i) => (
+              <li key={`${e.kind}-${e.at}-${i}`} className="relative flex gap-3 pb-4 last:pb-0">
+                {/* A linha do fio, ligando um evento ao seguinte. */}
+                {i < entries.length - 1 && (
+                  <span className="absolute left-[7px] top-4 h-full w-px" style={{ background: "var(--border-strong)" }} />
+                )}
+                <span
+                  className="relative mt-1 size-3.5 shrink-0 rounded-full border-2"
+                  style={{
+                    borderColor: TIMELINE_COLOR[e.kind] ?? "var(--border-strong)",
+                    background: "var(--surface)",
+                  }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span className="text-sm font-semibold">{t(TIMELINE_TITLE_KEY[e.kind] ?? "feed.kind.novidade")}</span>
+                    <span className="font-mono text-[10px] text-faint">{fmtDate(e.at)}</span>
+                  </div>
+                  <div className="text-xs text-muted">{timelineDetail(e, t)}</div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </Card>
+    </>
+  );
+}
+
+/** A cor do ponto por tipo de evento -- o fio fica legível de relance. */
+const TIMELINE_COLOR: Record<string, string> = {
+  divisao: "var(--accent)",
+  recorde: "var(--warning)",
+  marco: "var(--info)",
+  seguido: "var(--success)",
+};
+
+/** O evento vira frase no idioma escolhido, dos FATOS (`data`), como no feed.
+ * O `title` do backend é o fallback de quem não tem os fatos. */
+const TIMELINE_TITLE_KEY: Record<string, Key> = {
+  divisao: "club.evtDivision",
+  recorde: "club.evtRecord",
+  marco: "club.evtMilestone",
+  seguido: "club.evtFollowed",
+};
+
+function timelineDetail(e: TimelineEntry, t: (k: Key, p?: Record<string, string | number>) => string): string {
+  const d = e.data ?? {};
+  if (e.kind === "divisao") {
+    const to = d.new_division as number | undefined;
+    const from = d.previous_division as number | undefined;
+    if (from != null && to != null) return `D${from} → D${to}`;
+  }
+  if (e.kind === "recorde") {
+    if (d.record === "biggest_win") return `${e.detail ?? ""} · ${d.our_goals}–${d.their_goals}`;
+    if (d.record === "highest_scoring") return `${e.detail ?? ""} · ${d.total_goals} ${t("common.goals")}`;  }
+  return e.detail ?? "";
 }
 
 // ---------------------------------------------------------------- confronto

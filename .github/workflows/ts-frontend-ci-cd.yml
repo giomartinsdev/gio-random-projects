@@ -103,6 +103,25 @@ jobs:
           npx tsc -p tsconfig.json --noEmit
           npm test
 
+      # E2E/BDD (playwright-bdd): só clubs-frontend tem, por enquanto. Sobe o
+      # Chrome do runner e roda os `.feature` contra o build de produção em
+      # modo demo -- sem backend, sem banco. `npx playwright install` baixa o
+      # browser que o runner do GitHub precisa.
+      - name: E2E/BDD (playwright-bdd)
+        if: matrix.app == 'clubs-frontend'
+        working-directory: modules/apps/${{ matrix.app }}
+        env:
+          # Em CI não há Chrome de sistema; usa o Chromium que o Playwright
+          # instala (ver channel no playwright.config.ts).
+          CLUBS_PW_CHANNEL: chromium
+        run: |
+          # O `tsc -p tsconfig.json` do passo anterior cobre só `src`; os steps
+          # e specs de teste ficariam sem checagem de tipo. Este tsconfig os
+          # inclui -- um erro de tipo num step vira job vermelho, não surpresa.
+          npm run typecheck:tests
+          npx playwright install --with-deps chromium
+          npx bddgen
+          npx playwright test
       # Every VITE_* below is set for every app in the matrix -- Vite
       # only ever inlines the ones a given app's own code actually
       # references (import.meta.env.VITE_X), so an unused one here is

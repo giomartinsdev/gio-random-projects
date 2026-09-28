@@ -68,3 +68,9 @@ variable "watchtower_enabled" {
   type        = bool
   default     = false
 }
+
+variable "public_origin" {
+  description = "Origem pública do SPA (ex.: https://clubs.giomartins.dev). Usada para montar og:url/og:image absolutos no HTML de preview de link (Open Graph), que o ingress serve aos crawlers. Sem barra no fim; vazio = links relativos."
+  type        = string
+  default     = "https://clubs.giomartins.dev"
+}

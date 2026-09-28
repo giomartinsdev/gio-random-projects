@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { logout } from "./auth";
-import type { SyncRun } from "./types";
+import type { SourceStatus, SyncRun } from "./types";
 
 export interface Session {
   autenticado: boolean | null; // null = ainda sondando
@@ -112,4 +112,39 @@ export function useSyncStatus(enabled: boolean) {
   }, []);
 
   return { run, start };
+}
+
+// --- saúde da fonte -------------------------------------------------------
+
+/**
+ * Sonda a saúde da fonte (EA/CDN) de tempos em tempos.
+ *
+ * Quando a fornecedora dos dados está fora, a interface precisa dizer isso, em
+ * vez de mostrar o vazio como se fosse resposta. O polling é lento de
+ * propósito: é um estado de infraestrutura, muda em minutos, e a tela não
+ * pode gastar requisição por nada. Se a sonda falhar (o próprio backend fora),
+ * o silêncio é o certo -- um aviso errado é pior que nenhum.
+ */
+export function useSourceStatus(): SourceStatus | null {
+  const [status, setStatus] = useState<SourceStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const s = await api.sourceStatus();
+        if (!cancelled) setStatus(s);
+      } catch {
+        // Silencioso: um indicador que falha não vira erro de tela.
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  return status;
 }

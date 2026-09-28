@@ -13,6 +13,7 @@ import logging
 from typing import Any
 
 from .normalize import club_identity, club_totals
+from .source import SourceUnavailable
 
 log = logging.getLogger("clubs-ingest")
 
@@ -25,9 +26,17 @@ def drain_fetch_queue(domain: Any, ingest: Any) -> int:
     clubs onde ele jogou (a fonte não tem endpoint de jogador).
 
     Devolve quantos alvos foram processados. Cada um tem seu próprio
-    tratamento de error: um target ruim não impede os outros, e a linha da fila é
-    SEMPRE fechada -- inclusive no error. Fechar é o que impede o pedido de
-    voltar em todo tick e a tela ficar "buscando" para sempre.
+    tratamento de error: um target ruim não impede os outros.
+
+    Duas classes de falha, e a diferença importa:
+
+    - **fonte fora** (`SourceUnavailable`: 403, CDN, rede): a linha FICA
+      PENDENTE. Fechar perderia o pedido -- a pessoa teria que clicar de novo
+      depois, e a tela diria "0 players", que lê como "este clube não tem
+      dados". Aberta, este mesmo loop a pega sozinho quando a fonte voltar, e
+      o dado sincroniza sem ninguém pedir.
+    - **permanente** (clube que não existe, payload inválido): a linha FECHA
+      com erro. Se ficasse aberta, voltaria em todo tick e a SPA ficaria presa.
     """
     try:
         pendentes = domain.list_pending_fetches()
@@ -52,6 +61,11 @@ def drain_fetch_queue(domain: Any, ingest: Any) -> int:
                 domain.save_fetch_run(target, target_id, running=False, players=players,
                                       matches=matches, concluido=True)
             feitos += 1
+        except SourceUnavailable as err:
+            # A fonte está fora, não este alvo. NÃO fechar: a linha continua
+            # pendente e o próximo tick a pega sozinha quando a fonte voltar.
+            # É isto que faz o dado sincronizar sem a pessoa clicar de novo.
+            log.warning("fonte fora, %s %s fica pendente: %s", target, target_id, err)
         except Exception as err:  # noqa: BLE001 -- um alvo não derruba os outros
             log.error("sync de %s %s falhou: %s", target, target_id, err)
             try:
@@ -66,8 +80,13 @@ def drain_sync_queue(domain: Any, sync: Any) -> int:
     """Roda a sincronização de três níveis de quem pediu.
 
     O pedido é gravado pelo SPA em clubs_sync_runs; sem consumir esta fila o
-    hub nunca sai do vazio. Como no fetch, o pedido é fechado mesmo no erro:
-    um pedido permanentemente quebrado bloquearia os próximos da fila.
+    hub nunca sai do vazio.
+
+    Como no fetch, a classe da falha decide o destino da linha: a fonte fora
+    (`SourceUnavailable`) deixa o pedido PENDENTE -- é uma promessa de que ele
+    será atendido quando ela voltar, e a sincronização sai sem novo clique. Um
+    erro permanente fecha a linha, porque um pedido quebrado para sempre
+    bloquearia os próximos da fila.
     """
     try:
         pendentes = domain.list_pending_syncs()
@@ -85,6 +104,8 @@ def drain_sync_queue(domain: Any, sync: Any) -> int:
             resultado = sync.run(email)
             log.info("sync de %s: %s", email, resultado.get("niveis", resultado))
             feitos += 1
+        except SourceUnavailable as err:
+            log.warning("fonte fora, sync de %s fica pendente: %s", email, err)
         except Exception as err:  # noqa: BLE001 -- um pedido não derruba o loop
             log.error("sync de %s falhou: %s", email, err)
             try:
@@ -103,8 +124,9 @@ def drain_search_queue(domain: Any, source: Any) -> int:
 
     Grava cada clube encontrado com `acompanhado=false` (o resgate é que decide
     acompanhar), para o diretório passar a conhecê-lo. Devolve quantos termos
-    foram processados. Como no fetch, a linha da fila é fechada SEMPRE --
-    inclusive no erro, senão o pedido volta em todo tick e a SPA fica presa.
+    foram processados. Como no fetch, um erro permanente fecha a linha; a fonte
+    fora (`SourceUnavailable`) deixa o termo PENDENTE, para a busca ser
+    respondida sozinha quando ela voltar.
     """
     try:
         pendentes = domain.list_pending_searches()
@@ -135,6 +157,8 @@ def drain_search_queue(domain: Any, source: Any) -> int:
                 found += 1
             domain.save_search_run(termo, running=False, found=found, concluido=True)
             feitos += 1
+        except SourceUnavailable as err:
+            log.warning("fonte fora, busca de %r fica pendente: %s", termo, err)
         except Exception as err:  # noqa: BLE001 -- um termo não derruba os outros
             log.error("busca de %r falhou: %s", termo, err)
             try:

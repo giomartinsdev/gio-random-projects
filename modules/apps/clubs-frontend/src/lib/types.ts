@@ -286,6 +286,31 @@ export interface DivisionChange {
   kind: "promotion" | "relegation";
 }
 
+/** Um evento datado da história do clube -- divisão, recorde, marco, entrada no
+ * hub. É o acervo que a fonte não tem: a EA só conhece o agora. O `data` são os
+ * fatos, para desenhar no idioma escolhido; `title` é o fallback. */
+export interface TimelineEntry {
+  at: string;
+  kind: "divisao" | "recorde" | "marco" | "seguido";
+  title: string;
+  detail?: string;
+  data?: Record<string, unknown> | null;
+}
+
+/** A mudança desde que a pessoa começou a acompanhar o clube. Só existe porque
+ * o hub acumula leituras; a fonte não sabe responder "o que mudou desde X". */
+export interface ClubDeltas {
+  since: string | null;
+  matches: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goals: number;
+  skill_delta: number;
+  division_from: number;
+  division_to: number;
+}
+
 export interface RecordMatch {
   match_id: string;
   timestamp: string;
@@ -446,6 +471,15 @@ export interface SyncRun {
   new_items: string[] | null;
   started_at: string;
   finished_at: string;
+}
+
+/** A saúde da fonte (EA/CDN). `available:false` é a fornecedora dos dados fora
+ * — a interface usa isto para avisar que é uma falha passageira dela, e não
+ * "este clube não tem dados". Quando a fonte volta, o dado sincroniza sozinho. */
+export interface SourceStatus {
+  available: boolean;
+  error: string;
+  checked_at: string | null;
 }
 
 export interface AdminStatus {

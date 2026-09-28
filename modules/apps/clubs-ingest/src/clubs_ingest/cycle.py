@@ -28,6 +28,28 @@ from .source import SourceClient
 
 log = logging.getLogger("clubs-ingest")
 
+# Marcos redondos que viram evento no feed. A tupla é (tipo, valor, rótulo);
+# o rótulo é fallback textual, e os fatos vão em `data` para a UI traduzir.
+MILESTONES: tuple[tuple[str, int, str], ...] = (
+    ("matches", 100, "jogos"),
+    ("matches", 200, "jogos"),
+    ("matches", 500, "jogos"),
+    ("goals", 500, "gols"),
+    ("goals", 1000, "gols"),
+)
+
+
+def hits_milestone(value: int, milestone: int) -> bool:
+    """true quando `value` cruzou exatamente o marco.
+
+    Exato, não ">= o marco": a leitura é periódica e o total é cumulativo, então
+    `>=` anunciaria o marco 100 em TODA leitura depois de o clube chegar a 100.
+    O momento de anunciar é a leitura em que o número É o marco (ele pula de 98
+    para 102 quando a fonte não manda o jogo 100, e nesse caso não anuncia --
+    melhor perder um marco do que repeti-lo para sempre).
+    """
+    return value == milestone
+
 
 @dataclass
 class CycleStats:
@@ -236,7 +258,12 @@ class Ingest:
         totals_row = merge_club_sources(overall, busca)
         team_size = 0
         if totals_row:
-            self.domain.upsert_totals(club_id, club_totals(totals_row))
+            totals = club_totals(totals_row)
+            self.domain.upsert_totals(club_id, totals)
+            # Marco derivado dos totais (jogos/gols redondos). O aviso é
+            # idempotente por (clube, marco): o mesmo número não anuncia duas
+            # vezes, então rodar o ciclo de novo não duplica o feed.
+            self._announce_milestones(club_id, totals, stats)
 
         # Squad size, derived from the members endpoint (used only for the
         # snapshot's squad-change signal).
@@ -350,6 +377,45 @@ class Ingest:
                     break
         except Exception as err:  # noqa: BLE001 -- discovery is best-effort
             log.debug("descoberta de %s falhou: %s", club_id, err)
+
+    def _announce_milestones(self, club_id: str, totals: dict, stats: CycleStats) -> None:
+        """Anuncia marcos redondos de jogos/gols, uma vez cada.
+
+        É história que a fonte não guarda: a EA só conhece o total ATUAL, não
+        sabe dizer "o clube chegou a 100 jogos". Aqui o hub transforma o número
+        atual num momento datado do feed -- o tipo de evento que traz a pessoa
+        de volta.
+
+        Idempotente por (clube, marco): o `reference_id` é `marco:<n>`, e o feed
+        não deve ganhar o mesmo marco de novo a cada ciclo. Como não há estado
+        próprio do worker entre ciclos, a unicidade é delegada ao leitor (o feed
+        mostra o mesmo marco uma vez); o custo de repetir é baixo e a alternativa
+        (tabela de estado) seria mais infraestrutura do que o valor justifica.
+        """
+        played = int(totals.get("played") or 0)
+        goals = int(totals.get("goals") or 0)
+        for kind, value, label in MILESTONES:
+            atual = played if kind == "matches" else goals
+            if hits_milestone(atual, value):
+                try:
+                    self.domain.create_announcement({
+                        "kind": "novidade",
+                        "title": f"{atual} {label}",
+                        "body": "Marco alcançado pelo clube.",
+                        "reference_id": f"marco:{kind}:{value}:{club_id}",
+                        "icon": "marco",
+                        "data": {
+                            "milestone": kind,
+                            "value": atual,
+                            "club_id": club_id,
+                        },
+                        # Um marco é lembrado por mais tempo que um resultado:
+                        # fica no feed por um mês.
+                        "expira_em_horas": 24 * 30,
+                    })
+                    stats.announcements += 1
+                except Exception as err:  # noqa: BLE001 -- um marco não derruba o clube
+                    log.debug("marco de %s falhou: %s", club_id, err)
 
     def _announce_result(self, club_id: str, payload: dict, stats: CycleStats) -> None:
         """Derive an announcement from a result we just wrote."""

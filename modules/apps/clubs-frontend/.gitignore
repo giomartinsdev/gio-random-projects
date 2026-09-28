@@ -9,3 +9,13 @@ design/light/
 # Credenciais locais de dev (client IDs, etc.) — nunca versionadas.
 .env.local
 .env.*.local
+
+# BDD/e2e (playwright-bdd): os specs são GERADOS dos .feature a cada `bddgen`,
+# então não se versionam -- versionar convidaria a editar o gerado em vez do
+# .feature, que é a fonte.
+.features-gen/
+# Relatórios e artefatos de teste (traces, screenshots, vídeos de falha).
+test-results/
+playwright-report/
+coverage/
+dist-e2e/

@@ -49,9 +49,12 @@ func TestClubsCommandPayloadsMatchProducers(t *testing.T) {
 
 	t.Run("ingest health (clubs-ingest client.py)", func(t *testing.T) {
 		var in clubsIngestPayload
-		mustUnmarshal(t, `{"cycles":7,"clubs_ok":22,"clubs_failed":0,"new_matches":3,"snapshots":22,"bootstrapped":true,"last_error":""}`, &in)
+		mustUnmarshal(t, `{"cycles":7,"clubs_ok":22,"clubs_failed":0,"new_matches":3,"snapshots":22,"bootstrapped":true,"last_error":"","source_available":false,"source_error":"clubs/info: 403"}`, &in)
 		if in.Cycles != 7 || in.ClubsOK != 22 || in.NewMatches != 3 || in.Snapshots != 22 || !in.Bootstrapped {
 			t.Fatalf("payload de ingest-health não decodificou: %+v", in)
+		}
+		if in.SourceAvailable || in.SourceError == "" {
+			t.Fatalf("saúde da fonte não decodificou: %+v", in)
 		}
 	})
 }

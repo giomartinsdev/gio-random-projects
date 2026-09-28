@@ -10,7 +10,7 @@ O contrato que a tela de resgate depende:
 
 from __future__ import annotations
 
-from clubs_ingest.queues import drain_fetch_queue, drain_sync_queue
+from clubs_ingest.queues import drain_fetch_queue, drain_search_queue, drain_sync_queue
 
 
 class FakeDomain:
@@ -34,22 +34,25 @@ class FakeDomain:
 
 
 class FakeIngest:
-    def __init__(self, result=(3, 2), fail_on=None):
+    def __init__(self, result=(3, 2), fail_on=None, fail_type=RuntimeError):
         self.result = result
         self.fail_on = fail_on or set()
+        # RuntimeError = falha permanente (fecha a linha); SourceUnavailable =
+        # fonte fora (a linha fica aberta para tentar quando voltar).
+        self.fail_type = fail_type
         self.called: list[str] = []
         self.called_jogador: list[str] = []
 
     def run_fetch(self, club_id):
         self.called.append(club_id)
         if club_id in self.fail_on:
-            raise RuntimeError("a fonte bloqueou")
+            raise self.fail_type("a fonte bloqueou")
         return self.result
 
     def run_fetch_jogador(self, player_id):
         self.called_jogador.append(player_id)
         if player_id in self.fail_on:
-            raise RuntimeError("a fonte bloqueou")
+            raise self.fail_type("a fonte bloqueou")
         # (clubes, jogadores, partidas)
         return (4, 30, 40)
 
@@ -261,3 +264,70 @@ def test_search_failure_still_closes_the_row():
     assert d.saved, "a linha precisa fechar mesmo no error"
     assert d.saved[0]["concluido"] is True
     assert "a fonte bloqueou" in d.saved[0]["error"]
+
+
+def test_source_down_keeps_the_row_open_for_when_it_returns():
+    """Fonte fora NÃO é o mesmo que "clube ruim".
+
+    "Clube ruim" (id inexistente, payload inválido) é permanente: a linha
+    fecha com erro, senão volta em todo tick para sempre. "Fonte fora" (403,
+    CDN, rede) é passageira: fechar perderia o pedido, e a pessoa teria que
+    clicar de novo. Aqui a linha fica PENDENTE -- o mesmo loop a pega sozinho
+    quando a fonte voltar.
+    """
+    from clubs_ingest.source import SourceUnavailable
+
+    domain = FakeDomain(pendentes=[{"target": "clube", "target_id": "1"}])
+    ingest = FakeIngest(fail_on={"1"}, fail_type=SourceUnavailable)
+
+    feitos = drain_fetch_queue(domain, ingest)
+
+    assert feitos == 0
+    assert domain.saved == [], "a linha fica aberta: fecha só quando a fonte voltar"
+
+
+def test_a_permanent_failure_still_closes_the_row():
+    """O contraste: erro permanente fecha (para não voltar para sempre)."""
+    domain = FakeDomain(pendentes=[{"target": "clube", "target_id": "1"}])
+    ingest = FakeIngest(fail_on={"1"})  # RuntimeError genérico = permanente
+
+    drain_fetch_queue(domain, ingest)
+
+    assert domain.saved and domain.saved[0]["concluido"] is True
+    assert domain.saved[0]["error"]
+
+
+def test_source_down_does_not_mark_sync_done():
+    """No sync de pessoa, a fonte fora também deixa o pedido pendente -- senão
+    a sincronização seria dada por concluída sem ter buscado nada."""
+    from clubs_ingest.source import SourceUnavailable
+
+    domain = FakeDomain(syncs=[{"user_email": "me@test"}])
+
+    class Sync:
+        def run(self, email):
+            raise SourceUnavailable("a fonte não respondeu")
+
+    drain_sync_queue(domain, Sync())
+    assert domain.marked == [], "o pedido continua pendente"
+
+
+def test_source_down_search_does_not_close_the_row():
+    """A busca ao vivo segue a mesma regra: a fonte fora deixa o termo
+    pendente, para a resposta chegar sozinha quando ela voltar."""
+    from clubs_ingest.source import SourceUnavailable
+
+    class D(FakeDomain):
+        def list_pending_searches(self):
+            return [{"termo": "vilanova"}]
+
+        def save_search_run(self, termo, **kw):
+            self.saved.append({"termo": termo, **kw})
+
+    class S:
+        def search(self, termo):
+            raise SourceUnavailable("a fonte não respondeu")
+
+    d = D()
+    drain_search_queue(d, S())
+    assert d.saved == [], "o termo fica pendente: fecha só quando a fonte voltar"

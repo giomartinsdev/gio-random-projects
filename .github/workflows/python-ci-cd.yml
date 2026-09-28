@@ -99,6 +99,15 @@ jobs:
         # up at the repo root, so relative pip args would dead-end.
         run: |
           pip install -q "${{ github.workspace }}/modules/libs/deals_common" "${{ github.workspace }}/modules/apps/${{ matrix.app }}" pytest
+          # Os extras de dev (pytest-bdd, testcontainers, docker) trazem o BDD e
+          # a infra real dos testes de integração. Sem eles, os cenários que usam
+          # container se PULAM em silêncio -- e um teste que se pula não existe.
+          # Por isso a instalação NÃO leva `|| true`: se falhar, o job vermelha em
+          # vez de dar verde sem ter rodado os cenários.
+          #
+          # Só clubs-ingest declara `[dev]`; nas outras o extra é vazio e o pip
+          # sai 0 (nada a instalar), então o passo é seguro para toda a matrix.
+          pip install -q "${{ github.workspace }}/modules/apps/${{ matrix.app }}[dev]"
           python -m pytest -q
 
       # Same reasoning as go-ci-cd.yml: the VPS is arm64, this runner

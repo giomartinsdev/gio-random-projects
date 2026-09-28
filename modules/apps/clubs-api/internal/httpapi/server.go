@@ -47,6 +47,11 @@ type Config struct {
 	// Escotilha de dev: com ela, uma requisição sem cookie roda como este
 	// e-mail. Nunca deve coexistir com um client ID configurado.
 	DevUserEmail string
+	// Origem pública do SPA (ex.: "https://clubs.giomartins.dev"), usada para
+	// montar URLs absolutas no HTML de preview de link (og:url, og:image,
+	// canonical). Sem barra no fim. Vazia = links relativos, que é o aceitável
+	// em dev.
+	PublicOrigin string
 }
 
 type Server struct {
@@ -59,6 +64,7 @@ type Server struct {
 	sessionDuration     time.Duration
 	googleClientID      string
 	devEmail            string
+	publicOrigin        string
 }
 
 func NewServer(domain *domainclient.Client, cfg Config, log *slog.Logger) *Server {
@@ -75,6 +81,7 @@ func NewServer(domain *domainclient.Client, cfg Config, log *slog.Logger) *Serve
 		sessionDuration:     dur,
 		googleClientID:      cfg.GoogleClientID,
 		devEmail:            strings.ToLower(strings.TrimSpace(cfg.DevUserEmail)),
+		publicOrigin:        strings.TrimRight(cfg.PublicOrigin, "/"),
 	}
 }
 
@@ -85,6 +92,16 @@ func (s *Server) Handler() http.Handler {
 	r.Use(s.cors)
 
 	r.Get("/healthz", s.health)
+
+	// Preview de link (Open Graph) para as páginas de detalhe. Fica FORA de
+	// /api de propósito: o bot de preview (Discord, WhatsApp, X) busca a MESMA
+	// URL que a pessoa compartilha -- clubs.giomartins.dev/club/141881 -- e o
+	// nginx manda só os crawlers para cá (ver ingress). Servir HTML aqui, e não
+	// JSON, é o que faz o cartão do link ter título, descrição e escudo em vez
+	// de um preview vazio.
+	r.Get("/og/club/{clubId}", s.ogClub)
+	r.Get("/og/player/{playerId}", s.ogPlayer)
+	r.Get("/og/match/{matchId}", s.ogMatch)
 
 	r.Route("/api", func(r chi.Router) {
 		// --- public: no identity required -----------------------------
@@ -110,6 +127,10 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/clubs/{clubId}/evolution", s.getEvolution)
 		r.Get("/clubs/{clubId}/division-changes", s.getDivisionChanges)
 		r.Get("/clubs/{clubId}/records", s.getRecords)
+		// O acervo do hub: linha do tempo do clube e a mudança desde que a
+		// pessoa começou a acompanhar. Públicas como o resto da leitura.
+		r.Get("/clubs/{clubId}/timeline", s.getTimeline)
+		r.Get("/clubs/{clubId}/deltas", s.getDeltas)
 		r.Get("/records/global", s.getGlobalRecords)
 		r.Get("/clubs/{clubId}/h2h/{rivalId}", s.headToHead)
 		r.Get("/matches/{matchId}", s.getMatch)
@@ -126,6 +147,11 @@ func (s *Server) Handler() http.Handler {
 		// jogador. Público como o resto do dataset.
 		r.Get("/players/{playerId}/clubs", s.clubsDoJogador)
 		r.Get("/announcements", s.listAnnouncements)
+		// Saúde da fonte (EA/CDN): PÚBLICA de propósito. É o que qualquer tela
+		// consulta para avisar que há dificuldade de falar com a fornecedora
+		// dos dados -- e quem não está logado (a tela de resgate) é justamente
+		// quem mais precisa saber, porque o elenco aparece antes do login.
+		r.Get("/source-status", s.sourceStatus)
 
 		// --- personal: identity required ------------------------------
 		r.Group(func(r chi.Router) {
@@ -314,6 +340,15 @@ func (s *Server) getRecords(w http.ResponseWriter, r *http.Request) {
 	s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/records")
 }
 
+// getTimeline encaminha a linha do tempo do clube (divisões, recordes, marcos).
+func (s *Server) getTimeline(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/timeline")
+}
+// getDeltas encaminha a mudança desde a primeira leitura guardada.
+func (s *Server) getDeltas(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/deltas")
+}
+
 func (s *Server) getGlobalRecords(w http.ResponseWriter, r *http.Request) {
 	s.proxyGet(w, r, "/records/global")
 }
@@ -349,6 +384,13 @@ func (s *Server) getPlayer(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listAnnouncements(w http.ResponseWriter, r *http.Request) {
 	s.proxyGet(w, r, "/announcements?limite="+limitParam(r.URL.Query().Get("limite"), "12"))
+}
+
+// sourceStatus encaminha a saúde da fonte. Público: qualquer tela pode avisar
+// que há dificuldade de falar com a fornecedora dos dados, e quando ela volta o
+// dado sincroniza sozinho.
+func (s *Server) sourceStatus(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/source-status")
 }
 
 // --- personal -------------------------------------------------------------
@@ -405,9 +447,9 @@ func (s *Server) saveNotifications(w http.ResponseWriter, r *http.Request) {
 	id, _ := IdentityFrom(r.Context())
 	var body struct {
 		Channel             string `json:"channel"`
-		WeeklyDigest   bool   `json:"weekly_digest"`
+		WeeklyDigest        bool   `json:"weekly_digest"`
 		RecordsAndDivisions bool   `json:"records_and_divisions"`
-		MatchResults bool   `json:"match_results"`
+		MatchResults        bool   `json:"match_results"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")

@@ -10,12 +10,20 @@ Python instead of Go.
 This module only adapts its DataFrame-returning methods to the plain dicts the
 normalizer wants, and centralizes the TTL-relevant calls so the cycle stays
 readable.
+
+It also owns the answer to one product question: *"can we talk to the source
+right now?"* Every call goes through ``_get``, which records a success or a
+failure in the module-level :data:`health`. That flag is what the worker
+publishes back so the UI can tell a person "we are having trouble reaching the
+data provider -- when it comes back, your data syncs on its own", instead of
+showing a fake "0 players" in green.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any
 
 from .fc27_api import FC27API, FC27APIError  # vendored, see LICENSE.fc27
@@ -23,28 +31,92 @@ from .fc27_api import FC27API, FC27APIError  # vendored, see LICENSE.fc27
 log = logging.getLogger("clubs-ingest")
 
 
+class SourceUnavailable(Exception):
+    """A fonte (EA/CDN) não respondeu, bloqueou ou devolveu lixo.
+
+    Existe para separar dois casos que antes viravam o mesmo: "a fonte
+    respondeu que este clube não tem nada" (sucesso, devolve vazio) e "a fonte
+    não respondeu" (falha). O cliente engolia os dois no mesmo `return []`, e
+    por isso um sync com a EA fora fechava a fila como sucesso -- "0 jogadores"
+    na tela, em verde, parecendo "sem dados".
+
+    Quem chama decide: a fila mantém a linha PENDENTE (para tentar de novo
+    quando a fonte voltar), o ciclo conta o clube como falho. Nenhum dos dois
+    inventa um vazio que parece resposta.
+    """
+
+
+class SourceHealth:
+    """Se a fonte está conversável agora, e por quê não.
+
+    O worker é de longa duração e o CDN às vezes bloqueia por IP durante um
+    período. Quem percebe isso primeiro é a chamada que falha -- seja no ciclo,
+    seja num clique da tela. Este estado é a única fonte de verdade para o
+    aviso na interface: a tela lê, não adivinha pelo vazio do dado.
+
+    A fonte volta sozinha: a próxima chamada bem-sucedida marca ``available``
+    de novo, e as linhas de fila que continuaram pendentes são reprocessadas no
+    mesmo tick que detectou a volta.
+    """
+
+    def __init__(self) -> None:
+        self.available = True
+        self.error = ""
+        self.checked_at = 0.0
+
+    def ok(self) -> None:
+        self.available = True
+        self.error = ""
+        self.checked_at = time.time()
+
+    def down(self, reason: str) -> None:
+        self.available = False
+        self.error = str(reason)[:300]
+        self.checked_at = time.time()
+
+
+# Uma instância só: o worker inteiro fala com a mesma fonte pelo mesmo cliente,
+# então a saúde é do processo, não de uma consulta.
+health = SourceHealth()
+
+
 class SourceClient:
     def __init__(self, platform: str = "common-gen5", timeout: int = 15, timezone: str = "UTC") -> None:
         self.api = FC27API(platform=platform, timeout=timeout, timezone=timezone)
 
+    def _get(self, endpoint: str, params: dict[str, Any]) -> Any:
+        """Uma consulta à fonte, com a saúde registrada.
+
+        É o único caminho para a fonte: qualquer falha vira ``SourceUnavailable``
+        e marca ``health.down``; qualquer resposta marca ``health.ok``. Sem
+        centralizar isto, cada método decidia sozinho engolir o erro -- e o
+        padrão era engolir.
+        """
+        try:
+            data = self.api.get_json(endpoint, params)
+        except FC27APIError as err:
+            log.warning("%s %s: %s", endpoint, params, err)
+            health.down(f"{endpoint}: {err}")
+            raise SourceUnavailable(f"{endpoint} {params}: {err}") from err
+        health.ok()
+        return data
+
     # --- raw json, which is what the normalizer consumes ------------------
 
     def club_info(self, club_id: str) -> dict[str, Any]:
-        try:
-            data = self.api.get_json("clubs/info", {"clubIds": club_id})
-        except FC27APIError as err:
-            log.warning("club_info %s: %s", club_id, err)
-            return {}
+        """Identidade do clube. FONTE FORA SOBE (`SourceUnavailable`).
+
+        `{}` significa "a fonte respondeu e não conhece este clube" -- uma
+        resposta. Fundir os dois fazia um sync com a EA fora parecer sucesso.
+        """
+        data = self._get("clubs/info", {"clubIds": club_id})
         if isinstance(data, dict):
             return next(iter(data.values()), {}) or {}
         return {}
 
     def club_overall(self, club_id: str) -> dict[str, Any]:
-        try:
-            data = self.api.get_json("clubs/overallStats", {"clubIds": club_id})
-        except FC27APIError as err:
-            log.warning("club_overall %s: %s", club_id, err)
-            return {}
+        """Totais do clube. FONTE FORA SOBE (ver `club_info`)."""
+        data = self._get("clubs/overallStats", {"clubIds": club_id})
         # A lista pode vir com um `null` no lugar do objeto (clube que a fonte
         # não conhece): devolver o None faria o `.get` estourar lá em cima.
         if isinstance(data, list) and data and isinstance(data[0], dict):
@@ -52,11 +124,7 @@ class SourceClient:
         return {}
 
     def club_members(self, club_id: str) -> list[dict[str, Any]]:
-        try:
-            data = self.api.get_json("members/stats", {"clubId": club_id})
-        except FC27APIError as err:
-            log.warning("club_members %s: %s", club_id, err)
-            return []
+        data = self._get("members/stats", {"clubId": club_id})
         if isinstance(data, dict):
             membros = data.get("members") or []
             # Lista de membros com buraco (`null`) acontece; um item assim não é
@@ -72,11 +140,7 @@ class SourceClient:
         Não traz ``playerId``: a única chave é o gamertag, então quem consumir
         precisa casar por nome.
         """
-        try:
-            data = self.api.get_json("members/career/stats", {"clubId": club_id})
-        except FC27APIError as err:
-            log.warning("club_members_career %s: %s", club_id, err)
-            return []
+        data = self._get("members/career/stats", {"clubId": club_id})
         if isinstance(data, dict):
             membros = data.get("members") or []
             return [m for m in membros if isinstance(m, dict)]
@@ -108,17 +172,19 @@ class SourceClient:
         """
         out: list[dict[str, Any]] = []
         vistos: set[str] = set()
+        falhas: list[str] = []
         for match_type in match_types:
             try:
-                data = self.api.get_json(
+                data = self._get(
                     "clubs/matches",
                     {"clubIds": club_id, "matchType": match_type, "maxResultCount": count},
                 )
-            except FC27APIError as err:
+            except SourceUnavailable as err:
                 # Um tipo bloqueado não pode custar os outros: a fonte bloqueia
                 # por IP às vezes, e perder a liga por causa do playoff seria
-                # trocar dez partidas por nenhuma.
-                log.warning("club_matches %s [%s]: %s", club_id, match_type, err)
+                # trocar dez partidas por nenhuma. Mas se TODOS falharem, a
+                # fonte está fora -- e isso sobe, senão o sync "conclui" com 0.
+                falhas.append(f"{match_type}: {err}")
                 continue
             if not isinstance(data, list):
                 continue
@@ -132,6 +198,10 @@ class SourceClient:
                     continue
                 vistos.add(mid)
                 out.append(m)
+        # Todos os tipos falharam: a fonte não respondeu, e vazio seria mentira.
+        # Um tipo só falhando (outro respondeu) ainda é uma resposta parcial.
+        if match_types and len(falhas) == len(match_types):
+            raise SourceUnavailable(f"club_matches {club_id}: {'; '.join(falhas)}")
         return out
 
     def leaderboard(self) -> list[dict[str, Any]]:
@@ -141,19 +211,11 @@ class SourceClient:
         exige um nome, e a fonte não tem "liste todos". É daqui que a base se
         semeia no primeiro boot.
         """
-        try:
-            data = self.api.get_json("allTimeLeaderboard", {})
-        except FC27APIError as err:
-            log.warning("leaderboard: %s", err)
-            return []
+        data = self._get("allTimeLeaderboard", {})
         return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
 
     def search(self, name: str) -> list[dict[str, Any]]:
-        try:
-            data = self.api.get_json("allTimeLeaderboard/search", {"clubName": name})
-        except FC27APIError as err:
-            log.warning("search %r: %s", name, err)
-            return []
+        data = self._get("allTimeLeaderboard/search", {"clubName": name})
         return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
 
     def search_by_id(self, club_id: str, name: str = "") -> list[dict[str, Any]]:

@@ -1,10 +1,12 @@
-// Raiz do app: roteamento por hash, sessão e as telas.
+// Raiz do app: roteamento por caminho real, sessão e as telas.
 
 import { useCallback, useEffect, useState } from "react";
-import { Shell, type RouteId } from "./components/shell";
-import { sair, useAuth, useSyncStatus, useTheme } from "./lib/hooks";
+import { Shell } from "./components/shell";
+import { sair, useAuth, useSourceStatus, useSyncStatus, useTheme } from "./lib/hooks";
 import { api } from "./lib/api";
 import type { ClaimedPro, WatchEntry } from "./lib/types";
+import { currentView, parsePath, pathFor, type View } from "./lib/routing";
+import { legacyHashPath } from "./lib/legacy-hash";
 import { HomePage } from "./pages/HomePage";
 import { ClubsPage } from "./pages/ClubsPage";
 import { ClubPage } from "./pages/ClubPage";
@@ -16,48 +18,18 @@ import { ClaimPage } from "./pages/ClaimPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { AdminPage } from "./pages/AdminPage";
 
-/** Rotas ocultas (detalhe) também vivem no hash, para o link direto sobreviver
- * a recarregar e ao botão voltar. */
-type View = { route: RouteId; param?: string };
-
-const ROUTE_PATHS: Record<RouteId, string> = {
-  home: "",
-  clubs: "clubs",
-  club: "club",
-  match: "match",
-  player: "player",
-  players: "players",
-  claim: "claim",
-  "my-area": "my-area",
-  notifications: "notifications",
-  admin: "admin",
-};
-
-function parseHash(): View {
-  const raw = window.location.hash.replace(/^#\/?/, "");
-  const [path, query] = raw.split("?");
-  const params = new URLSearchParams(query ?? "");
-  for (const [route, p] of Object.entries(ROUTE_PATHS) as Array<[RouteId, string]>) {
-    if (p === path) {
-      if (route === "club") return { route, param: params.get("id") ?? "" };
-      if (route === "match") return { route, param: params.get("m") ?? "" };
-      if (route === "player") return { route, param: params.get("p") ?? "" };
-      return { route };
-    }
-  }
-  return { route: "home" };
-}
-
-function hashFor(view: View): string {
-  const p = ROUTE_PATHS[view.route];
-  if (view.route === "club" && view.param) return `#/${p}?id=${encodeURIComponent(view.param)}`;
-  if (view.route === "match" && view.param) return `#/${p}?m=${encodeURIComponent(view.param)}`;
-  if (view.route === "player" && view.param) return `#/${p}?p=${encodeURIComponent(view.param)}`;
-  return `#/${p}`;
+/** Converte um link antigo em hash (`#/club?id=…`) no caminho real, uma vez,
+ * antes do app montar. Sem isto, os links já compartilhados virariam link
+ * morto. `replaceState` de propósito: não empilha uma entrada de história só
+ * para consertar a URL. */
+function migrateLegacyHash(): void {
+  const path = legacyHashPath(window.location.hash);
+  if (path === null) return;
+  window.history.replaceState(null, "", path);
 }
 
 export default function App() {
-  const [view, setView] = useState<View>(parseHash);
+  const [view, setView] = useState<View>(currentView);
   const { autenticado: authed, email, refresh: refreshAuth } = useAuth();
   const { theme, setTheme } = useTheme();
   const [watch, setWatch] = useState<WatchEntry[]>([]);
@@ -68,11 +40,17 @@ export default function App() {
 
   // Só quem entrou tem sincronização — e ela nunca bloqueia a navegação.
   const { run: sync, start: startSync } = useSyncStatus(authed === true);
+  // Saúde da fonte, para TODOS (logado ou não): a tela de resgate mostra o
+  // elenco antes do login, e é aí que o aviso de "fonte fora" mais importa.
+  const source = useSourceStatus();
 
   useEffect(() => {
-    const onHash = () => setView(parseHash());
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    // Os links antigos em hash viram caminho real antes de qualquer coisa.
+    migrateLegacyHash();
+    // popstate é o voltar/avançar do navegador num app que usa pushState.
+    const onPop = () => setView(currentView());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   const loadWatch = useCallback(() => {
@@ -93,10 +71,15 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sync?.running]);
 
-  const navigate = useCallback((route: RouteId, param?: string) => {
-    const target = hashFor({ route, param });
-    if (window.location.hash !== target) window.location.hash = target;
-    else setView({ route, param });
+  const navigate = useCallback((route: View["route"], param?: string) => {
+    const target = pathFor({ route, param });
+    // `pushState` dá link real e entrada de história (o voltar funciona sem
+    // recarregar). Só empilha quando o caminho muda: clicar na rota atual é
+    // no-op em vez de poluir a história.
+    if (window.location.pathname !== target) {
+      window.history.pushState(null, "", target);
+    }
+    setView(parsePath(target));
     window.scrollTo({ top: 0 });
   }, []);
 
@@ -179,7 +162,7 @@ export default function App() {
             authed={authed}
           />
         ) : (
-          <HomePage onOpenClub={(id) => navigate("club", id)} onOpenPlayer={(id) => navigate("player", id)} />
+          <HomePage onOpenClub={(id) => navigate("club", id)} onOpenPlayer={(id) => navigate("player", id)} onClaim={() => navigate("claim")} onBrowseClubs={() => navigate("clubs")} />
         );
       case "match":
         return view.param ? (
@@ -190,7 +173,7 @@ export default function App() {
             onBack={() => window.history.back()}
           />
         ) : (
-          <HomePage onOpenClub={(id) => navigate("club", id)} onOpenPlayer={(id) => navigate("player", id)} />
+          <HomePage onOpenClub={(id) => navigate("club", id)} onOpenPlayer={(id) => navigate("player", id)} onClaim={() => navigate("claim")} onBrowseClubs={() => navigate("clubs")} />
         );
       case "player":
         return view.param ? (
@@ -237,7 +220,7 @@ export default function App() {
       case "admin":
         return <AdminPage authed={authed} />;
       default:
-        return <HomePage onOpenClub={(id) => navigate("club", id)} onOpenPlayer={(id) => navigate("player", id)} />;
+        return <HomePage onOpenClub={(id) => navigate("club", id)} onOpenPlayer={(id) => navigate("player", id)} onClaim={() => navigate("claim")} onBrowseClubs={() => navigate("clubs")} />;
     }
   })();
 
@@ -250,6 +233,7 @@ export default function App() {
       theme={theme}
       onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
       sync={sync}
+      source={source}
       isAdmin={authed === true}
       onLogout={sair}
     >

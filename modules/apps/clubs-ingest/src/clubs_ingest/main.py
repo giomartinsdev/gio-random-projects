@@ -21,6 +21,7 @@ from .client import DomainClient
 from .cycle import Ingest, IngestConfig
 from .queues import drain_fetch_queue, drain_search_queue, drain_sync_queue
 from .source import from_env as source_from_env
+from .source import health as source_health
 from .sync import Sync
 
 REQUIRED = ("CLUBS_INGEST_DOMAIN_API_URL", "CLUBS_INGEST_DOMAIN_API_KEY")
@@ -83,6 +84,39 @@ def main() -> int:
     cycles = 0
     bootstrapped = False
 
+    # O último estado de ciclo conhecido. A saúde da fonte é atualizada por
+    # QUALQUER chamada que falhe -- inclusive as filas interativas, que rodam a
+    # cada 20s. Guardar os números do último ciclo é o que permite publicar uma
+    # mudança de disponibilidade sem zerar as contagens que o painel mostra.
+    estado = {
+        "clubs_ok": 0, "clubs_failed": 0, "new_matches": 0,
+        "snapshots": 0, "last_error": "",
+    }
+    # O que já foi publicado da saúde da fonte. Começa no valor atual (True),
+    # não em None: assim uma fonte que cai logo no boot -- antes do primeiro
+    # ciclo -- já dispara o aviso no próximo tick das filas, sem esperar 15 min.
+    publicado_disponivel: bool = source_health.available
+
+    def publish_estado() -> None:
+        """Publica a saúde (incluindo a da fonte) pela domain-api.
+
+        O worker é Python e não serve HTTP: este é o único canal pelo qual
+        "estou coletando?" e "a fonte está fora?" chegam à tela.
+        """
+        nonlocal publicado_disponivel
+        domain.save_ingest_estado(
+            cycles=cycles,
+            clubs_ok=estado["clubs_ok"],
+            clubs_failed=estado["clubs_failed"],
+            new_matches=estado["new_matches"],
+            snapshots=estado["snapshots"],
+            bootstrapped=bootstrapped,
+            last_error=estado["last_error"],
+            source_available=source_health.available,
+            source_error=source_health.error,
+        )
+        publicado_disponivel = source_health.available
+
     # Próximo ciclo completo. As filas rodam a cada tick curto; o ciclo, no
     # intervalo longo (ele é caro: dezenas de consultas à fonte).
     proximo_ciclo = 0.0
@@ -94,35 +128,42 @@ def main() -> int:
         drain_fetch_queue(domain, ingest)
         drain_search_queue(domain, source)
 
+        # A saúde da fonte pode ter mudado num clique (403 na hora de um sync),
+        # não só no ciclo. Publicar na transição é o que faz o aviso "estamos
+        # com problemas para falar com a fonte" aparecer na tela em segundos --
+        # e sumir sozinho quando ela volta.
+        if source_health.available != publicado_disponivel:
+            try:
+                publish_estado()
+            except Exception as err:  # noqa: BLE001 -- publicar não pode derrubar o loop
+                log.error("publicar saúde da fonte falhou: %s", err)
+
         if time.monotonic() >= proximo_ciclo:
             try:
                 st = ingest.run_cycle()
                 cycles += 1
                 if st.clubes_processados:
                     bootstrapped = True
-                # Publica a saúde DEPOIS do ciclo: é o que o painel lê, e a única
-                # janela para ver uma falha em produção sem SSH.
-                domain.save_ingest_estado(
-                    cycles=cycles,
+                estado.update(
                     clubs_ok=st.clubes_processados,
                     clubs_failed=st.clubs_failed,
                     new_matches=st.new_matches,
                     snapshots=st.snapshots,
-                    bootstrapped=bootstrapped,
                     last_error="; ".join(st.falhas[:3]),
                 )
+                # Publica a saúde DEPOIS do ciclo: é o que o painel lê, e a única
+                # janela para ver uma falha em produção sem SSH.
+                publish_estado()
             except Exception as err:  # noqa: BLE001 -- a whole-cycle failure must not kill the loop
                 # The in-memory source client is deliberately kept alive across
                 # failures: its CDN challenge token has to survive, which is why
                 # this is a loop and not a one-shot job.
                 log.error("ciclo falhou: %s", err)
                 cycles += 1
+                estado.update(clubs_ok=0, clubs_failed=0, new_matches=0,
+                              snapshots=0, last_error=str(err)[:400])
                 try:
-                    domain.save_ingest_estado(
-                        cycles=cycles, clubs_ok=0, clubs_failed=0,
-                        new_matches=0, snapshots=0, bootstrapped=bootstrapped,
-                        last_error=str(err)[:400],
-                    )
+                    publish_estado()
                 except Exception:  # noqa: BLE001 -- registrar a falha não pode falhar
                     pass
             proximo_ciclo = time.monotonic() + poll_seconds

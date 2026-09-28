@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -38,6 +39,9 @@ type stubClubs struct {
 	clubesDoJogador []string
 	searchRun       domainclubs.SearchRun
 	pendingSearches []domainclubs.SearchRun
+	ingestEstado    domainclubs.IngestEstado
+	timeline        []domainclubs.TimelineEntry
+	deltas          domainclubs.ClubDeltas
 }
 
 func (s *stubClubs) GetClub(context.Context, string) (domainclubs.Club, error) {
@@ -80,6 +84,15 @@ func (s *stubClubs) GetSearchRun(context.Context, string) (domainclubs.SearchRun
 func (s *stubClubs) ListPendingSearches(context.Context) ([]domainclubs.SearchRun, error) {
 	return s.pendingSearches, nil
 }
+func (s *stubClubs) IngestEstado(context.Context) (domainclubs.IngestEstado, error) {
+	return s.ingestEstado, nil
+}
+func (s *stubClubs) Timeline(context.Context, string) ([]domainclubs.TimelineEntry, error) {
+	return s.timeline, nil
+}
+func (s *stubClubs) ClubDeltas(context.Context, string) (domainclubs.ClubDeltas, error) {
+	return s.deltas, nil
+}
 
 func clubsRouter(repo domainclubs.Repository) http.Handler {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -94,6 +107,9 @@ func clubsRouter(repo domainclubs.Repository) http.Handler {
 	r.Get("/fetch-pending", h.ListPendingFetches)
 	r.Get("/search-run", h.GetSearchRun)
 	r.Get("/search-pending", h.ListPendingSearches)
+	r.Get("/source-status", h.GetSourceStatus)
+	r.Get("/clubs/{clubId}/timeline", h.GetTimeline)
+	r.Get("/clubs/{clubId}/deltas", h.GetClubDeltas)
 	r.Get("/rankings/players", h.RankingPlayers)
 	r.Get("/rankings/clubs", h.RankingClubs)
 	r.Get("/announcements", h.ListAnnouncements)
@@ -155,7 +171,7 @@ func TestListPlayersTotalIsTheWholeIndex(t *testing.T) {
 	}
 	var body struct {
 		Players []domainclubs.PlayerProfile `json:"players"`
-		Total     int                         `json:"total"`
+		Total   int                         `json:"total"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -195,7 +211,7 @@ func TestRankingPlayersPaginates(t *testing.T) {
 	rec := getJSON(t, clubsRouter(repo), "/rankings/players?metric=rating&limite=10&offset=0")
 	var first struct {
 		Players []domainclubs.RankPlayer `json:"players"`
-		Total     int                      `json:"total"`
+		Total   int                      `json:"total"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &first); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -208,7 +224,7 @@ func TestRankingPlayersPaginates(t *testing.T) {
 	rec = getJSON(t, clubsRouter(repo), "/rankings/players?metric=rating&limite=10&offset=20")
 	var last struct {
 		Players []domainclubs.RankPlayer `json:"players"`
-		Total     int                      `json:"total"`
+		Total   int                      `json:"total"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &last); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -227,7 +243,7 @@ func TestRankingPlayersOffsetPastEnd(t *testing.T) {
 	rec := getJSON(t, clubsRouter(repo), "/rankings/players?metric=rating&limite=10&offset=99")
 	var body struct {
 		Players []domainclubs.RankPlayer `json:"players"`
-		Total     int                      `json:"total"`
+		Total   int                      `json:"total"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -250,7 +266,7 @@ func TestAnnouncementsTotalIsNotTheFeedLength(t *testing.T) {
 	}
 	var body struct {
 		Announcements []domainclubs.Announcement `json:"announcements"`
-		Total    int                        `json:"total"`
+		Total         int                        `json:"total"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -336,7 +352,7 @@ func TestClubsDoJogador(t *testing.T) {
 	}
 	var body struct {
 		Clubs []string `json:"clubs"`
-		Total  int      `json:"total"`
+		Total int      `json:"total"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -454,5 +470,76 @@ func TestGetClubFormaCarriesTheFullRecentWindow(t *testing.T) {
 	}
 	if len(got.Form) != 20 {
 		t.Fatalf("forma = %d resultados; want 20 (a janela toda)", len(got.Form))
+	}
+}
+
+// O recorte público da saúde da fonte: só "a EA está respondendo?" e o motivo.
+// É o que a tela lê para avisar da dificuldade de falar com a fornecedora dos
+// dados, sem exigir login.
+func TestGetSourceStatus(t *testing.T) {	repo := &stubClubs{ingestEstado: domainclubs.IngestEstado{
+		SourceAvailable: false,
+		SourceError:     "clubs/info: 403",
+	}}
+	rec := getJSON(t, clubsRouter(repo), "/source-status")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	var body struct {
+		Available bool   `json:"available"`
+		Error     string `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Available {
+		t.Fatal("a fonte marcada como fora deve vir available=false")
+	}
+	if body.Error == "" {
+		t.Fatal("o motivo (403) precisa chegar para a tela poder explicar")
+	}
+}
+
+// A linha do tempo do clube: o acervo do hub, que a fonte não tem. O handler
+// devolve os eventos e o total -- é o que a aba História desenha.
+func TestGetTimeline(t *testing.T) {
+	at := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	repo := &stubClubs{timeline: []domainclubs.TimelineEntry{
+		{At: at, Kind: "divisao", Title: "Promovido", Data: map[string]any{"new_division": 1}},
+		{At: at.Add(-48 * time.Hour), Kind: "seguido", Title: "Clube entrou no hub"},
+	}}
+	rec := getJSON(t, clubsRouter(repo), "/clubs/141881/timeline")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	var body struct {
+		Eventos []domainclubs.TimelineEntry `json:"eventos"`
+		Total   int                         `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Total != 2 || len(body.Eventos) != 2 {
+		t.Fatalf("got %d eventos (total %d); want 2", len(body.Eventos), body.Total)
+	}
+}
+
+// A mudança desde que a pessoa acompanha. O handler devolve o delta -- é o
+// número que só o hub pode dar.
+func TestGetClubDeltas(t *testing.T) {
+	repo := &stubClubs{deltas: domainclubs.ClubDeltas{
+		Matches: 100, Wins: 70, Goals: 450, SkillDelta: 250, DivisionFrom: 2, DivisionTo: 1,
+	}}
+	rec := getJSON(t, clubsRouter(repo), "/clubs/141881/deltas")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	var body struct {
+		Deltas domainclubs.ClubDeltas `json:"deltas"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Deltas.Matches != 100 || body.Deltas.SkillDelta != 250 {
+		t.Fatalf("delta errado: %+v", body.Deltas)
 	}
 }

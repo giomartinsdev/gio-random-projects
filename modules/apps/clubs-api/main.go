@@ -101,6 +101,9 @@ func main() {
 		SessionDuration:     envDuration("CLUBS_SESSION_DURATION", 30*24*time.Hour),
 		GoogleClientID:      googleClientID,
 		DevUserEmail:        devEmail,
+		// Origem pública do SPA: usada para montar og:url/og:image absolutos no
+		// preview de link. Sem ela, os links do cartão saem relativos.
+		PublicOrigin: os.Getenv("CLUBS_PUBLIC_ORIGIN"),
 	}
 	if cfg.SessionCookieDomain != "" {
 		log.Info("cookie de sessão escopado", "domain", cfg.SessionCookieDomain)
