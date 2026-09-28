@@ -43,6 +43,15 @@ resource "docker_container" "mediamtx" {
     # it advertising container/host-internal addresses no browser can
     # reach, which shows up only as video that never starts.
     "MTX_WEBRTCADDITIONALHOSTS=${var.mediamtx_public_host}",
+    # CRITICAL: without this MediaMTX ALSO advertises every interface
+    # address it can see -- the host's private 10.0.0.209, docker0's
+    # 172.17.0.1, br-*'s 172.18.0.1. Chrome then picks one of those from
+    # the SDP, sends its ICE checks to an address that isn't routable from
+    # the internet, and the handshake never completes (ICE "succeeds" on
+    # the public candidate but DTLS hangs on the unreachable one). With
+    # this off, the only candidate is MTX_WEBRTCADDITIONALHOSTS -- the
+    # public IP.
+    "MTX_WEBRTCIPSFROMINTERFACES=no",
     # Nothing else MediaMTX can speak is used -- WebRTC only. (MoQ
     # otherwise binds :8892 by default in MediaMTX 1.x.)
     "MTX_RTSP=no",
