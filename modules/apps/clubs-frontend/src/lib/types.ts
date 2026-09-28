@@ -203,6 +203,7 @@ export interface PlayerCareer {
 export interface PlayerMatch {
   match_id: string;
   timestamp: string;
+  kind: TipoPartida;
   opponent_name: string;
   resultado: Resultado;
   home_goals: number;

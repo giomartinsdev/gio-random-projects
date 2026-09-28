@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { ChevronLeft, Flag, Star } from "lucide-react";
 import { api } from "../lib/api";
 import type { Match, PlayerLine } from "../lib/types";
-import { Badge, Card, Crest, Empty, PosTag, Spinner } from "../components/ui";
+import { Badge, Card, Crest, Empty, MatchKindBadge, PosTag, Spinner } from "../components/ui";
 import { PageHead } from "../components/shell";
-import { EVENT_LABEL, fmt, fmtDateTime, minutes, POS_SHORT, ratingColor, resultColor, TIPO_LABEL } from "../lib/format";
+import { EVENT_LABEL, fmt, fmtDateTime, minutes, POS_SHORT, ratingColor, resultColor } from "../lib/format";
 import { useI18n } from "../lib/i18n";
 
 export function MatchPage({
@@ -50,7 +50,8 @@ export function MatchPage({
           </button>
         }
         title={`${m.home_club_name} ${m.home_goals}–${m.away_goals} ${m.away_club_name}`}
-        sub={`${fmtDateTime(m.timestamp)} · ${TIPO_LABEL[m.kind]}${m.playoff_round ? ` · ${m.playoff_round}` : ""}${m.decided_by_forfeit ? t("match.decidedByForfeit") : ""}`}
+        sub={`${fmtDateTime(m.timestamp)}${m.playoff_round ? ` · ${m.playoff_round}` : ""}${m.decided_by_forfeit ? t("match.decidedByForfeit") : ""}`}
+        actions={<MatchKindBadge kind={m.kind} />}
       />
 
       <Card title={t("common.result")}>

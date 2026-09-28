@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { api } from "../lib/api";
 import type { ClaimedPro, PlayerProfile } from "../lib/types";
-import { Badge, Card, Empty, PosTag, ResultBadge, Spinner, Stat } from "../components/ui";
+import { Badge, Card, Empty, MatchKindBadge, PosTag, ResultBadge, Spinner, Stat } from "../components/ui";
 import { SyncButton } from "../components/sync-button";
 import { PageHead } from "../components/shell";
 import { VerifiedIcon } from "../components/icons";
@@ -252,6 +252,7 @@ export function PlayerPage({
               <thead>
                 <tr className="bg-surface-2 text-faint">
                   <th className="px-3 py-2 text-left font-mono text-[10px] uppercase">{t("common.when")}</th>
+                  <th className="px-3 py-2 text-left font-mono text-[10px] uppercase">{t("common.match")}</th>
                   <th className="px-3 py-2 text-left font-mono text-[10px] uppercase">{t("club.opponents")}</th>
                   <th className="px-3 py-2 text-left font-mono text-[10px] uppercase">{t("common.result")}</th>
                   <th className="px-3 py-2 text-right font-mono text-[10px] uppercase">{t("common.rating")}</th>
@@ -269,6 +270,9 @@ export function PlayerPage({
                   >
                     <td className="px-3 py-2 font-mono text-[11px] text-faint">
                       {new Date(x.timestamp).toLocaleDateString("pt-BR")}
+                    </td>
+                    <td className="px-3 py-2">
+                      <MatchKindBadge kind={x.kind} />
                     </td>
                     <td className="px-3 py-2">{x.opponent_name}</td>
                     <td className="px-3 py-2">

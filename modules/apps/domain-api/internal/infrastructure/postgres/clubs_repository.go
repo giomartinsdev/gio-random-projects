@@ -659,7 +659,7 @@ func buildProfile(playerID string, rows []playerRow, clubNames map[string]string
 
 		// Recent performances, newest last in this ASC scan; keep the tail.
 		pm := domainclubs.PlayerMatch{
-			MatchID: pr.match.MatchID, Timestamp: pr.match.Timestamp,
+			MatchID: pr.match.MatchID, Timestamp: pr.match.Timestamp, Kind: pr.match.Kind,
 			Rating: pr.line.Rating, Goals: pr.line.Goals, Assists: pr.line.Assists,
 			Shots: pr.line.Shots, PassesMade: pr.line.PassesMade,
 			PassesAttempted: pr.line.PassesAttempted, TacklesMade: pr.line.TacklesMade,

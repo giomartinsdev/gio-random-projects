@@ -299,6 +299,9 @@ type CareerTotais struct {
 type PlayerMatch struct {
 	MatchID          string    `json:"match_id"`
 	Timestamp        time.Time `json:"timestamp"`
+	// Kind viaja com a atuação para a tabela diferenciar liga de amistoso e
+	// playoff -- o tipo é o que muda a leitura de um jogo na lista.
+	Kind             string    `json:"kind"`
 	OpponentName   string    `json:"opponent_name"`
 	Resultado        string    `json:"resultado"`
 	HomeGoals         int       `json:"home_goals"`

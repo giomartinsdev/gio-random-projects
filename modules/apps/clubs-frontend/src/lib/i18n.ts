@@ -277,7 +277,8 @@ export type Key =
   | "player.goalsBySeason" | "player.seasonsHint"
   | "club.h2h" | "club.h2hHint" | "club.h2hEmpty" | "club.h2hEmptyHint"
   | "club.h2hPickRival" | "club.h2hRecord" | "club.h2hGoals" | "club.h2hLastMeetings"
-  | "notif.comingSoon" | "notif.comingSoonHint";
+  | "notif.comingSoon" | "notif.comingSoonHint"
+  | "match.league" | "match.friendly" | "match.playoff";
 
 type Dict = Record<Key, string>;
 
@@ -610,6 +611,9 @@ const en_US: Dict = {
   "common.win": "Wins",
   "common.draw": "Draws",
   "common.loss": "Losses",
+  "match.league": "League",
+  "match.friendly": "Friendly",
+  "match.playoff": "Playoff",
 };
 
 const pt_BR: Dict = {
@@ -934,6 +938,9 @@ const pt_BR: Dict = {
   "common.win": "Vitórias",
   "common.draw": "Empates",
   "common.loss": "Derrotas",
+  "match.league": "Liga",
+  "match.friendly": "Amistoso",
+  "match.playoff": "Playoff",
 };
 
 const es_ES: Dict = {
@@ -1265,6 +1272,9 @@ const es_ES: Dict = {
   "common.win": "Victorias",
   "common.draw": "Empates",
   "common.loss": "Derrotas",
+  "match.league": "Liga",
+  "match.friendly": "Amistoso",
+  "match.playoff": "Playoff",
 };
 
 const fr_FR: Dict = {
@@ -1594,6 +1604,9 @@ const fr_FR: Dict = {
   "common.win": "Victoires",
   "common.draw": "Nuls",
   "common.loss": "Défaites",
+  "match.league": "Championnat",
+  "match.friendly": "Amical",
+  "match.playoff": "Play-off",
 };
 
 const de_DE: Dict = {
@@ -1923,6 +1936,9 @@ const de_DE: Dict = {
   "common.win": "Siege",
   "common.draw": "Unentschieden",
   "common.loss": "Niederlagen",
+  "match.league": "Liga",
+  "match.friendly": "Freundschaftsspiel",
+  "match.playoff": "Playoff",
 };
 
 const DICTS: Record<Locale, Dict> = {

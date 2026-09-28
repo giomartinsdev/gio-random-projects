@@ -15,11 +15,13 @@ import {
   ChevronRight,
   Compass,
   Flag,
+  Handshake,
   Lightbulb,
   Megaphone,
   Network,
   Radio,
   RefreshCw,
+  Shield,
   Star,
   Target,
   Trophy,
@@ -71,6 +73,16 @@ export const ANUNCIO_ICONS: Record<string, LucideIcon> = {
   ranking: Trophy,
   jogador: Users,
   novidade: Megaphone,
+};
+
+/** O ícone de cada tipo de partida. A distinção é o que o tipo significa, não
+ * um enfeite: liga é o campeonato (escudo), amistoso é combinado (aperto de
+ * mão), playoff é mata-mata (troféu). Um "playoff" com cara de liga faria a
+ * súmula de um jogo decisivo parecer um jogo qualquer. */
+export const MATCH_KIND_ICONS: Record<string, LucideIcon> = {
+  league: Shield,
+  friendly: Handshake,
+  playoff: Trophy,
 };
 
 /** Navegação de página. */

@@ -87,6 +87,15 @@ export const TIPO_LABEL: Record<TipoPartida, string> = {
   playoff: "Playoff",
 };
 
+/** A chave de i18n do tipo de partida, para o rótulo acompanhar o idioma --
+ * `TIPO_LABEL` acima é o fallback fixo (a sigla em contexto técnico), mas a
+ * interface fala a língua escolhida. */
+export const TIPO_KEY: Record<TipoPartida, "match.league" | "match.friendly" | "match.playoff"> = {
+  league: "match.league",
+  friendly: "match.friendly",
+  playoff: "match.playoff",
+};
+
 /** A cor de um resultado, usando só os tokens de status. */
 export function resultColor(r: Resultado | string): string {
   switch (r) {

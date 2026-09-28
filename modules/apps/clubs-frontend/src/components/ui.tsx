@@ -4,10 +4,12 @@
 
 import { useId, type ReactNode } from "react";
 import { clsx } from "clsx";
-import { ChevronLeft, ChevronRight, Flag } from "lucide-react";
-import type { Club, Position, Resultado } from "../lib/types";
-import { POS_SHORT, RESULT_LETTER, resultColor, resultSoft } from "../lib/format";
+import { ChevronLeft, ChevronRight, Flag, Shield } from "lucide-react";
+import type { Club, Position, Resultado, TipoPartida } from "../lib/types";
+import { POS_SHORT, RESULT_LETTER, TIPO_KEY, resultColor, resultSoft } from "../lib/format";
 import { clubPalette, crestPattern, crestSeed, crestShape, type Pattern } from "../lib/crest";
+import { MATCH_KIND_ICONS } from "./icons";
+import { useI18n } from "../lib/i18n";
 
 // ------------------------------------------------------------------ escudo
 
@@ -160,6 +162,21 @@ export function ResultBadge({ resultado, dnf = false }: { resultado: Resultado; 
 
 export function PosTag({ position }: { position: Position }) {
   return <Badge title={position}>{POS_SHORT[position]}</Badge>;
+}
+
+/** A partida é de liga, amistoso ou playoff — com ícone, porque a palavra
+ * sozinha some na lista densa e o formato é o que muda a leitura do jogo.
+ * O título acessível traz o nome inteiro; o badge é compacto. */
+export function MatchKindBadge({ kind }: { kind: TipoPartida }) {
+  const { t } = useI18n();
+  const Icon = MATCH_KIND_ICONS[kind] ?? Shield;
+  const label = t(TIPO_KEY[kind]);
+  return (
+    <Badge title={label} tone={kind === "playoff" ? "accent" : "default"}>
+      <Icon className="size-3" strokeWidth={2.5} />
+      <span className="hidden capitalize sm:inline">{label}</span>
+    </Badge>
+  );
 }
 
 /** Os últimos resultados, mais recente à esquerda. */

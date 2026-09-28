@@ -356,6 +356,7 @@ export const PLAYERS: PlayerProfile[] = (() => {
         matches: clubMatches.map((mm) => ({
           match_id: mm.match_id,
           timestamp: mm.timestamp,
+          kind: mm.kind,
           opponent_name: mm.opponent_name,
           resultado: mm.our_result,
           home_goals: mm.home_goals,

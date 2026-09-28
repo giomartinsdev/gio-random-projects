@@ -14,7 +14,7 @@ import type {
   Records,
   SquadMember,
 } from "../lib/types";
-import { Badge, Card, Crest, Empty, FormChips, Kit, PosTag, ResultBadge, Spinner, Stat } from "../components/ui";
+import { Card, Crest, Empty, FormChips, Kit, MatchKindBadge, PosTag, ResultBadge, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { WatchStar, type LucideIcon } from "../components/icons";
 import { SyncButton } from "../components/sync-button";
@@ -28,7 +28,6 @@ import {
   POS_ORDER,
   ratingColor,
   resultColor,
-  TIPO_LABEL,
 } from "../lib/format";
 import { useI18n } from "../lib/i18n";
 import { clubPalette, crestSeed } from "../lib/crest";
@@ -234,8 +233,9 @@ function ResumoTab({ club, onOpenMatch }: { club: Club; onOpenMatch: (id: string
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold">{m.opponent_name}</span>
-                      <span className="block font-mono text-[10px] text-faint">
-                        {TIPO_LABEL[m.kind]} · {fmtDateTime(m.timestamp)}
+                      <span className="mt-0.5 flex items-center gap-1.5 text-faint">
+                        <MatchKindBadge kind={m.kind} />
+                        <span className="font-mono text-[10px]">{fmtDateTime(m.timestamp)}</span>
                       </span>
                     </span>
                     {m.avg_rating > 0 && (
@@ -535,9 +535,9 @@ function PartidasTab({ clubId, onOpenMatch }: { clubId: string; onOpenMatch: (id
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {[
           ["", t("claim.all")],
-          ["league", TIPO_LABEL["league"]],
-          ["friendly", TIPO_LABEL["friendly"]],
-          ["playoff", TIPO_LABEL["playoff"]],
+          ["league", t("match.league")],
+          ["friendly", t("match.friendly")],
+          ["playoff", t("match.playoff")],
         ].map(([k, label]) => (
           <button
             key={k}
@@ -574,7 +574,7 @@ function PartidasTab({ clubId, onOpenMatch }: { clubId: string; onOpenMatch: (id
                   <span className="hidden w-24 shrink-0 font-mono text-[10px] text-faint sm:block">
                     {fmtDate(m.timestamp)}
                   </span>
-                  <Badge>{TIPO_LABEL[m.kind]}</Badge>
+                  <MatchKindBadge kind={m.kind} />
                   <ResultBadge resultado={m.our_result} dnf={m.decided_by_forfeit} />
                   <span className="tnum font-display w-16 font-bold" style={{ color: resultColor(m.our_result) }}>
                     {m.our_goals}–{m.their_goals}
