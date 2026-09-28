@@ -329,14 +329,28 @@ export interface HeadToHead {
   matches: Match[] | null;
 }
 
+/** O anúncio guarda os FATOS (`data`), não a frase pronta: quem desenha monta
+ * o texto no idioma escolhido. `title` é o fallback de quem não tem os fatos
+ * (linhas antigas, gravadas antes desta mudança). */
 export interface Announcement {
   id: string;
-  kind: "result" | "ranking" | "player" | "novelty";
+  // Os valores reais do banco. O tipo antigo dizia "result"/"player" mas o
+  // dado sempre foi "resultado"/"jogador" -- o TypeScript mentia.
+  kind: "resultado" | "ranking" | "jogador" | "novidade";
   title: string;
   body: string;
   reference_id: string;
   icon: string;
+  data?: AnnouncementData | null;
   generated_at: string;
+}
+
+/** Os fatos de um anúncio de resultado. */
+export interface AnnouncementData {
+  result?: Resultado;
+  our_goals?: number;
+  their_goals?: number;
+  match_kind?: TipoPartida;
 }
 
 export interface RankPlayer {

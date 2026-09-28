@@ -491,20 +491,25 @@ export function h2h(aId: string, bId: string): HeadToHead {
 
 // --- anúncios e rankings ---------------------------------------------------
 
-const ANNOUNCE_KINDS = ["result", "ranking", "player"] as const;
-const ANNOUNCE_TITLES = [
-  "Vitória por 5–1", "Vitória por 4–1", "Empate em 2–2", "Vitória por 3–0",
-  "Derrota por 2–4", "Vitória por 8–2", "Vitória por 6–1", "Vitória por 2–1",
-];
-export const ANNOUNCEMENTS: Announcement[] = ANNOUNCE_TITLES.map((title, i) => ({
-  id: `a${i}`,
-  kind: i % 5 === 4 ? "ranking" : ANNOUNCE_KINDS[i % ANNOUNCE_KINDS.length],
-  title,
-  body: "League match recorded by the hub.",
-  reference_id: String(matchSeq - i),
-  icon: i % 5 === 4 ? "ranking" : "result",
-  generated_at: iso(0, 18 - i, intBetween(0, 59)),
-}));
+// Os anúncios carregam os FATOS (`data`), como o backend grava agora: quem
+// desenha monta a frase no idioma escolhido. O `title` fica como fallback,
+// igual às linhas antigas do banco.
+const ANNOUNCE_RESULTS = ["win", "win", "draw", "win", "loss", "win", "win", "loss"] as const;
+export const ANNOUNCEMENTS: Announcement[] = ANNOUNCE_RESULTS.map((result, i) => {
+  const our = intBetween(1, 6);
+  const their = result === "win" ? intBetween(0, our - 1) : result === "loss" ? our + intBetween(1, 3) : our;
+  const ranking = i % 5 === 4;
+  return {
+    id: `a${i}`,
+    kind: ranking ? "ranking" : "resultado",
+    title: ranking ? "Ranking atualizado" : `${result === "win" ? "Vitória" : result === "loss" ? "Derrota" : "Empate"} por ${our}–${their}`,
+    body: "",
+    reference_id: String(matchSeq - i),
+    icon: ranking ? "ranking" : "resultado",
+    data: ranking ? null : { result, our_goals: our, their_goals: their, match_kind: "league" },
+    generated_at: iso(0, 18 - i, intBetween(0, 59)),
+  };
+});
 
 export function rankingsClubs(metric: string): ClubRef[] {
   const key = (c: Club): number =>

@@ -357,20 +357,31 @@ class Ingest:
             our = payload["home_goals"]
             theirs = payload["away_goals"]
             result = payload["home_result"]
-            if result == "win":
-                title = f"Vitória por {our}–{theirs}"
-            elif result == "loss":
-                title = f"Loss por {our}–{theirs}"
-            else:
-                title = f"Draw em {our}–{theirs}"
+            # O título que a UI usa sai dos FATOS (abaixo), traduzidos no
+            # idioma escolhido. Este texto é só o fallback para linhas antigas
+            # e para quem lê o dado cru -- por isso tem que estar inteiro num
+            # idioma só. O codemod deixou "Vitória por" (PT) ao lado de "Loss
+            # por"/"Draw em" (EN), porque traduziu o valor de `result` mas não
+            # as palavras da frase.
+            rotulo_resultado = {"win": "Vitória", "loss": "Derrota", "draw": "Empate"}[result]
+            title = f"{rotulo_resultado} por {our}–{theirs}"
             self.domain.create_announcement({
                 "kind": "resultado",
                 "title": title,
-                "body": f"Partida de {payload['kind']} registrada pelo hub.",
+                "body": f"Resultado registrado pelo hub.",
                 "reference_id": payload["match_id"],
                 # Chave semântica, não um emoji: quem desenha escolhe o ícone
                 # (emoji muda de cara em cada sistema e ignora o tema).
                 "icon": "resultado",
+                # Os FATOS que permitem desenhar o aviso em qualquer idioma.
+                # Sem eles, a frase teria que vir pronta daqui -- e foi assim
+                # que ela saiu meio em português, meio em inglês.
+                "data": {
+                    "result": result,
+                    "our_goals": our,
+                    "their_goals": theirs,
+                    "match_kind": payload["kind"],
+                },
                 # Result announcements are the most perishable item in the
                 # feed -- a week is plenty.
                 "expira_em_horas": 24 * 7,

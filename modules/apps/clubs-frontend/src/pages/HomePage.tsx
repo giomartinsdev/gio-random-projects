@@ -8,7 +8,29 @@ import { PageHead } from "../components/shell";
 import { ANUNCIO_ICONS, FLOW_ICONS, VerifiedIcon } from "../components/icons";
 import { BarChart } from "../components/charts";
 import { fmt, POS_SHORT, timeAgo } from "../lib/format";
-import { useI18n } from "../lib/i18n";
+import { useI18n, type Key } from "../lib/i18n";
+
+/** A chave de i18n do tipo de aviso. O dado vem em português (`resultado`)
+ * porque o banco é assim desde o início; a interface traduz. */
+const FEED_KIND_KEY: Record<Announcement["kind"], Key> = {
+  resultado: "feed.kind.resultado",
+  ranking: "feed.kind.ranking",
+  jogador: "feed.kind.jogador",
+  novidade: "feed.kind.novidade",
+};
+
+/** A frase do aviso, montada dos FATOS no idioma escolhido.
+ *
+ * Sem os fatos (linha antiga, gravada antes de o feed guardar `data`), cai no
+ * `title` -- que é o único texto que existe nesse caso. */
+function feedTitle(a: Announcement, t: (k: Key, p?: Record<string, string | number>) => string): string {
+  const d = a.data;
+  if (d?.result && d.our_goals != null && d.their_goals != null) {
+    const key: Key = `feed.result.${d.result}` as Key;
+    return t(key, { score: `${d.our_goals}–${d.their_goals}` });
+  }
+  return a.title;
+}
 
 type RankTab = "clubs" | "players";
 
@@ -142,10 +164,9 @@ export function HomePage({ onOpenClub, onOpenPlayer }: { onOpenClub: (id: string
                   </span>
                   <div className="min-w-0">
                     <div className="label" style={{ color: "var(--accent)" }}>
-                      {a.kind}
+                      {t(FEED_KIND_KEY[a.kind] ?? "feed.kind.novidade")}
                     </div>
-                    <div className="text-sm font-semibold">{a.title}</div>
-                    {a.body && <div className="mt-0.5 text-xs text-muted">{a.body}</div>}
+                    <div className="text-sm font-semibold">{feedTitle(a, t)}</div>
                     <div className="mt-1 font-mono text-[10px] text-faint">{timeAgo(a.generated_at)}</div>
                   </div>
                 </li>

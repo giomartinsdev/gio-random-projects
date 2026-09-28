@@ -23,7 +23,17 @@ func NewService(repo domainannouncement.Repository) *Service {
 // error rather than silently coerced — the feed is generated, so a bad tipo
 // is a bug in the generator worth seeing.
 func (s *Service) Append(ctx context.Context, in AppendInput) error {
-	a, err := domainannouncement.New(in.Kind, in.Title, in.Body, in.ReferenciaID, in.Icon, time.Now().UTC())
+	// O banco guarda os fatos como jsonb; o mapa do payload vira bytes aqui.
+	// Vazio vira `{}` no domínio, para a coluna NOT NULL nunca receber null.
+	var data []byte
+	if len(in.Data) > 0 {
+		encoded, err := json.Marshal(in.Data)
+		if err != nil {
+			return fmt.Errorf("encode announcement data: %w", err)
+		}
+		data = encoded
+	}
+	a, err := domainannouncement.New(in.Kind, in.Title, in.Body, in.ReferenciaID, in.Icon, data, time.Now().UTC())
 	if err != nil {
 		return err
 	}

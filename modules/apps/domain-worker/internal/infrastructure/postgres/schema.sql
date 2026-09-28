@@ -483,9 +483,18 @@ CREATE TABLE IF NOT EXISTS clubs_announcements (
     body         TEXT NOT NULL DEFAULT '',
     reference_id TEXT NOT NULL DEFAULT '',
     icon         TEXT NOT NULL DEFAULT '',
+    -- Os FATOS do aviso (resultado, gols, tipo de partida...), para a
+    -- interface montar a frase no idioma escolhido. O `title` acima é o
+    -- fallback de quem lê o dado cru; a frase pronta saía no idioma do worker
+    -- e por isso o feed misturava "Vitória por" com "Loss por".
+    data         JSONB NOT NULL DEFAULT '{}',
     generated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at     TIMESTAMPTZ
 );
+
+-- `CREATE TABLE IF NOT EXISTS` é no-op numa tabela que já existe: a coluna
+-- nova precisa do ALTER para chegar a um banco em produção.
+ALTER TABLE clubs_announcements ADD COLUMN IF NOT EXISTS data JSONB NOT NULL DEFAULT '{}';
 
 CREATE INDEX IF NOT EXISTS idx_clubs_announcements_gerado ON clubs_announcements(generated_at DESC);
 

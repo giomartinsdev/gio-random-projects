@@ -278,7 +278,10 @@ export type Key =
   | "club.h2h" | "club.h2hHint" | "club.h2hEmpty" | "club.h2hEmptyHint"
   | "club.h2hPickRival" | "club.h2hRecord" | "club.h2hGoals" | "club.h2hLastMeetings"
   | "notif.comingSoon" | "notif.comingSoonHint"
-  | "match.league" | "match.friendly" | "match.playoff";
+  | "match.league" | "match.friendly" | "match.playoff"
+  | "result.win" | "result.draw" | "result.loss"
+  | "feed.result.win" | "feed.result.draw" | "feed.result.loss"
+  | "feed.kind.resultado" | "feed.kind.ranking" | "feed.kind.jogador" | "feed.kind.novidade";
 
 type Dict = Record<Key, string>;
 
@@ -614,6 +617,16 @@ const en_US: Dict = {
   "match.league": "League",
   "match.friendly": "Friendly",
   "match.playoff": "Playoff",
+  "result.win": "Win",
+  "result.draw": "Draw",
+  "result.loss": "Loss",
+  "feed.result.win": "Win {score}",
+  "feed.result.draw": "Draw {score}",
+  "feed.result.loss": "Loss {score}",
+  "feed.kind.resultado": "Result",
+  "feed.kind.ranking": "Ranking",
+  "feed.kind.jogador": "Player",
+  "feed.kind.novidade": "News",
 };
 
 const pt_BR: Dict = {
@@ -941,6 +954,16 @@ const pt_BR: Dict = {
   "match.league": "Liga",
   "match.friendly": "Amistoso",
   "match.playoff": "Playoff",
+  "result.win": "Vitória",
+  "result.draw": "Empate",
+  "result.loss": "Derrota",
+  "feed.result.win": "Vitória por {score}",
+  "feed.result.draw": "Empate em {score}",
+  "feed.result.loss": "Derrota por {score}",
+  "feed.kind.resultado": "Resultado",
+  "feed.kind.ranking": "Ranking",
+  "feed.kind.jogador": "Jogador",
+  "feed.kind.novidade": "Novidade",
 };
 
 const es_ES: Dict = {
@@ -1275,6 +1298,16 @@ const es_ES: Dict = {
   "match.league": "Liga",
   "match.friendly": "Amistoso",
   "match.playoff": "Playoff",
+  "result.win": "Victoria",
+  "result.draw": "Empate",
+  "result.loss": "Derrota",
+  "feed.result.win": "Victoria {score}",
+  "feed.result.draw": "Empate {score}",
+  "feed.result.loss": "Derrota {score}",
+  "feed.kind.resultado": "Resultado",
+  "feed.kind.ranking": "Ranking",
+  "feed.kind.jogador": "Jugador",
+  "feed.kind.novidade": "Novedad",
 };
 
 const fr_FR: Dict = {
@@ -1607,6 +1640,16 @@ const fr_FR: Dict = {
   "match.league": "Championnat",
   "match.friendly": "Amical",
   "match.playoff": "Play-off",
+  "result.win": "Victoire",
+  "result.draw": "Nul",
+  "result.loss": "Défaite",
+  "feed.result.win": "Victoire {score}",
+  "feed.result.draw": "Nul {score}",
+  "feed.result.loss": "Défaite {score}",
+  "feed.kind.resultado": "Résultat",
+  "feed.kind.ranking": "Classement",
+  "feed.kind.jogador": "Joueur",
+  "feed.kind.novidade": "Nouveauté",
 };
 
 const de_DE: Dict = {
@@ -1939,6 +1982,16 @@ const de_DE: Dict = {
   "match.league": "Liga",
   "match.friendly": "Freundschaftsspiel",
   "match.playoff": "Playoff",
+  "result.win": "Sieg",
+  "result.draw": "Unentschieden",
+  "result.loss": "Niederlage",
+  "feed.result.win": "Sieg {score}",
+  "feed.result.draw": "Unentschieden {score}",
+  "feed.result.loss": "Niederlage {score}",
+  "feed.kind.resultado": "Ergebnis",
+  "feed.kind.ranking": "Ranking",
+  "feed.kind.jogador": "Spieler",
+  "feed.kind.novidade": "Neuigkeit",
 };
 
 const DICTS: Record<Locale, Dict> = {

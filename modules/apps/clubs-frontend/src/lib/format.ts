@@ -96,6 +96,7 @@ export const TIPO_KEY: Record<TipoPartida, "match.league" | "match.friendly" | "
   playoff: "match.playoff",
 };
 
+
 /** A cor de um resultado, usando só os tokens de status. */
 export function resultColor(r: Resultado | string): string {
   switch (r) {

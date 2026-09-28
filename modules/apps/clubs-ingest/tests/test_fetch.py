@@ -214,3 +214,58 @@ def test_announcement_carries_a_semantic_key_not_an_emoji():
     icon = announcements[0]["icon"]
     assert icon == "resultado", f"chave semântica esperada, veio {icon!r}"
     assert icon.isascii(), "nada de emoji no dado gravado"
+
+
+def test_announcement_carries_the_facts_so_the_ui_can_translate():
+    """O aviso guarda os FATOS (resultado, gols, tipo de partida), não a frase
+    pronta.
+
+    O texto era renderizado aqui, no worker -- então não seguia o idioma do
+    app e saía meio em cada língua ("Vitória por" com "Loss por"). Com os
+    fatos gravados, quem desenha monta a frase no idioma escolhido, e a mesma
+    linha serve a todos os idiomas.
+    """
+    from clubs_ingest.cycle import CycleStats
+
+    announcements = []
+
+    class D(FakeDomain):
+        def create_announcement(self, a):
+            announcements.append(a)
+
+    ing = new_ingest(FakeSource(info={}, overall={}, matches=[]), D())
+    ing._announce_result("1", {
+        "home_goals": 3, "away_goals": 1, "home_result": "loss",
+        "kind": "league", "match_id": "m1",
+    }, CycleStats())
+
+    data = announcements[0].get("data") or {}
+    assert data.get("result") == "loss", f"resultado esperado nos fatos, veio {data!r}"
+    assert data.get("our_goals") == 3 and data.get("their_goals") == 1, data
+    assert data.get("match_kind") == "league", data
+
+
+def test_announcement_title_is_one_language_no_mix():
+    """O fallback textual (para linhas antigas) não pode misturar idiomas: era
+    o bug em produção, "Vitória por 2-6" ao lado de "Loss por 2-6"."""
+    import re
+    from clubs_ingest.cycle import CycleStats
+
+    announcements = []
+
+    class D(FakeDomain):
+        def create_announcement(self, a):
+            announcements.append(a)
+
+    ing = new_ingest(FakeSource(info={}, overall={}, matches=[]), D())
+    for result in ("win", "loss", "draw"):
+        ing._announce_result("1", {
+            "home_goals": 2, "away_goals": 1, "home_result": result,
+            "kind": "league", "match_id": f"m-{result}",
+        }, CycleStats())
+
+    for a in announcements:
+        title = a["title"]
+        assert not re.search(r"\bLoss\b|\bDraw\b|\bWin\b", title), (
+            f"palavra em inglês no título: {title!r}"
+        )

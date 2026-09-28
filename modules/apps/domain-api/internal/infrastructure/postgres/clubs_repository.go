@@ -1045,7 +1045,7 @@ func (r *ClubsRepository) RecentAnnouncements(ctx context.Context, limit int) ([
 		limit = 12
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, kind, title, body, reference_id, icon, generated_at
+		SELECT id, kind, title, body, reference_id, icon, data, generated_at
 		FROM clubs_announcements
 		WHERE expires_at IS NULL OR expires_at > now()
 		ORDER BY generated_at DESC LIMIT $1`, limit)
@@ -1057,9 +1057,13 @@ func (r *ClubsRepository) RecentAnnouncements(ctx context.Context, limit int) ([
 	var list []domainclubs.Announcement
 	for rows.Next() {
 		var a domainclubs.Announcement
+		var data []byte
 		if err := rows.Scan(&a.ID, &a.Kind, &a.Title, &a.Body, &a.ReferenciaID, &a.Icon,
-			&a.GeneratedAt); err != nil {
+			&data, &a.GeneratedAt); err != nil {
 			return nil, fmt.Errorf("scan announcement: %w", err)
+		}
+		if len(data) > 0 {
+			_ = json.Unmarshal(data, &a.Data)
 		}
 		list = append(list, a)
 	}

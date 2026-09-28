@@ -93,6 +93,9 @@ type AnuncioInput struct {
 	Body         string `json:"body,omitempty"`
 	ReferenciaID  string `json:"reference_id,omitempty"`
 	Icon         string `json:"icon,omitempty"`
+	// Data são os fatos do aviso (resultado, gols, tipo de partida), para a
+	// interface montar a frase no idioma escolhido.
+	Data          map[string]any `json:"data,omitempty"`
 	ExpiraEmHoras int    `json:"expira_em_horas,omitempty"`
 }
 

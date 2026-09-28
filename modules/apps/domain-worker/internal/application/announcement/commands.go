@@ -9,6 +9,9 @@ type AppendInput struct {
 	Body        string `json:"body,omitempty"`
 	ReferenciaID string `json:"reference_id,omitempty"`
 	Icon        string `json:"icon,omitempty"`
+	// Data são os fatos do aviso (resultado, gols, tipo de partida), para a
+	// interface montar a frase no idioma escolhido. O Title é o fallback.
+	Data map[string]any `json:"data,omitempty"`
 	// ExpiraEmHoras is a relative TTL rather than an absolute timestamp, so
 	// the ingest doesn't have to know the worker's clock.
 	ExpiraEmHoras int `json:"expira_em_horas,omitempty"`

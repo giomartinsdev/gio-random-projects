@@ -26,9 +26,9 @@ func (r *AnuncioRepository) Append(ctx context.Context, a domainannouncement.Anu
 		a.ID = uuid.NewString()
 	}
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO clubs_announcements (id, kind, title, body, reference_id, icon, generated_at, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		a.ID, a.Kind, a.Title, a.Body, a.ReferenciaID, a.Icon, a.GeneratedAt, a.ExpiresAt)
+		INSERT INTO clubs_announcements (id, kind, title, body, reference_id, icon, data, generated_at, expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		a.ID, a.Kind, a.Title, a.Body, a.ReferenciaID, a.Icon, a.Data, a.GeneratedAt, a.ExpiresAt)
 	if err != nil {
 		return fmt.Errorf("append anuncio: %w", err)
 	}
@@ -41,7 +41,7 @@ func (r *AnuncioRepository) Recent(ctx context.Context, limit int) ([]domainanno
 		limit = 20
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, kind, title, body, reference_id, icon, generated_at, expires_at
+		SELECT id, kind, title, body, reference_id, icon, data, generated_at, expires_at
 		FROM clubs_announcements
 		WHERE expires_at IS NULL OR expires_at > now()
 		ORDER BY generated_at DESC LIMIT $1`, limit)
@@ -54,7 +54,7 @@ func (r *AnuncioRepository) Recent(ctx context.Context, limit int) ([]domainanno
 	for rows.Next() {
 		var a domainannouncement.Anuncio
 		if err := rows.Scan(&a.ID, &a.Kind, &a.Title, &a.Body, &a.ReferenciaID, &a.Icon,
-			&a.GeneratedAt, &a.ExpiresAt); err != nil {
+			&a.Data, &a.GeneratedAt, &a.ExpiresAt); err != nil {
 			return nil, fmt.Errorf("scan anuncio: %w", err)
 		}
 		list = append(list, a)

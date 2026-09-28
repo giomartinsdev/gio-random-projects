@@ -420,6 +420,9 @@ type Announcement struct {
 	Body        string    `json:"body"`
 	ReferenciaID string    `json:"reference_id"`
 	Icon        string    `json:"icon"`
+	// Data são os fatos do aviso (resultado, gols, tipo de partida), para a
+	// interface montar a frase no idioma escolhido -- o Title é o fallback.
+	Data        map[string]any `json:"data,omitempty"`
 	GeneratedAt     time.Time `json:"generated_at"`
 }
 
