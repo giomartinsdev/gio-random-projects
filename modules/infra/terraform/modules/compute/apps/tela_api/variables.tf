@@ -66,6 +66,13 @@ variable "coturn_enabled" {
   default     = false
 }
 
+variable "coturn_secret" {
+  description = "coturn's static-auth-secret, shared with tela-api so it can mint short-lived TURN credentials. Generated in the root module (secrets.tf); empty disables coturn."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "coturn_public_host" {
   description = "Public address coturn advertises to browsers (its external-ip). Same public IP as the host."
   type        = string

@@ -184,7 +184,10 @@ module "compute_apps_tela_api" {
   # break sharing entirely.
   coturn_enabled     = var.coturn_enabled
   coturn_public_host = var.server_ip
-  frontend_origins   = ["https://tela.giomartins.dev"]
+  # Shared secret: tela-api mints short-lived TURN credentials with it,
+  # coturn verifies them with the same value.
+  coturn_secret    = random_password.tela_turn_secret.result
+  frontend_origins = ["https://tela.giomartins.dev"]
   # Host-networked container — loopback endpoint, not the docker-network one.
   otlp_endpoint = module.compute_services_observability.otlp_endpoint_loopback
 }

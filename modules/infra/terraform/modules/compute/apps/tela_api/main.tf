@@ -12,12 +12,11 @@ locals {
     value = "true"
   }] : []
 
-  # A coturn without the host's private address has nothing to relay into
-  # (it can't reach the public IP of its own host), so refuse the combo
-  # rather than stand up a relay that can never deliver. Failing closed:
-  # if the private address is missing, coturn stays off and the app keeps
-  # STUN-only -- screen sharing still works on a healthy path.
-  coturn_on = var.coturn_enabled && var.mediamtx_private_host != ""
+  # A coturn without the host's private address (nothing to relay into) or
+  # without a shared secret (no auth) can't work, so fail closed: if
+  # either is missing, coturn stays off and the app keeps STUN-only --
+  # screen sharing still works on a healthy path.
+  coturn_on = var.coturn_enabled && var.mediamtx_private_host != "" && var.coturn_secret != ""
 }
 
 resource "docker_volume" "tela_state" {
@@ -112,7 +111,7 @@ resource "docker_container" "coturn" {
   command = [
     "-n",
     "--use-auth-secret",
-    "--static-auth-secret=${random_password.tela_turn_secret.result}",
+    "--static-auth-secret=${var.coturn_secret}",
     "--realm=tela.giomartins.dev",
     "--no-cli",
     "--no-tls",
@@ -174,7 +173,7 @@ resource "docker_container" "tela_api" {
     # browser onto the relay. The static TURN/Cloudflare inputs below stay
     # as alternatives; coturn wins when both are set.
     "TELA_TURN_URLS=${local.coturn_on ? "turn:${var.coturn_public_host}:${var.coturn_listen_port}?transport=udp turn:${var.coturn_public_host}:${var.coturn_listen_port}?transport=tcp" : var.turn_urls}",
-    "TELA_TURN_SECRET=${local.coturn_on ? random_password.tela_turn_secret.result : ""}",
+    "TELA_TURN_SECRET=${local.coturn_on ? var.coturn_secret : ""}",
     "TELA_TURN_USERID=tela",
     "TELA_TURN_USERNAME=${var.turn_username}",
     "TELA_TURN_PASSWORD=${var.turn_password}",
