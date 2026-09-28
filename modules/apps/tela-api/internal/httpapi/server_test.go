@@ -21,6 +21,7 @@ import (
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/mediamtx"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/turn"
 )
 
 // fakeMediaMTX answers a WHIP/WHEP offer with a real pion answer, so the
@@ -69,17 +70,25 @@ func fakeMediaMTX(t *testing.T) *httptest.Server {
 	return srv
 }
 
+// buildServer assembles the API under test with a real MediaMTX stand-in
+// and the given ICE config; the callers wrap it in an httptest.Server.
+func buildServer(t *testing.T, turnProxy *turn.Proxy) *httpapi.Server {
+	t.Helper()
+	media := mediamtx.NewProxy(fakeMediaMTX(t).URL)
+	api := httpapi.New(rooms.NewRegistry(""), media, turnProxy,
+		[]string{"http://example.com"}, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil)
+	api.RegisterClips(clips.NewMemoryStore(), 24*time.Hour)
+	return api
+}
+
 // Everything below runs against a real HTTP server over a real
 // WebSocket, with a real MediaMTX stand-in -- the signalling relay is the
 // whole product, so faking the transport would test nothing worth
 // testing.
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	media := mediamtx.NewProxy(fakeMediaMTX(t).URL)
-	api := httpapi.New(rooms.NewRegistry(""), media,
-		[]string{"http://example.com"}, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil)
-	api.RegisterClips(clips.NewMemoryStore(), 24*time.Hour)
-	srv := httptest.NewServer(api.Handler())
+	turnProxy := turn.New(turn.Options{STUNURLs: []string{"stun:stun.l.google.com:19302"}})
+	srv := httptest.NewServer(buildServer(t, turnProxy).Handler())
 	t.Cleanup(srv.Close)
 	return srv
 }

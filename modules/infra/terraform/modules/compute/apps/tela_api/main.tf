@@ -92,6 +92,19 @@ resource "docker_container" "tela_api" {
     # host-networked, so the docker-network name `mediamtx` doesn't
     # resolve). Empty disables screen sharing entirely.
     "MEDIAMTX_INTERNAL_URL=http://127.0.0.1:8889",
+    # ICE for the browser. STUN-only by default (empty = unset): the
+    # direct path to MediaMTX is healthy most of the time. A TURN relay
+    # is the fallback for a path that can't carry media (a hostile
+    # network, or one that drops the large DTLS handshake packets);
+    # because MediaMTX has a public IP, only the browser side needs the
+    # relay, so a managed TURN (Cloudflare) is enough. All secrets come
+    # from the vault via TF_VAR_*, never the repo.
+    "TELA_STUN_URLS=${var.stun_urls}",
+    "TELA_TURN_URLS=${var.turn_urls}",
+    "TELA_TURN_USERNAME=${var.turn_username}",
+    "TELA_TURN_PASSWORD=${var.turn_password}",
+    "TELA_TURN_CF_KEY_ID=${var.turn_cf_key_id}",
+    "TELA_TURN_CF_API_TOKEN=${var.turn_cf_api_token}",
     # Now a cross-origin caller (tela-frontend's own hostname/container)
     # instead of same-origin -- see internal/httpapi's AllowedOrigins.
     "FRONTEND_ORIGINS=${join(",", var.frontend_origins)}",

@@ -60,3 +60,46 @@ variable "otlp_endpoint" {
   type        = string
   default     = ""
 }
+
+variable "stun_urls" {
+  description = "Space/comma-separated STUN URLs handed to the browser. Empty uses the app's own default (Google STUN)."
+  type        = string
+  default     = ""
+}
+
+variable "turn_urls" {
+  description = <<-EOT
+    Space/comma-separated static TURN URLs (e.g. a self-hosted coturn:
+    turn:host:3478?transport=udp turn:host:3478?transport=tcp). When set,
+    the browser is pinned to the relay and turn_username/turn_password are
+    sent with it. Empty means no static TURN.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "turn_username" {
+  description = "Username for the static TURN above. Ignored when turn_urls is empty."
+  type        = string
+  default     = ""
+}
+
+variable "turn_password" {
+  description = "Password for the static TURN above. Sourced from the vault at apply time, never the repo."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "turn_cf_key_id" {
+  description = "Cloudflare Realtime TURN key id. With turn_cf_api_token set, the app mints short-lived TURN credentials server-side and never exposes the account token. Takes priority over the static TURN."
+  type        = string
+  default     = ""
+}
+
+variable "turn_cf_api_token" {
+  description = "Cloudflare API token that may mint TURN credentials for turn_cf_key_id. Sourced from the vault at apply time."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

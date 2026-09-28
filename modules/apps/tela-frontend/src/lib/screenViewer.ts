@@ -1,8 +1,5 @@
 import { waitIceComplete } from "./iceGathering";
-
-// Same reasoning as ScreenPublisher's: a plain STUN fallback when the
-// server-configured ICE list can't be fetched.
-const FALLBACK_ICE: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+import { fetchIceConfig } from "./iceServers";
 
 export interface ScreenViewerOptions {
   // The WHEP exchange, relayed by the server: raw offer in, MediaMTX's
@@ -12,6 +9,7 @@ export interface ScreenViewerOptions {
   // absent m-line.
   hasAudio: boolean;
   iceServers?: RTCIceServer[];
+  iceTransportPolicy?: RTCIceTransportPolicy;
   onEnded?: () => void;
   onBroken?: () => void;
 }
@@ -35,8 +33,12 @@ export class ScreenViewer {
   // the caller can swap streams without a gap; a timeout means the path is
   // not publishing (or MediaMTX is down).
   async start(stream: MediaStream): Promise<void> {
+    const config = this.options.iceServers
+      ? { iceServers: this.options.iceServers, iceTransportPolicy: this.options.iceTransportPolicy }
+      : await fetchIceConfig();
     const pc = new RTCPeerConnection({
-      iceServers: this.options.iceServers ?? FALLBACK_ICE,
+      iceServers: config.iceServers,
+      iceTransportPolicy: config.iceTransportPolicy,
       bundlePolicy: "max-bundle",
     });
     this.pc = pc;

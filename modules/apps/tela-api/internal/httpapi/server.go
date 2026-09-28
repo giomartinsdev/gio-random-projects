@@ -20,6 +20,7 @@ import (
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/cluster"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/mediamtx"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/turn"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
@@ -33,6 +34,9 @@ type Server struct {
 	// publishing is refused with a clear message rather than failing
 	// halfway through a handshake.
 	media *mediamtx.Proxy
+	// Decides which ICE servers the browser gets: STUN always, TURN when
+	// configured (a relay fallback for a path that can't carry media).
+	turn *turn.Proxy
 	// tela-frontend's own origin(s) -- the only ones the REST API sends
 	// CORS headers for and the WebSocket accepts a connection from. See
 	// ws.go's use of this for why it can't just trust r.Host anymore.
@@ -52,12 +56,13 @@ type Server struct {
 // The metrics handler is optional (nil = the /metrics route doesn't
 // exist at all) because scraping is a deployment's choice, not the
 // app's: TELA_METRICS=1 in main is what turns it on.
-func New(registry *rooms.Registry, media *mediamtx.Proxy, allowedOrigins []string, log *slog.Logger, metrics http.Handler) *Server {
+func New(registry *rooms.Registry, media *mediamtx.Proxy, turnProxy *turn.Proxy, allowedOrigins []string, log *slog.Logger, metrics http.Handler) *Server {
 	s := &Server{
 		registry:       registry,
 		limiter:        newAttemptLimiter(),
 		mux:            http.NewServeMux(),
 		media:          media,
+		turn:           turnProxy,
 		AllowedOrigins: allowedOrigins,
 		log:            log,
 	}
@@ -67,6 +72,7 @@ func New(registry *rooms.Registry, media *mediamtx.Proxy, allowedOrigins []strin
 	if metrics != nil {
 		s.mux.Handle("GET /metrics", metrics)
 	}
+	s.mux.HandleFunc("GET /api/rtc/ice", s.handleIceServers)
 	s.mux.HandleFunc("POST /api/rooms", s.handleCreateRoom)
 	s.mux.HandleFunc("GET /api/rooms", s.handleListRooms)
 	s.mux.HandleFunc("GET /api/rooms/{id}", s.handleRoomStatus)

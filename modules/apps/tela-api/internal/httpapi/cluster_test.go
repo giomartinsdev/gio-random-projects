@@ -17,6 +17,7 @@ import (
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/mediamtx"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/turn"
 )
 
 // Two real nodes, each wired to the other as its only peer -- the whole
@@ -28,7 +29,8 @@ func newClusteredServers(t *testing.T) (a, b *httptest.Server) {
 
 	build := func() (*httptest.Server, *httpapi.Server) {
 		media := mediamtx.NewProxy(fakeMediaMTX(t).URL)
-		api := httpapi.New(rooms.NewRegistry(""), media,
+		turnProxy := turn.New(turn.Options{STUNURLs: []string{"stun:stun.l.google.com:19302"}})
+		api := httpapi.New(rooms.NewRegistry(""), media, turnProxy,
 			[]string{"http://example.com"}, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil)
 		api.RegisterClips(clips.NewMemoryStore(), 24*time.Hour)
 		srv := httptest.NewServer(api.Handler())

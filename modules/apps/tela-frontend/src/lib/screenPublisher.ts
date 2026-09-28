@@ -1,11 +1,6 @@
 import { waitIceComplete } from "./iceGathering";
+import { fetchIceConfig } from "./iceServers";
 import type { ScreenQualityPreset } from "./screenQuality";
-
-// Cloudflare's edge answers STUN itself; MediaMTX media is reached
-// directly. The server advertises its own reachable address, so a STUN
-// fallback is all this needs -- on a network that blocks UDP outright
-// the connection won't establish.
-const FALLBACK_ICE: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
 // Opus cap carried on the audio sender; the path forwards RTP untouched.
 export const SCREEN_AUDIO_MAX_BITRATE = 128_000;
@@ -15,6 +10,7 @@ export interface ScreenPublisherOptions {
   // answer out. The publisher never learns the MediaMTX path.
   exchange: (offer: string) => Promise<string>;
   iceServers?: RTCIceServer[];
+  iceTransportPolicy?: RTCIceTransportPolicy;
   onEnded?: () => void;
   onBroken?: () => void;
 }
@@ -41,8 +37,12 @@ export class ScreenPublisher {
   // carries an audio track; the browser picker decided that, never a UI
   // switch.
   async start(stream: MediaStream, preset: ScreenQualityPreset): Promise<void> {
+    const config = this.options.iceServers
+      ? { iceServers: this.options.iceServers, iceTransportPolicy: this.options.iceTransportPolicy }
+      : await fetchIceConfig();
     const pc = new RTCPeerConnection({
-      iceServers: this.options.iceServers ?? FALLBACK_ICE,
+      iceServers: config.iceServers,
+      iceTransportPolicy: config.iceTransportPolicy,
       bundlePolicy: "max-bundle",
     });
     this.pc = pc;

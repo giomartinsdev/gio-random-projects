@@ -28,6 +28,7 @@ import (
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/metrics"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/telemetry"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/turn"
 )
 
 func main() {
@@ -144,7 +145,17 @@ func main() {
 	// deployment keep it off everything but loopback, since nginx is
 	// the only thing meant to reach it directly. Empty (bare metal /
 	// dev) falls back to every interface, same as before this existed.
-	api := httpapi.New(registry, media, allowedOrigins, log, metricsHandler)
+	// ICE configuration for the browser. STUN alone is fine on a healthy
+	// path; a TURN relay is the fallback for one that can't carry media
+	// (a hostile network, or a path that drops the large DTLS handshake).
+	// Because MediaMTX has a public IP, only the browser side needs the
+	// relay. Configured entirely from env; unset means STUN-only.
+	turnProxy := turn.NewFromEnv()
+	if turnProxy.HasRelay() {
+		log.Info("turn relay configured; browsers will be pinned to it")
+	}
+
+	api := httpapi.New(registry, media, turnProxy, allowedOrigins, log, metricsHandler)
 	api.RegisterClips(clipStore, clipTTL)
 
 	// Multi-node: TELA_NODE_PEERS lists the other tela-api nodes

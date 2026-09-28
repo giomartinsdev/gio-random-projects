@@ -70,8 +70,20 @@ O `tela-api` fala com o MediaMTX por loopback
 resolve. `MEDIAMTX_INTERNAL_URL` vazio desliga o compartilhamento de
 tela por completo — as salas, o chat e a presença continuam funcionando.
 
-Só há STUN público, sem TURN — numa rede que bloqueia UDP a conexão não
-estabelece.
+Por padrão só há STUN público, sem TURN — numa rede que bloqueia UDP, ou
+num caminho que descarta os pacotes grandes do handshake DTLS, a conexão
+não estabelece. Para esses casos há um **relay TURN** opcional
+(`GET /api/rtc/ice`): o navegador recebe os servidores ICE do servidor e,
+quando um TURN existe, é fixado nele (`iceTransportPolicy: relay`). Como
+o MediaMTX tem IP público, só o lado do navegador precisa do relay — o
+que torna um TURN gerenciado (Cloudflare) suficiente. Configuração por
+env var (todas opcionais, vazio = STUN-only):
+
+| Env | O quê |
+| --- | --- |
+| `TELA_STUN_URLS` | STUN (espaço/vírgula). Vazio usa o padrão (Google STUN). |
+| `TELA_TURN_URLS` + `TELA_TURN_USERNAME` + `TELA_TURN_PASSWORD` | TURN estático (ex.: coturn). |
+| `TELA_TURN_CF_KEY_ID` + `TELA_TURN_CF_API_TOKEN` | Cloudflare Realtime TURN: as credenciais são geradas no servidor e cacheadas; o token da conta nunca chega ao navegador. Tem prioridade sobre o TURN estático. |
 
 ## Estado
 
@@ -210,6 +222,7 @@ go test ./...   # proxy MediaMTX, autorização, ciclo de vida da sala
 | `POST /api/rooms/{id}/knock` | pede para entrar sem a senha — `{name}` → `{requestId}` |
 | `GET /api/rooms/{id}/knock/{requestId}` | status do pedido, com `admitToken` quando aprovado |
 | `GET /ws?room=&password=` (ou `&admitToken=`) | sinalização |
+| `GET /api/rtc/ice` | servidores ICE do navegador (STUN sempre, TURN quando configurado) |
 | `GET /healthz` | liveness + número de salas |
 
 Mensagens do WebSocket: `welcome` (com a lista de quem já está na sala,
