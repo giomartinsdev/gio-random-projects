@@ -9,6 +9,7 @@ import type {
   Club,
   DivisionChange,
   Evolution,
+  HeadToHead,
   Match,
   Records,
   SquadMember,
@@ -32,7 +33,7 @@ import {
 import { useI18n } from "../lib/i18n";
 import { clubPalette, crestSeed } from "../lib/crest";
 
-type Tab = "resumo" | "elenco" | "matches" | "numeros";
+type Tab = "resumo" | "elenco" | "matches" | "numeros" | "confronto";
 
 export function ClubPage({
   clubId,
@@ -129,6 +130,7 @@ export function ClubPage({
                 ["elenco", t("club.squadTab")],
                 ["matches", t("club.matchesTab")],
                 ["numeros", t("club.statsTab")],
+                ["confronto", t("club.h2h")],
               ] as Array<[Tab, string]>
             ).map(([id, label]) => (
               <button
@@ -152,6 +154,9 @@ export function ClubPage({
           {tab === "elenco" && <ElencoTab clubId={club.club_id} onOpenPlayer={onOpenPlayer} />}
           {tab === "matches" && <PartidasTab clubId={club.club_id} onOpenMatch={onOpenMatch} />}
           {tab === "numeros" && <NumerosTab clubId={club.club_id} club={club} onOpenPlayer={onOpenPlayer} onOpenMatch={onOpenMatch} />}
+          {tab === "confronto" && (
+            <ConfrontoTab club={club} onOpenClub={onOpenClub} onOpenMatch={onOpenMatch} />
+          )}
         </>
       )}
     </>
@@ -285,6 +290,139 @@ function Row({ k, v }: { k: string; v: string }) {
     <>
       <dt className="text-faint">{k}</dt>
       <dd className="tnum text-right font-mono">{v}</dd>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- confronto
+
+/** O retrospecto direto (FR-012): o rival sai dos adversários JÁ enfrentados,
+ * porque o confronto só existe se os dois se enfrentaram — é o histórico
+ * acumulado que o hub guarda, não um comparador arbitrário. */
+function ConfrontoTab({
+  club,
+  onOpenClub,
+  onOpenMatch,
+}: {
+  club: Club;
+  onOpenClub: (id: string) => void;
+  onOpenMatch: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  const rivals = club.adversarios ?? [];
+  const [rivalId, setRivalId] = useState(rivals[0]?.club_id ?? "");
+  const [h2h, setH2h] = useState<HeadToHead | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!rivalId) return;
+    let cancelled = false;
+    setLoading(true);
+    setH2h(null);
+    api
+      .h2h(club.club_id, rivalId)
+      .then((r) => !cancelled && setH2h(r))
+      .catch(() => !cancelled && setH2h(null))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [club.club_id, rivalId]);
+
+  if (rivals.length === 0) {
+    return <Empty title={t("club.h2hEmpty")} hint={t("club.h2hEmptyHint")} />;
+  }
+
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="label">{t("club.h2hPickRival")}</span>
+        <select
+          value={rivalId}
+          onChange={(e) => setRivalId(e.target.value)}
+          className="surface rounded-md px-3 py-2 text-sm outline-none"
+          aria-label={t("club.h2hPickRival")}
+        >
+          {rivals.map((r) => (
+            <option key={r.club_id} value={r.club_id}>
+              {r.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {loading || !h2h ? (
+        <Spinner />
+      ) : (
+        <>
+          <Card title={t("club.h2hRecord")}>
+            <div className="grid grid-cols-3 gap-3 px-4 py-4 text-center">
+              <div>
+                <div className="font-display tnum text-3xl font-bold" style={{ color: "var(--success)" }}>
+                  {fmt(h2h.wins_a)}
+                </div>
+                <div className="label mt-1">{t("common.win")}</div>
+              </div>
+              <div>
+                <div className="font-display tnum text-3xl font-bold text-muted">{fmt(h2h.draws)}</div>
+                <div className="label mt-1">{t("common.draw")}</div>
+              </div>
+              <div>
+                <div className="font-display tnum text-3xl font-bold" style={{ color: "var(--danger)" }}>
+                  {fmt(h2h.losses_a)}
+                </div>
+                <div className="label mt-1">{t("common.loss")}</div>
+              </div>
+            </div>
+            <div className="flex items-center justify-around border-t border-line px-4 py-3 text-sm">
+              <button
+                type="button"
+                onClick={() => onOpenClub(h2h.club_a.club_id)}
+                className="font-semibold hover:text-accent"
+              >
+                {h2h.club_a.name}
+              </button>
+              <span className="tnum font-display text-lg font-bold">
+                {fmt(h2h.goals_a)}–{fmt(h2h.goals_b)}
+              </span>
+              <button
+                type="button"
+                onClick={() => onOpenClub(h2h.club_b.club_id)}
+                className="font-semibold hover:text-accent"
+              >
+                {h2h.club_b.name}
+              </button>
+            </div>
+          </Card>
+
+          <div className="mt-4">
+            <Card title={t("club.h2hLastMeetings")}>
+              {!h2h.matches || h2h.matches.length === 0 ? (
+                <Empty title={t("common.noMatches")} />
+              ) : (
+                <ul className="divide-y divide-[var(--border)]">
+                  {h2h.matches.slice(0, 6).map((m) => (
+                    <li key={m.match_id}>
+                      <button
+                        type="button"
+                        onClick={() => onOpenMatch(m.match_id)}
+                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface-3"
+                      >
+                        <ResultBadge resultado={m.our_result} dnf={m.decided_by_forfeit} />
+                        <span className="tnum font-display w-14 text-lg font-bold" style={{ color: resultColor(m.our_result) }}>
+                          {m.our_goals}–{m.their_goals}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm">{m.opponent_name}</span>
+                        <span className="font-mono text-[10px] text-faint">{fmtDateTime(m.timestamp)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
+        </>
+      )}
     </>
   );
 }

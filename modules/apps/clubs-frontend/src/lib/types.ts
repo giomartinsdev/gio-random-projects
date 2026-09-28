@@ -243,6 +243,17 @@ export interface PlayerProfile {
   clubs: PlayerClub[] | null;
   verified: boolean;
   matches?: PlayerMatch[] | null;
+  // Evolução de gols por temporada (FR-013). A fonte não tem temporada,
+  // então é derivada da data das partidas — ver seasonLabel no backend.
+  seasons: PlayerSeason[];
+}
+
+export interface PlayerSeason {
+  season: string;
+  played: number;
+  goals: number;
+  assists: number;
+  rating: number;
 }
 
 export interface Snapshot {

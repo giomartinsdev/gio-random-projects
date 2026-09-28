@@ -87,8 +87,16 @@ export function NotificationsPage({
       <PageHead
         title={t("notif.title")}
         sub={t("notif.subtitle")}
-        actions={<Badge tone={prefs.channel ? "accent" : "default"}>{prefs.channel ? t("notif.channelConfigured") : t("notif.noChannel")}</Badge>}
+        actions={<Badge tone="info">{t("notif.comingSoon")}</Badge>}
       />
+
+      {/* O envio ainda não existe: as preferências são gravadas, mas nenhum
+          worker lê o canal. Dizer "em breve" em vez de deixar a tela prometer
+          um aviso que nunca chega. */}
+      <div className="surface mb-4 flex items-start gap-2.5 px-4 py-3" style={{ borderColor: "var(--info)" }}>
+        <Megaphone className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--info)" }} />
+        <p className="text-xs text-muted">{t("notif.comingSoonHint")}</p>
+      </div>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <Stat label={t("notif.channel")} value={prefs.channel || t("notif.notConfigured")} sub={prefs.channel ? t("notif.messagesGoHere") : t("notif.nothingSent")} accent={!!prefs.channel} />

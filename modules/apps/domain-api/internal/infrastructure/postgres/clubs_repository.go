@@ -487,6 +487,62 @@ func (r *ClubsRepository) Squad(ctx context.Context, clubID string) ([]domainclu
 
 func round2(f float64) float64 { return float64(int(f*100+0.5)) / 100 }
 
+// seasonLabel rotula a temporada de uma data no formato "AAAA/AA".
+//
+// A fonte não tem temporada: o `season_id` que ela manda nas partidas é sempre
+// "0". Então a temporada é derivada da data, com a convenção do futebol
+// europeu — começa em julho e vira o ano no meio, "2026/27". É por isso que a
+// virada do ano civil (1º de janeiro) NÃO troca a temporada: o que separa duas
+// temporadas é o mês de julho, não o réveillon.
+func seasonLabel(t time.Time) string {
+	y := t.Year()
+	if t.Month() < time.July {
+		// Janeiro a junho pertencem à temporada que começou no ano anterior.
+		y--
+	}
+	return fmt.Sprintf("%d/%02d", y, (y+1)%100)
+}
+
+// seasonsOf agrega as partidas de um jogador por temporada, em ordem
+// cronológica (mais antiga primeiro) para o gráfico ler da esquerda para a
+// direita. Só as partidas contam — a fonte não dá temporada, então esta é a
+// única série temporal de jogador que existe.
+func seasonsOf(rows []playerRow) []domainclubs.PlayerSeason {
+	type acc struct {
+		played, goals, assists int
+		ratingSum              float64
+	}
+	bySeason := map[string]*acc{}
+	for _, pr := range rows {
+		s := seasonLabel(pr.match.Timestamp)
+		a, ok := bySeason[s]
+		if !ok {
+			a = &acc{}
+			bySeason[s] = a
+		}
+		a.played++
+		a.goals += pr.line.Goals
+		a.assists += pr.line.Assists
+		a.ratingSum += pr.line.Rating
+	}
+	labels := make([]string, 0, len(bySeason))
+	for s := range bySeason {
+		labels = append(labels, s)
+	}
+	// Rótulo "AAAA/AA" ordena lexicograficamente igual a cronologicamente.
+	sort.Strings(labels)
+	out := make([]domainclubs.PlayerSeason, 0, len(labels))
+	for _, s := range labels {
+		a := bySeason[s]
+		ps := domainclubs.PlayerSeason{Season: s, Played: a.played, Goals: a.goals, Assists: a.assists}
+		if a.played > 0 {
+			ps.Rating = round2(a.ratingSum / float64(a.played))
+		}
+		out = append(out, ps)
+	}
+	return out
+}
+
 func pct(part, total int) float64 {
 	if total == 0 {
 		return 0
@@ -651,6 +707,9 @@ func buildProfile(playerID string, rows []playerRow, clubNames map[string]string
 	for i, j := 0, len(p.Matches)-1; i < j; i, j = i+1, j-1 {
 		p.Matches[i], p.Matches[j] = p.Matches[j], p.Matches[i]
 	}
+	// A evolução por temporada (FR-013) usa TODAS as partidas, não só as 12
+	// recentes: a janela curta serve à forma, não à série histórica.
+	p.Seasons = seasonsOf(rows)
 	return p
 }
 

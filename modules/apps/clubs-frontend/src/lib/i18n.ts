@@ -48,6 +48,7 @@ export type Key =
   | "common.tracked" | "common.notTracked" | "common.selected" | "common.noData"
   | "common.noMatches" | "common.youFollow" | "common.uniquePerAccount"
   | "common.inferred" | "common.when" | "common.result" | "common.min"
+  | "common.win" | "common.draw" | "common.loss"
   | "common.pos" | "common.index" | "common.history"
   | "home.title" | "home.subtitle" | "home.feed" | "home.feedEmpty"
   | "home.feedEmptyHint" | "home.levelByClub" | "home.levelEmpty"
@@ -272,7 +273,11 @@ export type Key =
   | "club.bestRating"
   | "club.mostGoalsInMatch"
   | "club.scorers"
-  | "club.goalsVsRating";
+  | "club.goalsVsRating"
+  | "player.goalsBySeason" | "player.seasonsHint"
+  | "club.h2h" | "club.h2hHint" | "club.h2hEmpty" | "club.h2hEmptyHint"
+  | "club.h2hPickRival" | "club.h2hRecord" | "club.h2hGoals" | "club.h2hLastMeetings"
+  | "notif.comingSoon" | "notif.comingSoonHint";
 
 type Dict = Record<Key, string>;
 
@@ -590,6 +595,21 @@ const en_US: Dict = {
   "claim.action": "action",
   "claim.favoritesHint": "mark the rivals that interest you",
   "claim.myAreaHint": "see what the login brought",
+  "player.goalsBySeason": "Goals by season",
+  "player.seasonsHint": "Season totals come from the matches the hub followed — the source has no season.",
+  "club.h2h": "Head-to-head",
+  "club.h2hHint": "Pick a rival the club has already faced.",
+  "club.h2hEmpty": "No rival to compare yet",
+  "club.h2hEmptyHint": "The comparison appears once the hub has accumulated matches against an opponent.",
+  "club.h2hPickRival": "Rival",
+  "club.h2hRecord": "Record",
+  "club.h2hGoals": "Goals",
+  "club.h2hLastMeetings": "Last meetings",
+  "notif.comingSoon": "Coming soon",
+  "notif.comingSoonHint": "Discord alerts are not wired up yet — the preferences are saved, but nothing is sent until the announcer ships.",
+  "common.win": "Wins",
+  "common.draw": "Draws",
+  "common.loss": "Losses",
 };
 
 const pt_BR: Dict = {
@@ -899,6 +919,21 @@ const pt_BR: Dict = {
   "claim.action": "ação",
   "claim.favoritesHint": "marque os rivais que te interessam",
   "claim.myAreaHint": "veja o que o login trouxe",
+  "player.goalsBySeason": "Gols por temporada",
+  "player.seasonsHint": "Os totais por temporada vêm das partidas que o hub acompanhou — a fonte não tem temporada.",
+  "club.h2h": "Retrospecto direto",
+  "club.h2hHint": "Escolha um rival que o clube já enfrentou.",
+  "club.h2hEmpty": "Nenhum rival para comparar ainda",
+  "club.h2hEmptyHint": "A comparação aparece quando o hub acumular partidas contra um adversário.",
+  "club.h2hPickRival": "Rival",
+  "club.h2hRecord": "Retrospecto",
+  "club.h2hGoals": "Gols",
+  "club.h2hLastMeetings": "Últimos confrontos",
+  "notif.comingSoon": "Em breve",
+  "notif.comingSoonHint": "Os avisos no Discord ainda não estão ligados — as preferências são salvas, mas nada é enviado até o anunciador entrar no ar.",
+  "common.win": "Vitórias",
+  "common.draw": "Empates",
+  "common.loss": "Derrotas",
 };
 
 const es_ES: Dict = {
@@ -1215,6 +1250,21 @@ const es_ES: Dict = {
   "claim.action": "acción",
   "claim.favoritesHint": "marca los rivales que te interesan",
   "claim.myAreaHint": "mira lo que el login trajo",
+  "player.goalsBySeason": "Goles por temporada",
+  "player.seasonsHint": "Los totales por temporada vienen de los partidos que el hub siguió — la fuente no tiene temporada.",
+  "club.h2h": "Historial directo",
+  "club.h2hHint": "Elige un rival al que el club ya se enfrentó.",
+  "club.h2hEmpty": "Aún no hay rival para comparar",
+  "club.h2hEmptyHint": "La comparación aparece cuando el hub acumule partidos contra un adversario.",
+  "club.h2hPickRival": "Rival",
+  "club.h2hRecord": "Historial",
+  "club.h2hGoals": "Goles",
+  "club.h2hLastMeetings": "Últimos enfrentamientos",
+  "notif.comingSoon": "Próximamente",
+  "notif.comingSoonHint": "Los avisos en Discord aún no están conectados — las preferencias se guardan, pero no se envía nada hasta que el anunciador esté listo.",
+  "common.win": "Victorias",
+  "common.draw": "Empates",
+  "common.loss": "Derrotas",
 };
 
 const fr_FR: Dict = {
@@ -1529,6 +1579,21 @@ const fr_FR: Dict = {
   "claim.action": "action",
   "claim.favoritesHint": "marquez les rivaux qui vous intéressent",
   "claim.myAreaHint": "voyez ce que la connexion a apporté",
+  "player.goalsBySeason": "Buts par saison",
+  "player.seasonsHint": "Les totaux par saison viennent des matchs suivis par le hub — la source n'a pas de saison.",
+  "club.h2h": "Confrontations directes",
+  "club.h2hHint": "Choisissez un rival que le club a déjà affronté.",
+  "club.h2hEmpty": "Aucun rival à comparer pour l'instant",
+  "club.h2hEmptyHint": "La comparaison apparaît quand le hub a accumulé des matchs contre un adversaire.",
+  "club.h2hPickRival": "Rival",
+  "club.h2hRecord": "Bilan",
+  "club.h2hGoals": "Buts",
+  "club.h2hLastMeetings": "Dernières rencontres",
+  "notif.comingSoon": "Bientôt disponible",
+  "notif.comingSoonHint": "Les alertes Discord ne sont pas encore branchées — les préférences sont enregistrées, mais rien n'est envoyé tant que l'annonceur n'est pas prêt.",
+  "common.win": "Victoires",
+  "common.draw": "Nuls",
+  "common.loss": "Défaites",
 };
 
 const de_DE: Dict = {
@@ -1843,6 +1908,21 @@ const de_DE: Dict = {
   "claim.action": "Aktion",
   "claim.favoritesHint": "markieren Sie die Rivalen, die Sie interessieren",
   "claim.myAreaHint": "sehen Sie, was der Login gebracht hat",
+  "player.goalsBySeason": "Tore pro Saison",
+  "player.seasonsHint": "Die Saisonwerte stammen aus den verfolgten Spielen — die Quelle hat keine Saison.",
+  "club.h2h": "Direkter Vergleich",
+  "club.h2hHint": "Wählen Sie einen Rivalen, gegen den der Club schon gespielt hat.",
+  "club.h2hEmpty": "Noch kein Rivale zum Vergleichen",
+  "club.h2hEmptyHint": "Der Vergleich erscheint, sobald der Hub Spiele gegen einen Gegner gesammelt hat.",
+  "club.h2hPickRival": "Rivale",
+  "club.h2hRecord": "Bilanz",
+  "club.h2hGoals": "Tore",
+  "club.h2hLastMeetings": "Letzte Begegnungen",
+  "notif.comingSoon": "Demnächst",
+  "notif.comingSoonHint": "Discord-Hinweise sind noch nicht angebunden — die Einstellungen werden gespeichert, aber bis der Ankündiger ausgeliefert ist, wird nichts gesendet.",
+  "common.win": "Siege",
+  "common.draw": "Unentschieden",
+  "common.loss": "Niederlagen",
 };
 
 const DICTS: Record<Locale, Dict> = {

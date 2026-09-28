@@ -229,6 +229,20 @@ type PlayerProfile struct {
 	Clubs     []PlayerClub  `json:"clubs"`
 	Verified bool          `json:"verified"`
 	Matches   []PlayerMatch `json:"matches,omitempty"`
+	// Seasons é a evolução de gols por temporada (FR-013). A fonte não tem
+	// temporada (manda season_id="0"), então é derivada da data das partidas
+	// gravadas — ver seasonLabel.
+	Seasons []PlayerSeason `json:"seasons"`
+}
+
+// PlayerSeason é o agregado de um jogador numa temporada. A temporada é
+// rotulada "AAAA/AA" (julho a junho), a convenção do futebol europeu.
+type PlayerSeason struct {
+	Season  string  `json:"season"`
+	Played  int     `json:"played"`
+	Goals   int     `json:"goals"`
+	Assists int     `json:"assists"`
+	Rating  float64 `json:"rating"`
 }
 
 // PlayerCareer são os totais ACUMULADOS de um jogador num clube, do

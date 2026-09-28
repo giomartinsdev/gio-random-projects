@@ -9,7 +9,7 @@ import { Badge, Card, Empty, PosTag, ResultBadge, Spinner, Stat } from "../compo
 import { SyncButton } from "../components/sync-button";
 import { PageHead } from "../components/shell";
 import { VerifiedIcon } from "../components/icons";
-import { LineChart } from "../components/charts";
+import { BarChart, LineChart } from "../components/charts";
 import { fmt, minutes, POS_LABEL, POS_SHORT, ratingColor, SAVE_LABEL } from "../lib/format";
 import { useI18n } from "../lib/i18n";
 
@@ -50,6 +50,7 @@ export function PlayerPage({
   if (!p) return <Spinner label={t("player.loading")} />;
 
   const matches = p.matches ?? [];
+  const seasons = p.seasons ?? [];
   // O pro DESTA pessoa. O selo do perfil é público (qualquer um vê que o pro
   // foi reivindicado), mas o botão só faz sentido para quem entrou e ainda
   // não reivindicou — e o seu próprio pro não se re-reivindica.
@@ -166,6 +167,21 @@ export function PlayerPage({
             <dt className="text-faint">{t("player.clubsPlayedAt")}</dt>
             <dd className="text-right font-mono">{fmt((p.clubs ?? []).length)}</dd>
           </dl>
+        </Card>
+      </div>
+
+      <div className="mb-4">
+        <Card title={t("player.goalsBySeason")}>
+          {seasons.length === 0 ? (
+            <Empty title={t("common.noData")} hint={t("player.seasonsHint")} />
+          ) : (
+            <div className="px-2 py-3">
+              <BarChart
+                height={200}
+                items={seasons.map((s) => ({ label: s.season, value: s.goals }))}
+              />
+            </div>
+          )}
         </Card>
       </div>
 

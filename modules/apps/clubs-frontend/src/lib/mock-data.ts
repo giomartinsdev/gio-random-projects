@@ -13,6 +13,7 @@
 import type {
   AdminStatus,
   RecordMatch,
+  Adversario,
   Announcement,
   Club,
   ClubRef,
@@ -23,7 +24,9 @@ import type {
   NotificationPrefs,
   PlayerLine,
   PlayerProfile,
+  PlayerSeason,
   RankPlayer,
+  Resultado,
   Records,
   SquadMember,
   SyncRun,
@@ -238,8 +241,61 @@ for (const club of CLUBS) {
   }
 }
 
+/** A partida vista pelo clube pedido, como o backend faz em `orient()`
+ * (clubs_repository.go).
+ *
+ * Os MATCHES são gravados da visão do mandante. Sem reorientar, a lista de um
+ * clube que foi visitante lê os gols do outro lado e o adversário errado. A
+ * orientação REAL da partida (home/away, gols, resultado do mandante) fica
+ * intacta — só os campos `our_*`/`opponent_*` mudam, senão a página da partida
+ * mostraria o placar invertido. */
+function orientFrom(m: Match, clubId: string): Match {
+  if (m.home_club_id === clubId) {
+    return { ...m, our_side: "home", our_result: m.home_result, our_goals: m.home_goals, their_goals: m.away_goals, opponent_id: m.away_club_id, opponent_name: m.away_club_name, opponent_tag: m.away_club_tag };
+  }
+  const mirror: Record<Resultado, Resultado> = { win: "loss", loss: "win", draw: "draw" };
+  return {
+    ...m,
+    our_side: "away",
+    our_result: mirror[m.home_result],
+    our_goals: m.away_goals,
+    their_goals: m.home_goals,
+    opponent_id: m.home_club_id,
+    opponent_name: m.home_club_name,
+    opponent_tag: m.home_club_tag,
+  };
+}
+
 export function matchesOf(clubId: string, limit = 25): Match[] {
-  return MATCHES.filter((m) => m.home_club_id === clubId || m.away_club_id === clubId).slice(0, limit);
+  return MATCHES.filter((m) => m.home_club_id === clubId || m.away_club_id === clubId)
+    .slice(0, limit)
+    .map((m) => orientFrom(m, clubId));
+}
+
+// Os adversários de cada clube, derivados das partidas como o backend faz
+// (clubshandlers.go). O H2H escolhe o rival daqui: o confronto só existe se
+// os dois já se enfrentaram, então esta lista é a fonte certa.
+for (const club of CLUBS) {
+  const byOpponent = new Map<string, Adversario>();
+  for (const m of matchesOf(club.club_id, 100)) {
+    const oppId = m.home_club_id === club.club_id ? m.away_club_id : m.home_club_id;
+    const opp = CLUBS.find((c) => c.club_id === oppId);
+    if (!opp) continue;
+    const a = byOpponent.get(oppId) ?? {
+      club_id: oppId, name: opp.name, tag: opp.tag,
+      played: 0, wins: 0, draws: 0, losses: 0, goals: 0, goals_against: 0,
+      last_match: m.timestamp,
+    };
+    a.played++;
+    if (m.our_result === "win") a.wins++;
+    else if (m.our_result === "loss") a.losses++;
+    else a.draws++;
+    a.goals += m.our_goals;
+    a.goals_against += m.their_goals;
+    if (m.timestamp > a.last_match) a.last_match = m.timestamp;
+    byOpponent.set(oppId, a);
+  }
+  club.adversarios = [...byOpponent.values()].sort((x, y) => (x.last_match < y.last_match ? 1 : -1));
 }
 
 // --- jogadores -------------------------------------------------------------
@@ -250,6 +306,10 @@ export const PLAYERS: PlayerProfile[] = (() => {
     for (const m of squadOf(club.club_id)) {
       if (seen.has(m.gamertag)) continue;
       const clubMatches = matchesOf(club.club_id, 6);
+      // A evolução por temporada (FR-013) sai das partidas, como no backend:
+      // a fonte não tem temporada. Aqui o mock concentra as partidas em duas
+      // temporadas para o gráfico ter mais de uma barra.
+      const seasons = seasonRollup(m.goals, m.assists, m.played);
       seen.set(m.gamertag, {
         player_id: m.player_id,
         gamertag: m.gamertag,
@@ -310,11 +370,37 @@ export const PLAYERS: PlayerProfile[] = (() => {
           tackles_attempted: intBetween(0, 12),
           seconds_played: intBetween(3000, 5500),
         })),
+        seasons,
       });
     }
   }
   return [...seen.values()];
 })();
+
+/** A evolução de gols por temporada (FR-013), sintetizada para o demo.
+ *
+ * O backend deriva a temporada da data das partidas (julho a junho), mas o
+ * mock só tem dez dias de partidas — daria uma temporada só e o gráfico
+ * ficaria degenerado, justo o estado que o demo precisa cobrir. Então aqui a
+ * série é gerada a partir dos totais do jogador, espalhados em três
+ * temporadas com a temporada atual por último. Determinístico (mesma seed,
+ * mesma tela) e rotulado "AAAA/AA" como o backend. */
+function seasonRollup(totalGoals: number, totalAssists: number, totalPlayed: number): PlayerSeason[] {
+  const now = new Date("2026-09-22T00:00:00Z");
+  const startYear = now.getUTCMonth() < 6 ? now.getUTCFullYear() - 1 : now.getUTCFullYear();
+  const splits = [0.28, 0.34, 0.38]; // fração dos totais em cada temporada
+  return splits.map((frac, i) => {
+    const y = startYear - (splits.length - 1 - i);
+    const played = Math.max(1, Math.round(totalPlayed * frac));
+    return {
+      season: `${y}/${String((y + 1) % 100).padStart(2, "0")}`,
+      played,
+      goals: Math.round(totalGoals * frac),
+      assists: Math.round(totalAssists * frac),
+      rating: Math.round((6.4 + rnd() * 1.8) * 100) / 100,
+    };
+  });
+}
 
 export function playerById(id: string): PlayerProfile | undefined {
   return PLAYERS.find((p) => p.player_id === id);
@@ -376,11 +462,30 @@ export function h2h(aId: string, bId: string): HeadToHead {
     goals_conceded: c.goals_conceded, clean_sheets: c.clean_sheets,
     sequencia_invicta: c.streak?.unbeaten ?? 0, tracked: c.tracked,
   });
-  return {
-    club_a: ref(a), club_b: ref(b), played: 6, wins_a: 4, draws: 1, losses_a: 1,
-    goals_a: 15, goals_b: 7, form_a: ["win", "win", "draw", "win", "loss", "win"],
-    matches: matchesOf(a.club_id, 6),
+  // Só os confrontos DIRETOS entre a e b, como o backend (filtra por
+  // adversário). Sem o filtro, o seletor de rival não mudaria nada.
+  const meetings = matchesOf(a.club_id, 500).filter((m) => m.opponent_id === bId).slice(0, 10);
+  const form: string[] = [];
+  const h: HeadToHead = {
+    club_a: ref(a), club_b: ref(b), played: meetings.length,
+    wins_a: 0, draws: 0, losses_a: 0, goals_a: 0, goals_b: 0, form_a: form,
+    matches: meetings,
   };
+  for (const m of meetings) {
+    h.goals_a += m.our_goals;
+    h.goals_b += m.their_goals;
+    if (m.our_result === "win") {
+      h.wins_a++;
+      form.push("V");
+    } else if (m.our_result === "loss") {
+      h.losses_a++;
+      form.push("D");
+    } else {
+      h.draws++;
+      form.push("E");
+    }
+  }
+  return h;
 }
 
 // --- anúncios e rankings ---------------------------------------------------
