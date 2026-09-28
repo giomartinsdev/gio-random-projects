@@ -52,6 +52,43 @@ module "network_docker_apps" {
   network_name = "apps"
 }
 
+# The VPS's own private (VCN) address. Read from the instance's metadata
+# service over the same SSH channel the docker provider uses -- no new
+# secret, no extra network path, and (unlike a CI-discovered TF_VAR) it can
+# never go missing on an apply that forgets to set it, which would silently
+# disable the coturn relay below and break screen sharing.
+data "external" "vps_private_ip" {
+  program = ["sh", "${path.module}/scripts/discover_private_ip.sh"]
+  query = {
+    docker_host = var.docker_host
+  }
+}
+
+# Host-level baseline (NIC MTU + the LOCAL iptables rules in front of every
+# published port). The Oracle Security List is a separate cloud layer; these
+# rules are the in-VM half of "a port is actually reachable", and the MTU is
+# the NIC setting Oracle images sometimes ship wrong (9000/jumbo). Encoded
+# here so a rebuilt host comes back the same and nothing drifts.
+module "compute_services_host_baseline" {
+  source = "./modules/compute/services/host_baseline"
+
+  docker_host = var.docker_host
+  interface   = var.host_interface
+  mtu         = var.host_mtu
+  # Every published inbound port this stack needs, minus SSH/80/443 which
+  # the base image already allows:
+  #   8217  tela's MediaMTX media (udp+tcp)
+  #   3478  coturn's TURN listener (udp+tcp)
+  #   49160-49200  coturn's relay allocation range (udp)
+  firewall_rules = [
+    "udp 8217",
+    "tcp 8217",
+    "udp 3478",
+    "tcp 3478",
+    "udp 49160:49200",
+  ]
+}
+
 module "storage_postgres" {
   source = "./modules/storage/postgres"
   providers = {
@@ -175,13 +212,14 @@ module "compute_apps_tela_api" {
   registry_host        = var.registry_host
   sfu_public_host      = var.server_ip
   mediamtx_public_host = var.server_ip
-  # The host's own private address, used by the co-located coturn relay.
-  # Discovered by CI as TF_VAR_server_private_ip.
-  mediamtx_private_host = var.server_private_ip
-  # Self-hosted, free TURN. Off until its ports are open in the Oracle
-  # Security List: with coturn on, the app forces browsers onto the relay,
-  # so enabling it before 3478 and the relay range are reachable would
-  # break sharing entirely.
+  # The host's own private address (read from the instance itself, above),
+  # used by the co-located coturn relay.
+  mediamtx_private_host = data.external.vps_private_ip.result.private_ip
+  # Self-hosted, free TURN relay. On by default: the relay is what makes
+  # screen sharing work from a browser that can't complete the direct ICE
+  # handshake. Its ports are opened by the host baseline module above, and
+  # `coturn_on` in the child module falls back to STUN-only if the private
+  # address or secret is somehow missing, so this can't hard-break.
   coturn_enabled     = var.coturn_enabled
   coturn_public_host = var.server_ip
   # Shared secret: tela-api mints short-lived TURN credentials with it,
@@ -190,6 +228,10 @@ module "compute_apps_tela_api" {
   frontend_origins = ["https://tela.giomartins.dev"]
   # Host-networked container — loopback endpoint, not the docker-network one.
   otlp_endpoint = module.compute_services_observability.otlp_endpoint_loopback
+
+  # The firewall + MTU must be in place before coturn/MediaMTX are expected
+  # to be reachable; also keeps the apply order readable.
+  depends_on = [module.compute_services_host_baseline]
 }
 
 # Deals scrapers: one headless poller container per source, both off

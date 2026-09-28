@@ -94,7 +94,9 @@ resource "docker_container" "mediamtx" {
 # interface, and its advertised external-ip must be the host's public one).
 # Auth is `static-auth-secret`: tela-api mints time-limited credentials
 # that coturn verifies against the same secret -- no fixed password, no
-# open relay. Off by default (count = local.coturn_on ? 1 : 0).
+# open relay. On by default (root sets coturn_enabled=true); `coturn_on`
+# below still drops it to STUN-only if the private address or secret is
+# somehow missing, so a misconfigured apply degrades instead of breaking.
 resource "docker_container" "coturn" {
   count   = local.coturn_on ? 1 : 0
   name    = "tela-coturn"

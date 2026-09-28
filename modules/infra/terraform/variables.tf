@@ -97,29 +97,29 @@ variable "server_ip" {
   type        = string
 }
 
-variable "server_private_ip" {
-  description = <<-EOT
-    The VPS's private address on its VCN. Needed only by tela's co-located
-    coturn relay: the relay can't reach the host's own public IP (Oracle
-    doesn't hairpin), so a NAT rule redirects the host's own traffic to
-    the public IP back onto this address. Empty disables the self-hosted
-    coturn. Discovered by CI as TF_VAR_server_private_ip.
-  EOT
-  type        = string
-  default     = ""
-}
-
 variable "coturn_enabled" {
   description = <<-EOT
-    Run tela's self-hosted coturn (free TURN relay). Turn this on ONLY
-    after the VPS firewall opens 3478/udp+tcp and the relay range
-    (default 49160-49200/udp) in the Oracle Security List: while coturn is
-    enabled the app forces browsers onto the relay, so enabling it before
-    those ports are reachable would break screen sharing entirely.
-    Set via TF_VAR_coturn_enabled=true.
+    Run tela's self-hosted coturn (free TURN relay). On by default: the
+    relay is what makes screen sharing work from a browser that can't
+    complete the direct ICE/DTLS handshake, and its ports are opened by
+    the host baseline module. The child module still falls back to
+    STUN-only if the private address or the shared secret is missing, so
+    this never hard-breaks. Set TF_VAR_coturn_enabled=false to disable.
   EOT
   type        = bool
-  default     = false
+  default     = true
+}
+
+variable "host_interface" {
+  description = "The VPS's primary network interface, whose MTU the host baseline pins. Empty skips the MTU step."
+  type        = string
+  default     = "enp0s6"
+}
+
+variable "host_mtu" {
+  description = "MTU to pin on host_interface. 1500 (standard Ethernet) is correct for a host on the public internet; Oracle images sometimes ship 9000 (jumbo), which silently drops large packets on the internet path."
+  type        = number
+  default     = 1500
 }
 
 # --- docker provider connection ---

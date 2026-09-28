@@ -240,23 +240,6 @@ jobs:
           fi
           echo "TF_VAR_server_ip=$SERVER_IP" >> "$GITHUB_ENV"
 
-      # The VPS's PRIVATE address, for tela's co-located coturn relay --
-      # it can't reach the host's own public IP (Oracle doesn't hairpin),
-      # so MediaMTX also advertises the private address for the relay to
-      # deliver to. Best-effort: an empty value just disables coturn.
-      - name: Discover the VPS's private IP
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          SERVER_PRIVATE_IP=$(ssh "ubuntu@$VPS_HOST" 'curl -s -H "Authorization: Bearer Oracle" http://169.254.169.254/opc/v2/vnics/ 2>/dev/null | grep -o "\"privateIp\": *\"[^\"]*\"" | head -1 | cut -d\" -f4' || true)
-          echo "Discovered server_private_ip=$SERVER_PRIVATE_IP"
-          echo "TF_VAR_server_private_ip=$SERVER_PRIVATE_IP" >> "$GITHUB_ENV"
-          # coturn (tela's free TURN relay) needs the private address above
-          # and its ports open in the Security List. It lives on the VPS
-          # itself, so there's no third-party cost. Enabled here, in the
-          # one step all four apply paths share, so they never drift.
-          echo "TF_VAR_coturn_enabled=true" >> "$GITHUB_ENV"
-
       # Same reasoning as tf-ci-cd.yml's own step of the same name.
       - name: Fetch secrets from Vaultwarden
         env:
