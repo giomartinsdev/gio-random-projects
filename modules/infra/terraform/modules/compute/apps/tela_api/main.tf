@@ -11,6 +11,13 @@ locals {
     label = "com.centurylinklabs.watchtower.enable"
     value = "true"
   }] : []
+
+  # A coturn without the host's private address has nothing to relay into
+  # (it can't reach the public IP of its own host), so refuse the combo
+  # rather than stand up a relay that can never deliver. Failing closed:
+  # if the private address is missing, coturn stays off and the app keeps
+  # STUN-only -- screen sharing still works on a healthy path.
+  coturn_on = var.coturn_enabled && var.mediamtx_private_host != ""
 }
 
 resource "docker_volume" "tela_state" {
@@ -43,11 +50,12 @@ resource "docker_container" "mediamtx" {
     # it advertising container/host-internal addresses no browser can
     # reach, which shows up only as video that never starts.
     #
-    # When a coturn runs on the same host it needs the PRIVATE address
-    # too: the relay can't reach the host's own public IP (Oracle doesn't
-    # hairpin), but it can reach the private one directly. So both are
-    # advertised; the browser uses whichever path works.
-    "MTX_WEBRTCADDITIONALHOSTS=${trimspace("${var.mediamtx_public_host} ${var.mediamtx_private_host}")}",
+    # PUBLIC ONLY, even with a co-located coturn: the relay's public IP is
+    # what a browser reaches, and coturn (with --external-ip PUBLIC/PRIVATE)
+    # then hands media to MediaMTX over the private address. Advertising
+    # the private address here too would hand browsers an unroutable
+    # candidate and break the direct path (verified: it does).
+    "MTX_WEBRTCADDITIONALHOSTS=${var.mediamtx_public_host}",
     # CRITICAL: without this MediaMTX ALSO advertises every interface
     # address it can see -- docker0's 172.17.0.1, br-*'s 172.18.0.1, etc.
     # A browser can pick one of those from the SDP, send its ICE checks to
@@ -84,9 +92,9 @@ resource "docker_container" "mediamtx" {
 # interface, and its advertised external-ip must be the host's public one).
 # Auth is `static-auth-secret`: tela-api mints time-limited credentials
 # that coturn verifies against the same secret -- no fixed password, no
-# open relay. Off by default (count = var.coturn_enabled ? 1 : 0).
+# open relay. Off by default (count = local.coturn_on ? 1 : 0).
 resource "docker_container" "coturn" {
-  count   = var.coturn_enabled ? 1 : 0
+  count   = local.coturn_on ? 1 : 0
   name    = "tela-coturn"
   image   = "coturn/coturn:latest"
   restart = "unless-stopped"
@@ -94,13 +102,13 @@ resource "docker_container" "coturn" {
   network_mode = "host"
 
   # `--external-ip=PUBLIC/PRIVATE`: coturn tells peers to reach its relay
-  # on the PUBLIC address, while internally it uses the PRIVATE one -- the
-  # exact shape a host that can't hairpin to its own public IP needs.
-  # `--listening-ip`/`--relay-ip` pin it to the VCN private interface so
-  # it never wanders onto docker0/br-* addresses. `--use-auth-secret`
-  # makes every credential short-lived (minted by tela-api); `--no-cli`
-  # and `--no-tls` keep the surface minimal (plain UDP/TCP only -- the
-  # browser's TURN transport on 3478).
+  # on the PUBLIC address, while it forwards into MediaMTX over the
+  # PRIVATE one -- the shape a host that can't hairpin to its own public
+  # IP needs. `--listening-ip`/`--relay-ip` pin it to the VCN private
+  # interface so it never wanders onto docker0/br-* addresses.
+  # `--use-auth-secret` makes every credential short-lived (minted by
+  # tela-api); `--no-cli`/`--no-tls` keep the surface minimal (plain
+  # UDP/TCP on 3478).
   command = [
     "-n",
     "--use-auth-secret",
@@ -127,47 +135,6 @@ resource "docker_container" "coturn" {
       value = labels.value.value
     }
   }
-}
-
-# Hairpin NAT: MediaMTX and coturn share a host, and Oracle doesn't route
-# a host back to its own public IP. When a viewer uses the relay, MediaMTX
-# must send media to the relay's PUBLIC address -- which, from the host,
-# would otherwise leave and never come back. The rule redirects the host's
-# own outbound UDP to its public IP back onto the private interface (DNAT)
-# and source-NATs it so replies return. Scoped to the public IP alone, so
-# nothing else on the host is diverted. Idempotent: added only when absent.
-#
-# The Docker provider talks to the remote dockerd; a throwaway privileged
-# container sharing the host's network namespace is how this reaches the
-# HOST's iptables from here without SSH (a --net=host container shares the
-# host's netfilter, so its iptables IS the host's).
-resource "null_resource" "tela_hairpin" {
-  count = var.coturn_enabled ? 1 : 0
-
-  triggers = {
-    public_ip  = var.coturn_public_host
-    private_ip = var.mediamtx_private_host
-  }
-
-  provisioner "local-exec" {
-    environment = {
-      DOCKER_HOST = var.docker_host
-      PUB         = var.coturn_public_host
-      PRIV        = var.mediamtx_private_host
-    }
-    command = <<-EOT
-      docker run --rm --privileged --net=host alpine:3.20 sh -c '
-        set -eu
-        apk add --no-cache iptables >/dev/null 2>&1
-        iptables -t nat -C OUTPUT -p udp -d "$PUB" -j DNAT --to-destination "$PRIV" 2>/dev/null \
-          || iptables -t nat -A OUTPUT -p udp -d "$PUB" -j DNAT --to-destination "$PRIV"
-        iptables -t nat -C POSTROUTING -p udp -d "$PRIV" -j MASQUERADE 2>/dev/null \
-          || iptables -t nat -A POSTROUTING -p udp -d "$PRIV" -j MASQUERADE
-      '
-    EOT
-  }
-
-  depends_on = [docker_container.coturn]
 }
 
 resource "docker_container" "tela_api" {
@@ -206,8 +173,8 @@ resource "docker_container" "tela_api" {
     # credentials from the shared secret (TURN REST API) and forces the
     # browser onto the relay. The static TURN/Cloudflare inputs below stay
     # as alternatives; coturn wins when both are set.
-    "TELA_TURN_URLS=${var.coturn_enabled ? "turn:${var.coturn_public_host}:${var.coturn_listen_port}?transport=udp turn:${var.coturn_public_host}:${var.coturn_listen_port}?transport=tcp" : var.turn_urls}",
-    "TELA_TURN_SECRET=${var.coturn_enabled ? random_password.tela_turn_secret.result : ""}",
+    "TELA_TURN_URLS=${local.coturn_on ? "turn:${var.coturn_public_host}:${var.coturn_listen_port}?transport=udp turn:${var.coturn_public_host}:${var.coturn_listen_port}?transport=tcp" : var.turn_urls}",
+    "TELA_TURN_SECRET=${local.coturn_on ? random_password.tela_turn_secret.result : ""}",
     "TELA_TURN_USERID=tela",
     "TELA_TURN_USERNAME=${var.turn_username}",
     "TELA_TURN_PASSWORD=${var.turn_password}",

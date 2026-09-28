@@ -101,12 +101,25 @@ variable "server_private_ip" {
   description = <<-EOT
     The VPS's private address on its VCN. Needed only by tela's co-located
     coturn relay: the relay can't reach the host's own public IP (Oracle
-    doesn't hairpin), so MediaMTX also advertises the private address for
-    the relay to deliver to. Empty disables the self-hosted coturn.
-    Discovered by CI as TF_VAR_server_private_ip.
+    doesn't hairpin), so a NAT rule redirects the host's own traffic to
+    the public IP back onto this address. Empty disables the self-hosted
+    coturn. Discovered by CI as TF_VAR_server_private_ip.
   EOT
   type        = string
   default     = ""
+}
+
+variable "coturn_enabled" {
+  description = <<-EOT
+    Run tela's self-hosted coturn (free TURN relay). Turn this on ONLY
+    after the VPS firewall opens 3478/udp+tcp and the relay range
+    (default 49160-49200/udp) in the Oracle Security List: while coturn is
+    enabled the app forces browsers onto the relay, so enabling it before
+    those ports are reachable would break screen sharing entirely.
+    Set via TF_VAR_coturn_enabled=true.
+  EOT
+  type        = bool
+  default     = false
 }
 
 # --- docker provider connection ---

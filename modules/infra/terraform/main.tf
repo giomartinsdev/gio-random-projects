@@ -175,13 +175,14 @@ module "compute_apps_tela_api" {
   registry_host        = var.registry_host
   sfu_public_host      = var.server_ip
   mediamtx_public_host = var.server_ip
-  # The host's own private address, advertised too so the co-located
-  # coturn relay can deliver to MediaMTX (Oracle doesn't hairpin the
-  # public IP back to the host). Discovered by CI as TF_VAR_server_private_ip.
+  # The host's own private address, used by the co-located coturn relay.
+  # Discovered by CI as TF_VAR_server_private_ip.
   mediamtx_private_host = var.server_private_ip
-  # Self-hosted, free TURN. Only meaningful together with a private
-  # address to relay into.
-  coturn_enabled     = var.server_private_ip != ""
+  # Self-hosted, free TURN. Off until its ports are open in the Oracle
+  # Security List: with coturn on, the app forces browsers onto the relay,
+  # so enabling it before 3478 and the relay range are reachable would
+  # break sharing entirely.
+  coturn_enabled     = var.coturn_enabled
   coturn_public_host = var.server_ip
   frontend_origins   = ["https://tela.giomartins.dev"]
   # Host-networked container — loopback endpoint, not the docker-network one.
