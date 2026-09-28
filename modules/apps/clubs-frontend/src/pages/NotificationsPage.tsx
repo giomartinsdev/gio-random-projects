@@ -42,7 +42,12 @@ export function NotificationsPage({
   if (!authed) {
     return (
       <>
-        <PageHead title={t("notif.title")} sub={t("notif.subtitle2")} />
+        <PageHead
+          title={t("notif.title")}
+          sub={t("notif.subtitle2")}
+          actions={<Badge tone="info">{t("notif.comingSoon")}</Badge>}
+        />
+        <ComingSoonBanner />
         <div className="mx-auto max-w-xl">
           <Card title={t("notif.signInToConfigure")}>
             <div className="flex flex-col gap-3 px-5 py-5">
@@ -90,13 +95,7 @@ export function NotificationsPage({
         actions={<Badge tone="info">{t("notif.comingSoon")}</Badge>}
       />
 
-      {/* O envio ainda não existe: as preferências são gravadas, mas nenhum
-          worker lê o canal. Dizer "em breve" em vez de deixar a tela prometer
-          um aviso que nunca chega. */}
-      <div className="surface mb-4 flex items-start gap-2.5 px-4 py-3" style={{ borderColor: "var(--info)" }}>
-        <Megaphone className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--info)" }} />
-        <p className="text-xs text-muted">{t("notif.comingSoonHint")}</p>
-      </div>
+      <ComingSoonBanner />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <Stat label={t("notif.channel")} value={prefs.channel || t("notif.notConfigured")} sub={prefs.channel ? t("notif.messagesGoHere") : t("notif.nothingSent")} accent={!!prefs.channel} />
@@ -203,4 +202,17 @@ export function NotificationsPage({
 
 function fmtOn(n: number): string {
   return String(n);
+}
+
+/** O envio ainda não existe: as preferências são gravadas, mas nenhum worker
+ * lê o canal (`ListNotifyEnabled` nunca é chamado). Dizer "em breve" em vez de
+ * deixar a tela prometer um aviso que nunca chega. */
+function ComingSoonBanner() {
+  const { t } = useI18n();
+  return (
+    <div className="surface mb-4 flex items-start gap-2.5 px-4 py-3" style={{ borderColor: "var(--info)" }}>
+      <Megaphone className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--info)" }} />
+      <p className="text-xs text-muted">{t("notif.comingSoonHint")}</p>
+    </div>
+  );
 }
