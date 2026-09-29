@@ -323,4 +323,15 @@ jobs:
               *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
             esac
           done
-          terraform apply -input=false -lock-timeout=300s -auto-approve "${REPLACE_ARGS[@]}"
+          # Retry com backoff (ver go-ci-cd.yml): o sshd do VPS recusa o
+          # handshake sob rajada, e o apply é idempotente -- re-tentar salva um
+          # deploy que ia passar.
+          for tentativa in 1 2 3 4 5; do
+            if terraform apply -input=false -lock-timeout=300s -auto-approve "${REPLACE_ARGS[@]}"; then
+              exit 0
+            fi
+            echo "::warning::apply falhou (tentativa $tentativa); aguardando antes de repetir"
+            sleep $((tentativa * 20))
+          done
+          echo "::error::apply falhou após 5 tentativas"
+          exit 1
