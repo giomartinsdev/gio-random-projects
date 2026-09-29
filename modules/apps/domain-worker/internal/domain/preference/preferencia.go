@@ -67,6 +67,12 @@ type Notificacoes struct {
 	WeeklyDigest    bool
 	RecordsAndDivisions  bool
 	MatchResults  bool
+	// Publico é o opt-in do perfil público. Nasce false: FR-025/SC-005 proíbem
+	// expor dado de uma pessoa sem a escolha dela.
+	Publico bool
+	// PublicHandle é o identificador do perfil público (a chave URL). Vazio =
+	// ainda não escolhido; sem handle, o perfil não é alcançável mesmo ligado.
+	PublicHandle string
 	UpdatedAt       time.Time
 }
 

@@ -18,6 +18,13 @@ export default defineConfig({
         target: process.env.VITE_CLUBS_API_URL ?? "http://localhost:8017",
         changeOrigin: true,
       },
+      // As imagens de preview/súmula (/og/...) vivem na RAIZ da API, fora de
+      // /api -- o crawler as busca na URL que o og:image aponta. O proxy de dev
+      // também cobre esse caminho para o botão "baixar súmula" funcionar local.
+      "/og": {
+        target: process.env.VITE_CLUBS_API_URL ?? "http://localhost:8017",
+        changeOrigin: true,
+      },
     },
   },
 });

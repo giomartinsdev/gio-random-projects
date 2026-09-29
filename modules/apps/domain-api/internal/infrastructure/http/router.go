@@ -112,6 +112,9 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		r.Get("/clubs/{clubId}/best-by-position", cl.GetBestByPosition)
 		r.Get("/regions", cl.GetRegionBreakdown)
 		r.Get("/hub/report", cl.GetHubReport)
+		// Perfil público (opt-in): acessível sem login, porque é público por
+		// escolha da pessoa.
+		r.Get("/profiles/{handle}", cl.GetPublicProfile)
 		r.Get("/players/{playerId}/rating-evolution", cl.GetPlayerRatingEvolution)
 		r.Get("/players/{playerId}/consistency", cl.GetPlayerConsistency)
 		r.Get("/players/{playerId}/discipline", cl.GetPlayerDiscipline)

@@ -144,3 +144,46 @@ func TestTimelineDivisaoCarregaOsFatos(t *testing.T) {
 		t.Errorf("fatos da divisão errados: %+v", div.Data)
 	}
 }
+
+// O perfil público SÓ existe com opt-in. Sem `publico = true`, é ErrNotFound --
+// o mesmo que um handle inexistente. É o que respeita FR-025/SC-005: nada
+// pessoal é exposto sem a escolha da pessoa, e não se vaza que o perfil existe.
+func TestPublicProfileExigeOptIn(t *testing.T) {
+	pool := readPool(t)
+	repo := NewClubsRepository(pool)
+	ctx := context.Background()
+	email := "perfil-test@x.com"
+	handle := "perfil-test-handle"
+
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM clubs_preferences WHERE user_email = $1`, email)
+		_, _ = pool.Exec(ctx, `DELETE FROM clubs_watchlist WHERE user_email = $1`, email)
+	})
+
+	// Sem linha nenhuma: não existe.
+	if _, err := repo.GetPublicProfile(ctx, handle); !errorsIsNotFound(err) {
+		t.Fatalf("sem opt-in, esperava ErrNotFound; veio %v", err)
+	}
+
+	// Com opt-in desligado (linha existe, publico=false): ainda não existe.
+	_, _ = pool.Exec(ctx, `
+		INSERT INTO clubs_preferences (user_email, channel, weekly_digest, records_and_divisions, match_results, publico, public_handle)
+		VALUES ($1,'',true,true,true,false,$2)`, email, handle)
+	if _, err := repo.GetPublicProfile(ctx, handle); !errorsIsNotFound(err) {
+		t.Fatalf("publico=false, esperava ErrNotFound; veio %v", err)
+	}
+
+	// Ligando o opt-in, passa a existir.
+	_, _ = pool.Exec(ctx, `UPDATE clubs_preferences SET publico = true WHERE user_email = $1`, email)
+	p, err := repo.GetPublicProfile(ctx, handle)
+	if err != nil {
+		t.Fatalf("com opt-in, esperava o perfil; veio %v", err)
+	}
+	if p.Handle != handle {
+		t.Errorf("handle = %q; want %q", p.Handle, handle)
+	}
+}
+
+func errorsIsNotFound(err error) bool {
+	return err != nil && err.Error() == domainclubs.ErrNotFound.Error()
+}

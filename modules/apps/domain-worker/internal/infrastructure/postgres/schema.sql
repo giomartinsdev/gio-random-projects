@@ -648,3 +648,23 @@ CREATE TABLE IF NOT EXISTS clubs_ingest_estado (
 -- Bancos criados antes da coluna de saúde da fonte.
 ALTER TABLE clubs_ingest_estado ADD COLUMN IF NOT EXISTS source_available BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE clubs_ingest_estado ADD COLUMN IF NOT EXISTS source_error TEXT NOT NULL DEFAULT '';
+
+-- ===========================================================================
+-- Perfil público (opt-in).
+--
+-- O padrão do hub é dado pessoal isolado: FR-025/SC-005 proíbem que o dado de
+-- uma pessoa apareça para outra. Um perfil público só existe se a PESSOA
+-- marcar -- por isso a coluna nasce false, e a leitura pública consulta
+-- `WHERE publico = true`. Sem isso, "perfil público" violaria a spec.
+--
+-- O que um perfil público mostra: o pro reivindicado (que já é público -- o
+-- selo de verificado aparece para qualquer um no perfil do jogador) e os clubes
+-- que a pessoa segue. NUNCA o e-mail: a chave é o e-mail (interno), mas a
+-- resposta usa um identificador opaco e o gamertag.
+-- ===========================================================================
+
+ALTER TABLE clubs_preferences ADD COLUMN IF NOT EXISTS publico BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE clubs_preferences ADD COLUMN IF NOT EXISTS public_handle TEXT NOT NULL DEFAULT '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_clubs_preferences_handle
+    ON clubs_preferences (lower(public_handle)) WHERE public_handle <> '';

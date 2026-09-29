@@ -662,3 +662,18 @@ export interface PlayerEventBreakdown {
   player_id: string;
   events: EventSummary[] | null;
 }
+
+/** Perfil público (opt-in). Só existe quando a pessoa escolheu torná-lo
+ * público; mostra o pro e os clubes seguidos, nunca o e-mail. */
+export interface PublicProfile {
+  handle: string;
+  gamertag: string;
+  pro?: {
+    player_id: string;
+    club_id: string;
+    club_name: string;
+    club_tag: string;
+    verified: boolean;
+  } | null;
+  clubs: WatchEntry[] | null;
+}

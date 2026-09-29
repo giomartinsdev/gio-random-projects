@@ -209,3 +209,28 @@ type HubReport struct {
 	// Coverage: por quantos dias o hub cobre, da primeira à última partida.
 	CoverageDays int `json:"coverage_days"`
 }
+
+// PublicProfile é um perfil que a PESSOA optou por tornar público.
+//
+// Só existe quando `clubs_preferences.publico = true`. O que mostra é dado que
+// já era público (o pro reivindicado carrega o selo de verificado que qualquer
+// um vê) e os clubes que a pessoa segue -- nunca o e-mail. É esta escolha que
+// respeita FR-025/SC-005: nada pessoal é exposto sem opt-in.
+type PublicProfile struct {
+	Handle string `json:"handle"`
+	// Gamertag é a identidade no jogo (pública); NÃO o e-mail.
+	Gamertag string `json:"gamertag"`
+	// Pro é o jogador reivindicado, quando houver.
+	Pro *PublicProfilePro `json:"pro,omitempty"`
+	// Clubs são os clubes que a pessoa segue (público no hub).
+	Clubs []WatchEntry `json:"clubs"`
+}
+
+// PublicProfilePro é o pro do perfil público, com o clube de onde ele joga.
+type PublicProfilePro struct {
+	PlayerID string `json:"player_id"`
+	ClubID   string `json:"club_id"`
+	ClubName string `json:"club_name"`
+	ClubTag  string `json:"club_tag"`
+	Verified bool   `json:"verified"`
+}

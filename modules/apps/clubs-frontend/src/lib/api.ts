@@ -26,6 +26,7 @@ import type {
   PlayerProfile,
   PlayerRatingEvolution,
   PositionHeatmap,
+  PublicProfile,
   RankPlayer,
   Records,
   RegionCount,
@@ -185,6 +186,10 @@ const realApi = {
   regions: () => request<{ regioes: RegionCount[]; total: number }>("/regions"),
 
   hubReport: () => request<HubReport>("/hub/report"),
+
+  /** Perfil público (opt-in) pelo handle. Público: não exige login. */
+  publicProfile: (handle: string) =>
+    request<PublicProfile>(`/profiles/${encodeURIComponent(handle)}`),
 
   ratingEvolution: (playerId: string) =>
     request<PlayerRatingEvolution>(`/players/${encodeURIComponent(playerId)}/rating-evolution`),

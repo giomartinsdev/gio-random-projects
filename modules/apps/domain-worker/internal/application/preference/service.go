@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
@@ -48,6 +49,8 @@ func (s *Service) SaveNotificacoes(ctx context.Context, in SaveNotificacoesInput
 		WeeklyDigest:   in.WeeklyDigest,
 		RecordsAndDivisions: in.RecordsAndDivisions,
 		MatchResults: in.MatchResults,
+		Publico:      in.Publico,
+		PublicHandle: strings.ToLower(strings.TrimSpace(in.PublicHandle)),
 		UpdatedAt:      time.Now().UTC(),
 	})
 }

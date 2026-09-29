@@ -115,15 +115,17 @@ func (r *PreferenciaRepository) GetNotificacoes(ctx context.Context, userEmail s
 func (r *PreferenciaRepository) UpsertNotificacoes(ctx context.Context, n domainpref.Notificacoes) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO clubs_preferences (user_email, channel, weekly_digest, records_and_divisions,
-			match_results, updated_at)
-		VALUES ($1,$2,$3,$4,$5, now())
+			match_results, publico, public_handle, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7, now())
 		ON CONFLICT (user_email) DO UPDATE SET
 			channel = EXCLUDED.channel,
 			weekly_digest = EXCLUDED.weekly_digest,
 			records_and_divisions = EXCLUDED.records_and_divisions,
 			match_results = EXCLUDED.match_results,
+			publico = EXCLUDED.publico,
+			public_handle = EXCLUDED.public_handle,
 			updated_at = now()`,
-		n.UserEmail, n.Channel, n.WeeklyDigest, n.RecordsAndDivisions, n.MatchResults)
+		n.UserEmail, n.Channel, n.WeeklyDigest, n.RecordsAndDivisions, n.MatchResults, n.Publico, n.PublicHandle)
 	if err != nil {
 		return fmt.Errorf("upsert notificacoes: %w", err)
 	}

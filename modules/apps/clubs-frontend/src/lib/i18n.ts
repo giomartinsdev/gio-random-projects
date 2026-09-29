@@ -309,7 +309,8 @@ export type Key =
   | "analytics.tenure" | "analytics.tenureHint" | "analytics.events" | "analytics.eventsHint"
   | "analytics.region" | "analytics.regionHint" | "analytics.hubReport" | "analytics.coverage"
   | "analytics.teamOfWeek" | "analytics.noWeek" | "analytics.noWeekHint"
-  | "match.highlights" | "match.bestOnPitch" | "match.hatTrick" | "match.rout"
+  | "profile.title" | "profile.notFound" | "profile.notFoundHint" | "profile.makePublic"
+  | "match.downloadSheet" | "match.highlights" | "match.bestOnPitch" | "match.hatTrick" | "match.rout"
   | "compare.title" | "compare.pick" | "compare.add" | "compare.clear"
   | "home.regions" | "home.regionsHint" | "home.hubReport" | "home.reportClubs"
   | "home.reportMatches" | "home.reportPlayers" | "home.reportCoverage" | "admin.forceSync"
@@ -749,6 +750,11 @@ const en_US: Dict = {
   "analytics.teamOfWeek": "Team of the week",
   "analytics.noWeek": "No match this week",
   "analytics.noWeekHint": "The team appears once the club plays in the last 7 days.",
+  "match.downloadSheet": "Download sheet",
+  "profile.title": "Public profile",
+  "profile.notFound": "Profile not found",
+  "profile.notFoundHint": "This profile is private or does not exist.",
+  "profile.makePublic": "Make my profile public",
   "match.highlights": "Highlights",
   "match.bestOnPitch": "Man of the match",
   "match.hatTrick": "Hat-trick",
@@ -1193,6 +1199,11 @@ const pt_BR: Dict = {
   "analytics.teamOfWeek": "Time da semana",
   "analytics.noWeek": "Sem jogo nesta semana",
   "analytics.noWeekHint": "O time aparece quando o clube jogar nos últimos 7 dias.",
+  "match.downloadSheet": "Baixar súmula",
+  "profile.title": "Perfil público",
+  "profile.notFound": "Perfil não encontrado",
+  "profile.notFoundHint": "Este perfil é privado ou não existe.",
+  "profile.makePublic": "Tornar meu perfil público",
   "match.highlights": "Destaques",
   "match.bestOnPitch": "Melhor em campo",
   "match.hatTrick": "Hat-trick",
@@ -1644,6 +1655,11 @@ const es_ES: Dict = {
   "analytics.teamOfWeek": "Equipo de la semana",
   "analytics.noWeek": "Sin partido esta semana",
   "analytics.noWeekHint": "El equipo aparece cuando el club juegue en los últimos 7 días.",
+  "match.downloadSheet": "Descargar acta",
+  "profile.title": "Perfil público",
+  "profile.notFound": "Perfil no encontrado",
+  "profile.notFoundHint": "Este perfil es privado o no existe.",
+  "profile.makePublic": "Hacer mi perfil público",
   "match.highlights": "Destacados",
   "match.bestOnPitch": "Mejor en el campo",
   "match.hatTrick": "Hat-trick",
@@ -2093,6 +2109,11 @@ const fr_FR: Dict = {
   "analytics.teamOfWeek": "Équipe de la semaine",
   "analytics.noWeek": "Pas de match cette semaine",
   "analytics.noWeekHint": "L'équipe apparaît quand le club joue dans les 7 derniers jours.",
+  "match.downloadSheet": "Télécharger la feuille",
+  "profile.title": "Profil public",
+  "profile.notFound": "Profil introuvable",
+  "profile.notFoundHint": "Ce profil est privé ou n'existe pas.",
+  "profile.makePublic": "Rendre mon profil public",
   "match.highlights": "Temps forts",
   "match.bestOnPitch": "Homme du match",
   "match.hatTrick": "Triplé",
@@ -2542,6 +2563,11 @@ const de_DE: Dict = {
   "analytics.teamOfWeek": "Team der Woche",
   "analytics.noWeek": "Kein Spiel diese Woche",
   "analytics.noWeekHint": "Das Team erscheint, sobald der Verein in den letzten 7 Tagen spielt.",
+  "match.downloadSheet": "Spielbericht laden",
+  "profile.title": "Öffentliches Profil",
+  "profile.notFound": "Profil nicht gefunden",
+  "profile.notFoundHint": "Dieses Profil ist privat oder existiert nicht.",
+  "profile.makePublic": "Mein Profil öffentlich machen",
   "match.highlights": "Höhepunkte",
   "match.bestOnPitch": "Spieler des Spiels",
   "match.hatTrick": "Hattrick",

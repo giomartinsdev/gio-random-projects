@@ -288,6 +288,17 @@ func drawString(img *image.RGBA, face font.Face, c color.RGBA, x, y int, s strin
 	d.DrawString(s)
 }
 
+// textWidth é a largura de `s` na fonte, em pixels -- para centralizar ou
+// alinhar à direita sem chutar.
+func textWidth(face font.Face, s string) int {
+	return font.MeasureString(face, s).Round()
+}
+
+// drawCentered desenha `s` centralizado horizontalmente em `cx`.
+func drawCentered(img *image.RGBA, face font.Face, c color.RGBA, cx, y int, s string) {
+	drawString(img, face, c, cx-textWidth(face, s)/2, y, s)
+}
+
 // truncate corta nomes longos para não invadir o cartão; "…" sinaliza o corte.
 func truncate(s string, max int) string {
 	s = strings.TrimSpace(s)
@@ -296,4 +307,9 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return string(r[:max-1]) + "…"
+}
+
+// fillRect preenche um retângulo -- a faixa de fundo dos blocos da súmula.
+func fillRect(img *image.RGBA, x, y, w, h int, c color.RGBA) {
+	draw.Draw(img, image.Rect(x, y, x+w, y+h), &image.Uniform{c}, image.Point{}, draw.Src)
 }

@@ -1,8 +1,8 @@
 // Partida: a súmula dos dois lados, a linha do tempo e os números do jogo.
 
 import { useEffect, useState } from "react";
-import { ChevronLeft, Flag, Star } from "lucide-react";
-import { api } from "../lib/api";
+import { ChevronLeft, Download, Flag, Star } from "lucide-react";
+import { api, apiUrl } from "../lib/api";
 import type { Match, PlayerLine } from "../lib/types";
 import { Badge, Card, Crest, Empty, MatchKindBadge, PosTag, Spinner } from "../components/ui";
 import { PageHead } from "../components/shell";
@@ -57,7 +57,23 @@ export function MatchPage({
         }
         title={`${m.home_club_name} ${m.home_goals}–${m.away_goals} ${m.away_club_name}`}
         sub={`${fmtDateTime(m.timestamp)}${m.playoff_round ? ` · ${m.playoff_round}` : ""}${m.decided_by_forfeit ? t("match.decidedByForfeit") : ""}`}
-        actions={<MatchKindBadge kind={m.kind} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <MatchKindBadge kind={m.kind} />
+            {/* Baixar a súmula em PNG: a imagem é gerada na API (o mesmo
+                desenho do og:image), então é um link direto -- sem canvas no
+                browser e sem CORS. `download` sugere o nome do arquivo. */}
+            <a
+              href={apiUrl(`/og/match/${encodeURIComponent(m.match_id)}/image.png`)}
+              download
+              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wide text-muted transition-colors hover:text-ink"
+              style={{ borderColor: "var(--border-strong)" }}
+            >
+              <Download className="size-3.5" />
+              {t("match.downloadSheet")}
+            </a>
+          </div>
+        }
       />
 
       <Card title={t("common.result")}>

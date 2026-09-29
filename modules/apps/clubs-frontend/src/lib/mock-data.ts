@@ -39,6 +39,7 @@ import type {
   PlayerSeason,
   Position,
   PositionHeatmap,
+  PublicProfile,
   RankPlayer,
   RatingPoint,
   RegionCount,
@@ -926,4 +927,18 @@ export function playerEventsOf(playerId: string): PlayerEventBreakdown {
 export function teamOfWeekOf(clubId: string): TeamOfWeek {
   const best = bestByPositionOf(clubId);
   return { since: iso(0, 12, 0), players: best.map((b) => b.player) };
+}
+
+/** Perfil público no demo: o "usuário" do mock com o pro e os clubes seguidos. */
+export function publicProfileOf(handle: string): PublicProfile {
+  const pro = PLAYERS.find((p) => p.verified) ?? PLAYERS[0];
+  const club = CLUBS.find((c) => c.club_id === pro?.club_id) ?? MY_CLUB;
+  return {
+    handle,
+    gamertag: pro?.gamertag ?? "demo",
+    pro: pro
+      ? { player_id: pro.player_id, club_id: club.club_id, club_name: club.name, club_tag: club.tag, verified: true }
+      : null,
+    clubs: WATCHLIST,
+  };
 }

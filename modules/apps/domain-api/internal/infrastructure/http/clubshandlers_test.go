@@ -476,7 +476,8 @@ func TestGetClubFormaCarriesTheFullRecentWindow(t *testing.T) {
 // O recorte público da saúde da fonte: só "a EA está respondendo?" e o motivo.
 // É o que a tela lê para avisar da dificuldade de falar com a fornecedora dos
 // dados, sem exigir login.
-func TestGetSourceStatus(t *testing.T) {	repo := &stubClubs{ingestEstado: domainclubs.IngestEstado{
+func TestGetSourceStatus(t *testing.T) {
+	repo := &stubClubs{ingestEstado: domainclubs.IngestEstado{
 		SourceAvailable: false,
 		SourceError:     "clubs/info: 403",
 	}}

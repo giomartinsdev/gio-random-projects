@@ -21,6 +21,9 @@ type SaveNotificacoesInput struct {
 	WeeklyDigest   bool   `json:"weekly_digest"`
 	RecordsAndDivisions bool   `json:"records_and_divisions"`
 	MatchResults bool   `json:"match_results"`
+	// Publico é o opt-in do perfil público; PublicHandle é a chave da URL.
+	Publico      bool   `json:"publico"`
+	PublicHandle string `json:"public_handle,omitempty"`
 }
 
 // ClaimProInput is the preferencia.claimPro payload.

@@ -78,6 +78,10 @@ type Repository interface {
 	ListWatch(ctx context.Context, userEmail string) ([]WatchEntry, error)
 	GetNotificacoes(ctx context.Context, userEmail string) (NotificationPrefs, error)
 	GetClaimed(ctx context.Context, userEmail string) (*ClaimedPro, error)
+	// GetPublicProfile lê um perfil PÚBLICO pelo handle. Só devolve quando a
+	// pessoa marcou `publico = true` -- senão é ErrNotFound, que é o mesmo que
+	// um handle inexistente: não vaza a existência de perfis privados.
+	GetPublicProfile(ctx context.Context, handle string) (*PublicProfile, error)
 	GetSyncRun(ctx context.Context, userEmail string) (SyncRun, error)
 	// ListPendingSyncs returns every person whose sync was requested but not
 	// finished (`rodando = true`, no concluido_em). The ingest worker polls

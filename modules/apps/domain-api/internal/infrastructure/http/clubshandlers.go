@@ -414,6 +414,23 @@ func (h *ClubsHandlers) GetHubReport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rep)
 }
 
+// GetPublicProfile lê um perfil público pelo handle. Só existe com opt-in da
+// pessoa; sem ele (ou handle inexistente) devolve 404 -- o mesmo resposta para
+// os dois, para não vazar a existência de perfis privados.
+func (h *ClubsHandlers) GetPublicProfile(w http.ResponseWriter, r *http.Request) {
+	handle := chi.URLParam(r, "handle")
+	p, err := h.clubs.GetPublicProfile(r.Context(), handle)
+	if errors.Is(err, domainclubs.ErrNotFound) || p == nil {
+		writeJSON(w, http.StatusNotFound, errorBody{Error: "perfil não encontrado"})
+		return
+	}
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
 // GetPlayerRatingEvolution devolve a série de notas de um jogador por partida.
 func (h *ClubsHandlers) GetPlayerRatingEvolution(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "playerId")

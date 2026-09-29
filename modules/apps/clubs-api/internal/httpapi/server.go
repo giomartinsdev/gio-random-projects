@@ -180,6 +180,9 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/og/club/{clubId}/image.png", s.ogClubImage)
 	r.Get("/og/player/{playerId}", s.ogPlayer)
 	r.Get("/og/match/{matchId}", s.ogMatch)
+	// A súmula em PNG: serve de og:image da partida E de download na tela --
+	// o mesmo desenho nos dois, para não manter dois geradores.
+	r.Get("/og/match/{matchId}/image.png", s.matchImage)
 
 	r.Route("/api", func(r chi.Router) {
 		// --- public: no identity required -----------------------------
@@ -221,6 +224,8 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/clubs/{clubId}/best-by-position", s.proxyClubSub("best-by-position"))
 		r.Get("/regions", s.getRegions)
 		r.Get("/hub/report", s.getHubReport)
+		// Perfil público (opt-in): sem login, porque é público por escolha.
+		r.Get("/profiles/{handle}", s.getPublicProfile)
 		r.Get("/players/{playerId}/rating-evolution", s.proxyPlayerSub("rating-evolution"))
 		r.Get("/players/{playerId}/consistency", s.proxyPlayerSub("consistency"))
 		r.Get("/players/{playerId}/discipline", s.proxyPlayerSub("discipline"))
@@ -475,6 +480,11 @@ func (s *Server) getRegions(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getHubReport(w http.ResponseWriter, r *http.Request) {
 	s.proxyGet(w, r, "/hub/report")
+}
+
+// getPublicProfile encaminha a leitura do perfil público pelo handle.
+func (s *Server) getPublicProfile(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/profiles/"+chi.URLParam(r, "handle"))
 }
 
 func (s *Server) getGlobalRecords(w http.ResponseWriter, r *http.Request) {

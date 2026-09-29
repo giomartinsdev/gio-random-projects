@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -168,13 +169,8 @@ func (s *Server) ogPlayer(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) ogMatch(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "matchId")
-	var m struct {
-		HomeClubName string `json:"home_club_name"`
-		AwayClubName string `json:"away_club_name"`
-		HomeGoals    int    `json:"home_goals"`
-		AwayGoals    int    `json:"away_goals"`
-	}
-	if !s.readInto(r.Context(), "/matches/"+id, &m) {
+	m, ok := s.readMatch(r.Context(), id)
+	if !ok {
 		s.writeOG(w, r, ogData{
 			Title:       "FC Clubs Hub",
 			Description: "Partida no FC Clubs Hub.",
@@ -188,8 +184,91 @@ func (s *Server) ogMatch(w http.ResponseWriter, r *http.Request) {
 		Title:       strings.TrimSpace(title) + " — FC Clubs Hub",
 		Description: "Placar, elenco e destaques da partida, no FC Clubs Hub.",
 		Path:        "/match/" + id,
+		Image:       "/og/match/" + id + "/image.png",
 		Kind:        "article",
 	})
+}
+
+// matchPayload é o que a súmula precisa da partida. Um tipo só para o HTML de
+// preview e para o PNG -- os dois leem o mesmo payload.
+type matchPayload struct {
+	HomeClubID       string `json:"home_club_id"`
+	AwayClubID       string `json:"away_club_id"`
+	HomeClubName     string `json:"home_club_name"`
+	HomeClubTag      string `json:"home_club_tag"`
+	AwayClubName     string `json:"away_club_name"`
+	AwayClubTag      string `json:"away_club_tag"`
+	HomeGoals        int    `json:"home_goals"`
+	AwayGoals        int    `json:"away_goals"`
+	Kind             string `json:"kind"`
+	PlayoffRound     string `json:"playoff_round"`
+	DecidedByForfeit bool   `json:"decided_by_forfeit"`
+	Timestamp        string `json:"timestamp"`
+	Players          []struct {
+		ClubID   string  `json:"club_id"`
+		Gamertag string  `json:"gamertag"`
+		Rating   float64 `json:"rating"`
+		Goals    int     `json:"goals"`
+		Assists  int     `json:"assists"`
+	} `json:"players"`
+}
+
+// readMatch lê a partida do domain-api. Devolve false quando não há persistência
+// ou o recurso não existe.
+func (s *Server) readMatch(ctx context.Context, id string) (matchPayload, bool) {
+	var m matchPayload
+	if !s.readInto(ctx, "/matches/"+id, &m) {
+		return m, false
+	}
+	return m, true
+}
+
+// matchImage gera o PNG da súmula. É o og:image da partida E o arquivo que a
+// tela baixa -- mesmo desenho, um gerador só.
+func (s *Server) matchImage(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "matchId")
+	m, ok := s.readMatch(r.Context(), id)
+	if !ok {
+		// Sem partida, um cartão genérico: um 404 daria preview sem imagem.
+		m = matchPayload{HomeClubName: "FC Clubs Hub", HomeClubTag: "FC", AwayClubName: "—", AwayClubTag: "—"}
+	}
+
+	// O melhor em campo, de qualquer lado, e a que clube pertence.
+	bestName, bestRating, bestClub := "", 0.0, ""
+	for _, p := range m.Players {
+		if p.Rating > bestRating {
+			bestRating = p.Rating
+			bestName = p.Gamertag
+			if p.ClubID == m.HomeClubID {
+				bestClub = m.HomeClubName
+			} else {
+				bestClub = m.AwayClubName
+			}
+		}
+	}
+
+	var when time.Time
+	if t, err := time.Parse(time.RFC3339, m.Timestamp); err == nil {
+		when = t
+	}
+
+	png, err := drawMatchCard(matchCard{
+		HomeName: m.HomeClubName, HomeTag: m.HomeClubTag,
+		AwayName: m.AwayClubName, AwayTag: m.AwayClubTag,
+		HomeGoals: m.HomeGoals, AwayGoals: m.AwayGoals,
+		Kind: m.Kind, PlayoffRound: m.PlayoffRound, DecidedByForfeit: m.DecidedByForfeit,
+		When: when, BestGamertag: bestName, BestRating: bestRating, BestClub: bestClub,
+	})
+	if err != nil {
+		s.log.ErrorContext(r.Context(), "imagem da partida", "match", id, "error", err)
+		http.Error(w, "erro ao gerar a imagem", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	if _, err := w.Write(png); err != nil {
+		s.log.WarnContext(r.Context(), "imagem da partida write", "match", id, "error", err)
+	}
 }
 
 // readInto busca um caminho do domain-api e decodifica em out. Devolve false

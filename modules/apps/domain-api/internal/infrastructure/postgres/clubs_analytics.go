@@ -3,10 +3,14 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	domainclubs "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/domain/clubs"
 )
@@ -634,4 +638,63 @@ func (r *ClubsRepository) HubReport(ctx context.Context) (domainclubs.HubReport,
 		rep.CoverageDays = int(rep.LastMatch.Sub(*rep.FirstMatch).Hours() / 24)
 	}
 	return rep, nil
+}
+
+// GetPublicProfile lê um perfil público pelo handle, SÓ quando a pessoa marcou
+// publico=true. Sem opt-in devolve ErrNotFound -- o mesmo que um handle
+// inexistente, para não vazar a existência de perfis privados.
+//
+// O e-mail (chave interna) nunca sai na resposta: o gamertag é a identidade
+// pública, e os clubes vêm da watchlist. É assim que "perfil público" não
+// viola FR-025/SC-005.
+func (r *ClubsRepository) GetPublicProfile(ctx context.Context, handle string) (*domainclubs.PublicProfile, error) {
+	handle = strings.ToLower(strings.TrimSpace(handle))
+	if handle == "" {
+		return nil, domainclubs.ErrNotFound
+	}
+
+	var email string
+	err := r.pool.QueryRow(ctx, `
+		SELECT user_email FROM clubs_preferences
+		WHERE lower(public_handle) = $1 AND publico = true`, handle).Scan(&email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domainclubs.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("perfil público: %w", err)
+	}
+
+	p := &domainclubs.PublicProfile{Handle: handle}
+
+	// O pro reivindicado, com o clube (nome/sigla) e o gamertag do jogador.
+	var playerID, clubID string
+	var verified bool
+	err = r.pool.QueryRow(ctx, `
+		SELECT cp.player_id, cp.club_id, cp.verified
+		FROM clubs_claimed_pros cp WHERE cp.user_email = $1`, email).
+		Scan(&playerID, &clubID, &verified)
+	if err == nil {
+		var clubName, clubTag string
+		_ = r.pool.QueryRow(ctx, `
+			SELECT COALESCE(name,''), COALESCE(tag,'') FROM clubs WHERE club_id = $1`, clubID).
+			Scan(&clubName, &clubTag)
+		pro := &domainclubs.PublicProfilePro{
+			PlayerID: playerID, ClubID: clubID, ClubName: clubName, ClubTag: clubTag, Verified: verified,
+		}
+		p.Pro = pro
+		// O gamertag sai do índice de jogadores (a fonte não tem endpoint de
+		// jogador; o nome vem das partidas gravadas).
+		if pl, err := r.GetPlayer(ctx, playerID); err == nil {
+			p.Gamertag = pl.Gamertag
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("perfil público pro: %w", err)
+	}
+
+	// Os clubes seguidos (público no hub).
+	clubs, err := r.ListWatch(ctx, email)
+	if err == nil {
+		p.Clubs = clubs
+	}
+	return p, nil
 }

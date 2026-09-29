@@ -22,6 +22,7 @@ export type RouteId =
   | "my-area"
   | "notifications"
   | "feed"
+  | "profile"
   | "admin";
 
 export interface View {
@@ -40,24 +41,26 @@ const LIST_PATHS: Record<Exclude<RouteId, "club" | "match" | "player">, string> 
   "my-area": "my-area",
   notifications: "notifications",
   feed: "feed",
+  profile: "u",
   admin: "admin",
 };
 
 /** As rotas de detalhe e o prefixo do seu caminho. `/club/:id`, `/match/:id`,
  * `/player/:id`. */
-const DETAIL_PREFIX: Record<"club" | "match" | "player", string> = {
+const DETAIL_PREFIX: Record<"club" | "match" | "player" | "profile", string> = {
   club: "club",
   match: "match",
   player: "player",
+  profile: "u",
 };
 
-const DETAIL_ROUTES = new Set<RouteId>(["club", "match", "player"]);
+const DETAIL_ROUTES = new Set<RouteId>(["club", "match", "player", "profile"]);
 
 /** O caminho para uma view. É a única função que monta URL -- quem navega passa
  * por aqui, então a forma do link vive num lugar só. */
 export function pathFor(view: View): string {
   if (DETAIL_ROUTES.has(view.route)) {
-    const prefix = DETAIL_PREFIX[view.route as "club" | "match" | "player"];
+    const prefix = DETAIL_PREFIX[view.route as "club" | "match" | "player" | "profile"];
     // Sem id não há página de detalhe: cai na lista correspondente em vez de
     // gerar um caminho quebrado tipo `/club/`.
     if (!view.param) {
@@ -98,6 +101,8 @@ export function parsePath(rawPath: string): View {
       return { route: "notifications" };
     case "feed":
       return { route: "feed" };
+    case "u":
+      return second ? { route: "profile", param: second } : { route: "home" };
     case "admin":
       return { route: "admin" };
     default:

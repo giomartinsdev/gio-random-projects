@@ -19,6 +19,7 @@ import { ClaimPage } from "./pages/ClaimPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { AdminPage } from "./pages/AdminPage";
 import { FeedPage } from "./pages/FeedPage";
+import { PublicProfilePage } from "./pages/PublicProfilePage";
 
 /** Converte um link antigo em hash (`#/club?id=…`) no caminho real, uma vez,
  * antes do app montar. Sem isto, os links já compartilhados virariam link
@@ -223,6 +224,12 @@ export default function App() {
         return <NotificationsPage authed={authed} onSignedIn={refreshAuth} />;
       case "feed":
         return <FeedPage />;
+      case "profile":
+        return view.param ? (
+          <PublicProfilePage handle={view.param} onOpenClub={(id) => navigate("club", id)} />
+        ) : (
+          <HomePage onOpenClub={(id) => navigate("club", id)} onOpenPlayer={(id) => navigate("player", id)} />
+        );
       case "admin":
         return <AdminPage authed={authed} isAdmin={isAdmin} />;
       default:
