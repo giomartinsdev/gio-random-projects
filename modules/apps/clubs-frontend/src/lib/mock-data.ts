@@ -52,6 +52,7 @@ import type {
   SquadComparison,
   SquadMember,
   SyncRun,
+  TeamOfWeek,
   TimelineEntry,
   WatchEntry,
 } from "./types";
@@ -514,6 +515,7 @@ export function recordsOf(clubId: string): Records {
     best_rating: star && tops ? { player_id: star.player_id, gamertag: star.gamertag, match_id: tops.match_id, timestamp: tops.timestamp, opponent_name: tops.opponent_name, rating: 9.8, goals: 2 } : null,
     most_goals_in_match: star && tops ? { player_id: star.player_id, gamertag: star.gamertag, match_id: tops.match_id, timestamp: tops.timestamp, opponent_name: tops.opponent_name, rating: 8.4, goals: 5 } : null,
     longest_win_streak: 8,
+    longest_unbeaten_streak: 11,
     clean_sheets: club.clean_sheets,
     total_matches: club.played,
   };
@@ -917,4 +919,11 @@ export function playerEventsOf(playerId: string): PlayerEventBreakdown {
       { label: "desarme", count: rows.length * 2 },
     ].sort((a, b) => b.count - a.count),
   };
+}
+
+/** O melhor XI da semana no demo: o melhor de cada posição do elenco, como o
+ * backend monta a partir das partidas dos últimos 7 dias. */
+export function teamOfWeekOf(clubId: string): TeamOfWeek {
+  const best = bestByPositionOf(clubId);
+  return { since: iso(0, 12, 0), players: best.map((b) => b.player) };
 }

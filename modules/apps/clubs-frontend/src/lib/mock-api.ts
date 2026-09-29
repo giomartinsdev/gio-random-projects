@@ -38,6 +38,7 @@ import type {
   SquadComparison,
   SquadMember,
   SyncRun,
+  TeamOfWeek,
   TimelineEntry,
   WatchEntry,
 } from "./types";
@@ -124,6 +125,7 @@ export const mockApi = {
   rollingGoals: (clubId: string) => later<RollingGoals>(D.rollingGoalsOf(clubId)),
   mainRival: (clubId: string) => later<{ rival: MainRival | null }>({ rival: D.mainRivalOf(clubId) }),
   idle: (clubId: string) => later<ClubIdle>(D.idleOf(clubId)),
+  teamOfWeek: (clubId: string) => later<TeamOfWeek>(D.teamOfWeekOf(clubId)),
   bestByPosition: (clubId: string) =>
     later<{ posicoes: BestByPosition[]; total: number }>({
       posicoes: D.bestByPositionOf(clubId),

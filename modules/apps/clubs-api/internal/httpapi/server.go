@@ -217,6 +217,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/clubs/{clubId}/rolling-goals", s.proxyClubSub("rolling-goals"))
 		r.Get("/clubs/{clubId}/main-rival", s.proxyClubSub("main-rival"))
 		r.Get("/clubs/{clubId}/idle", s.proxyClubSub("idle"))
+		r.Get("/clubs/{clubId}/team-of-week", s.proxyClubSub("team-of-week"))
 		r.Get("/clubs/{clubId}/best-by-position", s.proxyClubSub("best-by-position"))
 		r.Get("/regions", s.getRegions)
 		r.Get("/hub/report", s.getHubReport)

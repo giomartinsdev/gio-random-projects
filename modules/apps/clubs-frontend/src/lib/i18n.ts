@@ -35,7 +35,7 @@ export const LOCALE_SHORT: Record<Locale, string> = {
 export type Key =
   | "nav.discover" | "nav.myHub" | "nav.system"
   | "nav.home" | "nav.clubs" | "nav.players" | "nav.claim"
-  | "nav.myArea" | "nav.notifications" | "nav.admin"
+  | "nav.myArea" | "nav.notifications" | "nav.admin" | "nav.feed"
   | "action.signIn" | "action.signOut" | "action.connect" | "action.connecting"
   | "action.save" | "action.saving" | "action.saved" | "action.search"
   | "action.loading" | "action.back" | "action.clear"
@@ -286,7 +286,7 @@ export type Key =
   | "source.down" | "source.downHint" | "source.syncPending" | "source.searchPending"
   | "home.thinTitle" | "home.thinHint" | "home.claimCta" | "home.browseClubs"
   | "claim.campaignHint"
-  | "club.timelineTab" | "club.sinceYouFollow" | "club.evtDivision" | "club.evtRecord"
+  | "club.unbeatenStreak" | "club.filterOpponent" | "club.timelineTab" | "club.sinceYouFollow" | "club.evtDivision" | "club.evtRecord"
   | "club.evtMilestone" | "club.evtFollowed"
   | "admin.noPermission" | "admin.noPermissionHint"
   | "fresh.now" | "fresh.minutes" | "fresh.hours" | "fresh.days" | "fresh.never"
@@ -308,6 +308,7 @@ export type Key =
   | "analytics.discipline" | "analytics.redCards" | "analytics.cleanSheets"
   | "analytics.tenure" | "analytics.tenureHint" | "analytics.events" | "analytics.eventsHint"
   | "analytics.region" | "analytics.regionHint" | "analytics.hubReport" | "analytics.coverage"
+  | "analytics.teamOfWeek" | "analytics.noWeek" | "analytics.noWeekHint"
   | "match.highlights" | "match.bestOnPitch" | "match.hatTrick" | "match.rout"
   | "compare.title" | "compare.pick" | "compare.add" | "compare.clear"
   | "home.regions" | "home.regionsHint" | "home.hubReport" | "home.reportClubs"
@@ -318,7 +319,7 @@ type Dict = Record<Key, string>;
 
 const en_US: Dict = {
   "nav.discover": "Explore", "nav.myHub": "My Hub", "nav.system": "System",
-  "nav.home": "Home", "nav.clubs": "Clubs", "nav.players": "Players",
+  "nav.home": "Home", "nav.feed": "Feed", "nav.clubs": "Clubs", "nav.players": "Players",
   "nav.claim": "Claim pro", "nav.myArea": "My area", "nav.notifications": "Notifications",
   "nav.admin": "Admin",
   "action.signIn": "Sign in with Google", "action.signOut": "Sign out",
@@ -672,6 +673,8 @@ const en_US: Dict = {
   "home.claimCta": "Find my club",
   "home.browseClubs": "Browse clubs",
   "claim.campaignHint": "Campaign so far",
+  "club.filterOpponent": "filter by opponent…",
+  "club.unbeatenStreak": "unbeaten run",
   "club.timelineTab": "History",
   "club.sinceYouFollow": "Since you started following",
   "club.evtDivision": "Division change",
@@ -743,6 +746,9 @@ const en_US: Dict = {
   "analytics.regionHint": "The source has no location, only a region id.",
   "analytics.hubReport": "Hub coverage",
   "analytics.coverage": "days of coverage",
+  "analytics.teamOfWeek": "Team of the week",
+  "analytics.noWeek": "No match this week",
+  "analytics.noWeekHint": "The team appears once the club plays in the last 7 days.",
   "match.highlights": "Highlights",
   "match.bestOnPitch": "Man of the match",
   "match.hatTrick": "Hat-trick",
@@ -765,7 +771,7 @@ const en_US: Dict = {
 const pt_BR: Dict = {
   ...en_US,
   "nav.discover": "Explorar", "nav.myHub": "Meu hub", "nav.system": "Sistema",
-  "nav.home": "Início", "nav.clubs": "Clubs", "nav.players": "Players",
+  "nav.home": "Início", "nav.feed": "Feed", "nav.clubs": "Clubs", "nav.players": "Players",
   "nav.claim": "Resgatar pro", "nav.myArea": "Minha área", "nav.notifications": "Notificações",
   "nav.admin": "Administração",
   "action.signIn": "Entrar com Google", "action.signOut": "Sair",
@@ -1111,6 +1117,8 @@ const pt_BR: Dict = {
   "home.claimCta": "Encontrar meu clube",
   "home.browseClubs": "Ver clubes",
   "claim.campaignHint": "Campanha até agora",
+  "club.filterOpponent": "filtrar por adversário…",
+  "club.unbeatenStreak": "invencibilidade",
   "club.timelineTab": "História",
   "club.sinceYouFollow": "Desde que você acompanha",
   "club.evtDivision": "Mudança de divisão",
@@ -1182,6 +1190,9 @@ const pt_BR: Dict = {
   "analytics.regionHint": "A fonte não tem localização, só o id da região.",
   "analytics.hubReport": "Cobertura do hub",
   "analytics.coverage": "dias de cobertura",
+  "analytics.teamOfWeek": "Time da semana",
+  "analytics.noWeek": "Sem jogo nesta semana",
+  "analytics.noWeekHint": "O time aparece quando o clube jogar nos últimos 7 dias.",
   "match.highlights": "Destaques",
   "match.bestOnPitch": "Melhor em campo",
   "match.hatTrick": "Hat-trick",
@@ -1204,7 +1215,7 @@ const pt_BR: Dict = {
 const es_ES: Dict = {
   ...en_US,
   "nav.discover": "Explorar", "nav.myHub": "Mi hub", "nav.system": "Sistema",
-  "nav.home": "Inicio", "nav.clubs": "Clubs", "nav.players": "Jugadores",
+  "nav.home": "Inicio", "nav.feed": "Feed", "nav.clubs": "Clubs", "nav.players": "Jugadores",
   "nav.claim": "Reclamar pro", "nav.myArea": "Mi área", "nav.notifications": "Notificaciones",
   "nav.admin": "Administración",
   "action.signIn": "Iniciar sesión con Google", "action.signOut": "Salir",
@@ -1557,6 +1568,8 @@ const es_ES: Dict = {
   "home.claimCta": "Encontrar mi club",
   "home.browseClubs": "Ver clubes",
   "claim.campaignHint": "Campaña hasta ahora",
+  "club.filterOpponent": "filtrar por rival…",
+  "club.unbeatenStreak": "invencibilidad",
   "club.timelineTab": "Historial",
   "club.sinceYouFollow": "Desde que lo sigues",
   "club.evtDivision": "Cambio de división",
@@ -1628,6 +1641,9 @@ const es_ES: Dict = {
   "analytics.regionHint": "La fuente no tiene ubicación, solo el id de región.",
   "analytics.hubReport": "Cobertura del hub",
   "analytics.coverage": "días de cobertura",
+  "analytics.teamOfWeek": "Equipo de la semana",
+  "analytics.noWeek": "Sin partido esta semana",
+  "analytics.noWeekHint": "El equipo aparece cuando el club juegue en los últimos 7 días.",
   "match.highlights": "Destacados",
   "match.bestOnPitch": "Mejor en el campo",
   "match.hatTrick": "Hat-trick",
@@ -1650,7 +1666,7 @@ const es_ES: Dict = {
 const fr_FR: Dict = {
   ...en_US,
   "nav.discover": "Explorer", "nav.myHub": "Mon hub", "nav.system": "Système",
-  "nav.home": "Accueil", "nav.clubs": "Clubs", "nav.players": "Joueurs",
+  "nav.home": "Accueil", "nav.feed": "Fil", "nav.clubs": "Clubs", "nav.players": "Joueurs",
   "nav.claim": "Réclamer pro", "nav.myArea": "Mon espace", "nav.notifications": "Notifications",
   "nav.admin": "Administration",
   "action.signIn": "Se connecter avec Google", "action.signOut": "Se déconnecter",
@@ -2001,6 +2017,8 @@ const fr_FR: Dict = {
   "home.claimCta": "Trouver mon club",
   "home.browseClubs": "Voir les clubs",
   "claim.campaignHint": "Bilan jusqu'ici",
+  "club.filterOpponent": "filtrer par adversaire…",
+  "club.unbeatenStreak": "invincibilité",
   "club.timelineTab": "Historique",
   "club.sinceYouFollow": "Depuis que tu suis",
   "club.evtDivision": "Changement de division",
@@ -2072,6 +2090,9 @@ const fr_FR: Dict = {
   "analytics.regionHint": "La source n'a pas de localisation, seulement l'id de région.",
   "analytics.hubReport": "Couverture du hub",
   "analytics.coverage": "jours de couverture",
+  "analytics.teamOfWeek": "Équipe de la semaine",
+  "analytics.noWeek": "Pas de match cette semaine",
+  "analytics.noWeekHint": "L'équipe apparaît quand le club joue dans les 7 derniers jours.",
   "match.highlights": "Temps forts",
   "match.bestOnPitch": "Homme du match",
   "match.hatTrick": "Triplé",
@@ -2094,7 +2115,7 @@ const fr_FR: Dict = {
 const de_DE: Dict = {
   ...en_US,
   "nav.discover": "Entdecken", "nav.myHub": "Mein Hub", "nav.system": "System",
-  "nav.home": "Start", "nav.clubs": "Clubs", "nav.players": "Spieler",
+  "nav.home": "Start", "nav.feed": "Feed", "nav.clubs": "Clubs", "nav.players": "Spieler",
   "nav.claim": "Pro beanspruchen", "nav.myArea": "Mein Bereich", "nav.notifications": "Benachrichtigungen",
   "nav.admin": "Verwaltung",
   "action.signIn": "Mit Google anmelden", "action.signOut": "Abmelden",
@@ -2445,6 +2466,8 @@ const de_DE: Dict = {
   "home.claimCta": "Meinen Verein finden",
   "home.browseClubs": "Vereine ansehen",
   "claim.campaignHint": "Bilanz bisher",
+  "club.filterOpponent": "nach Gegner filtern…",
+  "club.unbeatenStreak": "Ungeschlagen-Serie",
   "club.timelineTab": "Verlauf",
   "club.sinceYouFollow": "Seit du folgst",
   "club.evtDivision": "Divisionswechsel",
@@ -2516,6 +2539,9 @@ const de_DE: Dict = {
   "analytics.regionHint": "Die Quelle hat keinen Ort, nur die Regions-ID.",
   "analytics.hubReport": "Hub-Abdeckung",
   "analytics.coverage": "Tage Abdeckung",
+  "analytics.teamOfWeek": "Team der Woche",
+  "analytics.noWeek": "Kein Spiel diese Woche",
+  "analytics.noWeekHint": "Das Team erscheint, sobald der Verein in den letzten 7 Tagen spielt.",
   "match.highlights": "Höhepunkte",
   "match.bestOnPitch": "Spieler des Spiels",
   "match.hatTrick": "Hattrick",

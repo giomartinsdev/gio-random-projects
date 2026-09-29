@@ -21,6 +21,7 @@ export type RouteId =
   | "claim"
   | "my-area"
   | "notifications"
+  | "feed"
   | "admin";
 
 export interface View {
@@ -38,6 +39,7 @@ const LIST_PATHS: Record<Exclude<RouteId, "club" | "match" | "player">, string> 
   claim: "claim",
   "my-area": "my-area",
   notifications: "notifications",
+  feed: "feed",
   admin: "admin",
 };
 
@@ -94,6 +96,8 @@ export function parsePath(rawPath: string): View {
       return { route: "my-area" };
     case "notifications":
       return { route: "notifications" };
+    case "feed":
+      return { route: "feed" };
     case "admin":
       return { route: "admin" };
     default:

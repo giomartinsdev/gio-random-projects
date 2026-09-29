@@ -12,6 +12,7 @@ import {
   Lock,
   LogOut,
   Moon,
+  Newspaper,
   Search,
   Shield,
   Star,
@@ -47,6 +48,7 @@ interface NavItem {
 // é o que dava o ar amador.
 const NAV: NavItem[] = [
   { id: "home", label: "nav.home", icon: House, group: "discover" },
+  { id: "feed", label: "nav.feed", icon: Newspaper, group: "discover" },
   { id: "clubs", label: "nav.clubs", icon: Shield, group: "discover" },
   { id: "players", label: "nav.players", icon: Star, group: "discover" },
   { id: "claim", label: "nav.claim", icon: Target, group: "my-hub" },

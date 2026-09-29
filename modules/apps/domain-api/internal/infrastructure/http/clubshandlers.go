@@ -244,8 +244,8 @@ func (h *ClubsHandlers) GetEvolution(w http.ResponseWriter, r *http.Request) {
 	}
 	latest, _ := h.clubs.LatestSnapshot(r.Context(), id)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"serie": series,
-		"total": len(series),
+		"serie":   series,
+		"total":   len(series),
 		"current": latest,
 		// Explicit so the UI can explain "history grows with every sync"
 		// instead of drawing a degenerate one-point chart.
@@ -368,6 +368,19 @@ func (h *ClubsHandlers) GetIdle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, idle)
+}
+
+// GetTeamOfWeek devolve o melhor XI dos últimos 7 dias (ajustável por `dias`).
+func (h *ClubsHandlers) GetTeamOfWeek(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "clubId")
+	dias := intParam(r, "dias", 7, 90)
+	since := time.Now().UTC().AddDate(0, 0, -dias)
+	team, err := h.clubs.TeamOfWeek(r.Context(), id, since)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, team)
 }
 
 // GetBestByPosition devolve o melhor jogador (por nota) de cada posição.

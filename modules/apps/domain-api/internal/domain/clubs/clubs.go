@@ -348,10 +348,10 @@ type DivisionChange struct {
 // `Kind` é uma chave semântica (`divisao`, `recorde`, `marco`, `seguido`), não
 // texto pronto: quem desenha monta a frase no idioma escolhido, como no feed.
 type TimelineEntry struct {
-	At     time.Time      `json:"at"`
-	Kind   string         `json:"kind"`
-	Title  string         `json:"title"`
-	Detail string         `json:"detail,omitempty"`
+	At     time.Time `json:"at"`
+	Kind   string    `json:"kind"`
+	Title  string    `json:"title"`
+	Detail string    `json:"detail,omitempty"`
 	// Data são os fatos para a UI traduzir/renderizar (ex.: nova divisão,
 	// placar do recorde, contagem do marco). O Title é o fallback textual.
 	Data map[string]any `json:"data,omitempty"`
@@ -387,8 +387,12 @@ type Records struct {
 	BestRating     *RecordLine  `json:"best_rating"`
 	MaisGolsJogo   *RecordLine  `json:"most_goals_in_match"`
 	MaiorSequencia int          `json:"longest_win_streak"`
-	CleanSheets    int          `json:"jogos_sem_sofrer_gol"`
-	TotalMatches   int          `json:"total_matches"`
+	// MaiorInvencibilidade é a maior sequência sem perder (vitórias + empates)
+	// no acervo. Distinto de MaiorSequencia, que conta só vitórias: um clube
+	// pode empatar muito e ainda assim ser difícil de bater.
+	MaiorInvencibilidade int `json:"longest_unbeaten_streak"`
+	CleanSheets          int `json:"jogos_sem_sofrer_gol"`
+	TotalMatches         int `json:"total_matches"`
 }
 
 // GlobalRecordClub é o clube dono de um recorde global. Carrega nome e tag

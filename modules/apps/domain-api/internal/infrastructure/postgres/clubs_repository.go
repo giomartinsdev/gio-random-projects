@@ -1143,6 +1143,22 @@ func (r *ClubsRepository) Records(ctx context.Context, clubID string) (domainclu
 	}
 	rec.MaiorSequencia = best
 
+	// Maior invencibilidade: a maior sequência sem derrota (vitória ou empate).
+	// Conta diferente da de vitórias -- um clube que empata muito também é
+	// difícil de bater, e essa é a leitura que "invencibilidade" promete.
+	cur, best = 0, 0
+	for _, m := range chrono {
+		if m.OurResult != "loss" {
+			cur++
+			if cur > best {
+				best = cur
+			}
+		} else {
+			cur = 0
+		}
+	}
+	rec.MaiorInvencibilidade = best
+
 	// Best individual rating and most goals in one match.
 	lines, err := r.allPlayerRows(ctx, `WHERE l.club_id = $1`, clubID)
 	if err != nil {

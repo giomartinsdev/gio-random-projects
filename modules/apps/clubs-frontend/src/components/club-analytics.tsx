@@ -18,6 +18,7 @@ import type {
   RollingGoals,
   SeasonList,
   SquadComparison,
+  TeamOfWeek,
 } from "../lib/types";
 import { Bar, Card, Crest, Empty, PosTag, Spinner } from "./ui";
 import { LineChart } from "./charts";
@@ -306,6 +307,47 @@ export function SeasonsCard({ clubId }: { clubId: string }) {
                   ))}
                 </div>
               )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+/** O melhor XI da semana: o melhor de cada posição nos últimos 7 dias. */
+export function TeamOfWeekCard({ clubId, onOpenPlayer }: { clubId: string; onOpenPlayer: (id: string) => void }) {
+  const { t } = useI18n();
+  const [team, setTeam] = useState<TeamOfWeek | null>(null);
+  useEffect(() => {
+    setTeam(null);
+    api.teamOfWeek(clubId).then(setTeam).catch(() => setTeam(null));
+  }, [clubId]);
+
+  if (team === null) return null;
+  const players = team.players ?? [];
+  return (
+    <Card title={t("analytics.teamOfWeek")}>
+      {players.length === 0 ? (
+        <Empty title={t("analytics.noWeek")} hint={t("analytics.noWeekHint")} />
+      ) : (
+        <ul className="divide-y divide-[var(--border)]">
+          {players.map((p) => (
+            <li key={p.player_id}>
+              <button
+                type="button"
+                onClick={() => onOpenPlayer(p.player_id)}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface-3"
+              >
+                <PosTag position={p.position} />
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{p.gamertag}</span>
+                <span className="font-mono text-[10px] text-faint">
+                  {fmt(p.goals)} {t("common.goals")}
+                </span>
+                <span className="tnum font-display text-sm font-bold" style={{ color: "var(--accent)" }}>
+                  {fmt(p.rating, 1)}
+                </span>
+              </button>
             </li>
           ))}
         </ul>

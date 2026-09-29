@@ -2,7 +2,7 @@
 // usuário. O clube não acompanhado mostra só os totais gerais, com uma
 // explicação explícita — nunca uma tela vazia sem motivo.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronLeft, Crosshair, Download, Goal, Skull, Star, Trophy } from "lucide-react";
 import { api } from "../lib/api";
 import type {
@@ -42,6 +42,7 @@ import {
   RollingGoalsCard,
   SeasonsCard,
   SquadComparisonCard,
+  TeamOfWeekCard,
 } from "../components/club-analytics";
 import { ClubCompare } from "../components/club-compare";
 import { Freshness } from "../components/freshness";
@@ -405,6 +406,9 @@ function ResumoTab({ club, onOpenMatch, onOpenClub, onOpenPlayer }: { club: Club
         <div className="lg:col-span-2">
           <BestByPositionCard clubId={club.club_id} onOpenPlayer={onOpenPlayer} />
         </div>
+      </div>
+      <div className="mt-4">
+        <TeamOfWeekCard clubId={club.club_id} onOpenPlayer={onOpenPlayer} />
       </div>
     </>
   );
@@ -802,12 +806,23 @@ function Th({ children, right = false }: { children: React.ReactNode; right?: bo
 function PartidasTab({ clubId, onOpenMatch }: { clubId: string; onOpenMatch: (id: string) => void }) {
   const { t } = useI18n();
   const [kind, setTipo] = useState("");
+  const [resultado, setResultado] = useState("");
+  const [busca, setBusca] = useState("");
   const [list, setList] = useState<Match[] | null>(null);
 
   useEffect(() => {
     setList(null);
     api.matches(clubId, kind, 40).then((r) => setList(r.matches ?? [])).catch(() => setList([]));
   }, [clubId, kind]);
+
+  // O filtro por tipo vai na API (ela filtra no banco); resultado e adversário
+  // filtram a lista já carregada -- não valem uma ida ao servidor por clique.
+  const filtrada = useMemo(() => {
+    const needle = busca.trim().toLowerCase();
+    return (list ?? [])
+      .filter((m) => !resultado || m.our_result === resultado)
+      .filter((m) => !needle || m.opponent_name.toLowerCase().includes(needle));
+  }, [list, resultado, busca]);
 
   return (
     <>
@@ -833,17 +848,54 @@ function PartidasTab({ clubId, onOpenMatch }: { clubId: string; onOpenMatch: (id
             {label}
           </button>
         ))}
-        {list && <span className="ml-auto font-mono text-xs text-muted">{fmt(list.length)} {t("common.matches")}</span>}
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-2.5">
+        {/* Filtro por resultado: vitória/empate/derrota. */}
+        <div className="flex flex-wrap gap-1.5">
+          {[
+            ["", t("claim.all")],
+            ["win", t("result.win")],
+            ["draw", t("result.draw")],
+            ["loss", t("result.loss")],
+          ].map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setResultado(k)}
+              aria-pressed={resultado === k}
+              className="rounded-full border px-3 py-1 text-xs font-semibold transition-colors"
+              style={
+                resultado === k
+                  ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" }
+                  : { borderColor: "var(--border)", background: "var(--surface-2)", color: "var(--text-muted)" }
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="surface flex min-w-[180px] flex-1 items-center gap-2 px-3 py-1.5">
+          <span className="text-faint">⌕</span>
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder={t("club.filterOpponent")}
+            className="w-full bg-transparent text-sm outline-none placeholder:text-faint"
+            aria-label={t("club.filterOpponent")}
+          />
+        </label>
+        {list && <span className="font-mono text-xs text-muted">{fmt(filtrada.length)} {t("common.matches")}</span>}
       </div>
 
       {list === null ? (
         <Spinner />
-      ) : list.length === 0 ? (
+      ) : filtrada.length === 0 ? (
         <Empty title={t("club.noMatchFilter")} hint={t("club.changeFilterHint")} />
       ) : (
         <div className="surface overflow-hidden">
           <ul className="divide-y divide-[var(--border)]">
-            {list.map((m) => (
+            {filtrada.map((m) => (
               <li key={m.match_id}>
                 <button
                   type="button"
@@ -956,7 +1008,11 @@ function NumerosTab({
           accent
         />
         <Stat label={t("club.divisionChanges")} value={fmt(changes.length)} sub={changes.length ? t("common.inferred") : t("admin.noneYet")} />
-        <Stat label={t("club.longestWinStreak")} value={`${rec?.longest_win_streak ?? 0}V`} sub={t("club.accumulatedHistory")} />
+        <Stat
+          label={t("club.longestWinStreak")}
+          value={`${rec?.longest_win_streak ?? 0}V`}
+          sub={`${t("club.unbeatenStreak")}: ${rec?.longest_unbeaten_streak ?? 0}`}
+        />
         <Stat label={t("club.cleanSheets")} value={fmt(rec?.clean_sheets ?? 0)} sub={`/ ${fmt(rec?.total_matches ?? 0)} ${t("common.matches")}`} />
       </div>
 

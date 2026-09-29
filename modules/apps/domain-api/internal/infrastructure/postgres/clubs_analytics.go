@@ -229,6 +229,73 @@ func (r *ClubsRepository) SquadComparison(ctx context.Context, clubID string) (d
 	return out, nil
 }
 
+// TeamOfWeek monta o melhor XI da SEMANA: para cada posição, o jogador de maior
+// nota média nas partidas dos últimos 7 dias.
+//
+// Por que "semana": é a janela que dá um recorte fresco -- o clube joga algumas
+// vezes por semana, e uma janela maior viraria "melhores da temporada", que já
+// existe na aba Números. Se a semana não tiver jogos, devolve vazio (a tela
+// explica), em vez de cair para uma janela maior silenciosamente.
+func (r *ClubsRepository) TeamOfWeek(ctx context.Context, clubID string, since time.Time) (domainclubs.TeamOfWeek, error) {
+	rows, err := r.allPlayerRows(ctx,
+		`WHERE l.club_id = $1 AND m.timestamp >= $2`, clubID, since)
+	if err != nil {
+		return domainclubs.TeamOfWeek{}, err
+	}
+	out := domainclubs.TeamOfWeek{Since: since}
+	if len(rows) == 0 {
+		return out, nil
+	}
+
+	// Acumula por (posição, jogador) dentro da janela.
+	type acc struct {
+		member    domainclubs.SquadMember
+		ratingSum float64
+	}
+	byPos := map[string]map[string]*acc{}
+	for _, pr := range rows {
+		pos := pr.line.Position
+		if byPos[pos] == nil {
+			byPos[pos] = map[string]*acc{}
+		}
+		a := byPos[pos][pr.line.PlayerID]
+		if a == nil {
+			a = &acc{member: domainclubs.SquadMember{
+				PlayerID: pr.line.PlayerID, Gamertag: pr.line.Gamertag, Position: pos,
+				Goalkeeper: pos == "goalkeeper",
+			}}
+			byPos[pos][pr.line.PlayerID] = a
+		}
+		m := &a.member
+		m.Played++
+		m.Goals += pr.line.Goals
+		m.Assists += pr.line.Assists
+		m.Rating += pr.line.Rating // soma; divide no fim
+		a.ratingSum += pr.line.Rating
+		if pr.line.ManOfTheMatch {
+			m.ManOfTheMatch++
+		}
+	}
+
+	// O melhor de cada posição, por nota média.
+	ordem := []string{"goalkeeper", "defender", "midfielder", "forward"}
+	for _, pos := range ordem {
+		players := byPos[pos]
+		if len(players) == 0 {
+			continue
+		}
+		var best *acc
+		for _, a := range players {
+			if best == nil || (a.ratingSum/float64(a.member.Played)) > (best.ratingSum/float64(best.member.Played)) {
+				best = a
+			}
+		}
+		best.member.Rating = round2(best.ratingSum / float64(best.member.Played))
+		out.Players = append(out.Players, best.member)
+	}
+	return out, nil
+}
+
 // RegionBreakdown conta os clubes por região -- "clubes perto de mim" por
 // região da fonte (não há geolocalização na EA, só o region_id).
 func (r *ClubsRepository) RegionBreakdown(ctx context.Context) ([]domainclubs.RegionCount, error) {

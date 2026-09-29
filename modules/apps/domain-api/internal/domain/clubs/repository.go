@@ -55,6 +55,8 @@ type Repository interface {
 	RollingGoals(ctx context.Context, clubID string, limit int) (RollingGoals, error)
 	MainRival(ctx context.Context, clubID string) (*MainRival, error)
 	IdleSince(ctx context.Context, clubID string) (ClubIdle, error)
+	// TeamOfWeek é o melhor XI da janela pedida (a tela passa 7 dias).
+	TeamOfWeek(ctx context.Context, clubID string, since time.Time) (TeamOfWeek, error)
 	BestByPosition(ctx context.Context, clubID string) ([]BestByPosition, error)
 	RegionBreakdown(ctx context.Context) ([]RegionCount, error)
 	HubReport(ctx context.Context) (HubReport, error)

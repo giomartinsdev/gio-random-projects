@@ -36,6 +36,7 @@ import type {
   SquadComparison,
   SquadMember,
   SyncRun,
+  TeamOfWeek,
   TimelineEntry,
   WatchEntry,
 } from "./types";
@@ -172,6 +173,9 @@ const realApi = {
 
   idle: (clubId: string) =>
     request<ClubIdle>(`/clubs/${encodeURIComponent(clubId)}/idle`),
+
+  teamOfWeek: (clubId: string, dias = 7) =>
+    request<TeamOfWeek>(`/clubs/${encodeURIComponent(clubId)}/team-of-week?dias=${dias}`),
 
   bestByPosition: (clubId: string) =>
     request<{ posicoes: BestByPosition[]; total: number }>(

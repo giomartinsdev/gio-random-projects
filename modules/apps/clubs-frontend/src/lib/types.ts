@@ -383,8 +383,15 @@ export interface Records {
   best_rating: RecordLine | null;
   most_goals_in_match: RecordLine | null;
   longest_win_streak: number;
+  longest_unbeaten_streak: number;
   clean_sheets: number;
   total_matches: number;
+}
+
+/** O melhor XI da janela (por padrão, 7 dias). Vazio quando não houve jogo. */
+export interface TeamOfWeek {
+  since: string;
+  players: SquadMember[] | null;
 }
 
 export interface HeadToHead {

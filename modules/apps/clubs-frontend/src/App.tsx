@@ -18,6 +18,7 @@ import { MyAreaPage } from "./pages/MyAreaPage";
 import { ClaimPage } from "./pages/ClaimPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { AdminPage } from "./pages/AdminPage";
+import { FeedPage } from "./pages/FeedPage";
 
 /** Converte um link antigo em hash (`#/club?id=…`) no caminho real, uma vez,
  * antes do app montar. Sem isto, os links já compartilhados virariam link
@@ -220,6 +221,8 @@ export default function App() {
         );
       case "notifications":
         return <NotificationsPage authed={authed} onSignedIn={refreshAuth} />;
+      case "feed":
+        return <FeedPage />;
       case "admin":
         return <AdminPage authed={authed} isAdmin={isAdmin} />;
       default:
