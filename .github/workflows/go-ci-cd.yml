@@ -92,12 +92,17 @@ jobs:
       - name: Test (Go apps only — skipped for anything without a go.mod)
         if: hashFiles(format('modules/apps/{0}/go.mod', matrix.app)) != ''
         working-directory: modules/apps/${{ matrix.app }}
+        # `-count=1` desliga o cache de RESULTADO de teste. Sem ele, o
+        # `actions/setup-go` acima restaura GOCACHE entre runs e um teste de
+        # integração pode aparecer "ok (cached)" sem ter rodado -- o
+        # testcontainers nunca sobe e o CI dá verde sobre um teste que não
+        # executou. O cache de COMPILAÇÃO continua valendo (é o que deixa o
+        # passo rápido); o que se força é a execução.
+        #
         # `go build ./...` era redundante: `go vet` já compila cada pacote, e o
-        # cache de build do Go é COMPARTILHADO entre os comandos, então o `go
-        # test` seguinte reaproveita o que o vet compilou. Tirar o build não
-        # perde checagem nenhuma -- só uma passada de compilação que num app com
-        # testcontainers custava parte dos ~100s do passo.
-        run: go vet ./... && go test ./...
+        # cache de build do Go é compartilhado entre os comandos, então o `go
+        # test` seguinte reaproveita o que o vet compilou.
+        run: go vet ./... && go test -count=1 ./...
 
       # The VPS is arm64 (Oracle's free-tier Ampere instances), but this
       # runner is amd64 -- QEMU is what lets BuildKit actually produce
