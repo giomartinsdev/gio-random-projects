@@ -78,11 +78,13 @@ jobs:
     needs: discover
     if: needs.discover.outputs.apps != '[]'
     runs-on: ubuntu-latest
-    # Um push novo cancela o build do anterior (ver go-ci-cd.yml). O deploy
-    # fica de fora: ele compartilha o concurrency "terraform-apply" abaixo, com
-    # cancel-in-progress: false, para um apply nunca morrer no meio.
+    # Um push novo cancela o build do anterior (ver go-ci-cd.yml). O grupo
+    # inclui o APP: sem ele, os jobs da mesma matrix entram no mesmo grupo e
+    # cancelam uns aos outros. O deploy fica de fora: ele compartilha o
+    # concurrency "terraform-apply" abaixo, com cancel-in-progress: false, para
+    # um apply nunca morrer no meio.
     concurrency:
-      group: py-build-${{ github.ref }}
+      group: py-build-${{ matrix.app }}-${{ github.ref }}
       cancel-in-progress: true
     strategy:
       matrix:

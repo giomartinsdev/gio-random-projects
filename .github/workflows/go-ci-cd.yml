@@ -67,12 +67,15 @@ jobs:
     if: needs.discover.outputs.apps != '[]'
     runs-on: ubuntu-latest
     # Um push novo cancela o build do anterior: dois pushes seguidos não devem
-    # gastar dois builds completos quando o segundo já os substitui. O DEPLOY
-    # não entra nisto (tem o próprio concurrency, mais abaixo, compartilhado com
-    # os outros workflows e com cancel-in-progress: false) -- matar um
-    # `terraform apply` no meio é o que deixa container pela metade.
+    # gastar dois builds completos quando o segundo já os substitui. O grupo
+    # inclui o APP (matrix.app) -- sem ele, os jobs da mesma matrix entram no
+    # mesmo grupo e cancelam UNS AOS OUTROS ("Canceling since a higher priority
+    # waiting request exists"), deixando só um app buildar. O DEPLOY não entra
+    # nisto (tem o próprio concurrency, mais abaixo, compartilhado com os outros
+    # workflows e com cancel-in-progress: false) -- matar um `terraform apply` no
+    # meio é o que deixa container pela metade.
     concurrency:
-      group: go-build-${{ github.ref }}
+      group: go-build-${{ matrix.app }}-${{ github.ref }}
       cancel-in-progress: true
     strategy:
       matrix:
