@@ -12,12 +12,16 @@ import type { SourceStatus, SyncRun } from "./types";
 export interface Session {
   autenticado: boolean | null; // null = ainda sondando
   email: string;
+  /** Quem pode ver a administração. Vem do servidor (`/me` -> is_admin), e é
+   * só para decidir se MOSTRA a aba -- a autoridade é a rota, que responde 403. */
+  isAdmin: boolean;
   refresh: () => void;
 }
 
 export function useAuth(): Session {
   const [autenticado, setAutenticado] = useState<boolean | null>(null);
   const [email, setEmail] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const refresh = useCallback(() => {
     api
@@ -25,15 +29,17 @@ export function useAuth(): Session {
       .then((r) => {
         setAutenticado(true);
         setEmail(r.email);
+        setIsAdmin(!!r.is_admin);
       })
       .catch((err) => {
         // 401 é a resposta esperada para quem não entrou — não é erro.
         setAutenticado(err instanceof ApiError && err.status === 401 ? false : false);
+        setIsAdmin(false);
       });
   }, []);
 
   useEffect(refresh, [refresh]);
-  return { autenticado, email, refresh };
+  return { autenticado, email, isAdmin, refresh };
 }
 
 /** Encerra a sessão no servidor e recarrega: sem cookie, o hub volta ao
@@ -112,6 +118,45 @@ export function useSyncStatus(enabled: boolean) {
   }, []);
 
   return { run, start };
+}
+
+// --- busca rápida (⌘K) ----------------------------------------------------
+
+/**
+ * O atalho de busca: ⌘K no macOS, Ctrl+K no resto. `metaKey || ctrlKey` cobre
+ * os dois com um binding só -- exigir a tecla "certa" por sistema obrigaria a
+ * detectar plataforma, o que dá errado em teclado externo e no iPad.
+ *
+ * Ignora quando o foco já está num campo: digitar "k" num input é digitar, não
+ * pedir busca.
+ */
+export function useCommandPalette(): { open: boolean; setOpen: (v: boolean) => void } {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const alvo = e.target as HTMLElement | null;
+      const digitando =
+        alvo &&
+        (alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable);
+      if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setOpen(true);
+        return;
+      }
+      if (digitando) return;
+      if (e.key === "/" ) {
+        // "/" também abre -- é o atalho de busca de vários apps, e não conflita
+        // com nada porque só vale fora de um campo.
+        e.preventDefault();
+        setOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  return { open, setOpen };
 }
 
 // --- saúde da fonte -------------------------------------------------------

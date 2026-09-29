@@ -180,7 +180,7 @@ const realApi = {
 
   // --- pessoal (exige login) ---------------------------------------------
 
-  me: () => request<{ email: string; autenticado: boolean }>("/me"),
+  me: () => request<{ email: string; autenticado: boolean; is_admin?: boolean }>("/me"),
 
   watchlist: () => request<{ clubs: WatchEntry[]; total: number }>("/watchlist"),
 

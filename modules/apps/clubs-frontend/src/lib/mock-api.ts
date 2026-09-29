@@ -138,7 +138,7 @@ export const mockApi = {
 
   // --- pessoal (sempre logado no demo) ------------------------------------
 
-  me: () => later<{ email: string; autenticado: boolean }>({ email: "demo@clubs.hub", autenticado: true }),
+  me: () => later<{ email: string; autenticado: boolean; is_admin: boolean }>({ email: "demo@clubs.hub", autenticado: true, is_admin: true }),
 
   watchlist: () => later<{ clubs: WatchEntry[]; total: number }>({ clubs: watch, total: watch.length }),
 
@@ -175,7 +175,7 @@ export const mockApi = {
 
   // No demo a fonte está sempre de pé: um demo não demonstra nada se quebrar
   // junto com a cadeia que ele existe para ilustrar.
-  sourceStatus: () => later<SourceStatus>({ available: true, error: "", checked_at: null }),
+  sourceStatus: () => later<SourceStatus>({ available: true, error: "", checked_at: new Date().toISOString() }),
 };
 
 export type MockApi = typeof mockApi;

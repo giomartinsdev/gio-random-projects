@@ -83,8 +83,52 @@ func (s *Server) ogClub(w http.ResponseWriter, r *http.Request) {
 		Title:       nome + " — FC Clubs Hub",
 		Description: desc,
 		Path:        "/club/" + id,
+		Image:       "/og/club/" + id + "/image.png",
 		Kind:        "article",
 	})
+}
+
+// ogClubImage gera o PNG do cartão do clube. É a imagem que o og:image aponta;
+// o crawler a busca separadamente, DEPOIS de ler o HTML.
+//
+// Sempre responde um PNG -- se o clube não existe, um cartão genérico. Um 404
+// faria o scraper mostrar link sem imagem; um cartão genérico ainda identifica o
+// hub.
+func (s *Server) ogClubImage(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "clubId")
+	var club struct {
+		Name     string `json:"name"`
+		Tag      string `json:"tag"`
+		Division int    `json:"division"`
+		Played   int    `json:"played"`
+		Wins     int    `json:"wins"`
+		Draws    int    `json:"draws"`
+		Losses   int    `json:"losses"`
+	}
+	if !s.readInto(r.Context(), "/clubs/"+id, &club) {
+		club.Name = "FC Clubs Hub"
+		club.Tag = "FC"
+	}
+	if strings.TrimSpace(club.Name) == "" {
+		club.Name = "Clube " + id
+	}
+	if strings.TrimSpace(club.Tag) == "" {
+		club.Tag = "FC"
+	}
+
+	png, err := drawCard(club.Name, club.Tag, club.Division, club.Played, club.Wins, club.Draws, club.Losses)
+	if err != nil {
+		s.log.ErrorContext(r.Context(), "og image", "club", id, "error", err)
+		http.Error(w, "erro ao gerar a imagem", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	// Cache mais longo que o HTML (o escudo muda pouco): um dia absorve a
+	// rajada de crawlers sem servir um cartão de semanas atrás.
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	if _, err := w.Write(png); err != nil {
+		s.log.WarnContext(r.Context(), "og image write", "club", id, "error", err)
+	}
 }
 
 func (s *Server) ogPlayer(w http.ResponseWriter, r *http.Request) {
@@ -176,6 +220,15 @@ func (s *Server) writeOG(w http.ResponseWriter, r *http.Request, d ogData) {
 		}
 		return s.publicOrigin + path
 	}
+	// A imagem é servida por ESTA API, não pelo SPA -- então a URL absoluta usa
+	// a origem da API. Sem isto, o og:image apontaria para o host do SPA, que
+	// não roteia /og/... e o cartão sairia sem imagem.
+	absImage := func(path string) string {
+		if s.apiOrigin == "" {
+			return path
+		}
+		return s.apiOrigin + path
+	}
 	esc := htmlEscape
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// Cache curto: o preview muda quando o clube joga. Um minuto é suficiente
@@ -206,7 +259,7 @@ func (s *Server) writeOG(w http.ResponseWriter, r *http.Request, d ogData) {
 		esc(d.Title), esc(d.Description), esc(abs(d.Path)),
 		esc(d.Kind),
 		esc(d.Title), esc(d.Description), esc(abs(d.Path)),
-		ogImageTag(abs(d.Image)),
+		ogImageTag(absImage(d.Image)),
 		esc(d.Title), esc(d.Description),
 		d.Path, esc(d.Title),
 	)

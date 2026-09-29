@@ -79,6 +79,24 @@ func (s *Server) requireIdentity(next http.Handler) http.Handler {
 	})
 }
 
+// requireAdmin protege a administração. Depende de requireIdentity ter rodado
+// (a rota está aninhada dentro do grupo pessoal), então a identidade já está no
+// contexto -- aqui só se decide se ela PODE ver o painel.
+//
+// 403, não 401: a pessoa está autenticada, só não é administradora. Distinguir
+// os dois é o que permite ao SPA mostrar "sem permissão" em vez de tentar
+// logar de novo.
+func (s *Server) requireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, ok := IdentityFrom(r.Context())
+		if !ok || !s.isAdmin(id.Email) {
+			writeError(w, http.StatusForbidden, "sem_permissao")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // sessionTTL é a duração padrão de uma sessão quando nada é configurado.
 const sessionTTL = 30 * 24 * time.Hour
 

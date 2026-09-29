@@ -157,3 +157,50 @@ func TestOGEscapaOConteudo(t *testing.T) {
 		t.Fatalf("esperava o nome escapado. Corpo:\n%s", body)
 	}
 }
+
+// O endpoint da imagem responde um PNG de verdade, com o Content-Type certo --
+// é o que o crawler busca depois de ler o og:image. Um JSON aqui daria cartão
+// sem imagem.
+func TestOGClubImageRespondePNG(t *testing.T) {
+	h := ogServer(t, map[string]string{
+		"/clubs/1001": `{"club_id":"1001","name":"Vila Nova FC","tag":"VNF","division":1,"played":50,"wins":30,"draws":5,"losses":15}`,
+	}, "https://clubs.giomartins.dev")
+
+	rec := getHTML(t, h, "/og/club/1001/image.png")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("Content-Type = %q; want image/png", ct)
+	}
+	// Assinatura PNG: 89 50 4E 47.
+	body := rec.Body.Bytes()
+	if len(body) < 8 || string(body[1:4]) != "PNG" {
+		t.Fatalf("corpo não é PNG (bytes=%d)", len(body))
+	}
+}
+
+// Clube desconhecido ainda gera cartão (genérico) -- um 404 deixaria o link sem
+// imagem no Discord.
+func TestOGClubImageClubeInexistenteGeraCartao(t *testing.T) {
+	h := ogServer(t, map[string]string{}, "https://clubs.giomartins.dev")
+	rec := getHTML(t, h, "/og/club/nao-existe/image.png")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200 (cartão genérico)", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("Content-Type = %q; want image/png", ct)
+	}
+}
+
+// O HTML do clube aponta para a imagem: sem essa tag, o cartão sai sem escudo.
+func TestOGClubApontaParaAImagem(t *testing.T) {
+	h := ogServer(t, map[string]string{
+		"/clubs/1001": `{"club_id":"1001","name":"Vila Nova FC","tag":"VNF","division":1}`,
+	}, "https://clubs.giomartins.dev")
+	body := getHTML(t, h, "/og/club/1001").Body.String()
+	if !strings.Contains(body, `property="og:image"`) ||
+		!strings.Contains(body, `content="https://clubs.giomartins.dev/og/club/1001/image.png"`) {
+		t.Fatalf("og:image ausente ou relativo:\n%s", body)
+	}
+}

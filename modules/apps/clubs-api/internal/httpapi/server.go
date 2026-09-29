@@ -52,6 +52,15 @@ type Config struct {
 	// canonical). Sem barra no fim. Vazia = links relativos, que é o aceitável
 	// em dev.
 	PublicOrigin string
+	// E-mails que podem ver a administração, separados por vírgula. Vazio =
+	// ninguém (negar por padrão). É uma decisão de operação, não um dado do
+	// produto -- por isso env, não tabela.
+	AdminEmails string
+	// Origem pública DESTA API (ex.: "https://clubs-api.giomartins.dev"), usada
+	// para montar o og:image absoluto. A imagem é servida por esta API, não pelo
+	// SPA -- apontar para a origem do SPA daria uma URL que o ingress de lá não
+	// roteia. Vazia = cai na PublicOrigin (dev).
+	APIOrigin string
 }
 
 type Server struct {
@@ -65,6 +74,8 @@ type Server struct {
 	googleClientID      string
 	devEmail            string
 	publicOrigin        string
+	apiOrigin           string
+	adminEmails         map[string]struct{}
 }
 
 func NewServer(domain *domainclient.Client, cfg Config, log *slog.Logger) *Server {
@@ -82,7 +93,44 @@ func NewServer(domain *domainclient.Client, cfg Config, log *slog.Logger) *Serve
 		googleClientID:      cfg.GoogleClientID,
 		devEmail:            strings.ToLower(strings.TrimSpace(cfg.DevUserEmail)),
 		publicOrigin:        strings.TrimRight(cfg.PublicOrigin, "/"),
+		apiOrigin:           strings.TrimRight(apiOrigin(cfg), "/"),
+		adminEmails:         parseAdminEmails(cfg.AdminEmails),
 	}
+}
+
+// apiOrigin resolve a origem pública da API: usa APIOrigin quando configurada e
+// cai na PublicOrigin (dev, onde SPA e API são o mesmo host via proxy).
+func apiOrigin(cfg Config) string {
+	if cfg.APIOrigin != "" {
+		return cfg.APIOrigin
+	}
+	return cfg.PublicOrigin
+}
+
+// parseAdminEmails normaliza a lista de administradores em um set. Minúsculas e
+// sem espaços porque o valor vem de um env digitado à mão e o e-mail do Google
+// já chega normalizado -- comparar cru faria "Ana@Corp.com " não casar com
+// "ana@corp.com" e a pessoa perder o acesso sem sintoma.
+func parseAdminEmails(raw string) map[string]struct{} {
+	set := make(map[string]struct{})
+	for _, e := range strings.Split(raw, ",") {
+		e = strings.ToLower(strings.TrimSpace(e))
+		if e != "" {
+			set[e] = struct{}{}
+		}
+	}
+	return set
+}
+
+// isAdmin diz se o e-mail pode ver a administração. Lista vazia = ninguém:
+// negar por padrão é o único default seguro para um painel que expõe o estado
+// interno.
+func (s *Server) isAdmin(email string) bool {
+	if email == "" {
+		return false
+	}
+	_, ok := s.adminEmails[strings.ToLower(strings.TrimSpace(email))]
+	return ok
 }
 
 // Handler wires every route. /healthz is public and unauthenticated so the
@@ -100,6 +148,8 @@ func (s *Server) Handler() http.Handler {
 	// JSON, é o que faz o cartão do link ter título, descrição e escudo em vez
 	// de um preview vazio.
 	r.Get("/og/club/{clubId}", s.ogClub)
+	// A imagem do cartão: o crawler busca isto depois de ler o og:image do HTML.
+	r.Get("/og/club/{clubId}/image.png", s.ogClubImage)
 	r.Get("/og/player/{playerId}", s.ogPlayer)
 	r.Get("/og/match/{matchId}", s.ogMatch)
 
@@ -165,15 +215,18 @@ func (s *Server) Handler() http.Handler {
 			r.Post("/claimed-pro", s.claimPro)
 			r.Get("/sync/status", s.syncStatus)
 			r.Post("/sync", s.startSync)
-			// O estado técnico é pessoal: o SPA só renderiza a aba de
-			// administração para quem entrou. A restrição forte
-			// (administrador de verdade) é uma decisão futura; hoje o login já
-			// é opt-in e o conteúdo é agregado, não dado de outra pessoa.
-			r.Get("/admin/status", s.adminStatus)
-			// Saúde do worker de ingestão: ele não tem host próprio, então é
-			// por aqui que "está coletando?" e "qual foi o último erro?"
-			// chegam ao painel.
-			r.Get("/admin/ingest", s.ingestStatus)
+			// A administração exige estar na ALLOWLIST (CLUBS_ADMIN_EMAILS),
+			// não só estar logado: o painel expõe o estado interno da ingestão,
+			// e o login é opt-in e aberto. O middleware responde 403 -- não o
+			// conteúdo -- para quem não está na lista.
+			r.Group(func(r chi.Router) {
+				r.Use(s.requireAdmin)
+				r.Get("/admin/status", s.adminStatus)
+				// Saúde do worker de ingestão: ele não tem host próprio, então
+				// é por aqui que "está coletando?" e "qual foi o último erro?"
+				// chegam ao painel.
+				r.Get("/admin/ingest", s.ingestStatus)
+			})
 		})
 
 		// --- auth: sessão própria, não Cloudflare Access -----------------
@@ -233,7 +286,12 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 // redirect de edge para contornar.
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	id, _ := IdentityFrom(r.Context())
-	writeJSON(w, http.StatusOK, map[string]any{"email": id.Email, "autenticado": true})
+	// `is_admin` permite ao SPA decidir se mostra a aba de administração SEM
+	// tentar a rota e levar 403. A rota continua sendo a autoridade (o cliente
+	// nunca é); isto é só para não oferecer um botão que falharia.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"email": id.Email, "autenticado": true, "is_admin": s.isAdmin(id.Email),
+	})
 }
 
 func (s *Server) listClubs(w http.ResponseWriter, r *http.Request) {
@@ -344,6 +402,7 @@ func (s *Server) getRecords(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getTimeline(w http.ResponseWriter, r *http.Request) {
 	s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/timeline")
 }
+
 // getDeltas encaminha a mudança desde a primeira leitura guardada.
 func (s *Server) getDeltas(w http.ResponseWriter, r *http.Request) {
 	s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/deltas")

@@ -12,6 +12,7 @@ import {
   Lock,
   LogOut,
   Moon,
+  Search,
   Shield,
   Star,
   Sun,
@@ -21,6 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "./ui";
+import { Freshness } from "./freshness";
 import { fmt } from "../lib/format";
 import type { SourceStatus, SyncRun } from "../lib/types";
 import type { Theme } from "../lib/hooks";
@@ -70,6 +72,7 @@ export function Shell({
   source,
   isAdmin,
   onLogout,
+  onOpenSearch,
   children,
 }: {
   route: RouteId;
@@ -82,6 +85,9 @@ export function Shell({
   source: SourceStatus | null;
   isAdmin: boolean;
   onLogout: () => void;
+  /** Abre a busca rápida (⌘K). O atalho em si vive no App; o shell só desenha
+   * o botão que também a abre, para quem usa mouse. */
+  onOpenSearch?: () => void;
   children: ReactNode;
 }) {
   const { t, locale, setLocale } = useI18n();
@@ -102,6 +108,22 @@ export function Shell({
           </div>
           <div className="label mt-1">{t("brand.tagline")}</div>
         </div>
+
+        {/* O gatilho da busca rápida: um campo falso que abre a paleta. Mostra
+            o atalho para quem usa teclado e serve de botão para quem usa mouse. */}
+        {onOpenSearch && (
+          <div className="px-2.5 pb-2">
+            <button
+              type="button"
+              onClick={onOpenSearch}
+              className="flex w-full items-center gap-2 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-left text-xs text-faint transition-colors hover:border-[var(--border-strong)] hover:text-muted"
+            >
+              <Search className="size-3.5 shrink-0" strokeWidth={2.5} />
+              <span className="flex-1 truncate">{t("search.button")}</span>
+              <kbd className="rounded border border-line px-1 font-mono text-[9px]">⌘K</kbd>
+            </button>
+          </div>
+        )}
 
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-4">
           {GROUPS.map((g) => {
@@ -147,6 +169,14 @@ export function Shell({
         </nav>
 
         <footer className="border-t border-line px-3 py-3">
+          {/* Frescor global: quando o hub leu a fonte pela última vez. É o
+              mesmo dado que o banner de "fonte fora" usa (checked_at), então uma
+              leitura velha já aparece aqui antes mesmo de a fonte cair. */}
+          {source?.checked_at && (
+            <div className="mb-2.5">
+              <Freshness at={source.checked_at} />
+            </div>
+          )}
           <div className="flex items-center gap-2.5">
             <span
               className="grid size-7 shrink-0 place-items-center rounded-md font-mono text-[10px] font-bold"

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Shell } from "./components/shell";
-import { sair, useAuth, useSourceStatus, useSyncStatus, useTheme } from "./lib/hooks";
+import { CommandPalette } from "./components/command-palette";
+import { sair, useAuth, useCommandPalette, useSourceStatus, useSyncStatus, useTheme } from "./lib/hooks";
 import { api } from "./lib/api";
 import type { ClaimedPro, WatchEntry } from "./lib/types";
 import { currentView, parsePath, pathFor, type View } from "./lib/routing";
@@ -30,7 +31,7 @@ function migrateLegacyHash(): void {
 
 export default function App() {
   const [view, setView] = useState<View>(currentView);
-  const { autenticado: authed, email, refresh: refreshAuth } = useAuth();
+  const { autenticado: authed, email, isAdmin, refresh: refreshAuth } = useAuth();
   const { theme, setTheme } = useTheme();
   const [watch, setWatch] = useState<WatchEntry[]>([]);
   // O pro reivindicado por esta pessoa. Vive aqui, e não na página do jogador,
@@ -43,6 +44,8 @@ export default function App() {
   // Saúde da fonte, para TODOS (logado ou não): a tela de resgate mostra o
   // elenco antes do login, e é aí que o aviso de "fonte fora" mais importa.
   const source = useSourceStatus();
+  // ⌘K / Ctrl+K / "/" abre a busca rápida -- global, funciona em qualquer tela.
+  const { open: paletteOpen, setOpen: setPaletteOpen } = useCommandPalette();
 
   useEffect(() => {
     // Os links antigos em hash viram caminho real antes de qualquer coisa.
@@ -218,7 +221,7 @@ export default function App() {
       case "notifications":
         return <NotificationsPage authed={authed} onSignedIn={refreshAuth} />;
       case "admin":
-        return <AdminPage authed={authed} />;
+        return <AdminPage authed={authed} isAdmin={isAdmin} />;
       default:
         return <HomePage onOpenClub={(id) => navigate("club", id)} onOpenPlayer={(id) => navigate("player", id)} onClaim={() => navigate("claim")} onBrowseClubs={() => navigate("clubs")} />;
     }
@@ -234,10 +237,17 @@ export default function App() {
       onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
       sync={sync}
       source={source}
-      isAdmin={authed === true}
+      isAdmin={isAdmin}
       onLogout={sair}
+      onOpenSearch={() => setPaletteOpen(true)}
     >
       {body}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onOpenClub={(id) => navigate("club", id)}
+        onOpenPlayer={(id) => navigate("player", id)}
+      />
     </Shell>
   );
 }

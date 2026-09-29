@@ -14,33 +14,49 @@ import { useI18n } from "../lib/i18n";
 
 type Aba = "visao" | "integracao" | "historico";
 
-export function AdminPage({ authed }: { authed: boolean | null }) {
+export function AdminPage({ authed, isAdmin }: { authed: boolean | null; isAdmin: boolean }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<AdminStatus | null>(null);
   const [negado, setNegado] = useState(false);
   const [aba, setAba] = useState<Aba>("visao");
 
   useEffect(() => {
-    if (authed !== true) return;
+    // Só busca o painel quem já sabemos ser administrador: pedir a rota sem ser
+    // é um 403 garantido, e não há razão para provocá-lo.
+    if (authed !== true || !isAdmin) return;
     api
       .adminStatus()
       .then(setStatus)
       .catch((e) => {
+        // 403: logado, mas fora da allowlist. 401 seria sessão inválida.
         if (e instanceof ApiError && e.status >= 400) setNegado(true);
         setStatus(null);
       });
-  }, [authed]);
+  }, [authed, isAdmin]);
 
   if (authed === null) return <Spinner label={t("admin.checkingAccess")} />;
-  if (authed === false || negado) {
+  if (authed === false) {
     return (
       <>
         <PageHead title={t("admin.title")} sub={t("admin.subtitle")} />
         <div className="mx-auto max-w-lg">
           <Card title={t("admin.restricted")} actions={<Lock className="size-4 text-faint" />}>
-            <p className="px-5 py-5 text-sm text-muted">
-              {t("admin.restrictedHint")}
-            </p>
+            <p className="px-5 py-5 text-sm text-muted">{t("admin.restrictedHint")}</p>
+          </Card>
+        </div>
+      </>
+    );
+  }
+  // Logado, mas sem permissão: a mensagem é diferente de "entre para ver" --
+  // a pessoa está dentro, só não é da equipe. Confundir os dois faria ela
+  // tentar logar de novo sem entender por quê.
+  if (!isAdmin || negado) {
+    return (
+      <>
+        <PageHead title={t("admin.title")} sub={t("admin.subtitle")} />
+        <div className="mx-auto max-w-lg">
+          <Card title={t("admin.noPermission")} actions={<Lock className="size-4 text-faint" />}>
+            <p className="px-5 py-5 text-sm text-muted">{t("admin.noPermissionHint")}</p>
           </Card>
         </div>
       </>

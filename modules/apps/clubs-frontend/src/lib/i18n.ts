@@ -287,7 +287,13 @@ export type Key =
   | "home.thinTitle" | "home.thinHint" | "home.claimCta" | "home.browseClubs"
   | "claim.campaignHint"
   | "club.timelineTab" | "club.sinceYouFollow" | "club.evtDivision" | "club.evtRecord"
-  | "club.evtMilestone" | "club.evtFollowed";
+  | "club.evtMilestone" | "club.evtFollowed"
+  | "admin.noPermission" | "admin.noPermissionHint"
+  | "fresh.now" | "fresh.minutes" | "fresh.hours" | "fresh.days" | "fresh.never"
+  | "fresh.updated" | "fresh.staleHint" | "fresh.oldHint"
+  | "search.title" | "search.placeholder" | "search.hint" | "search.empty"
+  | "search.nav" | "search.open" | "search.close" | "search.button"
+  | "club.export" | "club.exportHint";
 
 type Dict = Record<Key, string>;
 
@@ -386,7 +392,7 @@ const en_US: Dict = {
   "claim.saveHint": "Sign in to save this to your account.",
   "claim.sourceRefused": "source refused this update",
   "club.notTrackedTitle": "Why there's no squad or matches",
-  "club.notTrackedHint": "The hub brings a club's data when it enters the followed list. For this one, only the overall totals exist. Sign in with Google and follow this club so the hub starts tracking it — the squad and matches show up on the next update.",
+  "club.notTrackedHint": "The hub already has some of this club's matches (from opponents it follows), but not the full squad. Follow it so the hub starts tracking it — the squad shows up on the next update.",
   "club.squad": "Squad", "club.cleanSheets": "clean sheets",
   "club.attack": "Attack", "club.defense": "Defense", "club.form": "form",
   "club.matchesTab": "Matches", "club.statsTab": "Numbers", "club.summaryTab": "Summary",
@@ -653,6 +659,26 @@ const en_US: Dict = {
   "club.evtRecord": "Record",
   "club.evtMilestone": "Milestone",
   "club.evtFollowed": "Added to the hub",
+  "admin.noPermission": "No access",
+  "admin.noPermissionHint": "This area is restricted to the hub's team. Your account is signed in, but it is not on the admin list.",
+  "fresh.updated": "Updated",
+  "fresh.now": "just now",
+  "fresh.minutes": "{n} min ago",
+  "fresh.hours": "{n} h ago",
+  "fresh.days": "{n} d ago",
+  "fresh.never": "not updated yet",
+  "fresh.staleHint": "The hub refreshes every 15 min — this reading is a little behind.",
+  "fresh.oldHint": "This has not been updated in over a day; the collector may be paused.",
+  "search.title": "Quick search",
+  "search.placeholder": "Search clubs and players…",
+  "search.hint": "Type at least 2 characters. Esc closes.",
+  "search.empty": "Nothing found.",
+  "search.nav": "navigate",
+  "search.open": "open",
+  "search.close": "close",
+  "search.button": "Search",
+  "club.export": "Export",
+  "club.exportHint": "Download this history as PNG to share.",
 };
 
 const pt_BR: Dict = {
@@ -742,7 +768,7 @@ const pt_BR: Dict = {
   "claim.saveHint": "Entre para salvar isso na sua conta.",
   "claim.sourceRefused": "a fonte recusou esta atualização",
   "club.notTrackedTitle": "Por que não há elenco nem partidas",
-  "club.notTrackedHint": "O hub traz os dados de um clube quando ele entra na lista de acompanhados. Para este, só existem os totais gerais. Entre com o Google e siga este clube para o hub passá-lo a acompanhar — o elenco e as partidas aparecem na próxima atualização.",
+  "club.notTrackedHint": "O hub já tem algumas partidas deste clube (vieram dos adversários que ele acompanha), mas não o elenco completo. Siga o clube para o hub passá-lo a acompanhar — o elenco aparece na próxima atualização.",
   "club.squad": "Elenco", "club.cleanSheets": "played sem sofrer gol",
   "club.attack": "Ataque", "club.defense": "Defesa", "club.form": "form",
   "club.matchesTab": "Matches", "club.statsTab": "Números", "club.summaryTab": "Resumo",
@@ -1010,6 +1036,26 @@ const pt_BR: Dict = {
   "club.evtRecord": "Recorde",
   "club.evtMilestone": "Marco",
   "club.evtFollowed": "Entrou no hub",
+  "admin.noPermission": "Sem acesso",
+  "admin.noPermissionHint": "Esta área é restrita à equipe do hub. Sua conta está conectada, mas não está na lista de administradores.",
+  "fresh.updated": "Atualizado",
+  "fresh.now": "agora",
+  "fresh.minutes": "há {n} min",
+  "fresh.hours": "há {n} h",
+  "fresh.days": "há {n} d",
+  "fresh.never": "ainda não atualizado",
+  "fresh.staleHint": "O hub atualiza a cada 15 min — esta leitura está um pouco atrás.",
+  "fresh.oldHint": "Sem atualização há mais de um dia; o coletor pode estar parado.",
+  "search.title": "Busca rápida",
+  "search.placeholder": "Buscar clubes e jogadores…",
+  "search.hint": "Digite ao menos 2 letras. Esc fecha.",
+  "search.empty": "Nada encontrado.",
+  "search.nav": "navegar",
+  "search.open": "abrir",
+  "search.close": "fechar",
+  "search.button": "Buscar",
+  "club.export": "Exportar",
+  "club.exportHint": "Baixar este histórico como PNG para compartilhar.",
 };
 
 const es_ES: Dict = {
@@ -1105,7 +1151,7 @@ const es_ES: Dict = {
   "claim.saveHint": "Entra para guardar esto en tu cuenta.",
   "claim.sourceRefused": "la fuente rechazó esta actualización",
   "club.notTrackedTitle": "Por qué no hay plantilla ni partidos",
-  "club.notTrackedHint": "El hub trae los datos de un club cuando entra en la lista de seguidos. Para este, solo existen los totales generales. Entra con Google y sigue este club para que el hub lo empiece a seguir — la plantilla y los partidos aparecen en la próxima actualización.",
+  "club.notTrackedHint": "El hub ya tiene algunos partidos de este club (llegaron de los rivales que sigue), pero no la plantilla completa. Sigue el club para que el hub lo empiece a seguir — la plantilla aparece en la próxima actualización.",
   "club.squad": "Plantilla", "club.cleanSheets": "partidos sin encajar gol",
   "club.attack": "Ataque", "club.defense": "Defensa", "club.form": "form",
   "club.matchesTab": "Partidos", "club.statsTab": "Números", "club.summaryTab": "Resumen",
@@ -1374,6 +1420,26 @@ const es_ES: Dict = {
   "club.evtRecord": "Récord",
   "club.evtMilestone": "Hito",
   "club.evtFollowed": "Añadido al hub",
+  "admin.noPermission": "Sin acceso",
+  "admin.noPermissionHint": "Esta área está restringida al equipo del hub. Tu cuenta está conectada, pero no está en la lista de administradores.",
+  "fresh.updated": "Actualizado",
+  "fresh.now": "ahora",
+  "fresh.minutes": "hace {n} min",
+  "fresh.hours": "hace {n} h",
+  "fresh.days": "hace {n} d",
+  "fresh.never": "aún sin actualizar",
+  "fresh.staleHint": "El hub se actualiza cada 15 min — esta lectura va un poco atrás.",
+  "fresh.oldHint": "Sin actualizar desde hace más de un día; el colector puede estar detenido.",
+  "search.title": "Búsqueda rápida",
+  "search.placeholder": "Buscar clubes y jugadores…",
+  "search.hint": "Escribe al menos 2 letras. Esc cierra.",
+  "search.empty": "Nada encontrado.",
+  "search.nav": "navegar",
+  "search.open": "abrir",
+  "search.close": "cerrar",
+  "search.button": "Buscar",
+  "club.export": "Exportar",
+  "club.exportHint": "Descargar este historial como PNG para compartir.",
 };
 
 const fr_FR: Dict = {
@@ -1469,7 +1535,7 @@ const fr_FR: Dict = {
   "claim.saveHint": "Connectez-vous pour enregistrer ceci dans votre compte.",
   "claim.sourceRefused": "la source a refusé cette mise à jour",
   "club.notTrackedTitle": "Pourquoi il n'y a ni effectif ni matchs",
-  "club.notTrackedHint": "Le hub apporte les données d'un club quand il entre dans la liste suivie. Pour celui-ci, seuls les totaux généraux existent. Connectez-vous avec Google et suivez ce club pour que le hub le suive — l'effectif et les matchs apparaissent à la prochaine mise à jour.",
+  "club.notTrackedHint": "Le hub a déjà certains matchs de ce club (venus des rivaux qu'il suit), mais pas l'effectif complet. Suis ce club pour que le hub le suive — l'effectif apparaît à la prochaine mise à jour.",
   "club.squad": "Effectif", "club.cleanSheets": "matchs sans encaisser",
   "club.attack": "Attaque", "club.defense": "Défense", "club.form": "forme",
   "club.matchesTab": "Matchs", "club.statsTab": "Chiffres", "club.summaryTab": "Résumé",
@@ -1736,6 +1802,26 @@ const fr_FR: Dict = {
   "club.evtRecord": "Record",
   "club.evtMilestone": "Jalon",
   "club.evtFollowed": "Ajouté au hub",
+  "admin.noPermission": "Accès refusé",
+  "admin.noPermissionHint": "Cette zone est réservée à l'équipe du hub. Ton compte est connecté, mais il n'est pas sur la liste des administrateurs.",
+  "fresh.updated": "Actualisé",
+  "fresh.now": "à l'instant",
+  "fresh.minutes": "il y a {n} min",
+  "fresh.hours": "il y a {n} h",
+  "fresh.days": "il y a {n} j",
+  "fresh.never": "pas encore actualisé",
+  "fresh.staleHint": "Le hub actualise toutes les 15 min — cette lecture est un peu en retard.",
+  "fresh.oldHint": "Pas d'actualisation depuis plus d'un jour ; le collecteur est peut-être arrêté.",
+  "search.title": "Recherche rapide",
+  "search.placeholder": "Rechercher clubs et joueurs…",
+  "search.hint": "Tape au moins 2 caractères. Esc ferme.",
+  "search.empty": "Rien trouvé.",
+  "search.nav": "naviguer",
+  "search.open": "ouvrir",
+  "search.close": "fermer",
+  "search.button": "Rechercher",
+  "club.export": "Exporter",
+  "club.exportHint": "Télécharger cet historique en PNG pour partager.",
 };
 
 const de_DE: Dict = {
@@ -1831,7 +1917,7 @@ const de_DE: Dict = {
   "claim.saveHint": "Melden Sie sich an, um dies in Ihrem Konto zu speichern.",
   "claim.sourceRefused": "die Quelle hat diese Aktualisierung abgelehnt",
   "club.notTrackedTitle": "Warum es keinen Kader und keine Spiele gibt",
-  "club.notTrackedHint": "Der Hub holt die Daten eines Clubs, wenn er in die verfolgte Liste kommt. Für diesen gibt es nur die Gesamtsummen. Melden Sie sich mit Google an und folgen Sie diesem Club, damit der Hub ihn verfolgt — Kader und Spiele erscheinen beim nächsten Update.",
+  "club.notTrackedHint": "Der Hub hat bereits einige Spiele dieses Clubs (von den verfolgten Rivalen), aber nicht den kompletten Kader. Folge dem Club, damit der Hub ihn verfolgt — der Kader erscheint beim nächsten Update.",
   "club.squad": "Kader", "club.cleanSheets": "Spiele ohne Gegentor",
   "club.attack": "Angriff", "club.defense": "Abwehr", "club.form": "Form",
   "club.matchesTab": "Spiele", "club.statsTab": "Zahlen", "club.summaryTab": "Übersicht",
@@ -2098,6 +2184,26 @@ const de_DE: Dict = {
   "club.evtRecord": "Rekord",
   "club.evtMilestone": "Meilenstein",
   "club.evtFollowed": "Zum Hub hinzugefügt",
+  "admin.noPermission": "Kein Zugriff",
+  "admin.noPermissionHint": "Dieser Bereich ist dem Hub-Team vorbehalten. Dein Konto ist angemeldet, steht aber nicht auf der Admin-Liste.",
+  "fresh.updated": "Aktualisiert",
+  "fresh.now": "gerade eben",
+  "fresh.minutes": "vor {n} Min.",
+  "fresh.hours": "vor {n} Std.",
+  "fresh.days": "vor {n} T.",
+  "fresh.never": "noch nicht aktualisiert",
+  "fresh.staleHint": "Der Hub aktualisiert alle 15 Min. — diese Lesung ist etwas älter.",
+  "fresh.oldHint": "Seit über einem Tag nicht aktualisiert; der Sammler ist evtl. gestoppt.",
+  "search.title": "Schnellsuche",
+  "search.placeholder": "Clubs und Spieler suchen…",
+  "search.hint": "Mindestens 2 Zeichen. Esc schließt.",
+  "search.empty": "Nichts gefunden.",
+  "search.nav": "navigieren",
+  "search.open": "öffnen",
+  "search.close": "schließen",
+  "search.button": "Suchen",
+  "club.export": "Exportieren",
+  "club.exportHint": "Diesen Verlauf als PNG zum Teilen herunterladen.",
 };
 
 const DICTS: Record<Locale, Dict> = {

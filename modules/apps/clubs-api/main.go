@@ -104,6 +104,12 @@ func main() {
 		// Origem pública do SPA: usada para montar og:url/og:image absolutos no
 		// preview de link. Sem ela, os links do cartão saem relativos.
 		PublicOrigin: os.Getenv("CLUBS_PUBLIC_ORIGIN"),
+		// Origem pública desta API: o og:image é servido por ela (o host do SPA
+		// não roteia /og/...). Vazia cai na PublicOrigin, que é o certo em dev.
+		APIOrigin: os.Getenv("CLUBS_API_ORIGIN"),
+		// Allowlist da administração (e-mails separados por vírgula). Vazia =
+		// ninguém vê o painel técnico.
+		AdminEmails: os.Getenv("CLUBS_ADMIN_EMAILS"),
 	}
 	if cfg.SessionCookieDomain != "" {
 		log.Info("cookie de sessão escopado", "domain", cfg.SessionCookieDomain)

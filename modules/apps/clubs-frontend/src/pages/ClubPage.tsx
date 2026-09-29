@@ -2,8 +2,8 @@
 // usuário. O clube não acompanhado mostra só os totais gerais, com uma
 // explicação explícita — nunca uma tela vazia sem motivo.
 
-import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronLeft, Crosshair, Goal, Skull, Star, Trophy } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, ChevronLeft, Crosshair, Download, Goal, Skull, Star, Trophy } from "lucide-react";
 import { api } from "../lib/api";
 import type {
   Club,
@@ -34,6 +34,7 @@ import {
 } from "../lib/format";
 import { useI18n, type Key } from "../lib/i18n";
 import { DocumentMeta } from "../lib/document-meta";
+import { Freshness } from "../components/freshness";
 import { clubPalette, crestSeed } from "../lib/crest";
 
 type Tab = "resumo" | "elenco" | "matches" | "numeros" | "historia" | "confronto";
@@ -101,6 +102,7 @@ export function ClubPage({
         }
         actions={
           <>
+            <Freshness at={club.updated_at} />
             <FormChips form={club.form} max={20} />
             <SyncButton target="club" targetId={club.club_id} />
             {authed && (
@@ -129,7 +131,15 @@ export function ClubPage({
         }
       />
 
-      {notFollowed && <NotIndexed club={club} />}
+      {notFollowed && (
+        <NotIndexed
+          club={club}
+          authed={authed}
+          isWatched={isWatched(club.club_id)}
+          onToggleWatch={() => onToggleWatch(club.club_id)}
+          onOpenMatch={onOpenMatch}
+        />
+      )}
 
       {!notFollowed && (
         <>
@@ -175,10 +185,34 @@ export function ClubPage({
   );
 }
 
-/** O clube conhecido mas não acompanhado: só os totais gerais, com uma
- * explicação de por que o resto não está ali. */
-function NotIndexed({ club }: { club: Club }) {
+/** O clube conhecido mas não acompanhado: totais gerais, as partidas que o hub
+ * JÁ tem dele (apareceram pelos adversários) e o convite para seguir.
+ *
+ * Por que mudou: antes era só um texto explicando por que faltava dado. Mas o
+ * hub costuma ter as partidas do clube -- elas entraram pela descoberta de
+ * adversário -- então esconder isso era jogar fora o que já existia. E o texto
+ * "por que não tem" era um beco sem saída: agora termina numa AÇÃO (seguir),
+ * que é o que transforma visitante em usuário. */
+function NotIndexed({
+  club,
+  authed,
+  isWatched,
+  onToggleWatch,
+  onOpenMatch,
+}: {
+  club: Club;
+  authed: boolean | null;
+  isWatched: boolean;
+  onToggleWatch: () => void;
+  onOpenMatch: (id: string) => void;
+}) {
   const { t } = useI18n();
+  const [matches, setMatches] = useState<Match[] | null>(null);
+
+  useEffect(() => {
+    api.matches(club.club_id, "", 8).then((r) => setMatches(r.matches ?? [])).catch(() => setMatches([]));
+  }, [club.club_id]);
+
   return (
     <>
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -187,11 +221,64 @@ function NotIndexed({ club }: { club: Club }) {
         <Stat label={t("club.goalsForAgainst")} value={`${fmt(club.goals)}:${fmt(club.goals_conceded)}`} accent />
         <Stat label={t("common.points")} value={fmt(club.points)} />
       </div>
-      <Card title={t("club.notTrackedTitle")}>
-        <p className="px-4 py-3 text-sm text-muted">
-          {t("club.notTrackedHint2")}
-        </p>
-      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <Card title={t("club.recentMatches")}>
+          {matches === null ? (
+            <Spinner />
+          ) : matches.length === 0 ? (
+            <Empty title={t("club.noMatchesYet")} hint={t("club.nextUpdateHint")} />
+          ) : (
+            <ul className="divide-y divide-[var(--border)]">
+              {matches.map((m) => (
+                <li key={m.match_id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenMatch(m.match_id)}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface-3"
+                  >
+                    <ResultBadge resultado={m.our_result} dnf={m.decided_by_forfeit} />
+                    <span className="tnum font-display w-14 text-lg font-bold" style={{ color: resultColor(m.our_result) }}>
+                      {m.our_goals}–{m.their_goals}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{m.opponent_name}</span>
+                      <span className="mt-0.5 flex items-center gap-1.5 text-faint">
+                        <MatchKindBadge kind={m.kind} />
+                        <span className="font-mono text-[10px]">{fmtDateTime(m.timestamp)}</span>
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        {/* O convite: o texto explica o estado e termina numa ação. Sem login,
+            o botão leva à área pessoal (é lá que se segue). */}
+        <Card title={t("club.notTrackedTitle")}>
+          <div className="flex flex-col gap-3 px-4 py-3">
+            <p className="text-sm text-muted">{t("club.notTrackedHint2")}</p>
+            {authed ? (
+              <button
+                type="button"
+                onClick={onToggleWatch}
+                className="rounded-md border px-3 py-2 font-display text-xs font-bold uppercase tracking-wide transition-colors"
+                style={
+                  isWatched
+                    ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" }
+                    : { borderColor: "var(--accent)", background: "var(--accent)", color: "var(--accent-ink)" }
+                }
+              >
+                {isWatched ? t("clubs.unfollow") : t("clubs.follow")}
+              </button>
+            ) : (
+              <p className="text-xs text-faint">{t("clubs.signInToFollow")}</p>
+            )}
+          </div>
+        </Card>
+      </div>
     </>
   );
 }
@@ -804,6 +891,8 @@ function NumerosTab({
   const [rec, setRec] = useState<Records | null>(null);
   const [squad, setSquad] = useState<SquadMember[]>([]);
   const [metric, setMetric] = useState<EvolutionMetric>("skill_rating");
+  const graficoRef = useRef<HTMLDivElement>(null);
+  const [exportando, setExportando] = useState(false);
 
   useEffect(() => {
     api.evolution(clubId).then(setEvo).catch(() => setEvo({ serie: [], total: 0, current: null, historico_curto: true }));
@@ -813,6 +902,26 @@ function NumerosTab({
   }, [clubId]);
 
   const serie = evo?.serie ?? [];
+
+  // Exportar o histórico como PNG: é o dado que diferencia o hub, e um PNG é o
+  // que circula num Discord. Só habilitado quando há série de verdade -- um
+  // gráfico de um ponto só não vale o arquivo.
+  const exportar = useCallback(async () => {
+    if (!graficoRef.current) return;
+    setExportando(true);
+    try {
+      const { exportSvgAsPng } = await import("../lib/export-chart");
+      const tema = document.documentElement.dataset.theme === "light" ? "#ffffff" : "#0b0d0f";
+      await exportSvgAsPng(graficoRef.current, `${club.name.replace(/\s+/g, "-").toLowerCase()}-historico.png`, {
+        background: tema,
+      });
+    } catch {
+      // Silencioso: um download que falha não é erro de tela. A ação pode ser
+      // tentada de novo; nada no estado do app mudou.
+    } finally {
+      setExportando(false);
+    }
+  }, [club.name]);
 
   return (
     <>
@@ -849,6 +958,19 @@ function NumerosTab({
                   {t(m.label)}
                 </button>
               ))}
+              {!evo?.historico_curto && (
+                <button
+                  type="button"
+                  onClick={exportar}
+                  disabled={exportando}
+                  title={t("club.exportHint")}
+                  className="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-50"
+                  style={{ borderColor: "var(--border-strong)", color: "var(--text-muted)" }}
+                >
+                  <Download className="size-3" />
+                  {t("club.export")}
+                </button>
+              )}
             </div>
           }
         >
@@ -857,7 +979,7 @@ function NumerosTab({
           ) : evo.historico_curto ? (
             <Empty title={t("club.historyStarting")} hint={t("club.evolutionHint")} />
           ) : (
-            <div className="px-2 py-3">
+            <div className="px-2 py-3" ref={graficoRef}>
               <LineChart
                 values={serie.map((s) => metricValue(s, metric))}
                 labels={serie.map((s) => fmtDate(s.read_at))}
