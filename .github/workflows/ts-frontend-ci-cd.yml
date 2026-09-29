@@ -84,6 +84,14 @@ jobs:
     needs: discover
     if: needs.discover.outputs.apps != '[]'
     runs-on: ubuntu-latest
+    # Um push novo cancela o anterior. Aqui o "deploy" é espelhar o build no
+    # MinIO (`mc mirror --overwrite --remove`), idempotente -- diferente dos
+    # outros workflows, este job não roda terraform apply, então cancelar não
+    # deixa container pela metade. Se um mirror for interrompido, o run novo
+    # (que é quem dispara o cancel) remirrora por cima.
+    concurrency:
+      group: ts-frontend-${{ matrix.app }}-${{ github.ref }}
+      cancel-in-progress: true
     strategy:
       matrix:
         app: ${{ fromJson(needs.discover.outputs.apps) }}
@@ -103,10 +111,21 @@ jobs:
           npx tsc -p tsconfig.json --noEmit
           npm test
 
-      # E2E/BDD (playwright-bdd): só clubs-frontend tem, por enquanto. Sobe o
-      # Chrome do runner e roda os `.feature` contra o build de produção em
-      # modo demo -- sem backend, sem banco. `npx playwright install` baixa o
-      # browser que o runner do GitHub precisa.
+      # E2E/BDD (playwright-bdd): só clubs-frontend tem, por enquanto. Roda os
+      # `.feature` num Chromium de verdade contra o build de produção em modo
+      # demo -- sem backend, sem banco.
+      #
+      # O browser fica em ~/Library/Caches no macOS e em ~/.cache/ms-playwright
+      # no Linux (runner); cachear aqui evita baixar ~150MB de novo a cada push.
+      # A chave inclui o commit do package-lock para o cache invalidar quando a
+      # versão do Playwright mudar (o binário é versionado junto).
+      - name: Cache do browser do Playwright
+        if: matrix.app == 'clubs-frontend'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles(format('modules/apps/{0}/package-lock.json', matrix.app)) }}
+
       - name: E2E/BDD (playwright-bdd)
         if: matrix.app == 'clubs-frontend'
         working-directory: modules/apps/${{ matrix.app }}
@@ -119,7 +138,11 @@ jobs:
           # e specs de teste ficariam sem checagem de tipo. Este tsconfig os
           # inclui -- um erro de tipo num step vira job vermelho, não surpresa.
           npm run typecheck:tests
-          npx playwright install --with-deps chromium
+          # `install-deps` (só as libs de sistema) separado do `install`: o
+          # browser em si costuma vir do cache acima; as dependências de apt são
+          # rápidas e não valem o cache.
+          npx playwright install-deps chromium
+          npx playwright install chromium
           npx bddgen
           npx playwright test
       # Every VITE_* below is set for every app in the matrix -- Vite

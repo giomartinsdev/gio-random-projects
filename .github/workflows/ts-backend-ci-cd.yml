@@ -66,6 +66,12 @@ jobs:
     needs: discover
     if: needs.discover.outputs.apps != '[]'
     runs-on: ubuntu-latest
+    # Um push novo cancela o build do anterior (ver go-ci-cd.yml). O deploy fica
+    # de fora: ele compartilha o concurrency "terraform-apply" abaixo, com
+    # cancel-in-progress: false, para um apply nunca morrer no meio.
+    concurrency:
+      group: ts-backend-build-${{ github.ref }}
+      cancel-in-progress: true
     strategy:
       matrix:
         app: ${{ fromJson(needs.discover.outputs.apps) }}
@@ -107,7 +113,7 @@ jobs:
       # BuildKit's own config format.
       - uses: docker/setup-buildx-action@v3
         with:
-          config-inline: |
+          buildkitd-config-inline: |
             [registry."registry.giomartins.dev:5000"]
               http = true
               insecure = true
@@ -157,6 +163,10 @@ jobs:
           context: modules/apps/${{ matrix.app }}
           push: true
           platforms: linux/arm64
+          # Cache de camadas no cache do Actions (ver go-ci-cd.yml). O `npm ci`
+          # das duas etapas é a camada cara e raramente muda entre pushes.
+          cache-from: type=gha,scope=ts-${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=ts-${{ matrix.app }}
           tags: |
             registry.giomartins.dev:5000/${{ matrix.app }}:latest
             registry.giomartins.dev:5000/${{ matrix.app }}:${{ github.sha }}

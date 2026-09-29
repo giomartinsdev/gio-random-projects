@@ -66,6 +66,14 @@ jobs:
     needs: discover
     if: needs.discover.outputs.apps != '[]'
     runs-on: ubuntu-latest
+    # Um push novo cancela o build do anterior: dois pushes seguidos não devem
+    # gastar dois builds completos quando o segundo já os substitui. O DEPLOY
+    # não entra nisto (tem o próprio concurrency, mais abaixo, compartilhado com
+    # os outros workflows e com cancel-in-progress: false) -- matar um
+    # `terraform apply` no meio é o que deixa container pela metade.
+    concurrency:
+      group: go-build-${{ github.ref }}
+      cancel-in-progress: true
     strategy:
       matrix:
         app: ${{ fromJson(needs.discover.outputs.apps) }}
@@ -81,10 +89,12 @@ jobs:
       - name: Test (Go apps only — skipped for anything without a go.mod)
         if: hashFiles(format('modules/apps/{0}/go.mod', matrix.app)) != ''
         working-directory: modules/apps/${{ matrix.app }}
-        # The SFU regression tests spin up real peer connections and can
-        # take tens of seconds; without this step they'd never gate a
-        # deploy no matter how many tests are written.
-        run: go build ./... && go vet ./... && go test ./...
+        # `go build ./...` era redundante: `go vet` já compila cada pacote, e o
+        # cache de build do Go é COMPARTILHADO entre os comandos, então o `go
+        # test` seguinte reaproveita o que o vet compilou. Tirar o build não
+        # perde checagem nenhuma -- só uma passada de compilação que num app com
+        # testcontainers custava parte dos ~100s do passo.
+        run: go vet ./... && go test ./...
 
       # The VPS is arm64 (Oracle's free-tier Ampere instances), but this
       # runner is amd64 -- QEMU is what lets BuildKit actually produce
@@ -113,7 +123,7 @@ jobs:
       # repeated here in BuildKit's own config format.
       - uses: docker/setup-buildx-action@v3
         with:
-          config-inline: |
+          buildkitd-config-inline: |
             [registry."registry.giomartins.dev:5000"]
               http = true
               insecure = true
@@ -163,6 +173,13 @@ jobs:
           context: modules/apps/${{ matrix.app }}
           push: true
           platforms: linux/arm64
+          # Cache de camadas no cache do Actions. Sem isto, cada push reconstrói
+          # do zero: baixa a imagem base, roda `go mod download` e compila tudo
+          # de novo, mesmo num commit que só mexeu em um arquivo. `mode=max`
+          # cacheia todas as camadas (não só a final), que é o que interessa
+          # aqui -- a camada de dependências é a cara e quase nunca muda.
+          cache-from: type=gha,scope=go-${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=go-${{ matrix.app }}
           tags: |
             registry.giomartins.dev:5000/${{ matrix.app }}:latest
             registry.giomartins.dev:5000/${{ matrix.app }}:${{ github.sha }}
