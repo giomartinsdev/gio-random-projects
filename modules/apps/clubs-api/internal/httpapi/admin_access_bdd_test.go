@@ -36,7 +36,13 @@ func TestAdminAccessBdd(t *testing.T) {
 			})
 
 			sc.Step(`^a lista de administradores "([^"]*)"$`, func(raw string) error {
-				st.set = parseAdminEmails(raw)
+				st.set = resolveAdminEmails(raw)
+				return nil
+			})
+			sc.Step(`^que a lista de administradores não está configurada$`, func() error {
+				// Vazio aciona o default hardcoded -- é o caminho que o produto
+				// usa hoje em produção.
+				st.set = resolveAdminEmails("")
 				return nil
 			})
 			sc.Step(`^"([^"]*)" é administrador$`, func(email string) error {

@@ -75,12 +75,6 @@ variable "public_origin" {
   default     = "https://clubs.giomartins.dev"
 }
 
-variable "admin_emails" {
-  description = "E-mails que podem ver a administração (CLUBS_ADMIN_EMAILS). Vazio nega todo mundo -- o default seguro, já que o painel expõe o estado interno da ingestão. Reusa a lista de quem entra via SSO, que aqui é a mesma pessoa: quem opera o hub."
-  type        = list(string)
-  default     = []
-}
-
 variable "api_origin" {
   description = "Origem pública DESTA API (https://clubs-api.giomartins.dev). O og:image é servido por ela -- o host do SPA não roteia /og/..., então apontar para lá daria cartão sem imagem. Vazio cai na public_origin (dev)."
   type        = string

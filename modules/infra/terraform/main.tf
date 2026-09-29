@@ -551,9 +551,6 @@ module "compute_apps_clubs_api" {
   # Host-only cookie by default: only clubs-api reads the session, so scoping it
   # to a whole domain would be more privilege than the design needs.
   session_cookie_domain = ""
-  # Quem vê o painel técnico: a mesma lista de quem entra via SSO -- aqui é a
-  # mesma pessoa (quem opera o hub). Sem isto, qualquer login veria a admin.
-  admin_emails = var.allowed_emails
 
   # No module.cloud_cloudflare dependency: there is no Access application in
   # front of this host anymore -- the login is our own Google Sign-In + session.

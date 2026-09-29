@@ -7,9 +7,10 @@
 # interno da ingestão. Estes cenários fixam que só quem está na lista de
 # administradores entra; quem não está recebe 403, não o conteúdo.
 #
-# A lista vem de env (CLUBS_ADMIN_EMAILS), não de um papel no banco: é uma
-# decisão de operação, não um dado do produto, e mantê-la fora do banco evita
-# uma tabela e um fluxo de gestão só para meia dúzia de e-mails.
+# A lista vem do env CLUBS_ADMIN_EMAILS e, quando ele está vazio, de um default
+# HARDCODED (o dono do hub) -- não de um papel no banco: é uma decisão de
+# operação, não um dado do produto, e mantê-la fora do banco evita uma tabela e
+# um fluxo de gestão só para meia dúzia de e-mails.
 
 Funcionalidade: Acesso à administração
   Como alguém que opera o hub
@@ -25,7 +26,16 @@ Funcionalidade: Acesso à administração
     E "b@corp.com" é administrador
     E "c@corp.com" não é administrador
 
-  Cenário: Sem lista configurada, ninguém é administrador
-    # Negar por padrão: um env ausente não pode abrir o painel para todo mundo.
-    Dado a lista de administradores ""
-    Então "qualquer@corp.com" não é administrador
+  Cenário: Sem lista configurada, o dono do hub é administrador
+    # O default hardcoded garante que o painel nunca fique inacessível por falta
+    # de configuração -- mas é UMA pessoa, não "todo mundo".
+    Dado que a lista de administradores não está configurada
+    Então "giovannidealmeidamartins@gmail.com" é administrador
+    E "qualquer@corp.com" não é administrador
+
+  Cenário: O env sobrepõe o default
+    # Quando CLUBS_ADMIN_EMAILS está definido, é ele que vale -- o default sai
+    # de cena, então virar configurável depois não exige mexer no código.
+    Dado a lista de administradores "ana@corp.com"
+    Então "ana@corp.com" é administrador
+    E "giovannidealmeidamartins@gmail.com" não é administrador

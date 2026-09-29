@@ -24,15 +24,34 @@ func TestParseAdminEmailsNormaliza(t *testing.T) {
 	}
 }
 
-// Lista vazia nega todo mundo -- o default seguro para um painel que expõe o
-// estado interno. Um env ausente não pode abrir a administração.
-func TestSemListaNinguemEhAdmin(t *testing.T) {
-	s := &Server{adminEmails: parseAdminEmails("")}
+// Sem lista configurada, o default HARDCODED entra: o dono do hub é admin, e
+// ninguém mais. O painel não fica inacessível por falta de config, nem aberto
+// para qualquer um.
+func TestSemListaUsaODefaultHardcoded(t *testing.T) {
+	s := &Server{adminEmails: resolveAdminEmails("")}
+	if !s.isAdmin("giovannidealmeidamartins@gmail.com") {
+		t.Error("sem lista, o dono do hub deveria ser admin (default hardcoded)")
+	}
+	if !s.isAdmin("GiovanniDeAlmeidaMartins@Gmail.com") {
+		t.Error("o default também compara case-insensitive")
+	}
 	if s.isAdmin("qualquer@corp.com") {
-		t.Error("sem lista, ninguém deveria ser admin")
+		t.Error("sem lista, só o default é admin -- ninguém além dele")
 	}
 	if s.isAdmin("") {
 		t.Error("e-mail vazio nunca é admin")
+	}
+}
+
+// O env sobrepõe o default quando definido: virar configurável depois não exige
+// mexer no código.
+func TestEnvSobrepOEODefault(t *testing.T) {
+	s := &Server{adminEmails: resolveAdminEmails("ana@corp.com")}
+	if !s.isAdmin("ana@corp.com") {
+		t.Error("o e-mail do env deveria ser admin")
+	}
+	if s.isAdmin("giovannidealmeidamartins@gmail.com") {
+		t.Error("com env definido, o default sai de cena")
 	}
 }
 
@@ -66,7 +85,9 @@ func TestAdminRotaExigeAllowlist(t *testing.T) {
 	}{
 		{"admin vê", "ana@corp.com", "ana@corp.com", http.StatusOK},
 		{"não-admin não vê", "ana@corp.com", "bob@corp.com", http.StatusForbidden},
-		{"sem lista, ninguém vê", "", "ana@corp.com", http.StatusForbidden},
+		// Sem env, o default hardcoded entra: o dono do hub vê; outra conta não.
+		{"sem env, o dono do hub vê", "", "giovannidealmeidamartins@gmail.com", http.StatusOK},
+		{"sem env, terceiro não vê", "", "ana@corp.com", http.StatusForbidden},
 	}
 	for _, c := range cases {
 		t.Run(c.nome, func(t *testing.T) {

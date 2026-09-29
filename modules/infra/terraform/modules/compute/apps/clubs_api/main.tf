@@ -33,9 +33,6 @@ resource "docker_container" "clubs_api" {
     "CLUBS_SESSION_SECRET=${var.session_secret}",
     "CLUBS_SESSION_COOKIE_DOMAIN=${var.session_cookie_domain}",
     "CLUBS_GOOGLE_CLIENT_ID=${var.google_oauth_client_id}",
-    # Allowlist da administração: quem vê o painel técnico. Sem isto, o painel
-    # estaria aberto a qualquer pessoa logada.
-    "CLUBS_ADMIN_EMAILS=${join(",", var.admin_emails)}",
     # Origem pública do SPA, para montar og:url/og:image absolutos no preview
     # de link (Open Graph). O ingress manda crawler para cá em /club/:id etc.
     "CLUBS_PUBLIC_ORIGIN=${var.public_origin}",

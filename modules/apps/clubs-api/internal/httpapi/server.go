@@ -52,9 +52,9 @@ type Config struct {
 	// canonical). Sem barra no fim. Vazia = links relativos, que é o aceitável
 	// em dev.
 	PublicOrigin string
-	// E-mails que podem ver a administração, separados por vírgula. Vazio =
-	// ninguém (negar por padrão). É uma decisão de operação, não um dado do
-	// produto -- por isso env, não tabela.
+	// E-mails que podem ver a administração, separados por vírgula. Vazio cai no
+	// default HARDCODED abaixo (defaultAdminEmails). É uma decisão de operação,
+	// não um dado do produto -- por isso env, não tabela.
 	AdminEmails string
 	// Origem pública DESTA API (ex.: "https://clubs-api.giomartins.dev"), usada
 	// para montar o og:image absoluto. A imagem é servida por esta API, não pelo
@@ -94,8 +94,27 @@ func NewServer(domain *domainclient.Client, cfg Config, log *slog.Logger) *Serve
 		devEmail:            strings.ToLower(strings.TrimSpace(cfg.DevUserEmail)),
 		publicOrigin:        strings.TrimRight(cfg.PublicOrigin, "/"),
 		apiOrigin:           strings.TrimRight(apiOrigin(cfg), "/"),
-		adminEmails:         parseAdminEmails(cfg.AdminEmails),
+		adminEmails:         resolveAdminEmails(cfg.AdminEmails),
 	}
+}
+
+// defaultAdminEmails é o dono do hub, fixo por enquanto.
+//
+// Por que hardcoded: a allowlist ainda não tem fluxo de gestão, e deixá-la vazia
+// fecharia o painel para todo mundo -- inclusive para quem opera. Fixar o
+// próprio e-mail é o caminho mais curto até existir uma lista gerida; o env
+// (CLUBS_ADMIN_EMAILS) continua sobrepondo quando definido, então virar
+// configurável depois é só preencher a variável, sem mexer no código.
+const defaultAdminEmails = "giovannidealmeidamartins@gmail.com"
+
+// resolveAdminEmails escolhe a lista: o env quando definido, senão o dono
+// hardcoded. Não é "negar por padrão" porque, sem nenhum admin, o próprio painel
+// fica inacessível -- e o valor fixo é uma pessoa só, não um buraco.
+func resolveAdminEmails(raw string) map[string]struct{} {
+	if strings.TrimSpace(raw) == "" {
+		raw = defaultAdminEmails
+	}
+	return parseAdminEmails(raw)
 }
 
 // apiOrigin resolve a origem pública da API: usa APIOrigin quando configurada e
