@@ -123,6 +123,10 @@ function Profile({
 
   const porOrigem = (source: WatchEntry["source"]) => (watch ?? []).filter((w) => w.source === source);
 
+  // O cooldown do sync (rate limit de 30 min do servidor): desabilita o botão e
+  // conta o tempo, em vez de deixar a pessoa clicar e levar 429.
+  const cooldown = sync?.cooldown_segundos ?? 0;
+
   return (
     <>
       <PageHead
@@ -132,9 +136,15 @@ function Profile({
           <button
             type="button"
             onClick={onStartSync}
-            className="rounded-md border border-line-strong px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wide text-muted transition-colors hover:text-ink"
+            disabled={cooldown > 0 || sync?.running}
+            title={cooldown > 0 ? t("sync.cooldown", { n: Math.ceil(cooldown / 60) }) : undefined}
+            className="rounded-md border border-line-strong px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wide text-muted transition-colors hover:text-ink disabled:opacity-50"
           >
-            {sync?.running ? t("area.syncingNow") : t("area.updateClubs")}
+            {cooldown > 0
+              ? t("sync.cooldown", { n: Math.ceil(cooldown / 60) })
+              : sync?.running
+                ? t("area.syncingNow")
+                : t("area.updateClubs")}
           </button>
         }
       />

@@ -34,6 +34,16 @@ import {
 } from "../lib/format";
 import { useI18n, type Key } from "../lib/i18n";
 import { DocumentMeta } from "../lib/document-meta";
+import {
+  BestByPositionCard,
+  IdleCard,
+  MainRivalCard,
+  PositionHeatmapCard,
+  RollingGoalsCard,
+  SeasonsCard,
+  SquadComparisonCard,
+} from "../components/club-analytics";
+import { ClubCompare } from "../components/club-compare";
 import { Freshness } from "../components/freshness";
 import { clubPalette, crestSeed } from "../lib/crest";
 
@@ -171,7 +181,7 @@ export function ClubPage({
             ))}
           </div>
 
-          {tab === "resumo" && <ResumoTab club={club} onOpenMatch={onOpenMatch} />}
+          {tab === "resumo" && <ResumoTab club={club} onOpenMatch={onOpenMatch} onOpenClub={onOpenClub} onOpenPlayer={onOpenPlayer} />}
           {tab === "elenco" && <ElencoTab clubId={club.club_id} onOpenPlayer={onOpenPlayer} />}
           {tab === "matches" && <PartidasTab clubId={club.club_id} onOpenMatch={onOpenMatch} />}
           {tab === "numeros" && <NumerosTab clubId={club.club_id} club={club} onOpenPlayer={onOpenPlayer} onOpenMatch={onOpenMatch} />}
@@ -285,7 +295,7 @@ function NotIndexed({
 
 // ------------------------------------------------------------------- resumo
 
-function ResumoTab({ club, onOpenMatch }: { club: Club; onOpenMatch: (id: string) => void }) {
+function ResumoTab({ club, onOpenMatch, onOpenClub, onOpenPlayer }: { club: Club; onOpenMatch: (id: string) => void; onOpenClub: (id: string) => void; onOpenPlayer: (id: string) => void }) {
   const { t } = useI18n();
   const [matches, setMatches] = useState<Match[] | null>(null);
   useEffect(() => {
@@ -382,6 +392,18 @@ function ResumoTab({ club, onOpenMatch }: { club: Club; onOpenMatch: (id: string
               </ul>
             </Card>
           )}
+        </div>
+      </div>
+
+      {/* Análise do acervo: o que a fonte não responde. */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <PositionHeatmapCard clubId={club.club_id} />
+        <MainRivalCard club={club} onOpenClub={onOpenClub} />
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <IdleCard clubId={club.club_id} />
+        <div className="lg:col-span-2">
+          <BestByPositionCard clubId={club.club_id} onOpenPlayer={onOpenPlayer} />
         </div>
       </div>
     </>
@@ -571,6 +593,7 @@ function ConfrontoTab({
         <Spinner />
       ) : (
         <>
+          <ClubCompare clubs={[h2h.club_a, h2h.club_b]} />
           <Card title={t("club.h2hRecord")}>
             <div className="grid grid-cols-3 gap-3 px-4 py-4 text-center">
               <div>
@@ -1076,6 +1099,16 @@ function NumerosTab({
           </Card>
         </div>
       )}
+
+      {/* Análise do acervo: tendências e história que a fonte não guarda. */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <RollingGoalsCard clubId={clubId} />
+        <PositionHeatmapCard clubId={clubId} />
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <SeasonsCard clubId={clubId} />
+        <SquadComparisonCard clubId={clubId} />
+      </div>
     </>
   );
 }

@@ -13,6 +13,13 @@ import { BarChart, LineChart } from "../components/charts";
 import { fmt, minutes, POS_LABEL, POS_SHORT, ratingColor, SAVE_LABEL } from "../lib/format";
 import { useI18n } from "../lib/i18n";
 import { DocumentMeta } from "../lib/document-meta";
+import {
+  ConsistencyCard,
+  DisciplineCard,
+  EventProfileCard,
+  RatingEvolutionCard,
+  TenureCard,
+} from "../components/player-analytics";
 
 export function PlayerPage({
   playerId,
@@ -304,6 +311,20 @@ export function PlayerPage({
           </div>
         )}
       </Card>
+
+      {/* Análise do acervo: evolução, consistência, disciplina, tempo em cada
+          clube e perfil de eventos. */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <RatingEvolutionCard playerId={playerId} />
+        <ConsistencyCard playerId={playerId} />
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <TenureCard playerId={playerId} />
+        <EventProfileCard playerId={playerId} />
+      </div>
+      <div className="mt-4">
+        <DisciplineCard playerId={playerId} />
+      </div>
 
       <p className="mt-4 text-xs text-muted">
         {POS_SHORT[p.position]} · {t("player.publicProfile")}

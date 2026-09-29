@@ -92,6 +92,8 @@ export function MatchPage({
         <Lineup title={m.away_club_name} lines={away} onOpenPlayer={onOpenPlayer} />
       </div>
 
+      <MatchHighlights m={m} onOpenClub={onOpenClub} onOpenPlayer={onOpenPlayer} />
+
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_380px]">
         <Card title={t("match.events")}>
           {!m.events || m.events.length === 0 ? (
@@ -147,8 +149,7 @@ export function MatchPage({
   );
 }
 
-function Lineup({ title, lines, onOpenPlayer }: { title: string; lines: PlayerLine[]; onOpenPlayer: (id: string) => void }) {
-  const { t } = useI18n();
+function Lineup({ title, lines, onOpenPlayer }: { title: string; lines: PlayerLine[]; onOpenPlayer: (id: string) => void }) {  const { t } = useI18n();
   const order: Record<string, number> = { goalkeeper: 0, defender: 1, midfielder: 2, forward: 3 };
   const sorted = [...lines].sort((a, b) => (order[a.position] ?? 4) - (order[b.position] ?? 4));
   return (
@@ -193,5 +194,85 @@ function Lineup({ title, lines, onOpenPlayer }: { title: string; lines: PlayerLi
         </ul>
       )}
     </Card>
+  );
+}
+
+/** Destaques automáticos: o melhor em campo, hat-tricks e goleadas.
+ *
+ * Derivados da própria súmula -- não há curadoria. É o que dá à partida uma
+ * leitura de relance: quem foi o destaque, se alguém fez 3+, se foi goleada. */
+function MatchHighlights({
+  m,
+  onOpenClub,
+  onOpenPlayer,
+}: {
+  m: Match;
+  onOpenClub: (id: string) => void;
+  onOpenPlayer: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  const players = m.players ?? [];
+  if (players.length === 0) return null;
+
+  const melhor = [...players].sort((a, b) => b.rating - a.rating)[0];
+  const hatTricks = players.filter((p) => p.goals >= 3);
+  const margin = Math.abs(m.home_goals - m.away_goals);
+  const goleada = margin >= 4;
+
+  return (
+    <div className="mt-4">
+      <Card title={t("match.highlights")}>
+        <div className="flex flex-wrap gap-2 px-4 py-3">
+          {melhor && (
+            <button
+              type="button"
+              onClick={() => onOpenPlayer(melhor.player_id)}
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors hover:border-[var(--accent)]"
+              style={{ borderColor: "var(--border-strong)" }}
+            >
+              <Star className="size-3.5" style={{ color: "var(--warning)" }} />
+              <span className="flex flex-col">
+                <span className="label">{t("match.bestOnPitch")}</span>
+                <span className="text-xs font-semibold">
+                  {melhor.gamertag} · {fmt(melhor.rating, 1)}
+                </span>
+              </span>
+            </button>
+          )}
+          {hatTricks.map((p) => (
+            <button
+              key={p.player_id}
+              type="button"
+              onClick={() => onOpenPlayer(p.player_id)}
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors hover:border-[var(--accent)]"
+              style={{ borderColor: "var(--border-strong)" }}
+            >
+              <span className="text-base leading-none">⚽</span>
+              <span className="flex flex-col">
+                <span className="label">{t("match.hatTrick")}</span>
+                <span className="text-xs font-semibold">
+                  {p.gamertag} · {p.goals}
+                </span>
+              </span>
+            </button>
+          ))}
+          {goleada && (
+            <button
+              type="button"
+              onClick={() => onOpenClub(m.home_goals >= m.away_goals ? m.home_club_id : m.away_club_id)}
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-left"
+              style={{ borderColor: "var(--border-strong)" }}
+            >
+              <span className="flex flex-col">
+                <span className="label">{t("match.rout")}</span>
+                <span className="text-xs font-semibold">
+                  {m.home_goals}–{m.away_goals}
+                </span>
+              </span>
+            </button>
+          )}
+        </div>
+      </Card>
+    </div>
   );
 }

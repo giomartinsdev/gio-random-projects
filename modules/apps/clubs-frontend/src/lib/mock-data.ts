@@ -15,22 +15,41 @@ import type {
   RecordMatch,
   Adversario,
   Announcement,
+  BestByPosition,
   Club,
   ClubDeltas,
+  ClubIdle,
   ClubRef,
   DivisionChange,
   Evolution,
   GlobalRecordClub,
   GlobalRecords,
   HeadToHead,
+  HubReport,
+  MainRival,
   Match,
   NotificationPrefs,
+  PlayerClubTenure,
+  PlayerConsistency,
+  PlayerDiscipline,
+  PlayerEventBreakdown,
   PlayerLine,
   PlayerProfile,
+  PlayerRatingEvolution,
   PlayerSeason,
+  Position,
+  PositionHeatmap,
   RankPlayer,
+  RatingPoint,
+  RegionCount,
   Resultado,
   Records,
+  RollingGoals,
+  SeasonList,
+  SeasonScorer,
+  SeasonSummary,
+  SquadChange,
+  SquadComparison,
   SquadMember,
   SyncRun,
   TimelineEntry,
@@ -661,15 +680,15 @@ export const NOTIFICATION_PREFS: NotificationPrefs = {
 
 export const SYNC_RUN: SyncRun = {
   running: false,
-  level: 3,
-  skill_rating: 0,
+  skill_rating: 3,
   total: 34,
   completed: 34,
   current: "",
   new_items: [],
   started_at: iso(0, 17, 0),
   finished_at: iso(0, 17, 4),
-} as unknown as SyncRun;
+  cooldown_segundos: 0,
+};
 
 export const ADMIN_STATUS: AdminStatus = {
   clubs_total: CLUBS.length,
@@ -697,3 +716,205 @@ export const ADMIN_INGEST = {
   last_error: "",
   last_error_at: null,
 };
+
+// ---------------------------------------------------------------- analytics
+// Derivadas do mesmo dado do demo, como o backend faz a partir do acervo.
+
+/** Temporadas do clube: agrupa as partidas pelo rótulo "AAAA/AA" (mesma regra
+ * do backend -- julho a junho). */
+export function seasonsOf(clubId: string): SeasonList {
+  const ms = matchesOf(clubId, 100);
+  const bySeason = new Map<string, Match[]>();
+  for (const m of ms) {
+    const d = new Date(m.timestamp);
+    const y = d.getMonth() < 6 ? d.getFullYear() - 1 : d.getFullYear();
+    const label = `${y}/${String((y + 1) % 100).padStart(2, "0")}`;
+    const arr = bySeason.get(label) ?? [];
+    arr.push(m);
+    bySeason.set(label, arr);
+  }
+  const labels = [...bySeason.keys()].sort();
+  const squad = squadOf(clubId);
+  const seasons: SeasonSummary[] = labels.map((label) => {
+    const arr = bySeason.get(label) ?? [];
+    let wins = 0, draws = 0, losses = 0, goals = 0, against = 0;
+    for (const m of arr) {
+      goals += m.our_goals;
+      against += m.their_goals;
+      if (m.our_result === "win") wins++;
+      else if (m.our_result === "loss") losses++;
+      else draws++;
+    }
+    // Artilheiros: os do elenco atual, rateados pela fração de jogos da temporada.
+    const jogos = Math.max(1, arr.length);
+    const scorers: SeasonScorer[] = squad
+      .slice(0, 6)
+      .map((p, i) => ({
+        player_id: p.player_id,
+        gamertag: p.gamertag,
+        played: Math.max(1, Math.round((p.played * jogos) / 20)),
+        goals: Math.max(0, Math.round((p.goals * jogos) / 20) - i),
+        assists: Math.max(0, Math.round((p.assists * jogos) / 20)),
+        rating: p.rating,
+      }))
+      .filter((s) => s.goals > 0)
+      .sort((a, b) => b.goals - a.goals);
+    return { season: label, played: arr.length, wins, draws, losses, goals, against, scorers };
+  });
+  return { seasons, current: labels[labels.length - 1] ?? "" };
+}
+
+export function positionHeatmapOf(clubId: string): PositionHeatmap {
+  const squad = squadOf(clubId);
+  const counts = new Map<Position, number>();
+  for (const p of squad) counts.set(p.position, (counts.get(p.position) ?? 0) + 1);
+  const ordem: Position[] = ["goalkeeper", "defender", "midfielder", "forward"];
+  const buckets = ordem.filter((p) => counts.has(p)).map((p) => ({ position: p, players: counts.get(p)! }));
+  return { buckets, total: squad.length };
+}
+
+export function squadComparisonOf(clubId: string): SquadComparison {
+  const squad = squadOf(clubId);
+  // Demo: metade "entrou", alguns "saíram" -- para a tela ter o que mostrar.
+  const entraram: SquadChange[] = squad.slice(0, 3).map((p) => ({
+    player_id: p.player_id, gamertag: p.gamertag, position: p.position, goals: p.goals, kind: "entrou",
+  }));
+  const saíram: SquadChange[] = squad.slice(3, 5).map((p) => ({
+    player_id: p.player_id + "-old", gamertag: p.gamertag + " (antigo)", position: p.position, goals: Math.max(0, p.goals - 4), kind: "saiu",
+  }));
+  return { from: "2025/26", to: "2026/27", stayed: Math.max(0, squad.length - 5), entraram, sairam: saíram };
+}
+
+export function rollingGoalsOf(clubId: string): RollingGoals {
+  const ms = matchesOf(clubId, 20).slice().reverse();
+  return {
+    matches: ms.map((m) => ({
+      match_id: m.match_id, timestamp: m.timestamp, opponent: m.opponent_name,
+      our: m.our_goals, their: m.their_goals, result: m.our_result,
+    })),
+  };
+}
+
+export function mainRivalOf(clubId: string): MainRival | null {
+  const club = CLUBS.find((c) => c.club_id === clubId) ?? MY_CLUB;
+  const advs = club.adversarios ?? [];
+  if (!advs.length) return null;
+  const top = [...advs].sort((a, b) => b.played - a.played)[0];
+  return {
+    club_id: top.club_id, name: top.name, tag: top.tag, played: top.played,
+    wins: top.wins, draws: top.draws, losses: top.losses, goals: top.goals,
+    goals_against: top.goals_against, last_match: top.last_match,
+    matches: top.played,
+  };
+}
+
+export function idleOf(clubId: string): ClubIdle {
+  const ms = matchesOf(clubId, 1);
+  if (!ms.length) return { last_match: null, days: 0, idle: false };
+  const last = ms[0].timestamp;
+  const days = Math.floor((Date.now() - new Date(last).getTime()) / 86400000);
+  return { last_match: last, days, idle: days >= 7 };
+}
+
+export function bestByPositionOf(clubId: string): BestByPosition[] {
+  const squad = squadOf(clubId);
+  const best = new Map<Position, SquadMember>();
+  for (const p of squad) {
+    const cur = best.get(p.position);
+    if (!cur || p.rating > cur.rating) best.set(p.position, p);
+  }
+  const ordem: Position[] = ["goalkeeper", "defender", "midfielder", "forward"];
+  return ordem.filter((p) => best.has(p)).map((p) => ({ position: p, player: best.get(p)! }));
+}
+
+export const REGIONS: RegionCount[] = [
+  { region_id: "5457237", clubs: 6, tracked: 4, top_name: CLUBS[0].name },
+  { region_id: "1000000", clubs: 4, tracked: 2, top_name: CLUBS[2].name },
+  { region_id: "2000000", clubs: 3, tracked: 1, top_name: CLUBS[4].name },
+];
+
+export const HUB_REPORT: HubReport = {
+  clubs: CLUBS.length,
+  tracked_clubs: CLUBS.filter((c) => c.tracked).length,
+  matches: MATCHES.length,
+  players: PLAYERS.length,
+  snapshots: MATCHES.length,
+  first_match: MATCHES.length ? MATCHES[MATCHES.length - 1].timestamp : null,
+  last_match: MATCHES.length ? MATCHES[0].timestamp : null,
+  coverage_days: 120,
+};
+
+export function ratingEvolutionOf(playerId: string): PlayerRatingEvolution {
+  const rows: RatingPoint[] = [];
+  for (const m of MATCHES) {
+    const line = (m.players ?? []).find((p) => p.player_id === playerId);
+    if (!line) continue;
+    rows.push({
+      match_id: m.match_id, timestamp: m.timestamp, opponent: m.opponent_name,
+      rating: line.rating, goals: line.goals, assists: line.assists, result: m.our_result,
+    });
+  }
+  // MATCHES vem do mais recente para o mais antigo; o gráfico e a tenure leem
+  // do mais antigo para o mais novo, senão a duração sai negativa.
+  rows.sort((a, b) => +new Date(a.timestamp) - +new Date(b.timestamp));
+  return { points: rows };
+}
+export function consistencyOf(playerId: string): PlayerConsistency {
+  const points = ratingEvolutionOf(playerId).points ?? [];
+  if (!points.length) return { played: 0, mean: 0, std_dev: 0, best: 0, worst: 0, volatility: 0 };
+  const notas = points.map((p) => p.rating);
+  const mean = notas.reduce((a, b) => a + b, 0) / notas.length;
+  const variance = notas.reduce((a, b) => a + (b - mean) ** 2, 0) / notas.length;
+  const std = Math.sqrt(variance);
+  return {
+    played: notas.length,
+    mean: Math.round(mean * 100) / 100,
+    std_dev: Math.round(std * 100) / 100,
+    best: Math.max(...notas),
+    worst: Math.min(...notas),
+    volatility: mean > 0 ? Math.round((std / mean) * 10000) / 100 : 0,
+  };
+}
+
+export function disciplineOf(playerId: string): PlayerDiscipline {
+  let red = 0, matches = 0, clean = 0;
+  for (const m of MATCHES) {
+    const line = (m.players ?? []).find((p) => p.player_id === playerId);
+    if (!line) continue;
+    matches++;
+    if (line.red_card) red++;
+    if (line.clean_sheet) clean++;
+  }
+  return { red_cards: red, matches, clean_sheets: clean };
+}
+
+export function tenuresOf(playerId: string): PlayerClubTenure[] {
+  const rows = ratingEvolutionOf(playerId).points ?? [];
+  const club = CLUBS.find((c) => squadOf(c.club_id).some((p) => p.player_id === playerId));
+  if (!club || !rows.length) return [];
+  return [{
+    club_id: club.club_id,
+    club_name: club.name,
+    first_seen: rows[0].timestamp,
+    last_seen: rows[rows.length - 1].timestamp,
+    matches: rows.length,
+    days: Math.floor((+new Date(rows[rows.length - 1].timestamp) - +new Date(rows[0].timestamp)) / 86400000),
+  }];
+}
+
+export function playerEventsOf(playerId: string): PlayerEventBreakdown {
+  // Sem eventos reais no mock; devolve uma distribuição plausível.
+  const rows = ratingEvolutionOf(playerId).points ?? [];
+  if (!rows.length) return { player_id: playerId, events: [] };
+  const goals = rows.reduce((a, r) => a + r.goals, 0);
+  const assists = rows.reduce((a, r) => a + r.assists, 0);
+  return {
+    player_id: playerId,
+    events: [
+      { label: "chute", count: goals * 3 + 4 },
+      { label: "chute_no_gol", count: goals + 2 },
+      { label: "passe_certo", count: assists * 4 + 20 },
+      { label: "desarme", count: rows.length * 2 },
+    ].sort((a, b) => b.count - a.count),
+  };
+}

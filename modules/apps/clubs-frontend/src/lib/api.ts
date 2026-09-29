@@ -4,8 +4,10 @@
 import type {
   AdminStatus,
   Announcement,
+  BestByPosition,
   Club,
   ClubDeltas,
+  ClubIdle,
   ClubRef,
   ClaimedPro,
   DivisionChange,
@@ -13,13 +15,25 @@ import type {
   FetchRun,
   HeadToHead,
   GlobalRecords,
+  HubReport,
+  MainRival,
   Match,
   NotificationPrefs,
+  PlayerClubTenure,
+  PlayerConsistency,
+  PlayerDiscipline,
+  PlayerEventBreakdown,
   PlayerProfile,
+  PlayerRatingEvolution,
+  PositionHeatmap,
   RankPlayer,
   Records,
+  RegionCount,
+  RollingGoals,
   SearchRun,
+  SeasonList,
   SourceStatus,
+  SquadComparison,
   SquadMember,
   SyncRun,
   TimelineEntry,
@@ -138,6 +152,52 @@ const realApi = {
   /** A mudança desde a primeira leitura guardada: "o que aconteceu com o meu
    * clube desde que comecei a acompanhar". */
   deltas: (clubId: string) => request<ClubDeltas>(`/clubs/${encodeURIComponent(clubId)}/deltas`),
+
+  // --- analytics do acervo (derivadas do histórico) ----------------------
+
+  seasons: (clubId: string) =>
+    request<SeasonList>(`/clubs/${encodeURIComponent(clubId)}/seasons`),
+
+  positionHeatmap: (clubId: string) =>
+    request<PositionHeatmap>(`/clubs/${encodeURIComponent(clubId)}/positions`),
+
+  squadComparison: (clubId: string) =>
+    request<SquadComparison>(`/clubs/${encodeURIComponent(clubId)}/squad-comparison`),
+
+  rollingGoals: (clubId: string, limite = 20) =>
+    request<RollingGoals>(`/clubs/${encodeURIComponent(clubId)}/rolling-goals?limite=${limite}`),
+
+  mainRival: (clubId: string) =>
+    request<{ rival: MainRival | null }>(`/clubs/${encodeURIComponent(clubId)}/main-rival`),
+
+  idle: (clubId: string) =>
+    request<ClubIdle>(`/clubs/${encodeURIComponent(clubId)}/idle`),
+
+  bestByPosition: (clubId: string) =>
+    request<{ posicoes: BestByPosition[]; total: number }>(
+      `/clubs/${encodeURIComponent(clubId)}/best-by-position`,
+    ),
+
+  regions: () => request<{ regioes: RegionCount[]; total: number }>("/regions"),
+
+  hubReport: () => request<HubReport>("/hub/report"),
+
+  ratingEvolution: (playerId: string) =>
+    request<PlayerRatingEvolution>(`/players/${encodeURIComponent(playerId)}/rating-evolution`),
+
+  consistency: (playerId: string) =>
+    request<PlayerConsistency>(`/players/${encodeURIComponent(playerId)}/consistency`),
+
+  discipline: (playerId: string) =>
+    request<PlayerDiscipline>(`/players/${encodeURIComponent(playerId)}/discipline`),
+
+  tenures: (playerId: string) =>
+    request<{ clubes: PlayerClubTenure[]; total: number }>(
+      `/players/${encodeURIComponent(playerId)}/tenures`,
+    ),
+
+  playerEvents: (playerId: string) =>
+    request<PlayerEventBreakdown>(`/players/${encodeURIComponent(playerId)}/events`),
 
   globalRecords: () => request<GlobalRecords>("/records/global"),
 

@@ -301,6 +301,161 @@ func (h *ClubsHandlers) GetClubDeltas(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"deltas": d})
 }
 
+// GetSeasons devolve as temporadas do clube com os artilheiros de cada uma. A
+// temporada é derivada da data -- a fonte não tem season_id.
+func (h *ClubsHandlers) GetSeasons(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "clubId")
+	s, err := h.clubs.ClubSeasons(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s)
+}
+
+// GetPositionHeatmap devolve quantos jogadores distintos o clube tem por
+// posição.
+func (h *ClubsHandlers) GetPositionHeatmap(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "clubId")
+	hmap, err := h.clubs.PositionHeatmap(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, hmap)
+}
+
+// GetSquadComparison compara o elenco da temporada corrente com o da anterior.
+func (h *ClubsHandlers) GetSquadComparison(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "clubId")
+	c, err := h.clubs.SquadComparison(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}
+
+// GetRollingGoals devolve gols pró e contra por partida, em ordem cronológica.
+func (h *ClubsHandlers) GetRollingGoals(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "clubId")
+	limit := intParam(r, "limite", 20, 100)
+	g, err := h.clubs.RollingGoals(r.Context(), id, limit)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, g)
+}
+
+// GetMainRival devolve o adversário mais frequente com o retrospecto.
+func (h *ClubsHandlers) GetMainRival(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "clubId")
+	rival, err := h.clubs.MainRival(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rival": rival})
+}
+
+// GetIdle devolve há quanto tempo o clube não joga.
+func (h *ClubsHandlers) GetIdle(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "clubId")
+	idle, err := h.clubs.IdleSince(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, idle)
+}
+
+// GetBestByPosition devolve o melhor jogador (por nota) de cada posição.
+func (h *ClubsHandlers) GetBestByPosition(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "clubId")
+	list, err := h.clubs.BestByPosition(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"posicoes": list, "total": len(list)})
+}
+
+// GetRegionBreakdown conta os clubes conhecidos por região.
+func (h *ClubsHandlers) GetRegionBreakdown(w http.ResponseWriter, r *http.Request) {
+	list, err := h.clubs.RegionBreakdown(r.Context())
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"regioes": list, "total": len(list)})
+}
+
+// GetHubReport é o relatório público do acervo (contadores, cobertura).
+func (h *ClubsHandlers) GetHubReport(w http.ResponseWriter, r *http.Request) {
+	rep, err := h.clubs.HubReport(r.Context())
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
+}
+
+// GetPlayerRatingEvolution devolve a série de notas de um jogador por partida.
+func (h *ClubsHandlers) GetPlayerRatingEvolution(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "playerId")
+	evo, err := h.clubs.RatingEvolution(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, evo)
+}
+
+// GetPlayerConsistency devolve média, desvio e volatilidade das notas.
+func (h *ClubsHandlers) GetPlayerConsistency(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "playerId")
+	c, err := h.clubs.Consistency(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}
+
+// GetPlayerDiscipline devolve os cartões e clean sheets de um jogador.
+func (h *ClubsHandlers) GetPlayerDiscipline(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "playerId")
+	d, err := h.clubs.Discipline(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
+}
+
+// GetPlayerTenures devolve quanto tempo o jogador ficou em cada clube.
+func (h *ClubsHandlers) GetPlayerTenures(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "playerId")
+	list, err := h.clubs.Tenures(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"clubes": list, "total": len(list)})
+}
+
+// GetPlayerEvents devolve a distribuição de tipos de evento de um jogador.
+func (h *ClubsHandlers) GetPlayerEvents(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "playerId")
+	ev, err := h.clubs.EventsByPlayer(r.Context(), id)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ev)
+}
+
 // GetGlobalRecords são os recordes do hub inteiro (FR-011): a maior goleada
 // entre quaisquer dois clubes acompanhados, o jogo com mais gols e a melhor
 // atuação. É o que a fonte não dá, porque nunca cruza dois clubes.

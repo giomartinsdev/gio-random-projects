@@ -47,6 +47,23 @@ type Repository interface {
 	// faz, porque só conhece a janela recente de cada clube isolado (FR-011).
 	GlobalRecords(ctx context.Context) (GlobalRecords, error)
 
+	// Analytics derivadas do acervo (ver analytics.go). Nenhuma tem schema
+	// próprio: são leituras que a fonte não consegue responder.
+	ClubSeasons(ctx context.Context, clubID string) (SeasonList, error)
+	PositionHeatmap(ctx context.Context, clubID string) (PositionHeatmap, error)
+	SquadComparison(ctx context.Context, clubID string) (SquadComparison, error)
+	RollingGoals(ctx context.Context, clubID string, limit int) (RollingGoals, error)
+	MainRival(ctx context.Context, clubID string) (*MainRival, error)
+	IdleSince(ctx context.Context, clubID string) (ClubIdle, error)
+	BestByPosition(ctx context.Context, clubID string) ([]BestByPosition, error)
+	RegionBreakdown(ctx context.Context) ([]RegionCount, error)
+	HubReport(ctx context.Context) (HubReport, error)
+	RatingEvolution(ctx context.Context, playerID string) (PlayerRatingEvolution, error)
+	Consistency(ctx context.Context, playerID string) (PlayerConsistency, error)
+	Discipline(ctx context.Context, playerID string) (PlayerDiscipline, error)
+	Tenures(ctx context.Context, playerID string) ([]PlayerClubTenure, error)
+	EventsByPlayer(ctx context.Context, playerID string) (PlayerEventBreakdown, error)
+
 	// Feed e rankings
 	RecentAnnouncements(ctx context.Context, limit int) ([]Announcement, error)
 	// AnnouncementCount is how many announcements are live (not expired) --

@@ -100,6 +100,22 @@ func NewRouter(h *Handlers, p *PostHandlers, rm *RoomHandlers, msg *MessageHandl
 		// pessoa começou a acompanhar. Nenhuma das duas existe na fonte.
 		r.Get("/clubs/{clubId}/timeline", cl.GetTimeline)
 		r.Get("/clubs/{clubId}/deltas", cl.GetClubDeltas)
+		// Analytics derivadas do acervo -- temporadas, posições, rivalidade,
+		// gols pró/contra, inatividade e melhores por posição.
+		r.Get("/clubs/{clubId}/seasons", cl.GetSeasons)
+		r.Get("/clubs/{clubId}/positions", cl.GetPositionHeatmap)
+		r.Get("/clubs/{clubId}/squad-comparison", cl.GetSquadComparison)
+		r.Get("/clubs/{clubId}/rolling-goals", cl.GetRollingGoals)
+		r.Get("/clubs/{clubId}/main-rival", cl.GetMainRival)
+		r.Get("/clubs/{clubId}/idle", cl.GetIdle)
+		r.Get("/clubs/{clubId}/best-by-position", cl.GetBestByPosition)
+		r.Get("/regions", cl.GetRegionBreakdown)
+		r.Get("/hub/report", cl.GetHubReport)
+		r.Get("/players/{playerId}/rating-evolution", cl.GetPlayerRatingEvolution)
+		r.Get("/players/{playerId}/consistency", cl.GetPlayerConsistency)
+		r.Get("/players/{playerId}/discipline", cl.GetPlayerDiscipline)
+		r.Get("/players/{playerId}/tenures", cl.GetPlayerTenures)
+		r.Get("/players/{playerId}/events", cl.GetPlayerEvents)
 		r.Get("/records/global", cl.GetGlobalRecords)
 		r.Get("/clubs/{clubId}/h2h/{rivalId}", cl.HeadToHead)
 		r.Get("/matches/{matchId}", cl.GetMatch)

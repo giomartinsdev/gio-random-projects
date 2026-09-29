@@ -471,6 +471,9 @@ export interface SyncRun {
   new_items: string[] | null;
   started_at: string;
   finished_at: string;
+  /** Segundos restantes até poder sincronizar de novo (rate limit de 30 min do
+   * servidor). 0 = liberado. */
+  cooldown_segundos?: number;
 }
 
 /** A saúde da fonte (EA/CDN). `available:false` é a fornecedora dos dados fora
@@ -494,4 +497,161 @@ export interface AdminStatus {
   last_match_at: string | null;
   by_division: Record<string, number> | null;
   top_clubs: ClubRef[] | null;
+}
+
+// --- analytics do acervo (derivadas do histórico; a fonte não responde isto) --
+
+export interface SeasonScorer {
+  player_id: string;
+  gamertag: string;
+  played: number;
+  goals: number;
+  assists: number;
+  rating: number;
+}
+
+export interface SeasonSummary {
+  season: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goals: number;
+  against: number;
+  scorers: SeasonScorer[] | null;
+}
+
+export interface SeasonList {
+  seasons: SeasonSummary[] | null;
+  current: string;
+}
+
+export interface PositionCount {
+  position: Position;
+  players: number;
+}
+
+export interface PositionHeatmap {
+  buckets: PositionCount[] | null;
+  total: number;
+}
+
+export interface SquadChange {
+  player_id: string;
+  gamertag: string;
+  position: Position;
+  goals: number;
+  kind: "entrou" | "saiu";
+}
+
+export interface SquadComparison {
+  from: string;
+  to: string;
+  stayed: number;
+  entraram: SquadChange[] | null;
+  sairam: SquadChange[] | null;
+}
+
+export interface RollingGoals {
+  matches: RollingGoalsPoint[] | null;
+}
+
+export interface RollingGoalsPoint {
+  match_id: string;
+  timestamp: string;
+  opponent: string;
+  our: number;
+  their: number;
+  result: Resultado;
+}
+
+export interface MainRival {
+  club_id: string;
+  name: string;
+  tag: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goals: number;
+  goals_against: number;
+  last_match: string;
+  matches: number;
+}
+
+export interface ClubIdle {
+  last_match: string | null;
+  days: number;
+  idle: boolean;
+}
+
+export interface BestByPosition {
+  position: Position;
+  player: SquadMember;
+}
+
+export interface RegionCount {
+  region_id: string;
+  clubs: number;
+  tracked: number;
+  top_name: string;
+}
+
+export interface HubReport {
+  clubs: number;
+  tracked_clubs: number;
+  matches: number;
+  players: number;
+  snapshots: number;
+  first_match: string | null;
+  last_match: string | null;
+  coverage_days: number;
+}
+
+export interface RatingPoint {
+  match_id: string;
+  timestamp: string;
+  opponent: string;
+  rating: number;
+  goals: number;
+  assists: number;
+  result: Resultado;
+}
+
+export interface PlayerRatingEvolution {
+  points: RatingPoint[] | null;
+}
+
+export interface PlayerConsistency {
+  played: number;
+  mean: number;
+  std_dev: number;
+  best: number;
+  worst: number;
+  volatility: number;
+}
+
+export interface PlayerDiscipline {
+  red_cards: number;
+  matches: number;
+  clean_sheets: number;
+}
+
+export interface PlayerClubTenure {
+  club_id: string;
+  club_name: string;
+  first_seen: string;
+  last_seen: string;
+  matches: number;
+  days: number;
+}
+
+export interface EventSummary {
+  label: string;
+  count: number;
+}
+
+export interface PlayerEventBreakdown {
+  player_id: string;
+  events: EventSummary[] | null;
 }

@@ -9,19 +9,33 @@ import { ApiError } from "./api";
 import * as D from "./mock-data";
 import type {
   AdminStatus,
+  BestByPosition,
   Club,
   ClubDeltas,
+  ClubIdle,
   ClaimedPro,
   DivisionChange,
   Evolution,
   FetchRun,
   GlobalRecords,
   HeadToHead,
+  HubReport,
+  MainRival,
   Match,
   NotificationPrefs,
+  PlayerClubTenure,
+  PlayerConsistency,
+  PlayerDiscipline,
+  PlayerEventBreakdown,
+  PlayerRatingEvolution,
+  PositionHeatmap,
   Records,
+  RegionCount,
+  RollingGoals,
   SearchRun,
+  SeasonList,
   SourceStatus,
+  SquadComparison,
   SquadMember,
   SyncRun,
   TimelineEntry,
@@ -101,6 +115,28 @@ export const mockApi = {
     later<{ mudancas: DivisionChange[]; total: number }>({ mudancas: D.DIVISION_CHANGES, total: D.DIVISION_CHANGES.length }),
 
   records: (clubId: string) => later<Records>(D.recordsOf(clubId)),
+
+  // --- analytics do acervo (demo) ----------------------------------------
+
+  seasons: (clubId: string) => later<SeasonList>(D.seasonsOf(clubId)),
+  positionHeatmap: (clubId: string) => later<PositionHeatmap>(D.positionHeatmapOf(clubId)),
+  squadComparison: (clubId: string) => later<SquadComparison>(D.squadComparisonOf(clubId)),
+  rollingGoals: (clubId: string) => later<RollingGoals>(D.rollingGoalsOf(clubId)),
+  mainRival: (clubId: string) => later<{ rival: MainRival | null }>({ rival: D.mainRivalOf(clubId) }),
+  idle: (clubId: string) => later<ClubIdle>(D.idleOf(clubId)),
+  bestByPosition: (clubId: string) =>
+    later<{ posicoes: BestByPosition[]; total: number }>({
+      posicoes: D.bestByPositionOf(clubId),
+      total: D.bestByPositionOf(clubId).length,
+    }),
+  regions: () => later<{ regioes: RegionCount[]; total: number }>({ regioes: D.REGIONS, total: D.REGIONS.length }),
+  hubReport: () => later<HubReport>(D.HUB_REPORT),
+  ratingEvolution: (playerId: string) => later<PlayerRatingEvolution>(D.ratingEvolutionOf(playerId)),
+  consistency: (playerId: string) => later<PlayerConsistency>(D.consistencyOf(playerId)),
+  discipline: (playerId: string) => later<PlayerDiscipline>(D.disciplineOf(playerId)),
+  tenures: (playerId: string) =>
+    later<{ clubes: PlayerClubTenure[]; total: number }>({ clubes: D.tenuresOf(playerId), total: D.tenuresOf(playerId).length }),
+  playerEvents: (playerId: string) => later<PlayerEventBreakdown>(D.playerEventsOf(playerId)),
 
   timeline: (clubId: string) =>
     later<{ eventos: TimelineEntry[]; total: number }>({ eventos: D.timelineOf(clubId), total: D.timelineOf(clubId).length }),

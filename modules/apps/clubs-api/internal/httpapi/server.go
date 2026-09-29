@@ -76,6 +76,7 @@ type Server struct {
 	publicOrigin        string
 	apiOrigin           string
 	adminEmails         map[string]struct{}
+	syncLimiter         *syncLimiter
 }
 
 func NewServer(domain *domainclient.Client, cfg Config, log *slog.Logger) *Server {
@@ -95,6 +96,7 @@ func NewServer(domain *domainclient.Client, cfg Config, log *slog.Logger) *Serve
 		publicOrigin:        strings.TrimRight(cfg.PublicOrigin, "/"),
 		apiOrigin:           strings.TrimRight(apiOrigin(cfg), "/"),
 		adminEmails:         resolveAdminEmails(cfg.AdminEmails),
+		syncLimiter:         newSyncLimiter(),
 	}
 }
 
@@ -160,6 +162,13 @@ func (s *Server) Handler() http.Handler {
 
 	r.Get("/healthz", s.health)
 
+	// SEO de verdade: o SPA é uma página só, então buscador nenhum enxerga o
+	// acervo. O sitemap lista os clubes/jogadores/partidas reais para o Google
+	// descobrir; o robots aponta para ele. Ficam FORA de /api porque o buscador
+	// busca na raiz do host.
+	r.Get("/sitemap.xml", s.sitemap)
+	r.Get("/robots.txt", s.robots)
+
 	// Preview de link (Open Graph) para as páginas de detalhe. Fica FORA de
 	// /api de propósito: o bot de preview (Discord, WhatsApp, X) busca a MESMA
 	// URL que a pessoa compartilha -- clubs.giomartins.dev/club/141881 -- e o
@@ -200,6 +209,22 @@ func (s *Server) Handler() http.Handler {
 		// pessoa começou a acompanhar. Públicas como o resto da leitura.
 		r.Get("/clubs/{clubId}/timeline", s.getTimeline)
 		r.Get("/clubs/{clubId}/deltas", s.getDeltas)
+		// Analytics derivadas do acervo (ver domain-api). Públicas como o resto
+		// da leitura: é dado agregado, não pessoal.
+		r.Get("/clubs/{clubId}/seasons", s.proxyClubSub("seasons"))
+		r.Get("/clubs/{clubId}/positions", s.proxyClubSub("positions"))
+		r.Get("/clubs/{clubId}/squad-comparison", s.proxyClubSub("squad-comparison"))
+		r.Get("/clubs/{clubId}/rolling-goals", s.proxyClubSub("rolling-goals"))
+		r.Get("/clubs/{clubId}/main-rival", s.proxyClubSub("main-rival"))
+		r.Get("/clubs/{clubId}/idle", s.proxyClubSub("idle"))
+		r.Get("/clubs/{clubId}/best-by-position", s.proxyClubSub("best-by-position"))
+		r.Get("/regions", s.getRegions)
+		r.Get("/hub/report", s.getHubReport)
+		r.Get("/players/{playerId}/rating-evolution", s.proxyPlayerSub("rating-evolution"))
+		r.Get("/players/{playerId}/consistency", s.proxyPlayerSub("consistency"))
+		r.Get("/players/{playerId}/discipline", s.proxyPlayerSub("discipline"))
+		r.Get("/players/{playerId}/tenures", s.proxyPlayerSub("tenures"))
+		r.Get("/players/{playerId}/events", s.proxyPlayerSub("events"))
 		r.Get("/records/global", s.getGlobalRecords)
 		r.Get("/clubs/{clubId}/h2h/{rivalId}", s.headToHead)
 		r.Get("/matches/{matchId}", s.getMatch)
@@ -427,6 +452,30 @@ func (s *Server) getDeltas(w http.ResponseWriter, r *http.Request) {
 	s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/deltas")
 }
 
+// proxyClubSub e proxyPlayerSub encaminham um sub-recurso do clube/jogador ao
+// domain-api. Existem como fábrica porque estes endpoints são só repasse -- a
+// lógica vive no domain-api, e repetir o mesmo proxyGet dez vezes só adicionaria
+// linhas sem significado.
+func (s *Server) proxyClubSub(sub string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s.proxyGet(w, r, "/clubs/"+chi.URLParam(r, "clubId")+"/"+sub)
+	}
+}
+
+func (s *Server) proxyPlayerSub(sub string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s.proxyGet(w, r, "/players/"+chi.URLParam(r, "playerId")+"/"+sub)
+	}
+}
+
+func (s *Server) getRegions(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/regions")
+}
+
+func (s *Server) getHubReport(w http.ResponseWriter, r *http.Request) {
+	s.proxyGet(w, r, "/hub/report")
+}
+
 func (s *Server) getGlobalRecords(w http.ResponseWriter, r *http.Request) {
 	s.proxyGet(w, r, "/records/global")
 }
@@ -490,7 +539,27 @@ func (s *Server) getClaimed(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) syncStatus(w http.ResponseWriter, r *http.Request) {
 	id, _ := IdentityFrom(r.Context())
-	s.proxyGet(w, r, "/sync-status?usuario="+domainclient.Escape(id.Email))
+	// O cooldown viaja junto do status para a tela poder desabilitar o botão com
+	// a contagem, em vez de deixar a pessoa clicar e levar 429.
+	if !s.domain.Enabled() {
+		writeJSON(w, http.StatusOK, map[string]any{"cooldown_segundos": 0})
+		return
+	}
+	var m map[string]any
+	if err := s.domain.Get(r.Context(), "/sync-status?usuario="+domainclient.Escape(id.Email), &m); err != nil {
+		if err == domainclient.ErrNotFound {
+			writeJSON(w, http.StatusOK, map[string]any{})
+			return
+		}
+		s.log.ErrorContext(r.Context(), "sync status", "error", err)
+		writeError(w, http.StatusBadGateway, "falha ao ler o status")
+		return
+	}
+	if m == nil {
+		m = map[string]any{}
+	}
+	m["cooldown_segundos"] = int(s.syncLimiter.peek(id.Email, time.Now()).Seconds())
+	writeJSON(w, http.StatusOK, m)
 }
 
 func (s *Server) setWatch(w http.ResponseWriter, r *http.Request) {
@@ -571,6 +640,25 @@ func (s *Server) claimPro(w http.ResponseWriter, r *http.Request) {
 // own queue; this only records the request as a sync run the SPA can watch.
 func (s *Server) startSync(w http.ResponseWriter, r *http.Request) {
 	id, _ := IdentityFrom(r.Context())
+	// Freio de 30 min por pessoa: o sync dispara dezenas de consultas à fonte, e
+	// uma rajada faz o CDN bloquear por IP -- o que derrubaria a coleta de todos.
+	// A janela acompanha o ciclo do worker: dentro dela, pedir de novo não traz
+	// dado mais novo.
+	if ok, falta := s.syncLimiter.allow(id.Email, time.Now()); !ok {
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"iniciado":          false,
+			"motivo":            "aguarde",
+			"retry_em_segundos": int(falta.Seconds()),
+		})
+		return
+	}
+	if !s.domain.Enabled() {
+		// Sem persistência (dev local), o pedido de sync não tem onde ser
+		// gravado -- mas a resposta é a mesma "iniciado" para a tela não achar
+		// que falhou. A alternativa seria um 503, que travaria a tela em dev.
+		writeJSON(w, http.StatusAccepted, map[string]any{"iniciado": true})
+		return
+	}
 	if err := s.domain.Post(r.Context(), "/sync-status", map[string]any{
 		"user_email": id.Email, "running": true, "skill_rating": 1, "total": 0, "completed": 0,
 		"current": "", "new_items": []string{},

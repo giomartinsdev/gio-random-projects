@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArrowRight, Crosshair, Goal, Star, Target, Trophy } from "lucide-react";
 import { api } from "../lib/api";
-import type { Announcement, ClubRef, GlobalRecords, RankPlayer } from "../lib/types";
+import type { Announcement, ClubRef, GlobalRecords, HubReport, RankPlayer, RegionCount } from "../lib/types";
 import { Badge, Bar, Card, Crest, Empty, Pager, RankMedallion, Spinner, Stat } from "../components/ui";
 import { PageHead } from "../components/shell";
 import { ANUNCIO_ICONS, FLOW_ICONS, VerifiedIcon, type LucideIcon } from "../components/icons";
@@ -173,9 +173,13 @@ export function HomePage({
   const [totalJogadores, setTotalJogadores] = useState<number | null>(null);
   const [error, setErro] = useState("");
   const [globalRecs, setGlobalRecs] = useState<GlobalRecords | null>(null);
+  const [regions, setRegions] = useState<RegionCount[]>([]);
+  const [report, setReport] = useState<HubReport | null>(null);
 
   useEffect(() => {
     api.globalRecords().then(setGlobalRecs).catch(() => setGlobalRecs(null));
+    api.regions().then((r) => setRegions(r.regioes ?? [])).catch(() => setRegions([]));
+    api.hubReport().then(setReport).catch(() => setReport(null));
   }, []);
 
   useEffect(() => {
@@ -364,6 +368,40 @@ export function HomePage({
           </Card>
         </div>
       )}
+
+      {/* Relatório do acervo + regiões: o que o hub tem, sem login. */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Card title={t("home.hubReport")}>
+          {report === null ? (
+            <Spinner />
+          ) : (
+            <div className="grid grid-cols-2 gap-3 px-4 py-4 sm:grid-cols-4">
+              <Stat label={t("home.reportClubs")} value={fmt(report.clubs)} sub={`${fmt(report.tracked_clubs)} ${t("common.tracked")}`} accent />
+              <Stat label={t("home.reportMatches")} value={fmt(report.matches)} />
+              <Stat label={t("home.reportPlayers")} value={fmt(report.players)} />
+              <Stat label={t("analytics.coverage")} value={fmt(report.coverage_days)} sub={t("analytics.coverage")} />
+            </div>
+          )}
+        </Card>
+
+        <Card title={t("home.regions")}>
+          {regions.length === 0 ? (
+            <Empty title={t("common.noData")} hint={t("home.regionsHint")} />
+          ) : (
+            <ul className="divide-y divide-[var(--border)]">
+              {regions.slice(0, 6).map((r) => (
+                <li key={r.region_id} className="flex items-center gap-3 px-4 py-2 text-xs">
+                  <span className="font-mono text-faint">#{r.region_id}</span>
+                  <span className="min-w-0 flex-1 truncate">{r.top_name}</span>
+                  <span className="tnum font-mono text-faint">
+                    {fmt(r.clubs)} {t("common.clubs")} · {fmt(r.tracked)} {t("common.tracked")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
 
       <div className="mt-4">
         <Card
