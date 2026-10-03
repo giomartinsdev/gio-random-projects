@@ -1,0 +1,70 @@
+"""finance-contracts -- the finance bounded context's shared contract.
+
+Single source of truth (spec §7): the ``{action, payload}`` command
+envelope, the action family, and the domain events. Imported from
+``packages/`` by both apps; never copied into an app's ``src/``.
+"""
+
+from finance_contracts.envelope import (
+    ACTION_CATEGORIZE_TRANSACTION,
+    ACTION_GET_CASH_FLOW_HISTORY,
+    ACTION_GET_CATEGORY_BREAKDOWN,
+    ACTION_GET_DAILY_SUMMARY,
+    ACTION_GET_MONTHLY_DASHBOARD,
+    ACTION_RECONCILE_OPEN_FINANCE_TRANSACTION,
+    ACTION_REGISTER_TRANSACTION,
+    ACTION_SET_CATEGORY_BUDGET,
+    ACTION_TRANSFER_BETWEEN_ACCOUNTS,
+    ACTION_MAX_LENGTH,
+    ENVELOPE_SCHEMA_VERSION,
+    FINANCE_ACTION_PREFIX,
+    STATUS_ACCEPTED,
+    SYNC_COMMAND_PATH,
+    SYNC_HTTP_TO_STATUS,
+    SYNC_STATUS_FAILED,
+    SYNC_STATUS_QUEUED,
+    SYNC_STATUS_WRITTEN,
+    AcceptedResult,
+    CommandEnvelope,
+    SyncResult,
+)
+from finance_contracts.events import (
+    EVENT_BUDGET_THRESHOLD_REACHED,
+    EVENT_SCHEMA_VERSION,
+    EVENT_TRANSACTION_CATEGORIZED,
+    EVENT_TRANSACTION_REGISTERED,
+    EVENT_TRANSFER_COMPLETED,
+    BudgetThresholdReached,
+    DomainEvent,
+)
+
+__all__ = [
+    "ACTION_CATEGORIZE_TRANSACTION",
+    "ACTION_GET_CASH_FLOW_HISTORY",
+    "ACTION_GET_CATEGORY_BREAKDOWN",
+    "ACTION_GET_DAILY_SUMMARY",
+    "ACTION_GET_MONTHLY_DASHBOARD",
+    "ACTION_MAX_LENGTH",
+    "ACTION_RECONCILE_OPEN_FINANCE_TRANSACTION",
+    "ACTION_REGISTER_TRANSACTION",
+    "ACTION_SET_CATEGORY_BUDGET",
+    "ACTION_TRANSFER_BETWEEN_ACCOUNTS",
+    "AcceptedResult",
+    "BudgetThresholdReached",
+    "CommandEnvelope",
+    "DomainEvent",
+    "ENVELOPE_SCHEMA_VERSION",
+    "EVENT_BUDGET_THRESHOLD_REACHED",
+    "EVENT_SCHEMA_VERSION",
+    "EVENT_TRANSACTION_CATEGORIZED",
+    "EVENT_TRANSACTION_REGISTERED",
+    "EVENT_TRANSFER_COMPLETED",
+    "FINANCE_ACTION_PREFIX",
+    "STATUS_ACCEPTED",
+    "SYNC_COMMAND_PATH",
+    "SYNC_HTTP_TO_STATUS",
+    "SYNC_STATUS_FAILED",
+    "SYNC_STATUS_QUEUED",
+    "SYNC_STATUS_WRITTEN",
+    "SyncResult",
+]

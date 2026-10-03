@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "finance-contracts"
+version = "0.1.0"
+description = "Shared contracts of the finance bounded context: the {action, payload} command envelope and the domain events. Single source of truth -- imported from packages/, never copied into an app's src/."
+# Mesma baseline do resto do repo (python-ci-cd.yml: python-version 3.12).
+requires-python = ">=3.12"
+# Zero dependencias de runtime de proposito: e o contrato que os dois apps
+# (finance-api, finance-whatsapp-worker) importam, entao nao pode arrastar
+# nada para dentro deles. pydantic nao entra aqui -- o contrato e dataclass
+# puro, e quem precisa de validacao de schema faz no proprio app.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/finance_contracts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
