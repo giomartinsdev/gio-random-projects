@@ -30,7 +30,11 @@ name: maus
 
 services:
   omb:
-    image: ghcr.io/milind-soni/openmausbot:v0.1.95
+    # Built arm64 pelo workflow `maus-image.yml` a partir do upstream
+    # milind-soni/OpenMausBot (o ghcr só publica amd64; a VPS é Ampere arm64
+    # sem emulação de container que funcione — ver o comentário do topo).
+    # A tag do upstream fica no default/input daquele workflow.
+    image: registry.giomartins.dev:5000/maus:latest
     container_name: omb
     restart: unless-stopped
     init: true

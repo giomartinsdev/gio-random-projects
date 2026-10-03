@@ -1,0 +1,148 @@
+name: Maus image
+
+# Builds an arm64 image of OpenMausBot (milind-soni/OpenMausBot) and pushes
+# it to the private registry. Why this exists: the project only publishes
+# linux/amd64 (the ghcr manifest has a single platform), and the VPS is an
+# Oracle Ampere (arm64) instance with no working amd64 emulation for
+# containers -- see docs/servidor-zomboid.md, where the same wall killed the
+# Zomboid container. So `ghcr.io/milind-soni/openmausbot` can't run here;
+# this job rebuilds the upstream Dockerfile for linux/arm64 (via QEMU on the
+# amd64 runner) and the `maus` stack pulls registry.giomartins.dev:5000/maus.
+#
+# Trigger is manual on purpose. Until the first arm64 image exists in the
+# registry, an automatic push trigger would only launch a 20-40 min QEMU
+# build that would fail. To make upstream bumps automatic later, add a
+# version file (e.g. stacks/maus/VERSION holding "v0.1.95") and a push path
+# trigger; bumping the file then rebuilds.
+#
+# Depois do primeiro build de sucesso: no Dockhand, deixe a stack `maus`
+# (id 11) com repull_images + force_redeploy ligados (default do stack) --
+# assim o webhook abaixo puxa a :latest nova e recria.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream OpenMausBot tag to build (e.g. v0.1.95)"
+        required: true
+        default: "v0.1.95"
+
+env:
+  MAUS_VERSION: ${{ inputs.version || 'v0.1.95' }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The VPS is arm64 (Oracle Ampere) but this runner is amd64 -- QEMU is
+      # what lets BuildKit actually produce an arm64 image here (same reason
+      # go-ci-cd.yml sets it up).
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      # registry.giomartins.dev:5000 is plain HTTP (Phase 1), which dockerd
+      # rejects unless allow-listed as insecure; `docker login` goes through
+      # the runner's dockerd, so it needs this regardless of buildx.
+      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
+        run: |
+          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
+          sudo systemctl restart docker
+
+      # Cross-arch builds need BuildKit's isolated docker-container driver;
+      # its own daemon needs the insecure-registry trust in BuildKit's config
+      # format (see go-ci-cd.yml for the full explanation).
+      - uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-config-inline: |
+            [registry."registry.giomartins.dev:5000"]
+              http = true
+              insecure = true
+
+      # SSH + the vault fetch are only for reading the registry credentials;
+      # this job doesn't touch Terraform or var.docker_host.
+      - name: Set up SSH access to the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          echo "DOCKER_HOST=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
+
+      - name: Fetch registry credentials from Vaultwarden
+        env:
+          NETWORK_NAME: apps
+          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
+          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
+          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
+          ITEM_MAP: "REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
+        run: |
+          set -o pipefail
+          modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
+            echo "::add-mask::$v"
+            echo "${k}=${v}" >> "$GITHUB_ENV"
+          done
+
+      - name: Log in to registry.giomartins.dev:5000
+        uses: docker/login-action@v3
+        with:
+          registry: registry.giomartins.dev:5000
+          username: ${{ env.REGISTRY_USERNAME }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+
+      # Build straight from the upstream repo at the pinned tag -- git context,
+      # so there's nothing vendored to keep in sync. The upstream Dockerfile
+      # runs native `pnpm build:server` + `vite build` and bakes a browser; on
+      # arm64 that whole build runs under QEMU, so expect 20-40 min.
+      - name: Build and push maus (arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: https://github.com/milind-soni/OpenMausBot.git#${{ env.MAUS_VERSION }}
+          file: Dockerfile
+          push: true
+          platforms: linux/arm64
+          cache-from: type=gha,scope=maus
+          cache-to: type=gha,mode=max,scope=maus
+          tags: |
+            registry.giomartins.dev:5000/maus:latest
+            registry.giomartins.dev:5000/maus:${{ env.MAUS_VERSION }}
+
+  # Redeploy da stack `maus` (id 11) no Dockhand, mesmo desenho dos outros
+  # workflows (webhook do git stack pelo loopback do VPS via SSH, secret
+  # DOCKHAND_WEBHOOK_SECRET). Só roda se o stack já existir e estiver com
+  # repull_images + force_redeploy ligados.
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    concurrency:
+      group: dockhand-deploy-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Set up SSH access to the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Trigger Dockhand redeploy
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          DOCKHAND_WEBHOOK_SECRET: ${{ secrets.DOCKHAND_WEBHOOK_SECRET }}
+        run: |
+          if [ -z "$DOCKHAND_WEBHOOK_SECRET" ]; then
+            echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a imagem já foi publicada)."
+            exit 0
+          fi
+          echo "== redeploy stack id=11 (maus)"
+          out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 'http://127.0.0.1:8093/api/git/stacks/11/webhook?secret=$DOCKHAND_WEBHOOK_SECRET'")
+          echo "$out"
+          echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack 11 (maus)"; exit 1; }
