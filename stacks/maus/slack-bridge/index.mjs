@@ -164,12 +164,23 @@ async function resolveAndRun(slack, client, channel, rootTs, user, rawText) {
     await post(client, channel, rootTs, `*Bots disponíveis:*\n${botListText(bots)}`);
     return;
   }
-  const use = text.match(/^use\s+(.+)$/i);
+  // `use <bot>`: only the first word names the bot; anything after it is the
+  // first task for that bot (so a whole sentence is not mistaken for a name).
+  const use = text.match(/^use\s+(\S+)(?:\s+([\s\S]*))?$/i);
   if (use) {
     const bot = resolveBot(bots, use[1]);
-    if (!bot) { await post(client, channel, rootTs, `Não achei "${use[1].trim()}".\n\n${botListText(bots)}`); return; }
+    if (!bot) { await post(client, channel, rootTs, `Não achei "${use[1]}".\n\n${botListText(bots)}`); return; }
     state.channelDefaults[channel] = bot.name; saveState();
-    await post(client, channel, rootTs, `Beleza — este canal agora usa *${bot.name}*. (troque com \'use <nome>\')`);
+    const task = (use[2] || "").replace(/^[-–—:]\s*/, "").trim();
+    if (task) {
+      const session = await startSession(client, channel, rootTs, bot, task.slice(0, 40) || "nova");
+      const sent = await sendToMaus(session, task);
+      if (sent.status !== 202 && sent.status !== 200) {
+        await post(client, channel, rootTs, `*${bot.name}* recusou (${sent.status}): ${(sent.json?.error || sent.text || "").slice(0, 180)}`);
+      }
+      return;
+    }
+    await post(client, channel, rootTs, `Beleza — este canal agora usa *${bot.name}*. (troque com \`use <nome>\`)`);
     return;
   }
 
