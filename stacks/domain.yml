@@ -1,0 +1,43 @@
+# domain.yml — apps do bounded context `domain` (migra
+# `modules/compute/apps/domain_api`): a API de leitura e o worker (único
+# escritor) do CQRS. Dependem do storage em persistence.yml (postgres, redis)
+# pela rede `apps`.
+#
+# Segredos (variáveis de stack no Dockhand):
+#   POSTGRES_PASSWORD   (a MESMA senha do postgres em persistence.yml)
+#   DOMAIN_API_KEYS     (lista key:label — ver stacks/README.md)
+name: domain
+
+services:
+  domain-api:
+    image: registry.giomartins.dev:5000/domain-api:latest
+    container_name: domain-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://domain:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}@postgres:5432/domain
+      REDIS_ADDR: redis:6379
+      HTTP_ADDR: ":8000"
+      DOMAIN_API_KEYS: ${DOMAIN_API_KEYS:?defina DOMAIN_API_KEYS}
+      RATE_LIMIT_RPS: "1"
+      RATE_LIMIT_BURST: "5"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: domain-api
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks: [apps]
+
+  domain-worker:
+    image: registry.giomartins.dev:5000/domain-worker:latest
+    container_name: domain-worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://domain:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}@postgres:5432/domain
+      REDIS_ADDR: redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: domain-worker
+    networks: [apps]
+
+networks:
+  apps:
+    external: true
+    name: apps

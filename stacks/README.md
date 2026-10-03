@@ -4,24 +4,31 @@ O lar das stacks persistidas — o lado da migração que sai do
 Terraform-por-container. Cada arquivo é **um stack** do Docker Compose,
 versionado aqui e gerenciado pelo Dockhand.
 
-## Arquivos (infra)
+## Arquivos
+
+Cada arquivo é um stack **independente** (sem agregado na raiz). Não há
+`depends_on` entre arquivos — a ordem de subida é operacional.
 
 | Arquivo | O que migra | Serviços |
 | --- | --- | --- |
 | `persistence.yml` | `modules/storage/*` | postgres, redis, minio (+ volumes) |
 | `compute.yml` | `modules/compute/services/*` (menos observability) | registry, htpasswd-init, registry-docker-config, watchtower, beszel-hub, beszel-agent, vaultwarden, vaultwarden-api, adminer, 9router, ingress, dockhand |
 | `observability.yml` | `modules/compute/services/observability` | loki, prometheus, tempo, alloy, grafana (+ configs em `observability/`) |
+| `domain.yml` | `modules/compute/apps/domain_api` | domain-api, domain-worker |
+| `tela.yml` | `modules/compute/apps/tela_api` | tela-mediamtx, tela-coturn, tela-api (os 3 em host network) |
+| `clubs.yml` | `modules/compute/apps/clubs_api` + `clubs_ingest` | clubs-api, clubs-ingest |
 
-Os stacks de **app** (`domain`, `tela`, `clubs`, …) vêm numa fase
-posterior — o repo ainda não os tem aqui.
+Os **frontends** (`tela-frontend`, `clubs-frontend`, `hub-frontend`) são
+builds estáticos espelhados em bucket do MinIO — não são container, não
+entram aqui.
 
 O `ingress/default.conf` é o nginx renderizado (o TF gerava do
 `local.services`; agora é arquivo versionado). Se um app migrar e mudar a
 porta loopback, edite aqui.
 
-> **Detalhe do git-backed:** com os três arquivos na mesma pasta `stacks/`,
+> **Detalhe do git-backed:** com todos os arquivos na mesma pasta `stacks/`,
 > se você apontar o Dockhand pro mesmo *context directory* pra todos, um
-> commit em qualquer arquivo pode redeployar os três (a detecção de mudança
+> commit em qualquer arquivo pode redeployar todos (a detecção de mudança
 > é por diretório). Se quiser detecção por stack, ponha cada arquivo na
 > própria subpasta.
 
@@ -51,6 +58,13 @@ porta loopback, edite aqui.
 `NINEROUTER_JWT_SECRET`, `NINEROUTER_INITIAL_PASSWORD`.
 
 `observability.yml`: `GRAFANA_ADMIN_PASSWORD`.
+
+`domain.yml`: `POSTGRES_PASSWORD` (a MESMA do persistence), `DOMAIN_API_KEYS`.
+
+`clubs.yml`: `CLUBS_SESSION_SECRET`, `CLUBS_API_DOMAIN_KEY`,
+`CLUBS_INGEST_DOMAIN_KEY`.
+
+`tela.yml`: `TELA_TURN_SECRET`.
 
 > **Vaultwarden não serve o provider "Bitwarden" do Dockhand.** O provider
 > é o Bitwarden *Secrets Manager* (`bws` + Machine Account + Project UUID),

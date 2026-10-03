@@ -1,0 +1,98 @@
+# tela.yml — apps do screen sharing (migra `modules/compute/apps/tela_api`).
+# Os TRÊS containers são network_mode: host: o MediaMTX anuncia o IP na
+# internet e bind a porta de mídia direto no host; o coturn faz relay no mesmo
+# host; a tela-api fala com ambos pelo loopback. Nenhum entra na rede `apps`.
+#
+# IPs hardcoded (iguais aos do TF): público 168.138.135.6, privado 10.0.0.209.
+# Portas 8217 (udp/tcp), 3478 (udp/tcp) e 49160-49200 (udp) ficam no firewall
+# do host (host_baseline), NÃO no compose.
+#
+# Segredo: TELA_TURN_SECRET (static-auth-secret do coturn, compartilhado com a
+# tela-api, que emite credenciais TURN de curta duração via TURN REST API).
+name: tela
+
+services:
+  tela-mediamtx:
+    image: bluenviron/mediamtx:1
+    container_name: tela-mediamtx
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      # HTTP (WHIP/WHEP) no loopback; a tela-api alcança por 127.0.0.1:8889.
+      MTX_WEBRTCADDRESS: 127.0.0.1:8889
+      # Porta única de mídia (ICE/DTLS), bind direto no host; precisa ser
+      # alcançável da internet e bater com o que os browsers recebem.
+      MTX_WEBRTCLOCALUDPADDRESS: ":8217"
+      MTX_WEBRTCLOCALTCPADDRESS: ":8217"
+      # O endereço que o MediaMTX anuncia nos candidatos ICE.
+      MTX_WEBRTCADDITIONALHOSTS: "168.138.135.6"
+      # Sem isto ele anuncia também docker0/br-* (não roteáveis da internet).
+      MTX_WEBRTCIPSFROMINTERFACES: "no"
+      MTX_RTSP: "no"
+      MTX_RTMP: "no"
+      MTX_HLS: "no"
+      MTX_SRT: "no"
+      MTX_MOQ: "no"
+      MTX_API: "no"
+      MTX_METRICS: "no"
+      MTX_LOGLEVEL: info
+      MTX_LOGDESTINATIONS: stdout
+
+  tela-coturn:
+    image: coturn/coturn:latest
+    container_name: tela-coturn
+    restart: unless-stopped
+    network_mode: host
+    depends_on: [tela-mediamtx]
+    command:
+      - "-n"
+      - "--use-auth-secret"
+      - "--static-auth-secret=${TELA_TURN_SECRET:?defina TELA_TURN_SECRET}"
+      - "--realm=tela.giomartins.dev"
+      - "--no-cli"
+      - "--no-tls"
+      - "--log-file=stdout"
+      - "--fingerprint"
+      # Pina no ip privado do host; nunca deixa vazar para docker0/br-*.
+      - "--listening-ip=10.0.0.209"
+      - "--relay-ip=10.0.0.209"
+      - "--listening-port=3478"
+      - "--min-port=49160"
+      - "--max-port=49200"
+      # Anuncia o público, entrega no privado (o host não faz hairpin).
+      - "--external-ip=168.138.135.6/10.0.0.209"
+
+  tela-api:
+    image: registry.giomartins.dev:5000/tela-api:latest
+    container_name: tela-api
+    restart: unless-stopped
+    network_mode: host
+    depends_on: [tela-mediamtx]
+    environment:
+      PORT: "8007"
+      # Só o ingress (host network) alcança a API; roteia por Host header.
+      BIND_HOST: 127.0.0.1
+      STATE_FILE: /data/rooms.json
+      # MediaMTX pelo loopback (ambos host-networked: DNS do docker não existe).
+      MEDIAMTX_INTERNAL_URL: http://127.0.0.1:8889
+      TELA_STUN_URLS: ""
+      # coturn vence sobre STUN/estático quando TELA_TURN_SECRET está setado.
+      TELA_TURN_URLS: "turn:168.138.135.6:3478?transport=udp turn:168.138.135.6:3478?transport=tcp"
+      TELA_TURN_SECRET: ${TELA_TURN_SECRET:?defina TELA_TURN_SECRET}
+      TELA_TURN_USERID: tela
+      TELA_TURN_USERNAME: ""
+      TELA_TURN_PASSWORD: ""
+      TELA_TURN_CF_KEY_ID: ""
+      TELA_TURN_CF_API_TOKEN: ""
+      FRONTEND_ORIGINS: https://tela.giomartins.dev
+      # Loopback: host networking não resolve nomes do docker; alloy publica
+      # 4318 no 127.0.0.1 do host.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+      OTEL_SERVICE_NAME: tela-api
+    volumes:
+      - tela-state:/data
+
+volumes:
+  tela-state:
+    external: true
+    name: tela-state

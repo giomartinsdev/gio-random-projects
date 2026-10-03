@@ -1,0 +1,52 @@
+# clubs.yml — apps do FC Clubs Hub (migra `modules/compute/apps/clubs_api` e
+# `modules/compute/apps/clubs_ingest`). clubs-api é o BFF (loopback 8017; o
+# ingress roteia clubs-api.giomartins.dev); clubs-ingest é o poller da fonte
+# EA. Ambos falam com a domain-api pela rede `apps`.
+#
+# Segredos (variáveis de stack no Dockhand):
+#   CLUBS_SESSION_SECRET      (HS256 que assina o cookie de sessão)
+#   CLUBS_API_DOMAIN_KEY      (chave da clubs-api no DOMAIN_API_KEYS)
+#   CLUBS_INGEST_DOMAIN_KEY   (chave do worker no DOMAIN_API_KEYS)
+# CLUBS_GOOGLE_CLIENT_ID é público (vai no bundle do SPA).
+name: clubs
+
+services:
+  clubs-api:
+    image: registry.giomartins.dev:5000/clubs-api:latest
+    container_name: clubs-api
+    restart: unless-stopped
+    environment:
+      PORT: "8017"
+      CLUBS_FRONTEND_ORIGINS: https://clubs.giomartins.dev,http://localhost:5173
+      CLUBS_SESSION_SECRET: ${CLUBS_SESSION_SECRET:?defina CLUBS_SESSION_SECRET}
+      CLUBS_SESSION_COOKIE_DOMAIN: ""
+      CLUBS_GOOGLE_CLIENT_ID: 45441571832-4vldrm5h9ef87c82m1spuu6g8foa0k8c.apps.googleusercontent.com
+      CLUBS_PUBLIC_ORIGIN: https://clubs.giomartins.dev
+      CLUBS_API_ORIGIN: https://clubs-api.giomartins.dev
+      CLUBS_DOMAIN_API_URL: http://domain-api:8000
+      CLUBS_DOMAIN_API_KEY: ${CLUBS_API_DOMAIN_KEY:?defina CLUBS_API_DOMAIN_KEY}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: clubs-api
+    ports:
+      - "127.0.0.1:8017:8017"
+    networks: [apps]
+
+  clubs-ingest:
+    image: registry.giomartins.dev:5000/clubs-ingest:latest
+    container_name: clubs-ingest
+    restart: unless-stopped
+    environment:
+      CLUBS_INGEST_DOMAIN_API_URL: http://domain-api:8000
+      CLUBS_INGEST_DOMAIN_API_KEY: ${CLUBS_INGEST_DOMAIN_KEY:?defina CLUBS_INGEST_DOMAIN_KEY}
+      CLUBS_INGEST_POLL_SECONDS: "900"
+      CLUBS_INGEST_TTL_MATCHES: "300"
+      CLUBS_INGEST_TTL_SQUAD: "3600"
+      CLUBS_INGEST_DISCORD_WEBHOOK: ${CLUBS_INGEST_DISCORD_WEBHOOK:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: clubs-ingest
+    networks: [apps]
+
+networks:
+  apps:
+    external: true
+    name: apps
