@@ -63,11 +63,18 @@ export const SHORTCUTS: Shortcut[] = [
     url: "https://minio.giomartins.dev",
   },
   {
-    id: "beszel",
-    name: "Beszel",
-    emoji: "📈",
-    description: "saúde da VPS e dos containers",
-    url: "https://beszel.giomartins.dev",
+    id: "dockhand",
+    name: "Dockhand",
+    emoji: "🐳",
+    description: "containers, stacks e imagens",
+    url: "https://dockhand.giomartins.dev",
+  },
+  {
+    id: "adminer",
+    name: "Adminer",
+    emoji: "🗄️",
+    description: "banco de dados (Postgres)",
+    url: "https://adminer.giomartins.dev",
   },
   {
     id: "vault",
