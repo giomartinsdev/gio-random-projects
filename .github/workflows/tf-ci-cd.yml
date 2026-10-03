@@ -22,13 +22,8 @@ name: Terraform deploy
 # as before this split.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "modules/infra/terraform/**"
-  pull_request:
-    paths:
-      - "modules/infra/terraform/**"
+  # Desativado durante a migração pra stacks (Dockhand): nenhum apply
+  # automático. Só manual (workflow_dispatch), e o job de apply foi removido.
   workflow_dispatch:
     inputs:
       replace_vault_seed_group:
@@ -187,65 +182,3 @@ jobs:
           path: modules/infra/terraform/tfplan
           retention-days: 1
 
-  apply:
-    needs: plan
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    environment: production
-    # Deliberately NOT in the shared "terraform-apply" concurrency
-    # group the three app-deploy workflows use: this job pauses on a
-    # human approval (environment: production above), and a GitHub
-    # Actions concurrency group only holds one *running* job plus one
-    # *queued* one -- a run sitting in "waiting for approval" occupies
-    # that queued slot for as long as the approval takes, which can be
-    # hours. Sharing the group would mean every automatic app deploy
-    # backs up behind whoever hasn't clicked approve yet, which is
-    # worse than the lock-contention problem the group exists to fix.
-    # Terraform's own state lock (use_lockfile, versions.tf) still
-    # protects a genuine collision here; it's just not FIFO-queued
-    # against the app pipelines the way those three are against each
-    # other.
-    steps:
-      - uses: actions/checkout@v4
-
-      # Only for DOCKER_HOST -- applying a saved plan doesn't
-      # re-evaluate any variable (server_ip, registry_password, ...),
-      # just the providers' own connections, which the docker provider
-      # still needs a live SSH session for.
-      - name: Set up SSH access to the VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          echo "TF_VAR_docker_host=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "~> 1.10"
-
-      - name: Init
-        run: terraform init -backend-config="endpoints={s3=\"${{ secrets.TF_STATE_R2_ENDPOINT }}\"}"
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: tfplan
-          path: modules/infra/terraform
-
-      - name: Apply
-        run: |
-          # Mesmo transitório de sshd do Plan acima: o apply reabre a sessão
-          # SSH do provider. O apply é idempotente a partir do plano salvo,
-          # então re-tentar é seguro.
-          for tentativa in 1 2 3 4 5; do
-            if terraform apply -input=false -lock-timeout=300s -auto-approve tfplan; then
-              exit 0
-            fi
-            echo "::warning::apply falhou (tentativa $tentativa); aguardando antes de repetir"
-            sleep $((tentativa * 20))
-          done
-          echo "::error::apply falhou após 5 tentativas"
-          exit 1
