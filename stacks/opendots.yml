@@ -16,8 +16,10 @@
 #                                   qualquer valor não-vazio: REQUIRE_API_KEY=false)
 # Defaults (sobrescrevíveis):
 #   OPENDOTS_OWNER_ID, OPENDOTS_OPENAI_BASE_URL, OPENDOTS_OPENAI_MODEL,
-#   OPENDOTS_INTELLIGENCE_API_KEY (a chave pré-semeada do composite),
 #   OPENDOTS_INTELLIGENCE_API_URL, OPENDOTS_INTELLIGENCE_WS_URL.
+# Segredo adicional (variável de stack):
+#   OPENDOTS_INTELLIGENCE_API_KEY   API key provisionada no Intelligence
+#                                   (org/projeto/key no DB do composite).
 name: opendots
 
 services:
@@ -42,8 +44,8 @@ services:
       OWNER_ID: ${OPENDOTS_OWNER_ID:-opendots-owner}
       OWNER_TOKEN: ${OPENDOTS_OWNER_TOKEN:?defina OPENDOTS_OWNER_TOKEN}
       # Intelligence self-hosted (stack `intelligence`, na rede `apps`).
-      # A chave pré-semeada é a que o container composite espera.
-      INTELLIGENCE_API_KEY: ${OPENDOTS_INTELLIGENCE_API_KEY:-cpk_sPRVSEED_seed0privat0longtoken00}
+      # API key provisionada no DB do composite (cpki.api_keys).
+      INTELLIGENCE_API_KEY: ${OPENDOTS_INTELLIGENCE_API_KEY:?defina OPENDOTS_INTELLIGENCE_API_KEY}
       INTELLIGENCE_API_URL: ${OPENDOTS_INTELLIGENCE_API_URL:-http://intelligence:4201}
       INTELLIGENCE_WS_URL: ${OPENDOTS_INTELLIGENCE_WS_URL:-ws://intelligence:4401}
       # O 9router (stack compute) é OpenAI-compatível e está na rede `apps`.
