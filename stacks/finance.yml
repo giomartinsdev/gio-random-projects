@@ -1,0 +1,63 @@
+# finance.yml — bounded context financeiro (finance-api + finance-whatsapp-worker).
+# Depende de persistence.yml (postgres, rabbitmq) e do compute (alloy p/ OTLP),
+# pela rede externa `apps`.
+#
+# Isolamento (§1.1): NENHUM serviço daqui tem DATABASE_URL nem driver de banco.
+# Banco, broker de comando, domain-api e domain-worker são do stack `domain`.
+#
+# Segredos (variáveis de stack no Dockhand — NUNCA no git, só ${VAR}):
+#   FINANCE_API_KEYS        (lista key:label, um caller por serviço)
+#   FINANCE_WORKER_API_KEY  (key do worker; a MESMA tem de estar em FINANCE_API_KEYS)
+#   FINANCE_DOMAIN_API_KEY  (key da finance-api p/ o domain-api; a MESMA tem de
+#                           estar em DOMAIN_API_KEYS do stack `domain`, senão
+#                           todo request leva 401 com o deploy verde — §10.3)
+#   WHATSAPP_VERIFY_TOKEN / WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID
+name: finance
+
+services:
+  finance-api:
+    image: registry.giomartins.dev:5000/finance-api:latest
+    container_name: finance-api
+    restart: unless-stopped
+    environment:
+      # SEM DATABASE_URL / RABBITMQ_URL — a persistência é do stack `domain` (§1.1)
+      DOMAIN_API_BASE_URL: http://domain-api:8000
+      DOMAIN_API_KEY: ${FINANCE_DOMAIN_API_KEY:?defina FINANCE_DOMAIN_API_KEY}
+      HTTP_ADDR: ":8000"
+      FINANCE_API_KEYS: ${FINANCE_API_KEYS:?defina FINANCE_API_KEYS}
+      RATE_LIMIT_RPS: "5"
+      RATE_LIMIT_BURST: "20"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: finance-api
+    ports:
+      - "127.0.0.1:8018:8000"      # porta loopback nova — ver §10.5
+    networks: [apps]
+
+  # ATENÇÃO — o bloco abaixo é o CONTRATO com a fatia 2/3, não um desenho
+  # verificado: o app `finance-whatsapp-worker` AINDA NÃO EXISTE no repo. Ajustar
+  # env/porta/healthcheck quando ele for escrito, ANTES de subir este serviço, e
+  # derivar daí o `paths:`/`STACK` do CI (§10.4-4). Este é o único serviço daqui
+  # que consome o broker (eventos `finance.*`) — não é broker de comando (§1.1).
+  finance-whatsapp-worker:
+    image: registry.giomartins.dev:5000/finance-whatsapp-worker:latest
+    container_name: finance-whatsapp-worker
+    restart: unless-stopped
+    environment:
+      # SEM DATABASE_URL — regra de isolamento (§1.1)
+      FINANCE_API_BASE_URL: http://finance-api:8000
+      FINANCE_API_KEY: ${FINANCE_WORKER_API_KEY:?defina FINANCE_WORKER_API_KEY}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-domain}:${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}@rabbitmq:5672/
+      HTTP_ADDR: ":8080"
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:?defina WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:?defina WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:?defina WHATSAPP_PHONE_NUMBER_ID}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: finance-whatsapp-worker
+    ports:
+      - "127.0.0.1:8019:8080"      # webhook do WhatsApp — ver §10.5
+    networks: [apps]
+
+networks:
+  apps:
+    external: true
+    name: apps

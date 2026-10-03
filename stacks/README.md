@@ -19,6 +19,7 @@ Cada arquivo é um stack **independente** (sem agregado na raiz). Não há
 | `domain.yml` | `modules/compute/apps/domain_api` | domain-api, domain-worker |
 | `tela.yml` | `modules/compute/apps/tela_api` | tela-mediamtx, tela-coturn, tela-api (os 3 em host network) |
 | `clubs.yml` | `modules/compute/apps/clubs_api` + `clubs_ingest` | clubs-api, clubs-ingest |
+| `finance.yml` | bounded context financeiro (`finance-api` + `finance-whatsapp-worker`) | finance-api, finance-whatsapp-worker |
 | `maus.yml` | OpenMausBot (milind-soni/OpenMausBot): chat com um roster de bots, cada um com modelo, computador e apps conectados | omb (harness + UI, `ghcr.io/milind-soni/openmausbot`), maus-caddy (edge HTTP na netns do omb) |
 
 **`core.yml` é de boot, isolada de propósito.** O Dockhand deploya as

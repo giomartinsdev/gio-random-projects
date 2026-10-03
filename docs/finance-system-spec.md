@@ -30,9 +30,11 @@ criar um segundo CQRS:
 
 - `finance-api` é a **ACL do bounded context financeiro**: traduz o comando do
   worker para o envelope `{action, payload}` da casa, valida as invariantes do
-  §3.4 e **manda request para o `domain-api`** para persistir — `POST` async →
-  `202 {command_id}`, ou `/sync` → 200/422/504 quando o chamador precisa da
-  confirmação. Ela **não tem `DATABASE_URL`** nem driver de banco.
+  §3.4 e **manda request para o `domain-api`** para persistir. Hoje esse request
+  é sempre `/sync` → 200/422/504: a porta envelope assíncrona (`202`) **não
+  existe** no `domain-api` (só o `/sync` decodifica `{action, payload}` — ver
+  §4.1), então a `finance-api` não emite um `202` que nada aceitou. Ela **não tem
+  `DATABASE_URL`** nem driver de banco.
 - `domain-api` publica o comando no RabbitMQ; o `domain-worker` o consome,
   aplica, grava a auditoria (sucesso **ou** falha) e publica o evento. São os
   dois — stack `domain` — que detêm `DATABASE_URL` e são donos da persistência.
@@ -81,7 +83,7 @@ criar um segundo CQRS:
 │  sem banco · sem DATABASE_URL · sem driver de banco    │
 └────────────────────────────┬───────────────────────────┘
                              │ HTTP (X-API-Key) → domain-api, p/ persistir
-                             │ POST 202 {command_id} · POST /sync · GET
+                             │ POST /sync (202 quando a porta existir) · GET
                              ▼
 ┌────────────────────────────────────────────────────────┐
 │   domain-api — front door do CQRS da casa              │
@@ -167,15 +169,23 @@ traduz cada comando para o envelope `{action, payload}` (família `finance.*`) e
 faz o request. O contrato é o já documentado em
 `modules/apps/domain-api/README.md`:
 
-- `POST` → `202 {"command_id": ..., "status": "accepted"}`: o comando vai para o
-  broker, o `domain-worker` aplica e grava a auditoria (sucesso **ou** falha).
 - `POST /sync` → `200` aplicado / `422` rejeitado / `504` timeout — e
   **timeout ≠ não-escrito**: o comando pode continuar na fila e ser aplicado
   depois. Só `written` é confirmação.
+- `POST` envelope → `202 {"command_id": ..., "status": "accepted"}`: a **porta
+  assíncrona** que o `README.md` do `domain-api` descreve. Conferido no código
+  (2026-10-03): **ela não existe** — em
+  `domain-api/internal/infrastructure/http/router.go` as rotas são `/healthz`,
+  `/openapi.yaml`, `/docs`, `POST /sync` e `/clubs*`, e só o `/sync` decodifica o
+  envelope; os dois handlers que respondem `202` (`AppendSnapshot`, writes de
+  clubs) são route-specific.
 
-**Default: assíncrono (`202`).** O worker do WhatsApp responde ao usuário de
-forma assíncrona, então não precisa do `/sync`; ele fica reservado para os casos
-em que o chamador realmente não pode seguir sem confirmação.
+**Consequência prática (fatia 1):** a `finance-api` é ACL e **recusa** emitir um
+`202` que nada upstream aceitou, então ela relaya o envelope por `/sync` e
+devolve `200 written` / `422 failed` / `504 queued`. O default assíncrono segue
+sendo a **intenção** da casa e **passa a valer** quando o `domain-api` ganhar a
+porta envelope assíncrona (fatia 2, no stack `domain`) — até lá, `202` aqui é
+intenção, não contrato do que existe.
 
 ### 4.2. Read Side — Queries (`finance-api` → `domain-api`)
 - `GetDailySummaryQuery`
@@ -190,7 +200,8 @@ mas não consulta tabela nenhuma.
 
 ### 4.3. Outbox & entrega
 A outbox e a publicação de evento são do **`domain-worker`**, na mesma transação
-da escrita (a `finance-api` não participa: ela só recebe o `202`/`/sync`).
+da escrita (a `finance-api` não participa: hoje ela só recebe o
+`200`/`422`/`504` do `/sync`; o `202` quando a porta assíncrona existir).
 Entrega é at-least-once → todo consumidor precisa ser **idempotente** por
 `command_id`/`event_id` (testado em §12.5).
 
@@ -416,6 +427,9 @@ só `${VAR}`.
 #   FINANCE_DOMAIN_API_KEY  (a key da finance-api, espelhada em DOMAIN_API_KEYS
 #                            do stack `domain` — ver §10.3)
 #   WHATSAPP_VERIFY_TOKEN / WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID
+# FATIA 1 (o que já existe no repo): só o `finance-api`. O bloco do worker abaixo
+# é contrato para a fatia 2/3 — ajustar env/porta/healthcheck quando o app
+# existir, antes de subir aquele serviço, e derivar daí o `paths:`/`STACK` do CI.
 name: finance
 
 services:
@@ -494,8 +508,10 @@ cruzada que precisa existir é `FINANCE_DOMAIN_API_KEY` (aqui) ⊆
    `modules/apps/finance-api/**` e `modules/apps/finance-whatsapp-worker/**`
    ao filtro `paths:`; (b) adicionar as duas entradas ao
    `declare -A STACK=( ... )` do job `deploy`.
-5. Descobrir o **id numérico** da stack nova (o próprio URL do webhook no
+5. Descobrir o **id numérico** da stack nova (o URL do webhook na UI do
    Dockhand mostra: `/api/git/stacks/<ID>/webhook`) e colar no mapa do passo 4.
+   Este passo exige **acesso ao Dockhand** (login): sem credencial, nem criar a
+   stack nem ler o id é possível — é passo humano, não de agente.
 6. `python-ci-cd.yml` já usa contexto de build = raiz do repo; **não** alterar.
 7. Primeiro deploy: rodar o workflow à mão
    (`gh workflow run python-ci-cd.yml -f app=finance-api`, idem worker).
@@ -662,7 +678,11 @@ isolamento do §1.1 é estrutural, não uma promessa.
 - Comando rejeitado **ainda** grava auditoria com o motivo.
 
 ### 12.3. Casos de contrato (os de maior retorno)
-- `POST` de comando responde `202 {command_id, status:"accepted"}`.
+- `POST /sync` responde `200 {status:"written"}` / `422 {status:"failed"}` /
+  `504 {status:"queued"}` — e o teste deixa explícito que **timeout ≠
+  não-escrito**. Enquanto a porta envelope assíncrona não existir no
+  `domain-api`, **nenhum** teste exige `202`: exigir seria testar o que não
+  existe.
 - `/sync` (se existir) devolve 200 aplicado / 422 rejeitado / 504 timeout — e o
   teste deixa explícito que **timeout ≠ não-escrito**.
 - Evento publicado no broker tem `event_id`/`command_id` e schema versionado.
