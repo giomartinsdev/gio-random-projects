@@ -1,0 +1,148 @@
+name: OpenDots build
+
+# OpenDots é template de terceiro (CopilotKit/OpenDots), não código nosso:
+# este workflow clona o upstream no ref PINADO, builda o target `app`
+# (chat + Spaces) para arm64 e publica em registry.giomartins.dev:5000/
+# opendots. O redeploy da stack (`stacks/opendots.yml`) é do Dockhand, por
+# webhook — igual aos outros pipelines, e só no disparo MANUAL (dispatch):
+# um push só reconstrói a imagem, não mexe em produção sem querer.
+#
+# Escopo atual: só o container `app`. O target `browser` (Playwright) e os
+# Dot computers (OpenBot) ficam de fora; quando ligados, viram profile/
+# serviço na stack.
+#
+# Mapa app->stack: opendots=<id da stack no Dockhand>.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Ref do CopilotKit/OpenDots (SHA/tag/branch) para buildar"
+        required: false
+        default: "c2569bb6a13a22e565cf3eb791c62267d06babb1"
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/opendots-ci-cd.yml"
+      - "stacks/opendots.yml"
+
+env:
+  # Pin: um build reprodutível do upstream. Sobrescreve no dispatch.
+  OPENDOTS_REF: ${{ github.event.inputs.ref || 'c2569bb6a13a22e565cf3eb791c62267d06babb1' }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: opendots-build-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      # O VPS é arm64 (Oracle Ampere); o runner é amd64 — QEMU é o que
+      # deixa o BuildKit produzir uma imagem arm64 de verdade.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
+        run: |
+          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
+          sudo systemctl restart docker
+
+      - uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-config-inline: |
+            [registry."registry.giomartins.dev:5000"]
+              http = true
+              insecure = true
+
+      # SSH + Vault só para pegar as credenciais do registry (que o
+      # Terraform espelha no Vaultwarden) — este job não toca no VPS.
+      - name: Set up SSH access to the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Fetch registry credentials from Vaultwarden
+        env:
+          NETWORK_NAME: apps
+          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
+          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
+          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
+          ITEM_MAP: "REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
+        run: |
+          set -o pipefail
+          modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
+            echo "::add-mask::$v"
+            echo "${k}=${v}" >> "$GITHUB_ENV"
+          done
+
+      - name: Log in to registry.giomartins.dev:5000
+        uses: docker/login-action@v3
+        with:
+          registry: registry.giomartins.dev:5000
+          username: ${{ env.REGISTRY_USERNAME }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+
+      - name: Clone CopilotKit/OpenDots @ ${{ env.OPENDOTS_REF }}
+        run: |
+          git init .opendots-src
+          git -C .opendots-src remote add origin https://github.com/CopilotKit/OpenDots.git
+          git -C .opendots-src fetch --depth 1 origin "$OPENDOTS_REF"
+          git -C .opendots-src checkout --detach FETCH_HEAD
+
+      - name: Build and push opendots
+        uses: docker/build-push-action@v6
+        with:
+          context: ./.opendots-src
+          target: app
+          push: true
+          platforms: linux/arm64
+          cache-from: type=gha,scope=opendots
+          cache-to: type=gha,mode=max,scope=opendots
+          tags: |
+            registry.giomartins.dev:5000/opendots:latest
+            registry.giomartins.dev:5000/opendots:${{ github.sha }}
+
+  # Redeploy da stack opendots no Dockhand. Só no dispatch (não em push):
+  # assim um commit que reconstrói a imagem não derruba/recria a app sem
+  # querer. Webhook do git stack pelo loopback do VPS via SSH.
+  deploy:
+    needs: build-and-push
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: dockhand-deploy-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Set up SSH access to the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Trigger Dockhand redeploy
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          DOCKHAND_WEBHOOK_SECRET: ${{ secrets.DOCKHAND_WEBHOOK_SECRET }}
+        run: |
+          if [ -z "$DOCKHAND_WEBHOOK_SECRET" ]; then
+            echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a :latest já foi publicada)."
+            exit 0
+          fi
+          id=8
+          echo "== redeploy stack id=$id (opendots)"
+          out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 'http://127.0.0.1:8093/api/git/stacks/$id/webhook?secret=$DOCKHAND_WEBHOOK_SECRET'")
+          echo "$out" | head -c 600; echo
+          echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack $id"; exit 1; }

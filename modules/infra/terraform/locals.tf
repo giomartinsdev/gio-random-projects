@@ -108,6 +108,16 @@ locals {
       port     = 3000
     },
     {
+      # OpenDots — CopilotKit's self-hosted "Dots" (AI coworkers with
+      # Spaces/pages and chat). Google-SSO Access as the outer layer
+      # (not in excluded_hostnames), exactly like vault/grafana above;
+      # the app's own OWNER_TOKEN login is the inner one. The chat
+      # streams (SSE/AG-UI), so the ingress route disables buffering.
+      # Port must match stacks/opendots.yml's loopback publish (4310).
+      hostname = "dots.giomartins.dev"
+      port     = 4310
+    },
+    {
       # Alloy's OTLP/HTTP endpoint for the SPAs' browsers (see that
       # module's README for the whole data flow). Deliberately excluded
       # from Access via excluded_hostnames — a public visitor's browser

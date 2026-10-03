@@ -19,6 +19,7 @@ Cada arquivo é um stack **independente** (sem agregado na raiz). Não há
 | `domain.yml` | `modules/compute/apps/domain_api` | domain-api, domain-worker |
 | `tela.yml` | `modules/compute/apps/tela_api` | tela-mediamtx, tela-coturn, tela-api (os 3 em host network) |
 | `clubs.yml` | `modules/compute/apps/clubs_api` + `clubs_ingest` | clubs-api, clubs-ingest |
+| `opendots.yml` | template de terceiro (CopilotKit/OpenDots) | opendots (imagem `registry.giomartins.dev:5000/opendots`, buildada do upstream pinado pelo `opendots-ci-cd.yml`) |
 
 **`core.yml` é de boot, isolada de propósito.** O Dockhand deploya as
 stacks; se ele estiver dentro de uma stack que ele mesmo recria, o deploy
@@ -26,7 +27,7 @@ mata o processo que o está servindo (já aconteceu — derrubou o 9router e
 o resto do `compute`). Por isso registry + Dockhand vivem aqui, separados,
 e ficam **protegidos** no Dockhand (`force_redeploy=0`, `repull_images=0`,
 sem webhook). Numa VPS nova: `bootstrap → persistence → core →
-compute → observability → apps`, e não se atualiza o `core` pelo Dockhand.
+compute → observability → apps → opendots`, e não se atualiza o `core` pelo Dockhand.
 
 Os **frontends** (`tela-frontend`, `clubs-frontend`, `hub-frontend`) são
 builds estáticos espelhados em bucket do MinIO — não são container, não
@@ -77,6 +78,12 @@ porta loopback, edite aqui.
 
 `tela.yml`: `TELA_TURN_SECRET`.
 
+`opendots.yml`: `OPENDOTS_OWNER_TOKEN` (24+ chars, login local),
+`OPENDOTS_INTELLIGENCE_API_KEY` (CopilotKit Intelligence — runtime das
+conversas), `OPENDOTS_OPENAI_API_KEY` (provider OpenAI-compatível, ex. o
+9router). Não-segredo com default: `OPENDOTS_OPENAI_BASE_URL`
+(`http://9router:20128/v1`), `OPENDOTS_OPENAI_MODEL`, `OPENDOTS_OWNER_ID`.
+
 > **Vaultwarden não serve o provider "Bitwarden" do Dockhand.** O provider
 > é o Bitwarden *Secrets Manager* (`bws` + Machine Account + Project UUID),
 > que o Vaultwarden não implementa. Hoje os segredos ficam como variáveis
@@ -93,7 +100,7 @@ Cloudflare + host_baseline (a rede `apps` virou o `bootstrap.yml`) — ver
 `modules/infra/terraform/README.md`.
 
 Ordem de subida numa VPS limpa: **bootstrap → persistence → core →
-compute → observability → domain → clubs → tela**.
+compute → observability → domain → clubs → tela → opendots**.
 
 Para adicionar um stack novo depois: escreva `stacks/<nome>.yml`, crie a
 stack no Dockhand (git-backed, context `stacks`, compose `<nome>.yml`) e
