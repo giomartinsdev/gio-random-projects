@@ -1,0 +1,26 @@
+# Edge do OpenMausBot (stack maus). O harness sempre liga em 127.0.0.1:8799
+# (loopback é o modelo de auth dele), então este Caddy — na MESMA netns do
+# container omb — é quem publica a loopback do host que o ingress consome
+# (127.0.0.1:8799 -> :80). O TLS é do Cloudflare (origin HTTP na 80), como
+# nas outras stacks; não falamos HTTPS aqui.
+#
+# X-Forwarded-Proto: https SEMPRE: o browser só chega por https://maus.
+# giomartins.dev. Sem isso o OpenMausBot acha que a origem é http, emite o
+# cookie de sessão sem Secure e o same-origin check da sessão quebra.
+:80 {
+	encode zstd gzip
+
+	# Receiver de webhook: alcançável por terceiros de propósito (segredo por
+	# hook). Fica fora do login e o caminho passa intacto (/hooks/<id>).
+	handle /hooks/* {
+		reverse_proxy 127.0.0.1:8800
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8799 {
+			header_up X-Forwarded-Proto https
+			# SSE: evento a evento, sem buffer (senão o chat só aparece no fim).
+			flush_interval -1
+		}
+	}
+}

@@ -1,0 +1,92 @@
+# maus.yml — o OpenMausBot (milind-soni/OpenMausBot) substitui o OpenDots
+# como o produto de "coworkers de IA" (chat com um roster de bots, cada um com
+# sua personalidade, modelo, computador e apps conectados). Uma stack só.
+#
+# Por que dois containers: o harness do OpenMausBot SEMPRE liga em
+# 127.0.0.1:8799 (server/index.ts) — a confiança em loopback é o próprio modelo
+# de auth. Não dá pra ele ouvir em 0.0.0.0 e deixar o ingress bater direto nele
+# sem publicar a porta no host e furar essa invariante. Então ele mantém o Caddy
+# que já vem no deploy upstream: o Caddy roda na MESMA netns do omb, alcança o
+# loopback, e é quem publica a loopback do host (127.0.0.1:8799) que o ingress
+# usa. O ingress faz https://maus.giomartins.dev -> omb (8799) e /hooks/* -> omb
+# (8800, receiver de webhook, sem login — tem segredo por hook).
+#
+# Por que 8799 e não 80: o upstream publica 80:80 porque o Caddy dele termina
+# TLS sozinho. Aqui o TLS é do Cloudflare (origin HTTP na 80, como as outras
+# stacks), então o Caddy fica só como HTTP->loopback e a publicação vira
+# 127.0.0.1:8799:80 (host 8799 -> Caddy dentro do container na 80). Sem isso,
+# o Caddy tentaria HTTPS na 80 e todo request (inclusive /hooks) morreria em
+# redirect/mixed content.
+#
+# Segredos: nenhum obrigatório no boot. Não há OWNER_TOKEN — o login é o
+# "pairing" do próprio OpenMausBot (um código por dispositivo, docs
+# self-hosting). O provider de modelo é configuração in-app (App Settings),
+# não env: aponte o "OpenAI-compatible" para http://9router:20128/v1.
+# Variáveis opcionais (não-segredo, com default abaixo): OMB_UPSTREAM_SCHEME
+# (default http), ou OMB_SIGNIN_EMAILS/OMB_SIGNIN_MEMBER_EMAILS pra liberar
+# login por código no e-mail. OMB_PUBLIC_URL vira OMB_WEBHOOK_PUBLIC_URL (o
+# Caddy passa /hooks/* direto).
+name: maus
+
+services:
+  omb:
+    image: ghcr.io/milind-soni/openmausbot:v0.1.95
+    container_name: omb
+    restart: unless-stopped
+    init: true
+    environment:
+      OMB_PORT: "8799"
+      OMB_WEBHOOK_PORT: "8800"
+      # Links de pairing e URLs de webhook saem com o domínio público.
+      OMB_PUBLIC_URL: https://maus.giomartins.dev
+      OMB_WEBHOOK_PUBLIC_URL: https://maus.giomartins.dev
+      # 9router é o único provider: nenhum CLI (claude/codex/grok) é baked in.
+      # O "OpenAI-compatible" aponta pro 9router pela rede `apps`.
+      ENGINES: ""
+      # Vazio = só pairing code. Preencha pra liberar login por e-mail.
+      OMB_SIGNIN_EMAILS: ${OMB_SIGNIN_EMAILS:-}
+      OMB_SIGNIN_MEMBER_EMAILS: ${OMB_SIGNIN_MEMBER_EMAILS:-}
+    volumes:
+      - omb-data:/data
+    ports:
+      # host 8799 -> Caddy (netns compartilhada) na 80. O ingress roteia
+      # maus.giomartins.dev pra cá.
+      - "127.0.0.1:8799:80"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8799/api/health', { signal: AbortSignal.timeout(4000) }).then(async r => { if (!r.ok || !(await r.text()).includes('openmausbot')) process.exit(1); }).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    networks: [apps]
+
+  caddy:
+    image: caddy:2
+    container_name: maus-caddy
+    restart: unless-stopped
+    # Mesma netns do omb: alcança o loopback e publica a porta declarada nele.
+    network_mode: service:omb
+    depends_on:
+      omb:
+        condition: service_healthy
+    volumes:
+      - ./maus/Caddyfile:/etc/caddy/Caddyfile:ro
+      - maus-caddy-data:/data
+      - maus-caddy-config:/config
+
+volumes:
+  omb-data:
+    name: omb-data
+  maus-caddy-data:
+    name: maus-caddy-data
+  maus-caddy-config:
+    name: maus-caddy-config
+
+networks:
+  apps:
+    external: true
+    name: apps

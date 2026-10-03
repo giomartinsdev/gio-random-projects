@@ -91,11 +91,11 @@ export const SHORTCUTS: Shortcut[] = [
     url: "https://ai.giomartins.dev/dashboard",
   },
   {
-    id: "dots",
-    name: "OpenDots",
-    emoji: "🛰️",
-    description: "seus Dots (coworkers de IA) — chat, spaces e computer",
-    url: "https://dots.giomartins.dev",
+    id: "maus",
+    name: "OpenMausBot",
+    emoji: "🐭",
+    description: "sua equipe de bots de IA — chat, computador e apps",
+    url: "https://maus.giomartins.dev",
   },
   {
     id: "rabbit",

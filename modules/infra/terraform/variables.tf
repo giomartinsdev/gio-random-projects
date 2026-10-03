@@ -47,7 +47,7 @@ variable "excluded_hostnames" {
     "clubs-api.giomartins.dev", # no Cloudflare Access at all -- its own Google Sign-In + session cookie is the gate (see stacks/clubs.yml); the bare hostname serves the public reads so an anonymous visitor can browse and the SPA can probe /api/me without a redirect
     "ai.giomartins.dev",        # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
     "otel.giomartins.dev",      # public visitors' browsers send SPA telemetry here — a Google SSO redirect would break every one of them; alloy's OTLP receiver CORS allowlist (the SPA origins only) is the access control (stacks/observability.yml)
-    "dots.giomartins.dev",      # only the DNS record lives in Terraform (the OpenDots container is a Dockhand git stack, like the other apps); no Access app — the app's own OWNER_TOKEN login is the gate, and its SSE/AG-UI chat must not sit behind a browser SSO redirect
+    "maus.giomartins.dev",      # only the DNS record lives in Terraform (the OpenMausBot stack is a Dockhand git stack, like the other apps); no Access app — OpenMausBot's own pairing login is the gate, and its SSE chat must not sit behind a browser SSO redirect
   ]
 }
 

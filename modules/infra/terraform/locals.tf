@@ -129,16 +129,17 @@ locals {
       port     = 8080
     },
     {
-      # OpenDots — CopilotKit's self-hosted "Dots" (AI coworkers with
-      # Spaces/pages and chat). ONLY the DNS A record is managed here (the
-      # hostname is in excluded_hostnames): the container itself is the
-      # Dockhand git stack stacks/dots.yml, like every other app. No
-      # Cloudflare Access app — the app's own OWNER_TOKEN login is the gate,
-      # and the chat streams (SSE/AG-UI) can't sit behind a Google SSO
-      # redirect, so the ingress route disables buffering.
-      # Port must match stacks/dots.yml's loopback publish (4310).
-      hostname = "dots.giomartins.dev"
-      port     = 4310
+      # OpenMausBot — milind-soni/OpenMausBot: a chat app whose roster is a
+      # team of AI bots (each with a model, a computer and connected apps).
+      # ONLY the DNS A record is managed here (the hostname is in
+      # excluded_hostnames): the containers themselves are the Dockhand git
+      # stack stacks/maus.yml, like every other app. No Cloudflare Access app
+      # — the app's own pairing login is the gate, and the chat streams (SSE)
+      # can't sit behind a Google SSO redirect, so the ingress route disables
+      # buffering. Port must match stacks/maus.yml's host publish (8799) —
+      # the omb container publishes that through its Caddy sidecar.
+      hostname = "maus.giomartins.dev"
+      port     = 8799
     },
     {
       # Alloy's OTLP/HTTP endpoint for the SPAs' browsers (see that
