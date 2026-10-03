@@ -14,10 +14,10 @@
 #   VAULTWARDEN_API_CLIENT_SECRET
 #   VAULTWARDEN_BRIDGE_API_KEY        (era random_password.vaultwarden_bridge_api_key)
 #
-# NOTA: o watchtower existia pra puxar imagem nova do registry privado. O
-# Dockhand faz update-check sozinho, então você pode remover o watchtower
-# (e o `registry-docker-config`) quando o Dockhand estiver no controle. Por
-# ora ficam pra paridade 1:1.
+# O watchtower (e o one-shot `registry-docker-config`, que só existia pra
+# ele) foi removido: o Dockhand faz update-check/redeploy das stacks, então
+# não há mais auto-update por label. As variáveis WATCHTOWER_* podem sair do
+# stack no Dockhand (ficaram inúteis).
 name: compute
 
 services:
@@ -35,28 +35,6 @@ services:
       REGISTRY_PASSWORD: ${REGISTRY_PASSWORD:?defina REGISTRY_PASSWORD}
     volumes:
       - registry_registry-auth:/auth
-
-  # One-shot que grava /root/.docker/config.json pro watchtower autenticar
-  # no registry. (Remova junto com o watchtower.)
-  registry-docker-config:
-    image: alpine:3
-    container_name: registry-docker-config-install
-    restart: "no"
-    depends_on:
-      registry-htpasswd:
-        condition: service_completed_successfully
-    entrypoint: ["sh", "-c"]
-    command:
-      - >-
-        mkdir -p /dockerconfig &&
-        printf '{"auths":{"registry.giomartins.dev:5000":{"auth":"%s"}}}'
-        "$$(printf '%s:%s' "$$REGISTRY_USER" "$$REGISTRY_PASSWORD" | base64)"
-        > /dockerconfig/config.json
-    environment:
-      REGISTRY_USER: ${REGISTRY_USER:-admin}
-      REGISTRY_PASSWORD: ${REGISTRY_PASSWORD:?defina REGISTRY_PASSWORD}
-    volumes:
-      - /root/.docker:/dockerconfig
 
   registry:
     image: registry:2
@@ -78,22 +56,6 @@ services:
     volumes:
       - registry_registry-data:/var/lib/registry
       - registry_registry-auth:/auth:ro
-
-  watchtower:
-    image: containrrr/watchtower:latest
-    container_name: watchtower
-    restart: unless-stopped
-    depends_on:
-      registry-docker-config:
-        condition: service_completed_successfully
-    environment:
-      WATCHTOWER_CLEANUP: "true"
-      WATCHTOWER_LABEL_ENABLE: "true"
-      WATCHTOWER_POLL_INTERVAL: ${WATCHTOWER_POLL_INTERVAL:-60}
-      DOCKER_API_VERSION: ${WATCHTOWER_DOCKER_API_VERSION:-1.44}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /root/.docker/config.json:/config.json:ro
 
   # --- monitoring (Beszel) ------------------------------------------------
   beszel-hub:
