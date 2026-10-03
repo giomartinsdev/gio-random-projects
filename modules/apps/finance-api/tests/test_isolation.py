@@ -299,12 +299,25 @@ def test_no_action_string_literal_is_redefined_in_the_app() -> None:
 # `finance-whatsapp-worker` legitimately carries a broker URL (§1.1 -- it
 # consumes the `finance.*` events), so a file-level ban would either kill the
 # worker or force the check to be deleted.
+#
+# Two scoping rules, and both are load-bearing:
+#
+#  * EVERY service in the file is inspected, not a pair of hard-coded names.
+#    While the check named `finance-api` and `finance-whatsapp-worker`
+#    literally, a *third* service added in slice 3 carrying a `DATABASE_URL`
+#    passed in silence -- the assertion had no opinion about it.
+#  * The broker exemption is keyed on the `-worker` SUFFIX, never on a literal
+#    name. A worker renamed (or a second event consumer added) still gets the
+#    exemption; a service *without* the suffix never does. A database surface
+#    is a violation for every service, suffix or not.
 
 STACK_FILE = REPO_ROOT / "stacks" / "finance.yml"
 THIS_SERVICE = "finance-api"
-WORKER_SERVICE = "finance-whatsapp-worker"
+# Event consumers are exempt from the broker ban, identified by suffix so that
+# renaming or adding one cannot silently skip the check (see above).
+WORKER_SUFFIX = "-worker"
 
-# Keys that would mean this service owns persistence it must not own (§1.1:
+# Keys that would mean a service owns persistence it must not own (§1.1:
 # banco, broker de comando, domain-api e domain-worker sao do stack `domain`).
 DB_KEYS = ("DATABASE_URL", "POSTGRES_URL", "POSTGRES_DSN", "PGHOST", "PGPORT", "PGUSER", "DB_URL")
 DB_DSN_SCHEMES = ("postgres://", "postgresql://")
@@ -330,6 +343,16 @@ def _finance_stack() -> dict:
     return yaml.safe_load(STACK_FILE.read_text())
 
 
+def _service_names(stack: dict) -> list[str]:
+    """Every service the stack declares -- the scan domain, not a fixed pair."""
+    services = stack.get("services") or {}
+    assert services, (
+        f"{STACK_FILE.name} declares no service: without a scan domain a "
+        "per-service check is vacuously green"
+    )
+    return sorted(services)
+
+
 def _environment_of(stack: dict, service: str) -> dict:
     """The service's environment, normalised across BOTH compose shapes.
 
@@ -345,7 +368,7 @@ def _environment_of(stack: dict, service: str) -> dict:
     )
     raw = stack["services"][service].get("environment") or {}
     if isinstance(raw, dict):
-        return {str(k): v for k, v in raw.items()}
+        return {str(k).strip(): v for k, v in raw.items()}
     assert isinstance(raw, list), (
         f"{service}: unsupported environment shape ({type(raw).__name__}); "
         "expected a mapping or a list of KEY=value"
@@ -360,7 +383,7 @@ def _environment_of(stack: dict, service: str) -> dict:
         assert sep and key, (
             f"{service}: environment entry {entry!r} is not KEY=value"
         )
-        environment[key] = value
+        environment[key.strip()] = value
     return environment
 
 
@@ -379,13 +402,51 @@ def _surfaces(environment: dict, keys: tuple[str, ...], schemes: tuple[str, ...]
     return sorted(offenders)
 
 
+def _is_broker_exempt(service: str) -> bool:
+    """Only event consumers consume a broker; command-broker access is a ban."""
+    return service.endswith(WORKER_SUFFIX)
+
+
+def _offenders_for(service: str, environment: dict) -> list[str]:
+    """Persistence surfaces this service must not receive (§1.1).
+
+    A database surface is an offender for **every** service. A broker surface
+    is an offender unless the service is an event consumer.
+    """
+    offenders = _surfaces(environment, DB_KEYS, DB_DSN_SCHEMES)
+    if not _is_broker_exempt(service):
+        offenders += _surfaces(environment, BROKER_KEYS, BROKER_DSN_SCHEMES)
+    return sorted(offenders)
+
+
 def test_stack_declares_no_persistence_for_the_finance_api() -> None:
     """§12.6 estatico: nem banco nem broker no `environment:` desta app."""
-    environment = _environment_of(_finance_stack(), THIS_SERVICE)
-    offenders = _surfaces(environment, DB_KEYS + BROKER_KEYS, DB_DSN_SCHEMES + BROKER_DSN_SCHEMES)
+    stack = _finance_stack()
+    offenders = _offenders_for(THIS_SERVICE, _environment_of(stack, THIS_SERVICE))
     assert offenders == [], (
         "finance-api must not receive any database or broker surface from the "
         f"stack (§1.1 -- persistence belongs to the `domain` stack): {offenders}"
+    )
+
+
+def test_every_stack_service_is_free_of_persistence() -> None:
+    """§12.6 scanned over the whole file, per service (§1.1).
+
+    Scoping by a literal pair of names meant a service *added* later -- the
+    slice-3 case -- was never inspected, so a `DATABASE_URL` on it was green.
+    Enumerating the file is what makes the ban a property of the stack instead
+    of a property of two strings.
+    """
+    stack = _finance_stack()
+    violations = {}
+    for service in _service_names(stack):
+        offenders = _offenders_for(service, _environment_of(stack, service))
+        if offenders:
+            violations[service] = offenders
+    assert violations == {}, (
+        "these services receive a persistence surface they must not own (§1.1) "
+        f"-- a database surface is a violation for every service, broker only "
+        f"for non-`{WORKER_SUFFIX}` ones: {violations}"
     )
 
 
@@ -405,14 +466,50 @@ def test_stack_check_is_not_vacuous() -> None:
         f"{STACK_FILE.name} no longer declares any broker surface: the "
         "per-service exemption is no longer being exercised"
     )
-    # Read the worker through the SAME normaliser: a raw
+    exempt = [s for s in _service_names(stack) if _is_broker_exempt(s)]
+    assert exempt, (
+        f"no service ends in `{WORKER_SUFFIX}`: nothing exercises the broker "
+        "exemption, so its silence proves nothing"
+    )
+    # Read each exempt service through the SAME normaliser: a raw
     # `worker["environment"]` access only understood the mapping shape and
     # raised on the list shape, i.e. red for the wrong reason.
-    worker_db = _surfaces(_environment_of(stack, WORKER_SERVICE), DB_KEYS, DB_DSN_SCHEMES)
-    assert worker_db == [], (
-        "the worker may carry a broker URL but never a database surface "
-        f"(§1.1): {worker_db}"
+    for service in exempt:
+        worker_db = _surfaces(_environment_of(stack, service), DB_KEYS, DB_DSN_SCHEMES)
+        assert worker_db == [], (
+            "an event consumer may carry a broker URL but never a database "
+            f"surface (§1.1): {service}: {worker_db}"
+        )
+
+
+def test_an_added_service_carrying_a_database_is_caught() -> None:
+    """Regression: the ban is not scoped to the two names of slice 2.
+
+    The previous scoping inspected only `finance-api` and
+    `finance-whatsapp-worker` by literal name, so a third service -- exactly
+    the shape slice 3 takes -- could carry a `DATABASE_URL` with every test
+    still green. A worker renamed out of the literal name skipped the check the
+    same way; the suffix rule closes both.
+    """
+    stack = {
+        "services": {
+            THIS_SERVICE: {"environment": ["HTTP_ADDR=:8000"]},
+            "finance-whatsapp-worker": {"environment": ["RABBITMQ_URL=amqp://guest@rabbitmq:5672/"]},
+            "finance-audit-worker": {"environment": ["DATABASE_URL=postgres://u@db:5432/f"]},
+            "finance-notifier": {"environment": ["AMQP_URL=amqp://guest@rabbitmq:5672/"]},
+        }
+    }
+    added = _offenders_for("finance-audit-worker", _environment_of(stack, "finance-audit-worker"))
+    assert "DATABASE_URL (key)" in added, (
+        "a service added with a DATABASE_URL must fail: the scan domain is the "
+        f"whole file, not two literals (got {added})"
     )
+    renamed = _offenders_for("finance-notifier", _environment_of(stack, "finance-notifier"))
+    assert renamed, "a non-`-worker` service must not inherit the broker exemption"
+    keeper = _offenders_for(
+        "finance-whatsapp-worker", _environment_of(stack, "finance-whatsapp-worker")
+    )
+    assert keeper == [], keeper
 
 
 def test_stack_environment_list_form_is_inspected() -> None:
@@ -426,23 +523,21 @@ def test_stack_environment_list_form_is_inspected() -> None:
     innocent = {"services": {"finance-api": {"environment": ["HTTP_ADDR=:8000"]}}}
     env = _environment_of(innocent, THIS_SERVICE)
     assert env == {"HTTP_ADDR": ":8000"}, env
-    assert _surfaces(env, DB_KEYS + BROKER_KEYS, DB_DSN_SCHEMES + BROKER_DSN_SCHEMES) == []
+    assert _offenders_for(THIS_SERVICE, env) == []
 
     guilty = {
         "services": {
             "finance-api": {"environment": ["HTTP_ADDR=:8000", "DATABASE_URL=postgres://u@db:5432/f"]},
-            WORKER_SERVICE: {"environment": ["RABBITMQ_URL=amqp://guest@rabbitmq:5672/"]},
+            "finance-whatsapp-worker": {"environment": ["RABBITMQ_URL=amqp://guest@rabbitmq:5672/"]},
         }
     }
-    offenders = _surfaces(
-        _environment_of(guilty, THIS_SERVICE), DB_KEYS + BROKER_KEYS, DB_DSN_SCHEMES + BROKER_DSN_SCHEMES
-    )
+    offenders = _offenders_for(THIS_SERVICE, _environment_of(guilty, THIS_SERVICE))
     assert offenders, "a DATABASE_URL in list form must still be caught"
     assert "DATABASE_URL (key)" in offenders, offenders
 
     # the worker's list-form exemption stays broker-only (§1.1)
-    worker_env = _environment_of(guilty, WORKER_SERVICE)
-    assert _surfaces(worker_env, DB_KEYS, DB_DSN_SCHEMES) == []
+    worker_env = _environment_of(guilty, "finance-whatsapp-worker")
+    assert _offenders_for("finance-whatsapp-worker", worker_env) == []
     worker_env["DATABASE_URL"] = "postgres://u@db:5432/f"
-    worker_db = _surfaces(worker_env, DB_KEYS, DB_DSN_SCHEMES)
+    worker_db = _offenders_for("finance-whatsapp-worker", worker_env)
     assert "DATABASE_URL (key)" in worker_db, worker_db
