@@ -1,0 +1,114 @@
+# core.yml — a base da VPS: registry privado + Dockhand.
+#
+# Por que existe separado de compute.yml: o Dockhand faz o deploy das stacks.
+# Se ele estiver DENTRO de uma stack que ele mesmo recria, um deploy pode
+# matar o processo que está servindo o deploy (já aconteceu). Aqui ele fica
+# isolado, junto do registry (do qual as stacks dependem pra puxar imagem).
+#
+# É uma stack de BOOT: sobe uma vez por CLI (`docker compose up -d`) numa VPS
+# nova e não é atualizada pelo Dockhand. Fica protegida no Dockhand
+# (force_redeploy=0, repull_images=0, webhook desligado).
+#
+# Variáveis necessárias (env do stack no Dockhand ou /opt/giomartins/.env.core):
+#   REGISTRY_USER      (default: admin)
+#   REGISTRY_PASSWORD  (obrigatória; auth do registry)
+name: core
+
+networks:
+  apps:
+    external: true
+    name: apps
+
+volumes:
+  registry_registry-data:
+    external: true
+    name: registry_registry-data
+  registry_registry-auth:
+    external: true
+    name: registry_registry-auth
+
+services:
+  # --- registry privado + auth -------------------------------------------
+  # One-shot que escreve o htpasswd no volume que o registry lê.
+  registry-htpasswd:
+    image: httpd:2.4-alpine
+    container_name: htpasswd-init
+    restart: "no"
+    entrypoint: ["sh", "-c"]
+    command:
+      - 'htpasswd -Bbn "$$REGISTRY_USER" "$$REGISTRY_PASSWORD" > /auth/htpasswd'
+    environment:
+      REGISTRY_USER: ${REGISTRY_USER:-admin}
+      REGISTRY_PASSWORD: ${REGISTRY_PASSWORD:?defina REGISTRY_PASSWORD}
+    volumes:
+      - registry_registry-auth:/auth
+
+  # One-shot que grava /root/.docker/config.json com o auth do registry
+  # privado. É o arquivo que o Dockhand monta (e o docker CLI do host lê);
+  # sem ele, `docker compose pull` de imagem privada falha com "no basic
+  # auth credentials".
+  registry-docker-config:
+    image: alpine:3
+    container_name: registry-docker-config-install
+    restart: "no"
+    depends_on:
+      registry-htpasswd:
+        condition: service_completed_successfully
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        mkdir -p /dockerconfig &&
+        printf '{"auths":{"registry.giomartins.dev:5000":{"auth":"%s"}}}'
+        "$$(printf '%s:%s' "$$REGISTRY_USER" "$$REGISTRY_PASSWORD" | base64)"
+        > /dockerconfig/config.json
+    environment:
+      REGISTRY_USER: ${REGISTRY_USER:-admin}
+      REGISTRY_PASSWORD: ${REGISTRY_PASSWORD:?defina REGISTRY_PASSWORD}
+    volumes:
+      - /root/.docker:/dockerconfig
+
+  registry:
+    image: registry:2
+    container_name: registry
+    restart: unless-stopped
+    depends_on:
+      registry-htpasswd:
+        condition: service_completed_successfully
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+      REGISTRY_AUTH: htpasswd
+      REGISTRY_AUTH_HTPASSWD_REALM: Registry Realm
+      REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+      REGISTRY_HTTP_RELATIVEURLS: "true"
+    # Público de propósito (não loopback): CI faz push e o hostname não é
+    # proxiado pelo Cloudflare (ele proxeia 80/443; o Docker fala :5000).
+    ports:
+      - "5000:5000"
+    volumes:
+      - registry_registry-data:/var/lib/registry
+      - registry_registry-auth:/auth:ro
+    networks: [apps]
+
+  # --- Dockhand (gerencia as stacks; roda a partir daqui) -----------------
+  dockhand:
+    image: fnsys/dockhand:latest
+    container_name: dockhand
+    restart: unless-stopped
+    user: "0"
+    environment:
+      DATA_DIR: /opt/dockhand
+      STACKS_DIR: /opt/stacks
+      EXPORT_METRICS: "true"
+      COOKIE_SECURE: "true"
+      TRUST_FORWARDED_HEADERS: "true"
+    ports:
+      - "127.0.0.1:8093:3000"
+    volumes:
+      - /opt/dockhand:/opt/dockhand
+      - /opt/stacks:/opt/stacks
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Credenciais do registry privado, pro `docker compose pull` das stacks
+      # autenticar. O docker CLI lê $HOME/.docker/config.json e o HOME do
+      # dockhand é /home/dockhand (não /root).
+      - /root/.docker:/home/dockhand/.docker:ro
+    networks: [apps]

@@ -12,12 +12,21 @@ Cada arquivo é um stack **independente** (sem agregado na raiz). Não há
 | Arquivo | O que migra | Serviços |
 | --- | --- | --- |
 | `bootstrap.yml` | infra compartilhada | `network-init` (cria a rede `apps`; suba ESTE primeiro numa VPS nova) |
+| `core.yml` | base da VPS | registry, htpasswd-init, registry-docker-config, dockhand (boot-only; **protegida**) |
 | `persistence.yml` | `modules/storage/*` | postgres, redis, minio, minio-buckets (+ volumes) |
-| `compute.yml` | `modules/compute/services/*` (menos observability) | registry, htpasswd-init, registry-docker-config, watchtower, beszel-hub, beszel-agent, vaultwarden, vaultwarden-api, adminer, 9router, ingress, dockhand |
+| `compute.yml` | `modules/compute/services/*` (menos observability e core) | beszel-hub, beszel-agent, vaultwarden, vaultwarden-api, adminer, 9router, ingress |
 | `observability.yml` | `modules/compute/services/observability` | loki, prometheus, tempo, alloy, grafana (+ configs em `observability/`) |
 | `domain.yml` | `modules/compute/apps/domain_api` | domain-api, domain-worker |
 | `tela.yml` | `modules/compute/apps/tela_api` | tela-mediamtx, tela-coturn, tela-api (os 3 em host network) |
 | `clubs.yml` | `modules/compute/apps/clubs_api` + `clubs_ingest` | clubs-api, clubs-ingest |
+
+**`core.yml` é de boot, isolada de propósito.** O Dockhand deploya as
+stacks; se ele estiver dentro de uma stack que ele mesmo recria, o deploy
+mata o processo que o está servindo (já aconteceu — derrubou o 9router e
+o resto do `compute`). Por isso registry + Dockhand vivem aqui, separados,
+e ficam **protegidos** no Dockhand (`force_redeploy=0`, `repull_images=0`,
+sem webhook). Numa VPS nova: `bootstrap → persistence → core →
+compute → observability → apps`, e não se atualiza o `core` pelo Dockhand.
 
 Os **frontends** (`tela-frontend`, `clubs-frontend`, `hub-frontend`) são
 builds estáticos espelhados em bucket do MinIO — não são container, não
@@ -52,7 +61,9 @@ porta loopback, edite aqui.
 
 `persistence.yml`: `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`.
 
-`compute.yml`: `REGISTRY_PASSWORD`, `BESZEL_AGENT_KEY` (se vazio, remova o
+`core.yml`: `REGISTRY_PASSWORD` (e opcional `REGISTRY_USER`, default `admin`).
+
+`compute.yml`: `BESZEL_AGENT_KEY` (se vazio, remova o
 `beszel-agent`), `VAULTWARDEN_ADMIN_TOKEN`, `VAULTWARDEN_ACCOUNT_EMAIL`,
 `VAULTWARDEN_ACCOUNT_MASTER_PASSWORD`, `VAULTWARDEN_API_CLIENT_ID`,
 `VAULTWARDEN_API_CLIENT_SECRET`, `VAULTWARDEN_BRIDGE_API_KEY`,
@@ -75,16 +86,15 @@ porta loopback, edite aqui.
 
 ## Migração (concluída)
 
-Estes 6 stacks já foram migrados do Terraform: os containers antigos
+Estes stacks já foram migrados do Terraform: os containers antigos
 foram renomeados/parados e recriados pelas stacks (mesmo `container_name`,
 mesmos volumes), e os recursos correspondentes saíram do state com
 `terraform state rm` (sem destruir). O Terraform agora só cuida de
-Cloudflare + rede `apps` + host_baseline — ver
+Cloudflare + host_baseline (a rede `apps` virou o `bootstrap.yml`) — ver
 `modules/infra/terraform/README.md`.
 
-Ordem usada (do menos ao mais crítico): **observability → domain → clubs →
-tela → persistence → compute**. O `ingress` e o `dockhand` (no `compute`)
-entraram por último; o `ingress` caiu por alguns segundos no restart.
+Ordem de subida numa VPS limpa: **bootstrap → persistence → core →
+compute → observability → domain → clubs → tela**.
 
 Para adicionar um stack novo depois: escreva `stacks/<nome>.yml`, crie a
 stack no Dockhand (git-backed, context `stacks`, compose `<nome>.yml`) e

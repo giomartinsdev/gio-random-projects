@@ -1,9 +1,9 @@
 # compute.yml — os serviços de plataforma (migra `modules/compute/services/*`
-# do TF, exceto observability que fica em observability.yml).
+# do TF, exceto observability em observability.yml e o registry/Dockhand em
+# core.yml).
 #
 # Reusa os named volumes do TF (external). Segredos via variáveis de stack
 # no Dockhand:
-#   REGISTRY_PASSWORD                 (input, não gerado pelo TF)
 #   BESZEL_AGENT_KEY                  (input; se vazio, remova o serviço)
 #   VAULTWARDEN_ADMIN_TOKEN           (era random_password.vaultwarden_admin_token)
 #   NINEROUTER_JWT_SECRET             (era random_password.ninerouter_jwt_secret)
@@ -21,66 +21,6 @@
 name: compute
 
 services:
-  # --- registry privado + auth -------------------------------------------
-  # One-shot que escreve o htpasswd no volume que o registry lê.
-  registry-htpasswd:
-    image: httpd:2.4-alpine
-    container_name: htpasswd-init
-    restart: "no"
-    entrypoint: ["sh", "-c"]
-    command:
-      - 'htpasswd -Bbn "$$REGISTRY_USER" "$$REGISTRY_PASSWORD" > /auth/htpasswd'
-    environment:
-      REGISTRY_USER: ${REGISTRY_USER:-admin}
-      REGISTRY_PASSWORD: ${REGISTRY_PASSWORD:?defina REGISTRY_PASSWORD}
-    volumes:
-      - registry_registry-auth:/auth
-
-  # One-shot que grava /root/.docker/config.json com o auth do registry
-  # privado. Fica no host e é montado dentro do Dockhand (ver volumes dele):
-  # sem isto, um `docker compose pull` das stacks falha com "no basic auth
-  # credentials" ao puxar imagem de registry.giomartins.dev:5000.
-  registry-docker-config:
-    image: alpine:3
-    container_name: registry-docker-config-install
-    restart: "no"
-    depends_on:
-      registry-htpasswd:
-        condition: service_completed_successfully
-    entrypoint: ["sh", "-c"]
-    command:
-      - >-
-        mkdir -p /dockerconfig &&
-        printf '{"auths":{"registry.giomartins.dev:5000":{"auth":"%s"}}}'
-        "$$(printf '%s:%s' "$$REGISTRY_USER" "$$REGISTRY_PASSWORD" | base64)"
-        > /dockerconfig/config.json
-    environment:
-      REGISTRY_USER: ${REGISTRY_USER:-admin}
-      REGISTRY_PASSWORD: ${REGISTRY_PASSWORD:?defina REGISTRY_PASSWORD}
-    volumes:
-      - /root/.docker:/dockerconfig
-
-  registry:
-    image: registry:2
-    container_name: registry
-    restart: unless-stopped
-    depends_on:
-      registry-htpasswd:
-        condition: service_completed_successfully
-    environment:
-      REGISTRY_STORAGE_DELETE_ENABLED: "true"
-      REGISTRY_AUTH: htpasswd
-      REGISTRY_AUTH_HTPASSWD_REALM: Registry Realm
-      REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
-      REGISTRY_HTTP_RELATIVEURLS: "true"
-    # Público de propósito (não loopback): CI faz push e o hostname não é
-    # proxiado pelo Cloudflare (ele proxeia 80/443; o Docker fala :5000).
-    ports:
-      - "5000:5000"
-    volumes:
-      - registry_registry-data:/var/lib/registry
-      - registry_registry-auth:/auth:ro
-
   # --- monitoring (Beszel) ------------------------------------------------
   beszel-hub:
     image: henrygd/beszel:latest
@@ -175,45 +115,12 @@ services:
     volumes:
       - ./ingress/default.conf:/etc/nginx/conf.d/default.conf:ro
 
-  # --- Dockhand (gerencia as stacks; matching paths persistidos) ----------
-  # ATENÇÃO: o Dockhand gerencia este próprio arquivo. Ao subir/editar o
-  # compute.yml por ele, ele pode recriar a si mesmo — o deploy segue, mas
-  # a sessão do navegador cai. Preferível subir este uma vez por CLI.
-  dockhand:
-    image: fnsys/dockhand:latest
-    container_name: dockhand
-    restart: unless-stopped
-    user: "0"
-    environment:
-      DATA_DIR: /opt/dockhand
-      STACKS_DIR: /opt/stacks
-      EXPORT_METRICS: "true"
-      COOKIE_SECURE: "true"
-      TRUST_FORWARDED_HEADERS: "true"
-    ports:
-      - "127.0.0.1:8093:3000"
-    volumes:
-      - /opt/dockhand:/opt/dockhand
-      - /opt/stacks:/opt/stacks
-      - /var/run/docker.sock:/var/run/docker.sock
-      # Credenciais do registry privado, pro `docker compose pull` das stacks
-      # autenticar. O docker CLI lê $HOME/.docker/config.json e o HOME do
-      # dockhand é /home/dockhand (não /root) — ver env do container.
-      - /root/.docker:/home/dockhand/.docker:ro
-    networks: [apps]
-
 networks:
   apps:
     external: true
     name: apps
 
 volumes:
-  registry_registry-data:
-    external: true
-    name: registry_registry-data
-  registry_registry-auth:
-    external: true
-    name: registry_registry-auth
   beszel_data:
     external: true
     name: beszel_data
