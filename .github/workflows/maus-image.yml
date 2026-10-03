@@ -98,13 +98,16 @@ jobs:
       # Upstream's own Dockerfile fails on Linux arm64 (Chrome for Testing has
       # no ARM64 build). Clone the pinned tag and overlay our vendored
       # Dockerfile (stacks/maus/Dockerfile), which also adds the docker CLI and
-      # the uid-1000 user the Local VM needs. Reproducible: upstream source
-      # comes from the pinned tag, our patches from this repo.
+      # the uid-1000 user the Local VM needs. Then apply newbot-full.patch to
+      # the source: it makes every new bot (and every Chief-created teammate)
+      # default to Full access, which is the only level that stops the
+      # Allow/Deny cards on the OpenAI-compatible/9router engine.
       - name: Fetch upstream at the pinned tag
         run: |
           git clone --depth 1 --branch "$MAUS_VERSION" \
             https://github.com/milind-soni/OpenMausBot.git _maus-upstream
           cp stacks/maus/Dockerfile _maus-upstream/Dockerfile
+          git -C _maus-upstream apply --verbose "$GITHUB_WORKSPACE/stacks/maus/newbot-full.patch"
 
       - name: Build and push maus (arm64)
         uses: docker/build-push-action@v6
