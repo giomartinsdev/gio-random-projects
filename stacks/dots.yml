@@ -1,0 +1,252 @@
+# dots.yml — a stack única do OpenDots (CopilotKit): os três blocos que
+# compõem o produto, num só stack/projeto do Dockhand:
+#
+#   1. intelligence  — runtime self-hosted (threads dos Dots): postgres
+#                      (pgvector) + redis + composite (app-api 4201 +
+#                      realtime-gateway 4401 + thread-culler + migrations).
+#   2. computer      — OpenBot (CopilotKit): um container+browser+workspace
+#                      por Dot. `computer-supervisor` segura o socket do
+#                      Docker e cria os computadores sob demanda; a imagem
+#                      `computer-image` (base upstream + git/ssh + deploy key)
+#                      é o que cada computador roda.
+#   3. opendots      — o app (build do upstream PINADO direto no VPS).
+#
+# Por que uma stack só: o computador precisa das mesmas redes do app (o
+# supervisor entrega o endereço `<ns>-computer-<id>:4100` e o app o alcança
+# pela rede `opendots-computers`), e Intelligence é interna ao produto. Um
+# projeto só evita redes externas compartilhadas e mantém um webhook.
+#
+# Upstreams pinados (um deploy reprodutível):
+#   OpenDots c2569bb6a13a22e565cf3eb791c62267d06babb1
+#   OpenBot  b6932d31a8d6e7896c15139dfc27a6c6911deb27
+#
+# Segredos (variáveis de stack no Dockhand):
+#   INTELLIGENCE_DB_PASSWORD       senha do Postgres dedicado
+#   INTELLIGENCE_AUTH_SECRET       assinatura de sessão (32+ chars)
+#   INTELLIGENCE_SECRET_KEY_BASE   chave do realtime-gateway (64+ bytes)
+#   INTELLIGENCE_LICENSE_TOKEN     COPILOTKIT_LICENSE_TOKEN (opcional)
+#   OPENDOTS_OWNER_TOKEN           login local do app (24+ chars)
+#   OPENDOTS_OPENAI_API_KEY        credencial do provider (9router aceita
+#                                  qualquer valor não-vazio: REQUIRE_API_KEY=false)
+#   OPENDOTS_INTELLIGENCE_API_KEY  API key provisionada no Intelligence
+#   COMPUTER_SUPERVISOR_TOKEN      autoriza o ciclo de vida (24+ chars)
+#   COMPUTER_TOKEN                 credencial-mestra por-Dot (24+ chars, outra)
+#   COMPUTER_DEPLOY_KEY            chave privada SSH (deploy key) do repo de
+#                                  projetos, só no build da `computer-image`
+#                                  (segredo de build; nunca no git)
+# Defaults (sobrescrevíveis): OPENDOTS_OWNER_ID, OPENDOTS_OPENAI_BASE_URL,
+#   OPENDOTS_OPENAI_MODEL, OPENDOTS_INTELLIGENCE_API_URL/_WS_URL,
+#   INTELLIGENCE_RUNNER_AUTH_SECRET, COMPUTER_NAMESPACE, COMPUTER_MEMORY_BYTES.
+name: dots
+
+services:
+  # --- 1. Intelligence (self-hosted) --------------------------------------
+  intelligence-postgres:
+    # pgvector é exigido pelas features de memória do Intelligence (>=0.8.0).
+    image: pgvector/pgvector:0.8.2-pg16
+    container_name: intelligence-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: intelligence
+      POSTGRES_PASSWORD: ${INTELLIGENCE_DB_PASSWORD:?defina INTELLIGENCE_DB_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - intelligence-postgres-data:/var/lib/postgresql/data
+      - ./intelligence/init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intelligence -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [intelligence-internal]
+
+  intelligence-redis:
+    image: redis:7-alpine
+    container_name: intelligence-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [intelligence-internal]
+
+  intelligence:
+    image: ghcr.io/copilotkit/intelligence/composite:0.13.8
+    container_name: intelligence
+    restart: unless-stopped
+    # NÃO usar init:true: a imagem usa s6-overlay e precisa ser PID 1.
+    ports:
+      # 4401 é o gateway do realtime (o ingress faz /client/ e /runner/ ->
+      # este loopback); 4201 fica só pra debug/healthcheck.
+      - "127.0.0.1:4201:4201"
+      - "127.0.0.1:4401:4401"
+    environment:
+      # Hostnames PRÓPRIOS (não `postgres`/`redis`): a rede `apps` tem um
+      # `postgres`/`redis` compartilhados do persistence; com os nomes crus o
+      # DNS do Docker resolveria ambíguo e cairia no banco errado.
+      DATABASE_URL: postgresql://intelligence:${INTELLIGENCE_DB_PASSWORD:?defina INTELLIGENCE_DB_PASSWORD}@intelligence-postgres:5432/intelligence_app
+      REDIS_URL: redis://intelligence-redis:6379
+      AUTH_SECRET: ${INTELLIGENCE_AUTH_SECRET:?defina INTELLIGENCE_AUTH_SECRET}
+      RUNNER_AUTH_SECRET: ${INTELLIGENCE_RUNNER_AUTH_SECRET:-dev-runner-secret}
+      SECRET_KEY_BASE: ${INTELLIGENCE_SECRET_KEY_BASE:?defina INTELLIGENCE_SECRET_KEY_BASE}
+      INTELLIGENCE_DEPLOYMENT_MODE: ${INTELLIGENCE_DEPLOYMENT_MODE:-self_hosted}
+      COPILOTKIT_LICENSE_TOKEN: ${INTELLIGENCE_LICENSE_TOKEN:-}
+    depends_on:
+      intelligence-postgres:
+        condition: service_healthy
+      intelligence-redis:
+        condition: service_healthy
+    networks:
+      - intelligence-internal
+      - apps
+    security_opt:
+      - no-new-privileges:true
+
+  # --- 2. Computer (OpenBot) ----------------------------------------------
+  # A imagem base é o agent-computer upstream, construída do contexto git
+  # pinado. É "build-only": só existe pra a `computer-image` ter de quem
+  # partir; roda `true` e sai. O supervisor cria os containers reais depois.
+  computer-image-base:
+    image: opendots-computer:b6932d3
+    build:
+      context: https://github.com/CopilotKit/OpenBot.git#b6932d31a8d6e7896c15139dfc27a6c6911deb27
+      dockerfile: agent-computer/Dockerfile
+    command: ["true"]
+    restart: "no"
+
+  # Camada nossa sobre a base: git+ssh e a deploy key do repo de projetos, pra
+  # cada Dot clonar no próprio /workspace (persistente). A chave vem por
+  # segredo de BUILD (COMPUTER_DEPLOY_KEY), nunca entra no git.
+  computer-image:
+    image: opendots-computer-git:b6932d3
+    build:
+      context: .
+      dockerfile: computer/Dockerfile
+      args:
+        BASE_IMAGE: opendots-computer:b6932d3
+      secrets:
+        - source: computer_deploy_key
+    depends_on:
+      - computer-image-base
+    command: ["true"]
+    restart: "no"
+
+  # O único que segura o socket do Docker. Quatro verbos (ensure/stop/reset/
+  # list), sempre expressos por Dot — sem passthrough.
+  computer-supervisor:
+    image: opendots-supervisor:b6932d3-dot-auth
+    container_name: computer-supervisor
+    build:
+      context: https://github.com/CopilotKit/OpenDots.git#c2569bb6a13a22e565cf3eb791c62267d06babb1
+      dockerfile: deployment/computers/supervisor.Dockerfile
+      additional_contexts:
+        openbot: https://github.com/CopilotKit/OpenBot.git#b6932d31a8d6e7896c15139dfc27a6c6911deb27
+    restart: unless-stopped
+    init: true
+    environment:
+      PORT: "4300"
+      SUPERVISOR_TOKEN: ${COMPUTER_SUPERVISOR_TOKEN:?defina COMPUTER_SUPERVISOR_TOKEN}
+      COMPUTER_TOKEN: ${COMPUTER_TOKEN:?defina COMPUTER_TOKEN}
+      COMPUTER_NAMESPACE: ${COMPUTER_NAMESPACE:-opendots}
+      COMPUTER_IMAGE: opendots-computer-git:b6932d3
+      COMPUTER_BROWSER_MODE: headless
+      # Computadores entram nesta rede com nome `${ns}-computer-<id>`; o app os
+      # alcança por ela (sem publicar porta no host).
+      COMPUTER_NETWORK: ${COMPUTER_NAMESPACE:-opendots}-computers
+      COMPUTER_MEMORY_BYTES: ${COMPUTER_MEMORY_BYTES:-2147483648}
+      COMPUTER_RUNTIME: ${COMPUTER_RUNTIME:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - computer-control
+      - opendots-computers
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "const r = await fetch('http://localhost:4300/health'); const j = await r.json(); process.exit(r.ok && j.docker ? 0 : 1)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # --- 3. OpenDots (app) --------------------------------------------------
+  opendots:
+    build:
+      context: https://github.com/CopilotKit/OpenDots.git#c2569bb6a13a22e565cf3eb791c62267d06babb1
+      target: app
+    container_name: opendots
+    restart: unless-stopped
+    init: true
+    # Só o ingress (host network) alcança a app pelo loopback.
+    ports:
+      - "127.0.0.1:4310:4310"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "4310"
+      DATABASE_PATH: /data/opendots.sqlite
+      # Precisa ser EXATAMENTE a origem HTTPS do browser.
+      APP_ORIGIN: https://dots.giomartins.dev
+      OWNER_ID: ${OPENDOTS_OWNER_ID:-opendots-owner}
+      OWNER_TOKEN: ${OPENDOTS_OWNER_TOKEN:?defina OPENDOTS_OWNER_TOKEN}
+      INTELLIGENCE_API_KEY: ${OPENDOTS_INTELLIGENCE_API_KEY:?defina OPENDOTS_INTELLIGENCE_API_KEY}
+      INTELLIGENCE_API_URL: ${OPENDOTS_INTELLIGENCE_API_URL:-http://intelligence:4201}
+      # O wsUrl vira o endpoint do CLIENTE (browser) E do runner do servidor:
+      # precisa ser WSS público (o ingress roteia /client/ e /runner/ ->
+      # 127.0.0.1:4401). Um ws:// interno quebra por mixed content.
+      INTELLIGENCE_WS_URL: ${OPENDOTS_INTELLIGENCE_WS_URL:-wss://dots.giomartins.dev}
+      # Computer service (OpenBot). O app alcança o supervisor e os
+      # computadores pelas redes internas; a credencial por-Dot é derivada do
+      # COMPUTER_TOKEN.
+      COMPUTER_SUPERVISOR_URL: http://computer-supervisor:4300
+      COMPUTER_SUPERVISOR_TOKEN: ${COMPUTER_SUPERVISOR_TOKEN:?defina COMPUTER_SUPERVISOR_TOKEN}
+      COMPUTER_TOKEN: ${COMPUTER_TOKEN:?defina COMPUTER_TOKEN}
+      COMPUTER_NAMESPACE: ${COMPUTER_NAMESPACE:-opendots}
+      OPENAI_API_KEY: ${OPENDOTS_OPENAI_API_KEY:-not-needed}
+      OPENAI_BASE_URL: ${OPENDOTS_OPENAI_BASE_URL:-http://9router:20128/v1}
+      OPENAI_MODEL: ${OPENDOTS_OPENAI_MODEL:-}
+      WEB_SEARCH_PROVIDER: disabled
+    volumes:
+      - opendots-data:/data
+    depends_on:
+      - computer-supervisor
+    networks:
+      - apps
+      - computer-control
+      - opendots-computers
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  intelligence-postgres-data:
+    name: intelligence-postgres-data
+  opendots-data:
+    name: opendots-data
+
+networks:
+  intelligence-internal:
+    name: intelligence-internal
+  # Só supervisor + app: o app fala com o supervisor por DNS daqui; sem egress.
+  computer-control:
+    name: computer-control
+    internal: true
+  # Computadores dinâmicos + app + supervisor. Precisa de NAT/egress pra os
+  # Dots clonarem do GitHub e usarem rede.
+  opendots-computers:
+    name: opendots-computers
+  apps:
+    external: true
+    name: apps
+
+secrets:
+  computer_deploy_key:
+    environment: COMPUTER_DEPLOY_KEY
