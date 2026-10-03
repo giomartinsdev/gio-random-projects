@@ -35,6 +35,9 @@ on:
       state_rm_vault_seed_group:
         description: "Optional, use with care: same secrets.tf vault_item_groups key replace_vault_seed_group takes, but drops null_resource.vault_seed[...] from state entirely (terraform state rm) before planning, instead of -replace-ing it -- for when a stale/duplicate Vaultwarden item keeps getting upserted by name and destroy+recreate of the SAME tracked resource isn't enough. Just the bare key, e.g. domain_api_keys -- no quotes/brackets (same reason replace_vault_seed_group's own description gives)."
         required: false
+      state_rm_addresses:
+        description: "Optional (migração): endereços Terraform separados por espaço/linha a remover do state sem destruir (terraform state rm). Ex.: 'module.storage_postgres module.compute_services_registry null_resource.vault_seed random_password.postgres'. Use para tirar do state os recursos que migraram pra stacks. Quando preenchido, o Plan não roda."
+        required: false
       force_unlock_id:
         description: "Optional: state lock ID to force-unlock before planning -- for when a run gets cancelled (gh run cancel) mid-apply and never releases its own lock, leaving every later run blocked on 'Error acquiring the state lock'. Copy the ID from that error's own output."
         required: false
@@ -142,7 +145,19 @@ jobs:
           STATE_RM_GROUP: ${{ github.event.inputs.state_rm_vault_seed_group }}
         run: terraform state rm "null_resource.vault_seed[\"${STATE_RM_GROUP}\"]"
 
+      # Remove do state (sem destruir) os recursos que migraram pra stacks.
+      - name: State rm (addresses)
+        if: github.event.inputs.state_rm_addresses != ''
+        env:
+          ADDRS: ${{ github.event.inputs.state_rm_addresses }}
+        run: |
+          echo "$ADDRS" | tr ' ' '\n' | sed '/^$/d' | while read -r a; do
+            echo "== state rm $a"
+            terraform state rm "$a" || echo "::warning::state rm falhou para $a"
+          done
+
       - name: Plan
+        if: github.event.inputs.state_rm_addresses == ''
         env:
           REPLACE_GROUP: ${{ github.event.inputs.replace_vault_seed_group }}
           REPLACE_TARGET: ${{ github.event.inputs.replace_target }}
