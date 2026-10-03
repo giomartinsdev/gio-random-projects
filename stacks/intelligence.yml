@@ -60,7 +60,7 @@ services:
     image: ghcr.io/copilotkit/intelligence/composite:0.13.8
     container_name: intelligence
     restart: unless-stopped
-    init: true
+    # NÃO usar init:true: a imagem usa s6-overlay e precisa ser PID 1.
     ports:
       - "127.0.0.1:4201:4201"
       - "127.0.0.1:4401:4401"
