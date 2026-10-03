@@ -1,0 +1,14 @@
+apiVersion: 1
+
+providers:
+  - name: apps
+    folder: Apps
+    type: file
+    updateIntervalSeconds: 30
+    options:
+      # Grafana's file provider reads *.json only — this is the same
+      # directory the provider yaml itself lives in (apps-overview.json
+      # is uploaded alongside it), which keeps provisioning to one
+      # mounted path that exists in the base image.
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

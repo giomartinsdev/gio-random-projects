@@ -1,0 +1,82 @@
+# persistence.yml — camada de dados (migra `modules/storage/*` do TF).
+#
+# Reusa os MESMOS named volumes que o Terraform criou (external), então os
+# dados atuais continuam. Antes de tirar os módulos do TF, faça
+# `terraform state rm` também nos docker_volume, senão o apply os destrói.
+#
+# Segredos (variáveis de stack no Dockhand):
+#   POSTGRES_PASSWORD      (era random_password.postgres)
+#   MINIO_ROOT_PASSWORD    (era random_password.minio_root_password)
+# Não-secretos têm default abaixo.
+#
+# A porta 9000/9001 do MinIO é loopback: o ingress fala 127.0.0.1:9000 e
+# os SPAs falam por ele. O postgres/redis não publicam porta (rede interna).
+name: persistence
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-domain}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-domain}
+    volumes:
+      - apps_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-domain}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [apps]
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    volumes:
+      - apps_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [apps]
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-bookclub-minio-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD}
+      MINIO_BROWSER: "on"
+    ports:
+      - "127.0.0.1:9000:9000"   # S3 API (ingress e SPAs falam por aqui)
+      - "127.0.0.1:9001:9001"   # console (ingress -> minio.giomartins.dev)
+    volumes:
+      - apps_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks: [apps]
+
+networks:
+  apps:
+    external: true
+    name: apps
+
+volumes:
+  apps_postgres_data:
+    external: true
+    name: apps_postgres_data
+  apps_redis_data:
+    external: true
+    name: apps_redis_data
+  apps_minio_data:
+    external: true
+    name: apps_minio_data

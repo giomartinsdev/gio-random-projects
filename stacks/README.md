@@ -1,92 +1,92 @@
 # stacks/
 
-O lar das stacks persistidas deste host — o lado da migração que sai do
-Terraform-por-container. Cada subpasta é **um stack** do Docker Compose,
+O lar das stacks persistidas — o lado da migração que sai do
+Terraform-por-container. Cada arquivo é **um stack** do Docker Compose,
 versionado aqui e gerenciado pelo Dockhand.
 
-## Convenção
+## Arquivos (infra)
 
-- Uma pasta por stack: `stacks/<nome>/compose.yaml`.
-- O `<nome>` é o project name do Compose (`name:` no arquivo), o nome do
-  stack no Dockhand, e o nome do container/serviço. Mantenha os três
-  iguais — o Compose trata divergência como orphan.
-- **Nada de segredo no git.** Config normal pode ficar inline ou num
-  `.env` commitado; qualquer senha/chave é variável de stack no Dockhand
-  (criptografada no banco dele — ver "Segredos" abaixo).
-- A imagem vem do registry do repo: `registry.giomartins.dev:5000/<app>:latest`.
-  O build/push continua no CI; o redeploy passa a ser o Dockhand.
-- Toda stack entra na rede externa `apps` (a mesma rede que o storage e o
-  ingress já usam) — não crie rede própria, senão os serviços não se
-  enxergam por nome.
+| Arquivo | O que migra | Serviços |
+| --- | --- | --- |
+| `persistence.yml` | `modules/storage/*` | postgres, redis, minio (+ volumes) |
+| `compute.yml` | `modules/compute/services/*` (menos observability) | registry, htpasswd-init, registry-docker-config, watchtower, beszel-hub, beszel-agent, vaultwarden, vaultwarden-api, adminer, 9router, ingress, dockhand |
+| `observability.yml` | `modules/compute/services/observability` | loki, prometheus, tempo, alloy, grafana (+ configs em `observability/`) |
 
-Exemplo mínimo:
+Os stacks de **app** (`domain`, `tela`, `clubs`, …) vêm numa fase
+posterior — o repo ainda não os tem aqui.
 
-```yaml
-name: meu-app
-services:
-  meu-app:
-    image: registry.giomartins.dev:5000/meu-app:latest
-    restart: unless-stopped
-    environment:
-      ALGUMA_COISA: valor
-      MEU_SEGREDO: ${MEU_SEGREDO:?defina MEU_SEGREDO}
-    networks: [apps]
-networks:
-  apps:
-    external: true
-    name: apps
-```
+O `ingress/default.conf` é o nginx renderizado (o TF gerava do
+`local.services`; agora é arquivo versionado). Se um app migrar e mudar a
+porta loopback, edite aqui.
 
-## Onde vive no host
+> **Detalhe do git-backed:** com os três arquivos na mesma pasta `stacks/`,
+> se você apontar o Dockhand pro mesmo *context directory* pra todos, um
+> commit em qualquer arquivo pode redeployar os três (a detecção de mudança
+> é por diretório). Se quiser detecção por stack, ponha cada arquivo na
+> própria subpasta.
 
-O Dockhand roda com **matching paths**: `DATA_DIR=/opt/dockhand` e
-`STACKS_DIR=/opt/stacks`, ambos bind mounts no mesmo caminho dentro do
-container. O layout em disco é **flat**: `STACKS_DIR/<stack>/`. Então uma
-stack `clubs-ingest` no Dockhand mora em `/opt/stacks/clubs-ingest/`.
+## Convenções
 
-## Como uma stack é gerenciada (git-backed)
+- **`name:` = nome do stack no Dockhand**, e o serviço/`container_name`
+  mantém o nome que já era usado na rede (`postgres`, `redis`, `minio`,
+  `domain-api`, …) — é por esse nome que os outros se enxergam.
+- **Rede externa `apps`**: todas entram nela (`external: true`). Não crie
+  rede própria.
+- **Volumes externos reusando o nome do TF**: as stacks apontam pros
+  named volumes que o Terraform já criou (`apps_postgres_data`, `obs_*`,
+  `registry_*`, …) com `external: true`. Isso preserva os dados atuais.
+- **Imagem do registry**: `registry.giomartins.dev:5000/<app>:latest`. O
+  build/push continua no CI.
+- **Segredo nunca no git**: no compose só `${VAR}`. O valor vira variável
+  de stack no Dockhand (criptografada no DB dele).
 
-No Dockhand, a stack é criada como **git stack** apontando pra este repo:
+## Segredos por arquivo
 
-- Repository: o repo `gio-random-projects`.
-- Context directory: `stacks/<nome>`.
-- Compose file path: `compose.yaml`.
+`persistence.yml`: `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`.
 
-O Dockhand clona o repo, roda o compose a partir de `stacks/<nome>`, e só
-redeploya quando **algo dentro daquele diretório** muda (commits em outras
-pastas são ignorados). Deploy por webhook/API do Dockhand — ver
-`docs/` do próprio Dockhand ou o README do módulo
-`modules/infra/terraform/modules/compute/services/dockhand`.
+`compute.yml`: `REGISTRY_PASSWORD`, `BESZEL_AGENT_KEY` (se vazio, remova o
+`beszel-agent`), `VAULTWARDEN_ADMIN_TOKEN`, `VAULTWARDEN_ACCOUNT_EMAIL`,
+`VAULTWARDEN_ACCOUNT_MASTER_PASSWORD`, `VAULTWARDEN_API_CLIENT_ID`,
+`VAULTWARDEN_API_CLIENT_SECRET`, `VAULTWARDEN_BRIDGE_API_KEY`,
+`NINEROUTER_JWT_SECRET`, `NINEROUTER_INITIAL_PASSWORD`.
 
-## Segredos
+`observability.yml`: `GRAFANA_ADMIN_PASSWORD`.
 
-Não vão no git. Hoje: **variáveis de ambiente do stack no Dockhand**
-(ficam criptografadas no DB dele, com `.encryption_key` — as duas coisas
-entram no backup). No compose, referencie com `${VAR}` e o valor é
-injetado no deploy.
+> **Vaultwarden não serve o provider "Bitwarden" do Dockhand.** O provider
+> é o Bitwarden *Secrets Manager* (`bws` + Machine Account + Project UUID),
+> que o Vaultwarden não implementa. Hoje os segredos ficam como variáveis
+> de stack no Dockhand; pra centralizar num cofre suportado, suba um
+> **Infisical** e ligue o provider nele.
 
-> O Vaultwarden **não** serve o provider "Bitwarden" do Dockhand (ele é o
-> Bitwarden *Secrets Manager* via `bws`, que o Vaultwarden não implementa).
-> Pra centralizar num cofre de verdade, o caminho suportado é subir um
-> **Infisical** como stack e apontar o provider pra ele — fase posterior.
+## Como migrar um arquivo (ordem recomendada)
 
-## Migrar um app do Terraform para uma stack
+Os containers atuais do TF não têm labels de compose, então o "adopt" do
+Dockhand não os pega. O caminho é **parar+remover o antigo e subir a
+stack** (mesmo nome, mesmos volumes):
 
-Os containers atuais foram criados pelo provider `docker` do Terraform e
-**não** têm labels de compose, então o "adopt" do Dockhand não os
-reconhece. O caminho por app é:
+1. `terraform state rm` nos recursos do módulo — **containers E volumes**.
+   Sem isso, um apply futuro destrói o volume e você perde os dados.
+   Ex.: `terraform state rm module.storage_postgres` e os
+   `docker_volume` correspondentes.
+2. `docker rm -f <container>` (libera o nome; o volume fica).
+3. Suba a stack: `docker compose -f stacks/<arquivo>.yml up -d` (com as
+   variáveis de segredo no ambiente) **ou** crie/importe no Dockhand
+   (git-backed, context `stacks`, compose `<arquivo>.yml`).
+4. Valide que voltou.
+5. Apague o módulo TF e as entradas em `main.tf`/`locals.tf`/`secrets.tf`.
 
-1. Escreva `stacks/<app>/compose.yaml` espelhando o container atual
-   (`docker inspect`). Segredos viram variáveis no Dockhand.
-2. `terraform state rm module.compute_apps_<app>` — o Terraform *esquece*
-   sem destruir; o container antigo continua rodando.
-3. `docker rm -f <app>` — remove o container antigo (libera o nome).
-4. Crie/deploy a stack no Dockhand (ou `docker compose up -d` em
-   `/opt/stacks/<app>/`, que o Dockhand passa a rastrear).
-5. Apague o módulo Terraform do app (`modules/compute/apps/<app>/`) e a
-   entrada em `main.tf`/`locals.tf`/`secrets.tf` conforme sobrar.
+Ordem pra reduzir dor: **observability** (ninguém depende) → **compute**
+(registry/adminer/beszel/9router/ingress) → **persistence**
+(postgres/redis/minio: janela de downtime, os apps reconectam) → **apps**.
 
-Faça um app por vez. Comece por um **worker sem porta, sem volume e sem
-ingress** (ex.: `clubs-ingest`) — se recriar, ninguém sente. Só depois
-mexa em serviços com porta/ingress (aí a porta loopback tem que continuar
-batendo com o `locals.tf`, ou o ingress migra pra Traefik — fase 3).
+O `ingress` é `network_mode: host` e sobe por último no arquivo; ele já
+fala com tudo por `127.0.0.1:<porta>`.
+
+## O que NÃO vira stack
+
+- **Cloudflare** (DNS, Access, service tokens, mTLS do registry, email
+  routing) e o **firewall/MTU do host** (`host_baseline`) não são
+  containers. Ficam pra uma fase própria (dashboard/Tunnel + script).
+- **Buckets do MinIO** (`tela-frontend`, `hub-frontend`, `clubs-frontend`)
+  eram criados por um `null_resource`. Depois de migrar o MinIO, recrie
+  com `mc mb`/`mc anonymous set download` (ou pelo Dockhand).

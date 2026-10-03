@@ -1,0 +1,132 @@
+# observability.yml — Grafana + Loki + Prometheus + Tempo + Alloy (migra
+# `modules/compute/services/observability` do TF).
+#
+# Reusa os named volumes obs_* do TF (external). Os configs que o TF injetava
+# via `upload` agora são bind mounts de ./observability/ (mesma pasta).
+#
+# Segredo: GRAFANA_ADMIN_PASSWORD (era random_password.grafana_admin_password).
+#
+# memory 512 / swap 1024 em cada, como no TF. Alloy precisa do docker.sock
+# (lê o stdout de todos os containers) e publica 4318 loopback (o ingress
+# entrega otel.giomartins.dev).
+name: observability
+
+services:
+  loki:
+    image: grafana/loki:3.7.7
+    container_name: loki
+    restart: unless-stopped
+    user: "0"
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/loki.yaml:/etc/loki/local-config.yaml:ro
+      - obs_loki_data:/loki
+    mem_limit: 512m
+    memswap_limit: 1024m
+    logging:
+      options: { max-size: "10m", max-file: "3" }
+    networks: [apps]
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    container_name: prometheus
+    restart: unless-stopped
+    user: "0"
+    entrypoint: ["/bin/prometheus"]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-remote-write-receiver"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - obs_prom_data:/prometheus
+    mem_limit: 512m
+    memswap_limit: 1024m
+    logging:
+      options: { max-size: "10m", max-file: "3" }
+    networks: [apps]
+
+  tempo:
+    image: grafana/tempo:2.10.8
+    container_name: tempo
+    restart: unless-stopped
+    user: "0"
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - obs_tempo_data:/var/tempo
+    mem_limit: 512m
+    memswap_limit: 1024m
+    logging:
+      options: { max-size: "10m", max-file: "3" }
+    networks: [apps]
+
+  alloy:
+    image: grafana/alloy:v1.19.2
+    container_name: alloy
+    restart: unless-stopped
+    user: "0"
+    command:
+      - "run"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy/data"
+      - "/etc/alloy/config.alloy"
+    ports:
+      - "127.0.0.1:4318:4318"
+    volumes:
+      - ./observability/alloy.alloy:/etc/alloy/config.alloy:ro
+      - obs_alloy_state:/var/lib/alloy/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    mem_limit: 512m
+    memswap_limit: 1024m
+    logging:
+      options: { max-size: "10m", max-file: "3" }
+    networks: [apps]
+    depends_on: [loki, prometheus, tempo]
+
+  grafana:
+    image: grafana/grafana-oss:12.4.3
+    container_name: grafana
+    restart: unless-stopped
+    user: "0"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?defina GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: https://grafana.giomartins.dev
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./observability/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./observability/apps-overview.json:/etc/grafana/provisioning/dashboards/apps-overview.json:ro
+      - obs_grafana_data:/var/lib/grafana
+    mem_limit: 512m
+    memswap_limit: 1024m
+    logging:
+      options: { max-size: "10m", max-file: "3" }
+    networks: [apps]
+    depends_on: [loki, prometheus, tempo]
+
+networks:
+  apps:
+    external: true
+    name: apps
+
+volumes:
+  obs_loki_data:
+    external: true
+    name: obs_loki_data
+  obs_prom_data:
+    external: true
+    name: obs_prom_data
+  obs_tempo_data:
+    external: true
+    name: obs_tempo_data
+  obs_alloy_state:
+    external: true
+    name: obs_alloy_state
+  obs_grafana_data:
+    external: true
+    name: obs_grafana_data
