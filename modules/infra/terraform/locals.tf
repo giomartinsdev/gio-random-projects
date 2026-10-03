@@ -119,6 +119,16 @@ locals {
       port     = 15672
     },
     {
+      # Evolution API — gateway do WhatsApp (Baileys) que publica todo evento
+      # no RabbitMQ (exchange topic `evolution`). Browser-facing manager em
+      # /manager, então ganha o mesmo Access Google-SSO de vault/adminer/
+      # grafana acima (não está em excluded_hostnames); a apikey global da
+      # própria Evolution é a segunda camada. Port must match stacks/compute.yml's
+      # loopback publish (8080).
+      hostname = "evolution.giomartins.dev"
+      port     = 8080
+    },
+    {
       # OpenDots — CopilotKit's self-hosted "Dots" (AI coworkers with
       # Spaces/pages and chat). ONLY the DNS A record is managed here (the
       # hostname is in excluded_hostnames): the container itself is the

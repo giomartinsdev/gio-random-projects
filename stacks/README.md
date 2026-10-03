@@ -14,7 +14,7 @@ Cada arquivo é um stack **independente** (sem agregado na raiz). Não há
 | `bootstrap.yml` | infra compartilhada | `network-init` (cria a rede `apps`; suba ESTE primeiro numa VPS nova) |
 | `core.yml` | base da VPS | registry, htpasswd-init, registry-docker-config, dockhand (boot-only; **protegida**) |
 | `persistence.yml` | `modules/storage/*` | postgres, rabbitmq, minio, minio-buckets (+ volumes) |
-| `compute.yml` | `modules/compute/services/*` (menos observability e core) | vaultwarden, vaultwarden-api, adminer, 9router, ingress |
+| `compute.yml` | `modules/compute/services/*` (menos observability e core) | vaultwarden, vaultwarden-api, adminer, 9router, evolution-api, evolution-redis, evolution-db-init, ingress |
 | `observability.yml` | `modules/compute/services/observability` | loki, prometheus, tempo, alloy, grafana (+ configs em `observability/`) |
 | `domain.yml` | `modules/compute/apps/domain_api` | domain-api, domain-worker |
 | `tela.yml` | `modules/compute/apps/tela_api` | tela-mediamtx, tela-coturn, tela-api (os 3 em host network) |
@@ -69,7 +69,10 @@ porta loopback, edite aqui.
 `compute.yml`: `VAULTWARDEN_ADMIN_TOKEN`, `VAULTWARDEN_ACCOUNT_EMAIL`,
 `VAULTWARDEN_ACCOUNT_MASTER_PASSWORD`, `VAULTWARDEN_API_CLIENT_ID`,
 `VAULTWARDEN_API_CLIENT_SECRET`, `VAULTWARDEN_BRIDGE_API_KEY`,
-`NINEROUTER_JWT_SECRET`, `NINEROUTER_INITIAL_PASSWORD`.
+`NINEROUTER_JWT_SECRET`, `NINEROUTER_INITIAL_PASSWORD`, `POSTGRES_PASSWORD`
+(a MESMA do persistence — Evolution API), `RABBITMQ_PASSWORD` (a MESMA do
+persistence — Evolution API), `EVOLUTION_API_KEY` (apikey global da
+Evolution API).
 
 `observability.yml`: `GRAFANA_ADMIN_PASSWORD`.
 
