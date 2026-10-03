@@ -65,8 +65,12 @@ services:
       - "127.0.0.1:4201:4201"
       - "127.0.0.1:4401:4401"
     environment:
-      DATABASE_URL: postgresql://intelligence:${INTELLIGENCE_DB_PASSWORD:?defina INTELLIGENCE_DB_PASSWORD}@postgres:5432/intelligence_app
-      REDIS_URL: redis://redis:6379
+      # Hostnames PRÓPRIOS (NÃO `postgres`/`redis`): o composite também entra na
+      # rede `apps`, que tem um `postgres`/`redis` compartilhados do persistence.
+      # Com os nomes crus o DNS do Docker resolveria ambíguo e cairia no banco
+      # errado. Estes aliases só existem na rede intelligence-internal.
+      DATABASE_URL: postgresql://intelligence:${INTELLIGENCE_DB_PASSWORD:?defina INTELLIGENCE_DB_PASSWORD}@intelligence-postgres:5432/intelligence_app
+      REDIS_URL: redis://intelligence-redis:6379
       AUTH_SECRET: ${INTELLIGENCE_AUTH_SECRET:?defina INTELLIGENCE_AUTH_SECRET}
       RUNNER_AUTH_SECRET: ${INTELLIGENCE_RUNNER_AUTH_SECRET:-dev-runner-secret}
       SECRET_KEY_BASE: ${INTELLIGENCE_SECRET_KEY_BASE:?defina INTELLIGENCE_SECRET_KEY_BASE}
