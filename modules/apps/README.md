@@ -7,22 +7,18 @@ workflow's own header for why not watchtower). Three pipelines, one
 per language+layer:
 
 - **`.github/workflows/go-ci-cd.yml`** — Go apps, auto-discovered by
-  `go.mod` (`domain-api`, `domain-worker`, `tela-api`, `cch-api`).
-- **`.github/workflows/ts-frontend-ci-cd.yml`** — TypeScript frontend
-  apps (`buteco-class-frontend`, `tela-frontend`, `cch-frontend`,
-  `hub-frontend`, `bet-frontend`, `clubs-frontend`),
-  which need `VITE_*` env vars baked into the bundle at build time.
-  None of them runs as a container: the build is mirrored straight
-  into its own MinIO bucket instead (see
-  `modules/infra/terraform/static_sites.tf`).
-- **`.github/workflows/ts-backend-ci-cd.yml`** — TypeScript backend
-  apps (`post-api`, `bookclub-api`, `classroom-api`, `bet-api`,
-  `bet-runner`), which take their
-  config as real runtime env vars from Terraform instead.
+  `go.mod` (`domain-api`, `domain-worker`, `tela-api`, `clubs-api`).
+- **`.github/workflows/ts-frontend-ci-cd.yml`** — TypeScript SPAs
+  (`tela-frontend`, `clubs-frontend`, `hub-frontend`), which need
+  `VITE_*` env vars baked into the bundle at build time. None of them
+  runs as a container: the build is mirrored straight into its own
+  MinIO bucket instead (see `modules/infra/terraform/static_sites.tf`).
+- **`.github/workflows/python-ci-cd.yml`** — Python workers
+  (`clubs-ingest`), auto-discovered by `pyproject.toml`.
 
-Unlike Go, a `package.json` alone doesn't put a TypeScript app in
-either pipeline — see `docs/novo-app-ci-cd.md` for the `ALLOWED_APPS`
-list each of those two workflows actually reads.
+Unlike Go, a `package.json` alone doesn't put a TypeScript app in the
+frontend pipeline — see `docs/novo-app-ci-cd.md` for the `ALLOWED_APPS`
+list that workflow actually reads.
 
 Folders are named `<bounded-context>-api` / `<bounded-context>-worker`
 — `domain-api`/`domain-worker` today, more pairs alongside them as new
@@ -34,21 +30,25 @@ only ever fit one.
   `domain-worker`.
 - **`domain-worker/`** — the only writer, consumes commands off the
   event bus, applies them, records an audit trail.
-- **`post-api/`** — headless content API for Buteco dos Devs (articles/courses, Better Auth). Independent Node/TypeScript stack, not Go like the rest of this folder — see its own README for why. A future `buteco-bot` (Discord integration) would be just another consumer of this same API, not a new bounded context.
-- **`buteco-class-frontend/`** — the blog's React frontend, talking to `post-api` and `bookclub-api` directly from the browser. Same Node/TypeScript stack as `post-api`.
-- **`bookclub-api/`** — realtime PDF room service ("Clube do Livro"): upload a PDF, open a room, others join over a WebSocket for live page-turning, host annotations, and chat. Unlike `post-api`, it owns its rooms/documents/messages tables directly (no domain-api CQRS hop) and reuses post-api's own Better Auth session instead of its own login — see its README for why both.
-- **`tela-api/`** / **`tela-frontend/`** — screen sharing at `tela.giomartins.dev`: a Go SFU/signalling backend (its own container) and its own separate React frontend (a static build in MinIO, no container), talking to each other over CORS, own origins. Shares nothing with the rest of this folder — no Postgres, no Better Auth, no domain-api. See `tela-api/README.md` for how the SFU itself works.
-- **`cch-api/`** / **`cch-frontend/`** — cartas contra a humanidade at `cch.giomartins.dev`: a Go game backend (its own container, in-memory game state machine) and its own separate React frontend (a static build in MinIO, no container), talking to each other over CORS + WebSocket, own origins. Same standalone model as tela — no Postgres, no Better Auth, no domain-api; themed card decks are plain Go data in `cch-api/internal/decks`.
-- **`bet-api/`** / **`bet-runner/`** / **`bet-frontend/`** — apostas automatizadas at `bet.giomartins.dev`: paste a bookmaker link, the queue in `bet-api` (Hono + Drizzle, Access-JWT auth instead of Better Auth — the edge's `Cf-Access-Jwt-Assertion` is verified in-app) hands it to `bet-runner`, a patchright/Chromium worker that logs into the bookmaker with AES-GCM-encrypted credentials from the DB and places the bet, screenshot receipt included. Vendor-agnostic on both sides: `bet-api/src/lib/vendors.ts` maps link hostnames to vendors, `bet-runner/src/vendors/` holds one driver per house (betano today, bet365/bet338 later) behind a `BookmakerDriver` interface.
-
-- **`clubs-api/`** / **`clubs-ingest/`** / **`clubs-frontend/`** — o FC Clubs Hub em
-  `clubs.giomartins.dev`: rankings, perfis de clube/partida/jogador e o histórico
-  que a EA não guarda. `clubs-ingest` é um worker Python (sem porta, sem host) que
-  puxa da API pública de Pro Clubs e grava via `domain-api`; `clubs-api` é um BFF
-  Go (um host, sem banco) com duas camadas — leituras públicas sem identidade e
-  uma camada pessoal atrás do Access no `/api`; `clubs-frontend` é uma SPA React
-  estática em bucket, sem container, que entra no hub como microfrontend. O design
-  system vive em `clubs-frontend/ui.pen`.
+- **`tela-api/`** / **`tela-frontend/`** — screen sharing at
+  `tela.giomartins.dev`: a Go SFU/signalling backend (its own
+  container) and its own separate React frontend (a static build in
+  MinIO, no container), talking to each other over CORS, own origins.
+  Shares nothing with the rest of this folder — no Postgres, no Better
+  Auth, no domain-api. See `tela-api/README.md` for how the SFU itself
+  works.
+- **`clubs-api/`** / **`clubs-ingest/`** / **`clubs-frontend/`** — o FC
+  Clubs Hub em `clubs.giomartins.dev`: rankings, perfis de
+  clube/partida/jogador e o histórico que a EA não guarda. `clubs-ingest`
+  é um worker Python (sem porta, sem host) que puxa da API pública de
+  Pro Clubs e grava via `domain-api`; `clubs-api` é um BFF Go (um host,
+  sem banco) com duas camadas — leituras públicas sem identidade e uma
+  camada pessoal atrás do login próprio no `/api`; `clubs-frontend` é uma
+  SPA React estática em bucket, sem container, que entra no hub como
+  microfrontend. O design system vive em `clubs-frontend/ui.pen`.
+- **`hub-frontend/`** — o hub: chrome em volta das SPAs acima (sidebar +
+  um renderer que as iframeia) mais atalhos de nova aba para os painéis
+  protegidos por Access. Também é uma SPA estática em bucket.
 
 `domain-api` and `domain-worker` are deliberately independent Go
 modules (each with its own `go.mod`) even though they agree on the

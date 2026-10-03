@@ -1,18 +1,15 @@
 name: TypeScript frontend deploy
 
 # CI/CD for the TypeScript frontend apps under modules/apps/*/ --
-# buteco-class-frontend (the Buteco dos Devs SPA), tela-frontend
-# (screen sharing's own page, split from tela-api), cch-frontend
-# (the cards-against-humanity page) and hub-frontend (the shell that
-# renders the others). Split from the
-# backend pipeline (ts-backend-ci-cd.yml) because the two build
-# differently in a way that's easy to get wrong sharing one workflow:
+# tela-frontend (screen sharing's own page, split from tela-api),
+# clubs-frontend (the FC Clubs Hub SPA) and hub-frontend (the shell
+# that renders the others). go-ci-cd.yml/python-ci-cd.yml/tf-ci-cd.yml
+# are their own pipelines -- one per language+layer, not one generic
+# pipeline branching on every difference between them; in particular
 # only a frontend needs VITE_* env vars baked into the bundle at build
-# time. go-ci-cd.yml/tf-ci-cd.yml are their own pipelines for the same
-# reason -- one pipeline per language+layer, not one generic pipeline
-# branching on every difference between them.
+# time.
 #
-# Neither app runs as a container: both are plain static builds
+# None of these runs as a container: all are plain static builds
 # mirrored into their own MinIO bucket (modules/infra/terraform's
 # static_sites.tf/locals.tf), served by compute/services/ingress
 # proxying straight to MinIO's S3 API. There's nothing here for
@@ -24,18 +21,14 @@ name: TypeScript frontend deploy
 # ALLOWED_APPS below is the actual pipeline boundary -- add a new
 # frontend app there (and nowhere else) to bring it under this
 # pipeline; a package.json alone isn't enough, since that's equally
-# true of every backend app in modules/apps/*/.
+# true of every non-frontend app in modules/apps/*/.
 
 on:
   push:
     branches: [main]
     paths:
-      - "modules/apps/buteco-class-frontend/**"
       - "modules/apps/tela-frontend/**"
-      - "modules/apps/cch-frontend/**"
       - "modules/apps/hub-frontend/**"
-      - "modules/apps/bet-frontend/**"
-      - "modules/apps/financas-frontend/**"
       - "modules/apps/clubs-frontend/**"
   workflow_dispatch:
     inputs:
@@ -55,7 +48,7 @@ jobs:
 
       - id: list
         env:
-          ALLOWED_APPS: "buteco-class-frontend tela-frontend cch-frontend hub-frontend bet-frontend financas-frontend clubs-frontend"
+          ALLOWED_APPS: "tela-frontend hub-frontend clubs-frontend"
         run: |
           all_apps=$(echo "$ALLOWED_APPS" | tr ' ' '\n')
 
@@ -149,45 +142,31 @@ jobs:
       # only ever inlines the ones a given app's own code actually
       # references (import.meta.env.VITE_X), so an unused one here is
       # a harmless no-op, same convention the old Docker build-args
-      # followed. buteco-class-frontend uses VITE_POST_API_URL/etc;
-      # tela-frontend uses only VITE_TELA_API_URL; cch-frontend only
-      # VITE_CCH_API_URL. The SPAs with browser telemetry also get
-      # VITE_OTEL_EXPORTER_OTLP_ENDPOINT (unused here is a no-op --
-      # see src/telemetry.ts in each app).
+      # followed. tela-frontend uses only VITE_TELA_API_URL;
+      # clubs-frontend only VITE_CLUBS_API_URL. The SPAs with browser
+      # telemetry also get VITE_OTEL_EXPORTER_OTLP_ENDPOINT (unused here
+      # is a no-op -- see src/telemetry.ts in each app).
       #
-      # VITE_GOOGLE_CLIENT_ID is the one exception: it is NOT shared. Google
-      # registers the authorized JavaScript origins per client, so a single
-      # client cannot serve two products on different hosts -- that is
-      # precisely what produced clubs' `origin_mismatch` in production
-      # (clubs.giomartins.dev was not in financas' client). Each app with a
-      # sign-in button therefore gets its own client, resolved per matrix.app.
+      # VITE_GOOGLE_CLIENT_ID is NOT shared between products: Google
+      # registers the authorized JavaScript origins per client, so one
+      # client cannot serve two apps on different hosts -- that is
+      # precisely what produced clubs' `origin_mismatch` in production.
+      # Each app with a sign-in button therefore gets its own client,
+      # resolved per matrix.app.
       - name: Resolve the app's Google OAuth client ID
         working-directory: modules/apps/${{ matrix.app }}
         run: |
           case "${{ matrix.app }}" in
-            clubs-frontend)    id="${{ secrets.CLUBS_GOOGLE_OAUTH_CLIENT_ID }}" ;;
-            financas-frontend) id="${{ secrets.FINANCAS_GOOGLE_OAUTH_CLIENT_ID }}" ;;
-            *)                 id="" ;;
+            clubs-frontend) id="${{ secrets.CLUBS_GOOGLE_OAUTH_CLIENT_ID }}" ;;
+            *)              id="" ;;
           esac
           echo "VITE_GOOGLE_CLIENT_ID=$id" >> "$GITHUB_ENV"
 
       - name: Build ${{ matrix.app }}
         working-directory: modules/apps/${{ matrix.app }}
         env:
-          VITE_POST_API_URL: https://post-api.giomartins.dev
-          VITE_BOOKCLUB_API_URL: https://bookclub-api.giomartins.dev
-          VITE_CLASSROOM_API_URL: https://classroom-api.giomartins.dev
-          VITE_PUBLIC_APP_URL: https://buteco-class.giomartins.dev
           VITE_TELA_API_URL: https://tela-api.giomartins.dev
           VITE_OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
-          VITE_CCH_API_URL: https://cch-api.giomartins.dev
-          VITE_BET_API_URL: https://bet-api.giomartins.dev
-          VITE_CONTAS_API_URL: https://contas-api.giomartins.dev
-          VITE_TRANSACIONAL_API_URL: https://transacional-api.giomartins.dev
-          VITE_ASSET_MANAGER_API_URL: https://asset-manager-api.giomartins.dev
-          VITE_DASHBOARD_API_URL: https://dashboard-api.giomartins.dev
-          VITE_APOSTAS_API_URL: https://apostas-api.giomartins.dev
-          VITE_LEADS_API_URL: https://leads-api.giomartins.dev
           VITE_CLUBS_API_URL: https://clubs-api.giomartins.dev
         run: npm run build
 

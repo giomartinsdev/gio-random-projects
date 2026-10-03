@@ -58,18 +58,12 @@ env:
   TF_VAR_vaultwarden_account_master_password: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
   TF_VAR_vaultwarden_api_client_id: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
   TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-  TF_VAR_asset_manager_brapi_token: ${{ secrets.TF_ASSET_MANAGER_BRAPI_TOKEN }}
-  TF_VAR_google_oauth_client_id: ${{ secrets.FINANCAS_GOOGLE_OAUTH_CLIENT_ID }}
   TF_VAR_clubs_google_oauth_client_id: ${{ secrets.CLUBS_GOOGLE_OAUTH_CLIENT_ID }}
-  TF_VAR_apostas_extension_usuario_email: ${{ secrets.FINANCAS_APOSTAS_EXTENSION_USUARIO_EMAIL }}
-  TF_VAR_apostas_ai_api_key: ${{ secrets.FINANCAS_APOSTAS_AI_API_KEY }}
-  TF_VAR_apostas_sportsdata_api_key: ${{ secrets.FINANCAS_APOSTAS_SPORTSDATA_API_KEY }}
   AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
-  # TF_VAR_registry_password/TF_VAR_discord_client_id/TF_VAR_discord_client_secret
-  # are NOT here -- they're fetched from Vaultwarden below instead of
-  # kept as their own GitHub secret. See "Fetch secrets from
-  # Vaultwarden"'s own comment for why.
+  # TF_VAR_registry_password is NOT here -- it's fetched from
+  # Vaultwarden below instead of kept as its own GitHub secret. See
+  # "Fetch secrets from Vaultwarden"'s own comment for why.
 
 jobs:
   plan:
@@ -110,19 +104,12 @@ jobs:
           echo "Discovered server_ip=$SERVER_IP"
           echo "TF_VAR_server_ip=$SERVER_IP" >> "$GITHUB_ENV"
 
-      # registry_password and discord_client_id/secret aren't secret
-      # zero (nothing about bootstrapping Terraform itself needs
-      # them) -- they're regular resource inputs Terraform already
-      # keeps mirrored in Vaultwarden (secrets.tf's "registry" and
-      # "discord" vault_seed groups), so CI reads them from there
-      # instead of also holding its own GitHub-secret copy.
-      # The deals SOURCE_BASE_URLs and Discord webhook are here too:
-      # without TF_VAR_s at apply time, a tf-only apply would rewrite
-      # them to blank DEFAULTS -- SOURCE_BASE_URL blank leaves the
-      # scrapers crash-looping on purpose (a silent no-op poller would
-      # be worse). PLD/PHB_SOURCE_URL are therefore REQUIRED (no "?"),
-      # while the webhook is optional (blank = announcer stays silent
-      # but still drains the queue).
+      # registry_password isn't secret zero (nothing about
+      # bootstrapping Terraform itself needs it) -- it's a regular
+      # resource input Terraform already keeps mirrored in
+      # Vaultwarden (secrets.tf's "registry" vault_seed group), so CI
+      # reads it from there instead of also holding its own
+      # GitHub-secret copy.
       - name: Fetch secrets from Vaultwarden
         env:
           DOCKER_HOST: ${{ env.TF_VAR_docker_host }}
@@ -130,7 +117,7 @@ jobs:
           VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
           VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
           VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "TF_VAR_registry_password=REGISTRY_PASSWORD TF_VAR_discord_client_id=DISCORD_CLIENT_ID TF_VAR_discord_client_secret=DISCORD_CLIENT_SECRET TF_VAR_discord_announce_webhook_url=DISCORD_ANNOUNCE_WEBHOOK_URL? TF_VAR_pld_source_url=PLD_SOURCE_URL TF_VAR_phb_source_url=PHB_SOURCE_URL TF_VAR_deals_discord_webhook_url=DEALS_DISCORD_WEBHOOK_URL?"
+          ITEM_MAP: "TF_VAR_registry_password=REGISTRY_PASSWORD"
         run: |
           set -o pipefail
           ./scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do

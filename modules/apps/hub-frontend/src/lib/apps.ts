@@ -39,25 +39,11 @@ export const MICROFRONTENDS: Microfrontend[] = [
     url: "https://tela.giomartins.dev",
   },
   {
-    id: "cch",
-    name: "CCH",
-    emoji: "🎴",
-    description: "cartas contra a humanidade, sem cadastro",
-    url: "https://cch.giomartins.dev",
-  },
-  {
-    id: "bet",
-    name: "Bet",
-    emoji: "🎯",
-    description: "apostas automatizadas a partir de um link",
-    url: "https://bet.giomartins.dev",
-  },
-  {
-    id: "financas",
-    name: "Finanças",
-    emoji: "💰",
-    description: "contas, transações, investimentos e dashboard num só lugar",
-    url: "https://financas.giomartins.dev",
+    id: "clubs",
+    name: "FC Clubs",
+    emoji: "⚽",
+    description: "rankings de clubes e jogadores, e o histórico que a EA não guarda",
+    url: "https://clubs.giomartins.dev",
   },
 ];
 

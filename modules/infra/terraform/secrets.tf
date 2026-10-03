@@ -31,70 +31,6 @@ resource "random_id" "domain_api_key" {
   byte_length = 24
 }
 
-# post-api's own key, separate from the "ci" one above (go-ci-cd.yml/ts-backend-ci-cd.yml's
-# terraform apply, unrelated to any HTTP client of domain-api) -- lets
-# either be rotated independently, and makes the audit log's caller
-# label (see domain-api's apikey.go) actually distinguish the two.
-resource "random_id" "post_api_domain_key" {
-  byte_length = 24
-}
-
-# bookclub-api's own key, same reasoning as post_api_domain_key --
-# Room/Message go through domain-api's CQRS pipeline same as Post, so
-# this needs a caller identity there too.
-resource "random_id" "bookclub_api_domain_key" {
-  byte_length = 24
-}
-
-# classroom-api's own key, same reasoning as bookclub_api_domain_key --
-# Room/Message go through domain-api's CQRS pipeline same as Post, so
-# this needs a caller identity there too.
-resource "random_id" "classroom_api_domain_key" {
-  byte_length = 24
-}
-
-# the deals scrapers' own key (pld/phb-scraper's DOMAIN_API_KEY) --
-# both sources share one identity ("deals-scrapers") in the audit log;
-# no Vaultwarden item needed since terraform wires the key straight
-# into the scraper containers' env.
-resource "random_id" "deals_domain_key" {
-  byte_length = 24
-}
-
-# cch-api's own key, same reasoning as post_api_domain_key -- its rooms
-# and decks go through domain-api's command pipeline (cch_rooms /
-# cch_custom_decks), so the audit log needs a caller identity for it.
-# No Vaultwarden item: terraform wires the key straight into the
-# container's env, same as the scrapers' key.
-resource "random_id" "cch_api_domain_key" {
-  byte_length = 24
-}
-
-# contas-api's own key, same reasoning as post_api_domain_key -- its
-# accounts go through domain-api's command pipeline, so the audit log
-# needs a caller identity for it.
-resource "random_id" "contas_api_domain_key" {
-  byte_length = 24
-}
-
-# transacional-api's own key, same reasoning as contas_api_domain_key
-# -- its transactions go through domain-api's command pipeline.
-resource "random_id" "transacional_api_domain_key" {
-  byte_length = 24
-}
-
-# asset-manager-api's own key, same reasoning as contas_api_domain_key
-# -- its assets/movements go through domain-api's command pipeline.
-resource "random_id" "asset_manager_api_domain_key" {
-  byte_length = 24
-}
-
-# dashboard-api's own key, same reasoning as contas_api_domain_key --
-# its dashboard layouts go through domain-api's command pipeline.
-resource "random_id" "dashboard_api_domain_key" {
-  byte_length = 24
-}
-
 # clubs-api's session-signing secret. The hub no longer sits behind Cloudflare
 # Access: the SPA sends a Google ID token, clubs-api verifies it and mints an
 # HS256 cookie signed with this. It never leaves the infrastructure -- terraform
@@ -120,61 +56,8 @@ resource "random_id" "clubs_ingest_domain_key" {
   byte_length = 24
 }
 
-# leads-api's own key -- it never reads anything, only ever publishes
-# lead.create via POST /sync, but still needs its own identity so the
-# audit log can name it like every other caller.
-resource "random_id" "leads_api_domain_key" {
-  byte_length = 24
-}
-
-# proventos-worker's own key -- it reads GET /ativos/todos (the one
-# cross-user ativo read) and publishes ativo.registerMovement/
-# transacao.create via /sync, so the audit log needs a caller identity
-# for it like every other module.
-resource "random_id" "proventos_worker_domain_key" {
-  byte_length = 24
-}
-
-# apostas-api's own key -- publishes aposta.registrar/aposta.resolver
-# via /sync and creates transações (the stake debit / payout credit)
-# through the shared async route, same identity-for-audit reasoning as
-# every other module here.
-resource "random_id" "apostas_api_domain_key" {
-  byte_length = 24
-}
-
-# apostas-resultado-worker's own key -- reads GET /apostas/pendentes
-# (the one cross-user aposta read) and publishes aposta.resolver/
-# transacao.create via /sync, same identity-for-audit reasoning as
-# every other module here.
-resource "random_id" "apostas_resultado_worker_domain_key" {
-  byte_length = 24
-}
-
-# The HS256 secret financas' own session cookie is signed/verified
-# with -- contas-api mints the cookie (after verifying the Google ID
-# token), the other 3 backends only verify it. One secret shared by
-# all 4 so the cookie set on .giomartins.dev is valid everywhere,
-# never hardcoded per this project's usual secrets convention.
-resource "random_password" "financas_session_secret" {
-  length  = 48
-  special = false
-}
-
-# The static shared secret the betting-slip Chrome extension sends as
-# X-Extension-Token -- a service worker has no session cookie to reuse,
-# and financas is a single-person product, so one token mapped to one
-# fixed identity (var.apostas_extension_usuario_email) is enough. See
-# apostas-api's own Config doc comment for why this isn't a general
-# personal-token system. Retrieve with `terraform output -raw
-# apostas_extension_token` to paste into the extension's options page.
-resource "random_password" "apostas_extension_token" {
-  length  = 48
-  special = false
-}
-
 locals {
-  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.post_api_domain_key.hex}:post-api,${random_id.bookclub_api_domain_key.hex}:bookclub-api,${random_id.classroom_api_domain_key.hex}:classroom-api,${random_id.deals_domain_key.hex}:deals-scrapers,${random_id.cch_api_domain_key.hex}:cch-api,${random_id.contas_api_domain_key.hex}:contas-api,${random_id.transacional_api_domain_key.hex}:transacional-api,${random_id.asset_manager_api_domain_key.hex}:asset-manager-api,${random_id.dashboard_api_domain_key.hex}:dashboard-api,${random_id.leads_api_domain_key.hex}:leads-api,${random_id.proventos_worker_domain_key.hex}:proventos-worker,${random_id.apostas_api_domain_key.hex}:apostas-api,${random_id.apostas_resultado_worker_domain_key.hex}:apostas-resultado-worker,${random_id.clubs_api_domain_key.hex}:clubs-api,${random_id.clubs_ingest_domain_key.hex}:clubs-ingest"
+  domain_api_keys = "${random_id.domain_api_key.hex}:ci,${random_id.clubs_api_domain_key.hex}:clubs-api,${random_id.clubs_ingest_domain_key.hex}:clubs-ingest"
 }
 
 resource "random_password" "vaultwarden_admin_token" {
@@ -184,11 +67,6 @@ resource "random_password" "vaultwarden_admin_token" {
 
 resource "random_password" "vaultwarden_bridge_api_key" {
   length  = 32
-  special = false
-}
-
-resource "random_password" "post_api_better_auth_secret" {
-  length  = 48
   special = false
 }
 
@@ -215,25 +93,6 @@ resource "random_password" "ninerouter_initial_password" {
 # (tf-ci-cd.yml's replace_target dispatch: docker_container.grafana).
 resource "random_password" "grafana_admin_password" {
   length  = 32
-  special = false
-}
-
-# bet-api's AES-256-GCM key for the bookmaker credentials at rest
-# (modules/apps/bet-api's lib/crypto.ts) -- exactly 32 raw bytes as 64
-# hex chars. random_id (not random_password: alphanumeric chars like
-# g-z are not hex, and Buffer.from(s, "hex") TRUNCATES at the first
-# non-hex char -- the crash-loop that shipped this comment). Rotating
-# it bricks every saved password (AES-GCM has no re-key), so re-save
-# credentials in the bet app after a rotation.
-resource "random_id" "bet_credentials_key" {
-  byte_length = 32
-}
-
-# Shared secret between bet-api and bet-runner for /internal/* over the
-# apps network -- the runner bypasses ingress/Access by design, this is
-# its only auth.
-resource "random_password" "runner_api_key" {
-  length  = 48
   special = false
 }
 
@@ -301,8 +160,8 @@ resource "null_resource" "registry_restart" {
 # null_resource below via for_each, with its OWN narrow trigger.
 # Previously this was a single null_resource with every value in one
 # combined trigger map: any ONE secret changing replaced the whole
-# resource and resent all ~15 items through seed_vault.sh, even the
-# ~14 that hadn't changed. Now only the group whose value actually
+# resource and resent every item through seed_vault.sh, even the ones
+# that hadn't changed. Now only the group whose value actually
 # changed reruns.
 #
 # KNOWN GAP, hit for real once: when TWO OR MORE groups change in the
@@ -311,9 +170,9 @@ resource "null_resource" "registry_restart" {
 # log into the SAME Vaultwarden account and snapshot `bw list items`
 # independently -- if they race on editing the SAME existing item
 # (not just creating different new ones), one process's edit can be
-# silently lost even though its own container exits 0. Happened when
-# domain_api_keys (edit) and bookclub_api_domain_key (new item) landed
-# in one apply together: domain_api_keys' write never actually stuck.
+# silently lost even though its own container exits 0. It happened once
+# when domain_api_keys (edit) and another group (new item) landed in the
+# same apply: domain_api_keys' write never actually stuck.
 # No proper fix yet (would need real mutual exclusion in
 # seed_vault.sh, or forcing -parallelism=1 on every apply); the
 # workaround is `gh workflow run` this file with `replace_target` set
@@ -331,80 +190,6 @@ locals {
       trigger = local.domain_api_keys
       items   = { DOMAIN_API_KEYS = local.domain_api_keys }
     }
-    post_api_domain_key = {
-      trigger = random_id.post_api_domain_key.hex
-      items   = { POST_API_DOMAIN_KEY = random_id.post_api_domain_key.hex }
-    }
-    bookclub_api_domain_key = {
-      trigger = random_id.bookclub_api_domain_key.hex
-      items   = { BOOKCLUB_API_DOMAIN_KEY = random_id.bookclub_api_domain_key.hex }
-    }
-    classroom_api_domain_key = {
-      trigger = random_id.classroom_api_domain_key.hex
-      items   = { CLASSROOM_API_DOMAIN_KEY = random_id.classroom_api_domain_key.hex }
-    }
-    contas_api_domain_key = {
-      trigger = random_id.contas_api_domain_key.hex
-      items   = { CONTAS_API_DOMAIN_KEY = random_id.contas_api_domain_key.hex }
-    }
-    transacional_api_domain_key = {
-      trigger = random_id.transacional_api_domain_key.hex
-      items   = { TRANSACIONAL_API_DOMAIN_KEY = random_id.transacional_api_domain_key.hex }
-    }
-    asset_manager_api_domain_key = {
-      trigger = random_id.asset_manager_api_domain_key.hex
-      items   = { ASSET_MANAGER_API_DOMAIN_KEY = random_id.asset_manager_api_domain_key.hex }
-    }
-    dashboard_api_domain_key = {
-      trigger = random_id.dashboard_api_domain_key.hex
-      items   = { DASHBOARD_API_DOMAIN_KEY = random_id.dashboard_api_domain_key.hex }
-    }
-    leads_api_domain_key = {
-      trigger = random_id.leads_api_domain_key.hex
-      items   = { LEADS_API_DOMAIN_KEY = random_id.leads_api_domain_key.hex }
-    }
-    # Not Terraform-generated (a brapi.dev token comes from that
-    # service's own dashboard), but seeded here anyway so CI/a human
-    # can fetch it from the vault -- same reasoning as the discord
-    # group above. Empty is a valid state (asset-manager-api's quote
-    # lookups just fail/no-op without it).
-    asset_manager_brapi_token = {
-      trigger = var.asset_manager_brapi_token
-      items   = { ASSET_MANAGER_BRAPI_TOKEN = var.asset_manager_brapi_token }
-    }
-    post_api_better_auth_secret = {
-      trigger = random_password.post_api_better_auth_secret.result
-      items   = { POST_API_BETTER_AUTH_SECRET = random_password.post_api_better_auth_secret.result }
-    }
-    # Paste into the betting-slip Chrome extension's options page --
-    # see apostas-api's Config doc comment and this file's own
-    # random_password.apostas_extension_token.
-    apostas_extension_token = {
-      trigger = random_password.apostas_extension_token.result
-      items   = { APOSTAS_EXTENSION_TOKEN = random_password.apostas_extension_token.result }
-    }
-    # Not Terraform-generated (9router's own dashboard mints it), but
-    # seeded here anyway so CI/a human can fetch it from the vault --
-    # same reasoning as the brapi token group above.
-    apostas_ai_api_key = {
-      trigger = var.apostas_ai_api_key
-      items   = { APOSTAS_AI_API_KEY = var.apostas_ai_api_key }
-    }
-    # apostas-resultado-worker's own domain-api key, individually
-    # retrievable (unlike proventos-worker's, which only lives in the
-    # merged DOMAIN_API_KEYS item above -- a gap noted when this was
-    # added, worth mirroring back onto proventos-worker later).
-    apostas_resultado_worker_domain_key = {
-      trigger = random_id.apostas_resultado_worker_domain_key.hex
-      items   = { APOSTAS_RESULTADO_WORKER_DOMAIN_KEY = random_id.apostas_resultado_worker_domain_key.hex }
-    }
-    # Not Terraform-generated (BSD's own dashboard mints it), but
-    # seeded here anyway so CI/a human can fetch it from the vault --
-    # same reasoning as the brapi/9router token groups above.
-    apostas_sportsdata_api_key = {
-      trigger = var.apostas_sportsdata_api_key
-      items   = { APOSTAS_SPORTSDATA_API_KEY = var.apostas_sportsdata_api_key }
-    }
     vaultwarden_admin_token = {
       trigger = random_password.vaultwarden_admin_token.result
       items   = { TF_VAULTWARDEN_ADMIN_TOKEN = random_password.vaultwarden_admin_token.result }
@@ -412,24 +197,6 @@ locals {
     vaultwarden_bridge_api_key = {
       trigger = random_password.vaultwarden_bridge_api_key.result
       items   = { TF_VAULTWARDEN_BRIDGE_API_KEY = random_password.vaultwarden_bridge_api_key.result }
-    }
-    # Not generated by Terraform (a Discord OAuth app's credentials
-    # come from Discord's own developer portal, set once as
-    # var.discord_client_id/secret -- see that variable's own
-    # description), but seeded here anyway so CI can fetch them from
-    # the vault instead of keeping its own separate copy in GitHub
-    # Secrets. Empty/empty is a valid state (Discord integration
-    # disabled) -- seeding two empty items is harmless. The announce
-    # webhook rides in the same group: also a portal-made value, also
-    # optional ("" disables the post announcer), also fetched by CI as
-    # TF_VAR_discord_announce_webhook_url.
-    discord = {
-      trigger = "${var.discord_client_id}|${var.discord_client_secret}|${var.discord_announce_webhook_url}"
-      items = {
-        DISCORD_CLIENT_ID            = var.discord_client_id
-        DISCORD_CLIENT_SECRET        = var.discord_client_secret
-        DISCORD_ANNOUNCE_WEBHOOK_URL = var.discord_announce_webhook_url
-      }
     }
     # Grouped (not 4 separate resources): these four all describe the
     # same "how do I authenticate to the registry" concern and, in
@@ -492,17 +259,6 @@ locals {
       trigger = random_password.grafana_admin_password.result
       items = {
         GRAFANA_ADMIN_PASSWORD = random_password.grafana_admin_password.result
-      }
-    }
-    # Grouped (not 2 separate resources): both are the bet stack's
-    # secrets. Terraform wires both straight into the containers (no CI
-    # fetch needed); the vault items exist so a human can read the
-    # values out of the vault for local dev.
-    bet = {
-      trigger = "${random_id.bet_credentials_key.hex}|${random_password.runner_api_key.result}"
-      items = {
-        BET_CREDENTIALS_KEY = random_id.bet_credentials_key.hex
-        RUNNER_API_KEY      = random_password.runner_api_key.result
       }
     }
   }

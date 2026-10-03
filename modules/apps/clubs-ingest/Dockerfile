@@ -3,9 +3,9 @@
 # fetches their data from the EA Pro Clubs source, and writes back through
 # domain-api. No database of its own, same as every service in this repo.
 #
-# Build context is the REPO ROOT (python-ci-cd.yml sets it), matching
-# pld-scraper's own note: there is no private python registry here, so the app
-# (and the vendored source client inside it) is installed straight from source.
+# Build context is the REPO ROOT (python-ci-cd.yml sets it): there is no
+# private python registry here, so the app (and the vendored source client
+# inside it) is installed straight from source.
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1

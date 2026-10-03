@@ -7,6 +7,7 @@ import { sair, useAuth, useCommandPalette, useSourceStatus, useSyncStatus, useTh
 import { api } from "./lib/api";
 import type { ClaimedPro, WatchEntry } from "./lib/types";
 import { currentView, parsePath, pathFor, type View } from "./lib/routing";
+import { broadcastTheme, initHubThemeSync } from "./lib/hubTheme";
 import { legacyHashPath } from "./lib/legacy-hash";
 import { HomePage } from "./pages/HomePage";
 import { ClubsPage } from "./pages/ClubsPage";
@@ -48,6 +49,8 @@ export default function App() {
   const source = useSourceStatus();
   // ⌘K / Ctrl+K / "/" abre a busca rápida -- global, funciona em qualquer tela.
   const { open: paletteOpen, setOpen: setPaletteOpen } = useCommandPalette();
+
+  useEffect(() => initHubThemeSync(setTheme), [setTheme]);
 
   useEffect(() => {
     // Os links antigos em hash viram caminho real antes de qualquer coisa.
@@ -244,7 +247,11 @@ export default function App() {
       authed={authed}
       email={email}
       theme={theme}
-      onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+      onToggleTheme={() => {
+        const next = theme === "dark" ? "light" : "dark";
+        setTheme(next);
+        broadcastTheme(next);
+      }}
       sync={sync}
       source={source}
       isAdmin={isAdmin}

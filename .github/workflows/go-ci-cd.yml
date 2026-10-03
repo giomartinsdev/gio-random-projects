@@ -3,10 +3,9 @@ name: Go deploy
 # CI/CD for the Go apps under modules/apps/*/ (has both a Dockerfile
 # and a go.mod) — touch only modules/apps/domain-api/** and only the
 # domain-api image rebuilds, gets pushed, and redeploys; same for
-# domain-worker. TypeScript apps go through ts-frontend-ci-cd.yml
-# (front) or ts-backend-ci-cd.yml (post-api/bookclub-api/
-# classroom-api) instead — see either workflow's own header for why
-# this isn't one generic pipeline for every language.
+# domain-worker. TypeScript apps go through ts-frontend-ci-cd.yml,
+# Python ones through python-ci-cd.yml — see either workflow's own
+# header for why this isn't one generic pipeline for every language.
 #
 # Deploys go through Terraform, not watchtower: after pushing, the
 # deploy job runs `terraform apply` against modules/infra/terraform,
@@ -197,7 +196,7 @@ jobs:
     if: needs.discover.outputs.apps != '[]'
     runs-on: ubuntu-latest
     # Shared across every workflow that runs `terraform apply`
-    # (ts-frontend-ci-cd.yml, ts-backend-ci-cd.yml, tf-ci-cd.yml) --
+    # (ts-frontend-ci-cd.yml, python-ci-cd.yml, tf-ci-cd.yml) --
     # they all touch the same state file. Without this, pushing to
     # several apps at once queues up N applies that all race for the
     # same R2 state lock: each loser sits on `-lock-timeout=300s` and
@@ -225,18 +224,12 @@ jobs:
       TF_VAR_vaultwarden_account_master_password: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
       TF_VAR_vaultwarden_api_client_id: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
       TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-      TF_VAR_asset_manager_brapi_token: ${{ secrets.TF_ASSET_MANAGER_BRAPI_TOKEN }}
-      TF_VAR_google_oauth_client_id: ${{ secrets.FINANCAS_GOOGLE_OAUTH_CLIENT_ID }}
       TF_VAR_clubs_google_oauth_client_id: ${{ secrets.CLUBS_GOOGLE_OAUTH_CLIENT_ID }}
-      TF_VAR_apostas_extension_usuario_email: ${{ secrets.FINANCAS_APOSTAS_EXTENSION_USUARIO_EMAIL }}
-      TF_VAR_apostas_ai_api_key: ${{ secrets.FINANCAS_APOSTAS_AI_API_KEY }}
-      TF_VAR_apostas_sportsdata_api_key: ${{ secrets.FINANCAS_APOSTAS_SPORTSDATA_API_KEY }}
       AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
-      # TF_VAR_registry_password/TF_VAR_discord_client_id/
-      # TF_VAR_discord_client_secret come from Vaultwarden below
-      # instead of their own GitHub secret -- see tf-ci-cd.yml's
-      # "Fetch secrets from Vaultwarden" for why.
+      # TF_VAR_registry_password comes from Vaultwarden below instead
+      # of its own GitHub secret -- see tf-ci-cd.yml's "Fetch secrets
+      # from Vaultwarden" for why.
     steps:
       - uses: actions/checkout@v4
 
@@ -273,7 +266,7 @@ jobs:
           VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
           VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
           VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "TF_VAR_registry_password=REGISTRY_PASSWORD TF_VAR_discord_client_id=DISCORD_CLIENT_ID TF_VAR_discord_client_secret=DISCORD_CLIENT_SECRET TF_VAR_discord_announce_webhook_url=DISCORD_ANNOUNCE_WEBHOOK_URL? REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
+          ITEM_MAP: "TF_VAR_registry_password=REGISTRY_PASSWORD REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
         run: |
           set -o pipefail
           ./scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
@@ -345,15 +338,7 @@ jobs:
               domain-api) REPLACE_ARGS+=("-replace=module.compute_apps_domain_api.docker_container.domain_api") ;;
               domain-worker) REPLACE_ARGS+=("-replace=module.compute_apps_domain_api.docker_container.domain_worker") ;;
               tela-api) REPLACE_ARGS+=("-replace=module.compute_apps_tela_api.docker_container.tela_api") ;;
-              cch-api) REPLACE_ARGS+=("-replace=module.compute_apps_cch_api.docker_container.cch_api") ;;
-              contas-api) REPLACE_ARGS+=("-replace=module.compute_apps_contas_api.docker_container.contas_api") ;;
-              transacional-api) REPLACE_ARGS+=("-replace=module.compute_apps_transacional_api.docker_container.transacional_api") ;;
-              asset-manager-api) REPLACE_ARGS+=("-replace=module.compute_apps_asset_manager_api.docker_container.asset_manager_api") ;;
-              dashboard-api) REPLACE_ARGS+=("-replace=module.compute_apps_dashboard_api.docker_container.dashboard_api") ;;
-              apostas-api) REPLACE_ARGS+=("-replace=module.compute_apps_apostas_api.docker_container.apostas_api") ;;
-              leads-api) REPLACE_ARGS+=("-replace=module.compute_apps_leads_api.docker_container.leads_api") ;;
               clubs-api) REPLACE_ARGS+=("-replace=module.compute_apps_clubs_api.docker_container.clubs_api") ;;
-              proventos-worker) REPLACE_ARGS+=("-replace=module.compute_apps_proventos_worker.docker_container.proventos_worker") ;;
               *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
             esac
           done

@@ -4,7 +4,7 @@ Infra-as-code and app code for the VPS, all under `modules/`.
 
 ```
 modules/
-  apps/      independently deployed apps — api, worker, buteco-class-frontend, tela-api, tela-frontend, ...
+  apps/      independently deployed apps — clubs (api, ingest, frontend), tela (api, frontend), domain (api, worker), hub-frontend
   infra/     terraform (Cloudflare DNS/Access + VPS containers), registry, watchtower
 ```
 
@@ -16,16 +16,16 @@ than one generic pipeline branching on every difference between them:
 - **`.github/workflows/go-ci-cd.yml`** — CI/CD for Go apps under
   `modules/apps/*/`, auto-discovered by `go.mod`. Touching only one
   app's folder rebuilds, tests, pushes, and redeploys only that app.
-- **`.github/workflows/ts-frontend-ci-cd.yml`** — TypeScript frontend
-  apps (Vite, `VITE_*` build-args baked into the bundle).
-- **`.github/workflows/ts-backend-ci-cd.yml`** — TypeScript backend
-  apps (config as real runtime env vars from Terraform instead).
+- **`.github/workflows/python-ci-cd.yml`** — Python workers, likewise
+  auto-discovered by `pyproject.toml`.
+- **`.github/workflows/ts-frontend-ci-cd.yml`** — TypeScript SPAs
+  (Vite, `VITE_*` build-args baked into the bundle).
 - **`.github/workflows/tf-ci-cd.yml`** — plans on PRs touching
   `modules/infra/terraform/`, applies on push to `main`.
 
-Unlike Go's, the two TypeScript pipelines don't auto-discover by file
-presence alone (every app has a `package.json`, frontend or not) — see
-`docs/novo-app-ci-cd.md` for each workflow's `ALLOWED_APPS` list.
+Unlike Go's and Python's, the TypeScript pipeline doesn't auto-discover
+by file presence alone — see `docs/novo-app-ci-cd.md` for its
+`ALLOWED_APPS` list.
 
 ## Observability
 

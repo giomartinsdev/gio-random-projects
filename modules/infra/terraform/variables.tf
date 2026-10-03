@@ -26,13 +26,6 @@ variable "allowed_emails" {
   default     = ["giovannidealmeidamartins@gmail.com", "workwithgiomartinsdev@gmail.com"]
 }
 
-variable "discord_announce_webhook_url" {
-  description = "Discord channel webhook for buteco post announcements (post-api's post announcer polls it -- see modules/apps/post-api's README). Create under Server Settings → Integrations → Webhooks. Empty state is intentional: without it the poller never starts and nothing is announced."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
 variable "excluded_hostnames" {
   description = <<-EOT
     Hostnames from locals.tf that must NOT get a Cloudflare Access
@@ -41,31 +34,15 @@ variable "excluded_hostnames" {
   EOT
   type        = list(string)
   default = [
-    "registry.giomartins.dev",          # docker login/push — own htpasswd auth + mTLS (modules/cloudflare/registry_mtls.tf); Docker tooling can't do a browser SSO redirect or send custom Access headers
-    "domain.giomartins.dev",            # REST API clients — own X-API-Key auth + a service-token Access application (modules/cloudflare/service_token_access.tf)
-    "post-api.giomartins.dev",          # own Better Auth — a browser SSO redirect would break API/bot clients, same reasoning as domain.giomartins.dev
-    "bookclub-api.giomartins.dev",      # own Better Auth session check — same reasoning, plus a redirect would break the front's WebSocket upgrade
-    "classroom-api.giomartins.dev",     # own Better Auth session check — same reasoning as bookclub-api.giomartins.dev
-    "buteco-class.giomartins.dev",      # meant to be publicly readable by anyone, not gated behind Google SSO
-    "media.giomartins.dev",             # the blog's image bucket — every visitor's <img> tag must load anonymously, same reasoning as buteco-class
-    "tela.giomartins.dev",              # rooms are shared with people who have no account here; the room password is the access control
-    "tela-api.giomartins.dev",          # same tela-frontend page calls this cross-origin for signalling/SFU — a browser SSO redirect would break every fetch/WebSocket call
-    "cch.giomartins.dev",               # rooms are shared with guests who have no account here; the room password is the access control, same as tela
-    "cch-api.giomartins.dev",           # the cch-frontend page calls this cross-origin for game REST/WebSocket — a browser SSO redirect would break every fetch/WebSocket call, same as tela-api
-    "hub.giomartins.dev",               # the hub is chrome around the public SPAs, so it's public too — its opt-in Google login lives on the /sso path instead (see path_protected_hostnames in locals.tf), which gates only the admin shortcuts tier
-    "clubs.giomartins.dev",             # the hub's SPA is public by design -- a visitor reads the whole dataset with no account, and it must be iframe-embeddable in the hub (same reasoning as tela/cch/bet); the opt-in login lives on clubs-api's /api path (see path_protected_hostnames in locals.tf)
-    "clubs-api.giomartins.dev",         # the bare hostname serves the public reads (rankings, clubs, players, matches); only /api is Access-gated, so an anonymous visitor can browse and the SPA can probe /api/me without a redirect
-    "bet-api.giomartins.dev",           # path-protected like the hub (its /api and /auth have Access apps of their own, see path_protected_hostnames in locals.tf) — the bare hostname must stay reachable for bet-runner, which polls /internal/* from the home network with RUNNER_API_KEY (a machine-to-machine client can't pass a Google SSO redirect)
-    "bet.giomartins.dev",               # the bet micro frontend — public chrome around the real gate (the Access app on bet-api.giomartins.dev, which the SPA probes like the hub's /sso); it must be iframe-embeddable in the hub like cch/tela, and a Google SSO redirect inside the hub's renderer frame cannot be completed
-    "contas-api.giomartins.dev",        # no Cloudflare Access at all — financas' own Google Sign-In + session cookie is the gate now (contas-api issues it, see modules/apps/contas-api)
-    "transacional-api.giomartins.dev",  # same reasoning as contas-api.giomartins.dev above — verifies the session cookie, never issues it
-    "asset-manager-api.giomartins.dev", # same reasoning as contas-api.giomartins.dev above — verifies the session cookie, never issues it
-    "dashboard-api.giomartins.dev",     # same reasoning as contas-api.giomartins.dev above — verifies the session cookie, never issues it
-    "apostas-api.giomartins.dev",       # same reasoning as contas-api.giomartins.dev above — verifies the session cookie, never issues it
-    "financas.giomartins.dev",          # chrome público em volta do gate real nas 4 Access apps das APIs, precisa ser iframe-embeddable no hub
-    "leads-api.giomartins.dev",         # captura de e-mail na landing page pública, sem sessão de Access nenhuma para exigir de um visitante anônimo — mesma razão de ai.giomartins.dev abaixo
-    "ai.giomartins.dev",                # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
-    "otel.giomartins.dev",              # public visitors' browsers send SPA telemetry here — a Google SSO redirect would break every one of them; alloy's OTLP receiver CORS allowlist (the two SPA origins only) is the access control (modules/compute/services/observability)
+    "registry.giomartins.dev",  # docker login/push — own htpasswd auth + mTLS (modules/cloudflare/registry_mtls.tf); Docker tooling can't do a browser SSO redirect or send custom Access headers
+    "domain.giomartins.dev",    # REST API clients — own X-API-Key auth + a service-token Access application (modules/cloudflare/service_token_access.tf)
+    "tela.giomartins.dev",      # rooms are shared with people who have no account here; the room password is the access control
+    "tela-api.giomartins.dev",  # same tela-frontend page calls this cross-origin for signalling/SFU — a browser SSO redirect would break every fetch/WebSocket call
+    "hub.giomartins.dev",       # the hub is chrome around the public SPAs, so it's public too — its opt-in Google login lives on the /sso path instead (see path_protected_hostnames in locals.tf), which gates only the admin shortcuts tier
+    "clubs.giomartins.dev",     # the hub's SPA is public by design -- a visitor reads the whole dataset with no account, and it must be iframe-embeddable in the hub (same reasoning as tela); the opt-in login is clubs-api's own Google Sign-In, no Access app involved
+    "clubs-api.giomartins.dev", # no Cloudflare Access at all -- its own Google Sign-In + session cookie is the gate (see modules/apps/clubs-api); the bare hostname serves the public reads (rankings, clubs, players, matches) so an anonymous visitor can browse and the SPA can probe /api/me without a redirect
+    "ai.giomartins.dev",        # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
+    "otel.giomartins.dev",      # public visitors' browsers send SPA telemetry here — a Google SSO redirect would break every one of them; alloy's OTLP receiver CORS allowlist (the SPA origins only) is the access control (modules/compute/services/observability)
   ]
 }
 
@@ -128,8 +105,9 @@ variable "docker_host" {
   description = <<-EOT
     Where the docker provider connects — straight to the VPS dockerd
     over SSH, same channel a human `docker` CLI would use. Requires the
-    key in the caller's ssh-agent (CI: tf-ci-cd.yml/go-ci-cd.yml/ts-frontend-ci-cd.yml/
-    ts-backend-ci-cd.yml's SSH setup step; locally: your own agent). No
+    key in the caller's ssh-agent (CI: tf-ci-cd.yml/go-ci-cd.yml/
+    ts-frontend-ci-cd.yml/python-ci-cd.yml's SSH setup step; locally: your
+    own agent). No
     default — always ssh://ubuntu@<server_ip>, and hardcoding that IP
     twice invites the two to drift.
   EOT
@@ -163,7 +141,7 @@ variable "registry_password" {
     resource value computed in the same apply. Everything else about
     it IS automated now — see modules/compute/registry's README and
     this config's secrets.tf (docker_config_install/registry_restart/
-    vault_seed). go-ci-cd.yml/ts-frontend-ci-cd.yml/ts-backend-ci-cd.yml's own REGISTRY_PASSWORD GH
+    vault_seed). go-ci-cd.yml/ts-frontend-ci-cd.yml/python-ci-cd.yml's own REGISTRY_PASSWORD GH
     secret (for their push steps) is the one thing still synced by
     hand after a rotation.
   EOT
@@ -219,75 +197,9 @@ variable "vaultwarden_api_client_secret" {
   sensitive   = true
 }
 
-variable "discord_client_id" {
-  description = "Discord Application client ID for the buteco-class Discord Activity -- blank (the default) leaves the whole feature disabled: post-api's /discord/token route doesn't mount, and front's Activity handshake logs an error and no-ops. Register the app at discord.com/developers/applications, enable Activities, then set this and discord_client_secret."
-  type        = string
-  default     = ""
-}
-
-variable "discord_client_secret" {
-  description = "Matching client secret -- see discord_client_id."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-# --- deals scrapers (pld-scraper / phb-scraper) + events-announcer ---
-
-variable "pld_source_url" {
-  description = "Source feed API base URL the pld-scraper polls (docker env SOURCE_BASE_URL). The value lives in Vaultwarden -- CI injects TF_VAR_* at apply time; the repo deliberately ships no scraped-site hostnames. Blank leaves that container refusing to run."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "phb_source_url" {
-  description = "Source offers API base URL the phb-scraper polls -- see pld_source_url."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "deals_discord_webhook_url" {
-  description = "Discord channel webhook the events-announcer worker posts fresh deals to (one message per deal, oldest first, <=ANNOUNCE_MAX_PER_FLUSH/flush, drained off the durable domain.events.queue). The scrapers themselves never announce anymore. Blank state is intentional: without it announcements stay off, while the queue keeps draining and counting. Same shape as discord_announce_webhook_url above, separate item so deals announcing can live in its own channel."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-# --- financas (personal finance feature: contas/transacional/asset-manager/dashboard-api) ---
-
-variable "asset_manager_brapi_token" {
-  description = "brapi.dev API token asset-manager-api uses to fetch market data (stocks/funds quotes) -- no default, the real value is passed in from outside (terraform.tfvars or a CI secret as TF_VAR_asset_manager_brapi_token), never committed here."
-  type        = string
-  sensitive   = true
-}
-
-variable "google_oauth_client_id" {
-  description = "The Google OAuth 2.0 Web application Client ID financas' Google Identity Services sign-in button and contas-api's ID-token verification both use -- not secret (it's public in every ID token's aud claim and in the frontend bundle), but still passed in from outside (terraform.tfvars or TF_VAR_google_oauth_client_id) rather than hardcoded, so rotating it never means editing this repo."
-  type        = string
-}
+# --- clubs (FC Clubs Hub) ---
 
 variable "clubs_google_oauth_client_id" {
-  description = "The Google OAuth 2.0 Web application Client ID the FC Clubs Hub's own sign-in button and clubs-api's ID-token verification use. Deliberately SEPARATE from google_oauth_client_id: each Google project registers exactly the JavaScript origins its own app calls from, so sharing one client across two products is what produced clubs' origin_mismatch in production. Not secret (public in every ID token's aud claim and in the bundle); comes from terraform.tfvars or TF_VAR_clubs_google_oauth_client_id."
+  description = "The Google OAuth 2.0 Web application Client ID the FC Clubs Hub's own sign-in button and clubs-api's ID-token verification use -- not secret (it's public in every ID token's aud claim and in the frontend bundle), but passed in from outside (terraform.tfvars or TF_VAR_clubs_google_oauth_client_id) rather than hardcoded, so rotating it never means editing this repo. Each Google project registers exactly the JavaScript origins its own app calls from, so this client is clubs' alone."
   type        = string
-}
-
-variable "apostas_extension_usuario_email" {
-  description = "The one financas account the betting-slip Chrome extension registers bets as -- financas is a single-person product, so apostas-api's extension route (see its Config) maps every request bearing a valid X-Extension-Token straight to this fixed identity instead of running a real per-user auth flow. Never hardcoded; comes from terraform.tfvars or TF_VAR_apostas_extension_usuario_email."
-  type        = string
-}
-
-variable "apostas_ai_api_key" {
-  description = "9router's own API key -- its dashboard \"Require API key\" toggle applies even to internal-network callers (confirmed live), so apostas-api's vision client needs a real key, not just network trust. Never hardcoded; comes from terraform.tfvars or TF_VAR_apostas_ai_api_key. See 9router's own dashboard (ai.giomartins.dev) for the current key."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "apostas_sportsdata_api_key" {
-  description = "BSD Sports Data API's own token (sports.bzzoiro.com/dashboard/) -- the resolver worker's free football tier still requires a registered token. Never hardcoded; comes from terraform.tfvars or TF_VAR_apostas_sportsdata_api_key."
-  type        = string
-  sensitive   = true
-  default     = ""
 }

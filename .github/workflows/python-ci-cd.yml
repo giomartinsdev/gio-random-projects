@@ -1,34 +1,23 @@
 name: Python deploy
 
 # CI/CD for the Python workers under modules/apps/*/ (has both a
-# Dockerfile and a pyproject.toml) — touch only modules/apps/pld-scraper/**
-# and only the pld-scraper image rebuilds, gets pushed, and redeploys.
-# Go apps go through go-ci-cd.yml, TypeScript ones through
-# ts-backend/ts-frontend-ci-cd.yml — each language keeps its own
-# pipeline because the test/build steps never generalize for free.
+# Dockerfile and a pyproject.toml) — touch only modules/apps/clubs-ingest/**
+# and only the clubs-ingest image rebuilds, gets pushed, and redeploys.
+# Go apps go through go-ci-cd.yml, TypeScript frontends through
+# ts-frontend-ci-cd.yml — each language keeps its own pipeline because
+# the test/build steps never generalize for free.
 #
-# Two differences from go-ci-cd.yml worth knowing:
-# - Build context is the REPO ROOT, not the app dir: the workers bake
-#   the shared lib (modules/libs/deals_common) into the image via COPY,
-#   and there's no private python registry to install it from on the
-#   VPS. Because of that, any change under modules/libs/** rebuilds
-#   every python worker (the lib's contract is what changed).
-# - Deploys pass TF_VAR_pld_source_url/TF_VAR_phb_source_url fetched
-#   from Vaultwarden (items PLD_SOURCE_URL / PHB_SOURCE_URL, required:
-#   a blank SOURCE_BASE_URL makes the worker refuse to boot, which is
-#   worse than a red deploy step). TF_VAR_deals_discord_webhook_url
-#   (item DEALS_DISCORD_WEBHOOK_URL, optional) exists only for the
-#   events-announcer module -- the scrapers themselves never announce;
-#   they push through domain-api. DOMAIN_API_URL/DOMAIN_API_KEY for the
-#   scrapers come from terraform too (secrets.tf's random_id
-#   .deals_domain_key), so no vault items for them.
+# One difference from go-ci-cd.yml worth knowing:
+# - Build context is the REPO ROOT, not the app dir: clubs-ingest
+#   vendors its fc27 client (src/clubs_ingest/fc27_api.py) and a
+#   Dockerfile COPY of paths above the app dir would dead-end if the
+#   context were the app folder itself.
 
 on:
   push:
     branches: [main]
     paths:
-      - "modules/apps/**"
-      - "modules/libs/**"
+      - "modules/apps/clubs-ingest/**"
   workflow_dispatch:
     inputs:
       app:
@@ -57,17 +46,11 @@ jobs:
           else
             changed=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
             apps=""
-            # A shared-lib change (deals_common) is baked into every
-            # worker image at build time -- rebuild all of them.
-            if echo "$changed" | grep -q "^modules/libs/"; then
-              apps="$all_apps"
-            else
-              for a in $all_apps; do
-                if echo "$changed" | grep -q "^modules/apps/$a/"; then
-                  apps="$apps $a"
-                fi
-              done
-            fi
+            for a in $all_apps; do
+              if echo "$changed" | grep -q "^modules/apps/$a/"; then
+                apps="$apps $a"
+              fi
+            done
           fi
 
           json=$(echo "$apps" | xargs -n1 | jq -R -s -c 'split("\n") | map(select(length > 0))')
@@ -97,24 +80,20 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Same lib + app pair the Dockerfile bakes in -- tests import the
-      # worker's mapping code, whose imports reach into deals_common,
-      # so both editable installs are needed for collection.
       - name: Test (Python apps only — skipped for anything without a pyproject.toml)
         if: hashFiles(format('modules/apps/{0}/pyproject.toml', matrix.app)) != ''
         working-directory: modules/apps/${{ matrix.app }}
-        # Absolute paths: cwd is the app dir and the shared lib lives
-        # up at the repo root, so relative pip args would dead-end.
+        # Absolute path: cwd is the app dir, so a relative pip arg would
+        # dead-end. The package itself is installed (not just its deps)
+        # because the tests import the worker's own mapping code.
         run: |
-          pip install -q "${{ github.workspace }}/modules/libs/deals_common" "${{ github.workspace }}/modules/apps/${{ matrix.app }}" pytest
+          pip install -q "${{ github.workspace }}/modules/apps/${{ matrix.app }}" pytest
           # Os extras de dev (pytest-bdd, testcontainers, docker) trazem o BDD e
           # a infra real dos testes de integração. Sem eles, os cenários que usam
           # container se PULAM em silêncio -- e um teste que se pula não existe.
           # Por isso a instalação NÃO leva `|| true`: se falhar, o job vermelha em
           # vez de dar verde sem ter rodado os cenários.
           #
-          # Só clubs-ingest declara `[dev]`; nas outras o extra é vazio e o pip
-          # sai 0 (nada a instalar), então o passo é seguro para toda a matrix.
           pip install -q "${{ github.workspace }}/modules/apps/${{ matrix.app }}[dev]"
           python -m pytest -q
 
@@ -175,9 +154,8 @@ jobs:
           username: ${{ env.REGISTRY_USERNAME }}
           password: ${{ env.REGISTRY_PASSWORD }}
 
-      # Repo-root context: the worker images also COPY
-      # modules/libs/deals_common (see each Dockerfile) -- building from
-      # modules/apps/<app> would dead-end on that COPY.
+      # Repo-root context (see the header note): the Dockerfile copies
+      # vendored files from paths above the app dir.
       - name: Build and push ${{ matrix.app }}
         uses: docker/build-push-action@v6
         with:
@@ -216,21 +194,17 @@ jobs:
       TF_VAR_vaultwarden_account_master_password: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
       TF_VAR_vaultwarden_api_client_id: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
       TF_VAR_vaultwarden_api_client_secret: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-      # These three are required by the root module (no default) and are set by
-      # every other workflow that runs terraform apply. They were missing here
-      # and stayed invisible while this workflow had nothing to build: the
+      # Required by the root module (no default) and set by every other
+      # workflow that runs terraform apply. They were missing here and
+      # stayed invisible while this workflow had nothing to build: the
       # deploy job was skipped entirely. The first Python app (clubs-ingest)
       # made it run, and terraform refused with "No value for required
-      # variable". Same three secrets go-ci-cd.yml passes.
-      TF_VAR_asset_manager_brapi_token: ${{ secrets.TF_ASSET_MANAGER_BRAPI_TOKEN }}
-      TF_VAR_google_oauth_client_id: ${{ secrets.FINANCAS_GOOGLE_OAUTH_CLIENT_ID }}
+      # variable". Same two secrets go-ci-cd.yml passes.
       TF_VAR_clubs_google_oauth_client_id: ${{ secrets.CLUBS_GOOGLE_OAUTH_CLIENT_ID }}
-      TF_VAR_apostas_extension_usuario_email: ${{ secrets.FINANCAS_APOSTAS_EXTENSION_USUARIO_EMAIL }}
       AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
-      # TF_VAR_registry_password and the deals-scraper vars (source
-      # URLs + webhook) come from Vaultwarden below, not GitHub
-      # secrets -- see tf-ci-cd.yml's "Fetch secrets from Vaultwarden".
+      # TF_VAR_registry_password comes from Vaultwarden below, not a
+      # GitHub secret -- see tf-ci-cd.yml's "Fetch secrets from Vaultwarden".
     steps:
       - uses: actions/checkout@v4
 
@@ -256,11 +230,6 @@ jobs:
           fi
           echo "TF_VAR_server_ip=$SERVER_IP" >> "$GITHUB_ENV"
 
-      # PLD_SOURCE_URL / PHB_SOURCE_URL are REQUIRED (no "?" suffix):
-      # the fetch fails the deploy instead of shipping a worker that
-      # exits at boot on a blank SOURCE_BASE_URL.
-      # DEALS_DISCORD_WEBHOOK_URL is optional ("?") -- blank = the
-      # workers collect silently, no announcing.
       - name: Fetch secrets from Vaultwarden
         env:
           DOCKER_HOST: ${{ env.TF_VAR_docker_host }}
@@ -268,7 +237,7 @@ jobs:
           VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
           VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
           VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "TF_VAR_registry_password=REGISTRY_PASSWORD TF_VAR_pld_source_url=PLD_SOURCE_URL TF_VAR_phb_source_url=PHB_SOURCE_URL TF_VAR_deals_discord_webhook_url=DEALS_DISCORD_WEBHOOK_URL? REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
+          ITEM_MAP: "TF_VAR_registry_password=REGISTRY_PASSWORD REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
         run: |
           set -o pipefail
           ./scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
@@ -316,9 +285,6 @@ jobs:
             # resource per module instance -- add a line per new
             # source worker module in root main.tf.
             case "$app" in
-              pld-scraper) REPLACE_ARGS+=("-replace=module.compute_apps_pld_scraper.docker_container.scraper") ;;
-              phb-scraper) REPLACE_ARGS+=("-replace=module.compute_apps_phb_scraper.docker_container.scraper") ;;
-              events-announcer) REPLACE_ARGS+=("-replace=module.compute_apps_events_announcer.docker_container.announcer") ;;
               clubs-ingest) REPLACE_ARGS+=("-replace=module.compute_apps_clubs_ingest.docker_container.clubs_ingest") ;;
               *) echo "::warning::no -replace mapping for '$app'; its container will NOT be recreated" ;;
             esac

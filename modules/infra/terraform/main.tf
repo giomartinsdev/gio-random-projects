@@ -17,24 +17,15 @@ module "cloud_cloudflare" {
   excluded_hostnames       = var.excluded_hostnames
   path_protected_hostnames = local.path_protected_hostnames
   allowed_emails           = var.allowed_emails
-  # financas dropped public_signup_hostnames -- its 4 backends have no
-  # Cloudflare Access application at all anymore (own Google Sign-In +
-  # session cookie instead, see contas-api's session.go). Every other
-  # protected hostname -- hub, bet-api, harness-api-shaped things --
-  # stays on the allowed_emails allowlist above.
+  # clubs-api has no Cloudflare Access application at all (own Google
+  # Sign-In + session cookie instead), and hub is public -- login is
+  # opt-in and only reveals its shortcuts tier. Every remaining
+  # protected hostname stays on the allowed_emails allowlist above.
   session_duration = var.session_duration
-  # bet-api's /api path app is the one browser-facing cross-origin API
-  # still behind Access: its SPA (bet.giomartins.dev) preflights every
-  # content-type:json call, and a preflight 403s at the edge without
-  # this bypass no matter how logged-in the user is (preflights carry
-  # no cookies). The key is the path app's own domain string, not the
-  # bare hostname -- that's what the contains() check compares against.
-  # financas' 4 backends no longer need an entry here: with no Access
-  # app in front of them, there's no edge-level preflight to bypass --
-  # each service's own cors() middleware answers OPTIONS directly.
-  preflight_bypass_hostnames = [
-    "bet-api.giomartins.dev/api",
-  ]
+  # Nothing needs a preflight bypass: the browser-facing API that is
+  # behind Access is clubs-api, whose /api layer answers OPTIONS in its
+  # own cors() middleware rather than at the edge.
+  preflight_bypass_hostnames = []
 
   # Email Routing lives on the zone's DNS (MX/SPF/DKIM) plus account
   # state, not on any hostname's ingress — so it slots into this
@@ -137,70 +128,6 @@ module "compute_apps_domain_api" {
 
   depends_on = [null_resource.postgres_password_sync]
 }
-
-module "compute_apps_post_api" {
-  source = "./modules/compute/apps/post_api"
-  providers = {
-    docker = docker
-  }
-
-  network_name                 = module.network_docker_apps.network_name
-  postgres_host                = module.storage_postgres.postgres_host
-  postgres_user                = module.storage_postgres.postgres_user
-  postgres_password            = random_password.postgres.result
-  registry_host                = var.registry_host
-  better_auth_secret           = random_password.post_api_better_auth_secret.result
-  domain_api_key               = random_id.post_api_domain_key.hex
-  discord_client_id            = var.discord_client_id
-  discord_client_secret        = var.discord_client_secret
-  discord_announce_webhook_url = var.discord_announce_webhook_url
-  minio_endpoint               = module.storage_minio.endpoint
-  minio_access_key             = module.storage_minio.root_user
-  minio_secret_key             = random_password.minio_root_password.result
-  otlp_endpoint                = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api]
-}
-
-module "compute_apps_bookclub_api" {
-  source = "./modules/compute/apps/bookclub_api"
-  providers = {
-    docker = docker
-  }
-
-  network_name       = module.network_docker_apps.network_name
-  postgres_host      = module.storage_postgres.postgres_host
-  postgres_user      = module.storage_postgres.postgres_user
-  postgres_password  = random_password.postgres.result
-  registry_host      = var.registry_host
-  better_auth_secret = random_password.post_api_better_auth_secret.result
-  domain_api_key     = random_id.bookclub_api_domain_key.hex
-  minio_endpoint     = module.storage_minio.endpoint
-  minio_access_key   = module.storage_minio.root_user
-  minio_secret_key   = random_password.minio_root_password.result
-  otlp_endpoint      = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api, module.storage_minio]
-}
-
-module "compute_apps_classroom_api" {
-  source = "./modules/compute/apps/classroom_api"
-  providers = {
-    docker = docker
-  }
-
-  network_name       = module.network_docker_apps.network_name
-  postgres_host      = module.storage_postgres.postgres_host
-  postgres_user      = module.storage_postgres.postgres_user
-  postgres_password  = random_password.postgres.result
-  registry_host      = var.registry_host
-  better_auth_secret = random_password.post_api_better_auth_secret.result
-  domain_api_key     = random_id.classroom_api_domain_key.hex
-  otlp_endpoint      = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [null_resource.postgres_password_sync, module.compute_apps_domain_api]
-}
-
 # Standalone: no database, no shared auth, no domain-api. Split from
 # tela-frontend (below) -- see modules/compute/apps/tela_api/main.tf.
 module "compute_apps_tela_api" {
@@ -233,303 +160,6 @@ module "compute_apps_tela_api" {
   # to be reachable; also keeps the apply order readable.
   depends_on = [module.compute_services_host_baseline]
 }
-
-# Deals scrapers: one headless poller container per source, both off
-# the same parametrized module (no ports, no hostname, NO database --
-# their only write path is domain-api's POST /deals; see the
-# deals_scraper module). source_base_url lives in Vaultwarden; CI
-# injects it as TF_VAR_* at apply time, the repo ships none of it.
-module "compute_apps_pld_scraper" {
-  source = "./modules/compute/apps/deals_scraper"
-  providers = {
-    docker = docker
-  }
-
-  app_name         = "pld-scraper"
-  network_name     = module.network_docker_apps.network_name
-  domain_api_key   = random_id.deals_domain_key.hex
-  registry_host    = var.registry_host
-  source_base_url  = var.pld_source_url
-  flaresolverr_url = module.compute_services_flaresolverr.url
-  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [module.compute_apps_domain_api, module.compute_services_flaresolverr]
-}
-
-module "compute_apps_phb_scraper" {
-  source = "./modules/compute/apps/deals_scraper"
-  providers = {
-    docker = docker
-  }
-
-  app_name         = "phb-scraper"
-  network_name     = module.network_docker_apps.network_name
-  domain_api_key   = random_id.deals_domain_key.hex
-  registry_host    = var.registry_host
-  source_base_url  = var.phb_source_url
-  flaresolverr_url = module.compute_services_flaresolverr.url
-  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [module.compute_apps_domain_api, module.compute_services_flaresolverr]
-}
-
-# FlareSolverr: challenge-solver for the deals scrapers — Cloudflare
-# Turnstile-walls ("Just a moment...") can't be passed by the scrapers'
-# static fetch; on such a 403 they hand the URL here and reuse the
-# cf_clearance it wins. Idle unless a challenge actually appears.
-module "compute_services_flaresolverr" {
-  source = "./modules/compute/services/flaresolverr"
-  providers = {
-    docker = docker
-  }
-
-  network_name = module.network_docker_apps.network_name
-}
-
-# events-announcer: the announcing half the scrapers are shedding --
-# drains the durable domain.events.queue (written by domain-worker's
-# EventBus on every event) and posts fresh deals to Discord. Depends on
-# domain-api being up, since it's the same Redis its command pipeline
-# runs through.
-module "compute_apps_events_announcer" {
-  source = "./modules/compute/apps/events_announcer"
-  providers = {
-    docker = docker
-  }
-
-  app_name            = "events-announcer"
-  network_name        = module.network_docker_apps.network_name
-  redis_host          = module.storage_redis.redis_host
-  registry_host       = var.registry_host
-  discord_webhook_url = var.deals_discord_webhook_url
-  otlp_endpoint       = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [module.compute_apps_domain_api]
-}
-
-# Standalone like tela_api: no database, no shared auth -- the room
-# password IS the access control, same model as tela.
-module "compute_apps_cch_api" {
-  source = "./modules/compute/apps/cch_api"
-  providers = {
-    docker = docker
-  }
-
-  registry_host    = var.registry_host
-  frontend_origins = ["https://cch.giomartins.dev"]
-  domain_api_key   = random_id.cch_api_domain_key.hex
-
-  # The client's first calls (boot load, legacy JSON import) need
-  # domain-api up -- same ordering guarantee the other domain-api
-  # consumers declare.
-  depends_on = [module.compute_apps_domain_api]
-}
-
-# bet-api: the betting BFF -- path-protected behind Access (/api has
-# its own Access application, login hop /api/sso included; the bare
-# hostname is in excluded_hostnames for bet-runner, which polls
-# /internal/* from the home network with the shared runner key),
-# Access-JWT auth in-app, Postgres via the one-shot migrate container.
-# The app's aud tag is passed through (BET_ACCESS_AUD --
-# lib/accessAuth.ts verifies against it).
-module "compute_apps_bet_api" {
-  source = "./modules/compute/apps/bet_api"
-  providers = {
-    docker = docker
-  }
-
-  network_name      = module.network_docker_apps.network_name
-  postgres_host     = module.storage_postgres.postgres_host
-  postgres_user     = module.storage_postgres.postgres_user
-  postgres_password = random_password.postgres.result
-  registry_host     = var.registry_host
-  access_aud = [
-    module.cloud_cloudflare.access_app_auds["bet-api.giomartins.dev/api"],
-  ]
-  allowed_emails   = var.allowed_emails
-  credentials_key  = random_id.bet_credentials_key.hex
-  runner_api_key   = random_password.runner_api_key.result
-  frontend_origins = ["https://bet.giomartins.dev", "http://localhost:5173"]
-  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [null_resource.postgres_password_sync, module.cloud_cloudflare]
-}
-
-# contas-api: one of the 4 financas-frontend backends. No Cloudflare
-# Access in front of it anymore -- it verifies the Google ID token
-# financas-frontend's Identity Services button hands it, then mints
-# the financas_session cookie the other 3 backends only verify. No
-# database of its own: persistence rides domain-api's shared Postgres
-# via the command pipeline.
-module "compute_apps_contas_api" {
-  source = "./modules/compute/apps/contas_api"
-  providers = {
-    docker = docker
-  }
-
-  network_name           = module.network_docker_apps.network_name
-  registry_host          = var.registry_host
-  session_secret         = random_password.financas_session_secret.result
-  google_oauth_client_id = var.google_oauth_client_id
-  # Empty on purpose: this app-level allowlist is a restriction on TOP
-  # of "any Google account" (financas is open signup) -- there is no
-  # second list to also keep in sync anymore, unlike the old
-  # Access-allowlist days.
-  allowed_emails   = []
-  domain_api_key   = random_id.contas_api_domain_key.hex
-  frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
-  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [module.compute_apps_domain_api]
-}
-
-# transacional-api: one of the 4 financas-frontend backends -- same
-# shape as contas-api above, minus issuing the session (it only
-# verifies).
-module "compute_apps_transacional_api" {
-  source = "./modules/compute/apps/transacional_api"
-  providers = {
-    docker = docker
-  }
-
-  network_name   = module.network_docker_apps.network_name
-  registry_host  = var.registry_host
-  session_secret = random_password.financas_session_secret.result
-  # Empty on purpose -- see the same note on compute_apps_contas_api
-  # above.
-  allowed_emails   = []
-  domain_api_key   = random_id.transacional_api_domain_key.hex
-  frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
-  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [module.compute_apps_domain_api]
-}
-
-# asset-manager-api: one of the 4 financas-frontend backends -- same
-# shape as contas-api above, plus a brapi.dev token for market quotes.
-module "compute_apps_asset_manager_api" {
-  source = "./modules/compute/apps/asset_manager_api"
-  providers = {
-    docker = docker
-  }
-
-  network_name   = module.network_docker_apps.network_name
-  registry_host  = var.registry_host
-  session_secret = random_password.financas_session_secret.result
-  # Empty on purpose -- see the same note on compute_apps_contas_api
-  # above.
-  allowed_emails   = []
-  domain_api_key   = random_id.asset_manager_api_domain_key.hex
-  brapi_token      = var.asset_manager_brapi_token
-  frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
-  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [module.compute_apps_domain_api]
-}
-
-# dashboard-api: one of the 4 financas-frontend backends -- same shape
-# as contas-api above, minus issuing the session (it only verifies).
-module "compute_apps_dashboard_api" {
-  source = "./modules/compute/apps/dashboard_api"
-  providers = {
-    docker = docker
-  }
-
-  network_name   = module.network_docker_apps.network_name
-  registry_host  = var.registry_host
-  session_secret = random_password.financas_session_secret.result
-  # Empty on purpose -- see the same note on compute_apps_contas_api
-  # above.
-  allowed_emails   = []
-  domain_api_key   = random_id.dashboard_api_domain_key.hex
-  frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
-  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [module.compute_apps_domain_api]
-}
-
-# apostas-api: the BFF for the Apostas module (betting-house wallet
-# reconciliation) -- same verify-only session shape as the other 3
-# non-issuing financas backends above.
-module "compute_apps_apostas_api" {
-  source = "./modules/compute/apps/apostas_api"
-  providers = {
-    docker = docker
-  }
-
-  network_name   = module.network_docker_apps.network_name
-  registry_host  = var.registry_host
-  session_secret = random_password.financas_session_secret.result
-  # Empty on purpose -- see the same note on compute_apps_contas_api
-  # above.
-  allowed_emails          = []
-  domain_api_key          = random_id.apostas_api_domain_key.hex
-  extension_token         = random_password.apostas_extension_token.result
-  extension_usuario_email = var.apostas_extension_usuario_email
-  ai_api_key              = var.apostas_ai_api_key
-  frontend_origins        = ["https://financas.giomartins.dev", "http://localhost:5173"]
-  otlp_endpoint           = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [module.compute_apps_domain_api]
-}
-
-# leads-api: the one PUBLIC financas backend -- no access_aud/Access
-# app at all (its hostname is in excluded_hostnames instead), since an
-# anonymous landing-page visitor can't complete a Google SSO redirect.
-module "compute_apps_leads_api" {
-  source = "./modules/compute/apps/leads_api"
-  providers = {
-    docker = docker
-  }
-
-  network_name     = module.network_docker_apps.network_name
-  registry_host    = var.registry_host
-  domain_api_key   = random_id.leads_api_domain_key.hex
-  frontend_origins = ["https://financas.giomartins.dev", "http://localhost:5173"]
-  otlp_endpoint    = module.compute_services_observability.otlp_endpoint
-
-  depends_on = [module.compute_apps_domain_api]
-}
-
-# proventos-worker: a daily background sweep, not a person-facing
-# backend -- no hostname, no Access, no ingress route at all. It's the
-# one automatic writer of ativo "provento" movimentos and their
-# matching conta credit now that the manual entry is gone (see
-# asset-manager-api's own registrarMovimento validation).
-module "compute_apps_proventos_worker" {
-  source = "./modules/compute/apps/proventos_worker"
-  providers = {
-    docker = docker
-  }
-
-  network_name   = module.network_docker_apps.network_name
-  registry_host  = var.registry_host
-  domain_api_key = random_id.proventos_worker_domain_key.hex
-
-  depends_on = [module.compute_apps_domain_api]
-}
-
-# apostas-resultado-worker: same "daily background sweep, no
-# person-facing surface" shape as proventos-worker above -- it's the
-# automatic writer of aposta.resolver + the matching conta credit, so
-# green/red gets decided without anyone opening the financas app. See
-# this module's own doc comment (main.tf) for what it actually does
-# each cycle.
-module "compute_apps_apostas_resultado_worker" {
-  source = "./modules/compute/apps/apostas_resultado_worker"
-  providers = {
-    docker = docker
-  }
-
-  network_name       = module.network_docker_apps.network_name
-  registry_host      = var.registry_host
-  domain_api_key     = random_id.apostas_resultado_worker_domain_key.hex
-  ai_api_key         = var.apostas_ai_api_key
-  sportsdata_api_key = var.apostas_sportsdata_api_key
-
-  depends_on = [module.compute_apps_domain_api]
-}
-
 # clubs-api -- the FC Clubs Hub backend (clubs.giomartins.dev). One published
 # loopback port, one hostname, no database: everything goes through domain-api.
 # The bare hostname is public (the dataset is meant to be readable by anyone);
@@ -575,15 +205,6 @@ module "compute_apps_clubs_ingest" {
   depends_on = [module.compute_apps_domain_api]
 }
 
-# bet-runner used to live here as a Docker container on the apps
-# network -- Betano's compliance wall blocks the VPS's datacenter ASN
-# ("Access to this page is restricted due to security and compliance
-# measures"), which no selector fixes. It now runs on the home network
-# (residential IP) instead: see modules/apps/bet-runner/deploy/home's
-# compose file. Nothing on the VPS represents it anymore; dry_run lives
-# in that .env now, and stays 1 until selectors are verified against
-# the real site with receipts in hand.
-
 module "compute_services_registry" {
   source = "./modules/compute/services/registry"
   providers = {
@@ -612,18 +233,8 @@ module "compute_services_ingress" {
   # exist -- see null_resource.static_site_buckets below.
   depends_on = [
     module.compute_apps_domain_api,
-    module.compute_apps_post_api,
-    module.compute_apps_bookclub_api,
-    module.compute_apps_classroom_api,
     module.compute_apps_tela_api,
-    module.compute_apps_cch_api,
-    module.compute_apps_bet_api,
-    module.compute_apps_contas_api,
-    module.compute_apps_transacional_api,
-    module.compute_apps_asset_manager_api,
-    module.compute_apps_dashboard_api,
-    module.compute_apps_apostas_api,
-    module.compute_apps_leads_api,
+    module.compute_apps_clubs_api,
     module.compute_services_registry,
     module.compute_services_monitoring,
     module.compute_services_ai_proxy,
@@ -689,16 +300,11 @@ module "compute_services_observability" {
 
   network_name           = module.network_docker_apps.network_name
   grafana_admin_password = random_password.grafana_admin_password.result
-  # The origins browsers may POST telemetry from. buteco-class also runs
-  # as a Discord Activity, where window.location.origin is Discord's
-  # wildcard *.discordsays.com proxy — that's a real origin this
-  # endpoint has to accept (the wildcard form is what the receiver's
-  # CORS config matches on), or every Activity user's telemetry dies on
-  # its first preflight.
+  # The origins browsers may POST telemetry from.
   frontend_origins = [
-    "https://buteco-class.giomartins.dev",
     "https://tela.giomartins.dev",
-    "https://*.discordsays.com",
+    "https://clubs.giomartins.dev",
+    "https://hub.giomartins.dev",
   ]
 }
 

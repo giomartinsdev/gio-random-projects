@@ -17,21 +17,22 @@ carinho, porque ele aparece em vários lugares.
 
 ## 2. Como o pipeline descobre seu app
 
-Três workflows, um por linguagem+camada — **Go se descobre sozinho pelo
-arquivo, TypeScript precisa ser adicionado numa lista explícita**:
+Três workflows, um por linguagem+camada — **Go e Python se descobrem
+sozinhos pelo arquivo, TypeScript precisa ser adicionado numa lista
+explícita**:
 
 | Linguagem/camada | Workflow | Como decide quais apps buildar |
 | --- | --- | --- |
 | Go | `.github/workflows/go-ci-cd.yml` | qualquer pasta com `go.mod` em `modules/apps/<nome>/go.mod` |
+| Python | `.github/workflows/python-ci-cd.yml` | qualquer pasta com `pyproject.toml` em `modules/apps/<nome>/pyproject.toml` |
 | TypeScript frontend | `.github/workflows/ts-frontend-ci-cd.yml` | nome do app no `ALLOWED_APPS` do job `discover` |
-| TypeScript backend | `.github/workflows/ts-backend-ci-cd.yml` | idem, no seu próprio `ALLOWED_APPS` |
 
-Um `package.json` sozinho não basta para o TypeScript pegar seu app —
-`buteco-class-frontend` também tem um, e não é isso que separa frontend de backend. Ao
-criar um app TS novo, adicione o nome no array `ALLOWED_APPS` do
-workflow certo (`ts-frontend-ci-cd.yml` se ele bate `VITE_*` no bundle
-em build time; `ts-backend-ci-cd.yml` se recebe config em runtime via
-Terraform).
+Um `package.json` sozinho não basta para o TypeScript pegar seu app.
+Ao criar uma SPA nova, adicione o nome no array `ALLOWED_APPS` do
+`ts-frontend-ci-cd.yml`. (Não há pipeline de backend TypeScript no
+repo hoje: um backend TS novo precisa do próprio workflow, no mesmo
+espírito do `ts-frontend-ci-cd.yml` mas sem os `VITE_*` — a config
+dele entra como env de runtime via Terraform.)
 
 Go continua auto-descoberto por `find modules/apps -mindepth 2
 -maxdepth 2 -name go.mod`, **um nível abaixo de `modules/apps/`**:
@@ -87,15 +88,16 @@ resource "docker_container" "<nome>" {
 (e `OTEL_SERVICE_NAME = "<nome>"`). Logs já fluem para o Grafana sem
 nenhum trabalho extra (o alloy faz scrape do stdout de todo container);
 com esse env, traces e métricas também entram — copie o pacote
-`internal/telemetry` de um app Go ou `src/telemetry.ts` de um backend
-TS. A receita completa está no README do módulo observability.
+`internal/telemetry` de um app Go. A receita completa está no README do
+módulo observability.
 
-Portas já usadas hoje: 8004 (bookclub-api), 8005 (classroom-api), 8007
-(tela-api). Pegue a próxima.
+Portas já usadas hoje: 8000 (domain-api), 8007 (tela-api), 8017
+(clubs-api). Pegue a próxima.
 
-> Isso vale para um app que roda como container. `buteco-class-frontend`
-> e `tela-frontend` não seguem mais essa receita: são builds estáticos
-> espelhados direto num bucket do MinIO, sem container nenhum rodando —
+> Isso vale para um app que roda como container. `tela-frontend`,
+> `clubs-frontend` e `hub-frontend` não seguem mais essa receita: são
+> builds estáticos espelhados direto num bucket do MinIO, sem container
+> nenhum rodando —
 > veja `modules/infra/terraform/static_sites.tf` e o README de
 > `compute/services/ingress`. Se o app novo for só uma SPA estática sem
 > nenhuma parte de backend, esse é o caminho mais simples, não o daqui.
@@ -189,9 +191,10 @@ app builda, empurra e aplica logo depois. Se quiser rodar de novo à mão:
 
 ```bash
 gh workflow run go-ci-cd.yml -f app=<nome>
-# ou, se for TypeScript:
+# ou, se for Python:
+gh workflow run python-ci-cd.yml -f app=<nome>
+# ou, se for uma SPA:
 gh workflow run ts-frontend-ci-cd.yml -f app=<nome>
-gh workflow run ts-backend-ci-cd.yml -f app=<nome>
 ```
 
 Note que mudanças **só** em `.github/workflows/**` não disparam nada (o
@@ -210,8 +213,8 @@ curl -s https://<nome>.giomartins.dev/ | grep -o 'index-[A-Za-z0-9_-]*\.js'
 
 ## Checklist
 
-- [ ] `modules/apps/<nome>/` com `go.mod` **ou** `package.json` na raiz (não os dois)
-- [ ] se for TypeScript: nome adicionado ao `ALLOWED_APPS` de `ts-frontend-ci-cd.yml` ou `ts-backend-ci-cd.yml` (um `package.json` sozinho não é suficiente)
+- [ ] `modules/apps/<nome>/` com `go.mod`, `pyproject.toml` **ou** `package.json` na raiz (não mais de um)
+- [ ] se for uma SPA: nome adicionado ao `ALLOWED_APPS` de `ts-frontend-ci-cd.yml` (um `package.json` sozinho não é suficiente)
 - [ ] `Dockerfile` + `.dockerignore`
 - [ ] módulo Terraform em `modules/compute/apps/<nome>/`
 - [ ] `module "compute_apps_<nome>"` no `main.tf`

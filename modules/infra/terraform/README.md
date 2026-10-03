@@ -21,18 +21,15 @@ hostname/port pair gets declared — everything else derives from it:
   postgres, redis, minio: stateful, internal-only (no published ports
   except minio's console).
 - **[`modules/compute/apps/*`](modules/compute/apps/domain_api/README.md)**
-  — domain-api (+worker), post-api, bookclub-api, classroom-api,
-  tela, front: stateless app containers, each publishing its port from
-  `locals.tf` straight on the host.
+  — domain-api (+worker), tela-api, clubs-api, clubs-ingest: stateless
+  app/worker containers, each publishing its port from `locals.tf`
+  straight on the host (clubs-ingest publishes none).
 - **[`modules/compute/services/*`](modules/compute/services/registry/README.md)**
   — registry (+watchtower), beszel monitoring, 9router, vaultwarden
   (+bridge), adminer,
   [`observability`](modules/compute/services/observability/README.md)
   (grafana + loki + prometheus + tempo + alloy: logs, metrics, traces
-  for everything else here),
-  [`flaresolverr`](modules/compute/services/flaresolverr/README.md)
-  (idle-until-needed Cloudflare-challenge solver for the deals
-  scrapers), and
+  for everything else here), and
   [`ingress`](modules/compute/services/ingress/README.md)
   — the single nginx front door everything else routes through.
 
@@ -142,42 +139,16 @@ local-state, by-hand) bootstrap run.
 | `TF_VAULTWARDEN_API_CLIENT_ID` | API key `client_id` from the vault UI → Account Settings → Security → Keys |
 | `TF_VAULTWARDEN_API_CLIENT_SECRET` | matching `client_secret` |
 
-`registry_password` and `discord_client_id`/`discord_client_secret`
-are deliberately **not** GitHub secrets — every workflow's "Fetch
-secrets from Vaultwarden" step reads them from the vault instead
-(secrets.tf's `"registry"` and `"discord"` vault_seed groups keep
-those items current on every apply; `scripts/fetch_vault_secret.sh` is
-the read side). One consequence: a true from-scratch bootstrap (empty
+`registry_password` is deliberately **not** a GitHub secret — every
+workflow's "Fetch secrets from Vaultwarden" step reads it from the
+vault instead (secrets.tf's `"registry"` vault_seed group keeps that
+item current on every apply; `scripts/fetch_vault_secret.sh` is the
+read side). One consequence: a true from-scratch bootstrap (empty
 Vaultwarden, nothing seeded yet) has nothing for that step to fetch —
 run the very first `terraform apply` locally instead, with
-`registry_password`/`discord_client_id`/`discord_client_secret` set in
-`terraform.tfvars` (see "Running locally" below), and CI's
-vault-fetch-based flow takes back over for every apply after that one
-seeds the vault.
-
-The deals scrapers (python-ci-cd.yml) extend that pattern with inputs
-nobody generates: their per-source feed URLs, `TF_VAR_pld_source_url`
-and `TF_VAR_phb_source_url`, live in vault items **`PLD_SOURCE_URL`
-and `PHB_SOURCE_URL`** which have to be created by hand — both
-workflows (`tf-ci-cd.yml` too, which needs them at apply time or a
-tf-only apply would write blanks over the scrapers' env) hard-fail
-until they exist, by design (a blank `SOURCE_BASE_URL` makes the
-worker refuse to boot, which is worse than a red deploy). The repo
-itself ships no scraped-site hostnames anywhere on purpose; the
-workers only ever see the URL through that env. The optional
-**`DEALS_DISCORD_WEBHOOK_URL`** item (blank = the events-announcer
-keeps draining the event queue silently) bootstraps like
-`DISCORD_ANNOUNCE_WEBHOOK_URL` does.
-
-The deals stack itself is fully wired by Terraform: scrapers push
-through domain-api with `random_id.deals_domain_key` (secrets.tf,
-`:deals-scrapers` in the API-key list), and the whole data path is
-scraper → `POST /deals` → domain-worker (owner of the `raw_deals`
-table) → `domain.events.queue` → events-announcer → Discord. When a
-source's edge answers a poll with Cloudflare's JS challenge, the
-scraper's fetch layer hands that URL to the flaresolverr container
-(same root module, `flaresolverr_url`) once and reuses the clearance —
-no extra vault item or workflow input involved.
+`registry_password` set in `terraform.tfvars` (see "Running locally"
+below), and CI's vault-fetch-based flow takes back over for every
+apply after that one seeds the vault.
 
 Everything else the containers need (postgres password, API keys,
 Better Auth secrets, vaultwarden admin token, 9router credentials, …)
@@ -201,18 +172,9 @@ google_idp_identity_provider_id = "<from step 5>"
 server_ip                       = "<the VPS's current public IP>"
 docker_host                     = "ssh://ubuntu@<the VPS's public IP>"
 registry_password               = "<openssl rand -base64 24, or the existing one from the vault's REGISTRY_PASSWORD item>"
-# Only needed on a true from-scratch bootstrap -- CI fetches both of
-# these from Vaultwarden once this apply has seeded it (see the
-# GitHub repo secrets section above). Blank disables Discord entirely.
-discord_client_id               = ""
-discord_client_secret           = ""
-# Deals scrapers: from-scratch bootstraps set the source URLs here if
-# the vault items don't exist yet (otherwise those workers refuse to
-# boot); CI fetches them from Vaultwarden after that. The webhook is
-# optional forever -- blank = the workers collect without announcing.
-pld_source_url                  = ""
-phb_source_url                  = ""
-deals_discord_webhook_url       = ""
+# clubs' own Google client -- not secret (it ships in the SPA bundle),
+# but a real input so rotating it never means editing this repo.
+clubs_google_oauth_client_id    = "<the FC Clubs Hub's Google OAuth web client id>"
 EOF
 
 export CLOUDFLARE_API_TOKEN=<token from step 6>

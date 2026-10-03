@@ -503,7 +503,8 @@ todo o conteúdo técnico.
       FR-029, cenário 3 do Cenário 6
 - [X] T078 [P] [US5] Adicionar o segredo do canal em Vaultwarden
       (`CLUBS_DISCORD_WEBHOOK_URL`, **opcional** com o sufixo `?` no
-      `ITEM_MAP`, mesmo tratamento de `DEALS_DISCORD_WEBHOOK_URL`) e wire no
+      `ITEM_MAP`, mesmo tratamento dos webhooks opcionais dos outros
+      workers) e wire no
       módulo Terraform do `clubs-ingest` — nunca em texto claro
 - [X] T079 [US5] Implementar a **restrição de administração**: as rotas técnicas
       respondem `403` para quem não é administrador — FR-030, cenário 4 do
