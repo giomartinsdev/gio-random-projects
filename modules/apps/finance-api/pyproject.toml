@@ -23,11 +23,23 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.25",
     "opentelemetry-instrumentation-fastapi>=0.46b0",
     "opentelemetry-instrumentation-httpx>=0.46b0",
+    # Imported directly by src/finance_api/presentation/schemas.py. It arrived
+    # transitively through fastapi, which is why the omission was invisible --
+    # but a module the source imports is a dependency of the source, and
+    # relying on another package's transitive pins is how a fastapi upgrade
+    # breaks the app at import time.
+    "pydantic>=2.0",
     "finance-contracts",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-bdd>=8.0", "testcontainers>=4.0", "docker>=7.0"]
+# pyyaml is a TEST-ONLY dependency: tests/test_isolation.py imports it to read
+# stacks/finance.yml for the §12.6 static check. It is not a runtime dependency
+# of the app (the image never parses YAML) -- but it must be declared, because
+# the CI installs the app's own metadata and nothing else: undeclared, the
+# three §12.6 tests fail in CI while passing on any machine whose global
+# environment happens to have PyYAML (a green that depends on the laptop).
+dev = ["pytest>=8.0", "pytest-bdd>=8.0", "testcontainers>=4.0", "docker>=7.0", "pyyaml>=6.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/finance_api"]

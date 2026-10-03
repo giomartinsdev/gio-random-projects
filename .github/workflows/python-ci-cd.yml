@@ -3,6 +3,15 @@ name: Python deploy
 # CI/CD for the Python workers under modules/apps/*/ (has both a
 # Dockerfile and a pyproject.toml) — touch only modules/apps/clubs-ingest/**
 # and only the clubs-ingest image rebuilds, gets pushed, and redeploys.
+#
+# The `paths:` filter lists EVERY vendored app explicitly, and that is
+# deliberate: a filter that names one app while the discover step knows about
+# two is a silent hole — a push touching only the un-listed app starts no run
+# at all, so the image is never rebuilt and nothing reports a problem (§11-1).
+# finance-whatsapp-worker/** is deliberately NOT here yet: its app does not
+# exist in the repo (stacks/finance.yml marks that service as a contract for
+# the next slice), and listing a path with nothing behind it would only
+# advertise a pipeline that cannot do anything.
 # packages/** is a trigger too (§11-2): a change there rebuilds the apps that
 # import that package (map in the discover step below), never all of them.
 # Go apps go through go-ci-cd.yml, TypeScript frontends through
@@ -20,6 +29,11 @@ on:
     branches: [main]
     paths:
       - "modules/apps/clubs-ingest/**"
+      # §11-1: the discover step below rebuilds finance-api, but without this
+      # line a push that only touched that app would never start a run, so the
+      # app would build never and say nothing. The filter and the discover rule
+      # have to name the same apps or one of them is dead code.
+      - "modules/apps/finance-api/**"
       # Shared code lives in packages/ (§7). Without this, a commit that only
       # edits the shared contract triggers NOTHING and production keeps the
       # stale contract (§11-2) — the discover rule below needs the run to
@@ -124,14 +138,34 @@ jobs:
         # dead-end. The package itself is installed (not just its deps)
         # because the tests import the worker's own mapping code.
         run: |
-          pip install -q "${{ github.workspace }}/modules/apps/${{ matrix.app }}" pytest
+          # §11-3: an app whose pyproject declares a vendored `packages/*`
+          # dependency cannot be installed on its own -- pip looks for that
+          # name on the index, there is no private PyPI here, and the install
+          # dies with "No matching distribution found". So the path is
+          # discovered from the app's own pyproject and passed in the SAME pip
+          # invocation, which is what lets the resolver satisfy the dependency
+          # from source. Detection, not another hard-coded map: a second
+          # consumer of `packages/finance-contracts` in a later slice is picked
+          # up with no workflow edit, and an app that imports nothing shared
+          # (clubs-ingest) stays exactly as it was.
+          pkg_args=""
+          for pkg in "${{ github.workspace }}"/packages/*/; do
+            [ -f "${pkg}pyproject.toml" ] || continue
+            name=$(grep -m1 '^name = ' "${pkg}pyproject.toml" | cut -d'"' -f2)
+            if grep -q "\"${name}\"" "${{ github.workspace }}/modules/apps/${{ matrix.app }}/pyproject.toml"; then
+              echo "vendored dependency detected: ${name} -> ${pkg}"
+              pkg_args="$pkg_args $pkg"
+            fi
+          done
+
+          pip install -q $pkg_args "${{ github.workspace }}/modules/apps/${{ matrix.app }}" pytest
           # Os extras de dev (pytest-bdd, testcontainers, docker) trazem o BDD e
           # a infra real dos testes de integração. Sem eles, os cenários que usam
           # container se PULAM em silêncio -- e um teste que se pula não existe.
           # Por isso a instalação NÃO leva `|| true`: se falhar, o job vermelha em
           # vez de dar verde sem ter rodado os cenários.
           #
-          pip install -q "${{ github.workspace }}/modules/apps/${{ matrix.app }}[dev]"
+          pip install -q $pkg_args "${{ github.workspace }}/modules/apps/${{ matrix.app }}[dev]"
           python -m pytest -q
 
       # Same reasoning as go-ci-cd.yml: the VPS is arm64, this runner
@@ -240,9 +274,32 @@ jobs:
             echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a :latest já foi publicada)."
             exit 0
           fi
-          declare -A STACK=( [clubs-ingest]=5 )
-          ids=$(echo "$APPS" | jq -r '.[]' | while read -r a; do echo "${STACK[$a]}"; done | grep -v '^$' | sort -u)
-          [ -z "$ids" ] && { echo "nada a deployar"; exit 0; }
+          # §10.4-4/§10.4-5. The two finance entries exist so that the map
+          # covers every app the discover step can emit -- an app missing from
+          # this map is the §14 risk "build verde, nada sobe". Their ids are
+          # deliberately EMPTY: the numeric Dockhand stack id is only readable
+          # from the Dockhand UI after login, and inventing a number here would
+          # put a wrong value into the map the deploy actually fires. Fill them
+          # in (§10.4 step 5) in the same commit that first deploys that app;
+          # until then this job fails loudly instead of reporting success.
+          declare -A STACK=( [clubs-ingest]=5 [finance-api]= [finance-whatsapp-worker]= )
+          if [ -z "$APPS" ] || [ "$APPS" = "[]" ]; then
+            echo "nada a deployar (nenhum app descoberto)"
+            exit 0
+          fi
+          # An app that built with no id mapped is a failure, not a quiet skip:
+          # the image was published and nothing will pick it up. `nada a
+          # deployar` is reserved for the genuinely empty case above.
+          ids=""
+          for a in $(echo "$APPS" | jq -r '.[]'); do
+            id="${STACK[$a]}"
+            if [ -z "$id" ]; then
+              echo "::error::$a built, but STACK has no id for it: the image was published and no stack will redeploy (§10.4-4/5). Add [${a}]=<id> to STACK."
+              exit 1
+            fi
+            ids="$ids $id"
+          done
+          ids=$(echo "$ids" | tr ' ' '\n' | grep -v '^$' | sort -u)
           for id in $ids; do
             echo "== redeploy stack id=$id"
             out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 'http://127.0.0.1:8093/api/git/stacks/$id/webhook?secret=$DOCKHAND_WEBHOOK_SECRET'")
