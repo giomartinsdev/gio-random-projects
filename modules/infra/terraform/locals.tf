@@ -25,25 +25,18 @@ locals {
       port     = 8000
     },
     {
-      # Beszel's hub dashboard — host/container stats and metrics. Not
-      # in excluded_hostnames, so it gets the same Google-SSO Access
-      # protection as everything else browser-facing once proxied; the
-      # hub has its own login too, Access is just the outer layer.
-      hostname = "beszel.giomartins.dev"
-      port     = 8090
-    },
-    {
       # Vaultwarden's own web vault GUI — same Google-SSO Access outer
-      # layer as beszel above (not in excluded_hostnames),
-      # Vaultwarden's own master-password login is the inner one. Port
-      # must match module.compute_services_vaultwarden's published_port.
+      # layer as the other browser-facing services above (not in
+      # excluded_hostnames), Vaultwarden's own master-password login is
+      # the inner one. Port must match
+      # module.compute_services_vaultwarden's published_port.
       hostname = "vault.giomartins.dev"
       port     = 8222
     },
     {
       # Dockhand — Docker management UI (containers, logs, shell, file
       # browser, image CVE scans). Same Google-SSO Access outer layer as
-      # beszel/vault above (not in excluded_hostnames); its own local
+      # vault above (not in excluded_hostnames); its own local
       # login, created on first visit, is the inner one. Port must match
       # module.compute_services_dockhand's published_port.
       #
@@ -108,7 +101,7 @@ locals {
       # Grafana — the observability front door (logs/metrics/traces
       # dashboards over the whole stack, see
       # module.compute_services_observability's README). Google-SSO
-      # Access as the outer layer, exactly like beszel above; Grafana's
+      # Access as the outer layer, exactly like vault above; Grafana's
       # own Terraform-generated admin login is the inner one. Port must
       # match module.compute_services_observability's grafana publish.
       hostname = "grafana.giomartins.dev"

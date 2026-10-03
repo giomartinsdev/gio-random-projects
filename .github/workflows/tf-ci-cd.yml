@@ -41,6 +41,9 @@ on:
       force_unlock_id:
         description: "Optional: state lock ID to force-unlock before planning -- for when a run gets cancelled (gh run cancel) mid-apply and never releases its own lock, leaving every later run blocked on 'Error acquiring the state lock'. Copy the ID from that error's own output."
         required: false
+      apply_plan:
+        description: "Digite 'sim' para aplicar o plano salvo após o plan (terraform apply). Sem isto o workflow só roda o Plan (default). Mantém o apply manual durante/após a migração."
+        required: false
 
 defaults:
   run:
@@ -171,4 +174,40 @@ jobs:
           name: tfplan
           path: modules/infra/terraform/tfplan
           retention-days: 1
+
+  # Job MANUAL: só roda com apply_plan='sim' no dispatch. Aplica o MESMO plano
+  # binário salvo pelo job acima (não re-planeja), gated pelo environment
+  # production. É o único caminho de apply enquanto o freeze durar -- nenhum
+  # apply automático (o workflow não tem trigger de push/PR).
+  apply:
+    needs: plan
+    if: github.event.inputs.apply_plan == 'sim' && github.event.inputs.state_rm_addresses == ''
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.10"
+
+      - name: Init
+        run: terraform init -backend-config="endpoints={s3=\"${{ secrets.TF_STATE_R2_ENDPOINT }}\"}"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: modules/infra/terraform
+
+      - name: Apply
+        run: |
+          for tentativa in 1 2 3 4 5; do
+            if terraform apply -input=false -lock-timeout=300s -auto-approve tfplan; then
+              exit 0
+            fi
+            echo "::warning::apply falhou (tentativa $tentativa); aguardando antes de repetir"
+            sleep $((tentativa * 20))
+          done
+          echo "::error::apply falhou após 5 tentativas"
+          exit 1
 

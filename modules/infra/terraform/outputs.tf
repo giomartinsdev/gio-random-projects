@@ -17,7 +17,7 @@ output "service_token_client_secrets" {
 }
 
 output "protected_hosts_service_token_client_ids" {
-  description = "Keyed by full hostname (\"vault.giomartins.dev\", \"beszel.giomartins.dev\") — see modules/cloud/cloudflare/access.tf."
+  description = "Keyed by full hostname (\"vault.giomartins.dev\", \"grafana.giomartins.dev\") — see modules/cloud/cloudflare/access.tf."
   value       = module.cloud_cloudflare.protected_hosts_service_token_client_ids
 }
 
