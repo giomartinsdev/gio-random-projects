@@ -21,7 +21,7 @@
 #                                   dashboard do CopilotKit (plano Developer,
 #                                   grátis). Sem ele as threads não ativam.
 # Defaults (sobrescrevíveis como variável de stack):
-#   INTELLIGENCE_RUNNER_AUTH_SECRET, INTELLIGENCE_ORGANIZATION_ID.
+#   INTELLIGENCE_RUNNER_AUTH_SECRET, INTELLIGENCE_DEPLOYMENT_MODE (self_hosted).
 name: intelligence
 
 services:
@@ -75,8 +75,9 @@ services:
       AUTH_SECRET: ${INTELLIGENCE_AUTH_SECRET:?defina INTELLIGENCE_AUTH_SECRET}
       RUNNER_AUTH_SECRET: ${INTELLIGENCE_RUNNER_AUTH_SECRET:-dev-runner-secret}
       SECRET_KEY_BASE: ${INTELLIGENCE_SECRET_KEY_BASE:?defina INTELLIGENCE_SECRET_KEY_BASE}
-      # A chave pré-semeada do composite (cpk_sPRVSEED_...) vive nesta org.
-      DEFAULT_ORGANIZATION_ID: ${INTELLIGENCE_ORGANIZATION_ID:-casa-de-erlang}
+      # v0.13.8+: modo self_hosted (também é o default). NUNCA usar
+      # DEFAULT_ORGANIZATION_ID etc. (legado removido; fazer isso derruba o boot).
+      INTELLIGENCE_DEPLOYMENT_MODE: ${INTELLIGENCE_DEPLOYMENT_MODE:-self_hosted}
       COPILOTKIT_LICENSE_TOKEN: ${INTELLIGENCE_LICENSE_TOKEN:-}
     depends_on:
       postgres:
