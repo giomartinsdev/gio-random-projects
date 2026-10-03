@@ -47,9 +47,10 @@ services:
       # API key provisionada no DB do composite (cpki.api_keys).
       INTELLIGENCE_API_KEY: ${OPENDOTS_INTELLIGENCE_API_KEY:?defina OPENDOTS_INTELLIGENCE_API_KEY}
       INTELLIGENCE_API_URL: ${OPENDOTS_INTELLIGENCE_API_URL:-http://intelligence:4201}
-      # O wsUrl também vira o endpoint do CLIENTE (browser): precisa ser WSS
-      # público. O ingress roteia /client/ -> 127.0.0.1:4401. Um ws:// interno
-      # quebra por mixed content numa página HTTPS.
+      # O wsUrl vira o endpoint do CLIENTE (browser) E do runner do servidor:
+      # precisa ser WSS público. O ingress roteia /client/ e /runner/ ->
+      # 127.0.0.1:4401 (gateway). Um ws:// interno quebra por mixed content em
+      # página HTTPS; /runner/ não-proxiado faz o runtime reconectar em loop.
       INTELLIGENCE_WS_URL: ${OPENDOTS_INTELLIGENCE_WS_URL:-wss://dots.giomartins.dev}
       # O 9router (stack compute) é OpenAI-compatível e está na rede `apps`.
       OPENAI_API_KEY: ${OPENDOTS_OPENAI_API_KEY:-not-needed}

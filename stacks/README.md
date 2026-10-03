@@ -86,7 +86,9 @@ qualquer valor não-vazio). Não-segredo com default: `OPENDOTS_OWNER_ID`,
 `OPENDOTS_OPENAI_BASE_URL` (`http://9router:20128/v1`), `OPENDOTS_OPENAI_MODEL`,
 `OPENDOTS_INTELLIGENCE_API_KEY` (a chave pré-semeada do composite) e
 `OPENDOTS_INTELLIGENCE_API_URL`/`_WS_URL` (`http://intelligence:4201` /
-`ws://intelligence:4401`).
+`wss://dots.giomartins.dev`). O `_WS_URL` também é o endpoint do browser, então
+tem que ser WSS público (o ingress faz `/client/` e `/runner/` ->
+`127.0.0.1:4401`); `ws://intelligence:4401` quebra por mixed content.
 
 `intelligence.yml`: `INTELLIGENCE_DB_PASSWORD`, `INTELLIGENCE_AUTH_SECRET`
 (32+ chars), `INTELLIGENCE_SECRET_KEY_BASE` (64+ bytes) e
