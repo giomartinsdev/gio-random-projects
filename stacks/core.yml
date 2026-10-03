@@ -109,6 +109,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Credenciais do registry privado, pro `docker compose pull` das stacks
       # autenticar. O docker CLI lê $HOME/.docker/config.json e o HOME do
-      # dockhand é /home/dockhand (não /root).
-      - /root/.docker:/home/dockhand/.docker:ro
+      # dockhand é /home/dockhand (não /root). Precisa ser RW: o `docker
+      # build` (buildx) grava estado em ~/.docker/buildx/activity; com :ro o
+      # build das stacks falha com "read-only file system".
+      - /root/.docker:/home/dockhand/.docker:rw
     networks: [apps]
