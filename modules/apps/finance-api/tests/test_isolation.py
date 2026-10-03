@@ -331,11 +331,37 @@ def _finance_stack() -> dict:
 
 
 def _environment_of(stack: dict, service: str) -> dict:
+    """The service's environment, normalised across BOTH compose shapes.
+
+    Compose accepts a mapping (`KEY: value`) and a list of `KEY=value` strings;
+    both are valid and both appear in real stacks. Reading only the mapping
+    form does not fail safe -- it raises `AttributeError: 'list' object has no
+    attribute 'items'` on an innocent stack, i.e. red for the wrong reason, and
+    it never actually inspects the list form at all.
+    """
     assert service in (stack.get("services") or {}), (
         f"{service} must be a service of {STACK_FILE.name}: a rename there "
         "would silently drop this assertion"
     )
-    return stack["services"][service].get("environment") or {}
+    raw = stack["services"][service].get("environment") or {}
+    if isinstance(raw, dict):
+        return {str(k): v for k, v in raw.items()}
+    assert isinstance(raw, list), (
+        f"{service}: unsupported environment shape ({type(raw).__name__}); "
+        "expected a mapping or a list of KEY=value"
+    )
+    environment: dict = {}
+    for entry in raw:
+        assert isinstance(entry, str), (
+            f"{service}: environment list entries must be KEY=value strings, "
+            f"got {type(entry).__name__}"
+        )
+        key, sep, value = entry.partition("=")
+        assert sep and key, (
+            f"{service}: environment entry {entry!r} is not KEY=value"
+        )
+        environment[key] = value
+    return environment
 
 
 def _surfaces(environment: dict, keys: tuple[str, ...], schemes: tuple[str, ...]) -> list[str]:
@@ -379,9 +405,44 @@ def test_stack_check_is_not_vacuous() -> None:
         f"{STACK_FILE.name} no longer declares any broker surface: the "
         "per-service exemption is no longer being exercised"
     )
-    worker = stack.get("services", {}).get(WORKER_SERVICE)
-    if worker is not None:
-        assert _surfaces(worker.get("environment") or {}, DB_KEYS, DB_DSN_SCHEMES) == [], (
-            "the worker may carry a broker URL but never a database surface "
-            f"(§1.1): {sorted(_surfaces(worker['environment'] or {}, DB_KEYS, DB_DSN_SCHEMES))}"
-        )
+    # Read the worker through the SAME normaliser: a raw
+    # `worker["environment"]` access only understood the mapping shape and
+    # raised on the list shape, i.e. red for the wrong reason.
+    worker_db = _surfaces(_environment_of(stack, WORKER_SERVICE), DB_KEYS, DB_DSN_SCHEMES)
+    assert worker_db == [], (
+        "the worker may carry a broker URL but never a database surface "
+        f"(§1.1): {worker_db}"
+    )
+
+
+def test_stack_environment_list_form_is_inspected() -> None:
+    """The list `KEY=value` shape must be *checked*, not merely tolerated.
+
+    Guards the regression where `_environment_of` only understood the mapping
+    form: a `DATABASE_URL` written as a list entry was never inspected (the
+    check crashed on the innocent case first), so a stack could carry the
+    violation in the shape nobody looked at.
+    """
+    innocent = {"services": {"finance-api": {"environment": ["HTTP_ADDR=:8000"]}}}
+    env = _environment_of(innocent, THIS_SERVICE)
+    assert env == {"HTTP_ADDR": ":8000"}, env
+    assert _surfaces(env, DB_KEYS + BROKER_KEYS, DB_DSN_SCHEMES + BROKER_DSN_SCHEMES) == []
+
+    guilty = {
+        "services": {
+            "finance-api": {"environment": ["HTTP_ADDR=:8000", "DATABASE_URL=postgres://u@db:5432/f"]},
+            WORKER_SERVICE: {"environment": ["RABBITMQ_URL=amqp://guest@rabbitmq:5672/"]},
+        }
+    }
+    offenders = _surfaces(
+        _environment_of(guilty, THIS_SERVICE), DB_KEYS + BROKER_KEYS, DB_DSN_SCHEMES + BROKER_DSN_SCHEMES
+    )
+    assert offenders, "a DATABASE_URL in list form must still be caught"
+    assert "DATABASE_URL (key)" in offenders, offenders
+
+    # the worker's list-form exemption stays broker-only (§1.1)
+    worker_env = _environment_of(guilty, WORKER_SERVICE)
+    assert _surfaces(worker_env, DB_KEYS, DB_DSN_SCHEMES) == []
+    worker_env["DATABASE_URL"] = "postgres://u@db:5432/f"
+    worker_db = _surfaces(worker_env, DB_KEYS, DB_DSN_SCHEMES)
+    assert "DATABASE_URL (key)" in worker_db, worker_db
