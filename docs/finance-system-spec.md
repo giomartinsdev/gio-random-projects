@@ -1,198 +1,188 @@
-# 📊 WhatsApp Financial Dashboard & Engine — Technical Specification
+# 💳 WhatsApp Financial Dashboard & Engine — Technical Specification
 
 ## 1. Visão Geral do Sistema (System Overview)
 Sistema de gestão financeira pessoal e empresarial completo com experiência conversacional rica via WhatsApp, projetado seguindo **Domain-Driven Design (DDD)**, **CQRS (Command Query Responsibility Segregation)** e **Event-Driven Architecture (EDA)** em **Python 3.14 (Hard Typed)** com **SQLAlchemy 2.0+ (Async / Typed Mappings)**.
 
-O sistema opera em duas aplicações principais desacopladas:
-1. **`finance-api`**: Provedor central de dados, API REST/GraphQL de consulta e mutação analítica, CQRS Read Models, autenticação e suporte para futura ingestão assíncrona de Open Finance.
-2. **`finance-whatsapp-worker`**: Worker assíncrono orientado a eventos para processamento de mensagens, NLU/parsing de linguagem natural, geração de gráficos visuais (painéis UX no WhatsApp), gestão de contexto conversacional e orquestração de comandos.
+### Princípio Fundamental de Arquitetura
+> **Regra de Isolamento de Domínio:** O `finance-whatsapp-worker` **NUNCA** acessa a base de dados diretamente. Toda persistência, regras de negócio, invariantes de domínio e consultas passam estritamente pela **`finance-api` (Domain API)** através de APIs tipadas (REST/gRPC) e mensageria assíncrona (Event Bus).
 
 ---
 
-## 2. Arquitetura & Padrões de Projeto (DDD & CQRS)
+## 2. Arquitetura do Sistema & Topologia de Comunicação
 
 ```
-                       ┌───────────────────────────────┐
-                       │   WhatsApp Webhook / Gateway  │
-                       │   (Meta Cloud API / Baileys)  │
-                       └───────────────┬───────────────┘
-                                       │ Webhook Event
-                                       ▼
-                       ┌───────────────────────────────┐
-                       │    finance-whatsapp-worker    │
-                       │ ├─ NLU & Intent Parser        │
-                       │ ├─ Session / Context Manager  │
-                       │ ├─ Command Dispatcher         │
-                       │ └─ UX Renderer (Text+Charts)  │
-                       └───────┬───────────────┬───────┘
-                               │               │
-                     Dispatches│               │Publishes UI Events
-                      Commands │               │
-                               ▼               ▼
- ┌───────────────────────────────────────────────────────────┐
- │               Message Broker (RabbitMQ / Redis)           │
- └─────────────────────────────┬─────────────────────────────┘
-                               │
-                               │ Consumes Commands/Events
-                               ▼
- ┌───────────────────────────────────────────────────────────┐
- │                        finance-api                        │
- │ ┌───────────────────────────────────────────────────────┐ │
- │ │                   Command Stack (Write)               │ │
- │ │  Aggregates (Account, Transaction, Category, Budget)  │ │
- │ │  Domain Services & Invariants                         │ │
- │ │  Event Store / Outbox Pattern                         │ │
- │ └───────────────────────────┬───────────────────────────┘ │
- │                             │ Emits Domain Events         │
- │                             ▼                             │
- │ ┌───────────────────────────────────────────────────────┐ │
- │ │                    Read Stack (Query)                 │ │
- │ │  Projections & Read Models (Balances, Dashboards)     │ │
- │ │  Materialized Aggregations & Monthly Summaries        │ │
- │ └───────────────────────────────────────────────────────┘ │
- └─────────────────────────────┬─────────────────────────────┘
-                               │
-                               ▼
-               PostgreSQL Database (Transactional & Read Views)
+┌────────────────────────────────────────────────────────┐
+│             WhatsApp Webhook / Gateway                 │
+│              (Meta Cloud API / Baileys)                │
+└──────────────────────────┬─────────────────────────────┘
+                           │ Webhook Event (Mensagem do Usuário)
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│            finance-whatsapp-worker                     │
+│  ├─ NLU & Intent Parser (Comandos & Linguagem Natural) │
+│  ├─ Conversational State & Session Manager             │
+│  ├─ Interactive UX Renderer (Cards, Emojis, Menus)    │
+│  └─ Dynamic Chart Engine (Matplotlib/Pillow -> PNG)   │
+└────────────┬─────────────────────────────┬─────────────┘
+             │ 1. Dispara Commands         │ 2. Executa Queries
+             │    & Consome Eventos        │    (DTOs de Leitura)
+             ▼                             ▼
+┌───────────────────────────┐ ┌──────────────────────────┐
+│   Message Broker          │ │ HTTP / gRPC Client       │
+│   (RabbitMQ / Redis)      │ │ (mTLS, Auth & Tracing)   │
+└────────────┬──────────────┘ └────────────┬─────────────┘
+             │ Async Events / Commands     │ Sync Queries / Fast-path
+             ▼                             ▼
+┌────────────────────────────────────────────────────────┐
+│             finance-api (Domain API)                   │
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Command Stack (Write Model)                      │  │
+│  │  - Command Handlers & Domain Invariants          │  │
+│  │  - DDD Aggregates (Account, Transaction, Budget) │  │
+│  │  - Unit of Work & Outbox Pattern                 │  │
+│  └──────────────────────────┬───────────────────────┘  │
+│                             │ Emite Domain Events      │
+│                             ▼                          │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Read Stack (Query Model - CQRS)                  │  │
+│  │  - Projections & Materialized Views              │  │
+│  │  - Fast Query Handlers (Dashboards, Extratos)    │  │
+│  └──────────────────────────────────────────────────┘  │
+└────────────────────────────┬───────────────────────────┘
+                             │
+                             │ Conexão Segura & Exclusiva
+                             ▼
+              PostgreSQL Database (Asyncpg)
 ```
-
-### 2.1. Bounded Contexts & DDD Aggregate Roots
-* **Contexto de Contas e Usuários (Identity & Account Context)**:
-  * `User`: Identificador único, número WhatsApp (E.164), preferências de moeda e fuso horário.
-  * `Account`: Conta bancária/carteira (Saldo atual, moeda, tipo: Corrente, Poupança, Cartão, Investimento).
-* **Contexto de Transações (Ledger & Transaction Context)**:
-  * `Transaction` (Aggregate Root):
-    * `TransactionId`: UUIDv7 tipado.
-    * `Amount`: Value Object `Money(amount: Decimal, currency: Currency)`.
-    * `Type`: `INCOME`, `EXPENSE`, `TRANSFER`.
-    * `Status`: `PENDING`, `COMPLETED`, `CANCELLED`.
-    * `Category`: Categoria (Alimentação, Transporte, Lazer, etc.) com categorização automática inteligente.
-    * `Origin`: `WHATSAPP_MANUAL`, `OPEN_FINANCE_SYNC` (preparado para fase 2).
-    * `OccurredAt`: Timestamp com timezone consciente.
-* **Contexto de Orçamentos e Metas (Budget & Goal Context)**:
-  * `Budget`: Limites mensais por categoria com alertas de consumo (50%, 80%, 100%).
-  * `FinancialGoal`: Metas de economia com acompanhamento de progresso.
-* **Contexto de Relatórios e Insights (Analytics & Dashboard Context)**:
-  * Read models otimizados para rápida renderização de resumos diários, semanais e mensais.
-
-### 2.2. CQRS (Command Query Responsibility Segregation)
-* **Write Side (Commands)**:
-  * `RegisterTransactionCommand`
-  * `CategorizeTransactionCommand`
-  * `SetCategoryBudgetCommand`
-  * `TransferBetweenAccountsCommand`
-  * `ReconcileTransactionCommand` (futura conciliação Open Finance)
-* **Read Side (Queries)**:
-  * `GetDailySummaryQuery`
-  * `GetMonthlyDashboardQuery`
-  * `GetCategoryExpensesQuery`
-  * `GetCashFlowForecastQuery`
-
-### 2.3. Event-Driven Messaging (Domain Events)
-* `TransactionCreatedEvent`
-* `TransactionCategorizedEvent`
-* `BudgetThresholdExceededEvent`
-* `DailySummaryRequestedEvent`
-* `OpenFinanceTransactionIngestedEvent` (preparado)
 
 ---
 
-## 3. Experiência do Usuário (UX WhatsApp)
+## 3. Bounded Contexts & DDD (Domain-Driven Design)
 
-### 3.1. Entradas Conversacionais Flexíveis
-O worker interpreta comandos estruturados e linguagem natural:
-* *"Gastei 45 no almoço hoje"* ➔ Transação de Despesa `R$ 45,00` em `Alimentação`.
-* *"Recebi 3500 de freela"* ➔ Transação de Receita `R$ 3.500,00` em `Renda Extra`.
-* *"Paguei 120 de luz no cartão nubank"* ➔ Despesa `R$ 120,00` em `Contas/Moradia` na conta `Nubank`.
-* *"Quanto gastei esse mês?"* ➔ Dispara query e renderiza dashboard.
+### 3.1. Contexto de Identidade & Contas (`Identity & Account Context`)
+* **`User` (Aggregate Root)**: Identificação única, telefone WhatsApp (E.164), preferências de moeda, timezone e nível de detalhamento de alertas.
+* **`Account` (Entity)**: Conta corrente, carteira física, poupança, conta de investimento ou cartão de crédito. Possui controle de saldo e moeda.
 
-### 3.2. Dashboards e Retorno Visual Rico
-1. **Resumo Visual em Imagem (Automated Chart Rendering)**:
-   * Geração de gráficos de pizza (distribuição por categoria) e barras (fluxo de caixa diário/mensal) gerados dinamicamente via `matplotlib`/`seaborn` ou `Pillow` em alta resolução e enviados como imagem no WhatsApp.
-2. **Mensagem Formatada com Emojis & Progress Bars**:
+### 3.2. Contexto de Ledger & Transações (`Ledger & Transaction Context`)
+* **`Transaction` (Aggregate Root)**:
+  * `TransactionId`: UUIDv7 tipado e sequencial temporalmente.
+  * `Money`: Value Object imutável (`amount: Decimal`, `currency: Currency`).
+  * `TransactionType`: Enum (`INCOME`, `EXPENSE`, `TRANSFER`).
+  * `Category`: Value Object de categoria (Alimentação, Transporte, Lazer, Saúde, Moradia, etc.).
+  * `Source`: Value Object `TransactionSource(type: WHATSAPP_MANUAL | OPEN_FINANCE_SYNC, external_id: str | None)`.
+  * `OccurredAt`: Datetime consciente de fuso horário.
+
+### 3.3. Contexto de Planejamento & Orçamentos (`Budget & Goal Context`)
+* **`Budget` (Aggregate Root)**: Metas mensais de limite por categoria com réguas de notificação (50%, 80%, 100%).
+* **`FinancialGoal` (Aggregate Root)**: Objetivos financeiros de curto/médio prazo com cálculo de previsão de alcance.
+
+---
+
+## 4. CQRS (Command Query Responsibility Segregation)
+
+### 4.1. Write Side — Commands executados na `finance-api`
+* `RegisterTransactionCommand`: Criação de despesa ou receita validada com invariantes de saldo e categoria.
+* `CategorizeTransactionCommand`: Reclassificação manual ou inteligente de transações.
+* `SetCategoryBudgetCommand`: Configuração de orçamentos e limites por categoria.
+* `TransferBetweenAccountsCommand`: Transferência atômica entre contas com lançamento de débito e crédito.
+* `ReconcileOpenFinanceTransactionCommand`: Conciliação idempotente de dados bancários (Fase 2).
+
+### 4.2. Read Side — Queries executadas na `finance-api`
+* `GetDailySummaryQuery`: Resumo financeiro do dia formatado para consumo do worker.
+* `GetMonthlyDashboardQuery`: Indicadores consolidados do mês (Total Receitas, Despesas, Economia, Top Categorias).
+* `GetCategoryBreakdownQuery`: Dados agregados para montagem do gráfico de pizza/rosca.
+* `GetCashFlowHistoryQuery`: Série temporal de fluxo de caixa para gráfico de barras.
+
+---
+
+## 5. Experiência do Usuário (UX WhatsApp) no Worker
+
+O `finance-whatsapp-worker` é especializado em oferecer uma experiência conversacional fluida e moderna:
+
+### 5.1. Parsing Flexível de Linguagem Natural
+* *"Gastei 45 no almoço hoje"* ➔ Identifica Despesa R$ 45,00 em Alimentação.
+* *"Recebi 3500 de freela"* ➔ Identifica Receita R$ 3.500,00 em Renda Extra.
+* *"Paguei 120 de luz no nubank"* ➔ Despesa R$ 120,00 na conta Nubank.
+* *"Como estão meus gastos este mês?"* ➔ Solicita a query de dashboard e gera a resposta visual.
+
+### 5.2. Dashboard Visual Rico com Gráficos e Emojis
+1. **Cards Visuais em Texto:**
    ```text
    📊 *RESUMO MENSAL — OUTUBRO 2026*
-   ───────────────────────────
+   ──────────────────────────
    🟢 *Receitas:* R$ 8.500,00
    🔴 *Despesas:* R$ 4.230,00
-   💰 *Saldo Atual:* R$ 4.270,00 (Economia de 50.2%)
+   💰 *Saldo Líquido:* R$ 4.270,00 (50.2% poupado)
 
-   🏷️ *Top Categorias:*
+   🏆 *Top Categorias:*
    1. 🍔 Alimentação: R$ 1.450,00 [████████░░] 34%
    2. 🏠 Moradia:     R$ 1.200,00 [██████░░░░] 28%
    3. 🚗 Transporte:  R$   580,00 [███░░░░░░░] 13%
 
-   ⚠️ *Alertas de Orçamento:*
-   - Alimentação atingiu 85% do limite definido!
-   ───────────────────────────
-   Digite *extrato* para ver as últimas transações ou *grafico* para imagem analítica.
+   ⚠️ *Alertas:*
+   • Alimentação atingiu 85% do limite orçado.
+   ──────────────────────────
+   Envie *gráfico* para visualização analítica ou *extrato* para lista detalhada.
    ```
-3. **Botoes de Ação Rápida e Menus Interativos**:
-   * Suporte a botões de confirmação rápida (ex: *"Confirmar: R$ 45 em Alimentação? [Sim] [Mudar Categoria]"*).
+2. **Gráfico Analítico em Alta Resolução:**
+   * O worker consome a query da `finance-api` e renderiza um gráfico elegante (PNG) com paleta moderna e envia diretamente no chat.
 
 ---
 
-## 4. Stack Tecnológica & Tipagem Estrita (Hard Typed)
+## 6. Stack Tecnológica & Tipagem Estrita (Hard Typed)
 
-* **Linguagem**: Python 3.14 (utilizando novos recursos de performance, deferred annotation evaluation e type parameters).
-* **Dataclasses & Models**: `pydantic` v2.x para validação de borda e `dataclasses` com `@dataclass(slots=True, frozen=True)` para domain entities e value objects.
-* **ORM & Database**: `SQLAlchemy 2.0+` com `AsyncEngine`, `Mapped[...]`, `mapped_column`, `asyncpg` e PostgreSQL 16+.
-* **Migrações**: `Alembic`.
-* **Framework Web (API)**: `FastAPI` (Async, tipagem estrita com OpenAPI v3).
-* **Fila / Broker**: `RabbitMQ` / `Redis Streams` com worker `Celery` / `FastStream` ou `asyncio` consumers dedicados.
-* **Renderização Gráfica**: `matplotlib` / `Pillow` exportando buffers PNG para envio via WhatsApp Media API.
-* **Testes**: `pytest`, `pytest-asyncio`, `factory_boy`, `testcontainers`.
+* **Linguagem**: Python 3.14 (annotations deferidas, type parameters PEP 695).
+* **Tipagem**: Mypy strict / Pyright estrito, sem uso de `Any`.
+* **Domain & Data Modeling**: Pydantic v2 + Dataclasses (`slots=True, frozen=True`).
+* **Database & ORM**: SQLAlchemy 2.0+ Async (`Mapped[...]`, `mapped_column`), `asyncpg`, PostgreSQL 16.
+* **Comunicação entre Serviços**:
+  * **Síncrona/Queries**: HTTP REST / gRPC client assíncrono (`httpx.AsyncClient`).
+  * **Assíncrona/Events**: RabbitMQ (AMQP via `aio-pika`) ou Redis Streams.
+* **Framework Web**: FastAPI para a `finance-api` e endpoint de webhook no worker.
 
 ---
 
-## 5. Estrutura do Repositório (Monorepo Layout)
+## 7. Estrutura do Monorepo
 
 ```
 gio-random-projects/
 └── finance-system/
     ├── apps/
-    │   ├── finance-api/
+    │   ├── finance-api/               # Domain API (Regras de Domínio, CQRS, Banco de Dados)
     │   │   ├── src/
-    │   │   │   ├── domain/             # Aggregates, Entities, Value Objects, Events, Repositories Interfaces
-    │   │   │   ├── application/        # Commands, Queries, Handlers, DTOs, Event Listeners
-    │   │   │   ├── infrastructure/     # SQLAlchemy Mappings, Repositories Impl, Database Engine, Outbox
-    │   │   │   └── presentation/       # FastAPI Routes, Middlewares, Dependency Injection
+    │   │   │   ├── domain/            # Aggregates, Entities, Value Objects, Domain Events
+    │   │   │   ├── application/       # Command & Query Handlers, Application Services
+    │   │   │   ├── infrastructure/    # SQLAlchemy Mappings, Repositories Impl, DB Engine
+    │   │   │   └── presentation/      # FastAPI Routers, Schemas, Dependency Injection
     │   │   ├── tests/
     │   │   ├── Dockerfile
     │   │   └── pyproject.toml
     │   │
-    │   └── finance-whatsapp-worker/
+    │   └── finance-whatsapp-worker/   # Conversational Worker (NLU, Charts, WhatsApp Gateway)
     │       ├── src/
-    │       │   ├── nlu/                # Intent parsing, Regex/LLM extractors, Fallbacks
-    │       │   ├── rendering/          # WhatsApp message templates, Chart generators (PNG)
-    │       │   ├── state/              # Session context, Conversation state machine
-    │       │   ├── consumers/          # Event & Task queue consumers
-    │       │   └── gateway/            # WhatsApp Provider client (Meta Cloud API / Webhook receiver)
+    │       │   ├── nlu/               # Intent parsing & regex/LLM extractors
+    │       │   ├── rendering/         # WhatsApp text templates & Chart generators (PNG)
+    │       │   ├── state/             # Conversation session management
+    │       │   ├── clients/           # HTTP/gRPC client para comunicação com a finance-api
+    │       │   ├── consumers/         # Message broker consumers (Eventos de domínio)
+    │       │   └── gateway/           # WhatsApp Provider integration (Meta Cloud API)
     │       ├── tests/
     │       ├── Dockerfile
     │       └── pyproject.toml
     │
     ├── packages/
-    │   ├── finance-core/               # Shared Value Objects, Base Domain Events, Currency types
-    │   └── finance-messaging/          # Broker schemas, Protocol Buffers/JSON event contracts
+    │   ├── finance-core/              # Value Objects e contratos de eventos compartilhados
+    │   └── finance-messaging/         # Protocolos e schemas de mensagens de mensageria
     │
-    ├── docker-compose.yml              # Local development stack (Postgres, RabbitMQ, API, Worker)
+    ├── docker-compose.yml             # PostgreSQL, RabbitMQ, finance-api, finance-whatsapp-worker
     └── docs/
-        └── finance-system-spec.md      # Este documento de especificação detalhada
+        └── finance-system-spec.md     # Especificação técnica atualizada
 ```
 
 ---
 
-## 6. Preparação para Open Finance (Fase 2)
-1. **Modelagem de Origem de Dados Extensível**: O Aggregate `Transaction` possui `source: TransactionSource(type: WHATSAPP | OPEN_FINANCE, external_id: str | None)`.
-2. **Idempotência e Deduplicação**: Pipeline com `TransactionFingerprint` (hash de data, valor, descrição e conta) para evitar duplicação entre lançamentos manuais prévios e sincronização bancária.
-3. **Engine de Conciliação**: Notificação automática via WhatsApp quando uma transação Open Finance for associada a um gasto já registrado no chat.
-
----
-
-## 7. Próximos Passos
-1. [x] Criação de branch (`feat/finance-whatsapp-system`)
-2. [x] Especificação técnica da arquitetura DDD/CQRS e UX WhatsApp
-3. [ ] Abertura do Pull Request para revisão do usuário
-4. [ ] Implementação do Core Domain, `finance-api` e `finance-whatsapp-worker`
-5. [ ] Subida e testes em ambiente containerizado
+## 8. Preparação para Open Finance (Fase 2)
+1. O worker continuará registrando transações manuais via WhatsApp comunicando-se com a `finance-api`.
+2. O futuro conector Open Finance consumirá transações bancárias e chamará os endpoints/eventos da `finance-api`.
+3. A `finance-api` executará a engine de conciliação e deduplicação (`TransactionFingerprint`), notificando o worker via evento assíncrono para informar o usuário no WhatsApp sobre confirmações automáticas.
