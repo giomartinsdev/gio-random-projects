@@ -1,0 +1,14 @@
+{
+  "name": "maus-slack-bridge",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Bridges a Slack app (Socket Mode) to a OpenMausBot bot's thread on the same host.",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@slack/bolt": "^4.2.0"
+  }
+}
