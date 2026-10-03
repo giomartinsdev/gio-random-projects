@@ -90,6 +90,13 @@ export const SHORTCUTS: Shortcut[] = [
     description: "proxy de IA e seus modelos",
     url: "https://ai.giomartins.dev/dashboard",
   },
+  {
+    id: "dots",
+    name: "OpenDots",
+    emoji: "🛰️",
+    description: "seus Dots (coworkers de IA) — chat, spaces e computer",
+    url: "https://dots.giomartins.dev",
+  },
 ];
 
 // Hash shape: "#/tela" -- one flat namespace, no router dependency. An
