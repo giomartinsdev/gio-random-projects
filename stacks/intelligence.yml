@@ -26,7 +26,8 @@ name: intelligence
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector é exigido pelas features de memória do Intelligence (>=0.8.0).
+    image: pgvector/pgvector:0.8.2-pg16
     container_name: intelligence-postgres
     restart: unless-stopped
     environment:
