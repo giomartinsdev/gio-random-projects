@@ -97,6 +97,13 @@ export const SHORTCUTS: Shortcut[] = [
     description: "seus Dots (coworkers de IA) — chat, spaces e computer",
     url: "https://dots.giomartins.dev",
   },
+  {
+    id: "rabbit",
+    name: "RabbitMQ",
+    emoji: "🐰",
+    description: "filas, exchanges e conexões do bus",
+    url: "https://rabbit.giomartins.dev",
+  },
 ];
 
 // Hash shape: "#/tela" -- one flat namespace, no router dependency. An
