@@ -36,6 +36,30 @@ services:
     volumes:
       - registry_registry-auth:/auth
 
+  # One-shot que grava /root/.docker/config.json com o auth do registry
+  # privado. Fica no host e é montado dentro do Dockhand (ver volumes dele):
+  # sem isto, um `docker compose pull` das stacks falha com "no basic auth
+  # credentials" ao puxar imagem de registry.giomartins.dev:5000.
+  registry-docker-config:
+    image: alpine:3
+    container_name: registry-docker-config-install
+    restart: "no"
+    depends_on:
+      registry-htpasswd:
+        condition: service_completed_successfully
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        mkdir -p /dockerconfig &&
+        printf '{"auths":{"registry.giomartins.dev:5000":{"auth":"%s"}}}'
+        "$$(printf '%s:%s' "$$REGISTRY_USER" "$$REGISTRY_PASSWORD" | base64)"
+        > /dockerconfig/config.json
+    environment:
+      REGISTRY_USER: ${REGISTRY_USER:-admin}
+      REGISTRY_PASSWORD: ${REGISTRY_PASSWORD:?defina REGISTRY_PASSWORD}
+    volumes:
+      - /root/.docker:/dockerconfig
+
   registry:
     image: registry:2
     container_name: registry
@@ -172,6 +196,10 @@ services:
       - /opt/dockhand:/opt/dockhand
       - /opt/stacks:/opt/stacks
       - /var/run/docker.sock:/var/run/docker.sock
+      # Credenciais do registry privado, pro `docker compose pull` das stacks
+      # autenticar. O docker CLI lê $HOME/.docker/config.json e o HOME do
+      # dockhand é /home/dockhand (não /root) — ver env do container.
+      - /root/.docker:/home/dockhand/.docker:ro
     networks: [apps]
 
 networks:
