@@ -23,6 +23,9 @@ RUN printf 'Host github.com\n  IdentityFile /root/.ssh/id_ed25519\n  IdentitiesO
   && ssh-keyscan github.com > /root/.ssh/known_hosts 2>/dev/null \
   && chmod 644 /root/.ssh/known_hosts
 
+# O valor chega como variável de stack (env do Dockhand), e a substituição de
+# comando/`cat` normalmente perde o newline final — que o OpenSSH exige. O
+# `printf '%s\n'` normaliza pra exatamente uma linha terminada em newline.
 RUN --mount=type=secret,id=computer_deploy_key,target=/tmp/deploy_key \
-    cp /tmp/deploy_key /root/.ssh/id_ed25519 \
+    printf '%s\n' "$(cat /tmp/deploy_key)" > /root/.ssh/id_ed25519 \
   && chmod 600 /root/.ssh/id_ed25519
