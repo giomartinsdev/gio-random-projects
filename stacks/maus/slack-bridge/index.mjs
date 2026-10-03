@@ -94,7 +94,32 @@ async function post(client, channel, threadTs, text) {
   catch (e) { console.warn("[slack-bridge] post failed:", e.message); return null; }
 }
 
+async function react(client, channel, ts, name) {
+  try { await client.reactions.add({ channel, timestamp: ts, name }); }
+  catch (e) { /* already reacted, or missing reactions:write — not fatal */ }
+}
+async function unreact(client, channel, ts, name) {
+  try { await client.reactions.remove({ channel, timestamp: ts, name }); }
+  catch { /* not present */ }
+}
+
 function sessionKey(channel, rootTs) { return `${channel}:${rootTs}`; }
+
+// Send a task to the bound maus thread and mark it pending so the poller can
+// flip ⏳ → ✅ (or ❌) on the Slack message that asked for the work.
+async function dispatch(client, session, text, channel, ts) {
+  const sent = await sendToMaus(session, text);
+  if (sent.status === 202 || sent.status === 200) {
+    const requestMessageId = sent.json?.message?.id;
+    if (requestMessageId) {
+      session.pending = session.pending || {};
+      session.pending[requestMessageId] = { channel, ts };
+      saveState();
+      await react(client, channel, ts, "eyes");
+    }
+  }
+  return sent;
+}
 
 async function startSession(client, channel, rootTs, bot, label) {
   const created = await api("POST", `/api/bots/${bot.id}/tasks`, { title: `Slack · ${label}`.slice(0, 80) });
@@ -128,6 +153,14 @@ async function pollOnce(slack) {
         if (session.seen[m.id]) continue;
         // Seed anything that predates the session without reposting it.
         session.seen[m.id] = true;
+        // A settled bot turn for a pending request: flip the ⏳ on the Slack
+        // message that asked for it.
+        if (m.role === "bot" && m.turnTerminal && m.requestMessageId && session.pending?.[m.requestMessageId]) {
+          const { ts } = session.pending[m.requestMessageId];
+          delete session.pending[m.requestMessageId];
+          await unreact(slack, channel, ts, "eyes");
+          await react(slack, channel, ts, m.turnSucceeded === false ? "x" : "white_check_mark");
+        }
         if (m.role !== "bot") continue;
         if (m.kind === "text" && (m.text || "").trim()) {
           await post(slack, channel, rootTs, `*${session.botName}*\n${m.text}`);
@@ -174,7 +207,7 @@ async function resolveAndRun(slack, client, channel, rootTs, user, rawText) {
     const task = (use[2] || "").replace(/^[-–—:]\s*/, "").trim();
     if (task) {
       const session = await startSession(client, channel, rootTs, bot, task.slice(0, 40) || "nova");
-      const sent = await sendToMaus(session, task);
+      const sent = await dispatch(client, session, task, channel, rootTs);
       if (sent.status !== 202 && sent.status !== 200) {
         await post(client, channel, rootTs, `*${bot.name}* recusou (${sent.status}): ${(sent.json?.error || sent.text || "").slice(0, 180)}`);
       }
@@ -199,7 +232,7 @@ async function resolveAndRun(slack, client, channel, rootTs, user, rawText) {
   if (!session) {
     session = await startSession(client, channel, rootTs, bot, rest.slice(0, 40) || "nova");
   }
-  const sent = await sendToMaus(session, rest);
+  const sent = await dispatch(client, session, rest, channel, rootTs);
   if (sent.status !== 202 && sent.status !== 200) {
     await post(client, channel, rootTs, `*${bot.name}* recusou (${sent.status}): ${(sent.json?.error || sent.text || "").slice(0, 180)}`);
   }
@@ -226,7 +259,7 @@ async function onThreadMessage({ event, client }) {
   if (ALLOWED.length && !ALLOWED.includes(event.user)) return;
   const text = stripMention(event.text);
   if (!text) return;
-  const sent = await sendToMaus(session, text);
+  const sent = await dispatch(client, session, text, event.channel, event.ts);
   if (sent.status !== 202 && sent.status !== 200) {
     await post(client, event.channel, event.thread_ts, `*${session.botName}* recusou: ${(sent.json?.error || "").slice(0, 160)}`);
   }
