@@ -77,48 +77,10 @@ func main() {
 	}
 	defer commands.Close()
 
-	users := postgres.NewUserRepository(pool)
-	handlers := httpapi.NewHandlers(users, commands, log)
-
-	posts := postgres.NewPostRepository(pool)
-	postHandlers := httpapi.NewPostHandlers(posts, commands, log)
-
-	rooms := postgres.NewRoomRepository(pool)
-	roomHandlers := httpapi.NewRoomHandlers(rooms, commands, log)
-
-	messages := postgres.NewMessageRepository(pool)
-	messageHandlers := httpapi.NewMessageHandlers(messages, commands, log)
-
-	deals := postgres.NewDealRepository(pool)
-	dealHandlers := httpapi.NewDealHandlers(deals, commands, log)
-
-	// CCH (cch.giomartins.dev): read side straight from Postgres, write
-	// side through /sync. The sync route polls audit_log — the worker's
-	// unconditional per-command audit row is its "written" proof.
-	cchRooms := postgres.NewCCHRoomRepository(pool)
-	cchDecks := postgres.NewCCHDeckRepository(pool)
-	cchHandlers := httpapi.NewCCHHandlers(cchRooms, cchDecks, commands, log)
+	// /sync polls audit_log — the worker's unconditional per-command
+	// audit row is its "written" proof.
 	audits := postgres.NewAuditRepository(pool)
 	syncHandlers := httpapi.NewSyncHandlers(commands, audits, log)
-
-	// Gestão financeira modular (specs/002): conta/dashboardlayout are
-	// read-only here (writes go through /sync); transacao and ativo's
-	// quote update get their own dedicated async handlers.
-	contas := postgres.NewContaRepository(pool)
-	contaHandlers := httpapi.NewContaHandlers(contas, log)
-
-	transacoes := postgres.NewTransacaoRepository(pool)
-	transacaoHandlers := httpapi.NewTransacaoHandlers(transacoes, commands, log)
-
-	ativos := postgres.NewAtivoRepository(pool)
-	ativoMovimentos := postgres.NewAtivoMovimentoRepository(pool)
-	ativoHandlers := httpapi.NewAtivoHandlers(ativos, ativoMovimentos, commands, log)
-
-	apostas := postgres.NewApostaRepository(pool)
-	apostaHandlers := httpapi.NewApostaHandlers(apostas, log)
-
-	dashboardLayouts := postgres.NewDashboardLayoutRepository(pool)
-	dashboardLayoutHandlers := httpapi.NewDashboardLayoutHandlers(dashboardLayouts, log)
 
 	// FC Clubs Hub (specs/003): read models + the write doors the clubs
 	// services call. domain-api is read-only against these tables --
@@ -127,12 +89,9 @@ func main() {
 	clubsHandlers := httpapi.NewClubsHandlers(clubsRepo, log)
 	clubsWriteHandlers := httpapi.NewClubsWriteHandlers(commands, log)
 
-	// Each SSE subscriber declares its own exclusive queue off the
-	// domain.events fanout exchange, so it shares the bus connection
-	// rather than a single channel.
-	sseHandlers := httpapi.NewSSEHandlers(inamqp.NewEventSubscriber(bus), log)
+	handlers := httpapi.NewHandlers(log)
 
-	router := httpapi.NewRouter(handlers, postHandlers, roomHandlers, messageHandlers, dealHandlers, sseHandlers, cchHandlers, syncHandlers, contaHandlers, transacaoHandlers, ativoHandlers, apostaHandlers, dashboardLayoutHandlers, clubsHandlers, clubsWriteHandlers, apiKeys, rateLimiter, log)
+	router := httpapi.NewRouter(handlers, syncHandlers, clubsHandlers, clubsWriteHandlers, apiKeys, rateLimiter, log)
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: otelhttp.NewHandler(router, "domain-api",
 		// chi's route patterns aren't visible to otelhttp, so name the

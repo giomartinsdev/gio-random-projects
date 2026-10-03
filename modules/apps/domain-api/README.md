@@ -8,21 +8,20 @@ else on the network.
 
 ## Writes: commands, not CRUD
 
-`POST` to any collection answers `202 {"command_id": ..., "status":
+`POST` to any write door answers `202 {"command_id": ..., "status":
 "accepted"}` — the API publishes the command to RabbitMQ, the
-domain-worker consumes `domain.commands.queue`, dispatches by action prefix (`user.`,
-`post.`, `room.`, `message.`, `deal.`), writes the audit row (success or
-failure, always), and publishes the resulting domain event only on
-success. Nothing here writes application tables in the HTTP handler.
+domain-worker consumes `domain.commands.queue`, dispatches by action
+family (`club.`, `partida.`, `clubs.*`, `preferencia.`, ...), writes the
+audit row (success or failure, always), and publishes the resulting
+domain event only on success. Nothing here writes application tables in
+the HTTP handler.
 
-Current aggregates and their endpoints (all require `X-API-Key` — see
+The current surface is the **FC Clubs Hub**: public Pro Clubs data
+(clubs, squads, matches, analytics) plus the per-person preferences the
+hub's SPA and services use. All routes require `X-API-Key` — see
 `local.domain_api_keys` in `modules/infra/terraform/secrets.tf`; each
-caller gets its own identity so the audit log can name them):
-
-| collection | endpoints |
-|---|---|
-| users, posts, rooms, messages | `POST/GET/PUT/DELETE` — see `openapi.yaml` |
-| deals | `POST /deals` (ingest, action `deal.upsert`), `GET /deals?source=&limit=`, `GET /deals/{source}/{source_deal_id}` |
+caller gets its own identity so the audit log can name them. See
+`openapi.yaml` for the full route list.
 
 ## POST /sync — the exception, not the pattern
 
@@ -39,31 +38,11 @@ RabbitMQ publish, is the proof of "applied") until it lands or 10s pass:
 | no audit row within 10s | `504 {command_id, status: "queued"}` — **timeout ≠ not written**: the command stays queued behind a busy/down worker and may still land. Only `written` is a confirmation. |
 
 Use the plain `202` path unless your caller literally cannot proceed
-until the write is durable. Today the only such caller is **cch-api**
-(its room registry must survive a restart that happens seconds after a
-room is created); its structural writes (`cchroom.*`, `cchdeck.upsert`)
-go through `/sync`, while its fire-and-forget play counts use the normal
-async `202`. New services: default to async — reach for `/sync` only
-when the caller needs the confirmation, and say so in your own docs.
-
-## The deals contract specifically
-
-`POST /deals` is the scrapers' ingest path (`deal.upsert`): upsert by
-`(source, source_deal_id)` — the Go worker owns the `raw_deals` table
-and reports insert vs update via `RETURNING (xmax = 0)`. First-seen
-rows publish a **`deal.created`** event; re-polls of the same deal only
-update columns and the audit row, no event — at ~2 scrapers × 1800s
-polls, dedupe there is what keeps the event queue honest. `posted_at`
-is first-seen-wins (a deal's age is when its source published it, not
-when we last saw it).
-
-The event lands on the durable `domain.events.queue` RabbitMQ queue (the
-`domain.events` fanout exchange delivers to it, capped by
-`DOMAIN_EVENTS_QUEUE_MAX` with drop-head overflow), where the
-**events-announcer** worker consumes it for Discord announcing. Live
-subscribers — such as this API's SSE endpoint — bind an ephemeral,
-auto-delete queue to the same exchange. Any new consumer of deal events
-reads that queue, not the database.
+until the write is durable. Today the clubs services use `/sync` for
+their structural writes (club, partida, watchlist, claim, notify) and
+the normal async `202` for append-only, high-volume ones (snapshot,
+anuncio). New services: default to async — reach for `/sync` only when
+the caller needs the confirmation, and say so in your own docs.
 
 ## Runtime
 

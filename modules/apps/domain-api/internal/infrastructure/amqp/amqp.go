@@ -19,7 +19,6 @@ const (
 	commandExchange   = "domain.commands"
 	commandQueue      = "domain.commands.queue"
 	commandRoutingKey = "domain.commands"
-	eventsExchange    = "domain.events"
 )
 
 // reconnectDelay is the pause before a redial after the broker drops
@@ -27,12 +26,12 @@ const (
 // long enough not to hammer a broker that is still coming up.
 const reconnectDelay = time.Second
 
-// Client owns the AMQP connection shared by the command publisher and
-// the SSE event subscriber, and — unlike the raw amqp.Connection — can
-// redial it. A RabbitMQ restart closes the TCP connection for good, so
-// without redialing the publisher would fail every write until the
-// process restarted; the publisher and subscriber call reconnect()
-// when a channel or delivery dies, making recovery lazy but automatic.
+// Client owns the AMQP connection used by the command publisher and —
+// unlike the raw amqp.Connection — can redial it. A RabbitMQ restart
+// closes the TCP connection for good, so without redialing the publisher
+// would fail every write until the process restarted; the publisher
+// calls reconnect() when a channel dies, making recovery lazy but
+// automatic.
 type Client struct {
 	url string
 

@@ -10,7 +10,22 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/application"
 )
+
+// spyPublisher records the last command it was handed.
+type spyPublisher struct {
+	cmd   application.Command
+	err   error
+	calls int
+}
+
+func (s *spyPublisher) Publish(_ context.Context, cmd application.Command) error {
+	s.calls++
+	s.cmd = cmd
+	return s.err
+}
 
 // stubAudits answers CommandOutcome from a canned outcome; calls counts
 // how many polls the sync loop made.
@@ -30,19 +45,8 @@ func newSyncServer(t *testing.T, publisher *spyPublisher, audits *stubAudits) ht
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return NewRouter(
-		NewHandlers(nil, publisher, log),
-		NewPostHandlers(nil, publisher, log),
-		NewRoomHandlers(nil, publisher, log),
-		NewMessageHandlers(nil, publisher, log),
-		NewDealHandlers(nil, publisher, log),
-		NewSSEHandlers(nil, log),
-		NewCCHHandlers(nil, nil, publisher, log),
+		NewHandlers(log),
 		NewSyncHandlers(publisher, audits, log),
-		NewContaHandlers(nil, log),
-		NewTransacaoHandlers(nil, publisher, log),
-		NewAtivoHandlers(nil, nil, publisher, log),
-		NewApostaHandlers(nil, log),
-		NewDashboardLayoutHandlers(nil, log),
 		// nil repos/handlers: these tests never touch the clubs routes, they
 		// only need them registered on the router.
 		NewClubsHandlers(nil, log),
@@ -88,7 +92,7 @@ func TestSyncWritten(t *testing.T) {
 	pub := &spyPublisher{}
 	handler := newSyncServer(t, pub, audits)
 
-	rec := postSync(handler, `{"action":"cchroom.create","payload":{"id":"room-1"}}`)
+	rec := postSync(handler, `{"action":"club.upsert","payload":{"id":"room-1"}}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s; want 200", rec.Code, rec.Body)
 	}
@@ -105,7 +109,7 @@ func TestSyncWritten(t *testing.T) {
 	if pub.cmd.ID != resp.CommandID {
 		t.Fatalf("polled id %q != published id %q", resp.CommandID, pub.cmd.ID)
 	}
-	if string(pub.cmd.Action) != "cchroom.create" {
+	if string(pub.cmd.Action) != "club.upsert" {
 		t.Fatalf("action = %q", pub.cmd.Action)
 	}
 }
@@ -118,7 +122,7 @@ func TestSyncFailedSurfacesWorkerError(t *testing.T) {
 	audits := &stubAudits{found: true, success: false, detail: "salt is required"}
 	handler := newSyncServer(t, &spyPublisher{}, audits)
 
-	rec := postSync(handler, `{"action":"cchroom.create","payload":{}}`)
+	rec := postSync(handler, `{"action":"club.upsert","payload":{}}`)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, body = %s; want 422", rec.Code, rec.Body)
 	}
@@ -141,7 +145,7 @@ func TestSyncQueuedOnTimeout(t *testing.T) {
 	audits := &stubAudits{}
 	handler := newSyncServer(t, &spyPublisher{}, audits)
 
-	rec := postSync(handler, `{"action":"cchroom.create","payload":{"id":"room-1"}}`)
+	rec := postSync(handler, `{"action":"club.upsert","payload":{"id":"room-1"}}`)
 	if rec.Code != http.StatusGatewayTimeout {
 		t.Fatalf("status = %d, body = %s; want 504", rec.Code, rec.Body)
 	}
@@ -172,7 +176,7 @@ func TestSyncKeepsPollingThroughAuditErrors(t *testing.T) {
 		audits.found, audits.success, audits.detail = true, true, "room-1"
 	}()
 
-	rec := postSync(handler, `{"action":"cchdeck.upsert","payload":{"id":"d1"}}`)
+	rec := postSync(handler, `{"action":"clubsnapshot.append","payload":{"id":"d1"}}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s; want 200 after transient error cleared", rec.Code, rec.Body)
 	}

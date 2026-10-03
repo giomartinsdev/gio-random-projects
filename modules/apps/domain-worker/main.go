@@ -1,5 +1,5 @@
-// domain-worker is the only binary that ever calls domain/user.Repository's
-// mutating methods. It runs one processing loop: RabbitMQ delivers a
+// domain-worker is the only binary that ever mutates the domain tables.
+// It runs one processing loop: RabbitMQ delivers a
 // command from the durable domain.commands.queue, the loop applies it
 // via the matching aggregate's CommandHandler, records an
 // internal/application/audit entry, and publishes the resulting domain
@@ -25,44 +25,18 @@ import (
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
 	appannouncement "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/announcement"
-	appaposta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/aposta"
-	appativo "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/ativo"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
-	appcchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchdeck"
-	appcchroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/cchroom"
 	appclub "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/club"
 	appclubsnapshot "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/clubsnapshot"
-	appconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/conta"
-	appdashboardlayout "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/dashboardlayout"
-	appdeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/deal"
-	applead "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/lead"
-	appmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/message"
 	appmatch "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/match"
-	apppost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/post"
 	apppreference "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/preference"
-	approom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/room"
-	apptransacao "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/transacao"
-	appuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/user"
 	domainannouncement "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/announcement"
-	domainaposta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/aposta"
-	domainativo "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/ativo"
-	domaincchdeck "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchdeck"
-	domaincchroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/cchroom"
 	domainclub "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/club"
-	domainconta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/conta"
-	domaindashboardlayout "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/dashboardlayout"
-	domaindeal "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/deal"
-	domainlead "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/lead"
-	domainmessage "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/message"
 	domainmatch "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/match"
-	domainpost "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/post"
 	domainpref "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/preference"
-	domainroom "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/room"
-	domaintransacao "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/transacao"
-	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
+	inamqp "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/amqp"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/config"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/postgres"
-	inamqp "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/amqp"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/telemetry"
 )
 
@@ -128,58 +102,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	userRepo := postgres.NewUserRepository(pool)
 	auditRepo := postgres.NewAuditRepository(pool)
-	userService := appuser.NewService(userRepo)
-	userHandler := appuser.NewCommandHandler(userService)
-
-	postRepo := postgres.NewPostRepository(pool)
-	postService := apppost.NewService(postRepo)
-	postHandler := apppost.NewCommandHandler(postService)
-
-	roomRepo := postgres.NewRoomRepository(pool)
-	roomService := approom.NewService(roomRepo)
-	roomHandler := approom.NewCommandHandler(roomService)
-
-	messageRepo := postgres.NewMessageRepository(pool)
-	messageService := appmessage.NewService(messageRepo)
-	messageHandler := appmessage.NewCommandHandler(messageService)
-
-	dealRepo := postgres.NewDealRepository(pool)
-	dealService := appdeal.NewService(dealRepo)
-	dealHandler := appdeal.NewCommandHandler(dealService)
-
-	cchRoomRepo := postgres.NewCCHRoomRepository(pool)
-	cchRoomService := appcchroom.NewService(cchRoomRepo)
-	cchRoomHandler := appcchroom.NewCommandHandler(cchRoomService)
-
-	cchDeckRepo := postgres.NewCCHDeckRepository(pool)
-	cchDeckService := appcchdeck.NewService(cchDeckRepo)
-	cchDeckHandler := appcchdeck.NewCommandHandler(cchDeckService)
-
-	contaRepo := postgres.NewContaRepository(pool)
-	contaService := appconta.NewService(contaRepo)
-	contaHandler := appconta.NewCommandHandler(contaService)
-
-	transacaoRepo := postgres.NewTransacaoRepository(pool)
-	transacaoService := apptransacao.NewService(transacaoRepo)
-	transacaoHandler := apptransacao.NewCommandHandler(transacaoService)
-
-	ativoRepo := postgres.NewAtivoRepository(pool)
-	ativoService := appativo.NewService(ativoRepo)
-	ativoHandler := appativo.NewCommandHandler(ativoService)
-
-	apostaRepo := postgres.NewApostaRepository(pool)
-	apostaService := appaposta.NewService(apostaRepo)
-	apostaHandler := appaposta.NewCommandHandler(apostaService)
-
-	dashboardLayoutRepo := postgres.NewDashboardLayoutRepository(pool)
-	dashboardLayoutService := appdashboardlayout.NewService(dashboardLayoutRepo)
-	dashboardLayoutHandler := appdashboardlayout.NewCommandHandler(dashboardLayoutService)
-
-	leadRepo := postgres.NewLeadRepository(pool)
-	leadService := applead.NewService(leadRepo)
-	leadHandler := applead.NewCommandHandler(leadService)
 
 	// FC Clubs Hub (specs/003): public Pro Clubs data + the per-person
 	// preferences. Same wiring shape as every other aggregate above.
@@ -207,10 +130,6 @@ func main() {
 	// Every aggregate's handler in one place: process() takes this
 	// struct rather than a growing parameter list.
 	hs := handlers{
-		user: userHandler, post: postHandler, room: roomHandler, message: messageHandler,
-		deal: dealHandler, cchRoom: cchRoomHandler, cchDeck: cchDeckHandler,
-		conta: contaHandler, transacao: transacaoHandler, ativo: ativoHandler,
-		aposta: apostaHandler, dashboardLayout: dashboardLayoutHandler, lead: leadHandler,
 		club: clubHandler, partida: partidaHandler, snapshot: snapshotHandler,
 		anuncio: anuncioHandler, preferencia: preferenciaHandler,
 		ingestEstado: postgres.NewIngestEstadoRepository(pool),
@@ -239,33 +158,20 @@ func main() {
 }
 
 // process routes cmd to the right aggregate's CommandHandler by its
-// Action prefix ("user." / "post." / "deal."), then always records an
-// audit entry (success or failure) and, only on success, publishes the
-// resulting domain event. One shared command queue serves every
-// aggregate; this is the one place that knows how to fan a Command
+// Action family ("club." / "partida." / the clubs.* queue actions), then
+// always records an audit entry (success or failure) and, only on success,
+// publishes the resulting domain event. One shared command queue serves
+// every aggregate; this is the one place that knows how to fan a Command
 // back out to its owning handler.
 // handlers bundles every aggregate's CommandHandler. One struct instead of a
 // twenty-parameter list: adding an aggregate is one field, and process()'s
 // signature never changes again.
 type handlers struct {
-	user            *appuser.CommandHandler
-	post            *apppost.CommandHandler
-	room            *approom.CommandHandler
-	message         *appmessage.CommandHandler
-	deal            *appdeal.CommandHandler
-	cchRoom         *appcchroom.CommandHandler
-	cchDeck         *appcchdeck.CommandHandler
-	conta           *appconta.CommandHandler
-	transacao       *apptransacao.CommandHandler
-	ativo           *appativo.CommandHandler
-	aposta          *appaposta.CommandHandler
-	dashboardLayout *appdashboardlayout.CommandHandler
-	lead            *applead.CommandHandler
-	club            *appclub.CommandHandler
-	partida         *appmatch.CommandHandler
-	snapshot        *appclubsnapshot.CommandHandler
-	anuncio         *appannouncement.CommandHandler
-	preferencia     *apppreference.CommandHandler
+	club        *appclub.CommandHandler
+	partida     *appmatch.CommandHandler
+	snapshot    *appclubsnapshot.CommandHandler
+	anuncio     *appannouncement.CommandHandler
+	preferencia *apppreference.CommandHandler
 	// Saúde do worker de ingestão: um upsert direto, não um agregado -- o
 	// worker é um poller sem host, e esta é a única forma de a saúde dele
 	// chegar até a API.
@@ -305,117 +211,6 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 	k := classifyClubsAction(cmd.Action)
 
 	switch {
-	case strings.HasPrefix(string(cmd.Action), "user."):
-		entityType = "user"
-		var uevt domainuser.Event
-		uevt, err = h.user.Handle(ctx, cmd)
-		if uevt != nil {
-			evt = uevt
-			id = userEntityID(uevt)
-		}
-	case strings.HasPrefix(string(cmd.Action), "post."):
-		entityType = "post"
-		var pevt domainpost.Event
-		pevt, err = h.post.Handle(ctx, cmd)
-		if pevt != nil {
-			evt = pevt
-			id = postEntityID(pevt)
-		}
-	case strings.HasPrefix(string(cmd.Action), "room."):
-		entityType = "room"
-		var revt domainroom.Event
-		revt, err = h.room.Handle(ctx, cmd)
-		if revt != nil {
-			evt = revt
-			id = roomEntityID(revt)
-		}
-	case strings.HasPrefix(string(cmd.Action), "message."):
-		entityType = "message"
-		var mevt domainmessage.Event
-		mevt, err = h.message.Handle(ctx, cmd)
-		if mevt != nil {
-			evt = mevt
-			id = messageEntityID(mevt)
-		}
-	case strings.HasPrefix(string(cmd.Action), "deal."):
-		// The deal handler returns the Deal even when this upsert was
-		// an update (which raises no event) — either way the audit row
-		// should name the exact source:source_deal_id it touched.
-		entityType = "deal"
-		var d domaindeal.Deal
-		var devt domaindeal.Event
-		d, devt, err = h.deal.Handle(ctx, cmd)
-		if devt != nil {
-			evt = devt
-		}
-		if d.Source != "" {
-			id = d.EntityID()
-			telemetry.RecordDealUpsert(d.Source, map[bool]string{true: "inserted", false: "updated"}[devt != nil])
-		}
-	case strings.HasPrefix(string(cmd.Action), "cchroom."):
-		entityType = "cchroom"
-		var cevt domaincchroom.Event
-		cevt, err = h.cchRoom.Handle(ctx, cmd)
-		if cevt != nil {
-			evt = cevt
-			id = cchRoomEntityID(cevt)
-		}
-	case strings.HasPrefix(string(cmd.Action), "cchdeck."):
-		entityType = "cchdeck"
-		var cevt domaincchdeck.Event
-		cevt, err = h.cchDeck.Handle(ctx, cmd)
-		if cevt != nil {
-			evt = cevt
-			id = cchDeckEntityID(cevt)
-		}
-	case strings.HasPrefix(string(cmd.Action), "conta."):
-		entityType = "conta"
-		var cevt domainconta.Event
-		cevt, err = h.conta.Handle(ctx, cmd)
-		if cevt != nil {
-			evt = cevt
-			id = contaEntityID(cevt)
-		}
-	case strings.HasPrefix(string(cmd.Action), "transacao."):
-		entityType = "transacao"
-		var tevt domaintransacao.Event
-		tevt, err = h.transacao.Handle(ctx, cmd)
-		if tevt != nil {
-			evt = tevt
-			id = transacaoEntityID(tevt)
-		}
-	case strings.HasPrefix(string(cmd.Action), "ativo."):
-		entityType = "ativo"
-		var aevt domainativo.Event
-		aevt, err = h.ativo.Handle(ctx, cmd)
-		if aevt != nil {
-			evt = aevt
-			id = ativoEntityID(aevt)
-		}
-	case strings.HasPrefix(string(cmd.Action), "aposta."):
-		entityType = "aposta"
-		var apevt domainaposta.Event
-		apevt, err = h.aposta.Handle(ctx, cmd)
-		if apevt != nil {
-			evt = apevt
-			id = apostaEntityID(apevt)
-		}
-	case strings.HasPrefix(string(cmd.Action), "dashboardlayout."):
-		entityType = "dashboardlayout"
-		var devt domaindashboardlayout.Event
-		devt, err = h.dashboardLayout.Handle(ctx, cmd)
-		if devt != nil {
-			evt = devt
-			id = dashboardLayoutEntityID(devt)
-		}
-	case strings.HasPrefix(string(cmd.Action), "lead."):
-		entityType = "lead"
-		var levt domainlead.Event
-		levt, err = h.lead.Handle(ctx, cmd)
-		if levt != nil {
-			evt = levt
-			id = leadEntityID(levt)
-		}
 	case strings.HasPrefix(string(cmd.Action), "club."):
 		entityType = "club"
 		var cevt domainclub.Event
@@ -650,148 +445,6 @@ func classifyClubsAction(a application.Action) clubsKind {
 		return clubsKindCareer
 	default:
 		return clubsKindOther
-	}
-}
-
-// userEntityID/postEntityID pull the affected aggregate's ID out of
-// its domain event for the audit row — the only place that needs it,
-// since Create doesn't know its own generated ID until the event
-// comes back from the handler.
-func userEntityID(evt domainuser.Event) string {
-	switch e := evt.(type) {
-	case domainuser.Created:
-		return e.UserID
-	case domainuser.Updated:
-		return e.UserID
-	case domainuser.Deleted:
-		return e.UserID
-	default:
-		return ""
-	}
-}
-
-func postEntityID(evt domainpost.Event) string {
-	switch e := evt.(type) {
-	case domainpost.Created:
-		return e.PostID
-	case domainpost.Updated:
-		return e.PostID
-	case domainpost.Deleted:
-		return e.PostID
-	default:
-		return ""
-	}
-}
-
-func roomEntityID(evt domainroom.Event) string {
-	switch e := evt.(type) {
-	case domainroom.Created:
-		return e.RoomID
-	case domainroom.Updated:
-		return e.RoomID
-	case domainroom.Deleted:
-		return e.RoomID
-	default:
-		return ""
-	}
-}
-
-func messageEntityID(evt domainmessage.Event) string {
-	switch e := evt.(type) {
-	case domainmessage.Created:
-		return e.MessageID
-	default:
-		return ""
-	}
-}
-
-func cchRoomEntityID(evt domaincchroom.Event) string {
-	switch e := evt.(type) {
-	case domaincchroom.Created:
-		return e.RoomID
-	case domaincchroom.Deleted:
-		return e.RoomID
-	default:
-		return ""
-	}
-}
-
-func cchDeckEntityID(evt domaincchdeck.Event) string {
-	switch e := evt.(type) {
-	case domaincchdeck.Upserted:
-		return e.DeckID
-	case domaincchdeck.Played:
-		return e.DeckID
-	default:
-		return ""
-	}
-}
-
-func contaEntityID(evt domainconta.Event) string {
-	switch e := evt.(type) {
-	case domainconta.Created:
-		return e.ContaID
-	case domainconta.Updated:
-		return e.ContaID
-	default:
-		return ""
-	}
-}
-
-func transacaoEntityID(evt domaintransacao.Event) string {
-	switch e := evt.(type) {
-	case domaintransacao.Created:
-		return e.TransacaoID
-	case domaintransacao.Updated:
-		return e.TransacaoID
-	case domaintransacao.Deleted:
-		return e.TransacaoID
-	default:
-		return ""
-	}
-}
-
-func apostaEntityID(evt domainaposta.Event) string {
-	switch e := evt.(type) {
-	case domainaposta.Registrada:
-		return e.ApostaID
-	case domainaposta.Resolvida:
-		return e.ApostaID
-	default:
-		return ""
-	}
-}
-
-func ativoEntityID(evt domainativo.Event) string {
-	switch e := evt.(type) {
-	case domainativo.Created:
-		return e.AtivoID
-	case domainativo.MovimentoRegistrado:
-		return e.AtivoID
-	case domainativo.CotacaoAtualizada:
-		return e.AtivoID
-	default:
-		return ""
-	}
-}
-
-func dashboardLayoutEntityID(evt domaindashboardlayout.Event) string {
-	switch e := evt.(type) {
-	case domaindashboardlayout.Saved:
-		return e.UsuarioEmail
-	case domaindashboardlayout.Deleted:
-		return e.UsuarioEmail
-	default:
-		return ""
-	}
-}
-
-func leadEntityID(evt domainlead.Event) string {
-	switch e := evt.(type) {
-	case domainlead.Captured:
-		return e.LeadID
-	default:
-		return ""
 	}
 }
 

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -36,7 +37,7 @@ import (
 type SyncHandlers struct {
 	commands application.CommandPublisher
 	audits   AuditReader
-	log      Logger
+	log      *slog.Logger
 }
 
 // AuditReader is the sync route's read slice over audit_log — the
@@ -45,7 +46,7 @@ type AuditReader interface {
 	CommandOutcome(ctx context.Context, commandID string) (found, success bool, detail string, err error)
 }
 
-func NewSyncHandlers(commands application.CommandPublisher, audits AuditReader, log Logger) *SyncHandlers {
+func NewSyncHandlers(commands application.CommandPublisher, audits AuditReader, log *slog.Logger) *SyncHandlers {
 	return &SyncHandlers{commands: commands, audits: audits, log: log}
 }
 

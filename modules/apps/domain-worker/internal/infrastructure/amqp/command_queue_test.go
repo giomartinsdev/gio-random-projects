@@ -45,7 +45,7 @@ func TestCommandQueueRecoversAfterConnectionLoss(t *testing.T) {
 	}
 
 	// Baseline: consume one command over the healthy connection.
-	rawPublishCommand(t, url, "c1", application.ActionCreateUser)
+	rawPublishCommand(t, url, "c1", application.ActionUpsertClub)
 	if got := nextCommand(t, q, ctx, "c1"); got.ID != "c1" {
 		t.Fatalf("first command id = %q, want c1", got.ID)
 	}
@@ -56,7 +56,7 @@ func TestCommandQueueRecoversAfterConnectionLoss(t *testing.T) {
 
 	// A command published after the drop must still be consumed once
 	// Next redials and re-establishes the consumer.
-	rawPublishCommand(t, url, "c2", application.ActionCreateUser)
+	rawPublishCommand(t, url, "c2", application.ActionUpsertClub)
 	if got := nextCommand(t, q, ctx, "c2"); got.ID != "c2" {
 		t.Fatalf("command after connection loss id = %q, want c2", got.ID)
 	}

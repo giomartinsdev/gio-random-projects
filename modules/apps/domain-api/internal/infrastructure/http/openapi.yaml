@@ -2,12 +2,13 @@ openapi: 3.0.3
 info:
   title: domain-api
   description: >
-    Event-driven CRUD API. Reads are synchronous (straight from
-    Postgres). Writes (POST/PUT/DELETE) are accepted asynchronously —
-    they publish a command onto the event bus and return 202; the
-    change is applied by domain-worker and won't be visible on a GET
-    until it's processed.
-  version: "1.0.0"
+    Event-driven CRUD API for the FC Clubs Hub. Reads are synchronous
+    (straight from Postgres). Writes are either accepted asynchronously
+    — they publish a command onto the event bus and return 202, applied
+    by domain-worker — or, for the few callers that must not proceed
+    until the write is durable, sent through POST /sync, which blocks
+    until the worker's audit row lands.
+  version: "2.0.0"
 servers:
   - url: /
 security:
@@ -28,838 +29,633 @@ paths:
                   status:
                     type: string
                     example: ok
-  /users:
-    get:
-      summary: List users
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/User"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
+
+  /sync:
     post:
-      summary: Create a user (async — returns 202, not the created row)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UserInput"
-      responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /users/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      summary: Get a user by id
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/User"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-    put:
-      summary: Update a user (async — returns 202)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UserInput"
-      responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-    delete:
-      summary: Delete a user (async — returns 202)
-      responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /posts:
-    get:
-      summary: List published posts
+      summary: Synchronous write (the exception)
       description: >
-        Optional ?q= narrows the list to published posts whose title,
-        excerpt or body contains the (case-insensitive, escaped,
-        substring) query. Shape is identical with or without q.
-      parameters:
-        - name: q
-          in: query
-          required: false
-          schema:
-            type: string
+        Republishes the given command and blocks until domain-worker's
+        audit_log row for it lands. Use only when the caller cannot
+        proceed without the write applied — every other write should use
+        its own async (202) route.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Command"
       responses:
         "200":
-          description: OK
+          description: Applied; entity_id carries the affected row.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  posts:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Post"
+                $ref: "#/components/schemas/SyncResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: The worker rejected the command.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncResult"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "504":
+          description: Timed out waiting; the command stays queued.
+
+  /clubs:
+    get:
+      tags: [clubs]
+      summary: List clubs (local directory)
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
     post:
-      summary: Create a post (async — returns 202, not the created row)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PostCreateInput"
+      tags: [clubs]
+      summary: Upsert a club (ingest door)
+      requestBody: { $ref: "#/components/requestBodies/Input" }
       responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /posts/slug/{slug}:
-    parameters:
-      - name: slug
-        in: path
-        required: true
-        schema:
-          type: string
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/search:
     get:
-      summary: Get a published post by slug
+      tags: [clubs]
+      summary: Search clubs already known to the hub
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Post"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Post not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /posts/id/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}:
     get:
-      summary: >
-        Get any post by id, drafts included — not for public browsing
-        (no status filter). Exists so post-api can look up a post's
-        current author_id before forwarding an edit/delete command;
-        post-api itself already enforces ownership before calling
-        this.
+      tags: [clubs]
+      summary: Get one club
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Post"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Post not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /posts/author/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/squad:
     get:
-      summary: List one author's posts (published AND drafts)
-      description: >
-        Trusted-caller read for post-api's profile views: returns the
-        author's drafts too, so post-api must filter them from any
-        response not addressed to the owner. Empty list for an author
-        with no posts (never 404).
+      tags: [clubs]
+      summary: Current squad
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  posts:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Post"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /posts/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    put:
-      summary: Update a post (async — returns 202)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PostUpdateInput"
-      responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-    delete:
-      summary: >
-        Delete a post (async — returns 202). Unusually for a DELETE,
-        takes a JSON body: the caller (post-api) already validated
-        author_id owns this post and passes it through here for the
-        aggregate to check again.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PostDeleteInput"
-      responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /rooms:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/matches:
     get:
-      summary: List every room
+      tags: [clubs]
+      summary: Matches the hub has seen for this club
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  rooms:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Room"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
     post:
-      summary: Create a room (async — returns 202, not the created row)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RoomCreateInput"
+      tags: [clubs]
+      summary: Record a match (ingest door, async)
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      requestBody: { $ref: "#/components/requestBodies/Input" }
       responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /rooms/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/totals:
+    post:
+      tags: [clubs]
+      summary: Upsert club totals (ingest door, async)
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      requestBody: { $ref: "#/components/requestBodies/Input" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/snapshots:
+    post:
+      tags: [clubs]
+      summary: Append a snapshot (ingest door, async)
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      requestBody: { $ref: "#/components/requestBodies/Input" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/career:
+    post:
+      tags: [clubs]
+      summary: Save a player's career totals for this club (async)
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      requestBody: { $ref: "#/components/requestBodies/Input" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/evolution:
     get:
-      summary: Get a room by id
+      tags: [clubs]
+      summary: Skill/division evolution from snapshots
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Room"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Room not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-    put:
-      summary: >
-        Update a room — page turns AND open/close both go through
-        this (async — returns 202). Bookclub-specific rules like
-        "only the host may turn the page" are enforced by bookclub-api
-        before it ever calls here, not by this aggregate.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RoomUpdateInput"
-      responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-    delete:
-      summary: >
-        Delete a room (async — returns 202). Takes a JSON body, same
-        reasoning as DELETE /posts/{id}.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RoomDeleteInput"
-      responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /rooms/{id}/events:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/division-changes:
     get:
-      summary: >
-        Server-Sent Events stream of this room's domain events
-        (room.updated, message.created). Server-to-server only —
-        bookclub-api's own process is the one subscriber, relaying
-        onward to its browser WebSocket clients; a browser EventSource
-        can't attach the required X-API-Key header itself.
+      tags: [clubs]
+      summary: Promotions and relegations detected between snapshots
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
       responses:
-        "200":
-          description: text/event-stream, never closes on its own
-          content:
-            text/event-stream:
-              schema:
-                type: string
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /messages:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/records:
     get:
-      summary: List a room's chat message history
+      tags: [clubs]
+      summary: Club records derived from the hub's archive
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/timeline:
+    get:
+      tags: [clubs]
+      summary: Club timeline (the hub's archive)
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/deltas:
+    get:
+      tags: [clubs]
+      summary: Change since the person started tracking the club
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/seasons:
+    get:
+      tags: [clubs]
+      summary: Season breakdown from the archive
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/positions:
+    get:
+      tags: [clubs]
+      summary: Position heatmap
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/squad-comparison:
+    get:
+      tags: [clubs]
+      summary: Squad comparison
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/rolling-goals:
+    get:
+      tags: [clubs]
+      summary: Rolling goals
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/main-rival:
+    get:
+      tags: [clubs]
+      summary: Main rival
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/idle:
+    get:
+      tags: [clubs]
+      summary: Idle time
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/team-of-week:
+    get:
+      tags: [clubs]
+      summary: Team of the week
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/best-by-position:
+    get:
+      tags: [clubs]
+      summary: Best player by position
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/h2h/{rivalId}:
+    get:
+      tags: [clubs]
+      summary: Head-to-head against a rival
       parameters:
-        - name: room_id
-          in: query
+        - { $ref: "#/components/parameters/ClubID" }
+        - name: rivalId
+          in: path
           required: true
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string }
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  messages:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Message"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /clubs/{clubId}/fetch-run:
+    get:
+      tags: [clubs]
+      summary: On-demand club sync status
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
     post:
-      summary: Send a chat message (async — returns 202, not the created row)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MessageCreateInput"
+      tags: [clubs]
+      summary: Request an on-demand club sync
+      parameters: [ { $ref: "#/components/parameters/ClubID" } ]
+      requestBody: { $ref: "#/components/requestBodies/Input" }
       responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /deals:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /regions:
     get:
-      summary: List recently scraped deals
-      description: >
-        Newest first by posted_at (the source's own publish date),
-        falling back to scraped_at. ?source= narrows to one source;
-        ?limit= (1..200, default 50) caps the page.
+      tags: [club-stats]
+      summary: Region breakdown
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /hub/report:
+    get:
+      tags: [club-stats]
+      summary: Hub-wide report
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /profiles/{handle}:
+    get:
+      tags: [club-stats]
+      summary: Public profile (opt-in)
       parameters:
-        - name: source
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 50
-            minimum: 1
-            maximum: 200
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  deals:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Deal"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-    post:
-      summary: Ingest a scraped deal (async — returns 202, not the stored row)
-      description: >
-        Publishing a deal.upsert command; domain-worker decides insert
-        vs update (identity is source + source_deal_id) and only a
-        genuine insert ever raises deal.created downstream. Re-polls of
-        the same deal are updates and are free of announcements.
-        202 means "heard, queued", not "stored".
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/DealUpsertInput"
-      responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /deals/{source}/{sourceDealID}:
-    parameters:
-      - name: source
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: sourceDealID
-        in: path
-        required: true
-        schema:
-          type: string
-    get:
-      summary: Get one deal by its source identity
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Deal"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Deal not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /contas:
-    get:
-      summary: List a usuario's contas
-      description: >
-        Read-only -- creation/update (conta.create, conta.update) go
-        through the generic POST /sync route.
-      parameters:
-        - name: usuario
-          in: query
+        - name: handle
+          in: path
           required: true
-          schema:
-            type: string
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [ativa, arquivada]
+          schema: { type: string }
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  contas:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Conta"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /contas/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /players:
     get:
-      summary: Get a conta by id
+      tags: [players]
+      summary: List players
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Conta"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Conta not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /transacoes:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /players/{playerId}:
     get:
-      summary: List transacoes by filter
-      parameters:
-        - name: usuario
-          in: query
-          required: true
-          schema:
-            type: string
-        - name: conta
-          in: query
-          required: false
-          schema:
-            type: string
-            format: uuid
-        - name: categoria
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: de
-          in: query
-          required: false
-          description: Inclusive lower bound, YYYY-MM-DD.
-          schema:
-            type: string
-            format: date
-        - name: ate
-          in: query
-          required: false
-          description: Inclusive upper bound, YYYY-MM-DD.
-          schema:
-            type: string
-            format: date
+      tags: [players]
+      summary: Get one player
+      parameters: [ { $ref: "#/components/parameters/PlayerID" } ]
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  transacoes:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Transacao"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /players/{playerId}/clubs:
+    get:
+      tags: [players]
+      summary: Clubs where the player appeared
+      parameters: [ { $ref: "#/components/parameters/PlayerID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /players/{playerId}/fetch-run:
+    get:
+      tags: [players]
+      summary: On-demand player sync status
+      parameters: [ { $ref: "#/components/parameters/PlayerID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
     post:
-      summary: Create a transacao (async — returns 202, not the created row)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TransacaoCreateInput"
+      tags: [players]
+      summary: Request an on-demand player sync
+      parameters: [ { $ref: "#/components/parameters/PlayerID" } ]
+      requestBody: { $ref: "#/components/requestBodies/Input" }
       responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /transacoes/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    patch:
-      summary: Update a transacao (async — returns 202)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TransacaoUpdateInput"
-      responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-    delete:
-      summary: >
-        Delete a transacao (async — returns 202). Takes a JSON body,
-        same reasoning as DELETE /rooms/{id}.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TransacaoDeleteInput"
-      responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /ativos:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /players/{playerId}/rating-evolution:
     get:
-      summary: List a usuario's ativos
-      description: >
-        Read-only -- ativo.create and ativo.registerMovement go through
-        the generic POST /sync route. Each item includes
-        valor_mercado_atual (quantidade_atual x ultima_cotacao);
-        rentabilidade completa is left to asset-manager-api / the BFF.
+      tags: [players]
+      summary: Rating evolution
+      parameters: [ { $ref: "#/components/parameters/PlayerID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /players/{playerId}/consistency:
+    get:
+      tags: [players]
+      summary: Consistency
+      parameters: [ { $ref: "#/components/parameters/PlayerID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /players/{playerId}/discipline:
+    get:
+      tags: [players]
+      summary: Discipline
+      parameters: [ { $ref: "#/components/parameters/PlayerID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /players/{playerId}/tenures:
+    get:
+      tags: [players]
+      summary: Tenures
+      parameters: [ { $ref: "#/components/parameters/PlayerID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /players/{playerId}/events:
+    get:
+      tags: [players]
+      summary: Player event log
+      parameters: [ { $ref: "#/components/parameters/PlayerID" } ]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /records/global:
+    get:
+      tags: [club-stats]
+      summary: Global records
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /matches/{matchId}:
+    get:
+      tags: [club-stats]
+      summary: Get one match
       parameters:
-        - name: usuario
-          in: query
+        - name: matchId
+          in: path
           required: true
-          schema:
-            type: string
-        - name: conta
-          in: query
-          required: false
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string }
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ativos:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Ativo"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /ativos/{id}/movimentos:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /rankings/clubs:
     get:
-      summary: List an ativo's movimentos (compra/venda/provento)
+      tags: [club-stats]
+      summary: Club rankings
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  movimentos:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/AtivoMovimento"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Ativo not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /ativos/{id}/cotacao:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /rankings/players:
+    get:
+      tags: [club-stats]
+      summary: Player rankings
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /announcements:
+    get:
+      tags: [feed]
+      summary: Announcement feed
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
     post:
-      summary: >
-        Update an ativo's quote (async — returns 202). Called in the
-        background by asset-manager-api, not by a person waiting on the
-        response.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AtivoQuoteInput"
+      tags: [feed]
+      summary: Create an announcement (async)
+      requestBody: { $ref: "#/components/requestBodies/Input" }
       responses:
-        "202":
-          $ref: "#/components/responses/Accepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-  /dashboardlayouts/{usuario}:
-    parameters:
-      - name: usuario
-        in: path
-        required: true
-        schema:
-          type: string
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /watchlist:
     get:
-      summary: >
-        Get a usuario's saved dashboard layout. Writes
-        (dashboardlayout.save, dashboardlayout.delete) go through the
-        generic POST /sync route.
+      tags: [preferences]
+      summary: List the person's watched clubs
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DashboardLayout"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: >
-            No layout saved for this usuario -- the frontend falls back
-            to its own embedded default in this case.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "429":
-          $ref: "#/components/responses/RateLimited"
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    post:
+      tags: [preferences]
+      summary: Set a watch
+      requestBody: { $ref: "#/components/requestBodies/Input" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /notifications:
+    get:
+      tags: [preferences]
+      summary: Get notification preferences
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    post:
+      tags: [preferences]
+      summary: Save notification preferences
+      requestBody: { $ref: "#/components/requestBodies/Input" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /claimed-pro:
+    get:
+      tags: [preferences]
+      summary: Get the person's claimed pro
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    post:
+      tags: [preferences]
+      summary: Claim a pro
+      requestBody: { $ref: "#/components/requestBodies/Input" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /sync-status:
+    get:
+      tags: [sync]
+      summary: Last per-person sync state
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    post:
+      tags: [sync]
+      summary: Save per-person sync state (async)
+      requestBody: { $ref: "#/components/requestBodies/Input" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /sync-pending:
+    get:
+      tags: [sync]
+      summary: Pending per-person syncs (consumed by the ingest worker)
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /fetch-pending:
+    get:
+      tags: [sync]
+      summary: Pending on-demand fetches (consumed by the ingest worker)
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /fetch-run/result:
+    post:
+      tags: [sync]
+      summary: Publish an on-demand fetch result (ingest worker)
+      requestBody: { $ref: "#/components/requestBodies/Input" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /search-run:
+    get:
+      tags: [sync]
+      summary: Live source-search status
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    post:
+      tags: [sync]
+      summary: Request a live source search
+      requestBody: { $ref: "#/components/requestBodies/Input" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /search-pending:
+    get:
+      tags: [sync]
+      summary: Pending source searches (consumed by the ingest worker)
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /search-run/result:
+    post:
+      tags: [sync]
+      summary: Publish a source-search result (ingest worker)
+      requestBody: { $ref: "#/components/requestBodies/Input" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /source-status:
+    get:
+      tags: [health]
+      summary: Public slice of source health ("is EA responding?")
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /admin/status:
+    get:
+      tags: [health]
+      summary: Worker/admin status
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /admin/ingest:
+    get:
+      tags: [health]
+      summary: Ingest worker health
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    post:
+      tags: [health]
+      summary: Save ingest worker health (async)
+      requestBody: { $ref: "#/components/requestBodies/Input" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
 components:
   securitySchemes:
     apiKeyAuth:
@@ -867,520 +663,94 @@ components:
       in: header
       name: X-API-Key
       description: >
-        Required on every /users route. A valid key also exempts the
-        request from the per-IP rate limit that otherwise applies to
-        unauthenticated (401) attempts.
-  schemas:
-    User:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        email:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    UserInput:
-      type: object
-      required: [name, email]
-      properties:
-        name:
-          type: string
-        email:
-          type: string
-    Post:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        author_id:
-          type: string
-        title:
-          type: string
-        slug:
-          type: string
-        body_markdown:
-          type: string
-        excerpt:
-          type: string
-        cover_image_url:
-          type: string
-        type:
-          type: string
-          enum: [article, course]
-        status:
-          type: string
-          enum: [draft, published]
-        source:
-          type: string
-          enum: [native, imported]
-        source_url:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        published_at:
-          type: string
-          format: date-time
-          nullable: true
-    PostCreateInput:
-      type: object
-      required: [author_id, title, body_markdown]
-      properties:
-        author_id:
-          type: string
-        title:
-          type: string
-        body_markdown:
-          type: string
-        excerpt:
-          type: string
-        cover_image_url:
-          type: string
-        type:
-          type: string
-          enum: [article, course]
-        status:
-          type: string
-          enum: [draft, published]
-    PostUpdateInput:
-      type: object
-      required: [author_id]
-      properties:
-        author_id:
-          type: string
-        title:
-          type: string
-        body_markdown:
-          type: string
-        excerpt:
-          type: string
-        cover_image_url:
-          type: string
-        status:
-          type: string
-          enum: [draft, published]
-    PostDeleteInput:
-      type: object
-      required: [author_id]
-      properties:
-        author_id:
-          type: string
-    Room:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        host_id:
-          type: string
-        title:
-          type: string
-        document_id:
-          type: string
-        kind:
-          type: string
-          enum: [book, class]
-          description: >
-            Partitions this one shared aggregate between callers --
-            "book" (bookclub-api's PDF rooms) or "class" (classroom-api's
-            live screen/camera + notepad rooms). Defaults to "book" when
-            omitted on create, matching every room created before this
-            field existed.
-        current_page:
-          type: integer
-        status:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    RoomCreateInput:
-      type: object
-      required: [host_id, title]
-      properties:
-        host_id:
-          type: string
-        title:
-          type: string
-        document_id:
-          type: string
-          description: Optional -- "" for classroom-api's rooms (no document).
-        kind:
-          type: string
-          enum: [book, class]
-          description: Optional, defaults to "book".
-    RoomUpdateInput:
-      type: object
-      required: [host_id]
-      properties:
-        host_id:
-          type: string
-        title:
-          type: string
-        current_page:
-          type: integer
-        status:
-          type: string
-    RoomDeleteInput:
-      type: object
-      required: [host_id]
-      properties:
-        host_id:
-          type: string
-    Message:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        room_id:
-          type: string
-          format: uuid
-        user_id:
-          type: string
-        user_name:
-          type: string
-        body:
-          type: string
-        requested_page:
-          type: integer
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-    MessageCreateInput:
-      type: object
-      required: [room_id, user_id, body]
-      properties:
-        room_id:
-          type: string
-          format: uuid
-        user_id:
-          type: string
-        user_name:
-          type: string
-        body:
-          type: string
-        requested_page:
-          type: integer
-    Deal:
-      type: object
-      properties:
-        source:
-          type: string
-        source_deal_id:
-          type: string
-        title:
-          type: string
-        url:
-          type: string
-        store:
-          type: string
-          nullable: true
-        price_cents:
-          type: integer
-          nullable: true
-        old_price_cents:
-          type: integer
-          nullable: true
-        posted_at:
-          type: string
-          format: date-time
-          nullable: true
-        scraped_at:
-          type: string
-          format: date-time
-        payload:
-          type: object
-          description: The source's own JSON, stored verbatim.
-          additionalProperties: true
-    DealUpsertInput:
-      type: object
-      required: [source, source_deal_id, title, url]
-      properties:
-        source:
-          type: string
-        source_deal_id:
-          type: string
-        title:
-          type: string
-        url:
-          type: string
-        store:
-          type: string
-          nullable: true
-        price_cents:
-          type: integer
-          nullable: true
-        old_price_cents:
-          type: integer
-          nullable: true
-        posted_at:
-          type: string
-          format: date-time
-          nullable: true
-        scraped_at:
-          type: string
-          format: date-time
-          nullable: true
-        payload:
-          type: object
-          nullable: true
-          additionalProperties: true
-    Conta:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        usuario_email:
-          type: string
-        nome:
-          type: string
-        tipo:
-          type: string
-          enum: [corrente, investimento]
-        status:
-          type: string
-          enum: [ativa, arquivada]
-        criado_em:
-          type: string
-          format: date-time
-        atualizado_em:
-          type: string
-          format: date-time
-    Transacao:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        usuario_email:
-          type: string
-        conta_id:
-          type: string
-          format: uuid
-        tipo:
-          type: string
-          enum: [entrada, saida]
-        categoria:
-          type: string
-        descricao:
-          type: string
-        anexo_imagem:
-          type: string
-        valor:
-          type: number
-          format: double
-        data:
-          type: string
-          format: date
-        criado_em:
-          type: string
-          format: date-time
-        atualizado_em:
-          type: string
-          format: date-time
-    TransacaoCreateInput:
-      type: object
-      required: [usuario_email, conta_id, tipo, categoria, valor, data]
-      properties:
-        usuario_email:
-          type: string
-        conta_id:
-          type: string
-          format: uuid
-        tipo:
-          type: string
-          enum: [entrada, saida]
-        categoria:
-          type: string
-        descricao:
-          type: string
-        anexo_imagem:
-          type: string
-        valor:
-          type: number
-          format: double
-          description: Must be greater than zero.
-        data:
-          type: string
-          format: date
-    TransacaoUpdateInput:
-      type: object
-      required: [usuario_email]
-      properties:
-        usuario_email:
-          type: string
-        conta_id:
-          type: string
-          format: uuid
-        tipo:
-          type: string
-          enum: [entrada, saida]
-        categoria:
-          type: string
-        descricao:
-          type: string
-        anexo_imagem:
-          type: string
-        valor:
-          type: number
-          format: double
-        data:
-          type: string
-          format: date
-    TransacaoDeleteInput:
-      type: object
-      required: [usuario_email]
-      properties:
-        usuario_email:
-          type: string
-    Ativo:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        usuario_email:
-          type: string
-        conta_id:
-          type: string
-          format: uuid
-        ticker:
-          type: string
-        status:
-          type: string
-          enum: [aberta, encerrada]
-        quantidade_atual:
-          type: number
-          format: double
-        custo_medio:
-          type: number
-          format: double
-        ultima_cotacao:
-          type: number
-          format: double
-        ultima_cotacao_em:
-          type: string
-          format: date-time
-        valor_mercado_atual:
-          type: number
-          format: double
-          description: Computed as quantidade_atual x ultima_cotacao.
-        criado_em:
-          type: string
-          format: date-time
-        atualizado_em:
-          type: string
-          format: date-time
-    AtivoMovimento:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        ativo_id:
-          type: string
-          format: uuid
-        tipo:
-          type: string
-          enum: [compra, venda, provento]
-        quantidade:
-          type: number
-          format: double
-        preco_unitario:
-          type: number
-          format: double
-        valor_provento:
-          type: number
-          format: double
-        resultado_realizado:
-          type: number
-          format: double
-        data:
-          type: string
-          format: date
-        criado_em:
-          type: string
-          format: date-time
-    AtivoQuoteInput:
-      type: object
-      required: [cotacao, obtida_em]
-      properties:
-        cotacao:
-          type: number
-          format: double
-          description: Must be greater than zero.
-        obtida_em:
-          type: string
-          format: date-time
-    DashboardLayout:
-      type: object
-      properties:
-        usuario_email:
-          type: string
-        blocos:
-          type: array
-          items: {}
-          description: Opaque JSON, shaped and owned by the frontend.
-        atualizado_em:
-          type: string
-          format: date-time
-    Error:
-      type: object
-      properties:
-        error:
-          type: string
-  responses:
-    Accepted:
-      description: Command accepted — applied asynchronously
+        Required on every route except /healthz, /openapi.yaml and
+        /docs. A valid key also exempts the request from the per-IP
+        rate limit that otherwise applies to unauthenticated attempts.
+  parameters:
+    ClubID:
+      name: clubId
+      in: path
+      required: true
+      schema: { type: string }
+    PlayerID:
+      name: playerId
+      in: path
+      required: true
+      schema: { type: string }
+  requestBodies:
+    Input:
+      required: true
       content:
         application/json:
           schema:
             type: object
-            properties:
-              command_id:
-                type: string
-                format: uuid
-              status:
-                type: string
-                example: accepted
+            additionalProperties: true
+  responses:
+    Ok:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    Accepted:
+      description: Accepted; applied asynchronously by domain-worker.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Accepted"
     BadRequest:
-      description: Invalid request body
+      description: Invalid input.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     Unauthorized:
-      description: Missing or invalid API key
+      description: Missing or invalid API key.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     NotFound:
-      description: User not found
+      description: Not found.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     RateLimited:
-      description: Too many unauthenticated requests from this IP
+      description: Too many requests.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+  schemas:
+    Command:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          example: club.upsert
+        payload:
+          type: object
+          additionalProperties: true
+    SyncResult:
+      type: object
+      properties:
+        command_id: { type: string }
+        status:
+          type: string
+          enum: [written, failed, queued]
+        entity_id: { type: string }
+        error: { type: string }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+    Accepted:
+      type: object
+      properties:
+        command_id: { type: string }
+        status:
+          type: string
+          example: accepted

@@ -10,8 +10,8 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// namedEvent is deliberately not domainuser.Event or domainpost.Event
-// specifically — every aggregate's Event interface has the same
+// namedEvent is deliberately decoupled from any one aggregate's Event
+// type — every aggregate's Event interface has the same
 // EventName() string shape, so this bus stays aggregate-agnostic
 // rather than importing every domain package that ever publishes
 // through it.
@@ -21,22 +21,20 @@ type namedEvent interface {
 
 // envelope is the wire format every domain event is wrapped in —
 // EventName exists because the bus carries opaque bytes, so a
-// subscriber needs some way to tell a user.Created from a user.Deleted
+// subscriber needs some way to tell one event type from another
 // before unmarshaling Payload into the right Go type. The durable
-// queue receives this same envelope, so its consumers read events with
-// the exact same shape the SSE subscribers get.
+// queue receives this same envelope.
 type envelope struct {
 	EventName  string          `json:"event_name"`
 	OccurredAt time.Time       `json:"occurred_at"`
 	Payload    json.RawMessage `json:"payload"`
 }
 
-// EventBus implements application.EventPublisher. One durable publish
-// to the domain.events fanout reaches both the durable queue (workers
-// that must not miss an event while offline) and every live subscriber
-// (push-style, domain-api's SSE). Holds the Client rather than a bare
-// channel so a broker restart can be recovered: the channel is rebuilt
-// (topology and all) on the first publish after it dies.
+// EventBus publishes domain events to the domain.events fanout
+// exchange. One durable publish reaches the durable queue (consumers
+// that must not miss an event while offline). Holds the Client rather
+// than a bare channel so a broker restart can be recovered: the channel
+// is rebuilt (topology and all) on the first publish after it dies.
 type EventBus struct {
 	client   *Client
 	queueMax int
