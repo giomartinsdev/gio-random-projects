@@ -19,3 +19,15 @@ variable "published_port" {
   type        = number
   default     = 8093
 }
+
+variable "data_dir" {
+  description = "Host path for Dockhand's DATA_DIR (SQLite DB, .encryption_key, git clones), bind-mounted at the same path inside the container (matching paths). Must already exist on the host — a missing dir would be created root-owned by Docker and can't be chowned from Terraform."
+  type        = string
+  default     = "/opt/dockhand"
+}
+
+variable "stacks_dir" {
+  description = "Host path for STACKS_DIR (flat layout for local-socket stack files), bind-mounted at the same path inside the container. Must already exist on the host — see data_dir."
+  type        = string
+  default     = "/opt/stacks"
+}

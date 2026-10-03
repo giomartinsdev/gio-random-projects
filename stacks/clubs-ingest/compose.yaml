@@ -1,0 +1,29 @@
+# clubs-ingest — worker Python (poller), sem porta, sem volume, sem ingress.
+#
+# Piloto da migração Terraform -> stack persistida: espelha exatamente o
+# container que o módulo `compute_apps_clubs_ingest` criava. Segredos
+# (CLUBS_INGEST_DOMAIN_API_KEY, CLUBS_INGEST_DISCORD_WEBHOOK) NÃO ficam
+# aqui — são variáveis de stack no Dockhand. Ver ../../stacks/README.md.
+name: clubs-ingest
+
+services:
+  clubs-ingest:
+    image: registry.giomartins.dev:5000/clubs-ingest:latest
+    restart: unless-stopped
+    environment:
+      # In-network: domain-api e alloy são resolvidos pelo nome na rede apps.
+      CLUBS_INGEST_DOMAIN_API_URL: http://domain-api:8000
+      CLUBS_INGEST_DOMAIN_API_KEY: ${CLUBS_INGEST_DOMAIN_API_KEY:?defina CLUBS_INGEST_DOMAIN_API_KEY}
+      CLUBS_INGEST_POLL_SECONDS: "900"
+      CLUBS_INGEST_TTL_MATCHES: "300"
+      CLUBS_INGEST_TTL_SQUAD: "3600"
+      CLUBS_INGEST_DISCORD_WEBHOOK: ${CLUBS_INGEST_DISCORD_WEBHOOK:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: clubs-ingest
+    networks:
+      - apps
+
+networks:
+  apps:
+    external: true
+    name: apps

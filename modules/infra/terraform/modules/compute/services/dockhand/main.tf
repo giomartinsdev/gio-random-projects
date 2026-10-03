@@ -22,10 +22,15 @@
 # published port is loopback-only and the hostname sits behind
 # Cloudflare Access — the same outer gate as beszel/grafana. Dockhand's
 # own local login (created on first visit) is the inner one.
-
-resource "docker_volume" "dockhand_data" {
-  name = "dockhand_data"
-}
+#
+# MATCHING PATHS, on purpose: DATA_DIR (/opt/dockhand) and STACKS_DIR
+# (/opt/stacks) are host bind mounts at the *same* path inside the
+# container, so a compose stack that bind-mounts ./config resolves to a
+# file the daemon can see on the host without translation. Both dirs
+# exist on the host already (DATA_DIR was migrated off the old
+# dockhand_data named volume); a missing dir would make Docker create
+# it root-owned, and the operator can't `chown` what Terraform can't
+# reach, so create them out of band and keep them here.
 
 resource "docker_container" "dockhand" {
   name    = "dockhand"
@@ -34,6 +39,14 @@ resource "docker_container" "dockhand" {
   user    = "0"
 
   env = [
+    # Both are the matching paths above: everything dockhand persists
+    # (SQLite DB, .encryption_key, git clones) lives under DATA_DIR,
+    # and local (socket) stack files live flat under STACKS_DIR.
+    "DATA_DIR=/opt/dockhand",
+    "STACKS_DIR=/opt/stacks",
+    # Optional Prometheus endpoint at /metrics (auth-gated while login
+    # is enabled — see the module README). Harmless if nothing scrapes.
+    "EXPORT_METRICS=true",
     # TLS terminates at Cloudflare's edge, so the request ingress
     # forwards is plain HTTP — without this Dockhand would infer the
     # session cookie should not be Secure. TRUST_FORWARDED_HEADERS
@@ -57,10 +70,21 @@ resource "docker_container" "dockhand" {
     name = var.network_name
   }
 
+  # Matching path: the host's /opt/dockhand is the container's
+  # /opt/dockhand (DATA_DIR). Holds the SQLite DB and .encryption_key —
+  # back this up or stored credentials are unrecoverable.
   mounts {
-    type   = "volume"
-    source = docker_volume.dockhand_data.name
-    target = "/app/data"
+    type   = "bind"
+    source = var.data_dir
+    target = var.data_dir
+  }
+
+  # Matching path for stack files (STACKS_DIR). Persisted on the host
+  # so a Dockhand container recreate never loses a stack's compose/.env.
+  mounts {
+    type   = "bind"
+    source = var.stacks_dir
+    target = var.stacks_dir
   }
 
   # See the header: this is what lets Dockhand observe and manage the
