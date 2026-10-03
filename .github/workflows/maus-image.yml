@@ -95,15 +95,22 @@ jobs:
           username: ${{ env.REGISTRY_USERNAME }}
           password: ${{ env.REGISTRY_PASSWORD }}
 
-      # Build straight from the upstream repo at the pinned tag -- git context,
-      # so there's nothing vendored to keep in sync. The upstream Dockerfile
-      # runs native `pnpm build:server` + `vite build` and bakes a browser; on
-      # arm64 that whole build runs under QEMU, so expect 20-40 min.
+      # Upstream's own Dockerfile fails on Linux arm64 (Chrome for Testing has
+      # no ARM64 build). Clone the pinned tag and overlay our vendored
+      # Dockerfile (stacks/maus/Dockerfile), which also adds the docker CLI and
+      # the uid-1000 user the Local VM needs. Reproducible: upstream source
+      # comes from the pinned tag, our patches from this repo.
+      - name: Fetch upstream at the pinned tag
+        run: |
+          git clone --depth 1 --branch "$MAUS_VERSION" \
+            https://github.com/milind-soni/OpenMausBot.git _maus-upstream
+          cp stacks/maus/Dockerfile _maus-upstream/Dockerfile
+
       - name: Build and push maus (arm64)
         uses: docker/build-push-action@v6
         with:
-          context: https://github.com/milind-soni/OpenMausBot.git#${{ env.MAUS_VERSION }}
-          file: Dockerfile
+          context: _maus-upstream
+          file: _maus-upstream/Dockerfile
           push: true
           platforms: linux/arm64
           cache-from: type=gha,scope=maus
