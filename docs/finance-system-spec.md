@@ -39,11 +39,13 @@ criar um segundo CQRS:
 - `finance-whatsapp-worker` não tem banco, não importa driver de banco, e fala
   só com a `finance-api` por HTTP.
 
-### 1.2. Decisões que ainda precisam de dono
+### 1.2. Decisões — o que já está fechado e o que falta dono
+
+**Fechado: D1 — `finance-api` em Python 3.12 + FastAPI** (§6.3). O
+`finance-whatsapp-worker` também é Python 3.12.
 
 | # | Decisão | Opções | Recomendação |
 | --- | --- | --- | --- |
-| D1 | Linguagem da `finance-api` | (a) Python 3.12 + FastAPI · (b) Go, espelhando `domain-api` | Ver §6.3 |
 | D2 | Banco | (a) schema `finance` dentro do DB `domain` · (b) database próprio | (a) — (b) exige bootstrap em `persistence.yml` |
 | D3 | Stack | (a) stack nova `finance` · (b) entrar no stack `domain` | (a) — ver §10 |
 | D4 | Hostnames | nomes definitivos de API e webhook | §10.5 |
@@ -220,35 +222,41 @@ detalhada. Os templates e o PNG entram em teste de golden file (§12.4).
   têm default `domain`).
 - **Broker:** RabbitMQ (stack `persistence`).
 
-### 6.2. Proposta para o `finance-whatsapp-worker`
-- Python 3.12, `pyproject.toml` (hatchling), `pytest` + `pytest-bdd` +
-  `testcontainers` + `docker` nos extras `dev` — idêntico a `clubs-ingest`.
-- Pydantic v2 para contratos; nenhuma dependência de driver de banco.
-- `httpx` para falar com a `finance-api`; `aio-pika` só para **consumir** os eventos de domínio (§13).
-- Empacotamento: `packages = ["src/<pkg>"]`, entrypoint
+### 6.2. Stack dos apps do financeiro (Python 3.12 em ambos)
+
+**`finance-api`** — Python 3.12 + **FastAPI** (uvicorn), a escolha fechada em §6.3:
+- `fastapi` + `uvicorn` para as rotas HTTP; **Pydantic v2** para os schemas de
+  request/response e para o envelope `{action, payload}`.
+- `httpx` como cliente do `domain-api` (§1.1). **Sem** driver de banco e **sem**
+  `DATABASE_URL` — a persistência é do stack `domain`.
+- Empacotamento: `pyproject.toml` (hatchling) com
+  `packages = ["src/finance_api"]` — **a chave `packages` do hatchling é do build
+  da wheel, não o diretório `packages/` do §7**.
+
+**`finance-whatsapp-worker`** — Python 3.12:
+- Mesmo esqueleto de `clubs-ingest`: `pyproject.toml` (hatchling), `pytest` +
+  `pytest-bdd` + `testcontainers` + `docker` nos extras `dev`.
+- `httpx` para falar com a `finance-api`; `aio-pika` só para **consumir** os
+  eventos de domínio (§13); Pydantic v2 para contratos; nenhum driver de banco.
+- `packages = ["src/finance_whatsapp_worker"]`, entrypoint
   `python -m finance_whatsapp_worker.main`.
 
-### 6.3. ⚠️ Decisão aberta (D1) — Python 3.14 vs 3.12, e Python vs Go
-A versão anterior desta spec pedia **Python 3.14** e **FastAPI/SQLAlchemy**.
-Nada disso existe no repo:
-- o CI fixa **3.12** — pedir 3.14 significa subir uma imagem base nova sem
-  relação com o que os outros apps testam;
-- o CQRS de escrita/leitura já está implementado em **Go** (`domain-api`/
-  `domain-worker`), e o financeiro é o mesmo desenho.
+### 6.3. D1 — decidido: Python 3.12 + FastAPI
 
-Opções honestas:
-1. **Python 3.12 + FastAPI** para `finance-api` e worker — mais rápido de
-   escrever. Não cria um segundo CQRS: a persistência continua sendo a do
-   `domain-api`/`domain-worker` (§1.1) e a `finance-api` é só a ACL.
-2. **Go** para `finance-api`, espelhando `domain-api` — consistência
-   arquitetural, ao custo de reaproveitar o pacote de telemetria e reescrever
-   os contratos em Go.
-3. Python 3.14 — **não recomendado** sem antes subir isso em todo o CI.
+Decisão fechada (encerra a antiga dúvida de versão e de linguagem):
 
-**Recomendação:** (1) para começar (entrega mais rápida e o worker já é Python
-de qualquer jeito), registrando explicitamente que o bounded context financeiro
-tem sua própria `finance-api` em Python. Se a consistência com `domain-api`
-pesar mais que a velocidade, escolher (2) antes do primeiro commit de código.
+- **`finance-api` e `finance-whatsapp-worker`: Python 3.12.** É o que o CI já
+  constrói (`python-version: "3.12"`, imagem `python:3.12-slim`) — nada de 3.14,
+  que exigiria subir a imagem base em todo o pipeline.
+- **A `finance-api` usa FastAPI** para servir as rotas HTTP; o worker continua um
+  processo Python sem porta.
+- **A `finance-api` é uma ACL, não um CQRS próprio.** Continua valendo o §1.1: a
+  persistência é do `domain-api`/`domain-worker` (Go, stack `domain`) e a
+  `finance-api` só traduz e repassa. Escolher Python **não** cria um segundo
+  banco nem um segundo broker.
+
+Consequência: **não** há caminho Go para a `finance-api`; o `go-ci-cd.yml` não
+entra no financeiro e os dois apps ficam no `python-ci-cd.yml` (§11).
 
 ---
 
@@ -258,6 +266,12 @@ Nada de `finance-system/apps/...`: o repo é `modules/apps/<nome>/`, e o nome da
 pasta **é** o nome da imagem e do container.
 
 ```
+packages/                          # NOVO — código compartilhado, vendorizado aqui
+  finance-contracts/               # fonte única: envelope {action,payload} + eventos
+    pyproject.toml
+    src/finance_contracts/
+      envelope.py
+      events.py
 modules/
   apps/
     finance-api/                   # ACL do financeiro — sem banco; fala com o domain-api
@@ -267,7 +281,7 @@ modules/
         domain/                    # aggregates, entities, value objects, eventos
         application/               # command/query handlers, ports
         infrastructure/            # cliente HTTP do domain-api, telemetria
-        presentation/              # rotas HTTP, schemas, DI
+        presentation/              # rotas FastAPI, schemas, DI
       tests/
         features/                  # cenários BDD
     finance-whatsapp-worker/       # worker conversacional — sem banco
@@ -288,23 +302,38 @@ docs/
   finance-system-spec.md           # este documento
 ```
 
-**Código compartilhado:** o repo **não tem** `packages/`. A convenção observada
-é *vendorizar* (`clubs-ingest` embarca o cliente que usa dentro do próprio
-pacote). Para contratos de evento compartilhados entre `finance-api` e worker,
-a opção mais barata é gerar um módulo pequeno em `src/` de ambos a partir de
-uma única fonte (schema versionado), em vez de subir um registry Python
-privado — que não existe aqui.
+**Código compartilhado — sempre em `packages/`.** Este projeto **não** duplica o
+contrato dentro de cada app nem o copia para o `src/` de ambos: o compartilhado
+mora num diretório `packages/` na **raiz do repo**, versionado como pacote
+próprio (`packages/finance-contracts/`: o envelope `{action, payload}` e os
+eventos de domínio — a fonte única que `finance-api` e worker importam).
+- O repo **ainda não tem** `packages/`; criá-lo é parte desta entrega. A
+  convenção de *vendorizar* que já existe (`clubs-ingest` embarca o `fc27_api.py`
+  no pacote) continua valendo para **terceiros** — um cliente de terceiro
+  vendorizado também entra em `packages/`, e não no `src/` do app.
+- Não há registry Python privado: `packages/` é instalado **por caminho** a partir
+  da raiz (o contexto de build do Dockerfile é a raiz, ver abaixo).
+- Nada muda na **descoberta** do `python-ci-cd.yml`: ele acha *apps* por
+  `modules/apps/*/pyproject.toml`, então `packages/` **não** vira um app
+  deployado — é o que se quer. O que o CI precisa é tratar `packages/**` como
+  gatilho de rebuild dos apps que o consomem (§11).
 
-**Dockerfile (padrão Python do repo):**
+**Dockerfile (padrão Python do repo, com `packages/`):**
 
 ```dockerfile
-# Contexto de build = RAIZ DO REPO (é o que o python-ci-cd.yml usa).
+# Contexto de build = RAIZ DO REPO (é o que o python-ci-cd.yml usa) — é o que
+# permite copiar packages/ e modules/apps/<nome> na mesma build.
 FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 RUN useradd --create-home app
 WORKDIR /app
+# O pacote compartilhado vem de packages/ e entra no MESMO `pip install` do app;
+# assim o pip satisfaz a dependência `finance-contracts` com o pacote local (não
+# há registry privado). Instalar o app sozinho falharia ao resolver essa dep.
+COPY packages/finance-contracts /tmp/finance-contracts
 COPY modules/apps/<nome> /tmp/app
-RUN pip install --no-cache-dir /tmp/app && rm -rf /tmp/app
+RUN pip install --no-cache-dir /tmp/finance-contracts /tmp/app \
+    && rm -rf /tmp/finance-contracts /tmp/app
 USER app
 ENTRYPOINT ["python", "-m", "<pkg>.main"]
 ```
@@ -577,12 +606,20 @@ publica `:latest` + `:<sha>` e chama o webhook do Dockhand.
 
 Mudanças necessárias:
 
-1. **Filtro `paths:`** — hoje só `modules/apps/clubs-ingest/**`; adicionar os
-   dois apps do financeiro.
-2. **`declare -A STACK=( ... )`** no job `deploy` — adicionar
+1. **Filtro `paths:`** — hoje só `modules/apps/clubs-ingest/**`; adicionar
+   `modules/apps/finance-api/**`, `modules/apps/finance-whatsapp-worker/**`
+   **e `packages/finance-contracts/**`**.
+2. **`packages/**` como gatilho dos dependentes.** O `discover` só casa um app
+   quando o diff contém `^modules/apps/<app>/`. Um commit que mexe **só** em
+   `packages/finance-contracts/**` não rebuilda ninguém — e os dois apps importam
+   aquele pacote, então produção ficaria com o contrato velho. Corrigir com uma
+   regra explícita (mapa pacote→apps) somada ao filtro de apps.
+3. **Install local do `packages/` no job de teste.** Hoje é
+   `pip install "${{ github.workspace }}/modules/apps/${{ matrix.app }}"`; o pacote
+   compartilhado precisa entrar no mesmo comando
+   (`... /packages/finance-contracts ...`), senão o `pytest` nem importa.
+4. **`declare -A STACK=( ... )`** no job `deploy` — adicionar
    `[finance-api]=<id> [finance-whatsapp-worker]=<id>` (§10.4 passos 4–5).
-3. Se a `finance-api` for **Go** (D1 = opção 2), o caminho é o
-   `go-ci-cd.yml` e o mapa dele — o `finance-whatsapp-worker` continua Python.
 
 ### 11.1. Regra de não-pular
 Os extras `dev` (`pytest-bdd`, `testcontainers`, `docker`) são o que faz os
@@ -609,7 +646,7 @@ isolamento do §1.1 é estrutural, não uma promessa.
 | Camada | O que prova | Ferramenta | Roda em |
 | --- | --- | --- | --- |
 | Unit (domínio) | invariantes §3.4, `Money`/`Decimal`, réguas de budget | `pytest`, `hypothesis` | todo push |
-| Componente | handlers com portas falsas (sem broker/DB) | `pytest` | todo push |
+| Componente | handlers com portas falsas (sem broker/DB); rotas da `finance-api` via `TestClient` do FastAPI | `pytest` + `TestClient`/`httpx` | todo push |
 | Contrato | worker↔api: schemas de request/response e de eventos batem com a fonte única | `pytest` + validação de schema | todo push |
 | Integração | Postgres+RabbitMQ reais, outbox, idempotência, auditoria | `pytest-bdd` + `testcontainers` + `docker` | todo push |
 | E2E (worker) | webhook → NLU → API → evento → resposta → PNG | `pytest` + broker/DB reais | nightly + manual |
@@ -653,6 +690,9 @@ isolamento do §1.1 é estrutural, não uma promessa.
   para `postgres:5432` — as conexões saem do `domain-api`/`domain-worker`.
 - **Grafo de imports:** nenhum import da `finance-api` alcança um repositório de
   banco; a persistência entra só pelo cliente HTTP do `domain-api`.
+- **Fonte única (§7):** o teste falha se o envelope/eventos estiverem duplicados
+  dentro de um app — `finance_contracts` só pode ser importado de `packages/`, e
+  nenhum `src/` de app pode conter uma cópia do contrato.
 
 ### 12.7. Verificação de deploy (o teste que o check verde não faz)
 - `curl https://finance.giomartins.dev/healthz` → 200.
@@ -714,7 +754,7 @@ Cenário: Broker indisponível não perde a escrita
 | App publicado sem entrada no mapa `STACK` | build verde, nada sobe | conferir §10.4-4/5; smoke por digest §12.7 |
 | Contexto `stacks/` compartilhado | commit em um arquivo redeploya vários | subpasta própria se incomodar (§10.4) |
 | `:latest` não muda | "deploy" que não muda nada | verificação por digest (§10.6) |
-| D1 não decidida | retrabalho grande depois | decidir antes do primeiro commit de código |
+| `packages/` fora do `paths:`/install do CI | build verde com contrato velho em produção | incluir `packages/**` no filtro e no install local (§11) |
 | Webhook sem proteção | endpoint público | assinatura Meta + rate limit + verificação de origem |
 | Migração incompatível com rollback | rollback quebra schema | expand-contract (§10.8) |
 | Key da `finance-api` fora de `DOMAIN_API_KEYS` | deploy verde, 401 em todo request | conferir §10.3; smoke §12.7 pega |
