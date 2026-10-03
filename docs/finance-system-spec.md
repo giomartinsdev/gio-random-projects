@@ -20,18 +20,24 @@ Architecture**, com tipagem estrita.
 ### 1.1. Princípio Fundamental — Regra de Isolamento de Domínio
 
 > O `finance-whatsapp-worker` **NUNCA** acessa banco de dados diretamente.
-> Toda persistência, invariante de domínio e consulta passa estritamente pela
-> `finance-api` — via REST tipado (queries) e mensageria (commands/eventos).
+> Toda persistência e consulta passa pela `finance-api` — via REST tipado — e,
+> dela, pelo `domain-api`, que é o front door do CQRS deste repo.
 
 Esse princípio **não é novo neste repo**: é exatamente o desenho que já existe
 entre `domain-api` (a porta de entrada de leitura/escrita do CQRS) e
-`domain-worker` (o único escritor). A `finance-api` é a mesma ideia aplicada ao
-bounded context financeiro — e a mesma disciplina deve valer:
+`domain-worker` (o único escritor). O financeiro **reusa essa camada** em vez de
+criar um segundo CQRS:
 
-- `finance-api` responde escrita com `202 Accepted` + `command_id`, publica o
-  comando no RabbitMQ, e é o **único** componente com `DATABASE_URL`.
-- `finance-whatsapp-worker` não tem banco, não importa driver de banco, e
-  fala com a `finance-api` por HTTP + mensageria.
+- `finance-api` é a **ACL do bounded context financeiro**: traduz o comando do
+  worker para o envelope `{action, payload}` da casa, valida as invariantes do
+  §3.4 e **manda request para o `domain-api`** para persistir — `POST` async →
+  `202 {command_id}`, ou `/sync` → 200/422/504 quando o chamador precisa da
+  confirmação. Ela **não tem `DATABASE_URL`** nem driver de banco.
+- `domain-api` publica o comando no RabbitMQ; o `domain-worker` o consome,
+  aplica, grava a auditoria (sucesso **ou** falha) e publica o evento. São os
+  dois — stack `domain` — que detêm `DATABASE_URL` e são donos da persistência.
+- `finance-whatsapp-worker` não tem banco, não importa driver de banco, e fala
+  só com a `finance-api` por HTTP.
 
 ### 1.2. Decisões que ainda precisam de dono
 
@@ -61,31 +67,52 @@ bounded context financeiro — e a mesma disciplina deve valer:
 │  └─ Chart Engine (PNG)                                 │
 │                                                        │
 │  sem banco · sem DATABASE_URL · sem driver de banco    │
-└────────────┬─────────────────────────────┬─────────────┘
-             │ 1. Commands                 │ 2. Queries
-             │    (RabbitMQ, async)        │    (HTTP, sync)
-             ▼                             ▼
-┌───────────────────────────┐ ┌──────────────────────────┐
-│  RabbitMQ (stack           │ │  finance-api (HTTP)      │
-│  persistence)              │ │  X-API-Key               │
-└────────────┬──────────────┘ └────────────┬─────────────┘
-             │ eventos de domínio           │
-             ▼                              ▼
-┌────────────────────────────────────────────────────────┐
-│             finance-api (Domain API)                   │
-│  Command Stack  → aggregates, invariantes, UoW, Outbox │
-│  Read Stack      → projections, queries de dashboard   │
-│  (único componente com DATABASE_URL)                   │
 └────────────────────────────┬───────────────────────────┘
-                             │
+                             │ HTTP tipado (X-API-Key): commands + queries
                              ▼
-        PostgreSQL 17 (stack persistence, DB/schema do §8)
+┌────────────────────────────────────────────────────────┐
+│   finance-api — ACL do bounded context financeiro      │
+│  ├─ traduz o comando → envelope {action, payload}      │
+│  ├─ invariantes de Money/transferência/budget (§3.4)   │
+│  └─ cliente HTTP tipado do domain-api                  │
+│                                                        │
+│  sem banco · sem DATABASE_URL · sem driver de banco    │
+└────────────────────────────┬───────────────────────────┘
+                             │ HTTP (X-API-Key) → domain-api, p/ persistir
+                             │ POST 202 {command_id} · POST /sync · GET
+                             ▼
+┌────────────────────────────────────────────────────────┐
+│   domain-api — front door do CQRS da casa              │
+│  publica o comando no broker · serve as leituras       │
+│  (DATABASE_URL — stacks/domain.yml)                    │
+└────────────┬─────────────────────────────┬─────────────┘
+             │ comandos (RabbitMQ, async)   │ leituras (GET, projeções)
+             ▼                              │
+┌───────────────────────────┐               │
+│  RabbitMQ (stack          │               │
+│  persistence)             │               │
+└────────────┬──────────────┘               │
+             │ domain.commands.queue         │
+             ▼                               ▼
+┌────────────────────────────────────────────────────────┐
+│   domain-worker — ÚNICO escritor do banco              │
+│  aplica o comando · grava audit_log · publica o evento │
+│  (DATABASE_URL — stacks/domain.yml)                    │
+└────────────┬───────────────────────────┬───────────────┘
+             │ eventos de domínio         │
+             │ (finance.*, via broker)    │
+             ▼                            ▼
+   finance-whatsapp-worker      PostgreSQL 17 (stack persistence,
+   (assina p/ avisar o          DB/schema do §8)
+    usuário — §13)
 ```
 
 **Transporte — o que o repo já tem, sem inventar:**
 
 - **Broker:** RabbitMQ do `stacks/persistence.yml` (usuário `domain`), na rede
-  externa `apps`. Nada de subir um broker próprio.
+  externa `apps`. Nada de subir um broker próprio. Quem **publica** comando nele
+  é o `domain-api`; a `finance-api` não fala broker, e o worker só o consome
+  (eventos, §13).
 - **Rede:** externa `apps` (`external: true`). Não criar rede nova.
 - **Observabilidade:** `alloy:4318` já recebe OTLP; incluir
   `OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_SERVICE_NAME` desde o primeiro deploy.
@@ -126,29 +153,42 @@ bounded context financeiro — e a mesma disciplina deve valer:
 
 ## 4. CQRS
 
-### 4.1. Write Side — Commands (`finance-api`)
+### 4.1. Write Side — Commands (`finance-api` → `domain-api`)
 - `RegisterTransactionCommand`
 - `CategorizeTransactionCommand`
 - `SetCategoryBudgetCommand`
 - `TransferBetweenAccountsCommand`
 - `ReconcileOpenFinanceTransactionCommand` (Fase 2)
 
-Contrato de escrita, igual ao padrão da casa: `POST` responde
-`202 {"command_id": ..., "status": "accepted"}`, o comando vai para o broker, o
-handler aplica e grava a auditoria. Só existe caminho síncrono (`/sync`, 200/422/504)
-onde o chamador **realmente** não pode seguir sem confirmação — e o worker não
-precisa: ele responde ao usuário de forma assíncrona. **Default: assíncrono.**
+O contrato de escrita é o da casa e **vive no `domain-api`**: a `finance-api`
+traduz cada comando para o envelope `{action, payload}` (família `finance.*`) e
+faz o request. O contrato é o já documentado em
+`modules/apps/domain-api/README.md`:
 
-### 4.2. Read Side — Queries (`finance-api`)
+- `POST` → `202 {"command_id": ..., "status": "accepted"}`: o comando vai para o
+  broker, o `domain-worker` aplica e grava a auditoria (sucesso **ou** falha).
+- `POST /sync` → `200` aplicado / `422` rejeitado / `504` timeout — e
+  **timeout ≠ não-escrito**: o comando pode continuar na fila e ser aplicado
+  depois. Só `written` é confirmação.
+
+**Default: assíncrono (`202`).** O worker do WhatsApp responde ao usuário de
+forma assíncrona, então não precisa do `/sync`; ele fica reservado para os casos
+em que o chamador realmente não pode seguir sem confirmação.
+
+### 4.2. Read Side — Queries (`finance-api` → `domain-api`)
 - `GetDailySummaryQuery`
 - `GetMonthlyDashboardQuery`
 - `GetCategoryBreakdownQuery`
 - `GetCashFlowHistoryQuery`
 
-Leituras são `GET` simples com `X-API-Key`, servidas de projections.
+A `finance-api` **não tem banco**, então as leituras também passam pelo
+`domain-api`: `GET` simples com `X-API-Key`, servidos de projections. A
+`finance-api` valida e transforma o payload para o formato do worker (card/PNG),
+mas não consulta tabela nenhuma.
 
 ### 4.3. Outbox & entrega
-Publicação de evento de domínio via **Outbox** na mesma transação da escrita.
+A outbox e a publicação de evento são do **`domain-worker`**, na mesma transação
+da escrita (a `finance-api` não participa: ela só recebe o `202`/`/sync`).
 Entrega é at-least-once → todo consumidor precisa ser **idempotente** por
 `command_id`/`event_id` (testado em §12.5).
 
@@ -184,7 +224,7 @@ detalhada. Os templates e o PNG entram em teste de golden file (§12.4).
 - Python 3.12, `pyproject.toml` (hatchling), `pytest` + `pytest-bdd` +
   `testcontainers` + `docker` nos extras `dev` — idêntico a `clubs-ingest`.
 - Pydantic v2 para contratos; nenhuma dependência de driver de banco.
-- `httpx` para falar com a `finance-api`; `aio-pika` para o broker.
+- `httpx` para falar com a `finance-api`; `aio-pika` só para **consumir** os eventos de domínio (§13).
 - Empacotamento: `packages = ["src/<pkg>"]`, entrypoint
   `python -m finance_whatsapp_worker.main`.
 
@@ -198,7 +238,8 @@ Nada disso existe no repo:
 
 Opções honestas:
 1. **Python 3.12 + FastAPI** para `finance-api` e worker — mais rápido de
-   escrever, mas cria um segundo jeito de fazer CQRS no repo.
+   escrever. Não cria um segundo CQRS: a persistência continua sendo a do
+   `domain-api`/`domain-worker` (§1.1) e a `finance-api` é só a ACL.
 2. **Go** para `finance-api`, espelhando `domain-api` — consistência
    arquitetural, ao custo de reaproveitar o pacote de telemetria e reescrever
    os contratos em Go.
@@ -219,13 +260,13 @@ pasta **é** o nome da imagem e do container.
 ```
 modules/
   apps/
-    finance-api/                   # Domain API (CQRS write+read) — só ela vê o banco
+    finance-api/                   # ACL do financeiro — sem banco; fala com o domain-api
       pyproject.toml
       Dockerfile
       src/finance_api/
         domain/                    # aggregates, entities, value objects, eventos
         application/               # command/query handlers, ports
-        infrastructure/            # mapeamentos, repositórios, engine, broker
+        infrastructure/            # cliente HTTP do domain-api, telemetria
         presentation/              # rotas HTTP, schemas, DI
       tests/
         features/                  # cenários BDD
@@ -274,16 +315,20 @@ ENTRYPOINT ["python", "-m", "<pkg>.main"]
 
 ### 8.1. Onde mora (D2)
 `persistence.yml` cria **uma** database (`POSTGRES_DB=domain`) e um usuário
-(`domain`). Duas saídas:
+(`domain`). O schema financeiro vive dentro dela, e **quem escreve é o
+`domain-worker`** — a `finance-api` não tem `DATABASE_URL` (§1.1). Duas saídas:
 
 - **(a) schema `finance` dentro de `domain`** — zero mudança em
-  `persistence.yml`; a `finance-api` usa `search_path=finance`. **Recomendado.**
+  `persistence.yml`; o `domain-worker` usa `search_path=finance` nas actions
+  `finance.*`. **Recomendado.**
 - **(b) database própria** — exige um passo de bootstrap em `persistence.yml`
-  (ex.: `finance-db-init`, no espírito do `evolution-db-init` do `compute.yml`).
+  (ex.: `finance-db-init`, no espírito do `evolution-db-init` do `compute.yml`) e
+  muda a `DATABASE_URL` do stack `domain`.
 
 ### 8.2. Convenções
-- Migrações **versionadas e idempotentes**, aplicadas no start da `finance-api`
-  ou por job dedicado; em produção, expand-contract (ver §10.8 rollback).
+- Migrações **versionadas e idempotentes**, aplicadas no start do
+  `domain-api`/`domain-worker` (é onde o `schema.sql` mora) ou por job
+  dedicado; em produção, expand-contract (ver §10.8 rollback).
 - `audit_log` de comandos (sucesso **e** falha) — mesma ideia do `domain-api`:
   a linha de auditoria é a prova de "aplicado", não o publish no broker.
 - Índices mínimos: `(user_id, occurred_at DESC)`, `(user_id, category, month)`,
@@ -339,6 +384,8 @@ só `${VAR}`.
 #   RABBITMQ_PASSWORD   (a MESMA do persistence.yml)
 #   FINANCE_API_KEYS        (lista key:label, um caller por serviço)
 #   FINANCE_WORKER_API_KEY  (a key do worker, espelhada em FINANCE_API_KEYS)
+#   FINANCE_DOMAIN_API_KEY  (a key da finance-api, espelhada em DOMAIN_API_KEYS
+#                            do stack `domain` — ver §10.3)
 #   WHATSAPP_VERIFY_TOKEN / WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID
 name: finance
 
@@ -348,8 +395,9 @@ services:
     container_name: finance-api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-domain}:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-domain}
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-domain}:${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}@rabbitmq:5672/
+      # SEM DATABASE_URL / RABBITMQ_URL — a persistência é do stack `domain` (§1.1)
+      DOMAIN_API_BASE_URL: http://domain-api:8000
+      DOMAIN_API_KEY: ${FINANCE_DOMAIN_API_KEY:?defina FINANCE_DOMAIN_API_KEY}
       HTTP_ADDR: ":8000"
       FINANCE_API_KEYS: ${FINANCE_API_KEYS:?defina FINANCE_API_KEYS}
       RATE_LIMIT_RPS: "5"
@@ -393,17 +441,19 @@ senhas já existentes:
 
 | Variável | Escopo | Valor |
 | --- | --- | --- |
-| `POSTGRES_PASSWORD` | finance-api | a MESMA de `persistence.yml` |
-| `RABBITMQ_PASSWORD` | ambos | a MESMA de `persistence.yml` |
-| `POSTGRES_USER` / `POSTGRES_DB` | finance-api | defaults `domain` (só mudar com D2) |
+| `RABBITMQ_PASSWORD` | worker | a MESMA de `persistence.yml` (consumo de eventos) |
+| `FINANCE_DOMAIN_API_KEY` | finance-api | a key da finance-api — **também** na lista `DOMAIN_API_KEYS` do stack `domain` |
 | `FINANCE_API_KEYS` | finance-api | lista `key:label`, um caller por serviço |
 | `FINANCE_WORKER_API_KEY` | worker | a key do worker, espelhada em `FINANCE_API_KEYS` |
 | `WHATSAPP_VERIFY_TOKEN` | worker | token do webhook (Meta) |
 | `WHATSAPP_ACCESS_TOKEN` | worker | token de envio (Meta Cloud API) |
 | `WHATSAPP_PHONE_NUMBER_ID` | worker | id do número |
 
-`DATABASE_URL`/`RABBITMQ_URL` **não** são variáveis de stack: são montadas no
-compose a partir das senhas, como no `domain.yml`.
+`DATABASE_URL` e o broker de comandos **não** pertencem a este stack: banco,
+`domain-api` e `domain-worker` são do stack `domain` (§1.1). A dependência
+cruzada que precisa existir é `FINANCE_DOMAIN_API_KEY` (aqui) ⊆
+`DOMAIN_API_KEYS` (no stack `domain`) — sem ela a `finance-api` leva 401 do
+`domain-api` e o deploy fica verde sem funcionar.
 
 ### 10.4. Passo a passo (o que fazer, na ordem)
 
@@ -596,11 +646,13 @@ isolamento do §1.1 é estrutural, não uma promessa.
   publicado depois (sem perder a escrita).
 
 ### 12.6. Isolamento (§1.1) — como provar, não prometer
-- **Estático:** `finance-whatsapp-worker` não pode ter dependência de driver de
-  banco nem `DATABASE_URL` no compose (o teste lê `stacks/finance.yml`).
-- **Dinâmico:** durante o E2E, o worker não abre socket para `postgres:5432`.
-- **Grafo de imports:** nenhum import do worker alcança
-  `infrastructure/postgres` da API.
+- **Estático:** nem `finance-whatsapp-worker` nem `finance-api` podem ter
+  dependência de driver de banco, nem `DATABASE_URL` no compose (o teste lê
+  `stacks/finance.yml`). Banco só existe no stack `domain`.
+- **Dinâmico:** durante o E2E, nem o worker nem a `finance-api` abrem socket
+  para `postgres:5432` — as conexões saem do `domain-api`/`domain-worker`.
+- **Grafo de imports:** nenhum import da `finance-api` alcança um repositório de
+  banco; a persistência entra só pelo cliente HTTP do `domain-api`.
 
 ### 12.7. Verificação de deploy (o teste que o check verde não faz)
 - `curl https://finance.giomartins.dev/healthz` → 200.
@@ -665,3 +717,4 @@ Cenário: Broker indisponível não perde a escrita
 | D1 não decidida | retrabalho grande depois | decidir antes do primeiro commit de código |
 | Webhook sem proteção | endpoint público | assinatura Meta + rate limit + verificação de origem |
 | Migração incompatível com rollback | rollback quebra schema | expand-contract (§10.8) |
+| Key da `finance-api` fora de `DOMAIN_API_KEYS` | deploy verde, 401 em todo request | conferir §10.3; smoke §12.7 pega |
