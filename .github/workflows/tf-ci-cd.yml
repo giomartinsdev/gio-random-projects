@@ -160,7 +160,21 @@ jobs:
           if [ -n "$REPLACE_TARGET" ]; then
             REPLACE_ARGS+=("-replace=${REPLACE_TARGET}")
           fi
-          terraform plan -input=false -lock-timeout=300s -out=tfplan "${REPLACE_ARGS[@]}"
+          # Retry com backoff: o docker provider abre uma sessão SSH no VPS
+          # para falar com o dockerd, e o sshd dele recusa o handshake
+          # (`kex_exchange_identification: read: Connection reset by peer`)
+          # quando vários workflows fazem apply ao mesmo tempo. É o mesmo
+          # transitório que os `-replace` dos workflows de app já tratam; sem
+          # isto, um plan que ia passar fica vermelho por timing do sshd.
+          for tentativa in 1 2 3 4 5; do
+            if terraform plan -input=false -lock-timeout=300s -out=tfplan "${REPLACE_ARGS[@]}"; then
+              exit 0
+            fi
+            echo "::warning::plan falhou (tentativa $tentativa); aguardando antes de repetir"
+            sleep $((tentativa * 20))
+          done
+          echo "::error::plan falhou após 5 tentativas"
+          exit 1
 
       # Binary plan file, not the human-readable summary -- carries
       # fully-resolved attribute values (including ones the CLI's own
@@ -222,4 +236,16 @@ jobs:
           path: modules/infra/terraform
 
       - name: Apply
-        run: terraform apply -input=false -lock-timeout=300s -auto-approve tfplan
+        run: |
+          # Mesmo transitório de sshd do Plan acima: o apply reabre a sessão
+          # SSH do provider. O apply é idempotente a partir do plano salvo,
+          # então re-tentar é seguro.
+          for tentativa in 1 2 3 4 5; do
+            if terraform apply -input=false -lock-timeout=300s -auto-approve tfplan; then
+              exit 0
+            fi
+            echo "::warning::apply falhou (tentativa $tentativa); aguardando antes de repetir"
+            sleep $((tentativa * 20))
+          done
+          echo "::error::apply falhou após 5 tentativas"
+          exit 1
