@@ -21,7 +21,8 @@
 # Segredos: nenhum obrigatório no boot. Não há OWNER_TOKEN — o login é o
 # "pairing" do próprio OpenMausBot (um código por dispositivo, docs
 # self-hosting). O provider de modelo é configuração in-app (App Settings),
-# não env: aponte o "OpenAI-compatible" para http://9router:20128/v1.
+# não env; aqui ficou o 9router pelo HTTPS público https://ai.giomartins.dev/v1
+# (HTTP não-loopback é recusado pelo runtime para computer/image tools).
 # Variáveis opcionais (não-segredo, com default abaixo): OMB_UPSTREAM_SCHEME
 # (default http), ou OMB_SIGNIN_EMAILS/OMB_SIGNIN_MEMBER_EMAILS pra liberar
 # login por código no e-mail. OMB_PUBLIC_URL vira OMB_WEBHOOK_PUBLIC_URL (o
@@ -52,6 +53,11 @@ services:
       OMB_SIGNIN_MEMBER_EMAILS: ${OMB_SIGNIN_MEMBER_EMAILS:-}
     volumes:
       - omb-data:/data
+      # Docker do host: o "Local VM" (computer container Cua) é criado pelo
+      # próprio omb via `docker` CLI. A imagem inclui o binário e o usuário
+      # maus entra no grupo docker (gid 989 nesta VPS). Trade-off: quem fala
+      # com o daemon é root-equivalente no host — servidor dedicado.
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       # host 8799 -> Caddy (netns compartilhada) na 80. O ingress roteia
       # maus.giomartins.dev pra cá.
