@@ -72,29 +72,23 @@ porta loopback, edite aqui.
 > de stack no Dockhand; pra centralizar num cofre suportado, suba um
 > **Infisical** e ligue o provider nele.
 
-## Como migrar um arquivo (ordem recomendada)
+## Migração (concluída)
 
-Os containers atuais do TF não têm labels de compose, então o "adopt" do
-Dockhand não os pega. O caminho é **parar+remover o antigo e subir a
-stack** (mesmo nome, mesmos volumes):
+Estes 6 stacks já foram migrados do Terraform: os containers antigos
+foram renomeados/parados e recriados pelas stacks (mesmo `container_name`,
+mesmos volumes), e os recursos correspondentes saíram do state com
+`terraform state rm` (sem destruir). O Terraform agora só cuida de
+Cloudflare + rede `apps` + host_baseline — ver
+`modules/infra/terraform/README.md`.
 
-1. `terraform state rm` nos recursos do módulo — **containers E volumes**.
-   Sem isso, um apply futuro destrói o volume e você perde os dados.
-   Ex.: `terraform state rm module.storage_postgres` e os
-   `docker_volume` correspondentes.
-2. `docker rm -f <container>` (libera o nome; o volume fica).
-3. Suba a stack: `docker compose -f stacks/<arquivo>.yml up -d` (com as
-   variáveis de segredo no ambiente) **ou** crie/importe no Dockhand
-   (git-backed, context `stacks`, compose `<arquivo>.yml`).
-4. Valide que voltou.
-5. Apague o módulo TF e as entradas em `main.tf`/`locals.tf`/`secrets.tf`.
+Ordem usada (do menos ao mais crítico): **observability → domain → clubs →
+tela → persistence → compute**. O `ingress` e o `dockhand` (no `compute`)
+entraram por último; o `ingress` caiu por alguns segundos no restart.
 
-Ordem pra reduzir dor: **observability** (ninguém depende) → **compute**
-(registry/adminer/beszel/9router/ingress) → **persistence**
-(postgres/redis/minio: janela de downtime, os apps reconectam) → **apps**.
-
-O `ingress` é `network_mode: host` e sobe por último no arquivo; ele já
-fala com tudo por `127.0.0.1:<porta>`.
+Para adicionar um stack novo depois: escreva `stacks/<nome>.yml`, crie a
+stack no Dockhand (git-backed, context `stacks`, compose `<nome>.yml`) e
+suba. Os segredos são variáveis de stack no Dockhand (criptografadas no
+DB dele; o `/opt/dockhand` + `.encryption_key` entram no backup).
 
 ## O que NÃO vira stack
 

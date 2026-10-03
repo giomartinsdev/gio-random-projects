@@ -1,38 +1,32 @@
 # Terraform
 
-Source of truth for Cloudflare (DNS, Access, registry mTLS) **and** for
-the VPS's core containers (postgres, redis, minio, the APIs, the front,
-and every service module). This root module wires up provider
-configuration (`versions.tf`, the only place `provider` blocks live)
-and its child modules; it declares no resources of its own beyond
-that. `locals.tf`'s `services` list is the one place a new
-hostname/port pair gets declared — everything else derives from it:
+Source of truth for the **edge and the host**, not for containers. After
+the migration to persisted Compose stacks (Dockhand — see
+[`stacks/README.md`](../../../stacks/README.md) at the repo root), every
+container lives in a stack; this config keeps only what isn't a
+container:
 
 - **[`modules/cloud/cloudflare`](modules/cloud/cloudflare/README.md)** —
-  one A record per hostname, orange-cloud through Cloudflare's proxy
-  except registry.giomartins.dev (grey — its :5000 docker protocol
-  can't transit the proxy), Access applications/policies/service
-  tokens for everything not in `excluded_hostnames`, and
-  registry.giomartins.dev's mTLS chain + WAF enforcement rule (dormant
-  while its record stays grey — see that file).
+  DNS (one A record per hostname), Cloudflare Access
+  applications/policies/service tokens for everything not in
+  `excluded_hostnames`, registry.giomartins.dev's grey-cloud + mTLS
+  chain, and Email Routing.
 - **[`modules/network/docker_apps`](modules/network/docker_apps/README.md)**
-  — the shared `apps` docker network every container joins.
-- **[`modules/storage/*`](modules/storage/postgres/README.md)** —
-  postgres, redis, minio: stateful, internal-only (no published ports
-  except minio's console).
-- **[`modules/compute/apps/*`](modules/compute/apps/domain_api/README.md)**
-  — domain-api (+worker), tela-api, clubs-api, clubs-ingest: stateless
-  app/worker containers, each publishing its port from `locals.tf`
-  straight on the host (clubs-ingest publishes none).
-- **[`modules/compute/services/*`](modules/compute/services/registry/README.md)**
-  — registry (+watchtower), beszel monitoring, dockhand (Docker
-  management UI), 9router, vaultwarden
-  (+bridge), adminer,
-  [`observability`](modules/compute/services/observability/README.md)
-  (grafana + loki + prometheus + tempo + alloy: logs, metrics, traces
-  for everything else here), and
-  [`ingress`](modules/compute/services/ingress/README.md)
-  — the single nginx front door everything else routes through.
+  — the shared `apps` docker network. The stacks join it as
+  `external: true`, so it has to keep existing (here, or created
+  out-of-band) or every stack loses its network.
+- **`modules/compute/services/host_baseline`** — the in-VM firewall
+  (iptables) + NIC MTU, applied over SSH.
+
+`locals.tf`'s `services` list is still the one place a public
+hostname/port pair gets declared for DNS/Access (the `port` column is now
+informational — ingress routes by the ports the stacks publish).
+
+> **O resto deste README é histórico**: descreve a arquitetura anterior à
+> migração (quando o TF gerenciaba postgres/redis/minio, os apps e os
+> serviços como containers). O estado foi reconciliado com
+> `terraform state rm` (sem destruir) e os módulos de container foram
+> removidos do config; o histórico do git tem o contexto completo.
 
 ## Where the traffic goes
 
