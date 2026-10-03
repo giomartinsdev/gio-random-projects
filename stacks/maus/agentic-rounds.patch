@@ -1,0 +1,42 @@
+diff --git a/server/drivers/openai-chat-protocol.ts b/server/drivers/openai-chat-protocol.ts
+index 216a9e2..6968178 100644
+--- a/server/drivers/openai-chat-protocol.ts
++++ b/server/drivers/openai-chat-protocol.ts
+@@ -5,7 +5,7 @@ export interface ChatToolCall {
+   function: { name: string; arguments: string };
+ }
+ 
+-export const MAX_CHAT_TOOL_CALLS = 32;
++export const MAX_CHAT_TOOL_CALLS = 256;
+ const MAX_ARGUMENT_CHARS = 256_000;
+ 
+ export class ChatProtocolError extends Error {}
+diff --git a/server/drivers/openai-chat.ts b/server/drivers/openai-chat.ts
+index 13f8ea8..bb60d1e 100644
+--- a/server/drivers/openai-chat.ts
++++ b/server/drivers/openai-chat.ts
+@@ -20,6 +20,14 @@ import { ChatProtocolError, ChatReasoningDetails, ChatToolCalls, MAX_CHAT_TOOL_C
+ import { appendNative } from "./native.ts";
+ import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
+ 
++/** Local patch: upstream caps a turn at 16 model calls, too small for
++ * OpenAI-compatible/9router agentic work (writing a document, many tool
++ * calls). Env-tunable, default 64. */
++function chatMaxRounds(): number {
++  const raw = Number(process.env.OPENMAUS_OPENAI_COMPAT_MAX_ROUNDS);
++  return Number.isSafeInteger(raw) && raw >= 1 && raw <= 1000 ? raw : 64;
++}
++
+ export interface OpenAIChatMessage {
+   role: "system" | "user" | "assistant" | "tool";
+   content: string | ChatContentPart[] | null;
+@@ -495,7 +503,8 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
+         if (questionAllowed && !tools.definitions.some((definition) => definition.function.name === ASK_USER_TOOL)) {
+           tools.definitions.push(ASK_USER_TOOL_DEFINITION);
+         }
+-        for (let round = 0; round < 16; round++) {
++        const maxRounds = chatMaxRounds();
++        for (let round = 0; round < maxRounds; round++) {
+           abort.signal.throwIfAborted();
+           // Drain parked mid-turn input here, before the next completion
+           // request: the previous round's tool results are complete, so a
