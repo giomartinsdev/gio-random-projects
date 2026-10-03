@@ -108,7 +108,9 @@ services:
         condition: service_healthy
     environment:
       OMB_URL: http://127.0.0.1:8799
-      OMB_BOT_ID: ${OMB_BOT_ID:?defina OMB_BOT_ID (id do bot em GET /api/bots)}
+      # Opcional: bot padrão quando a mensagem não nomeia um. Vazio = o bridge
+      # pede pra escolher (ou usa o único bot, se houver um só).
+      OMB_DEFAULT_BOT_ID: ${OMB_DEFAULT_BOT_ID:-}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:?defina SLACK_BOT_TOKEN (xoxb-...)}
       SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:?defina SLACK_APP_TOKEN (xapp-...)}
       SLACK_ALLOWED_USERS: ${SLACK_ALLOWED_USERS:-}
