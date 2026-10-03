@@ -64,6 +64,13 @@ resource "docker_volume" "grafana_data" {
 # anyone. A memory ceiling that OOM-kills and restarts one observability
 # container is preferable to it squeezing the game server; raise the
 # ceiling if a container starts cycling (see README).
+#
+# memory_swap = 1024 is declared explicitly on each: with `memory` set
+# and `memory_swap` left out, Docker defaults swap to 2x the memory
+# limit (1024), and the provider reads that back from the live container
+# as 1024 != the config's null — a perpetual in-place diff on every
+# plan. Declaring the 1024 Docker was already applying keeps the current
+# behavior (512 RAM + 512 swap) and makes plan clean.
 
 resource "docker_container" "loki" {
   name    = "loki"
@@ -84,7 +91,8 @@ resource "docker_container" "loki" {
     name = var.network_name
   }
 
-  memory = 512
+  memory      = 512
+  memory_swap = 1024
 
   log_opts = {
     "max-size" = "10m"
@@ -126,7 +134,8 @@ resource "docker_container" "prometheus" {
     name = var.network_name
   }
 
-  memory = 512
+  memory      = 512
+  memory_swap = 1024
 
   log_opts = {
     "max-size" = "10m"
@@ -157,7 +166,8 @@ resource "docker_container" "tempo" {
     name = var.network_name
   }
 
-  memory = 512
+  memory      = 512
+  memory_swap = 1024
 
   log_opts = {
     "max-size" = "10m"
@@ -207,7 +217,8 @@ resource "docker_container" "alloy" {
     external = 4318
   }
 
-  memory = 512
+  memory      = 512
+  memory_swap = 1024
 
   log_opts = {
     "max-size" = "10m"
@@ -263,7 +274,8 @@ resource "docker_container" "grafana" {
     name = var.network_name
   }
 
-  memory = 512
+  memory      = 512
+  memory_swap = 1024
 
   log_opts = {
     "max-size" = "10m"
