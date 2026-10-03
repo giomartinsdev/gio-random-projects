@@ -237,6 +237,7 @@ module "compute_services_ingress" {
     module.compute_apps_clubs_api,
     module.compute_services_registry,
     module.compute_services_monitoring,
+    module.compute_services_dockhand,
     module.compute_services_ai_proxy,
     module.compute_services_vaultwarden,
     module.compute_services_adminer,
@@ -254,6 +255,18 @@ module "compute_services_monitoring" {
 
   network_name = module.network_docker_apps.network_name
   agent_key    = var.beszel_agent_key
+}
+
+# Dockhand -- the Docker management UI at dockhand.giomartins.dev. Same
+# loopback-only + Access shape as monitoring above; the read-mostly
+# contract with this Terraform config is in the module's own README.
+module "compute_services_dockhand" {
+  source = "./modules/compute/services/dockhand"
+  providers = {
+    docker = docker
+  }
+
+  network_name = module.network_docker_apps.network_name
 }
 
 module "compute_services_ai_proxy" {

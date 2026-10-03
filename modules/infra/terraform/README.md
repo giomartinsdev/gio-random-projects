@@ -25,7 +25,8 @@ hostname/port pair gets declared — everything else derives from it:
   app/worker containers, each publishing its port from `locals.tf`
   straight on the host (clubs-ingest publishes none).
 - **[`modules/compute/services/*`](modules/compute/services/registry/README.md)**
-  — registry (+watchtower), beszel monitoring, 9router, vaultwarden
+  — registry (+watchtower), beszel monitoring, dockhand (Docker
+  management UI), 9router, vaultwarden
   (+bridge), adminer,
   [`observability`](modules/compute/services/observability/README.md)
   (grafana + loki + prometheus + tempo + alloy: logs, metrics, traces

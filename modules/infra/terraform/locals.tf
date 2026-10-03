@@ -41,6 +41,19 @@ locals {
       port     = 8222
     },
     {
+      # Dockhand — Docker management UI (containers, logs, shell, file
+      # browser, image CVE scans). Same Google-SSO Access outer layer as
+      # beszel/vault above (not in excluded_hostnames); its own local
+      # login, created on first visit, is the inner one. Port must match
+      # module.compute_services_dockhand's published_port.
+      #
+      # Read-mostly by contract: every container here is owned by this
+      # same Terraform config, so changing a container *definition*
+      # belongs in Terraform, not the UI — see the module's README.
+      hostname = "dockhand.giomartins.dev"
+      port     = 8093
+    },
+    {
       # tela-api: the same tela-frontend page calls this cross-origin
       # for signalling/SFU (see modules/apps/tela-api's own README) --
       # same reasoning as tela.giomartins.dev above for staying out of
