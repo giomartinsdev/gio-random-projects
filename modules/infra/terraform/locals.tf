@@ -108,6 +108,17 @@ locals {
       port     = 3000
     },
     {
+      # RabbitMQ management UI — the durable command bus + event fanout behind
+      # the domain services (see stacks/persistence.yml). Browser-facing
+      # dashboard, so it gets the same Google-SSO Access outer layer as
+      # vault/adminer/grafana above (not in excluded_hostnames); RabbitMQ's own
+      # management login is the inner one. Port must match
+      # stacks/persistence.yml's loopback publish (15672). The AMQP port (5672)
+      # is never published — only the internal `apps` network reaches it.
+      hostname = "rabbit.giomartins.dev"
+      port     = 15672
+    },
+    {
       # OpenDots — CopilotKit's self-hosted "Dots" (AI coworkers with
       # Spaces/pages and chat). ONLY the DNS A record is managed here (the
       # hostname is in excluded_hostnames): the container itself is the
