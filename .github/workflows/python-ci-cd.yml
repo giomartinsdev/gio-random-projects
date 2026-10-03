@@ -3,6 +3,8 @@ name: Python deploy
 # CI/CD for the Python workers under modules/apps/*/ (has both a
 # Dockerfile and a pyproject.toml) — touch only modules/apps/clubs-ingest/**
 # and only the clubs-ingest image rebuilds, gets pushed, and redeploys.
+# packages/** is a trigger too (§11-2): a change there rebuilds the apps that
+# import that package (map in the discover step below), never all of them.
 # Go apps go through go-ci-cd.yml, TypeScript frontends through
 # ts-frontend-ci-cd.yml — each language keeps its own pipeline because
 # the test/build steps never generalize for free.
@@ -18,6 +20,11 @@ on:
     branches: [main]
     paths:
       - "modules/apps/clubs-ingest/**"
+      # Shared code lives in packages/ (§7). Without this, a commit that only
+      # edits the shared contract triggers NOTHING and production keeps the
+      # stale contract (§11-2) — the discover rule below needs the run to
+      # start before it can rebuild the dependents.
+      - "packages/**"
   workflow_dispatch:
     inputs:
       app:
@@ -45,11 +52,41 @@ jobs:
             apps="$all_apps"
           else
             changed=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
+
+            # §11-2: a package change rebuilds the apps that import it. The map
+            # is EXPLICIT, not a blanket `^packages/` rule: a blanket rule
+            # rebuilds every python app for a contract most of them cannot see
+            # (clubs-ingest does not import finance-contracts), and a package
+            # whose change rebuilds nobody is the §11 risk -- green build with a
+            # stale contract in production. Adding a package here is a one-line
+            # change; the assertion below stops the map from rotting silently.
+            declare -A PACKAGE_APPS=( [packages/finance-contracts]=finance-api )
+            for pkg in "${!PACKAGE_APPS[@]}"; do
+              dependents="${PACKAGE_APPS[$pkg]}"
+              for dependent in $dependents; do
+                [ -d "modules/apps/$dependent" ] || {
+                  echo "::error::$pkg maps to modules/apps/$dependent, which does not exist"
+                  exit 1
+                }
+              done
+            done
+
             apps=""
             for a in $all_apps; do
               if echo "$changed" | grep -q "^modules/apps/$a/"; then
                 apps="$apps $a"
+                continue
               fi
+              for pkg in "${!PACKAGE_APPS[@]}"; do
+                case " ${PACKAGE_APPS[$pkg]} " in
+                  *" $a "*) ;;
+                  *) continue ;;
+                esac
+                if echo "$changed" | grep -q "^$pkg/"; then
+                  apps="$apps $a"
+                  break
+                fi
+              done
             done
           fi
 

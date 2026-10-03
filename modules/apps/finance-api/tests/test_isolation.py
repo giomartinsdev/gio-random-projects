@@ -48,8 +48,11 @@ FORBIDDEN_IMPORTS = frozenset(
     }
 )
 
-# Substrings that must not appear in this app's source at all. A commented
-# DATABASE_URL is still a config someone will wire up at 2am.
+# Substrings that must not appear in this app's *code* at all. The check runs
+# over `_code_text` below, which reads through the AST -- comments and
+# docstrings never reach it, so this cannot fire on prose that says "there is
+# no DATABASE_URL here" (that prose is the point). POSTGRES_ stays on purpose:
+# a `POSTGRES_HOST`-style slip is a driver by another name.
 FORBIDDEN_SUBSTRINGS = ("DATABASE_URL", "RABBITMQ_URL", "POSTGRES_", "AMQP_URL")
 
 
@@ -286,3 +289,99 @@ def test_no_action_string_literal_is_redefined_in_the_app() -> None:
     assert offenders == [], (
         f"action names must be imported from finance_contracts: {offenders}"
     )
+
+
+# ------------------------------------------------- stacks/finance.yml (§12.6)
+#
+# §12.6's static clause says the *test* reads the stack file -- the app's own
+# source cannot prove anything about the compose that runs it. It is parsed as
+# YAML and inspected PER SERVICE, never grepped as text: the
+# `finance-whatsapp-worker` legitimately carries a broker URL (§1.1 -- it
+# consumes the `finance.*` events), so a file-level ban would either kill the
+# worker or force the check to be deleted.
+
+STACK_FILE = REPO_ROOT / "stacks" / "finance.yml"
+THIS_SERVICE = "finance-api"
+WORKER_SERVICE = "finance-whatsapp-worker"
+
+# Keys that would mean this service owns persistence it must not own (§1.1:
+# banco, broker de comando, domain-api e domain-worker sao do stack `domain`).
+DB_KEYS = ("DATABASE_URL", "POSTGRES_URL", "POSTGRES_DSN", "PGHOST", "PGPORT", "PGUSER", "DB_URL")
+DB_DSN_SCHEMES = ("postgres://", "postgresql://")
+BROKER_KEYS = ("RABBITMQ_URL", "AMQP_URL", "BROKER_URL", "KAFKA_BOOTSTRAP_SERVERS")
+BROKER_DSN_SCHEMES = ("amqp://", "amqps://")
+
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover -- only in a stripped venv
+    yaml = None
+
+
+def _finance_stack() -> dict:
+    assert yaml is not None, (
+        "PyYAML is required by the §12.6 static check that reads "
+        f"{STACK_FILE.relative_to(REPO_ROOT)}: unparsed, the check sees nothing "
+        "and its green proves nothing"
+    )
+    assert STACK_FILE.is_file(), (
+        f"{STACK_FILE.relative_to(REPO_ROOT)} must exist: §12.6 proves the "
+        "isolation statically by reading it"
+    )
+    return yaml.safe_load(STACK_FILE.read_text())
+
+
+def _environment_of(stack: dict, service: str) -> dict:
+    assert service in (stack.get("services") or {}), (
+        f"{service} must be a service of {STACK_FILE.name}: a rename there "
+        "would silently drop this assertion"
+    )
+    return stack["services"][service].get("environment") or {}
+
+
+def _surfaces(environment: dict, keys: tuple[str, ...], schemes: tuple[str, ...]) -> list[str]:
+    """Keys and DSN-valued entries that expose one kind of dependency.
+
+    Matching the *value* as well as the key: a postgres DSN under an innocuous
+    name is the same violation as the canonical `DATABASE_URL`.
+    """
+    offenders = [f"{k} (key)" for k in environment if k in keys]
+    offenders += [
+        f"{k} (DSN)"
+        for k, v in environment.items()
+        if isinstance(v, str) and v.lower().startswith(schemes)
+    ]
+    return sorted(offenders)
+
+
+def test_stack_declares_no_persistence_for_the_finance_api() -> None:
+    """§12.6 estatico: nem banco nem broker no `environment:` desta app."""
+    environment = _environment_of(_finance_stack(), THIS_SERVICE)
+    offenders = _surfaces(environment, DB_KEYS + BROKER_KEYS, DB_DSN_SCHEMES + BROKER_DSN_SCHEMES)
+    assert offenders == [], (
+        "finance-api must not receive any database or broker surface from the "
+        f"stack (§1.1 -- persistence belongs to the `domain` stack): {offenders}"
+    )
+
+
+def test_stack_check_is_not_vacuous() -> None:
+    """The scoping above must be *exercised*, not merely written.
+
+    The file does carry a broker URL -- the worker's, which is legitimate
+    (§1.1). Pinning that down is what proves the ban is scoped per service
+    instead of passing on a file with nothing left to check, and proves the
+    worker's exemption is broker-only (a database surface there is still a
+    violation, worker or not).
+    """
+    stack = _finance_stack()
+    environment = _environment_of(stack, THIS_SERVICE)
+    assert environment, f"an empty environment for {THIS_SERVICE} makes §12.6 vacuous"
+    assert any(v in STACK_FILE.read_text() for v in BROKER_KEYS), (
+        f"{STACK_FILE.name} no longer declares any broker surface: the "
+        "per-service exemption is no longer being exercised"
+    )
+    worker = stack.get("services", {}).get(WORKER_SERVICE)
+    if worker is not None:
+        assert _surfaces(worker.get("environment") or {}, DB_KEYS, DB_DSN_SCHEMES) == [], (
+            "the worker may carry a broker URL but never a database surface "
+            f"(§1.1): {sorted(_surfaces(worker['environment'] or {}, DB_KEYS, DB_DSN_SCHEMES))}"
+        )

@@ -5,13 +5,22 @@
 # Isolamento (§1.1): NENHUM serviço daqui tem DATABASE_URL nem driver de banco.
 # Banco, broker de comando, domain-api e domain-worker são do stack `domain`.
 #
-# Segredos (variáveis de stack no Dockhand — NUNCA no git, só ${VAR}):
+# Segredos (variáveis de stack no Dockhand — NUNCA no git, só ${VAR}).
+# Lista conferida contra §10.3 e contra TODO `${...}` deste arquivo: uma
+# variável referenciada e não cadastrada é deploy vermelho (ou verde com o
+# default errado).
 #   FINANCE_API_KEYS        (lista key:label, um caller por serviço)
 #   FINANCE_WORKER_API_KEY  (key do worker; a MESMA tem de estar em FINANCE_API_KEYS)
 #   FINANCE_DOMAIN_API_KEY  (key da finance-api p/ o domain-api; a MESMA tem de
 #                           estar em DOMAIN_API_KEYS do stack `domain`, senão
 #                           todo request leva 401 com o deploy verde — §10.3)
+#   RABBITMQ_USER           (opcional, default `domain` — o MESMO do persistence.yml)
+#   RABBITMQ_PASSWORD       (a MESMA de persistence.yml)
 #   WHATSAPP_VERIFY_TOKEN / WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID
+#
+# Fora daqui de propósito: POSTGRES_PASSWORD. A `finance-api` não fala com o
+# banco (§1.1) e este stack não publica serviço de banco — quem precisa dela é
+# o stack `domain`/`persistence`.
 name: finance
 
 services:
@@ -21,9 +30,18 @@ services:
     restart: unless-stopped
     environment:
       # SEM DATABASE_URL / RABBITMQ_URL — a persistência é do stack `domain` (§1.1)
+      # 8000 é a porta do domain-api DENTRO do container (HTTP_ADDR ":8000" em
+      # stacks/domain.yml); o `127.0.0.1:8000:8000` de lá é só o publish para o
+      # host. Daqui o tráfego é container-a-container pela rede `apps`, então a
+      # porta certa é a interna — a externa não é alcançável pelo nome DNS.
       DOMAIN_API_BASE_URL: http://domain-api:8000
       DOMAIN_API_KEY: ${FINANCE_DOMAIN_API_KEY:?defina FINANCE_DOMAIN_API_KEY}
       HTTP_ADDR: ":8000"
+      # 12s > os 10s que o /sync do domain-api segura a conexão por desenho:
+      # sem a folga, uma escrita lenta e bem-sucedida vira erro de transporte
+      # no cliente em vez do 504-com-corpo documentado (§4.1). Default em
+      # config.py é exatamente este; explícito aqui porque o app o lê.
+      DOMAIN_API_TIMEOUT_S: "12"
       FINANCE_API_KEYS: ${FINANCE_API_KEYS:?defina FINANCE_API_KEYS}
       RATE_LIMIT_RPS: "5"
       RATE_LIMIT_BURST: "20"
@@ -44,6 +62,10 @@ services:
     restart: unless-stopped
     environment:
       # SEM DATABASE_URL — regra de isolamento (§1.1)
+      # 8000 = porta da finance-api DENTRO do container; a 8018 do `ports`
+      # abaixo é só o loopback do host para o ingress (§10.5), não a rota
+      # container-a-container. Sem healthcheck aqui de propósito: o app não
+      # existe, e um healthcheck inventado é contrato falso (ver comentário).
       FINANCE_API_BASE_URL: http://finance-api:8000
       FINANCE_API_KEY: ${FINANCE_WORKER_API_KEY:?defina FINANCE_WORKER_API_KEY}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-domain}:${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}@rabbitmq:5672/
