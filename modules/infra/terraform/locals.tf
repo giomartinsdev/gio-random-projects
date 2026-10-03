@@ -109,10 +109,12 @@ locals {
     },
     {
       # OpenDots — CopilotKit's self-hosted "Dots" (AI coworkers with
-      # Spaces/pages and chat). Google-SSO Access as the outer layer
-      # (not in excluded_hostnames), exactly like vault/grafana above;
-      # the app's own OWNER_TOKEN login is the inner one. The chat
-      # streams (SSE/AG-UI), so the ingress route disables buffering.
+      # Spaces/pages and chat). ONLY the DNS A record is managed here (the
+      # hostname is in excluded_hostnames): the container itself is the
+      # Dockhand git stack stacks/opendots.yml, like every other app. No
+      # Cloudflare Access app — the app's own OWNER_TOKEN login is the gate,
+      # and the chat streams (SSE/AG-UI) can't sit behind a Google SSO
+      # redirect, so the ingress route disables buffering.
       # Port must match stacks/opendots.yml's loopback publish (4310).
       hostname = "dots.giomartins.dev"
       port     = 4310

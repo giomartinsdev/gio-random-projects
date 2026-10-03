@@ -1,29 +1,36 @@
-# opendots.yml — OpenDots (CopilotKit), template self-hosted de "Dots"
-# (coworkers de IA) com Spaces/páginas + chat. Não é código nosso: a
-# imagem é construída do upstream pinado pelo .github/workflows/
-# opendots-ci-cd.yml e publicada em registry.giomartins.dev:5000/opendots.
+# opendots.yml — OpenDots (CopilotKit): template self-hosted de "Dots"
+# (coworkers de IA) com Spaces/páginas + chat. NÃO é código nosso: buildamos
+# o upstream PINADO direto no VPS (contexto git do Docker), igual ao
+# compose.yml da raiz do próprio repo (https://github.com/CopilotKit/OpenDots)
+# — sem imagem nossa em registry e sem pipeline de build.
 #
-# Escopo atual: chat + Spaces (target `app` do Dockerfile do upstream).
-# Sem Calls (VOICE_API_KEY/Realtime), sem Slack e sem Dot computers
-# (OpenBot) — esses entram como variáveis de stack quando ligados.
+# Escopo atual: chat + Spaces (target `app`). Sem Calls (VOICE_*), sem Slack e
+# sem Dot computers (OpenBot) — entram como variável de stack quando ligados.
+#
+# Fala com a Intelligence self-hosted (stacks/intelligence.yml) pela rede
+# `apps`, e com o 9router (stacks/compute.yml) como modelo.
 #
 # Segredos (variáveis de stack no Dockhand):
 #   OPENDOTS_OWNER_TOKEN            24+ chars; login local do app
-#   OPENDOTS_INTELLIGENCE_API_KEY   CopilotKit Intelligence (runtime das conversas)
-#   OPENDOTS_OPENAI_API_KEY         credencial do provider OpenAI-compatível
-# Não-segredo (defaults abaixo, sobrescrevíveis):
-#   OPENDOTS_OPENAI_BASE_URL  (default: o 9router interno)
-#   OPENDOTS_OPENAI_MODEL
-#   OPENDOTS_OWNER_ID         (KEEP STABLE — ele é dono das conversas)
+#   OPENDOTS_OPENAI_API_KEY         credencial do provider (o 9router aceita
+#                                   qualquer valor não-vazio: REQUIRE_API_KEY=false)
+# Defaults (sobrescrevíveis):
+#   OPENDOTS_OWNER_ID, OPENDOTS_OPENAI_BASE_URL, OPENDOTS_OPENAI_MODEL,
+#   OPENDOTS_INTELLIGENCE_API_KEY (a chave pré-semeada do composite),
+#   OPENDOTS_INTELLIGENCE_API_URL, OPENDOTS_INTELLIGENCE_WS_URL.
 name: opendots
 
 services:
   opendots:
-    image: ${OPENDOTS_IMAGE:-registry.giomartins.dev:5000/opendots:latest}
+    # Pin do upstream: um deploy reprodutível. Sobreponha o serviço inteiro
+    # (ou edite aqui) pra subir de versão.
+    build:
+      context: https://github.com/CopilotKit/OpenDots.git#c2569bb6a13a22e565cf3eb791c62267d06babb1
+      target: app
     container_name: opendots
     restart: unless-stopped
     init: true
-    # Só o ingress (host network) alcança a app pelo loopback; nada de 0.0.0.0.
+    # Só o ingress (host network) alcança a app pelo loopback.
     ports:
       - "127.0.0.1:4310:4310"
     environment:
@@ -34,17 +41,20 @@ services:
       APP_ORIGIN: https://dots.giomartins.dev
       OWNER_ID: ${OPENDOTS_OWNER_ID:-opendots-owner}
       OWNER_TOKEN: ${OPENDOTS_OWNER_TOKEN:?defina OPENDOTS_OWNER_TOKEN}
-      INTELLIGENCE_API_KEY: ${OPENDOTS_INTELLIGENCE_API_KEY:-}
-      OPENAI_API_KEY: ${OPENDOTS_OPENAI_API_KEY:-}
+      # Intelligence self-hosted (stack `intelligence`, na rede `apps`).
+      # A chave pré-semeada é a que o container composite espera.
+      INTELLIGENCE_API_KEY: ${OPENDOTS_INTELLIGENCE_API_KEY:-cpk_sPRVSEED_seed0privat0longtoken00}
+      INTELLIGENCE_API_URL: ${OPENDOTS_INTELLIGENCE_API_URL:-http://intelligence:4201}
+      INTELLIGENCE_WS_URL: ${OPENDOTS_INTELLIGENCE_WS_URL:-ws://intelligence:4401}
       # O 9router (stack compute) é OpenAI-compatível e está na rede `apps`.
+      OPENAI_API_KEY: ${OPENDOTS_OPENAI_API_KEY:-not-needed}
       OPENAI_BASE_URL: ${OPENDOTS_OPENAI_BASE_URL:-http://9router:20128/v1}
       OPENAI_MODEL: ${OPENDOTS_OPENAI_MODEL:-}
       # Sem o worker de browser (target `browser`) nem key da Parallel.
-      WEB_SEARCH_PROVIDER: ${OPENDOTS_WEB_SEARCH_PROVIDER:-disabled}
+      WEB_SEARCH_PROVIDER: disabled
     volumes:
       - opendots-data:/data
-    networks:
-      - apps
+    networks: [apps]
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -57,3 +67,4 @@ volumes:
 networks:
   apps:
     external: true
+    name: apps
