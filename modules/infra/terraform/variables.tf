@@ -1,3 +1,7 @@
+# Variáveis que sobraram depois da migração: só o que a Cloudflare, a rede
+# `apps` e o baseline do host precisam. Tudo de storage/compute/apps virou
+# stack (Dockhand) e não é mais input do Terraform.
+
 # --- Cloudflare account/zone ---
 
 variable "cloudflare_account_id" {
@@ -40,9 +44,9 @@ variable "excluded_hostnames" {
     "tela-api.giomartins.dev",  # same tela-frontend page calls this cross-origin for signalling/SFU — a browser SSO redirect would break every fetch/WebSocket call
     "hub.giomartins.dev",       # the hub is chrome around the public SPAs, so it's public too — its opt-in Google login lives on the /sso path instead (see path_protected_hostnames in locals.tf), which gates only the admin shortcuts tier
     "clubs.giomartins.dev",     # the hub's SPA is public by design -- a visitor reads the whole dataset with no account, and it must be iframe-embeddable in the hub (same reasoning as tela); the opt-in login is clubs-api's own Google Sign-In, no Access app involved
-    "clubs-api.giomartins.dev", # no Cloudflare Access at all -- its own Google Sign-In + session cookie is the gate (see modules/apps/clubs-api); the bare hostname serves the public reads (rankings, clubs, players, matches) so an anonymous visitor can browse and the SPA can probe /api/me without a redirect
+    "clubs-api.giomartins.dev", # no Cloudflare Access at all -- its own Google Sign-In + session cookie is the gate (see stacks/clubs.yml); the bare hostname serves the public reads so an anonymous visitor can browse and the SPA can probe /api/me without a redirect
     "ai.giomartins.dev",        # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
-    "otel.giomartins.dev",      # public visitors' browsers send SPA telemetry here — a Google SSO redirect would break every one of them; alloy's OTLP receiver CORS allowlist (the SPA origins only) is the access control (modules/compute/services/observability)
+    "otel.giomartins.dev",      # public visitors' browsers send SPA telemetry here — a Google SSO redirect would break every one of them; alloy's OTLP receiver CORS allowlist (the SPA origins only) is the access control (stacks/observability.yml)
   ]
 }
 
@@ -70,21 +74,8 @@ variable "email_routing_rules" {
 # --- server ---
 
 variable "server_ip" {
-  description = "Public IP of the VPS. Target of every DNS record (grey-cloud until the proxy flip) and tela's SFU advertisement."
+  description = "Public IP of the VPS. Target of every DNS A record (dns.tf)."
   type        = string
-}
-
-variable "coturn_enabled" {
-  description = <<-EOT
-    Run tela's self-hosted coturn (free TURN relay). On by default: the
-    relay is what makes screen sharing work from a browser that can't
-    complete the direct ICE/DTLS handshake, and its ports are opened by
-    the host baseline module. The child module still falls back to
-    STUN-only if the private address or the shared secret is missing, so
-    this never hard-breaks. Set TF_VAR_coturn_enabled=false to disable.
-  EOT
-  type        = bool
-  default     = true
 }
 
 variable "host_interface" {
@@ -105,101 +96,9 @@ variable "docker_host" {
   description = <<-EOT
     Where the docker provider connects — straight to the VPS dockerd
     over SSH, same channel a human `docker` CLI would use. Requires the
-    key in the caller's ssh-agent (CI: tf-ci-cd.yml/go-ci-cd.yml/
-    ts-frontend-ci-cd.yml/python-ci-cd.yml's SSH setup step; locally: your
-    own agent). No
-    default — always ssh://ubuntu@<server_ip>, and hardcoding that IP
-    twice invites the two to drift.
+    key in the caller's ssh-agent (CI: tf-ci-cd.yml's SSH setup step;
+    locally: your own agent). No default — always ssh://ubuntu@<server_ip>,
+    and hardcoding that IP twice invites the two to drift.
   EOT
-  type        = string
-}
-
-# --- compute/data + compute/app ---
-# postgres_password and domain_api_keys are Terraform-generated now —
-# see secrets.tf — not inputs anymore.
-
-# --- compute/registry ---
-
-variable "registry_host" {
-  description = "Host:port docker_container/docker_image resources pull images from, and the docker provider's registry_auth is scoped to (versions.tf). Port 5000 because the registry serves plain HTTP (see modules/compute/services/registry) -- a bare hostname makes Docker assume HTTPS on 443, which nothing listens on until the Phase 2 proxy flip."
-  type        = string
-  default     = "registry.giomartins.dev:5000"
-}
-
-variable "registry_user" {
-  description = "Basic-auth username for docker push/pull against registry.giomartins.dev."
-  type        = string
-  default     = "admin"
-}
-
-variable "registry_password" {
-  description = <<-EOT
-    Basic-auth password for the registry. Generate: openssl rand -base64 24.
-    Stays a real input (not Terraform-generated like the other secrets
-    in secrets.tf) because the root docker provider (versions.tf) also
-    needs it for registry_auth, and provider config can't depend on a
-    resource value computed in the same apply. Everything else about
-    it IS automated now — see modules/compute/registry's README and
-    this config's secrets.tf (docker_config_install/registry_restart/
-    vault_seed). go-ci-cd.yml/ts-frontend-ci-cd.yml/python-ci-cd.yml's own REGISTRY_PASSWORD GH
-    secret (for their push steps) is the one thing still synced by
-    hand after a rotation.
-  EOT
-  type        = string
-  sensitive   = true
-}
-
-# --- compute/monitoring ---
-
-variable "beszel_agent_key" {
-  description = "The Beszel hub's SSH public key — see modules/compute/monitoring's own variable of the same name for why this can't have a real default and how to obtain it."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-# --- compute/vaultwarden ---
-# vaultwarden_admin_token is Terraform-generated now — see secrets.tf.
-
-# --- compute/vaultwarden_bridge ---
-# See that module's own README for the required setup order (real
-# Vaultwarden account first, then an API key, then these). Only the
-# four "secret zero" credentials below stay as real inputs —
-# vaultwarden_bridge_api_key is Terraform-generated now (secrets.tf);
-# module.compute_vaultwarden_bridge's create/skip guard switched from
-# checking that to checking vaultwarden_account_email instead.
-
-variable "vaultwarden_account_email" {
-  description = "Email of the real Vaultwarden account modules/compute/vaultwarden_bridge logs in as."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "vaultwarden_account_master_password" {
-  description = "That account's master password."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "vaultwarden_api_client_id" {
-  description = "API key client_id from vault.giomartins.dev → Account Settings → Security → Keys."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "vaultwarden_api_client_secret" {
-  description = "Matching client_secret for vaultwarden_api_client_id."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-# --- clubs (FC Clubs Hub) ---
-
-variable "clubs_google_oauth_client_id" {
-  description = "The Google OAuth 2.0 Web application Client ID the FC Clubs Hub's own sign-in button and clubs-api's ID-token verification use -- not secret (it's public in every ID token's aud claim and in the frontend bundle), but passed in from outside (terraform.tfvars or TF_VAR_clubs_google_oauth_client_id) rather than hardcoded, so rotating it never means editing this repo. Each Google project registers exactly the JavaScript origins its own app calls from, so this client is clubs' alone."
   type        = string
 }

@@ -80,23 +80,12 @@ provider "cloudflare" {
 
 provider "docker" {
   # Talks straight to the VPS dockerd over SSH (var.docker_host) — the
-  # same channel a human `docker` CLI would use, no exposed TCP port,
-  # no Access service token, no header-injecting proxy anywhere in the
-  # path. The remote host needs the key in the caller's ssh-agent (CI:
-  # tf-ci-cd.yml's SSH setup step; locally: your own agent).
+  # same channel a human `docker` CLI would use, no exposed TCP port.
   #
-  # A pull triggered over the Docker API (as this provider does, unlike
-  # the docker CLI) carries its own auth per-request — dockerd does NOT
-  # fall back to the host's `docker login`-populated config.json for
-  # API-originated pulls. registry_auth below supplies that per-pull;
-  # without it, every docker_container/docker_image resource pulling
-  # from registry.giomartins.dev (htpasswd-gated) fails with "no basic
-  # auth credentials".
-  registry_auth {
-    address  = var.registry_host
-    username = var.registry_user
-    password = var.registry_password
-  }
+  # Depois da migração pras stacks, o TF só usa o docker provider pra
+  # uma coisa: criar/garantir a rede `apps` (module.network_docker_apps).
+  # Nenhuma imagem é mais puxada daqui (os containers são do Dockhand),
+  # então não há mais registry_auth.
   host = var.docker_host
 }
 
