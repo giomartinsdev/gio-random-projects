@@ -11,7 +11,8 @@ Cada arquivo é um stack **independente** (sem agregado na raiz). Não há
 
 | Arquivo | O que migra | Serviços |
 | --- | --- | --- |
-| `persistence.yml` | `modules/storage/*` | postgres, redis, minio (+ volumes) |
+| `bootstrap.yml` | infra compartilhada | `network-init` (cria a rede `apps`; suba ESTE primeiro numa VPS nova) |
+| `persistence.yml` | `modules/storage/*` | postgres, redis, minio, minio-buckets (+ volumes) |
 | `compute.yml` | `modules/compute/services/*` (menos observability) | registry, htpasswd-init, registry-docker-config, watchtower, beszel-hub, beszel-agent, vaultwarden, vaultwarden-api, adminer, 9router, ingress, dockhand |
 | `observability.yml` | `modules/compute/services/observability` | loki, prometheus, tempo, alloy, grafana (+ configs em `observability/`) |
 | `domain.yml` | `modules/compute/apps/domain_api` | domain-api, domain-worker |

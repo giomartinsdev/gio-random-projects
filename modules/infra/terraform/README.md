@@ -11,10 +11,9 @@ container:
   applications/policies/service tokens for everything not in
   `excluded_hostnames`, registry.giomartins.dev's grey-cloud + mTLS
   chain, and Email Routing.
-- **[`modules/network/docker_apps`](modules/network/docker_apps/README.md)**
-  — the shared `apps` docker network. The stacks join it as
-  `external: true`, so it has to keep existing (here, or created
-  out-of-band) or every stack loses its network.
+- **`modules/network/docker_apps`** — **migrou para `stacks/bootstrap.yml`**
+  (o `network-init` cria a rede `apps`, que as stacks usam como
+  `external: true`). O módulo saiu do state (`state rm`, sem destruir a rede).
 - **`modules/compute/services/host_baseline`** — the in-VM firewall
   (iptables) + NIC MTU, applied over SSH.
 

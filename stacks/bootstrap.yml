@@ -1,0 +1,22 @@
+# bootstrap.yml — infra compartilhada que não pertence a nenhum app: a rede
+# docker `apps`, que TODAS as stacks usam como `external: true`. Ela precisa
+# existir ANTES de qualquer stack subir (o compose falha se uma rede external
+# não existe). Este one-shot é idempotente e cria a rede.
+#
+# Antes isto era o `module.network_docker_apps` do Terraform; saiu de lá na
+# migração (`terraform state rm`, sem destruir). Numa VPS nova, suba ESTE
+# primeiro: `docker compose -f stacks/bootstrap.yml up -d` (ou, no Dockhand,
+# faça o deploy desta stack antes das outras).
+name: bootstrap
+
+services:
+  network-init:
+    image: docker:cli
+    container_name: apps-network-init
+    restart: "no"
+    entrypoint: ["sh", "-c"]
+    command:
+      - 'docker network create apps >/dev/null 2>&1 && echo "rede apps criada" || echo "rede apps já existe"'
+    # Fala com o dockerd do host pelo socket pra criar a rede.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

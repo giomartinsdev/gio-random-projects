@@ -49,17 +49,10 @@ module "cloud_cloudflare" {
   email_routing_rules       = var.email_routing_rules
 }
 
-# A rede `apps` continua no TF de propósito: as stacks a usam como
-# `external: true`. Se sair daqui, um apply a destruiria e todas as
-# stacks perderiam a rede.
-module "network_docker_apps" {
-  source = "./modules/network/docker_apps"
-  providers = {
-    docker = docker
-  }
-
-  network_name = "apps"
-}
+# A rede `apps` saiu do Terraform: agora é criada pelo `stacks/bootstrap.yml`
+# (one-shot idempotente, com o socket do docker). As stacks a referenciam
+# como `external: true`, então numa VPS nova suba o bootstrap antes. O
+# `module.network_docker_apps` foi removido do state (state rm, sem destruir).
 
 # Host-level baseline (NIC MTU + the LOCAL iptables rules in front of every
 # published port). The Oracle Security List is a separate cloud layer; these

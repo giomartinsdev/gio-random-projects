@@ -21,10 +21,6 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 5.0"
     }
-    docker = {
-      source  = "kreuzwerker/docker"
-      version = "~> 3.0"
-    }
     random = {
       source  = "hashicorp/random"
       version = "~> 3.6"
@@ -76,17 +72,6 @@ provider "cloudflare" {
   # Routing — modules/cloudflare/email_routing.tf) Zone / Email
   # Routing Rules / Edit + Account / Email Routing Addresses / Edit —
   # see modules/cloudflare's README.
-}
-
-provider "docker" {
-  # Talks straight to the VPS dockerd over SSH (var.docker_host) — the
-  # same channel a human `docker` CLI would use, no exposed TCP port.
-  #
-  # Depois da migração pras stacks, o TF só usa o docker provider pra
-  # uma coisa: criar/garantir a rede `apps` (module.network_docker_apps).
-  # Nenhuma imagem é mais puxada daqui (os containers são do Dockhand),
-  # então não há mais registry_auth.
-  host = var.docker_host
 }
 
 provider "tls" {
