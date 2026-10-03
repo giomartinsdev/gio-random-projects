@@ -1,10 +1,11 @@
-# Override SÓ para desenvolvimento local: publica Postgres e Redis no host para
-# que os binários nativos (go run) consigam conectar. Em produção nada disto é
-# usado — os serviços falam pela rede interna do Docker.
+# Override SÓ para desenvolvimento local: publica Postgres e RabbitMQ no host
+# para que os binários nativos (go run) consigam conectar. Em produção nada
+# disto é usado — os serviços falam pela rede interna do Docker.
 services:
   postgres:
     ports:
       - "15432:5432"
-  redis:
+  rabbitmq:
     ports:
-      - "16379:6379"
+      - "15672:5672"    # AMQP
+      - "25672:15672"   # management UI

@@ -20,10 +20,9 @@ import (
 
 type Config struct {
 	DatabaseURL string
-	RedisAddr   string
-	RedisPass   string
+	RabbitMQURL string
 	// EventsQueueMax caps the durable event queue's length from the
-	// tail (event_bus.go's LTRIM).
+	// tail (event_bus.go's x-max-length).
 	EventsQueueMax int
 }
 
@@ -35,9 +34,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
-	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == "" {
-		return Config{}, secretsbridge.ErrRequired("REDIS_ADDR")
+	rabbitMQURL := os.Getenv("RABBITMQ_URL")
+	if rabbitMQURL == "" {
+		return Config{}, secretsbridge.ErrRequired("RABBITMQ_URL")
 	}
 
 	queueMax := 10000
@@ -51,8 +50,7 @@ func Load() (Config, error) {
 
 	return Config{
 		DatabaseURL:    databaseURL,
-		RedisAddr:      redisAddr,
-		RedisPass:      os.Getenv("REDIS_PASSWORD"),
+		RabbitMQURL:    rabbitMQURL,
 		EventsQueueMax: queueMax,
 	}, nil
 }

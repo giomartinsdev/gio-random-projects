@@ -3,7 +3,7 @@ package user
 import "time"
 
 // Event is implemented by every domain event this aggregate raises.
-// EventName exists so infrastructure/redis can label a message on the
+// EventName exists so infrastructure/amqp can label a message on the
 // wire without reflection — the domain layer itself never needs it.
 type Event interface {
 	EventName() string

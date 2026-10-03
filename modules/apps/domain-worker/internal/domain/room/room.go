@@ -1,5 +1,5 @@
 // Package room is the domain layer for the Room aggregate — plain Go
-// types and business rules, no database, no HTTP, no Redis, and
+// types and business rules, no database, no HTTP, no messaging, and
 // deliberately no idea what a "book club", "class", or "PDF" is:
 // DocumentID is an opaque string the calling service gave us (or left
 // empty), same as author_id is an opaque string on Post. Page-turn

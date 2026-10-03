@@ -1,10 +1,9 @@
 // domain-worker is the only binary that ever calls domain/user.Repository's
-// mutating methods. It runs two concurrent loops — the bus Relay
-// (bridges the pub/sub command channel into the durable queue) and the
-// processing loop below (pops a command, applies it via
-// internal/application/user's CommandHandler, records an
-// internal/application/audit entry, publishes the resulting domain
-// event).
+// mutating methods. It runs one processing loop: RabbitMQ delivers a
+// command from the durable domain.commands.queue, the loop applies it
+// via the matching aggregate's CommandHandler, records an
+// internal/application/audit entry, and publishes the resulting domain
+// event to the domain.events exchange.
 package main
 
 import (
@@ -19,7 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	goredis "github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -64,7 +62,7 @@ import (
 	domainuser "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/config"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/postgres"
-	inredis "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/redis"
+	inamqp "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/amqp"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/telemetry"
 )
 
@@ -110,12 +108,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	rdb := goredis.NewClient(&goredis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPass})
-	defer rdb.Close()
+	bus, err := inamqp.Dial(cfg.RabbitMQURL)
+	if err != nil {
+		log.Error("rabbitmq connect error", "error", err)
+		os.Exit(1)
+	}
+	defer bus.Close()
 
-	relay := inredis.NewRelay(rdb)
-	commandQueue := inredis.NewCommandQueue(rdb)
-	eventBus := inredis.NewEventBus(rdb, int64(cfg.EventsQueueMax))
+	eventBus, err := inamqp.NewEventBus(bus, cfg.EventsQueueMax)
+	if err != nil {
+		log.Error("event bus error", "error", err)
+		os.Exit(1)
+	}
+	defer eventBus.Close()
+
+	commandQueue, err := inamqp.NewCommandQueue(bus)
+	if err != nil {
+		log.Error("command queue error", "error", err)
+		os.Exit(1)
+	}
 
 	userRepo := postgres.NewUserRepository(pool)
 	auditRepo := postgres.NewAuditRepository(pool)
@@ -208,20 +219,12 @@ func main() {
 		career:       postgres.NewPlayerCareerRepository(pool),
 	}
 
-	errCh := make(chan error, 1)
-	go func() {
-		log.Info("relay started")
-		if err := relay.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errCh <- err
-		}
-	}()
-
 	go func() {
 		log.Info("processing loop started")
 		for {
 			cmd, err := commandQueue.Next(ctx)
 			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, goredis.ErrClosed) {
+				if errors.Is(err, context.Canceled) {
 					return
 				}
 				log.Error("fetch command error", "error", err)
@@ -231,13 +234,8 @@ func main() {
 		}
 	}()
 
-	select {
-	case <-ctx.Done():
-		log.Info("shutting down")
-	case err := <-errCh:
-		log.Error("relay error", "error", err)
-		os.Exit(1)
-	}
+	<-ctx.Done()
+	log.Info("shutting down")
 }
 
 // process routes cmd to the right aggregate's CommandHandler by its
@@ -284,7 +282,7 @@ type handlers struct {
 	career *postgres.PlayerCareerRepository
 }
 
-func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Repository, eventBus *inredis.EventBus, cmd application.Command) {
+func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Repository, eventBus *inamqp.EventBus, cmd application.Command) {
 	// One span per command: the handler, the audit write and the event
 	// publish below are the whole story of that write, and the
 	// trace_id stamped into the log lines ties every one of them to it.

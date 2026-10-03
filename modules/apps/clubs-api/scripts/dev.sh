@@ -23,14 +23,14 @@ DEV_AUTH=0
 # As portas do compose.dev.yaml: publicadas no host só para os binários nativos
 # conectarem.
 PG_URL="postgresql://domain:devpass@localhost:15432/domain"
-REDIS_ADDR="localhost:16379"
+AMQP_URL="amqp://domain:devpass@localhost:15672/"
 
 log() { printf '\033[36m▸\033[0m %s\n' "$*"; }
 fail() { printf '\033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
 # ─── 1. base compartilhada ─────────────────────────────────────────────────
-log "subindo Postgres e Redis (compose.dev.yaml publica as portas no host)"
-(cd "$APPS" && docker compose -f compose.yaml -f compose.dev.yaml up -d postgres redis >/dev/null)
+log "subindo Postgres e RabbitMQ (compose.dev.yaml publica as portas no host)"
+(cd "$APPS" && RABBITMQ_PASSWORD=devpass docker compose -f compose.yaml -f compose.dev.yaml up -d postgres rabbitmq >/dev/null)
 
 for _ in $(seq 1 30); do
   docker exec apps-postgres-1 pg_isready -U domain >/dev/null 2>&1 && break
@@ -53,9 +53,9 @@ pkill -f "/tmp/domain-api" 2>/dev/null || true
 sleep 1
 
 log "iniciando domain-worker (aplica o schema) e domain-api"
-(DATABASE_URL="$PG_URL" REDIS_ADDR="$REDIS_ADDR" /tmp/domain-worker > /tmp/worker.log 2>&1 &)
+(DATABASE_URL="$PG_URL" RABBITMQ_URL="$AMQP_URL" /tmp/domain-worker > /tmp/worker.log 2>&1 &)
 sleep 2
-(DATABASE_URL="$PG_URL" REDIS_ADDR="$REDIS_ADDR" \
+(DATABASE_URL="$PG_URL" RABBITMQ_URL="$AMQP_URL" \
  DOMAIN_API_KEYS="devkey:dev,clubs-api-key:clubs-api,clubs-ingest-key:clubs-ingest" \
  HTTP_ADDR=":8000" /tmp/domain-api > /tmp/api.log 2>&1 &)
 sleep 2

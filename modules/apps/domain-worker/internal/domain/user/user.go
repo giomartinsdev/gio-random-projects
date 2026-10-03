@@ -1,5 +1,5 @@
 // Package user is the domain layer for the User aggregate — plain Go
-// types and business rules, no database, no HTTP, no Redis. domain-api
+// types and business rules, no database, no HTTP, no messaging. domain-api
 // has its own, smaller copy of this package (read-only: no
 // New/Rename, since it never writes).
 package user

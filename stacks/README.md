@@ -13,7 +13,7 @@ Cada arquivo é um stack **independente** (sem agregado na raiz). Não há
 | --- | --- | --- |
 | `bootstrap.yml` | infra compartilhada | `network-init` (cria a rede `apps`; suba ESTE primeiro numa VPS nova) |
 | `core.yml` | base da VPS | registry, htpasswd-init, registry-docker-config, dockhand (boot-only; **protegida**) |
-| `persistence.yml` | `modules/storage/*` | postgres, redis, minio, minio-buckets (+ volumes) |
+| `persistence.yml` | `modules/storage/*` | postgres, rabbitmq, minio, minio-buckets (+ volumes) |
 | `compute.yml` | `modules/compute/services/*` (menos observability e core) | vaultwarden, vaultwarden-api, adminer, 9router, ingress |
 | `observability.yml` | `modules/compute/services/observability` | loki, prometheus, tempo, alloy, grafana (+ configs em `observability/`) |
 | `domain.yml` | `modules/compute/apps/domain_api` | domain-api, domain-worker |
@@ -47,7 +47,7 @@ porta loopback, edite aqui.
 ## Convenções
 
 - **`name:` = nome do stack no Dockhand**, e o serviço/`container_name`
-  mantém o nome que já era usado na rede (`postgres`, `redis`, `minio`,
+  mantém o nome que já era usado na rede (`postgres`, `rabbitmq`, `minio`,
   `domain-api`, …) — é por esse nome que os outros se enxergam.
 - **Rede externa `apps`**: todas entram nela (`external: true`). Não crie
   rede própria.
@@ -61,7 +61,8 @@ porta loopback, edite aqui.
 
 ## Segredos por arquivo
 
-`persistence.yml`: `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`.
+`persistence.yml`: `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD`,
+`MINIO_ROOT_PASSWORD`.
 
 `core.yml`: `REGISTRY_PASSWORD` (e opcional `REGISTRY_USER`, default `admin`).
 
@@ -72,7 +73,8 @@ porta loopback, edite aqui.
 
 `observability.yml`: `GRAFANA_ADMIN_PASSWORD`.
 
-`domain.yml`: `POSTGRES_PASSWORD` (a MESMA do persistence), `DOMAIN_API_KEYS`.
+`domain.yml`: `POSTGRES_PASSWORD` (a MESMA do persistence),
+`RABBITMQ_PASSWORD` (a MESMA do persistence), `DOMAIN_API_KEYS`.
 
 `clubs.yml`: `CLUBS_SESSION_SECRET`, `CLUBS_API_DOMAIN_KEY`,
 `CLUBS_INGEST_DOMAIN_KEY`.

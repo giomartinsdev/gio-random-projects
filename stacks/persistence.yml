@@ -7,10 +7,12 @@
 # Segredos (variáveis de stack no Dockhand):
 #   POSTGRES_PASSWORD      (era random_password.postgres)
 #   MINIO_ROOT_PASSWORD    (era random_password.minio_root_password)
+#   RABBITMQ_PASSWORD      (senha do usuário domain no broker)
 # Não-secretos têm default abaixo.
 #
 # A porta 9000/9001 do MinIO é loopback: o ingress fala 127.0.0.1:9000 e
-# os SPAs falam por ele. O postgres/redis não publicam porta (rede interna).
+# os SPAs falam por ele. O postgres/rabbitmq AMQP não publicam porta (rede
+# interna); só o management do rabbitmq fica em loopback para inspeção.
 name: persistence
 
 services:
@@ -31,15 +33,20 @@ services:
       retries: 10
     networks: [apps]
 
-  redis:
-    image: redis:7-alpine
-    container_name: redis
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: rabbitmq
     restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-domain}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}
+    ports:
+      - "127.0.0.1:15672:15672"   # management UI (loopback)
     volumes:
-      - apps_redis_data:/data
+      - apps_rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
       timeout: 5s
       retries: 10
     networks: [apps]
@@ -98,9 +105,8 @@ volumes:
   apps_postgres_data:
     external: true
     name: apps_postgres_data
-  apps_redis_data:
-    external: true
-    name: apps_redis_data
+  apps_rabbitmq_data:
+    name: apps_rabbitmq_data
   apps_minio_data:
     external: true
     name: apps_minio_data

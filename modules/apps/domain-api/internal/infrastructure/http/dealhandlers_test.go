@@ -246,7 +246,7 @@ func TestDealRoutesRequireAPIKey(t *testing.T) {
 }
 
 func TestInternalErrorOnPublishFailure(t *testing.T) {
-	pub := &spyPublisher{err: errors.New("redis down")}
+	pub := &spyPublisher{err: errors.New("rabbitmq down")}
 	handler := newDealServer(t, &stubDeals{}, pub)
 
 	if rec := postDeals(handler, `{"source":"pld","source_deal_id":"1","title":"t","url":"https://e.com/1"}`); rec.Code != http.StatusInternalServerError {

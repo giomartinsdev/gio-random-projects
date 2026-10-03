@@ -1,10 +1,11 @@
 # domain.yml — apps do bounded context `domain` (migra
 # `modules/compute/apps/domain_api`): a API de leitura e o worker (único
-# escritor) do CQRS. Dependem do storage em persistence.yml (postgres, redis)
-# pela rede `apps`.
+# escritor) do CQRS. Dependem do storage em persistence.yml (postgres,
+# rabbitmq) pela rede `apps`.
 #
 # Segredos (variáveis de stack no Dockhand):
 #   POSTGRES_PASSWORD   (a MESMA senha do postgres em persistence.yml)
+#   RABBITMQ_PASSWORD   (a MESMA senha do rabbitmq em persistence.yml)
 #   DOMAIN_API_KEYS     (lista key:label — ver stacks/README.md)
 name: domain
 
@@ -15,7 +16,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://domain:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}@postgres:5432/domain
-      REDIS_ADDR: redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-domain}:${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}@rabbitmq:5672/
       HTTP_ADDR: ":8000"
       DOMAIN_API_KEYS: ${DOMAIN_API_KEYS:?defina DOMAIN_API_KEYS}
       RATE_LIMIT_RPS: "1"
@@ -32,7 +33,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://domain:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}@postgres:5432/domain
-      REDIS_ADDR: redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-domain}:${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}@rabbitmq:5672/
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: domain-worker
     networks: [apps]

@@ -6,9 +6,8 @@ import (
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/user"
 )
 
-// CommandConsumer pulls commands off the durable side of the bus (the
-// queue, not the pub/sub channel directly — see infrastructure/redis's
-// package doc for why those are separate).
+// CommandConsumer pulls commands off the durable queue — see
+// infrastructure/amqp's package doc for the topology.
 type CommandConsumer interface {
 	Next(ctx context.Context) (Command, error)
 }

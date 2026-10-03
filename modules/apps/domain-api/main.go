@@ -12,12 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	goredis "github.com/redis/go-redis/v9"
-
+	inamqp "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/amqp"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/config"
 	httpapi "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/http"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/postgres"
-	inredis "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/infrastructure/redis"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/telemetry"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -65,11 +63,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	rdb := goredis.NewClient(&goredis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPass})
-	defer rdb.Close()
+	bus, err := inamqp.Dial(cfg.RabbitMQURL)
+	if err != nil {
+		log.Error("rabbitmq connect error", "error", err)
+		os.Exit(1)
+	}
+	defer bus.Close()
+
+	commands, err := inamqp.NewCommandPublisher(bus)
+	if err != nil {
+		log.Error("command publisher error", "error", err)
+		os.Exit(1)
+	}
+	defer commands.Close()
 
 	users := postgres.NewUserRepository(pool)
-	commands := inredis.NewCommandPublisher(rdb)
 	handlers := httpapi.NewHandlers(users, commands, log)
 
 	posts := postgres.NewPostRepository(pool)
@@ -119,13 +127,10 @@ func main() {
 	clubsHandlers := httpapi.NewClubsHandlers(clubsRepo, log)
 	clubsWriteHandlers := httpapi.NewClubsWriteHandlers(commands, log)
 
-	// A dedicated client for SSE's Redis SUBSCRIBE -- go-redis dedicates
-	// a connection per subscription for the life of that subscription,
-	// so this stays separate from rdb (which CommandPublisher uses for
-	// plain PUBLISH calls) rather than contending with it.
-	sseRDB := goredis.NewClient(&goredis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPass})
-	defer sseRDB.Close()
-	sseHandlers := httpapi.NewSSEHandlers(sseRDB, log)
+	// Each SSE subscriber declares its own exclusive queue off the
+	// domain.events fanout exchange, so it shares the bus connection
+	// rather than a single channel.
+	sseHandlers := httpapi.NewSSEHandlers(inamqp.NewEventSubscriber(bus), log)
 
 	router := httpapi.NewRouter(handlers, postHandlers, roomHandlers, messageHandlers, dealHandlers, sseHandlers, cchHandlers, syncHandlers, contaHandlers, transacaoHandlers, ativoHandlers, apostaHandlers, dashboardLayoutHandlers, clubsHandlers, clubsWriteHandlers, apiKeys, rateLimiter, log)
 

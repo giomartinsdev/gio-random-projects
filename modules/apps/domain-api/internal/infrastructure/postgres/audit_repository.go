@@ -14,7 +14,7 @@ import (
 // Its one caller is the sync route (internal/infrastructure/http's
 // SyncHandlers), which polls CommandOutcome until the row for its
 // command lands — that write is the only proof the worker actually
-// applied the write, since the Redis round-trip only ever promised
+// applied the write, since the RabbitMQ round-trip only ever promised
 // "queued".
 type AuditRepository struct {
 	pool *pgxpool.Pool

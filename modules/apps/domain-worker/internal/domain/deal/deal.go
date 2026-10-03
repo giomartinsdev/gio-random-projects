@@ -1,6 +1,6 @@
 // Package deal is the domain layer for the Deal aggregate — the
 // stage-row every scraper feed eventually becomes. Plain Go types and
-// business rules, no database, no HTTP, no Redis. domain-api has its
+// business rules, no database, no HTTP, no messaging. domain-api has its
 // own smaller copy of this package (read-only: it never writes rows,
 // it only shapes the command and serves reads back out).
 //

@@ -20,8 +20,7 @@ import (
 
 type Config struct {
 	DatabaseURL    string
-	RedisAddr      string
-	RedisPass      string
+	RabbitMQURL    string
 	HTTPAddr       string
 	APIKeys        string
 	RateLimitRPS   float64
@@ -40,9 +39,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
-	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == "" {
-		return Config{}, secretsbridge.ErrRequired("REDIS_ADDR")
+	rabbitMQURL := os.Getenv("RABBITMQ_URL")
+	if rabbitMQURL == "" {
+		return Config{}, secretsbridge.ErrRequired("RABBITMQ_URL")
 	}
 	httpAddr := os.Getenv("HTTP_ADDR")
 	if httpAddr == "" {
@@ -68,8 +67,7 @@ func Load() (Config, error) {
 
 	return Config{
 		DatabaseURL:    databaseURL,
-		RedisAddr:      redisAddr,
-		RedisPass:      os.Getenv("REDIS_PASSWORD"),
+		RabbitMQURL:    rabbitMQURL,
 		HTTPAddr:       httpAddr,
 		APIKeys:        apiKeys,
 		RateLimitRPS:   rps,

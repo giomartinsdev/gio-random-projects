@@ -3,14 +3,14 @@
 The write/read front door of the CQRS side of this stack: every write
 is a command answered with a `202 Accepted`, persisted by the paired
 domain-worker (see `modules/apps/domain-worker`), and read back through
-plain GETs. Shares one Postgres database and Redis with everything else
-on the network.
+plain GETs. Shares one Postgres database and RabbitMQ with everything
+else on the network.
 
 ## Writes: commands, not CRUD
 
 `POST` to any collection answers `202 {"command_id": ..., "status":
-"accepted"}` — the API published the command to Redis, the domain-worker
-BLPOPs `domain.commands.queue`, dispatches by action prefix (`user.`,
+"accepted"}` — the API publishes the command to RabbitMQ, the
+domain-worker consumes `domain.commands.queue`, dispatches by action prefix (`user.`,
 `post.`, `room.`, `message.`, `deal.`), writes the audit row (success or
 failure, always), and publishes the resulting domain event only on
 success. Nothing here writes application tables in the HTTP handler.
@@ -30,7 +30,7 @@ caller gets its own identity so the audit log can name them):
 it on the **same async broker as everything else**, then holds the HTTP
 request open, polling `audit_log` by `command_id` (the worker writes
 that row unconditionally — success or failure — so the row, not the
-Redis publish, is the proof of "applied") until it lands or 10s pass:
+RabbitMQ publish, is the proof of "applied") until it lands or 10s pass:
 
 | outcome | response |
 |---|---|
@@ -57,15 +57,17 @@ polls, dedupe there is what keeps the event queue honest. `posted_at`
 is first-seen-wins (a deal's age is when its source published it, not
 when we last saw it).
 
-The event lands on the durable `domain.events.queue` Redis list (every
-domain-worker event is RPUSHed there before its pub/sub broadcast —
-capped by `DOMAIN_EVENTS_QUEUE_MAX`), where the **events-announcer**
-worker consumes it for Discord announcing. Any new consumer of deal
-events reads that list, not the database.
+The event lands on the durable `domain.events.queue` RabbitMQ queue (the
+`domain.events` fanout exchange delivers to it, capped by
+`DOMAIN_EVENTS_QUEUE_MAX` with drop-head overflow), where the
+**events-announcer** worker consumes it for Discord announcing. Live
+subscribers — such as this API's SSE endpoint — bind an ephemeral,
+auto-delete queue to the same exchange. Any new consumer of deal events
+reads that queue, not the database.
 
 ## Runtime
 
-- env: `DATABASE_URL`, `REDIS_ADDR`, `HTTP_ADDR`, `DOMAIN_API_KEYS`,
+- env: `DATABASE_URL`, `RABBITMQ_URL`, `HTTP_ADDR`, `DOMAIN_API_KEYS`,
   `RATE_LIMIT_RPS`/`RATE_LIMIT_BURST`, `OTEL_EXPORTER_OTLP_ENDPOINT`
   (empty = telemetry off), `OTEL_SERVICE_NAME`.
 - deploy: `go-ci-cd.yml` builds/pushes the image and redeploys via

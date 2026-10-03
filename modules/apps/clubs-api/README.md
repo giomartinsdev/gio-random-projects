@@ -103,14 +103,14 @@ Duas formas de escrita, deliberadamente separadas:
 ## Rodando local
 
 ```sh
-# a base compartilhada
-cd ..  &&  docker compose -f compose.yaml -f compose.dev.yaml up -d postgres redis
+# a base compartilhada (RABBITMQ_PASSWORD igual ao do compose.dev.yaml)
+cd ..  &&  RABBITMQ_PASSWORD=devpass docker compose -f compose.yaml -f compose.dev.yaml up -d postgres rabbitmq
 
 # domain-worker + domain-api (o schema é aplicado pelo worker)
 cd ../domain-worker && DATABASE_URL="postgresql://domain:devpass@localhost:15432/domain" \
-  REDIS_ADDR="localhost:16379" go run .
+  RABBITMQ_URL="amqp://domain:devpass@localhost:15672/" go run .
 cd ../domain-api && DATABASE_URL="postgresql://domain:devpass@localhost:15432/domain" \
-  REDIS_ADDR="localhost:16379" DOMAIN_API_KEYS="devkey:dev,clubs-api-key:clubs-api" \
+  RABBITMQ_URL="amqp://domain:devpass@localhost:15672/" DOMAIN_API_KEYS="devkey:dev,clubs-api-key:clubs-api" \
   HTTP_ADDR=":8000" go run .
 
 # dados de exemplo, pelo caminho de escrita real

@@ -1,5 +1,5 @@
 // Package post is the domain layer for the Post aggregate — plain Go
-// types and business rules, no database, no HTTP, no Redis.
+// types and business rules, no database, no HTTP, no messaging.
 // domain-api has its own, smaller copy of this package (read-only: no
 // New/Edit, since it never writes) — same split as domain/user.
 package post

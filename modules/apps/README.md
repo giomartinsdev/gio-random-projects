@@ -60,14 +60,14 @@ change to one never forces a rebuild of the other. See either's own
 ## Running locally
 
 ```
-cp .env.example .env   # set POSTGRES_PASSWORD and DOMAIN_API_KEYS
+cp .env.example .env   # set POSTGRES_PASSWORD, RABBITMQ_PASSWORD and DOMAIN_API_KEYS
 docker compose up --build
 ```
 
 ## Deploying
 
 `compose.yaml` here is local-dev only. Production containers
-(postgres, redis, domain-api, domain-worker) are defined in
+(postgres, rabbitmq, domain-api, domain-worker) are defined in
 `modules/infra/terraform/modules/compute/{data,app}` as real
 `docker_container` resources, not docker-compose — CI builds and
 pushes an image on every push touching an app's own folder;
