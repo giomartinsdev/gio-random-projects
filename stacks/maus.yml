@@ -52,7 +52,12 @@ services:
       OMB_SIGNIN_EMAILS: ${OMB_SIGNIN_EMAILS:-}
       OMB_SIGNIN_MEMBER_EMAILS: ${OMB_SIGNIN_MEMBER_EMAILS:-}
     volumes:
-      - omb-data:/data
+      # Bind (não named volume) em /data: o Local VM é criado PELO omb via o
+      # docker do host, e o `docker run` do VM monta /data/.openmausbot/vm-home
+      # como bind no HOST. O caminho do bind é resolvido no host, então o
+      # host precisa ter /data idêntico ao do container. Um named volume fica
+      # em /var/lib/docker/volumes/... e o path não existiria no host.
+      - /data:/data
       # Docker do host: o "Local VM" (computer container Cua) é criado pelo
       # próprio omb via `docker` CLI. A imagem inclui o binário e o usuário
       # maus entra no grupo docker (gid 989 nesta VPS). Trade-off: quem fala
@@ -89,8 +94,6 @@ services:
       - maus-caddy-config:/config
 
 volumes:
-  omb-data:
-    name: omb-data
   maus-caddy-data:
     name: maus-caddy-data
   maus-caddy-config:
