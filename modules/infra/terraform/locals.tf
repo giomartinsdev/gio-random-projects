@@ -111,11 +111,11 @@ locals {
       # OpenDots — CopilotKit's self-hosted "Dots" (AI coworkers with
       # Spaces/pages and chat). ONLY the DNS A record is managed here (the
       # hostname is in excluded_hostnames): the container itself is the
-      # Dockhand git stack stacks/opendots.yml, like every other app. No
+      # Dockhand git stack stacks/dots.yml, like every other app. No
       # Cloudflare Access app — the app's own OWNER_TOKEN login is the gate,
       # and the chat streams (SSE/AG-UI) can't sit behind a Google SSO
       # redirect, so the ingress route disables buffering.
-      # Port must match stacks/opendots.yml's loopback publish (4310).
+      # Port must match stacks/dots.yml's loopback publish (4310).
       hostname = "dots.giomartins.dev"
       port     = 4310
     },

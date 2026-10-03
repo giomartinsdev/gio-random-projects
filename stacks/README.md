@@ -19,8 +19,7 @@ Cada arquivo é um stack **independente** (sem agregado na raiz). Não há
 | `domain.yml` | `modules/compute/apps/domain_api` | domain-api, domain-worker |
 | `tela.yml` | `modules/compute/apps/tela_api` | tela-mediamtx, tela-coturn, tela-api (os 3 em host network) |
 | `clubs.yml` | `modules/compute/apps/clubs_api` + `clubs_ingest` | clubs-api, clubs-ingest |
-| `intelligence.yml` | runtime self-hosted do CopilotKit Intelligence (threads dos Dots) | intelligence-postgres, intelligence-redis, intelligence (`ghcr.io/copilotkit/intelligence/composite`; app-api + realtime-gateway + thread-culler + db-migrations) |
-| `opendots.yml` | template de terceiro (CopilotKit/OpenDots) | opendots (build do upstream PINADO direto no VPS, contexto git do Docker — sem imagem nossa) |
+| `dots.yml` | OpenDots completo (CopilotKit): app + Intelligence self-hosted + computer service | intelligence-postgres, intelligence-redis, intelligence (`ghcr.io/copilotkit/intelligence/composite`), computer-image-base (build-only), computer-image (base upstream + git/ssh + deploy key), computer-supervisor (OpenBot, segura o socket do Docker), opendots (build do upstream PINADO) |
 
 **`core.yml` é de boot, isolada de propósito.** O Dockhand deploya as
 stacks; se ele estiver dentro de uma stack que ele mesmo recria, o deploy
@@ -28,7 +27,7 @@ mata o processo que o está servindo (já aconteceu — derrubou o 9router e
 o resto do `compute`). Por isso registry + Dockhand vivem aqui, separados,
 e ficam **protegidos** no Dockhand (`force_redeploy=0`, `repull_images=0`,
 sem webhook). Numa VPS nova: `bootstrap → persistence → core →
-compute → observability → apps → intelligence → opendots`, e não se
+compute → observability → apps → dots`, e não se
 atualiza o `core` pelo Dockhand.
 
 Os **frontends** (`tela-frontend`, `clubs-frontend`, `hub-frontend`) são
@@ -80,24 +79,32 @@ porta loopback, edite aqui.
 
 `tela.yml`: `TELA_TURN_SECRET`.
 
-`opendots.yml`: `OPENDOTS_OWNER_TOKEN` (24+ chars, login local) e
-`OPENDOTS_OPENAI_API_KEY` (provider OpenAI-compatível, ex. o 9router — aceita
-qualquer valor não-vazio). Não-segredo com default: `OPENDOTS_OWNER_ID`,
-`OPENDOTS_OPENAI_BASE_URL` (`http://9router:20128/v1`), `OPENDOTS_OPENAI_MODEL`,
-`OPENDOTS_INTELLIGENCE_API_KEY` (a chave pré-semeada do composite) e
-`OPENDOTS_INTELLIGENCE_API_URL`/`_WS_URL` (`http://intelligence:4201` /
-`wss://dots.giomartins.dev`). O `_WS_URL` também é o endpoint do browser, então
-tem que ser WSS público (o ingress faz `/client/` e `/runner/` ->
-`127.0.0.1:4401`); `ws://intelligence:4401` quebra por mixed content.
+`dots.yml` junta os três blocos, então tem os três conjuntos de segredos:
 
-`intelligence.yml`: `INTELLIGENCE_DB_PASSWORD`, `INTELLIGENCE_AUTH_SECRET`
-(32+ chars), `INTELLIGENCE_SECRET_KEY_BASE` (64+ bytes) e
-`INTELLIGENCE_LICENSE_TOKEN` (o `COPILOTKIT_LICENSE_TOKEN` emitido pelo
-dashboard do CopilotKit — plano Developer, grátis; sem ele as threads não
-ativam). Não-segredo com default: `INTELLIGENCE_RUNNER_AUTH_SECRET`,
-`INTELLIGENCE_ORGANIZATION_ID` (`casa-de-erlang`, a org da chave pré-semeada
-`cpk_sPRVSEED_...`). O `composite` fica na rede `apps`; postgres/redis são
-dedicados e internos (não usam os do `persistence.yml`).
+- **Intelligence**: `INTELLIGENCE_DB_PASSWORD`, `INTELLIGENCE_AUTH_SECRET`
+  (32+ chars), `INTELLIGENCE_SECRET_KEY_BASE` (64+ bytes) e, opcional,
+  `INTELLIGENCE_LICENSE_TOKEN` (o `COPILOTKIT_LICENSE_TOKEN` do dashboard
+  CopilotKit; sem ele o app funciona, só os entitlements ficam `none`).
+  Não-segredo com default: `INTELLIGENCE_RUNNER_AUTH_SECRET` (gerado se
+  faltar). postgres/redis são dedicados e internos (não usam os do
+  `persistence.yml`).
+- **OpenDots**: `OPENDOTS_OWNER_TOKEN` (24+ chars, login local) e
+  `OPENDOTS_OPENAI_API_KEY` (provider OpenAI-compatível, ex. o 9router).
+  Não-segredo com default: `OPENDOTS_OWNER_ID`, `OPENDOTS_OPENAI_BASE_URL`
+  (`http://9router:20128/v1`), `OPENDOTS_OPENAI_MODEL`,
+  `OPENDOTS_INTELLIGENCE_API_KEY` (a chave pré-semeada do composite) e
+  `OPENDOTS_INTELLIGENCE_API_URL`/`_WS_URL` (`http://intelligence:4201` /
+  `wss://dots.giomartins.dev`). O `_WS_URL` também é o endpoint do browser,
+  então tem que ser WSS público (o ingress faz `/client/` e `/runner/` ->
+  `127.0.0.1:4401`); `ws://intelligence:4401` quebra por mixed content.
+- **Computer (OpenBot)**: `COMPUTER_SUPERVISOR_TOKEN` e `COMPUTER_TOKEN`
+  (segredos, 24+ chars; o supervisor deriva a credencial de cada Dot com
+  HMAC-SHA256 do `COMPUTER_TOKEN`) e `COMPUTER_DEPLOY_KEY` (a **chave
+  privada** ed25519 usada pra clonar/empurrar o repo; a pública entra como
+  *deploy key* no GitHub). Não-segredo com default: `COMPUTER_NAMESPACE`
+  (`opendots`) e `COMPUTER_MEMORY_BYTES` (`2147483648`). O
+  `computer-supervisor` segura o socket do Docker e cria um container
+  `${COMPUTER_NAMESPACE}-computer-<dotId>` sob demanda.
 
 > **Vaultwarden não serve o provider "Bitwarden" do Dockhand.** O provider
 > é o Bitwarden *Secrets Manager* (`bws` + Machine Account + Project UUID),
@@ -115,7 +122,7 @@ Cloudflare + host_baseline (a rede `apps` virou o `bootstrap.yml`) — ver
 `modules/infra/terraform/README.md`.
 
 Ordem de subida numa VPS limpa: **bootstrap → persistence → core →
-compute → observability → domain → clubs → tela → intelligence → opendots**.
+compute → observability → domain → clubs → tela → dots**.
 
 Para adicionar um stack novo depois: escreva `stacks/<nome>.yml`, crie a
 stack no Dockhand (git-backed, context `stacks`, compose `<nome>.yml`) e
