@@ -56,3 +56,20 @@ Funcionalidade: Worker do financeiro consome o Evolution e responde
     E que o gateway do WhatsApp vai falhar no envio
     Quando chega a mensagem "Gastei 45 no almoço hoje" do telefone "5521981962914"
     Então a finance-api recebeu o comando "finance.transaction.register"
+
+  Cenário: "Como estão meus gastos" vira uma leitura e responde com o resumo
+    Dado que a finance-api vai responder "written" com entity_id "tx-1"
+    E que a leitura "finance.query.monthlyDashboard" devolve o resumo do mês
+    Quando chega a mensagem "Como estão meus gastos este mês?" do telefone "5521981962914"
+    Então a finance-api recebeu a leitura "finance.query.monthlyDashboard"
+    E nenhum comando foi enviado à finance-api
+    E o worker enviou a resposta para "5521981962914"
+    E a resposta menciona "Resumo de 2026-10"
+
+  Cenário: Pedir gráfico envia um PNG pelo gateway
+    Dado que a finance-api vai responder "written" com entity_id "tx-1"
+    E que a leitura "finance.query.cashFlowHistory" devolve o fluxo de caixa
+    Quando chega a mensagem "me manda o gráfico dos gastos" do telefone "5521981962914"
+    Então a finance-api recebeu a leitura "finance.query.cashFlowHistory"
+    E o worker enviou uma mídia para "5521981962914"
+    E a mídia é um PNG

@@ -8,6 +8,8 @@ v2.3.7 — ver spec §5.3). O ``number`` é o ``remoteJid`` sem o sufixo
 
 from __future__ import annotations
 
+import base64
+
 import httpx
 
 
@@ -38,6 +40,35 @@ class EvolutionClient:
             )
         if resp.status_code >= 300:
             raise RuntimeError(f"evolution sendText {resp.status_code}: {resp.text[:200]}")
+        try:
+            return resp.json()
+        except ValueError:
+            return {}
+
+    async def send_media(
+        self, remote_jid: str, png: bytes, *, caption: str = "", filename: str = "grafico.png"
+    ) -> dict:
+        """Envia uma imagem (PNG) como mídia (§5.2).
+
+        ``POST /message/sendMedia/{instance}`` com a imagem em base64, header
+        ``apikey``. Levanta em falha para o chamador decidir (§12.9).
+        """
+        encoded = base64.b64encode(png).decode("ascii")
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.post(
+                f"{self._base}/message/sendMedia/{self._instance}",
+                headers={"apikey": self._key, "Content-Type": "application/json"},
+                json={
+                    "number": jid_to_number(remote_jid),
+                    "mediatype": "image",
+                    "mimetype": "image/png",
+                    "caption": caption,
+                    "media": encoded,
+                    "fileName": filename,
+                },
+            )
+        if resp.status_code >= 300:
+            raise RuntimeError(f"evolution sendMedia {resp.status_code}: {resp.text[:200]}")
         try:
             return resp.json()
         except ValueError:

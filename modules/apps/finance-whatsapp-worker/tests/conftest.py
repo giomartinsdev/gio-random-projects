@@ -92,7 +92,7 @@ def stubs(stub_base):
         with urllib.request.urlopen(stub_base + "/__state") as r:
             return json.loads(r.read())
 
-    _set(finance_outcome="written", entity_id="tx-1", gateway_fail=False, commands=[], sends=[])
+    _set(finance_outcome="written", entity_id="tx-1", gateway_fail=False, commands=[], queries_seen=[], sends=[], medias=[], queries={})
     return {"set": _set, "get": _get, "base": stub_base}
 
 

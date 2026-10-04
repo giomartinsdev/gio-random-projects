@@ -18,9 +18,11 @@ WhatsApp ──► Evolution API (stack compute, Baileys)
                  ▼
       finance-whatsapp-worker
         ├─ NLU por regras (nlu/parser.py)  → intent + payload
-        ├─ POST finance-api /commands       → {action, payload} (X-API-Key)
+        ├─ POST finance-api /commands       → {action, payload} (X-API-Key)   [escrita]
+        ├─ POST finance-api /queries        → leitura (§4.2)                  [leitura]
         ├─ render (rendering/text.py)       → texto do WhatsApp
-        └─ POST Evolution /message/sendText/{instance}  → resposta
+        ├─ chart (rendering/chart.py)       → PNG do fluxo de caixa
+        └─ POST Evolution sendText/sendMedia/{instance} → resposta
 ```
 
 Detalhes que importam:
@@ -45,6 +47,22 @@ golden file e sem rede. Hoje entende:
 - *"Recebi 3500 de freela"* → receita R$ 3.500,00, Renda Extra
 - *"paguei 120 de luz no nubank"* → despesa R$ 120,00, Contas
 - *"orçamento de 600 pra alimentação"* → `finance.budget.setCategory`
+
+### Leituras (§4.2, §5.2)
+
+O worker também entende pedidos de consulta e responde com um card de texto
+(ou PNG):
+
+- *"Como estão meus gastos este mês?"* / *"resumo"* / *"saldo"* →
+  `finance.query.monthlyDashboard` → card de receitas/despesas/saldo + top
+  categorias com barra + alertas de orçamento.
+- *"extrato"* → `finance.query.categoryBreakdown` → lista detalhada.
+- *"gráfico"* → `finance.query.cashFlowHistory` → PNG do fluxo de caixa, enviado
+  por `sendMedia`.
+
+As leituras viajam por `POST /queries` (não `/commands`) e não têm ambiguidade:
+200 é a projeção, qualquer outra coisa é erro. O PNG é determinístico
+(stdlib `zlib`, sem lib de plotagem) e testado por golden file (§12.4).
 
 O que não casa vira `desconhecido` e o worker pede para reformular — **nunca
 inventa** uma transação. O valor sai sempre como **string decimal exata** (o

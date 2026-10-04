@@ -17,8 +17,18 @@ if str(SRC) not in sys.path:
 
 import pytest
 
+from finance_contracts import (
+    ACTION_GET_CASH_FLOW_HISTORY,
+    ACTION_GET_CATEGORY_BREAKDOWN,
+    ACTION_GET_MONTHLY_DASHBOARD,
+)
 from finance_whatsapp_worker.nlu.parser import parse
-from finance_whatsapp_worker.rendering.text import render
+from finance_whatsapp_worker.rendering.text import (
+    render,
+    render_breakdown,
+    render_chart_caption,
+    render_dashboard,
+)
 
 WHEN = "2026-10-04T12:00:00+00:00"
 
@@ -77,3 +87,84 @@ def test_render_failed_explica():
     intent = parse("Gastei 45 no almoço", phone="55", occurred_at=WHEN)
     out = render(intent, "failed", error="valor inválido")
     assert "valor inválido" in out
+
+
+# --------------------------------------------------------------- leituras §4.2
+
+@pytest.mark.parametrize(
+    "text,action,kind",
+    [
+        ("Como estão meus gastos este mês?", ACTION_GET_MONTHLY_DASHBOARD, "resumo"),
+        ("resumo do mês", ACTION_GET_MONTHLY_DASHBOARD, "resumo"),
+        ("qual meu saldo?", ACTION_GET_MONTHLY_DASHBOARD, "resumo"),
+        ("quanto gastei este mês", ACTION_GET_MONTHLY_DASHBOARD, "resumo"),
+        ("me manda o extrato", ACTION_GET_CATEGORY_BREAKDOWN, "extrato"),
+        ("extrato detalhado", ACTION_GET_CATEGORY_BREAKDOWN, "extrato"),
+        ("gráfico dos meus gastos", ACTION_GET_CASH_FLOW_HISTORY, "grafico"),
+        ("me manda um grafico", ACTION_GET_CASH_FLOW_HISTORY, "grafico"),
+    ],
+)
+def test_parse_leituras(text, action, kind):
+    intent = parse(text, phone="5521981962914", occurred_at=WHEN)
+    assert intent.kind == kind, intent
+    assert intent.action == action, intent
+    assert intent.is_read
+    assert intent.payload["user_id"] == "5521981962914"
+    assert intent.payload["month"] == "2026-10"
+
+
+def test_grafico_vence_dashboard_quando_o_texto_tem_os_dois():
+    # "gráfico dos meus gastos" contém "gastos" (dashboard), mas a intenção
+    # mais específica (gráfico) tem de vencer.
+    intent = parse("gráfico dos meus gastos", phone="55", occurred_at=WHEN)
+    assert intent.action == ACTION_GET_CASH_FLOW_HISTORY
+
+
+def test_render_dashboard_golden():
+    body = {
+        "user_id": "55", "month": "2026-10", "income": "1000.00", "expense": "-80.00",
+        "net": "920.00", "currency": "BRL", "transaction_count": 2,
+        "top_categories": [
+            {"category": "Alimentação", "amount": "-80.00", "currency": "BRL", "transaction_count": 1},
+            {"category": "Transporte", "amount": "-20.00", "currency": "BRL", "transaction_count": 1},
+        ],
+        "budgets": [
+            {"category": "Alimentação", "limit_amount": "100.00", "spent_amount": "-80.00",
+             "currency": "BRL", "thresholds_reached": [50]},
+        ],
+    }
+    out = render_dashboard(body)
+    assert out == (
+        "📊 *Resumo de 2026-10*\n"
+        "💰 Receitas: R$ 1.000,00\n"
+        "💸 Despesas: R$ -80,00\n"
+        "⚖️ Saldo: R$ 920,00\n"
+        "\n"
+        "*Top categorias*\n"
+        "Alimentação ██████████ R$ -80,00\n"
+        "Transporte ███ R$ -20,00\n"
+        "\n"
+        "*Alertas de orçamento*\n"
+        "⚠️ Alimentação: 50% do limite (R$ -80,00 de R$ 100,00)"
+    )
+
+
+def test_render_breakdown_golden():
+    body = {"month": "2026-10", "categories": [
+        {"category": "Alimentação", "amount": "-95.00", "currency": "BRL", "transaction_count": 2},
+        {"category": "Transporte", "amount": "-10.00", "currency": "BRL", "transaction_count": 1},
+    ]}
+    out = render_breakdown(body)
+    assert out == (
+        "📄 *Extrato de 2026-10*\n"
+        "• Alimentação: R$ -95,00\n"
+        "• Transporte: R$ -10,00"
+    )
+
+
+def test_render_breakdown_sem_dados():
+    assert render_breakdown({"month": "2026-10", "categories": []}) == "📄 Nenhuma despesa registrada em 2026-10."
+
+
+def test_render_chart_caption_golden():
+    assert render_chart_caption({"month": "2026-10", "net": "920.00"}) == "📈 Fluxo de caixa de 2026-10 — saldo R$ 920,00"

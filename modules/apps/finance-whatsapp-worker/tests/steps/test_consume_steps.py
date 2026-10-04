@@ -94,6 +94,29 @@ def gateway_fail(contexto: dict) -> None:
     contexto["stubs"]["set"](gateway_fail=True)
 
 
+DASHBOARD_BODY = {
+    "user_id": "5521981962914", "month": "2026-10", "income": "1000.00", "expense": "-80.00",
+    "net": "920.00", "currency": "BRL", "transaction_count": 2,
+    "top_categories": [{"category": "Alimentação", "amount": "-80.00", "currency": "BRL", "transaction_count": 1}],
+    "budgets": [],
+}
+
+CASHFLOW_BODY = {
+    "user_id": "5521981962914", "month": "2026-10", "currency": "BRL",
+    "days": [{"date": "2026-10-02", "income": "100.00", "expense": "-10.00", "net": "90.00"}],
+}
+
+
+@given(parsers.parse('que a leitura "{action}" devolve o resumo do mês'))
+def leitura_resumo(contexto: dict, action: str) -> None:
+    contexto["stubs"]["set"](queries={action: DASHBOARD_BODY})
+
+
+@given(parsers.parse('que a leitura "{action}" devolve o fluxo de caixa'))
+def leitura_cashflow(contexto: dict, action: str) -> None:
+    contexto["stubs"]["set"](queries={action: CASHFLOW_BODY})
+
+
 def _run(contexto: dict, rabbit_url, event: dict) -> None:
     _publish(rabbit_url, event)
     worker = _build_worker(contexto["stubs"])
@@ -163,3 +186,28 @@ def resposta_menciona(contexto: dict, needle: str) -> None:
 @then("nenhum comando foi enviado à finance-api")
 def nenhum_comando(contexto: dict) -> None:
     assert contexto["stubs"]["get"]()["commands"] == []
+
+
+@then(parsers.parse('a finance-api recebeu a leitura "{action}"'))
+def recebeu_leitura(contexto: dict, action: str) -> None:
+    seen = contexto["stubs"]["get"]()["queries_seen"]
+    assert seen, "nenhuma leitura chegou à finance-api"
+    assert seen[-1]["action"] == action, seen[-1]
+
+
+@then(parsers.parse('o worker enviou uma mídia para "{phone}"'))
+def enviou_midia(contexto: dict, phone: str) -> None:
+    medias = contexto["stubs"]["get"]()["medias"]
+    assert medias, "nenhuma mídia foi enviada ao gateway"
+    assert medias[-1]["number"] == phone, medias[-1]
+    assert medias[-1]["instance"] == INSTANCE
+
+
+@then("a mídia é um PNG")
+def midia_png(contexto: dict) -> None:
+    import base64
+
+    media = contexto["stubs"]["get"]()["medias"][-1]
+    assert media["mimetype"] == "image/png", media
+    raw = base64.b64decode(media["media"])
+    assert raw.startswith(b"\x89PNG\r\n\x1a\n"), "a mídia não é um PNG"

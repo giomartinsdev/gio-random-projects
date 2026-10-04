@@ -15,6 +15,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from finance_contracts import (
+    ACTION_GET_CASH_FLOW_HISTORY,
+    ACTION_GET_CATEGORY_BREAKDOWN,
+    ACTION_GET_MONTHLY_DASHBOARD,
     ACTION_REGISTER_TRANSACTION,
     ACTION_SET_CATEGORY_BUDGET,
 )
@@ -24,6 +27,15 @@ _AMOUNT = r"(\d{1,3}(?:\.\d{3})*,\d{2}|\d+(?:[.,]\d{1,2})?)"
 _EXPENSE = re.compile(rf"\b(gastei|paguei|comprei|despesa)\b[^\d]*{_AMOUNT}", re.IGNORECASE)
 _INCOME = re.compile(rf"\b(recebi|ganhei|receita|entrou)\b[^\d]*{_AMOUNT}", re.IGNORECASE)
 _BUDGET = re.compile(rf"\b(or[çc]amento|limite)\b[^\d]*{_AMOUNT}", re.IGNORECASE)
+
+# Leituras (§4.2). A ordem importa: "gráfico dos meus gastos" contém "gastos"
+# (que casaria com dashboard), então gráfico e extrato são testados antes.
+_CHART = re.compile(r"\b(gr[aá]fico|grafico|chart)\b", re.IGNORECASE)
+_EXTRATO = re.compile(r"\b(extrato|detalhe|detalhado|lista)\b", re.IGNORECASE)
+_DASHBOARD = re.compile(
+    r"\b(como est[ãa]o|resumo|dashboard|quanto (gastei|recebi)|meus gastos|balan[çc]o|saldo)\b",
+    re.IGNORECASE,
+)
 
 # Categorias por palavra-chave, para o caso comum. Sem acerto, "Outros".
 _CATEGORIES = (
@@ -40,11 +52,16 @@ class Intent:
 
     action: str
     payload: dict[str, Any]
-    kind: str  # "despesa" | "receita" | "orcamento" | "desconhecido"
+    kind: str = "desconhecido"
 
     @property
     def understood(self) -> bool:
         return bool(self.action)
+
+    @property
+    def is_read(self) -> bool:
+        """Uma leitura (§4.2) viaja por ``POST /queries``, não ``/commands``."""
+        return self.action.startswith("finance.query.")
 
 
 def _to_decimal_str(raw: str) -> str:
@@ -86,6 +103,27 @@ def parse(text: str, *, phone: str, occurred_at: str) -> Intent:
                 "period": occurred_at[:7],
             },
             "orcamento",
+        )
+
+    # Leituras (§4.2): "gráfico" e "extrato" antes de dashboard, porque
+    # "gráfico dos meus gastos" contém "gastos" (que casaria com dashboard).
+    if _CHART.search(clean):
+        return Intent(
+            ACTION_GET_CASH_FLOW_HISTORY,
+            {"user_id": phone, "month": occurred_at[:7]},
+            "grafico",
+        )
+    if _EXTRATO.search(clean):
+        return Intent(
+            ACTION_GET_CATEGORY_BREAKDOWN,
+            {"user_id": phone, "month": occurred_at[:7]},
+            "extrato",
+        )
+    if _DASHBOARD.search(clean):
+        return Intent(
+            ACTION_GET_MONTHLY_DASHBOARD,
+            {"user_id": phone, "month": occurred_at[:7]},
+            "resumo",
         )
 
     expense = _EXPENSE.search(clean)
