@@ -5,52 +5,35 @@ export default {
   theme: {
     extend: {
       colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
-        },
-        success: {
-          DEFAULT: "hsl(var(--success))",
-          foreground: "hsl(var(--success-foreground))",
-        },
-        warning: {
-          DEFAULT: "hsl(var(--warning))",
-          foreground: "hsl(var(--warning-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
-        },
-        popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
-        },
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
-        },
+        // Superfícies/linguagem do cockpit (novos tokens).
+        bg: "hsl(var(--bg))",
+        "bg-soft": "hsl(var(--bg-soft))",
+        fg: "hsl(var(--fg))",
+        "fg-dim": "hsl(var(--fg-dim))",
+        surface: "hsl(var(--surface))",
+        up: "hsl(var(--up))",
+        down: "hsl(var(--down))",
+        warn: "hsl(var(--warn))",
+        // Aliases shadcn (os componentes de ui usam estes nomes).
+        border: "hsl(0 0% 50% / 0.16)",
+        input: "hsl(0 0% 50% / 0.2)",
+        ring: "hsl(var(--accent))",
+        background: "hsl(var(--bg))",
+        foreground: "hsl(var(--fg))",
+        primary: { DEFAULT: "hsl(var(--accent))", foreground: "hsl(0 0% 100%)" },
+        secondary: { DEFAULT: "hsl(var(--bg-soft))", foreground: "hsl(var(--fg))" },
+        destructive: { DEFAULT: "hsl(var(--down))", foreground: "hsl(0 0% 100%)" },
+        success: { DEFAULT: "hsl(var(--up))", foreground: "hsl(40 6% 5%)" },
+        warning: { DEFAULT: "hsl(var(--warn))", foreground: "hsl(40 6% 5%)" },
+        muted: { DEFAULT: "hsl(var(--bg-soft))", foreground: "hsl(var(--fg-dim))" },
+        accent: { DEFAULT: "hsl(var(--accent) / 0.14)", foreground: "hsl(var(--accent))" },
+        popover: { DEFAULT: "hsl(var(--surface))", foreground: "hsl(var(--fg))" },
+        card: { DEFAULT: "hsl(var(--surface))", foreground: "hsl(var(--fg))" },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        lg: "16px",
+        md: "10px",
+        sm: "8px",
       },
     },
   },

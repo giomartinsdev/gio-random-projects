@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Landmark, RefreshCw } from "lucide-react";
 import { api, formatBRL, type OFAccount, type OFConsent } from "@/lib/api";
-import { PageHeader, Panel, Empty } from "@/components/primitives";
-import { Badge } from "@/components/ui/badge";
+import { Card, Cockpit, Empty, Kpi, PageHead } from "@/components/primitives";
 import { hrefFor } from "@/lib/router";
 
-// Contas conectadas (Open Finance) e as conexões. Clicar numa conta leva ao
-// extrato daquele mês; clicar na conexão leva ao Open Finance.
+// Contas no formato cockpit: rail esquerdo com o saldo total, centro com os
+// cards por conta (clicáveis) e as conexões, direito com resumo.
 export function AccountsPage() {
   const [accounts, setAccounts] = useState<OFAccount[]>([]);
   const [consents, setConsents] = useState<OFConsent[]>([]);
@@ -33,79 +32,82 @@ export function AccountsPage() {
 
   const total = accounts.reduce((s, a) => s + Number(a.balance_amount), 0);
 
-  return (
-    <div>
-      <PageHeader
-        eyebrow="patrimônio"
+  const left = (
+    <Card>
+      <div className="kick mb-2">patrimônio</div>
+      <p className="fig tnum">{formatBRL(String(total))}</p>
+      <p className="mt-1 text-[11px] dim">{accounts.length} conta(s) conectada(s)</p>
+      <div className="mt-4 grid grid-cols-1 gap-3">
+        <Kpi label="Conexões ativas" value={String(consents.filter((c) => c.status === "AUTHORISED").length)} />
+      </div>
+    </Card>
+  );
+
+  const center = (
+    <div className="space-y-3">
+      <PageHead
+        kick="contas"
         title="Contas"
-        description="Saldos e conexões bancárias."
-        action={
-          <button onClick={load} className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-[13px] hover:bg-secondary">
-            <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} /> Atualizar
+        sub="Saldos e conexões bancárias."
+        right={
+          <button onClick={load} className="pill">
+            <RefreshCw className={loading ? "size-3.5 animate-spin" : "size-3.5"} /> Atualizar
           </button>
         }
       />
-
-      {error && <p className="mb-4 text-[13px] text-destructive">{error}</p>}
-
-      <div className="mb-5 rounded-lg border border-border bg-card p-5">
-        <p className="eyebrow">saldo total</p>
-        <p className="tnum mt-1 text-2xl">{formatBRL(String(total))}</p>
-        <p className="mt-0.5 text-[12px] text-muted-foreground">{accounts.length} conta(s) conectada(s)</p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {error && <p className="text-[13px] text-down">{error}</p>}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {accounts.map((a) => (
-          <a key={a.id} href={hrefFor({ name: "transactions" })} className="block">
-            <Panel>
+          <a key={a.id} href={hrefFor({ name: "transactions" })}>
+            <Card className="h-full">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="flex size-9 items-center justify-center rounded-md bg-primary/15 text-primary">
-                    <Landmark className="size-5" />
+                    <Landmark className="size-4" />
                   </span>
                   <div>
                     <p className="text-[13px]">{a.name || "Conta"}</p>
-                    <p className="text-[11px] text-muted-foreground">{a.account_type.replace(/_/g, " ")}</p>
+                    <p className="text-[11px] dim">{a.account_type.replace(/_/g, " ")}</p>
                   </div>
                 </div>
-                <p className="tnum text-lg">{formatBRL(a.balance_amount)}</p>
+                <p className="tnum text-[16px]">{formatBRL(a.balance_amount)}</p>
               </div>
-              {a.balance_updated_at && (
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  saldo de {new Date(a.balance_updated_at).toLocaleString("pt-BR")}
-                </p>
-              )}
-            </Panel>
+            </Card>
           </a>
         ))}
         {!loading && accounts.length === 0 && (
-          <Panel>
+          <Card>
             <Empty text="Nenhuma conta conectada ainda." />
             <div className="text-center">
-              <a href={hrefFor({ name: "openfinance" })} className="text-[13px] text-primary hover:underline">
-                Conectar um banco →
-              </a>
+              <a href={hrefFor({ name: "openfinance" })} className="text-[13px] text-primary hover:underline">Conectar um banco →</a>
             </div>
-          </Panel>
+          </Card>
         )}
       </div>
-
-      {consents.length > 0 && (
-        <Panel title="Conexões" className="mt-5">
-          <ul className="divide-y divide-border">
-            {consents.map((c) => (
-              <li key={c.id} className="flex items-center justify-between py-2.5">
-                <a href={hrefFor({ name: "openfinance" })} className="text-[13px] hover:text-primary">
-                  {c.institution_name || c.institution_id}
-                </a>
-                <Badge variant={c.status === "AUTHORISED" ? "success" : "warning"}>
-                  {c.status === "AUTHORISED" ? "conectado" : "aguardando"}
-                </Badge>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      )}
     </div>
   );
+
+  const right = (
+    <Card title="Conexões">
+      {consents.length === 0 ? (
+        <Empty text="Sem conexões." />
+      ) : (
+        <ul>
+          {consents.map((c) => (
+            <li key={c.id} className="row">
+              <span className="av">{(c.institution_name || "?").slice(0, 1)}</span>
+              <a href={hrefFor({ name: "openfinance" })} className="truncate text-[13px] hover:text-primary">
+                {c.institution_name || c.institution_id}
+              </a>
+              <span className={c.status === "AUTHORISED" ? "text-[11px] text-up" : "text-[11px] text-warn"}>
+                {c.status === "AUTHORISED" ? "conectado" : "aguardando"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+
+  return <Cockpit left={left} center={center} right={right} />;
 }

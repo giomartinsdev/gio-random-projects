@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Plus, Target } from "lucide-react";
 import { api, currentMonth, formatBRL, type BudgetStatus } from "@/lib/api";
-import { PageHeader, Panel, Empty } from "@/components/primitives";
+import { Card, Cockpit, Empty, PageHead, Progress } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BudgetBar } from "@/components/charts";
 
 const CATEGORIES = ["Alimentação", "Transporte", "Contas", "Lazer", "Saúde", "Educação", "Moradia", "Compras", "Renda Extra", "Outros"];
 
@@ -17,7 +16,8 @@ function toDecimal(raw: string): string | null {
   return Number.isFinite(v) && v > 0 ? v.toFixed(2) : null;
 }
 
-// Limites (orçamentos) por categoria e mês, com as réguas 50/80/100%.
+// Limites no formato cockpit: centro com os limites do mês (barra + réguas),
+// rail direito com o formulário de novo limite.
 export function LimitsPage() {
   const [month, setMonth] = useState(currentMonth());
   const [budgets, setBudgets] = useState<BudgetStatus[]>([]);
@@ -41,55 +41,46 @@ export function LimitsPage() {
     load();
   }, [load]);
 
-  return (
-    <div>
-      <PageHeader
-        eyebrow="controle"
+  const center = (
+    <div className="space-y-3">
+      <PageHead
+        kick="controle"
         title="Limites"
-        description="Orçamento por categoria, com avisos em 50%, 80% e 100%."
-        action={
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-[13px]" />
-        }
+        sub="Orçamento por categoria, com avisos em 50%, 80% e 100%."
+        right={<input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="hairline rounded-full bg-transparent px-3 py-1.5 text-[12px]" />}
       />
-
-      {error && <p className="mb-4 text-[13px] text-destructive">{error}</p>}
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
-        <Panel title="Limites do mês">
-          {budgets.length === 0 && !loading ? (
-            <Empty text="Nenhum limite definido neste mês." />
-          ) : (
-            <div className="space-y-5">
-              {budgets.map((b) => {
-                const spent = Math.abs(Number(b.spent_amount));
-                const limit = Number(b.limit_amount);
-                const pct = limit > 0 ? Math.round((spent / limit) * 100) : 0;
-                return (
-                  <div key={b.category} className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[13px]">
-                      <span className="flex items-center gap-2">
-                        <Target className="size-3.5 text-muted-foreground" />
-                        {b.category}
-                      </span>
-                      <span className="tnum text-muted-foreground">
-                        {formatBRL(String(spent))} / {formatBRL(b.limit_amount)} · {pct}%
-                      </span>
-                    </div>
-                    <BudgetBar spent={spent} limit={limit} />
-                    {b.thresholds_reached?.length > 0 && (
-                      <p className="text-[11px] text-warning">réguas: {b.thresholds_reached.map((t) => `${t}%`).join(", ")}</p>
-                    )}
+      {error && <p className="text-[13px] text-down">{error}</p>}
+      <Card>
+        {budgets.length === 0 && !loading ? (
+          <Empty text="Nenhum limite definido neste mês." />
+        ) : (
+          <div className="space-y-5">
+            {budgets.map((b) => {
+              const spent = Math.abs(Number(b.spent_amount));
+              const limit = Number(b.limit_amount);
+              const pct = limit > 0 ? Math.round((spent / limit) * 100) : 0;
+              return (
+                <div key={b.category}>
+                  <div className="flex items-center justify-between text-[13px]">
+                    <span className="flex items-center gap-2"><Target className="size-3.5 dim" /> {b.category}</span>
+                    <span className="tnum dim">{formatBRL(String(spent))} / {formatBRL(b.limit_amount)} · {pct}%</span>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </Panel>
-
-        <BudgetForm month={month} onDone={load} />
-      </div>
+                  <div className="mt-1.5"><Progress used={spent} total={limit} /></div>
+                  {b.thresholds_reached?.length > 0 && (
+                    <p className="mt-1 text-[11px] text-warn">réguas: {b.thresholds_reached.map((t) => `${t}%`).join(", ")}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
     </div>
   );
+
+  const right = <BudgetForm month={month} onDone={load} />;
+
+  return <Cockpit center={center} right={right} />;
 }
 
 function BudgetForm({ month, onDone }: { month: string; onDone: () => void }) {
@@ -117,27 +108,25 @@ function BudgetForm({ month, onDone }: { month: string; onDone: () => void }) {
   }
 
   return (
-    <Panel title="Novo limite">
+    <Card title="Novo limite">
       <form onSubmit={submit} className="space-y-3">
         <div className="space-y-1.5">
           <Label>Categoria</Label>
           <Select value={category} onValueChange={setCategory}>
             <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
+            <SelectContent>{CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
           </Select>
         </div>
         <div className="space-y-1.5">
           <Label>Limite (R$)</Label>
           <Input inputMode="decimal" placeholder="600,00" value={limit} onChange={(e) => setLimit(e.target.value)} />
         </div>
-        {msg && <p className={msg.ok ? "text-[13px] text-success" : "text-[13px] text-destructive"}>{msg.text}</p>}
+        {msg && <p className={msg.ok ? "text-[13px] text-success" : "text-[13px] text-down"}>{msg.text}</p>}
         <Button type="submit" disabled={busy} className="w-full">
           {busy ? <Loader2 className="animate-spin" /> : <Plus />} Definir limite
         </Button>
-        <p className="text-[11px] text-muted-foreground">Vale para {month}. Repetir o mesmo mês atualiza o valor.</p>
+        <p className="text-[11px] dim">Vale para {month}. Repetir o mesmo mês atualiza.</p>
       </form>
-    </Panel>
+    </Card>
   );
 }

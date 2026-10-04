@@ -24,7 +24,7 @@ export function ThemeToggle() {
       onClick={toggle}
       title={label}
       aria-label={label}
-      className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+      className="inline-flex size-7 items-center justify-center rounded-full text-fg-dim transition-colors hover:bg-fg/8 hover:text-fg"
     >
       {theme === "light" ? <Sun className="size-4" /> : <Moon className="size-4" />}
     </button>

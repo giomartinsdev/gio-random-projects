@@ -1,63 +1,28 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-// Peças de apresentação compartilhadas — dão o ar editorial/denso (título em
-// serifa, "eyebrow" em caixa alta, valores tabulares) sem repetir classes.
+// Peças de apresentação do cockpit — replicam os componentes do seuimposto
+// (`.card`, `.hd`, `.kick`, `.kpi`, `.fig`, `.sent`, `.bar`, `.row`, `.ev`).
 
-export function PageHeader({
-  eyebrow,
+export function Card({
   title,
-  description,
-  action,
-}: {
-  eyebrow?: string;
-  title: string;
-  description?: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        {eyebrow && <p className="eyebrow mb-1">{eyebrow}</p>}
-        <h1 className="text-2xl leading-tight">{title}</h1>
-        {description && <p className="mt-1 text-[13px] text-muted-foreground">{description}</p>}
-      </div>
-      {action}
-    </div>
-  );
-}
-
-export function Panel({
-  title,
-  eyebrow,
-  action,
+  right,
   children,
   className,
   onClick,
 }: {
   title?: string;
-  eyebrow?: string;
-  action?: ReactNode;
+  right?: ReactNode;
   children: ReactNode;
   className?: string;
   onClick?: () => void;
 }) {
   return (
-    <section
-      className={cn(
-        "rounded-lg border border-border bg-card p-5",
-        onClick && "cursor-pointer transition-colors hover:border-primary/40",
-        className,
-      )}
-      onClick={onClick}
-    >
-      {(title || action) && (
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <div>
-            {eyebrow && <p className="eyebrow mb-0.5">{eyebrow}</p>}
-            {title && <h2 className="text-[15px]">{title}</h2>}
-          </div>
-          {action}
+    <section className={cn("card", onClick && "cursor-pointer transition-colors hover:border-fg/20", className)} onClick={onClick}>
+      {(title || right) && (
+        <div className="hd">
+          {title && <h3>{title}</h3>}
+          {right}
         </div>
       )}
       {children}
@@ -65,28 +30,72 @@ export function Panel({
   );
 }
 
-export function Stat({
-  label,
-  value,
-  delta,
-  tone = "neutral",
-}: {
-  label: string;
-  value: string;
-  delta?: string;
-  tone?: "neutral" | "income" | "expense";
-}) {
-  const toneClass =
-    tone === "income" ? "text-success" : tone === "expense" ? "text-destructive" : "text-foreground";
+// KPI: rótulo miúdo + valor.
+export function Kpi({ label, value, tone }: { label: string; value: string; tone?: "up" | "down" }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <p className="eyebrow">{label}</p>
-      <p className={cn("tnum mt-1.5 text-xl", toneClass)}>{value}</p>
-      {delta && <p className="mt-0.5 text-[12px] text-muted-foreground">{delta}</p>}
+    <div className="kpi">
+      <div className="k">{label}</div>
+      <div className={cn("v tnum", tone === "up" && "text-up", tone === "down" && "text-down")}>{value}</div>
+    </div>
+  );
+}
+
+// Cabeçalho de seção (eyebrow + título serifa grande + ação).
+export function PageHead({
+  kick,
+  title,
+  sub,
+  right,
+}: {
+  kick?: string;
+  title: string;
+  sub?: string;
+  right?: ReactNode;
+}) {
+  return (
+    <div className="mb-3 flex items-end justify-between gap-3">
+      <div>
+        {kick && <div className="kick mb-1">{kick}</div>}
+        <h2 className="sent">{title}</h2>
+        {sub && <p className="mt-0.5 text-[12px] dim">{sub}</p>}
+      </div>
+      {right}
     </div>
   );
 }
 
 export function Empty({ text }: { text: string }) {
-  return <p className="py-8 text-center text-[13px] text-muted-foreground">{text}</p>;
+  return <p className="py-8 text-center text-[13px] dim">{text}</p>;
+}
+
+// Barra de progresso com valor (réguas/metas do original `.goal/.gb`).
+export function Progress({ used, total, tone }: { used: number; total: number; tone?: string }) {
+  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+  const color = tone ?? (pct >= 100 ? "hsl(var(--down))" : pct >= 80 ? "hsl(var(--warn))" : "hsl(var(--up))");
+  return (
+    <div className="bar">
+      <i style={{ width: `${pct}%`, background: color }} />
+    </div>
+  );
+}
+
+// Três colunas fixas (rail esquerdo, canvas central, rail direito) — o
+// `.col.l` / centro / `.col.r` do original. Sem scroll de página; cada coluna
+// rola por dentro.
+export function Cockpit({
+  left,
+  center,
+  right,
+}: {
+  left?: ReactNode;
+  center: ReactNode;
+  right?: ReactNode;
+}) {
+  return (
+    <div className="grid h-full grid-cols-1 gap-3 overflow-hidden p-3 lg:grid-cols-[300px_1fr_280px]">
+      {left && <aside className="hidden min-h-0 flex-col gap-3 overflow-y-auto scroll-thin lg:flex">{left}</aside>}
+      <main className="min-h-0 overflow-y-auto scroll-thin">{center}</main>
+      {right && <aside className="hidden min-h-0 flex-col gap-3 overflow-y-auto scroll-thin xl:flex">{right}</aside>}
+    </div>
+  );
 }

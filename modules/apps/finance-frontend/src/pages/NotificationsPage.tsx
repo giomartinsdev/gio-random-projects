@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Bell, BellOff, Loader2, Plus, Trash2 } from "lucide-react";
 import { api, formatBRL, type Notification } from "@/lib/api";
-import { PageHeader, Panel, Empty } from "@/components/primitives";
+import { Card, Cockpit, Empty, PageHead } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,8 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const CATEGORIES = ["Alimentação", "Transporte", "Contas", "Lazer", "Saúde", "Educação", "Moradia", "Compras", "Outros"];
 
-// Notificações: a pessoa cadastra as regras de aviso. O disparo é do worker
-// conversacional (WhatsApp); aqui só se criam/removem as regras.
+// Notificações no formato cockpit: centro com as regras, rail direito com o
+// formulário. O disparo é do worker conversacional (WhatsApp).
 export function NotificationsPage() {
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,7 +23,7 @@ export function NotificationsPage() {
       const res = await api.notifications();
       setItems(res.notifications ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "não consegui carregar as notificações");
+      setError(err instanceof Error ? err.message : "não consegui carregar");
     } finally {
       setLoading(false);
     }
@@ -42,63 +42,49 @@ export function NotificationsPage() {
     }
   }
 
-  return (
-    <div>
-      <PageHeader eyebrow="avisos" title="Notificações" description="Regras que disparam um aviso no seu WhatsApp." />
-
-      {error && <p className="mb-4 text-[13px] text-destructive">{error}</p>}
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
-        <Panel title="Suas regras">
-          {loading ? (
-            <p className="text-[13px] text-muted-foreground">carregando…</p>
-          ) : items.length === 0 ? (
-            <Empty text="Nenhuma regra de aviso cadastrada." />
-          ) : (
-            <ul className="divide-y divide-border">
-              {items.map((n) => (
-                <li key={n.id} className="flex items-center justify-between gap-3 py-3">
-                  <div className="flex items-center gap-3">
-                    <span className="flex size-8 items-center justify-center rounded-md bg-primary/15 text-primary">
-                      {n.enabled ? <Bell className="size-4" /> : <BellOff className="size-4" />}
-                    </span>
-                    <div>
-                      <p className="text-[13px]">{describe(n)}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        canal {n.channel} · {n.enabled ? "ativa" : "pausada"}
-                      </p>
-                    </div>
-                  </div>
-                  <button onClick={() => remove(n.id)} className="rounded-md p-1.5 text-muted-foreground hover:text-destructive" title="Remover">
-                    <Trash2 className="size-4" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
-
-        <NotificationForm onDone={load} />
-      </div>
+  const center = (
+    <div className="space-y-3">
+      <PageHead kick="avisos" title="Notificações" sub="Regras que disparam um aviso no seu WhatsApp." />
+      {error && <p className="text-[13px] text-down">{error}</p>}
+      <Card>
+        {loading ? (
+          <Empty text="carregando…" />
+        ) : items.length === 0 ? (
+          <Empty text="Nenhuma regra de aviso cadastrada." />
+        ) : (
+          <ul>
+            {items.map((n) => (
+              <li key={n.id} className="row">
+                <span className="av">{n.enabled ? <Bell className="size-3.5" /> : <BellOff className="size-3.5" />}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px]">{describe(n)}</span>
+                  <span className="block text-[11px] dim">canal {n.channel} · {n.enabled ? "ativa" : "pausada"}</span>
+                </span>
+                <button onClick={() => remove(n.id)} className="p-1.5 text-fg-dim hover:text-down" title="Remover">
+                  <Trash2 className="size-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
+
+  return <Cockpit center={center} right={<NotificationForm onDone={load} />} />;
 }
 
 function describe(n: Notification): string {
   switch (n.kind) {
-    case "category_threshold":
-      return `Avisar quando ${n.category || "uma categoria"} passar de ${formatBRL(n.threshold)}`;
-    case "large_transaction":
-      return `Avisar em transações acima de ${formatBRL(n.threshold)}`;
-    case "any_transaction":
-      return "Avisar em toda transação";
-    default:
-      return n.kind;
+    case "category_threshold": return `Avisar quando ${n.category || "uma categoria"} passar de ${formatBRL(n.threshold)}`;
+    case "large_transaction": return `Avisar em transações acima de ${formatBRL(n.threshold)}`;
+    case "any_transaction": return "Avisar em toda transação";
+    default: return n.kind;
   }
 }
 
 function NotificationForm({ onDone }: { onDone: () => void }) {
-  const [kind, setKind] = useState<Notification["kind"]>("category_threshold");
+  const [kind, setKind] = useState<string>("category_threshold");
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [threshold, setThreshold] = useState("");
   const [busy, setBusy] = useState(false);
@@ -109,16 +95,12 @@ function NotificationForm({ onDone }: { onDone: () => void }) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (needsThreshold && !toDecimal(threshold)) return setMsg({ ok: false, text: "Informe um valor maior que zero." });
+    const value = toDecimal(threshold);
+    if (needsThreshold && !value) return setMsg({ ok: false, text: "Informe um valor maior que zero." });
     setBusy(true);
     setMsg(null);
     try {
-      await api.setNotification({
-        kind,
-        category: needsCategory ? category : undefined,
-        threshold: needsThreshold ? toDecimal(threshold)! : undefined,
-        enabled: true,
-      });
+      await api.setNotification({ kind, category: needsCategory ? category : undefined, threshold: needsThreshold ? value! : undefined, enabled: true });
       setThreshold("");
       setMsg({ ok: true, text: "Regra criada." });
       onDone();
@@ -130,11 +112,11 @@ function NotificationForm({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <Panel title="Nova regra">
+    <Card title="Nova regra">
       <form onSubmit={submit} className="space-y-3">
         <div className="space-y-1.5">
           <Label>Tipo</Label>
-          <Select value={kind} onValueChange={(v) => setKind(v)}>
+          <Select value={kind} onValueChange={setKind}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="category_threshold">Categoria passou de um valor</SelectItem>
@@ -158,12 +140,12 @@ function NotificationForm({ onDone }: { onDone: () => void }) {
             <Input inputMode="decimal" placeholder="300,00" value={threshold} onChange={(e) => setThreshold(e.target.value)} />
           </div>
         )}
-        {msg && <p className={msg.ok ? "text-[13px] text-success" : "text-[13px] text-destructive"}>{msg.text}</p>}
+        {msg && <p className={msg.ok ? "text-[13px] text-success" : "text-[13px] text-down"}>{msg.text}</p>}
         <Button type="submit" disabled={busy} className="w-full">
           {busy ? <Loader2 className="animate-spin" /> : <Plus />} Criar regra
         </Button>
       </form>
-    </Panel>
+    </Card>
   );
 }
 

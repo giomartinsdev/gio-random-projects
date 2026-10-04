@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, Search } from "lucide-react";
 import { api, currentMonth, formatBRL, type Transaction } from "@/lib/api";
-import { PageHeader, Panel, Empty } from "@/components/primitives";
+import { Card, Cockpit, Empty, Kpi, PageHead } from "@/components/primitives";
+import { CategoryBars } from "@/components/charts";
 import { Input } from "@/components/ui/input";
 import { hrefFor } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "INCOME" | "EXPENSE";
 
-// Lista densa de transações, com busca e filtros. Cada linha é clicável e leva
-// ao detalhe profundo.
+// Cockpit de transações: rail esquerdo com filtros e totais, centro com a lista
+// densa (cada linha abre o detalhe), rail direito com a quebra por categoria.
 export function TransactionsPage({ month: initialMonth }: { month?: string }) {
   const [month, setMonth] = useState(initialMonth ?? currentMonth());
   const [all, setAll] = useState<Transaction[]>([]);
@@ -25,7 +26,7 @@ export function TransactionsPage({ month: initialMonth }: { month?: string }) {
       const res = await api.transactions(month);
       setAll(res.transactions ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "não consegui carregar o extrato");
+      setError(err instanceof Error ? err.message : "não consegui carregar");
     } finally {
       setLoading(false);
     }
@@ -40,16 +41,12 @@ export function TransactionsPage({ month: initialMonth }: { month?: string }) {
     return all.filter((t) => {
       if (filter !== "all" && t.transaction_type !== filter) return false;
       if (!needle) return true;
-      return [t.counterparty, t.description, t.category, t.external_category]
-        .join(" ")
-        .toLowerCase()
-        .includes(needle);
+      return [t.counterparty, t.description, t.category, t.external_category].join(" ").toLowerCase().includes(needle);
     });
   }, [all, query, filter]);
 
   const totals = useMemo(() => {
-    let income = 0;
-    let expense = 0;
+    let income = 0, expense = 0;
     for (const t of rows) {
       const v = Number(t.amount);
       if (t.transaction_type === "INCOME") income += v;
@@ -58,71 +55,71 @@ export function TransactionsPage({ month: initialMonth }: { month?: string }) {
     return { income, expense };
   }, [rows]);
 
-  return (
-    <div>
-      <PageHeader
-        eyebrow="movimentações"
-        title="Transações"
-        description={loading ? "carregando…" : `${rows.length} lançamentos`}
-        action={
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-[13px]"
-          />
-        }
-      />
+  const byCategory = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const t of rows) {
+      if (t.transaction_type === "INCOME") continue;
+      map.set(t.category || "Outros", (map.get(t.category || "Outros") ?? 0) + Math.abs(Number(t.amount)));
+    }
+    return [...map.entries()].map(([label, value]) => ({ label, value: -value })).sort((a, b) => a.value - b.value);
+  }, [rows]);
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar lugar, descrição, categoria…" className="pl-9" />
-        </div>
-        <div className="flex gap-1">
-          {(["all", "INCOME", "EXPENSE"] as Filter[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={cn(
-                "rounded-full px-3 py-1.5 text-[13px] transition-colors",
-                filter === f ? "bg-primary text-primary-foreground" : "border border-border hover:bg-secondary",
-              )}
-            >
-              {f === "all" ? "Tudo" : f === "INCOME" ? "Entradas" : "Saídas"}
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto flex gap-4 text-[13px]">
-          <span className="text-success">+ {formatBRL(String(totals.income))}</span>
-          <span className="text-destructive">− {formatBRL(String(totals.expense))}</span>
-        </div>
+  const left = (
+    <Card title="Filtros">
+      <div className="seg mb-3 w-full">
+        {(["all", "INCOME", "EXPENSE"] as Filter[]).map((f) => (
+          <button key={f} data-on={filter === f} onClick={() => setFilter(f)} className="flex-1 justify-center">
+            {f === "all" ? "Tudo" : f === "INCOME" ? "Entradas" : "Saídas"}
+          </button>
+        ))}
       </div>
+      <input
+        type="month"
+        value={month}
+        onChange={(e) => setMonth(e.target.value)}
+        className="hairline mb-4 w-full rounded-full bg-transparent px-3 py-1.5 text-[12px]"
+      />
+      <div className="grid grid-cols-2 gap-3">
+        <Kpi label="Entradas" value={formatBRL(String(totals.income))} tone="up" />
+        <Kpi label="Saídas" value={formatBRL(String(totals.expense))} tone="down" />
+      </div>
+      <div className="mt-3">
+        <Kpi label="Resultado" value={formatBRL(String(totals.income - totals.expense), { signed: true })} />
+      </div>
+    </Card>
+  );
 
-      {error && <p className="mb-4 text-[13px] text-destructive">{error}</p>}
-
-      <Panel className="p-0">
+  const center = (
+    <div className="space-y-3">
+      <PageHead
+        kick="movimentações"
+        title="Transações"
+        sub={loading ? "carregando…" : `${rows.length} lançamentos`}
+      />
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-fg-dim" />
+        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar lugar, descrição, categoria…" className="hairline rounded-full bg-transparent pl-9" />
+      </div>
+      {error && <p className="text-[13px] text-down">{error}</p>}
+      <Card className="p-0">
         {rows.length === 0 && !loading ? (
           <Empty text="Nenhuma transação encontrada." />
         ) : (
-          <ul className="divide-y divide-border">
+          <ul>
             {rows.map((t) => (
               <li key={t.id}>
-                <a
-                  href={hrefFor({ name: "transaction", id: t.id })}
-                  className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-secondary"
-                >
-                  <span className={cn("[&_svg]:size-4", t.transaction_type === "INCOME" ? "text-success" : "text-destructive")}>
-                    {t.transaction_type === "INCOME" ? <ArrowUpRight /> : <ArrowDownRight />}
+                <a href={hrefFor({ name: "transaction", id: t.id })} className="row px-4 hover:bg-fg/4">
+                  <span className={cn("flex size-6 items-center justify-center rounded-md", t.transaction_type === "INCOME" ? "bg-up/15 text-up" : "bg-down/15 text-down")}>
+                    {t.transaction_type === "INCOME" ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px]">{t.counterparty || t.description || t.category || "Lançamento"}</p>
-                    <p className="truncate text-[11px] text-muted-foreground">
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13px]">{t.counterparty || t.description || t.category || "Lançamento"}</span>
+                    <span className="block truncate text-[11px] dim">
                       {new Date(t.occurred_at).toLocaleDateString("pt-BR")} · {t.category || "Outros"}
                       {t.source === "OPEN_FINANCE_SYNC" ? " · banco" : ""}
-                    </p>
-                  </div>
-                  <span className={cn("tnum shrink-0 text-[13px]", t.transaction_type === "INCOME" && "text-success")}>
+                    </span>
+                  </span>
+                  <span className={cn("tnum text-[13px]", t.transaction_type === "INCOME" && "text-up")}>
                     {t.transaction_type === "INCOME" ? "+" : "−"} {formatBRL(String(Math.abs(Number(t.amount))))}
                   </span>
                 </a>
@@ -130,7 +127,15 @@ export function TransactionsPage({ month: initialMonth }: { month?: string }) {
             ))}
           </ul>
         )}
-      </Panel>
+      </Card>
     </div>
   );
+
+  const right = (
+    <Card title="Por categoria">
+      <CategoryBars points={byCategory} />
+    </Card>
+  );
+
+  return <Cockpit left={left} center={center} right={right} />;
 }
