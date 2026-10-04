@@ -1,32 +1,56 @@
-// finance-api is a separate origin (its own container, its own hostname)
-// -- VITE_FINANCE_API_URL is baked in at build time (see the CI's
-// ts-frontend-ci-cd.yml) and empty locally, where the dev server's own
-// proxy (vite.config.ts) makes relative paths reach finance-api anyway.
+// Cliente HTTP do SPA. Diferente da versão antiga (que pedia uma X-API-Key
+// colada pelo operador), agora a identidade é a sessão do Google: todo fetch
+// vai com `credentials: "include"` e o finance-api amarra o `user_id` ao
+// telefone da sessão. Não há chave no bundle.
 const API_URL = import.meta.env.VITE_FINANCE_API_URL ?? "";
 
-// The house envelope the ACL speaks on both sides of its boundary
-// (spec §4.1): {action, payload}. `finance.*` actions are relayed to
-// domain-api, which owns persistence.
-export type Envelope = { action: string; payload: Record<string, unknown> };
+export function apiUrl(path: string): string {
+  return `${API_URL}${path}`;
+}
 
-// The relayed outcome. Mirrors RelayResponse in
-// finance-api/src/finance_api/presentation/schemas.py: `entity_id` and
-// `error` appear only when they apply (exclude_none on the server).
-export type RelayOutcome = {
-  // The HTTP status the ACL answered with. The default door is async and
-  // answers 202 `accepted`; `/commands/sync` answers 200/422/504.
-  http: number;
-  command_id: string;
-  // "accepted" (202, published — the worker applies it) | "written"
-  // (confirmed) | "failed" (422, rejected) | "queued" (504: timeout is NOT
-  // failure).
-  status: "accepted" | "written" | "failed" | "queued" | string;
-  entity_id?: string;
-  error?: string;
-};
+export type TransactionType = "INCOME" | "EXPENSE" | "TRANSFER";
 
-// A transport/auth failure, distinct from a *rejected command*: a 422
-// outcome is a RelayOutcome with status "failed", never a thrown error.
+export interface CategoryAmount {
+  category: string;
+  amount: string;
+  currency: string;
+  transaction_count: number;
+}
+
+export interface BudgetStatus {
+  category: string;
+  limit_amount: string;
+  spent_amount: string;
+  currency: string;
+  thresholds_reached: number[];
+}
+
+export interface MonthlyDashboard {
+  user_id: string;
+  month: string;
+  income: string;
+  expense: string;
+  net: string;
+  currency: string;
+  transaction_count: number;
+  top_categories: CategoryAmount[];
+  budgets: BudgetStatus[];
+}
+
+export interface CashFlowDay {
+  date: string;
+  income: string;
+  expense: string;
+  net: string;
+}
+
+export interface CashFlowHistory {
+  user_id: string;
+  month: string;
+  currency: string;
+  days: CashFlowDay[];
+}
+
 export class ApiError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -36,81 +60,100 @@ export class ApiError extends Error {
   }
 }
 
-// Every write route needs X-API-Key (spec §12.3); the key's label names
-// the caller in the audit trail. In the browser the key is a temporary
-// operator credential the user pastes for this session, kept only in
-// sessionStorage -- it is NOT baked into the bundle.
-const KEY_STORAGE = "finance:api-key";
-
-export function readApiKey(): string {
-  try {
-    return sessionStorage.getItem(KEY_STORAGE) ?? "";
-  } catch {
-    return "";
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(apiUrl(path), {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+  if (!res.ok) {
+    throw new ApiError(res.status, payload?.error ?? `falha (${res.status})`);
   }
+  return payload as T;
 }
 
-export function rememberApiKey(key: string): void {
-  try {
-    if (key) sessionStorage.setItem(KEY_STORAGE, key);
-    else sessionStorage.removeItem(KEY_STORAGE);
-  } catch {
-    // Storage disabled (private mode): the key still works for this page's
-    // lifetime, it just is not remembered across reloads.
-  }
-}
+// As ações do contrato (packages/finance-contracts). Aqui só as que o SPA usa.
+const ACTION_REGISTER = "finance.transaction.register";
+const ACTION_BUDGET = "finance.budget.setCategory";
+const ACTION_TRANSFER = "finance.transfer.betweenAccounts";
+const QUERY_DASHBOARD = "finance.query.monthlyDashboard";
+const QUERY_BREAKDOWN = "finance.query.categoryBreakdown";
+const QUERY_CASHFLOW = "finance.query.cashFlowHistory";
 
-async function jsonHeaders(): Promise<HeadersInit> {
-  const key = readApiKey();
-  return {
-    "content-type": "application/json",
-    ...(key ? { "x-api-key": key } : {}),
-  };
+export interface NewTransaction {
+  transaction_type: TransactionType;
+  amount: string; // decimal canônico, ex. "45.00"
+  category: string;
+  occurred_at: string; // ISO tz-aware
+  account_id?: string;
 }
 
 export const api = {
-  // Public, no key (spec §10.6) -- the page's own liveness probe.
-  async health(): Promise<{ status: string }> {
-    const res = await fetch(`${API_URL}/healthz`);
-    if (!res.ok) throw new ApiError(res.status, `offline (${res.status})`);
-    return res.json() as Promise<{ status: string }>;
+  registerTransaction(tx: NewTransaction): Promise<{ status: string; command_id: string }> {
+    return post("/commands", {
+      action: ACTION_REGISTER,
+      payload: {
+        account_id: tx.account_id || "web",
+        transaction_type: tx.transaction_type,
+        amount: tx.amount,
+        currency: "BRL",
+        category: tx.category,
+        occurred_at: tx.occurred_at,
+        source_type: "WEB_MANUAL",
+      },
+    });
   },
 
-  // The write door. 200 written / 422 failed / 504 queued are all returned
-  // as a RelayOutcome (they are the documented contract, not errors); only
-  // 401 (bad key) and 502 (unreachable upstream) throw, so a caller can
-  // tell "the command was rejected" from "the request never got there".
-  async submit(envelope: Envelope): Promise<RelayOutcome> {
-    const res = await fetch(`${API_URL}/commands`, {
-      method: "POST",
-      headers: await jsonHeaders(),
-      body: JSON.stringify(envelope),
+  setBudget(input: { category: string; limit: string; period: string }): Promise<{ status: string }> {
+    return post("/commands", {
+      action: ACTION_BUDGET,
+      payload: {
+        category: input.category,
+        limit: input.limit,
+        currency: "BRL",
+        period: input.period,
+      },
     });
-    const body = (await res.json().catch(() => null)) as
-      | (Omit<RelayOutcome, "http"> & { error?: string })
-      | null;
-    if (res.status === 401 || res.status === 502) {
-      throw new ApiError(res.status, body?.error ?? `falha na requisição (${res.status})`);
-    }
-    if (!body || typeof body.command_id !== "string") {
-      throw new ApiError(res.status, body?.error ?? `resposta inesperada (${res.status})`);
-    }
-    return { http: res.status, ...body };
   },
 
-  // The read door (spec §4.2). Reads are unambiguous: a 200 carries the
-  // projection, anything else is an error (401 bad key, 422 bad query, 502
-  // upstream, 504 client timeout). Unlike a write there is no "queued".
-  async query(action: string, payload: Record<string, unknown>): Promise<unknown> {
-    const res = await fetch(`${API_URL}/queries`, {
-      method: "POST",
-      headers: await jsonHeaders(),
-      body: JSON.stringify({ action, payload }),
+  transfer(input: { from_account_id: string; to_account_id: string; amount: string; occurred_at: string }): Promise<{ status: string }> {
+    return post("/commands", {
+      action: ACTION_TRANSFER,
+      payload: {
+        from_account_id: input.from_account_id,
+        to_account_id: input.to_account_id,
+        amount: input.amount,
+        currency: "BRL",
+        occurred_at: input.occurred_at,
+      },
     });
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    if (!res.ok) {
-      throw new ApiError(res.status, body?.error ?? `falha na leitura (${res.status})`);
-    }
-    return body;
+  },
+
+  dashboard(month: string): Promise<MonthlyDashboard> {
+    return post("/queries", { action: QUERY_DASHBOARD, payload: { month } });
+  },
+
+  breakdown(month: string): Promise<{ month: string; categories: CategoryAmount[]; currency: string }> {
+    return post("/queries", { action: QUERY_BREAKDOWN, payload: { month } });
+  },
+
+  cashFlow(month: string): Promise<CashFlowHistory> {
+    return post("/queries", { action: QUERY_CASHFLOW, payload: { month } });
   },
 };
+
+// Formatação de dinheiro a partir da string decimal do domínio (§3.4): o SPA
+// só exibe — nunca faz aritmética que possa virar float.
+export function formatBRL(amount: string, opts?: { signed?: boolean }): string {
+  const value = Number(amount);
+  const abs = Math.abs(value);
+  const formatted = abs.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  if (!opts?.signed || value === 0) return formatted;
+  return value < 0 ? `− ${formatted}` : `+ ${formatted}`;
+}
+
+export function currentMonth(): string {
+  return new Date().toISOString().slice(0, 7);
+}

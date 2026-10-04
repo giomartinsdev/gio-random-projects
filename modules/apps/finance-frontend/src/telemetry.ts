@@ -51,9 +51,10 @@ if (endpoint) {
     instrumentations: [
       new DocumentLoadInstrumentation(),
       new FetchInstrumentation({
-        // Only finance-api gets traceparent (and thus a preflight asking
-        // for it) -- third-party requests are left untouched.
-        propagateTraceHeaderCorsUrls: [/^https:\/\/finance\.giomartins\.dev\//],
+        // Só a finance-api recebe traceparent (e portanto um preflight
+        // pedindo o header). O host da API é finance-api., não o da SPA
+        // (finance.) -- propagar para a origem errada não rastreia a chamada.
+        propagateTraceHeaderCorsUrls: [/^https:\/\/finance-api\.giomartins\.dev\//],
         ignoreUrls: [otelUrlFilter],
       }),
     ],

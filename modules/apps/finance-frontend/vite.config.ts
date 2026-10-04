@@ -17,6 +17,8 @@ export default defineConfig({
     proxy: {
       "/healthz": "http://localhost:8018",
       "/commands": "http://localhost:8018",
+      "/queries": "http://localhost:8018",
+      "/auth": "http://localhost:8018",
     },
   },
 });

@@ -2,38 +2,85 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Same token set the other SPAs use, so every app on the domain reads
-   as one family. Dark-only here: the finance dashboard is a single dark
-   surface, and there is no theme toggle to support yet. */
+/* Duas cores: um acento (verde-dinheiro) e neutros quentes. O resto do
+   sistema de tokens (card, muted, border…) é derivado desses neutros, então
+   trocar o acento troca a identidade inteira sem tocar em componente nenhum.
+   Modo claro e escuro são o MESMO conjunto de variáveis em `:root` e `.dark`,
+   só com valores diferentes — nada de `dark:` espalhado pelo JSX. */
 @layer base {
   :root {
-    --background: 240 10% 4%;
-    --foreground: 0 0% 98%;
-    --card: 240 6% 8%;
-    --card-foreground: 0 0% 98%;
-    --primary: 217 91% 60%;
+    --background: 40 33% 99%;
+    --foreground: 24 10% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 24 10% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 24 10% 10%;
+    /* Acento: verde. */
+    --primary: 160 84% 30%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 4% 16%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 4% 16%;
-    --muted-foreground: 240 5% 65%;
-    --accent: 240 4% 16%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 4% 18%;
-    --input: 240 4% 18%;
-    --ring: 217 91% 60%;
+    --secondary: 40 20% 95%;
+    --secondary-foreground: 24 10% 18%;
+    --muted: 40 20% 95%;
+    --muted-foreground: 24 6% 42%;
+    --accent: 160 40% 94%;
+    --accent-foreground: 160 84% 22%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 160 84% 30%;
+    --success-foreground: 0 0% 100%;
+    --warning: 35 92% 42%;
+    --warning-foreground: 0 0% 100%;
+    --border: 30 12% 89%;
+    --input: 30 12% 87%;
+    --ring: 160 84% 30%;
     --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 24 12% 7%;
+    --foreground: 40 20% 96%;
+    --card: 24 10% 10%;
+    --card-foreground: 40 20% 96%;
+    --popover: 24 10% 10%;
+    --popover-foreground: 40 20% 96%;
+    --primary: 158 64% 45%;
+    --primary-foreground: 24 12% 7%;
+    --secondary: 24 8% 16%;
+    --secondary-foreground: 40 20% 96%;
+    --muted: 24 8% 16%;
+    --muted-foreground: 40 8% 62%;
+    --accent: 160 30% 18%;
+    --accent-foreground: 158 64% 70%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 158 64% 45%;
+    --success-foreground: 24 12% 7%;
+    --warning: 40 90% 55%;
+    --warning-foreground: 24 12% 7%;
+    --border: 24 8% 18%;
+    --input: 24 8% 20%;
+    --ring: 158 64% 45%;
   }
 
   * {
     @apply border-border;
   }
 
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     overscroll-behavior: none;
+  }
+
+  /* Números tabulares: valores monetários não "dançam" ao atualizar. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
   }
 }
