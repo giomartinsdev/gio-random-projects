@@ -9,7 +9,7 @@ per language+layer:
 - **`.github/workflows/go-ci-cd.yml`** — Go apps, auto-discovered by
   `go.mod` (`domain-api`, `domain-worker`, `tela-api`, `clubs-api`).
 - **`.github/workflows/ts-frontend-ci-cd.yml`** — TypeScript SPAs
-  (`tela-frontend`, `clubs-frontend`, `hub-frontend`), which need
+  (`tela-frontend`, `clubs-frontend`, `hub-frontend`, `finance-frontend`), which need
   `VITE_*` env vars baked into the bundle at build time. None of them
   runs as a container: the build is mirrored straight into its own
   MinIO bucket instead (see `modules/infra/terraform/static_sites.tf`).
@@ -46,6 +46,14 @@ only ever fit one.
   camada pessoal atrás do login próprio no `/api`; `clubs-frontend` é uma
   SPA React estática em bucket, sem container, que entra no hub como
   microfrontend. O design system vive em `clubs-frontend/ui.pen`.
+- **`finance-api/`** / **`finance-frontend/`** — o bounded context
+  financeiro (gestão conversacional via WhatsApp, spec em
+  `docs/finance-system-spec.md`). `finance-api` é a ACL do contexto (Python
+  3.12 + FastAPI): valida o comando e o relaya ao `domain-api`, o dono da
+  persistência — **sem banco e sem broker** (regra de isolamento §1.1);
+  `finance-frontend` é uma SPA React estática em bucket com a tela de
+  operação (liveness, chave de API, envio de comando). O contrato
+  compartilhado vive em `packages/finance-contracts/`.
 - **`hub-frontend/`** — o hub: chrome em volta das SPAs acima (sidebar +
   um renderer que as iframeia) mais atalhos de nova aba para os painéis
   protegidos por Access. Também é uma SPA estática em bucket.

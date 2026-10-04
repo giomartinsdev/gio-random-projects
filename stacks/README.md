@@ -33,7 +33,8 @@ Numa VPS nova: `bootstrap → persistence → core →
 compute → observability → apps → maus`, e não se
 atualiza o `core` pelo Dockhand.
 
-Os **frontends** (`tela-frontend`, `clubs-frontend`, `hub-frontend`) são
+Os **frontends** (`tela-frontend`, `clubs-frontend`, `hub-frontend`,
+`finance-frontend`) são
 builds estáticos espelhados em bucket do MinIO — não são container, não
 entram aqui.
 
