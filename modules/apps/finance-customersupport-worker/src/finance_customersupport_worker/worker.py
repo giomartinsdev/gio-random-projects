@@ -206,9 +206,16 @@ class Worker:
         ):
             return
 
-        # Idempotência: o envelope carrega event_id (estável por entrega), com
-        # command_id como reserva. O mesmo evento reentregue é no-op (§12.5).
-        key = str(event.get("event_id") or command_id or f"{event_name}:{event.get('occurred_at')}")
+        # Idempotência da NOTIFICAÇÃO. Para confirmações de transação a chave é
+        # o id DA TRANSAÇÃO (estável entre reimportações do mesmo lançamento),
+        # não o event_id/command_id: o conector pode reler a mesma transação num
+        # poll seguinte, e o /commands dá um command_id novo a cada vez — só o
+        # transaction_id não muda. Sem isso, uma releitura re-notificaria.
+        txn_id = payload.get("transaction_id")
+        if event_name in _CONFIRMATION_EVENTS and isinstance(txn_id, str) and txn_id:
+            key = f"{event_name}:{txn_id}"
+        else:
+            key = str(event.get("event_id") or command_id or f"{event_name}:{event.get('occurred_at')}")
         if key in self._seen_events:
             return
         self._seen_events.add(key)

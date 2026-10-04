@@ -158,3 +158,22 @@ def test_budget_alert_is_not_suppressed_by_a_self_originated_command():
     ))
     assert len(evo.sent) == 2
     assert "80%" in evo.sent[-1][1]
+
+
+def test_same_transaction_read_again_is_not_notified_twice():
+    # O conector pode reler a mesma transação num poll seguinte; o /commands dá
+    # um command_id/event_id novo a cada vez. A dedup da notificação tem de ser
+    # pelo transaction_id (estável), senão o dia a dia re-notificaria.
+    evo = FakeEvolution()
+    worker = _worker(FakeFinance(), evo)
+    for i in range(2):
+        asyncio.run(worker.handle_domain_event(
+            _event(
+                "finance.transaction.registered",
+                {"transaction_id": "tx-stable-1", "user_id": "5521981962914", "transaction_type": "EXPENSE",
+                 "amount": "-12.50", "category": "Alimentação", "source_type": "OPEN_FINANCE_SYNC", "historical": False},
+                command_id=f"cmd-{i}",
+                event_id=f"evt-{i}",
+            )
+        ))
+    assert len(evo.sent) == 1, "a mesma transação re-lida não pode notificar duas vezes"
