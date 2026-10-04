@@ -60,6 +60,13 @@ um app migrar e mudar a porta loopback, edite aqui e recrie o `ingress`.
   `registry_*`, …) com `external: true`. Isso preserva os dados atuais.
 - **Imagem do registry**: `registry.giomartins.dev:5000/<app>:latest`. O
   build/push continua no CI.
+- **Renomear um serviço**: o `up -d --remove-orphans` do Dockhand remove o
+  container antigo (mesmo projeto compose), mas um órfão sobrevivente é uma
+  falha **silenciosa** — dois consumidores da mesma fila (ex.: os dois workers
+  do financeiro) dividem as mensagens. O deploy do CI tem um guard que remove,
+  por nome, os legados já aposentados e falha se sobrar. Ao renomear um serviço,
+  acrescente o nome ANTIGO à lista `legacy` no `deploy` do workflow da
+  linguagem (`python-ci-cd.yml`, `go-ci-cd.yml`, …).
 - **Segredo nunca no git**: no compose só `${VAR}`. O valor vira variável
   de stack no Dockhand (criptografada no DB dele).
 

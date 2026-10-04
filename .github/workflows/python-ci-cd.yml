@@ -335,3 +335,28 @@ jobs:
             echo "ok: $a rodando"
           done
 
+          # Orfaos de rename de servico. O `up -d --remove-orphans` do Dockhand
+          # ja remove containers cujo servico saiu do compose (mesmo projeto),
+          # mas um orfao sobrevivente e uma falha SILENCIOSA e grave: no caso
+          # `finance-whatsapp-worker` -> `finance-customersupport-worker`, os
+          # DOIS consumiriam a mesma fila do Evolution e cada mensagem cairia
+          # em um (metade do atendimento some). Removemos explicitamente o
+          # legado conhecido, se ainda existir, e provamos que sumiu.
+          #
+          # A lista e de nomes LEGADOS ja aposentados; um rename novo adiciona
+          # o nome antigo aqui. Remover um nome que nao existe e no-op.
+          for legacy in finance-whatsapp-worker; do
+            if ssh "ubuntu@$VPS_HOST" "docker ps -a --format '{{.Names}}'" | grep -qx "$legacy"; then
+              echo "== orfao de rename detectado: $legacy; removendo"
+              ssh "ubuntu@$VPS_HOST" "docker rm -f '$legacy'" >/dev/null || {
+                echo "::error::nao consegui remover o orfao $legacy: ele pode estar consumindo a fila em paralelo."
+                exit 1
+              }
+              ssh "ubuntu@$VPS_HOST" "docker ps -a --format '{{.Names}}'" | grep -qx "$legacy" && {
+                echo "::error::$legacy ainda existe apos docker rm -f."
+                exit 1
+              }
+              echo "ok: orfao $legacy removido"
+            fi
+          done
+
