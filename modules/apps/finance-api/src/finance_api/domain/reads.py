@@ -387,3 +387,75 @@ class OFAccountList:
             "user_id": self.user_id,
             "accounts": [a.to_wire() for a in self.accounts],
         }
+
+
+@dataclass(frozen=True, slots=True)
+class Transaction:
+    id: str
+    occurred_at: str
+    transaction_type: str
+    amount: str
+    currency: str
+    category: str
+    account_id: str
+    source: str
+    counterparty: str
+    description: str
+    external_category: str
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "Transaction":
+        return cls(
+            id=str(body.get("id", "")),
+            occurred_at=str(body.get("occurred_at", "")),
+            transaction_type=str(body.get("transaction_type", "")),
+            amount=_amount_text(body.get("amount", "0.00"), field_name="amount"),
+            currency=str(body.get("currency", "BRL")),
+            category=str(body.get("category", "")),
+            account_id=str(body.get("account_id", "")),
+            source=str(body.get("source", "")),
+            counterparty=str(body.get("counterparty", "")),
+            description=str(body.get("description", "")),
+            external_category=str(body.get("external_category", "")),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "occurred_at": self.occurred_at,
+            "transaction_type": self.transaction_type,
+            "amount": self.amount,
+            "currency": self.currency,
+            "category": self.category,
+            "account_id": self.account_id,
+            "source": self.source,
+            "counterparty": self.counterparty,
+            "description": self.description,
+            "external_category": self.external_category,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionList:
+    user_id: str
+    month: str
+    transactions: tuple[Transaction, ...] = ()
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "TransactionList":
+        data = _require_object(body, field_name="transactions")
+        raw = data.get("transactions", [])
+        if not isinstance(raw, (list, tuple)):
+            raise ValidationError("transactions must be a list")
+        return cls(
+            user_id=str(data.get("user_id", "")),
+            month=str(data.get("month", "")),
+            transactions=tuple(Transaction.from_wire(t) for t in raw),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "user_id": self.user_id,
+            "month": self.month,
+            "transactions": [t.to_wire() for t in self.transactions],
+        }

@@ -21,6 +21,7 @@ type RegisterTransactionInput struct {
 	OFAccountID      string `json:"of_account_id,omitempty"`
 	Counterparty     string `json:"counterparty,omitempty"`
 	ExternalCategory string `json:"external_category,omitempty"`
+	Description      string `json:"description,omitempty"`
 }
 
 type CategorizeTransactionInput struct {

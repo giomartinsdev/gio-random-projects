@@ -454,6 +454,7 @@ ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS external_id TEXT;
 ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS of_account_id UUID;
 ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS counterparty TEXT NOT NULL DEFAULT '';
 ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS external_category TEXT NOT NULL DEFAULT '';
+ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_transactions_external
     ON finance_transactions (source, external_id) WHERE external_id IS NOT NULL;
 

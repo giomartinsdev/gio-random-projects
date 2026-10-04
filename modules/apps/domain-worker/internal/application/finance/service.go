@@ -66,6 +66,7 @@ func (s *Service) RegisterTransaction(ctx context.Context, in RegisterTransactio
 	tx.OFAccountID = in.OFAccountID
 	tx.Counterparty = in.Counterparty
 	tx.ExternalCategory = in.ExternalCategory
+	tx.Description = in.Description
 	if _, err := s.repo.Insert(ctx, tx); err != nil {
 		return domainfinance.Transaction{}, nil, err
 	}

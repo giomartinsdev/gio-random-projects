@@ -23,7 +23,7 @@ func NewFinanceRepository(pool *pgxpool.Pool) *FinanceRepository {
 }
 
 const financeTxColumns = `id, user_id, account_id, type, amount::text, currency, category,
-	source, occurred_at, created_at, external_id, of_account_id, counterparty, external_category`
+	source, occurred_at, created_at, external_id, of_account_id, counterparty, external_category, description`
 
 func scanFinanceTx(row pgx.Row) (domainfinance.Transaction, error) {
 	var (
@@ -34,7 +34,7 @@ func scanFinanceTx(row pgx.Row) (domainfinance.Transaction, error) {
 	)
 	if err := row.Scan(&t.ID, &t.UserID, &t.AccountID, &t.Type, &amountDecimal,
 		&t.Amount.Currency, &t.Category, &t.Source, &t.OccurredAt, &t.CreatedAt,
-		&externalID, &ofAccountID, &t.Counterparty, &t.ExternalCategory); err != nil {
+		&externalID, &ofAccountID, &t.Counterparty, &t.ExternalCategory, &t.Description); err != nil {
 		return domainfinance.Transaction{}, err
 	}
 	// amount vem como texto (`amount::text`) para NÃO passar por float no
@@ -61,16 +61,33 @@ func scanFinanceTx(row pgx.Row) (domainfinance.Transaction, error) {
 // parcial em (source, external_id) é a segunda barreira, caso um producer
 // futuro use outro id.
 func (r *FinanceRepository) Insert(ctx context.Context, t domainfinance.Transaction) (bool, error) {
+	// Open Finance: o re-sync ATUALIZA o enriquecimento (categoria/lugar/
+	// descrição), porque o provedor melhora esses campos depois (o
+	// counterparty só aparece após o job de enrichment). Sem isso, a primeira
+	// importação congelava uma categoria pior para sempre — e uma correção do
+	// nosso mapeamento nunca chegaria ao que já foi importado.
+	//
+	// Um lançamento manual (sem external_id) continua DO NOTHING: o id dele é
+	// o command_id, e reentregar o mesmo comando não pode mexer no registro.
+	conflict := "ON CONFLICT (id) DO NOTHING"
+	if t.ExternalID != "" {
+		conflict = `ON CONFLICT (id) DO UPDATE SET
+			category = EXCLUDED.category,
+			counterparty = EXCLUDED.counterparty,
+			external_category = EXCLUDED.external_category,
+			description = EXCLUDED.description,
+			of_account_id = EXCLUDED.of_account_id`
+	}
 	tag, err := r.pool.Exec(ctx, `
 		INSERT INTO finance_transactions
 			(id, user_id, account_id, type, amount, currency, category, source, occurred_at, command_id,
-			 external_id, of_account_id, counterparty, external_category)
+			 external_id, of_account_id, counterparty, external_category, description)
 		VALUES ($1,$2,$3,$4,$5::numeric,$6,$7,$8,$9,$1,
-		        NULLIF($10,''), NULLIF($11,'')::uuid, $12, $13)
-		ON CONFLICT (id) DO NOTHING`,
+		        NULLIF($10,''), NULLIF($11,'')::uuid, $12, $13, $14)
+		`+conflict,
 		t.ID, t.UserID, t.AccountID, string(t.Type), t.Amount.Decimal(), t.Amount.Currency,
 		t.Category, t.Source, t.OccurredAt,
-		t.ExternalID, t.OFAccountID, t.Counterparty, t.ExternalCategory)
+		t.ExternalID, t.OFAccountID, t.Counterparty, t.ExternalCategory, t.Description)
 	if err != nil {
 		return false, fmt.Errorf("insert transaction: %w", err)
 	}

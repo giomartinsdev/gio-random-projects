@@ -93,6 +93,7 @@ class RegisterTransactionCommand:
     of_account_id: str | None = None
     counterparty: str | None = None
     external_category: str | None = None
+    description: str | None = None
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> "RegisterTransactionCommand":
@@ -121,6 +122,7 @@ class RegisterTransactionCommand:
             of_account_id=_optional_text(data.get("of_account_id"), "of_account_id"),
             counterparty=_optional_text(data.get("counterparty"), "counterparty"),
             external_category=_optional_text(data.get("external_category"), "external_category"),
+            description=_optional_text(data.get("description"), "description"),
         )
 
     def to_payload(self) -> dict[str, Any]:
@@ -141,6 +143,7 @@ class RegisterTransactionCommand:
             ("of_account_id", self.of_account_id),
             ("counterparty", self.counterparty),
             ("external_category", self.external_category),
+            ("description", self.description),
         ):
             if value is not None:
                 payload[key] = value

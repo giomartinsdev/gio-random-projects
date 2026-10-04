@@ -44,6 +44,7 @@ type Transaction struct {
 	OFAccountID      string
 	Counterparty     string
 	ExternalCategory string
+	Description      string
 }
 
 // NewTransaction valida as invariantes do §3.4 na construção:

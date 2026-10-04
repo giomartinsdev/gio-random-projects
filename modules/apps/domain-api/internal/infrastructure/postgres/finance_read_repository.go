@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -305,6 +306,46 @@ func (r *FinanceReadRepository) OFAccounts(ctx context.Context, userID string) (
 			a.BalanceUpdatedAt = balanceAt.UTC().Format(time.RFC3339)
 		}
 		out.Accounts = append(out.Accounts, a)
+	}
+	return out, rows.Err()
+}
+
+// Transactions is the extrato: as transações do usuário (mês opcional), mais
+// recentes primeiro, com o nome do lugar e a origem quando houver.
+func (r *FinanceReadRepository) Transactions(ctx context.Context, userID, month string, limit int) (domainfinance.TransactionList, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	query := `
+		SELECT id::text, occurred_at, type, amount::text, currency, category, account_id,
+		       source, counterparty, description, external_category
+		FROM finance_transactions
+		WHERE user_id = $1`
+	args := []any{userID}
+	if month != "" {
+		query += ` AND to_char(occurred_at AT TIME ZONE 'UTC', 'YYYY-MM') = $2`
+		args = append(args, month)
+	}
+	query += ` ORDER BY occurred_at DESC, created_at DESC LIMIT ` + strconv.Itoa(limit)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return domainfinance.TransactionList{}, fmt.Errorf("transactions: %w", err)
+	}
+	defer rows.Close()
+
+	out := domainfinance.TransactionList{UserID: userID, Month: month, Transactions: []domainfinance.Transaction{}}
+	for rows.Next() {
+		var (
+			t  domainfinance.Transaction
+			at time.Time
+		)
+		if err := rows.Scan(&t.ID, &at, &t.Type, &t.Amount, &t.Currency, &t.Category, &t.AccountID,
+			&t.Source, &t.Counterparty, &t.Description, &t.ExternalCategory); err != nil {
+			return domainfinance.TransactionList{}, fmt.Errorf("scan transaction: %w", err)
+		}
+		t.OccurredAt = at.UTC().Format(time.RFC3339)
+		out.Transactions = append(out.Transactions, t)
 	}
 	return out, rows.Err()
 }

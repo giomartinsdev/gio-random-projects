@@ -229,17 +229,24 @@ func TestFinanceOpenFinanceImportIsIdempotentByExternalID(t *testing.T) {
 	if _, err := repo.Insert(ctx, txA); err != nil {
 		t.Fatalf("insert A: %v", err)
 	}
-	// Reimportar a MESMA transação (mesmo id e mesmo external) -> no-op.
-	ins, err := repo.Insert(ctx, txA)
-	if err != nil {
+	// Reimportar a MESMA transação não duplica (uma linha), e ATUALIZA o
+	// enriquecimento — o provedor melhora categoria/lugar depois, e a nossa
+	// correção de mapeamento precisa alcançar o que já foi importado.
+	txA.Category = "Transporte"
+	txA.Counterparty = "Uber"
+	if _, err := repo.Insert(ctx, txA); err != nil {
 		t.Fatalf("reinsert A: %v", err)
-	}
-	if ins {
-		t.Fatal("reimport não podia inserir de novo")
 	}
 	var n int
 	_ = pool.QueryRow(ctx, `SELECT count(*) FROM finance_transactions WHERE user_id=$1 AND source='OPEN_FINANCE_SYNC'`, user).Scan(&n)
 	if n != 1 {
-		t.Fatalf("transações OF = %d; want 1", n)
+		t.Fatalf("transações OF = %d; want 1 (não duplica)", n)
+	}
+	got, err := repo.FindByID(ctx, txA.ID)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if got.Category != "Transporte" || got.Counterparty != "Uber" {
+		t.Fatalf("re-sync devia atualizar categoria/lugar; veio %q / %q", got.Category, got.Counterparty)
 	}
 }

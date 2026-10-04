@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
 from finance_openfinance_worker.sync.mapping import (  # noqa: E402
     amount_decimal,
     map_category,
+    merchant_name,
     occurred_at_iso,
     transaction_to_command,
 )
@@ -24,6 +25,24 @@ def test_category_mapping():
     assert map_category("INCOME_SALARY") == "Renda Extra"
     assert map_category("SOMETHING_WEIRD") == "Outros"
     assert map_category(None) == "Outros"
+
+
+def test_transfers_have_their_own_category_not_outros():
+    # Pix/transferências são a maior parte do extrato do BTG; jogá-los em
+    # "Outros" esconde tudo. Têm categoria própria.
+    assert map_category("TRANSFER_OUT_TRANSFER_OUT_FROM_APPS") == "Transferências"
+    assert map_category("TRANSFER_IN_ACCOUNT_TRANSFER") == "Transferências"
+    assert map_category("TRANSFER_OUT_WIRE") == "Transferências"
+
+
+def test_merchant_name_prefers_counterparty_then_transaction_name():
+    assert merchant_name({"counterparty": {"alias": "Netflix"}}) == "Netflix"
+    assert merchant_name({"counterparty": {"name": "NETFLIX LTDA"}}) == "NETFLIX LTDA"
+    # counterparty null mas o transaction_name é o estabelecimento (cartão)
+    assert merchant_name({"counterparty": None, "transaction_name": "CAFE LAMAS LTDA"}) == "CAFE LAMAS LTDA"
+    # transaction_name genérico (meio de pagamento) não serve como lugar
+    assert merchant_name({"counterparty": None, "transaction_name": "Pix"}) == ""
+    assert merchant_name({"transaction_name": "InternalTransfer"}) == ""
 
 
 def test_amount_is_decimal_string_module():

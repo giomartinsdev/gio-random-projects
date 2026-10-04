@@ -89,6 +89,31 @@ type CashFlowHistory struct {
 	Days     []CashFlowDay `json:"days"`
 }
 
+// Transaction is one ledger line as the extrato shows it: data, valor, tipo,
+// categoria e — quando vier do banco — o nome do lugar (counterparty), a
+// descrição crua e a origem.
+type Transaction struct {
+	ID               string `json:"id"`
+	OccurredAt       string `json:"occurred_at"`
+	Type             string `json:"transaction_type"`
+	Amount           string `json:"amount"`
+	Currency         string `json:"currency"`
+	Category         string `json:"category"`
+	AccountID        string `json:"account_id"`
+	Source           string `json:"source"`
+	Counterparty     string `json:"counterparty"`
+	Description      string `json:"description"`
+	ExternalCategory string `json:"external_category"`
+}
+
+// TransactionList is the extrato: the user's transactions in a window, newest
+// first. `Month` filters by calendar month (UTC); vazio = sem filtro de mês.
+type TransactionList struct {
+	UserID       string        `json:"user_id"`
+	Month        string        `json:"month"`
+	Transactions []Transaction `json:"transactions"`
+}
+
 // OFConsent is one Open Finance connection as the SPA shows it.
 type OFConsent struct {
 	ID                string   `json:"id"`
@@ -133,6 +158,7 @@ type ReadRepository interface {
 	MonthlyDashboard(ctx context.Context, userID, month string) (MonthlyDashboard, error)
 	CategoryBreakdown(ctx context.Context, userID, month string) (CategoryBreakdown, error)
 	CashFlowHistory(ctx context.Context, userID, month string) (CashFlowHistory, error)
+	Transactions(ctx context.Context, userID, month string, limit int) (TransactionList, error)
 	OFConsents(ctx context.Context, userID string) (OFConsentList, error)
 	OFAccounts(ctx context.Context, userID string) (OFAccountList, error)
 }

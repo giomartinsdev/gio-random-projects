@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 
 	domainfinance "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/domain/finance"
 )
@@ -151,6 +152,32 @@ func (h *FinanceHandlers) GetOFAccounts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	list, err := h.reads.OFAccounts(r.Context(), userID)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// GetTransactions is the extrato: as transações do usuário, mais recentes
+// primeiro. `month` é opcional (vazio = todas).
+func (h *FinanceHandlers) GetTransactions(w http.ResponseWriter, r *http.Request) {
+	userID, ok := financeUserID(w, r)
+	if !ok {
+		return
+	}
+	month := r.URL.Query().Get("month")
+	if month != "" && !yyyymm.MatchString(month) {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "month must be 'YYYY-MM'"})
+		return
+	}
+	limit := 200
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+	list, err := h.reads.Transactions(r.Context(), userID, month, limit)
 	if err != nil {
 		h.internalError(r, w, err)
 		return

@@ -93,8 +93,23 @@ const ACTION_TRANSFER = "finance.transfer.betweenAccounts";
 const QUERY_DASHBOARD = "finance.query.monthlyDashboard";
 const QUERY_BREAKDOWN = "finance.query.categoryBreakdown";
 const QUERY_CASHFLOW = "finance.query.cashFlowHistory";
+const QUERY_TRANSACTIONS = "finance.query.transactions";
 const QUERY_OF_CONSENTS = "finance.query.ofConsents";
 const QUERY_OF_ACCOUNTS = "finance.query.ofAccounts";
+
+export interface Transaction {
+  id: string;
+  occurred_at: string;
+  transaction_type: string;
+  amount: string;
+  currency: string;
+  category: string;
+  account_id: string;
+  source: string;
+  counterparty: string;
+  description: string;
+  external_category: string;
+}
 
 export interface OFInstitution {
   id: string;
@@ -193,6 +208,10 @@ export const api = {
 
   cashFlow(month: string): Promise<CashFlowHistory> {
     return post("/queries", { action: QUERY_CASHFLOW, payload: { month } });
+  },
+
+  transactions(month: string): Promise<{ transactions: Transaction[] }> {
+    return post("/queries", { action: QUERY_TRANSACTIONS, payload: month ? { month } : {} });
   },
 
   // ---- Open Finance (Polp) ----

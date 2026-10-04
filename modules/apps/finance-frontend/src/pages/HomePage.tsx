@@ -1,4 +1,5 @@
 import { DashboardPage } from "@/pages/DashboardPage";
+import { TransactionsPage } from "@/pages/TransactionsPage";
 import { OpenFinancePage } from "@/pages/OpenFinancePage";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -7,12 +8,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export function HomePage() {
   return (
     <Tabs defaultValue="painel">
-      <TabsList className="grid w-full max-w-xs grid-cols-2">
+      <TabsList className="grid w-full max-w-md grid-cols-3">
         <TabsTrigger value="painel">Painel</TabsTrigger>
+        <TabsTrigger value="extrato">Extrato</TabsTrigger>
         <TabsTrigger value="openfinance">Open Finance</TabsTrigger>
       </TabsList>
       <TabsContent value="painel">
         <DashboardPage />
+      </TabsContent>
+      <TabsContent value="extrato">
+        <TransactionsPage />
       </TabsContent>
       <TabsContent value="openfinance">
         <OpenFinancePage />

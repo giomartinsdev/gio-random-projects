@@ -11,24 +11,48 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
-# Prefixo da taxonomia da Polp -> categoria do ledger. A ordem importa: o
-# primeiro prefixo que casa vence (FOOD_AND_DRINK antes de GENERAL_*). O mapa é
-# curto de propósito — o valor cru fica em external_category para um mapa
-# melhor depois.
+# Prefixo da taxonomia da Polp -> categoria do ledger. A ORDEM importa — o
+# prefixo mais específico vence, então os filhos de FOOD_AND_DRINK/TRANSPORT etc.
+# vêm antes do pai. Cobrimos os prefixos de topo da taxonomia (a lista completa
+# da doc da Polp); qualquer coisa não coberta cai em "Outros".
 _CATEGORY_BY_PREFIX: tuple[tuple[str, str], ...] = (
+    # Alimentação
     ("FOOD_AND_DRINK", "Alimentação"),
+    # Transporte
     ("TRANSPORTATION", "Transporte"),
     ("TRAVEL", "Transporte"),
+    # Contas e moradia
     ("RENT_AND_UTILITIES", "Contas"),
     ("BANK_FEES", "Contas"),
-    ("ENTERTAINMENT", "Lazer"),
+    ("HOME_IMPROVEMENT", "Moradia"),
+    # Saúde
     ("MEDICAL", "Saúde"),
     ("PERSONAL_CARE", "Saúde"),
-    ("GENERAL_SERVICES_EDUCATION", "Educação"),
-    ("HOME_IMPROVEMENT", "Moradia"),
+    # Lazer / compras
+    ("ENTERTAINMENT", "Lazer"),
     ("GENERAL_MERCHANDISE", "Compras"),
+    ("GENERAL_SERVICES_EDUCATION", "Educação"),
+    # Governo/impostos
+    ("GOVERNMENT_AND_NON_PROFIT", "Impostos"),
+    # Movimentações entre contas / Pix — são transferências, não consumo. Ficam
+    # numa categoria própria em vez de "Outros", que é o balde de lixo.
+    ("TRANSFER_IN", "Transferências"),
+    ("TRANSFER_OUT", "Transferências"),
+    # Crédito (empréstimos/financiamentos)
+    ("LOAN_", "Empréstimos"),
+    # Receitas (depois de TRANSFER_ para TRANSFER_IN_* não cair aqui)
     ("INCOME", "Renda Extra"),
-    ("GOVERNMENT_AND_NON_PROFIT_TAX_PAYMENT", "Impostos"),
+)
+
+# transaction_name genérico: quando é só o meio de pagamento, não serve como
+# nome do lugar (o nome real está no counterparty ou numa compra de cartão).
+_GENERIC_NAMES = frozenset(
+    {
+        "pix", "ted", "doc", "tef", "boleto", "cartao", "cartão", "internaltransfer",
+        "transferencia", "transferência", "deposito", "depósito", "saque",
+        "valorrendimentosaldoremunerado", "estornovalorrendimentosaldoremunerado",
+        "bankslip", "cardbankslip", "outros", "other",
+    }
 )
 
 
@@ -39,6 +63,24 @@ def map_category(category_ref: str | None) -> str:
         if category_ref.startswith(prefix):
             return category
     return "Outros"
+
+
+def merchant_name(tx: Mapping[str, Any]) -> str:
+    """O nome do lugar/pessoa da transação, do mais específico ao genérico.
+
+    Preferência: o ``counterparty`` enriquecido (razão social/fantasia do
+    CNPJ) → o ``transaction_name`` quando NÃO é só o meio de pagamento (num
+    cartão, ``transaction_name`` é o estabelecimento, ex. "CAFE LAMAS LTDA").
+    """
+    counterparty = tx.get("counterparty")
+    if isinstance(counterparty, Mapping):
+        name = counterparty.get("alias") or counterparty.get("name")
+        if name:
+            return str(name).strip()
+    raw = str(tx.get("transaction_name", "") or "").strip()
+    if raw and raw.lower() not in _GENERIC_NAMES:
+        return raw
+    return ""
 
 
 def amount_decimal(amount: Mapping[str, Any] | None) -> str:
@@ -80,8 +122,6 @@ def transaction_to_command(
         return None
     is_credit = str(tx.get("credit_debit_type", "")).upper() == "CREDITO"
     amount = amount_decimal(tx.get("transaction_amount"))
-    counterparty = tx.get("counterparty") or {}
-    cp_name = str(counterparty.get("alias") or counterparty.get("name") or "") if isinstance(counterparty, Mapping) else ""
     return {
         "user_id": user_id,
         "account_id": of_account_id,
@@ -93,6 +133,9 @@ def transaction_to_command(
         "source_type": "OPEN_FINANCE_SYNC",
         "external_id": external_id,
         "of_account_id": of_account_id,
-        "counterparty": cp_name,
+        # O nome do lugar/pessoa: do counterparty enriquecido ou do
+        # transaction_name (num cartão é o estabelecimento).
+        "counterparty": merchant_name(tx),
         "external_category": str(tx.get("category_ref") or ""),
+        "description": str(tx.get("transaction_name", "") or ""),
     }
