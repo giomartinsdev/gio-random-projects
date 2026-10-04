@@ -31,6 +31,10 @@ DEFAULT_RATE_LIMIT_BURST = 20
 # a rebuild.
 DEFAULT_CORS_ORIGINS = "https://finance.giomartins.dev"
 
+# Sessão do SPA (§5): mesmo desenho do clubs-api — cookie HttpOnly/Secure com
+# um JWT HS256 assinado por FINANCE_SESSION_SECRET.
+DEFAULT_SESSION_TTL_S = 30 * 24 * 3600  # 30 dias
+
 
 class ConfigError(RuntimeError):
     """A required setting is missing or malformed."""
@@ -49,6 +53,11 @@ class Settings:
     otlp_endpoint: str
     service_name: str
     cors_origins: tuple[str, ...]
+    # SSO do SPA. Vazios = login desabilitado (só o worker com X-API-Key passa),
+    # o que mantém o boot possível antes de os segredos existirem no stack.
+    google_client_id: str = ""
+    session_secret: str = ""
+    session_ttl_s: int = DEFAULT_SESSION_TTL_S
 
 
 def parse_api_keys(raw: str) -> dict[str, str]:
@@ -128,6 +137,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         cors_origins=parse_cors_origins(
             source.get("FINANCE_CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
         ),
+        google_client_id=source.get("FINANCE_GOOGLE_CLIENT_ID", "").strip(),
+        session_secret=source.get("FINANCE_SESSION_SECRET", "").strip(),
+        session_ttl_s=int(source.get("FINANCE_SESSION_TTL_S") or DEFAULT_SESSION_TTL_S),
     )
 
 

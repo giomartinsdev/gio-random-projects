@@ -29,6 +29,12 @@ dependencies = [
     # relying on another package's transitive pins is how a fastapi upgrade
     # breaks the app at import time.
     "pydantic>=2.0",
+    # Google SSO do SPA (§5): google-auth verifica o ID token do Google
+    # Identity Services contra o JWKS do Google; PyJWT assina o cookie de
+    # sessão (o mesmo desenho do clubs-api, que usa idtoken+jwt/v5). Nenhum
+    # dos dois fala banco nem broker — a regra de isolamento (§1.1) continua.
+    "google-auth>=2.30",
+    "PyJWT>=2.8",
     "finance-contracts",
 ]
 

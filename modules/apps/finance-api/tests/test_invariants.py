@@ -270,6 +270,15 @@ def test_register_rejects_an_unknown_source() -> None:
         )
 
 
+def test_register_accepts_the_web_channel_source() -> None:
+    # O SPA manda WEB_MANUAL; é um lançamento manual legítimo, distinto do
+    # WhatsApp só para o extrato dizer de onde veio.
+    cmd = RegisterTransactionCommand.from_payload(
+        dict(BASE, amount="1.00", currency="BRL", source_type="WEB_MANUAL")
+    )
+    assert cmd.source_type == "WEB_MANUAL"
+
+
 def test_register_requires_a_user_and_an_account() -> None:
     for missing in ("user_id", "account_id", "category"):
         payload = dict(BASE, amount="1.00", currency="BRL")

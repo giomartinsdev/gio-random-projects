@@ -18,6 +18,8 @@
 #   RABBITMQ_PASSWORD       (a MESMA de persistence.yml)
 #   EVOLUTION_API_KEY       (a MESMA do compute.yml — apikey global da Evolution)
 #   EVOLUTION_INSTANCE      (opcional, default web-businesses)
+#   FINANCE_GOOGLE_CLIENT_ID (client ID OAuth do Google do SPA; público)
+#   FINANCE_SESSION_SECRET   (segredo HS256 do cookie de sessão do SPA; >=32 bytes)
 #
 # Fora daqui de propósito: POSTGRES_PASSWORD. A `finance-api` não fala com o
 # banco (§1.1) e este stack não publica serviço de banco — quem precisa dela é
@@ -49,6 +51,11 @@ services:
       # em finance-api.giomartins.dev: CORS e obrigatorio). Default do app ja e
       # finance.giomartins.dev; explicito aqui pra dev local tb.
       FINANCE_CORS_ORIGINS: ${FINANCE_CORS_ORIGINS:-https://finance.giomartins.dev}
+      # SSO do SPA (§5). Sem FINANCE_GOOGLE_CLIENT_ID o login fica desabilitado
+      # (o worker com X-API-Key segue funcionando); sem FINANCE_SESSION_SECRET
+      # não há como assinar a sessão. Os dois são obrigatórios para o SPA.
+      FINANCE_GOOGLE_CLIENT_ID: ${FINANCE_GOOGLE_CLIENT_ID:?defina FINANCE_GOOGLE_CLIENT_ID}
+      FINANCE_SESSION_SECRET: ${FINANCE_SESSION_SECRET:?defina FINANCE_SESSION_SECRET}
       RATE_LIMIT_RPS: "5"
       RATE_LIMIT_BURST: "20"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318

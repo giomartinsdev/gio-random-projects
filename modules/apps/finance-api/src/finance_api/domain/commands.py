@@ -29,7 +29,10 @@ from finance_api.domain.money import Money, MoneyError
 from finance_api.domain.occurred_at import TimestampError, parse_occurred_at
 
 TRANSACTION_TYPES: Final = frozenset({"INCOME", "EXPENSE", "TRANSFER"})
-SOURCES: Final = frozenset({"WHATSAPP_MANUAL", "OPEN_FINANCE_SYNC"})
+# Fontes manuais e automáticas. WEB_MANUAL é o SPA (§5): lançamento manual, mas
+# por outro canal que não o WhatsApp — mantê-los distintos deixa o extrato
+# dizer de onde veio cada linha.
+SOURCES: Final = frozenset({"WHATSAPP_MANUAL", "WEB_MANUAL", "OPEN_FINANCE_SYNC"})
 BUDGET_THRESHOLDS: Final = (50, 80, 100)
 
 # UUIDv7 is what the spec asks for (§3.2), but the ACL does not mint ids:

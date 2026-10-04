@@ -268,6 +268,19 @@ Card em texto (receitas/despesas/saldo, top categorias com barra, alertas) e
 gráfico PNG quando o usuário pedir *gráfico*; *extrato* devolve a lista
 detalhada. Os templates e o PNG entram em teste de golden file (§12.4).
 
+### 5.2.1. O SPA (canal web)
+
+Além do WhatsApp, a `finance-frontend` é um canal de primeira classe: login com
+Google (mesmo desenho do `clubs-api`, ver o README da `finance-api`), painel
+com cards e gráficos, e formulários para registrar transação, transferência e
+orçamento. O `user_id` continua sendo o **telefone**: a SPA manda o comando sem
+`user_id` e a `finance-api` o amarra ao telefone da sessão (um payload que
+alegue outro `user_id` é recusado). A fonte de um lançamento feito na tela é
+`WEB_MANUAL`, distinta de `WHATSAPP_MANUAL`, para o extrato dizer a origem.
+
+O SPA consome os mesmos quatro GETs do §4.2 (via `POST /queries`) — não há CQRS
+novo, só outro cliente.
+
 ### 5.3. Transporte pelo Evolution API (não pela Meta)
 
 O gateway do WhatsApp é a **Evolution API** que já roda no stack `compute`

@@ -12,12 +12,33 @@ trusting it.
 | Route | Purpose |
 | --- | --- |
 | `GET /healthz` | Liveness. Public, no key — what §10.6 curls after a deploy. |
+| `POST /auth/google` | Troca o ID token do Google por um cookie de sessão (§5). Criação = login. |
+| `GET /auth/me` | Diz quem está logado (a SPA usa para decidir login vs painel). |
+| `POST /auth/phone` | Vincula o telefone (o `user_id` do ledger) à sessão. |
+| `POST /auth/logout` | Limpa o cookie de sessão. |
 | `POST /commands` | The default write door. Validates and relays on the **async** path: `202 {status:"accepted"}` from `domain-api`'s `/commands`; the worker applies it. |
 | `POST /commands/sync` | Same envelope, explicitly blocking path. `200 written` / `422 failed` / `504 queued`. |
 | `POST /queries` | The read door (§4.2). Validates the query, relays it to a `domain-api` GET, and returns the projection. `422` bad query / `504` client timeout / `502` upstream. |
 
-All routes need `X-API-Key`; the key's **label** names the caller in the
-audit trail (§12.3).
+Two auth paths coexist on the write/read doors: the **worker** sends
+`X-API-Key` and a full payload (its NLU resolved the phone from WhatsApp); the
+**SPA** sends the session cookie and no `user_id` — the ACL binds it to the
+phone on the session. A SPA payload claiming another `user_id` is refused.
+
+## Login com Google (§5)
+
+Mesmo desenho do `clubs-api`: o SPA renderiza o botão do Google, o ID token é
+verificado contra o JWKS do Google **e** contra `FINANCE_GOOGLE_CLIENT_ID`, e a
+sessão vira um cookie `finance_session` HttpOnly/Secure/SameSite=None assinado
+(HS256) por `FINANCE_SESSION_SECRET`. O cookie é **host-only** (sem `Domain`):
+a SPA (`finance.`) e a API (`finance-api.`) são origens distintas, então o
+cookie precisa de `SameSite=None` para o fetch cross-origin mandá-lo, mas não
+precisa vazar para os outros subdomínios.
+
+O `user_id` do ledger é o **telefone** (o mesmo do WhatsApp); o login do Google
+prova o e-mail e o `/auth/phone` faz o vínculo. Sem `FINANCE_GOOGLE_CLIENT_ID`
+ou `FINANCE_SESSION_SECRET` o login fica desabilitado e o worker (X-API-Key)
+segue funcionando — o boot não quebra antes dos segredos existirem no stack.
 
 ## Writes: async by default
 

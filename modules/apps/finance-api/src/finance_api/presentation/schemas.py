@@ -64,3 +64,24 @@ class ErrorResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
+
+
+# ------------------------------------------------------------------- SSO §5
+
+class GoogleLoginRequest(BaseModel):
+    """O callback do Google Identity Services manda ``credential`` -- o ID
+    token. O nome do campo é o do Google, repassado como veio."""
+
+    credential: str = Field(min_length=1)
+
+
+class PhoneRequest(BaseModel):
+    """O telefone que vira o ``user_id`` do ledger (o mesmo do WhatsApp)."""
+
+    phone: str = Field(min_length=1)
+
+
+class SessionResponse(BaseModel):
+    email: str
+    name: str
+    phone: str = ""

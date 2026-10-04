@@ -37,7 +37,12 @@ from finance_api.domain.errors import (
     DomainApiTimeout,
     ValidationError,
 )
-from finance_api.presentation.dependencies import Container
+from finance_api.presentation.dependencies import (
+    Container,
+    caller_label,
+    get_container,
+    session_from,
+)
 from finance_api.presentation.schemas import (
     CommandRequest,
     ErrorResponse,
@@ -45,7 +50,6 @@ from finance_api.presentation.schemas import (
     QueryRequest,
     RelayResponse,
 )
-from finance_api.presentation.security import authenticate
 
 router = APIRouter()
 
@@ -57,13 +61,6 @@ _STATUS_BY_OUTCOME = {
     SYNC_STATUS_FAILED: 422,
     SYNC_STATUS_QUEUED: 504,
 }
-
-
-def get_container(request: Request) -> Container:
-    container = getattr(request.app.state, "container", None)
-    if container is None:  # pragma: no cover - wiring bug, not a request case
-        raise RuntimeError("application container is not configured")
-    return container
 
 
 def get_router(container: Container = Depends(get_container)) -> CommandRouter:
@@ -79,13 +76,12 @@ def get_query_router(container: Container = Depends(get_container)) -> QueryRout
 def get_caller_label(
     request: Request, container: Container = Depends(get_container)
 ) -> str:
-    """Authenticate the request and return the caller's label.
+    """Autentica o chamador (worker por ``X-API-Key`` ou SPA por sessão).
 
-    Raises ``UnauthorizedError``; the handler registered in main.py turns it
-    into a 401 with the house ``{"error": ...}`` body -- the same shape
-    domain-api answers with, so a caller has one error shape to parse.
+    Devolve um rótulo para a auditoria. Os dois caminhos convivem na mesma
+    rota: o worker manda a key, o SPA manda o cookie de sessão.
     """
-    return authenticate(request.headers, container.api_keys)
+    return caller_label(request, container)
 
 
 @router.get("/healthz", response_model=HealthResponse)
@@ -96,8 +92,10 @@ def healthz() -> HealthResponse:
 @router.post("/commands")
 def submit_command(
     body: CommandRequest,
+    request: Request,
     caller: str = Depends(get_caller_label),
     commands: CommandRouter = Depends(get_router),
+    container: Container = Depends(get_container),
 ) -> JSONResponse:
     """Relay a command on the default (asynchronous) path.
 
@@ -107,8 +105,11 @@ def submit_command(
     ``relay`` field names the path actually used, so a log reader can tell
     the two apart.
     """
+    payload = _scoped_payload(request, container, body.payload)
+    if isinstance(payload, JSONResponse):
+        return payload
     try:
-        outcome = commands.relay(body.action, body.payload, mode=RELAY_MODE_ASYNC)
+        outcome = commands.relay(body.action, payload, mode=RELAY_MODE_ASYNC)
     except AsyncRelayUnavailable as exc:  # pragma: no cover - door exists by default
         return _error(409, exc.message)
     except ValidationError as exc:
@@ -119,26 +120,31 @@ def submit_command(
         return _error(502, exc.message)
 
     # 202 accepted by domain-api; the async status IS the response status.
-    payload = RelayResponse(
+    outgoing = RelayResponse(
         command_id=outcome.command_id,
         status=outcome.status,
         error=outcome.error,
         relay=RELAY_MODE_ASYNC,
     )
     return JSONResponse(
-        status_code=202, content=payload.model_dump(exclude_none=True)
+        status_code=202, content=outgoing.model_dump(exclude_none=True)
     )
 
 
 @router.post("/commands/sync")
 def submit_command_sync(
     body: CommandRequest,
+    request: Request,
     caller: str = Depends(get_caller_label),
     commands: CommandRouter = Depends(get_router),
+    container: Container = Depends(get_container),
 ) -> JSONResponse:
     """Relay a command and report the worker's documented outcome."""
+    payload = _scoped_payload(request, container, body.payload)
+    if isinstance(payload, JSONResponse):
+        return payload
     try:
-        outcome = commands.relay(body.action, body.payload, mode=RELAY_MODE_SYNC)
+        outcome = commands.relay(body.action, payload, mode=RELAY_MODE_SYNC)
     except ValidationError as exc:
         return _error(422, exc.message)
     except DomainApiTimeout as exc:
@@ -152,7 +158,7 @@ def submit_command_sync(
     if status_code is None:  # pragma: no cover - guarded by the port contract
         return _error(502, f"unexpected relay outcome {outcome.status!r}")
 
-    payload = RelayResponse(
+    outgoing = RelayResponse(
         command_id=outcome.command_id,
         status=outcome.status,
         entity_id=outcome.entity_id,
@@ -162,8 +168,40 @@ def submit_command_sync(
     # exclude_none keeps the body identical to domain-api's own: a written
     # reply carries entity_id and no error, a queued one the reverse.
     return JSONResponse(
-        status_code=status_code, content=payload.model_dump(exclude_none=True)
+        status_code=status_code, content=outgoing.model_dump(exclude_none=True)
     )
+
+
+def _scoped_payload(
+    request: Request, container: Container, payload: dict
+) -> dict | JSONResponse:
+    """Amarra o ``user_id`` de um comando do SPA ao telefone da sessão.
+
+    O worker (``X-API-Key``) manda o ``user_id`` no payload, porque o NLU
+    resolve o telefone a partir do remetente do WhatsApp. O SPA não tem esse
+    contexto, então quando a chamada vem por SESSÃO e não traz ``user_id``, o
+    telefone da sessão entra — a pessoa só opera no próprio ledger. Um payload
+    do SPA que já traga ``user_id`` diferente do seu é recusado: não se escreve
+    na conta de outro. Devolve um ``JSONResponse`` (422) quando recusa.
+    """
+    if _request_has_api_key(request, container):
+        return payload  # worker: o payload é dele
+    session = session_from(request, container)
+    if session is None:
+        return payload  # sem sessão, o Depends já barrou; defensivo
+    phone = session.phone
+    provided = payload.get("user_id")
+    if provided and phone and str(provided) != phone:
+        return _error(422, "user_id não pertence à sessão")
+    if not phone:
+        return _error(422, "vincule seu número do WhatsApp antes de registrar")
+    return {**payload, "user_id": phone}
+
+
+def _request_has_api_key(request: Request, container: Container) -> bool:
+    from finance_api.presentation.security import API_KEY_HEADER
+
+    return bool(request.headers.get(API_KEY_HEADER) or request.headers.get(API_KEY_HEADER.lower()))
 
 
 def _error(status: int, message: str) -> JSONResponse:
@@ -175,8 +213,10 @@ def _error(status: int, message: str) -> JSONResponse:
 @router.post("/queries")
 def run_query(
     body: QueryRequest,
+    request: Request,
     caller: str = Depends(get_caller_label),
     queries: QueryRouter = Depends(get_query_router),
+    container: Container = Depends(get_container),
 ) -> JSONResponse:
     """Relay a read query (spec §4.2) to a domain-api GET.
 
@@ -186,8 +226,11 @@ def run_query(
     read either happened or is an error. Errors keep domain-api's/ACL's shape:
     422 for a bad query, 502 for an upstream fault.
     """
+    params = _scoped_payload(request, container, body.payload)
+    if isinstance(params, JSONResponse):
+        return params
     try:
-        result = queries.relay(body.action, body.payload)
+        result = queries.relay(body.action, params)
     except ValidationError as exc:
         return _error(422, exc.message)
     except DomainApiTimeout as exc:

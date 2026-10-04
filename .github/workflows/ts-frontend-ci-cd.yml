@@ -159,6 +159,7 @@ jobs:
         run: |
           case "${{ matrix.app }}" in
             clubs-frontend) id="${{ secrets.CLUBS_GOOGLE_OAUTH_CLIENT_ID }}" ;;
+            finance-frontend) id="${{ secrets.FINANCE_GOOGLE_OAUTH_CLIENT_ID }}" ;;
             *)              id="" ;;
           esac
           echo "VITE_GOOGLE_CLIENT_ID=$id" >> "$GITHUB_ENV"
@@ -169,7 +170,10 @@ jobs:
           VITE_TELA_API_URL: https://tela-api.giomartins.dev
           VITE_OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
           VITE_CLUBS_API_URL: https://clubs-api.giomartins.dev
-          VITE_FINANCE_API_URL: https://finance.giomartins.dev
+          # A API do financeiro vive em finance-API., não no host da SPA
+          # (finance.) -- apontar para o próprio host faria a SPA chamar a si
+          # mesma e todo request virar 404.
+          VITE_FINANCE_API_URL: https://finance-api.giomartins.dev
         run: npm run build
 
       # scp (not the docker provider/API) because the files have to

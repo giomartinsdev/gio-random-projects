@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from finance_api.domain.errors import UnauthorizedError
+from finance_api.presentation.authroutes import auth_router
 from finance_api.presentation.dependencies import Container
 from finance_api.presentation.routes import router
 
@@ -50,10 +51,15 @@ def create_app(
     # needs CORS on every response, not a subset. An empty allowlist skips
     # the middleware entirely: a machine-only deploy gets no CORS headers,
     # which is the correct answer for a non-browser caller.
+    #
+    # allow_credentials=True is what lets the browser send the session cookie
+    # cross-origin (finance. -> finance-api.); without it the login "works"
+    # and every following request is a 401.
     if allowed_origins:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=list(allowed_origins),
+            allow_credentials=True,
             allow_methods=["GET", "POST", "OPTIONS"],
             allow_headers=_CORS_ALLOW_HEADERS,
         )
@@ -64,6 +70,7 @@ def create_app(
     async def _unauthorized(_: Request, exc: UnauthorizedError) -> JSONResponse:
         return JSONResponse(status_code=exc.status, content={"error": exc.message})
 
+    app.include_router(auth_router)
     app.include_router(router)
 
     if instrument:

@@ -93,6 +93,11 @@ Evolution API).
 `clubs.yml`: `CLUBS_SESSION_SECRET`, `CLUBS_API_DOMAIN_KEY`,
 `CLUBS_INGEST_DOMAIN_KEY`.
 
+`finance.yml`: `FINANCE_API_KEYS`, `FINANCE_WORKER_API_KEY`,
+`FINANCE_DOMAIN_API_KEY` (a MESMA em `DOMAIN_API_KEYS` do `domain`),
+`RABBITMQ_PASSWORD`, `EVOLUTION_API_KEY`, `FINANCE_GOOGLE_CLIENT_ID`,
+`FINANCE_SESSION_SECRET`.
+
 `tela.yml`: `TELA_TURN_SECRET`.
 
 `maus.yml`: **nenhum segredo obrigatório**. O OpenMausBot não tem

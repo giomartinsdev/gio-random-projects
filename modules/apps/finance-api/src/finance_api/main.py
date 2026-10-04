@@ -16,6 +16,7 @@ import uvicorn
 
 from finance_api.infrastructure.config import ConfigError, Settings, load_settings
 from finance_api.infrastructure.domain_api import DomainApiClient
+from finance_api.infrastructure.google import GoogleVerifier
 from finance_api.infrastructure.telemetry import configure_telemetry
 from finance_api.application.commands import CommandRouter
 from finance_api.application.reads import QueryRouter
@@ -36,6 +37,10 @@ def build_app(settings: Settings) -> object:
         router=CommandRouter(client),
         api_keys=settings.finance_api_keys,
         queries=QueryRouter(client),
+        google=GoogleVerifier(settings.google_client_id) if settings.google_client_id else None,
+        google_client_id=settings.google_client_id,
+        session_secret=settings.session_secret,
+        session_ttl_s=settings.session_ttl_s,
     )
     return create_app(
         container,
