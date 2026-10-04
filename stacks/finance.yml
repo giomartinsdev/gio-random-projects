@@ -130,7 +130,7 @@ services:
       POLP_OF_CLIENT_SECRET: ${POLP_OF_CLIENT_SECRET:-}
       POLP_OF_SANDBOX: ${POLP_OF_SANDBOX:-}
       OF_POLL_SECONDS: ${OF_POLL_SECONDS:-600}
-      OF_BACKFILL_DAYS: ${OF_BACKFILL_DAYS:-30}
+      OF_BACKFILL_DAYS: ${OF_BACKFILL_DAYS:-365}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: finance-openfinance-worker
     networks: [apps]

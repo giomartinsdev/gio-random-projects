@@ -50,7 +50,7 @@ def build_syncer() -> tuple[Syncer, float]:
         timeout_s=float(os.environ.get("FINANCE_API_TIMEOUT_S", "15")),
     )
     poll = float(os.environ.get("OF_POLL_SECONDS", "600"))
-    backfill = int(os.environ.get("OF_BACKFILL_DAYS", "30"))
+    backfill = int(os.environ.get("OF_BACKFILL_DAYS", "365"))
     return Syncer(polp=polp, finance=finance, backfill_days=backfill), poll
 
 

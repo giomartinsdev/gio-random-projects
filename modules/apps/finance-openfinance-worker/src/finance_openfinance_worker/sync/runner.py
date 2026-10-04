@@ -25,7 +25,7 @@ _Cursor = dict[str, str]
 
 
 class Syncer:
-    def __init__(self, *, polp: Any, finance: Any, backfill_days: int = 30) -> None:
+    def __init__(self, *, polp: Any, finance: Any, backfill_days: int = 365) -> None:
         self._polp = polp
         self._finance = finance
         self._backfill_days = backfill_days
