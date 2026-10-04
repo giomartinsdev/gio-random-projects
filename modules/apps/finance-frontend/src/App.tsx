@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { LogOut, Wallet } from "lucide-react";
-import { applyTheme, loadTheme } from "@/lib/theme";
+import { setTheme } from "@/lib/theme";
+import { initHubThemeSync } from "@/lib/hubTheme";
 import { fetchSession, logout, type SessionInfo } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -17,10 +18,10 @@ type Gate =
 export default function App() {
   const [gate, setGate] = useState<Gate>({ state: "loading" });
 
-  // Tema antes do primeiro paint (aplicar cedo evita piscar o claro).
-  useEffect(() => {
-    applyTheme(loadTheme());
-  }, []);
+  // Ponte de tema com o hub enquanto embutidos: `hub:theme` do pai vira a
+  // escolha local (e o toggle daqui reporta de volta via broadcastTheme). Fora
+  // do iframe é no-op. O tema inicial já foi aplicado em main.tsx.
+  useEffect(() => initHubThemeSync(setTheme), []);
 
   const refresh = useCallback(async () => {
     const session = await fetchSession();

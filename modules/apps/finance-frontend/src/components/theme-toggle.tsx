@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
-import { applyTheme, loadTheme, setTheme, type Theme } from "@/lib/theme";
+import { broadcastTheme } from "@/lib/hubTheme";
+import { currentTheme, onThemeChange, setTheme, type Theme } from "@/lib/theme";
 
-// O interruptor sol/lua. Aplica na hora em <html class="dark"> e persiste.
+// O interruptor sol/lua. Aplica na hora em <html class="dark">, persiste, e
+// avisa o hub (quando embutido). Assina onThemeChange para o ícone refletir um
+// tema que o hub tenha mandado — nunca fica dessincronizado do que está na tela.
 export function ThemeToggle() {
-  const [theme, setLocal] = useState<Theme>(() => loadTheme());
+  const [theme, setLocal] = useState<Theme>(() => currentTheme());
 
-  useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
+  useEffect(() => onThemeChange(setLocal), []);
 
   function toggle() {
     const next: Theme = theme === "light" ? "dark" : "light";
     setTheme(next);
-    setLocal(next);
+    broadcastTheme(next);
   }
 
   const label = theme === "light" ? "Mudar para tema escuro" : "Mudar para tema claro";
