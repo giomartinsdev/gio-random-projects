@@ -56,28 +56,28 @@ services:
   # env/porta/healthcheck quando ele for escrito, ANTES de subir este serviço, e
   # derivar daí o `paths:`/`STACK` do CI (§10.4-4). Este é o único serviço daqui
   # que consome o broker (eventos `finance.*`) — não é broker de comando (§1.1).
-  finance-whatsapp-worker:
-    image: registry.giomartins.dev:5000/finance-whatsapp-worker:latest
-    container_name: finance-whatsapp-worker
-    restart: unless-stopped
-    environment:
-      # SEM DATABASE_URL — regra de isolamento (§1.1)
-      # 8000 = porta da finance-api DENTRO do container; a 8018 do `ports`
-      # abaixo é só o loopback do host para o ingress (§10.5), não a rota
-      # container-a-container. Sem healthcheck aqui de propósito: o app não
-      # existe, e um healthcheck inventado é contrato falso (ver comentário).
-      FINANCE_API_BASE_URL: http://finance-api:8000
-      FINANCE_API_KEY: ${FINANCE_WORKER_API_KEY:?defina FINANCE_WORKER_API_KEY}
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-domain}:${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}@rabbitmq:5672/
-      HTTP_ADDR: ":8080"
-      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:?defina WHATSAPP_VERIFY_TOKEN}
-      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:?defina WHATSAPP_ACCESS_TOKEN}
-      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:?defina WHATSAPP_PHONE_NUMBER_ID}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
-      OTEL_SERVICE_NAME: finance-whatsapp-worker
-    ports:
-      - "127.0.0.1:8019:8080"      # webhook do WhatsApp — ver §10.5
-    networks: [apps]
+# [FATIA 2/3]   finance-whatsapp-worker:
+# [FATIA 2/3]     image: registry.giomartins.dev:5000/finance-whatsapp-worker:latest
+# [FATIA 2/3]     container_name: finance-whatsapp-worker
+# [FATIA 2/3]     restart: unless-stopped
+# [FATIA 2/3]     environment:
+# [FATIA 2/3]       # SEM DATABASE_URL — regra de isolamento (§1.1)
+# [FATIA 2/3]       # 8000 = porta da finance-api DENTRO do container; a 8018 do `ports`
+# [FATIA 2/3]       # abaixo é só o loopback do host para o ingress (§10.5), não a rota
+# [FATIA 2/3]       # container-a-container. Sem healthcheck aqui de propósito: o app não
+# [FATIA 2/3]       # existe, e um healthcheck inventado é contrato falso (ver comentário).
+# [FATIA 2/3]       FINANCE_API_BASE_URL: http://finance-api:8000
+# [FATIA 2/3]       FINANCE_API_KEY: ${FINANCE_WORKER_API_KEY:?defina FINANCE_WORKER_API_KEY}
+# [FATIA 2/3]       RABBITMQ_URL: amqp://${RABBITMQ_USER:-domain}:${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}@rabbitmq:5672/
+# [FATIA 2/3]       HTTP_ADDR: ":8080"
+# [FATIA 2/3]       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:?defina WHATSAPP_VERIFY_TOKEN}
+# [FATIA 2/3]       WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:?defina WHATSAPP_ACCESS_TOKEN}
+# [FATIA 2/3]       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:?defina WHATSAPP_PHONE_NUMBER_ID}
+# [FATIA 2/3]       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+# [FATIA 2/3]       OTEL_SERVICE_NAME: finance-whatsapp-worker
+# [FATIA 2/3]     ports:
+# [FATIA 2/3]       - "127.0.0.1:8019:8080"      # webhook do WhatsApp — ver §10.5
+# [FATIA 2/3]     networks: [apps]
 
 networks:
   apps:

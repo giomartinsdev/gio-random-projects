@@ -295,20 +295,46 @@ jobs:
           # An app that built with no id mapped is a failure, not a quiet skip:
           # the image was published and nothing will pick it up. `nada a
           # deployar` is reserved for the genuinely empty case above.
-          ids=""
+          pairs=""
           for a in $(echo "$APPS" | jq -r '.[]'); do
             id="${STACK[$a]}"
             if [ -z "$id" ]; then
               echo "::error::$a built, but STACK has no id for it: the image was published and no stack will redeploy (§10.4-4/5). Add [${a}]=<id> to STACK."
               exit 1
             fi
-            ids="$ids $id"
+            pairs="$pairs $a=$id"
           done
-          ids=$(echo "$ids" | tr ' ' '\n' | grep -v '^$' | sort -u)
+          ids=$(for p in $pairs; do echo "${p#*=}"; done | sort -u)
+          # O guarda de baixo roda depois dos webhooks: o nome do container e o
+          # `container_name` do compose (`clubs-ingest`, `finance-api`), identico
+          # ao app nos dois casos descobertos hoje. Um app novo cujo
+          # container_name difira do nome do app precisa da sua propria linha.
           for id in $ids; do
             echo "== redeploy stack id=$id"
             out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 'http://127.0.0.1:8093/api/git/stacks/$id/webhook?secret=$DOCKHAND_WEBHOOK_SECRET'")
             echo "$out" | head -c 600; echo
             echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack $id"; exit 1; }
+            # §10.4-4/§10.4-5, segunda metade. `success:true` sozinho nao prova
+            # deploy: quando a stack ja esta no commit, o Dockhand devolve
+            # {"success":true,...,"skipped":true} e NADA sobe -- e este job
+            # ficava verde com a imagem recem-publicada e nenhum container.
+            # `skipped:true` para um id que acabou de receber webhook significa
+            # exatamente "nada foi deployado", entao e falha, nao sucesso.
+            if echo "$out" | grep -q '"skipped":true'; then
+              echo "::error::stack $id devolveu skipped:true: a stack ja estava neste commit, entao a imagem publicada por este run NAO foi deployada (§10.4-4). Force o redeploy ou mude a stack de commit."
+              exit 1
+            fi
+          done
+          running=$(ssh "ubuntu@$VPS_HOST" "docker ps --format '{{.Names}}'") || {
+            echo "::error::nao consegui listar containers no host ($VPS_HOST) para provar o deploy"
+            exit 1
+          }
+          for p in $pairs; do
+            a="${p%%=*}"; pid="${p#*=}"
+            echo "$running" | grep -qx "$a" || {
+              echo "::error::stack $pid respondeu success, mas nenhum container \"$a\" esta rodando: a imagem foi publicada e nada subiu."
+              exit 1
+            }
+            echo "ok: $a rodando"
           done
 
