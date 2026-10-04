@@ -19,12 +19,16 @@ type namedEvent interface {
 	EventName() string
 }
 
-// envelope is the wire format every domain event is wrapped in —
-// EventName exists because the bus carries opaque bytes, so a
-// subscriber needs some way to tell one event type from another
-// before unmarshaling Payload into the right Go type. The durable
-// queue receives this same envelope.
+// envelope is the wire format every domain event is wrapped in.
+//
+// EventName exists because the bus carries opaque bytes, so a subscriber
+// needs some way to tell one event type from another before unmarshaling
+// Payload into the right Go type. EventID/CommandID are what make an
+// at-least-once consumer idempotent (spec §12.3/§12.5): the same delivery
+// twice carries the same EventID, so the consumer can swallow the duplicate.
 type envelope struct {
+	EventID    string          `json:"event_id"`
+	CommandID  string          `json:"command_id"`
 	EventName  string          `json:"event_name"`
 	OccurredAt time.Time       `json:"occurred_at"`
 	Payload    json.RawMessage `json:"payload"`
@@ -83,7 +87,10 @@ func (b *EventBus) Publish(ctx context.Context, evt namedEvent) error {
 	if err != nil {
 		return fmt.Errorf("marshal event payload: %w", err)
 	}
-	data, err := b.EnvelopeBytes(evt.EventName(), time.Now().UTC(), payload)
+	// Sem id determinístico aqui (caminho legado): o EventBus.Publish direto
+	// não é o caminho de produção — a produção passa pelo outbox, que monta o
+	// envelope com EventID/CommandID. Este fica para consumidores diretos.
+	data, err := b.EnvelopeBytes("", "", evt.EventName(), time.Now().UTC(), payload)
 	if err != nil {
 		return err
 	}
@@ -91,10 +98,12 @@ func (b *EventBus) Publish(ctx context.Context, evt namedEvent) error {
 }
 
 // EnvelopeBytes wraps a payload in the wire envelope the bus (and the durable
-// outbox) store: {event_name, occurred_at, payload}. Kept separate so the
-// outbox can persist exactly the bytes the relay will later publish.
-func (b *EventBus) EnvelopeBytes(eventName string, occurredAt time.Time, payload json.RawMessage) ([]byte, error) {
-	env := envelope{EventName: eventName, OccurredAt: occurredAt, Payload: payload}
+// outbox) store: {event_id, command_id, event_name, occurred_at, payload}.
+// Kept separate so the outbox can persist exactly the bytes the relay will
+// later publish. eventID/commandID empty means "no stable id" and is only
+// used on the legacy direct-publish path.
+func (b *EventBus) EnvelopeBytes(eventID, commandID, eventName string, occurredAt time.Time, payload json.RawMessage) ([]byte, error) {
+	env := envelope{EventID: eventID, CommandID: commandID, EventName: eventName, OccurredAt: occurredAt, Payload: payload}
 	data, err := json.Marshal(env)
 	if err != nil {
 		return nil, fmt.Errorf("marshal event envelope: %w", err)

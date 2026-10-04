@@ -7,12 +7,14 @@ um deploy vermelho — ele consome a fila e não entrega nada.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
 
 from finance_customersupport_worker.clients.finance_api import FinanceApiClient
-from finance_customersupport_worker.consumers.evolution import consume_forever
+from finance_customersupport_worker.consumers.domain_events import DomainEventsConsumer
+from finance_customersupport_worker.consumers.evolution import EvolutionConsumer
 from finance_customersupport_worker.gateway.evolution import EvolutionClient
 from finance_customersupport_worker.worker import Worker
 
@@ -57,7 +59,22 @@ def main() -> int:
     logging.getLogger("finance-customersupport-worker").info(
         "worker iniciado; instância %s", os.environ.get("EVOLUTION_INSTANCE", "web-businesses")
     )
-    consume_forever(os.environ["RABBITMQ_URL"], worker)
+
+    # Dois consumidores concorrentes, um processo:
+    #  1. `evolution.messages.upsert` — o que o cliente manda (comandos/leituras).
+    #  2. `domain.events` — o que o sistema aplicou (atendimento proativo:
+    #     confirmação e alerta de orçamento).
+    # Se um loop morre, o processo não deve seguir só com metade do atendimento:
+    # `gather` propaga o erro e o `restart: unless-stopped` sobe de novo.
+    rabbit_url = os.environ["RABBITMQ_URL"]
+
+    async def _run() -> None:
+        await asyncio.gather(
+            EvolutionConsumer(rabbit_url, worker).run_forever(),
+            DomainEventsConsumer(rabbit_url, worker).run_forever(),
+        )
+
+    asyncio.run(_run())
     return 0
 
 

@@ -95,8 +95,8 @@ type fakeBus struct {
 	failCount int
 }
 
-func (b *fakeBus) EnvelopeBytes(name string, at time.Time, payload json.RawMessage) ([]byte, error) {
-	env := map[string]any{"event_name": name, "occurred_at": at, "payload": payload}
+func (b *fakeBus) EnvelopeBytes(eventID, commandID, name string, at time.Time, payload json.RawMessage) ([]byte, error) {
+	env := map[string]any{"event_id": eventID, "command_id": commandID, "event_name": name, "occurred_at": at, "payload": payload}
 	return json.Marshal(env)
 }
 

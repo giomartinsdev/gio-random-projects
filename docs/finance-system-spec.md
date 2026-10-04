@@ -243,7 +243,15 @@ transação de cada agregado — trabalho futuro, não prometido aqui.
 A `finance-api` não participa da outbox: ela só recebe o `202 accepted`
 (default) ou o `200`/`422`/`504` do `/sync`. Entrega é at-least-once → todo
 consumidor precisa ser **idempotente** por `command_id`/`event_id` (testado em
-§12.5).
+§12.5). O envelope publicado carrega `event_id`/`command_id` (adicionados junto
+com a outbox, no `amqp.envelope`) exatamente para isso.
+
+O **`finance-customersupport-worker`** é o consumidor dos eventos de domínio: ele
+assina `domain.events` (fila própria `finance.customersupport.events`) e faz o
+atendimento proativo — confirmação de lançamento/transferência e o alerta de
+orçamento (50/80/100%) que antes ninguém tinha como mandar. A escolha da fila
+própria é deliberada: o exchange é **fanout**, então cada serviço que assina
+precisa da sua fila (senão competem pela mesma mensagem).
 
 ---
 
@@ -858,6 +866,12 @@ Cenário: Broker indisponível não perde a escrita
    (`TransactionFingerprint`) e publica um evento de domínio; o worker o consome
    (o mesmo consumidor dos eventos `finance.*`) e avisa o usuário no WhatsApp via
    Evolution.
+
+> **Feito (fatia 3+):** o consumidor de eventos de domínio já existe — o
+> `finance-customersupport-worker` assina `domain.events` e faz o atendimento
+> proativo (§4.3). O que resta da Fase 2 é só o conector Open Finance em si
+> (itens 2–3): a `finance-api` produzir o evento de conciliação. O lado do
+> worker já está pronto para consumi-lo.
 
 ---
 

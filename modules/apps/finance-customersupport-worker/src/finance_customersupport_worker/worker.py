@@ -19,6 +19,7 @@ from finance_customersupport_worker.clients.finance_api import (
 from finance_customersupport_worker.gateway.evolution import EvolutionClient
 from finance_customersupport_worker.nlu.parser import parse
 from finance_customersupport_worker.rendering import chart
+from finance_customersupport_worker.rendering.events import phone_to_jid, render_event
 from finance_customersupport_worker.rendering.text import (
     render,
     render_breakdown,
@@ -55,6 +56,9 @@ class Worker:
         # o conjunto, o que é aceitável (no pior caso, um comando repetido, que
         # a ACL/domain rejeitam por idempotência).
         self._seen: set[str] = set()
+        # Idempotência do atendimento proativo: a mesma transação aplicada
+        # (mesmo command_id) não vira dois avisos.
+        self._seen_events: set[str] = set()
 
     async def handle(self, event: dict) -> None:
         """Processa um evento do Evolution. Eventos irrelevantes são no-op."""
@@ -136,6 +140,39 @@ class Worker:
             await self._evolution.send_media(remote_jid, png, caption=caption)
         except Exception as exc:  # noqa: BLE001 -- falha de envio não derruba o consumo
             log.error("envio de mídia pelo Evolution falhou para %s: %s", remote_jid, exc)
+
+    async def handle_domain_event(self, event: dict) -> None:
+        """Atende um evento de domínio do tópico ``domain.events`` (proativo).
+
+        O domain-worker publica a transação concluída/aplicada; este worker é o
+        encarregado de avisar o cliente. O envelope é
+        ``{event_name, occurred_at, payload}`` (ver amqp.event_bus), e o
+        ``payload.user_id`` é o telefone — o mesmo que vira JID de volta.
+
+        Idempotente por ``event_id``/``command_id`` (at-least-once, §12.5): o
+        mesmo evento reentregue é no-op. Um evento que este worker não atende
+        (outra família) devolve ``None`` no render e é ignorado.
+        """
+        event_name = event.get("event_name")
+        payload = event.get("payload") or {}
+        if not isinstance(event_name, str) or not isinstance(payload, dict):
+            return
+        # Idempotência: o envelope carrega event_id (estável por entrega), com
+        # command_id como reserva. O mesmo evento reentregue é no-op (§12.5).
+        key = str(event.get("event_id") or event.get("command_id") or f"{event_name}:{event.get('occurred_at')}")
+        if key in self._seen_events:
+            return
+        self._seen_events.add(key)
+
+        text = render_event(event_name, payload)
+        if text is None:
+            return  # evento de outra família: não é atendimento deste worker
+
+        user_id = payload.get("user_id")
+        if not isinstance(user_id, str) or not user_id:
+            log.warning("evento %s sem user_id; não há para quem avisar", event_name)
+            return
+        await self._reply(phone_to_jid(user_id), text)
 
     async def _reply(self, remote_jid: str, text: str) -> None:
         try:

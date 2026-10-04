@@ -18,7 +18,7 @@ type Event interface {
 // Bus is the broker edge the relay writes through: it renders the wire
 // envelope the outbox stores and publishes already-enveloped bytes.
 type Bus interface {
-	EnvelopeBytes(eventName string, occurredAt time.Time, payload json.RawMessage) ([]byte, error)
+	EnvelopeBytes(eventID, commandID, eventName string, occurredAt time.Time, payload json.RawMessage) ([]byte, error)
 	PublishRaw(ctx context.Context, data []byte) error
 }
 
@@ -64,12 +64,16 @@ func (r *Relay) Publish(ctx context.Context, commandID string, events []Event) e
 			return fmt.Errorf("marshal event %s: %w", evt.EventName(), err)
 		}
 		occurredAt := r.now()
-		env, err := r.bus.EnvelopeBytes(evt.EventName(), occurredAt, payload)
+		// O id determinístico da outbox É o event_id (estável por comando +
+		// nome + índice): reentrega carrega o mesmo event_id, e o consumidor
+		// at-least-once é idempotente por ele (§12.3/§12.5).
+		eventID := uuid.NewSHA1(r.namespace, []byte(fmt.Sprintf("%s|%s|%d", commandID, evt.EventName(), i))).String()
+		env, err := r.bus.EnvelopeBytes(eventID, commandID, evt.EventName(), occurredAt, payload)
 		if err != nil {
 			return err
 		}
 		entries = append(entries, Entry{
-			ID:         uuid.NewSHA1(r.namespace, []byte(fmt.Sprintf("%s|%s|%d", commandID, evt.EventName(), i))).String(),
+			ID:         eventID,
 			EventName:  evt.EventName(),
 			Payload:    env,
 			OccurredAt: occurredAt,

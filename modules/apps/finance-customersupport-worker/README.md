@@ -1,10 +1,18 @@
 # finance-customersupport-worker
 
-O worker conversacional do bounded context financeiro. Roda como um processo
-Python **sem porta e sem host** (não serve HTTP): ele **consome** os eventos da
-[Evolution API](../../../stacks/compute.yml) pelo RabbitMQ e **envia** a resposta
-por HTTP de volta à Evolution. Não tem banco, não tem `DATABASE_URL` e **nunca**
-publica comando — a persistência é do stack `domain` (spec §1.1).
+O worker conversacional do bounded context financeiro — o **encarregado do
+atendimento ao cliente**. Roda como um processo Python **sem porta e sem host**
+(não serve HTTP) e tem **dois consumidores concorrentes**:
+
+1. `evolution.messages.upsert` — o que o cliente **manda** pelo WhatsApp
+   (comandos e leituras). Responde pelo gateway do Evolution.
+2. `domain.events` — o que o sistema **aplicou** (o domain-worker publica toda
+   transação concluída via outbox). O worker avisa o cliente: confirmação de
+   lançamento, transferência e, principalmente, o **alerta de orçamento** que
+   ninguém tinha como mandar antes.
+
+Não tem banco, não tem `DATABASE_URL` e **nunca** publica comando — a
+persistência é do stack `domain` (spec §1.1).
 
 ## O caminho de uma mensagem
 
@@ -23,7 +31,32 @@ WhatsApp ──► Evolution API (stack compute, Baileys)
         ├─ render (rendering/text.py)       → texto do WhatsApp
         ├─ chart (rendering/chart.py)       → PNG do fluxo de caixa
         └─ POST Evolution sendText/sendMedia/{instance} → resposta
+
+domain-worker ──► domain.events (fanout, outbox §4.3)
+                 │ o worker TAMBÉM consome (AMQP) — atendimento proativo
+                 ▼
+        fila finance.customersupport.events
+                 │
+                 ▼
+      finance-customersupport-worker
+        └─ render_event (rendering/events.py) → aviso: confirmação/alerta
+           └─ POST Evolution sendText/{instance} → mensagem proativa
 ```
+
+## Atendimento proativo (eventos de domínio)
+
+O worker assina `domain.events` e, por evento, manda ao cliente (roteando pelo
+`payload.user_id`, que é o telefone):
+
+| evento | mensagem |
+|---|---|
+| `finance.transaction.registered` | confirmação do lançamento |
+| `finance.transfer.completed` | transferência concluída |
+| `finance.transaction.categorized` | categoria atualizada |
+| `finance.budget.thresholdReached` | ⚠️ aviso (50/80%) / 🚨 estouro (100%) |
+
+Idempotente por `event_id` (o envelope carrega `event_id`/`command_id`): a mesma
+entrega reentregue é no-op. Um evento de outra família é ignorado.
 
 Detalhes que importam:
 
