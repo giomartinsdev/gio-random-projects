@@ -3,7 +3,7 @@
 // the loopback publish). The SPAs' browsers hit otel.giomartins.dev →
 // ingress → 127.0.0.1:4318. CORS is locked to exactly the SPA origins —
 // that, enforced by the browser, is the public endpoint's whole access
-// control. Origins: tela, clubs, hub (ver frontend_origins no TF).
+// control. Origins: tela, clubs, hub, finance (ver frontend_origins no TF).
 
 otelcol.receiver.otlp "default" {
   grpc {
@@ -13,7 +13,7 @@ otelcol.receiver.otlp "default" {
   http {
     endpoint = "0.0.0.0:4318"
     cors {
-      allowed_origins = ["https://tela.giomartins.dev", "https://clubs.giomartins.dev", "https://hub.giomartins.dev"]
+      allowed_origins = ["https://tela.giomartins.dev", "https://clubs.giomartins.dev", "https://hub.giomartins.dev", "https://finance.giomartins.dev"]
     }
   }
 

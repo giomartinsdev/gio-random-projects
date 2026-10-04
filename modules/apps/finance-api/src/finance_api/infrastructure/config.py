@@ -25,6 +25,11 @@ DEFAULT_SERVICE_NAME = "finance-api"
 DEFAULT_DOMAIN_TIMEOUT_S = 12.0
 DEFAULT_RATE_LIMIT_RPS = 5
 DEFAULT_RATE_LIMIT_BURST = 20
+# The SPA that calls this API cross-origin. Comma-separated; empty disables
+# CORS (a machine-to-machine deploy that never gets a browser). Kept as a
+# setting rather than hard-coded so a local dev origin can be added without
+# a rebuild.
+DEFAULT_CORS_ORIGINS = "https://finance.giomartins.dev"
 
 
 class ConfigError(RuntimeError):
@@ -43,6 +48,7 @@ class Settings:
     domain_timeout_s: float
     otlp_endpoint: str
     service_name: str
+    cors_origins: tuple[str, ...]
 
 
 def parse_api_keys(raw: str) -> dict[str, str]:
@@ -119,4 +125,18 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         otlp_endpoint=source.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip(),
         service_name=source.get("OTEL_SERVICE_NAME", DEFAULT_SERVICE_NAME).strip()
         or DEFAULT_SERVICE_NAME,
+        cors_origins=parse_cors_origins(
+            source.get("FINANCE_CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
+        ),
     )
+
+
+def parse_cors_origins(raw: str) -> tuple[str, ...]:
+    """``"a,b"`` -> ``("a", "b")``. Whitespace-trimmed, blanks dropped.
+
+    A blank list is valid and means "no browser origin is allowed" -- a
+    machine-only deploy. Each entry is kept verbatim (scheme included):
+    Starlette matches the ``Origin`` header exactly, so a trailing slash or
+    a missing scheme would silently never match.
+    """
+    return tuple(part.strip() for part in raw.split(",") if part.strip())

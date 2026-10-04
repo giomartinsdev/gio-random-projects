@@ -32,7 +32,11 @@ def build_app(settings: Settings) -> object:
         timeout_s=settings.domain_timeout_s,
     )
     container = Container(router=CommandRouter(client), api_keys=settings.finance_api_keys)
-    return create_app(container, instrument=bool(settings.otlp_endpoint))
+    return create_app(
+        container,
+        instrument=bool(settings.otlp_endpoint),
+        allowed_origins=settings.cors_origins,
+    )
 
 
 def main() -> int:

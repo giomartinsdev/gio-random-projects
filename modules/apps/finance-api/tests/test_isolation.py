@@ -151,6 +151,7 @@ def test_every_environment_variable_read_is_an_allowed_one() -> None:
         "DOMAIN_API_TIMEOUT_S",
         "HTTP_ADDR",
         "FINANCE_API_KEYS",
+        "FINANCE_CORS_ORIGINS",
         "RATE_LIMIT_RPS",
         "RATE_LIMIT_BURST",
         "OTEL_EXPORTER_OTLP_ENDPOINT",
@@ -453,33 +454,44 @@ def test_every_stack_service_is_free_of_persistence() -> None:
 def test_stack_check_is_not_vacuous() -> None:
     """The scoping above must be *exercised*, not merely written.
 
-    The file does carry a broker URL -- the worker's, which is legitimate
-    (§1.1). Pinning that down is what proves the ban is scoped per service
-    instead of passing on a file with nothing left to check, and proves the
-    worker's exemption is broker-only (a database surface there is still a
-    violation, worker or not).
+    Two things could make this whole section silently green:
+
+    - the real stack scan degenerating to an empty domain (no service, an
+      empty environment), and
+    - the broker exemption never running, because no `-worker` service is
+      present. The production stack does not carry one yet -- the
+      `finance-whatsapp-worker` block is deliberately commented out until
+      slice 2/3 lands (a service for an app that does not exist would break
+      the deploy), so the exemption is exercised against a synthetic stack
+      rather than by demanding the production file carry a service it must
+      not have yet. The point is that the *logic* runs and is broker-only
+      (a database surface is a violation there too), not that today's file
+      happens to contain a worker.
     """
     stack = _finance_stack()
     environment = _environment_of(stack, THIS_SERVICE)
     assert environment, f"an empty environment for {THIS_SERVICE} makes §12.6 vacuous"
-    assert any(v in STACK_FILE.read_text() for v in BROKER_KEYS), (
-        f"{STACK_FILE.name} no longer declares any broker surface: the "
-        "per-service exemption is no longer being exercised"
+
+    # A synthetic worker proves the exemption is broker-only and actually
+    # runs: a broker URL is fine, a database surface is not, and a
+    # non-`-worker` service gets no exemption at all.
+    synthetic = {
+        "services": {
+            "finance-outbox-worker": {"environment": ["RABBITMQ_URL=amqp://u@rabbitmq:5672/"]},
+            "finance-notifier": {"environment": ["RABBITMQ_URL=amqp://u@rabbitmq:5672/"]},
+        }
+    }
+    worker_env = _environment_of(synthetic, "finance-outbox-worker")
+    assert _offenders_for("finance-outbox-worker", worker_env) == [], (
+        "an event consumer must be exempt from the broker ban"
     )
-    exempt = [s for s in _service_names(stack) if _is_broker_exempt(s)]
-    assert exempt, (
-        f"no service ends in `{WORKER_SUFFIX}`: nothing exercises the broker "
-        "exemption, so its silence proves nothing"
+    worker_env["DATABASE_URL"] = "postgres://u@db:5432/f"
+    assert "DATABASE_URL (key)" in _offenders_for("finance-outbox-worker", worker_env), (
+        "the worker exemption is broker-only: a database surface still violates"
     )
-    # Read each exempt service through the SAME normaliser: a raw
-    # `worker["environment"]` access only understood the mapping shape and
-    # raised on the list shape, i.e. red for the wrong reason.
-    for service in exempt:
-        worker_db = _surfaces(_environment_of(stack, service), DB_KEYS, DB_DSN_SCHEMES)
-        assert worker_db == [], (
-            "an event consumer may carry a broker URL but never a database "
-            f"surface (§1.1): {service}: {worker_db}"
-        )
+    assert _offenders_for(
+        "finance-notifier", _environment_of(synthetic, "finance-notifier")
+    ), "a non-`-worker` service must never inherit the broker exemption"
 
 
 def test_an_added_service_carrying_a_database_is_caught() -> None:

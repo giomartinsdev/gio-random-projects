@@ -45,6 +45,13 @@ export const MICROFRONTENDS: Microfrontend[] = [
     description: "rankings de clubes e jogadores, e o histórico que a EA não guarda",
     url: "https://clubs.giomartins.dev",
   },
+  {
+    id: "finance",
+    name: "Finance",
+    emoji: "💳",
+    description: "gestão financeira: registre e acompanhe pelas mensagens do WhatsApp",
+    url: "https://finance.giomartins.dev",
+  },
 ];
 
 export const SHORTCUTS: Shortcut[] = [

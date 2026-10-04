@@ -145,10 +145,11 @@ locals {
       # finance-api -- o backend do bounded context financeiro
       # (stacks/finance.yml). A porta e a loopback publicada pelo stack
       # (127.0.0.1:8018) e tem de bater com o server{} de
-      # stacks/ingress/default.conf. Fica ATRAS do Access (nao esta em
-      # excluded_hostnames): o consumidor e maquina-a-maquina, entao o
-      # caminho normal e service token; ver §10.5 da spec.
-      hostname = "finance.giomartins.dev"
+      # stacks/ingress/default.conf. AUTH proprio (X-API-Key), sem Cloudflare
+      # Access -- o SPA (finance.giomartins.dev) chama este host cross-origin
+      # pelo browser, e um redirect de SSO Google quebraria toda chamada
+      # (mesma razao de clubs-api). O hostname esta em excluded_hostnames.
+      hostname = "finance-api.giomartins.dev"
       port     = 8018
     },
     {
@@ -226,6 +227,16 @@ locals {
       # (locals.services); sem ela, link de clube compartilhado em Discord
       # apareceria pelado.
       og_api = 8017
+    },
+    {
+      # finance-frontend: a SPA do bounded context financeiro (tela de
+      # operacao da fatia 1 -- liveness, chave de API e envio de comando).
+      # Entra no hub como microfrontend, entao precisa ser publica e
+      # iframe-embeddable (em excluded_hostnames): o login e a X-API-Key que o
+      # operador cola na propria tela, nao um redirect de Access. Ela chama a
+      # finance-api (finance-api.giomartins.dev) cross-origin por CORS.
+      hostname = "finance.giomartins.dev"
+      bucket   = "finance-frontend"
     },
   ]
 

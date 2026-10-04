@@ -43,6 +43,11 @@ services:
       # config.py é exatamente este; explícito aqui porque o app o lê.
       DOMAIN_API_TIMEOUT_S: "12"
       FINANCE_API_KEYS: ${FINANCE_API_KEYS:?defina FINANCE_API_KEYS}
+      # Origem(ns) do SPA autorizada a chamar esta API pelo browser. Sem isto o
+      # browser bloqueia a resposta (o SPA vive em finance.giomartins.dev, a API
+      # em finance-api.giomartins.dev: CORS e obrigatorio). Default do app ja e
+      # finance.giomartins.dev; explicito aqui pra dev local tb.
+      FINANCE_CORS_ORIGINS: ${FINANCE_CORS_ORIGINS:-https://finance.giomartins.dev}
       RATE_LIMIT_RPS: "5"
       RATE_LIMIT_BURST: "20"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
