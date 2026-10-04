@@ -23,6 +23,13 @@ type Repository interface {
 	RecordThreshold(ctx context.Context, b Budget, threshold int, period, spent, limit string) (bool, error)
 	// SumSpent soma os gastos (EXPENSE) de uma categoria num período, em centavos.
 	SumSpent(ctx context.Context, userID, category, period string) (int64, error)
+	// UpsertConsent grava/atualiza um consentimento Open Finance por
+	// polp_consent_id (idempotente — reprocessar não empilha).
+	UpsertConsent(ctx context.Context, c Consent) error
+	// UpdateConsentStatus muda o estado de um consentimento já existente.
+	UpdateConsentStatus(ctx context.Context, polpConsentID string, status ConsentStatus, executionStatus string) error
+	// UpsertOFAccount grava/atualiza uma conta importada por polp_account_id.
+	UpsertOFAccount(ctx context.Context, a OFAccount) error
 }
 
 var ErrNotFound = notFoundError{}

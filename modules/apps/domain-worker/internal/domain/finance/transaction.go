@@ -25,6 +25,10 @@ const (
 
 // Transaction é o agregado do ledger (§3.2). O id é UUIDv7 gerado pelo
 // domain-worker (quem aplica) — a ACL/worker nunca inventam id (§4.1).
+//
+// Os campos de Open Finance só têm valor quando a transação foi importada do
+// banco (Source == "OPEN_FINANCE_SYNC"): ExternalID é o id dela no provedor e
+// é o que torna o import idempotente (índice único parcial no banco).
 type Transaction struct {
 	ID        string
 	UserID    string
@@ -35,6 +39,11 @@ type Transaction struct {
 	OccurredAt time.Time
 	Source    string
 	CreatedAt time.Time
+	// Open Finance (opcional).
+	ExternalID       string
+	OFAccountID      string
+	Counterparty     string
+	ExternalCategory string
 }
 
 // NewTransaction valida as invariantes do §3.4 na construção:

@@ -72,6 +72,33 @@ func (f *fakeRepo) RecordThreshold(_ context.Context, b domainfinance.Budget, th
 func (f *fakeRepo) SumSpent(_ context.Context, _, _, _ string) (int64, error) {
 	return f.spentCents, nil
 }
+func (f *fakeRepo) UpsertConsent(_ context.Context, _ domainfinance.Consent) error { return nil }
+func (f *fakeRepo) UpdateConsentStatus(_ context.Context, _ string, _ domainfinance.ConsentStatus, _ string) error {
+	return nil
+}
+func (f *fakeRepo) UpsertOFAccount(_ context.Context, _ domainfinance.OFAccount) error { return nil }
+
+// O import do Open Finance tem id DETERMINÍSTICO por (source, external_id):
+// reimportar o mesmo extrato (com id de comando novo) é no-op, não duplicata.
+func TestOpenFinanceTransactionIDIsDeterministic(t *testing.T) {
+	s := NewService(newFakeRepo())
+	in := RegisterTransactionInput{
+		UserID: "u", AccountID: "acct", Type: "EXPENSE", Amount: "45.00", Currency: "BRL",
+		Category: "Alimentação", OccurredAt: "2026-10-04T12:00:00+00:00",
+		SourceType: "OPEN_FINANCE_SYNC", ExternalID: "polp-tx-1",
+	}
+	tx1, _, err := s.RegisterTransaction(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx2, _, err := s.RegisterTransaction(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tx1.ID != tx2.ID {
+		t.Fatalf("o id devia ser determinístico por external_id: %s != %s", tx1.ID, tx2.ID)
+	}
+}
 
 func TestRegisterTransactionRejectsFloat(t *testing.T) {
 	s := NewService(newFakeRepo())

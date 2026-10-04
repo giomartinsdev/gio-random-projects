@@ -67,6 +67,40 @@ func (h *CommandHandler) Handle(ctx context.Context, cmd application.Command) ([
 		}
 		return events, nil
 
+	case application.ActionOFConsentCreated:
+		var in ConsentCreatedInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode consent created: %w", err)
+		}
+		_, evt, err := h.service.UpsertConsent(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return []domainfinance.Event{evt}, nil
+
+	case application.ActionOFConsentUpdated:
+		var in ConsentUpdatedInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode consent updated: %w", err)
+		}
+		evt, err := h.service.UpdateConsentStatus(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return []domainfinance.Event{evt}, nil
+
+	case application.ActionOFAccountSynced:
+		var in AccountSyncedInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode account synced: %w", err)
+		}
+		// A conta é dado de apoio; não gera evento. Devolve lista vazia (o
+		// process() aceita zero eventos sem publicar).
+		if err := h.service.SyncAccount(ctx, in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
 	default:
 		return nil, fmt.Errorf("unknown action: %q", cmd.Action)
 	}

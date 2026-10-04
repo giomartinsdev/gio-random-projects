@@ -23,15 +23,18 @@ func NewFinanceRepository(pool *pgxpool.Pool) *FinanceRepository {
 }
 
 const financeTxColumns = `id, user_id, account_id, type, amount::text, currency, category,
-	source, occurred_at, created_at`
+	source, occurred_at, created_at, external_id, of_account_id, counterparty, external_category`
 
 func scanFinanceTx(row pgx.Row) (domainfinance.Transaction, error) {
 	var (
 		t             domainfinance.Transaction
 		amountDecimal string
+		externalID    *string
+		ofAccountID   *string
 	)
 	if err := row.Scan(&t.ID, &t.UserID, &t.AccountID, &t.Type, &amountDecimal,
-		&t.Amount.Currency, &t.Category, &t.Source, &t.OccurredAt, &t.CreatedAt); err != nil {
+		&t.Amount.Currency, &t.Category, &t.Source, &t.OccurredAt, &t.CreatedAt,
+		&externalID, &ofAccountID, &t.Counterparty, &t.ExternalCategory); err != nil {
 		return domainfinance.Transaction{}, err
 	}
 	// amount vem como texto (`amount::text`) para NÃO passar por float no
@@ -41,19 +44,33 @@ func scanFinanceTx(row pgx.Row) (domainfinance.Transaction, error) {
 		return domainfinance.Transaction{}, fmt.Errorf("parse stored amount %q: %w", amountDecimal, err)
 	}
 	t.Amount = money
+	if externalID != nil {
+		t.ExternalID = *externalID
+	}
+	if ofAccountID != nil {
+		t.OFAccountID = *ofAccountID
+	}
 	return t, nil
 }
 
 // Insert grava a transação, idempotente por id (o command_id). Devolve false
 // quando já existia — a segunda entrega do mesmo comando é no-op.
+//
+// Para transações do Open Finance o id é gerado pelo worker a partir do
+// (source, external_id), então o ON CONFLICT (id) já cobre; o índice único
+// parcial em (source, external_id) é a segunda barreira, caso um producer
+// futuro use outro id.
 func (r *FinanceRepository) Insert(ctx context.Context, t domainfinance.Transaction) (bool, error) {
 	tag, err := r.pool.Exec(ctx, `
 		INSERT INTO finance_transactions
-			(id, user_id, account_id, type, amount, currency, category, source, occurred_at, command_id)
-		VALUES ($1,$2,$3,$4,$5::numeric,$6,$7,$8,$9,$1)
+			(id, user_id, account_id, type, amount, currency, category, source, occurred_at, command_id,
+			 external_id, of_account_id, counterparty, external_category)
+		VALUES ($1,$2,$3,$4,$5::numeric,$6,$7,$8,$9,$1,
+		        NULLIF($10,''), NULLIF($11,'')::uuid, $12, $13)
 		ON CONFLICT (id) DO NOTHING`,
 		t.ID, t.UserID, t.AccountID, string(t.Type), t.Amount.Decimal(), t.Amount.Currency,
-		t.Category, t.Source, t.OccurredAt)
+		t.Category, t.Source, t.OccurredAt,
+		t.ExternalID, t.OFAccountID, t.Counterparty, t.ExternalCategory)
 	if err != nil {
 		return false, fmt.Errorf("insert transaction: %w", err)
 	}
@@ -172,4 +189,69 @@ func (r *FinanceRepository) SumSpent(ctx context.Context, userID, category, peri
 		return -money.Cents, nil
 	}
 	return money.Cents, nil
+}
+
+// --------------------------------------------------------------- Open Finance
+
+// UpsertConsent grava/atualiza o consentimento por polp_consent_id. Idempotente:
+// reprocessar o mesmo consentimento atualiza os campos em vez de empilhar.
+func (r *FinanceRepository) UpsertConsent(ctx context.Context, c domainfinance.Consent) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO finance_of_consents
+			(id, polp_consent_id, user_id, institution_id, institution_name, status,
+			 execution_status, products, url_to_authenticate, url_expires_at, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now())
+		ON CONFLICT (polp_consent_id) DO UPDATE SET
+			status = EXCLUDED.status,
+			execution_status = EXCLUDED.execution_status,
+			institution_name = EXCLUDED.institution_name,
+			url_to_authenticate = EXCLUDED.url_to_authenticate,
+			url_expires_at = EXCLUDED.url_expires_at,
+			updated_at = now()`,
+		c.ID, c.PolpConsentID, c.UserID, c.InstitutionID, c.InstitutionName, string(c.Status),
+		c.ExecutionStatus, c.Products, c.URLToAuthenticate, nullableTime(c.URLExpiresAt))
+	if err != nil {
+		return fmt.Errorf("upsert consent: %w", err)
+	}
+	return nil
+}
+
+func (r *FinanceRepository) UpdateConsentStatus(ctx context.Context, polpConsentID string, status domainfinance.ConsentStatus, executionStatus string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE finance_of_consents
+		SET status = $2, execution_status = $3, updated_at = now()
+		WHERE polp_consent_id = $1`,
+		polpConsentID, string(status), executionStatus)
+	if err != nil {
+		return fmt.Errorf("update consent status: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domainfinance.ErrNotFound
+	}
+	return nil
+}
+
+// UpsertOFAccount grava/atualiza a conta importada por polp_account_id. O saldo
+// pode vir vazio (ainda não sincronizado) — nesse caso mantém o anterior.
+func (r *FinanceRepository) UpsertOFAccount(ctx context.Context, a domainfinance.OFAccount) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO finance_of_accounts
+			(id, polp_account_id, polp_consent_id, user_id, name, type, currency,
+			 balance_amount, balance_updated_at, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7, NULLIF($8,'')::numeric,
+		        $9, now(), now())
+		ON CONFLICT (polp_account_id) DO UPDATE SET
+			polp_consent_id = EXCLUDED.polp_consent_id,
+			name = EXCLUDED.name,
+			type = EXCLUDED.type,
+			currency = EXCLUDED.currency,
+			balance_amount = COALESCE(EXCLUDED.balance_amount, finance_of_accounts.balance_amount),
+			balance_updated_at = COALESCE(EXCLUDED.balance_updated_at, finance_of_accounts.balance_updated_at),
+			updated_at = now()`,
+		a.ID, a.PolpAccountID, a.PolpConsentID, a.UserID, a.Name, a.Type, a.Currency,
+		a.BalanceAmount, nullableTime(a.BalanceUpdatedAt))
+	if err != nil {
+		return fmt.Errorf("upsert of account: %w", err)
+	}
+	return nil
 }

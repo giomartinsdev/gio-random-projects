@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -244,4 +245,66 @@ func (r *FinanceReadRepository) CashFlowHistory(ctx context.Context, userID, mon
 		Currency: "BRL",
 		Days:     days,
 	}, nil
+}
+
+// --------------------------------------------------------------- Open Finance
+
+func (r *FinanceReadRepository) OFConsents(ctx context.Context, userID string) (domainfinance.OFConsentList, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, polp_consent_id, institution_id, institution_name, status, execution_status,
+		       products, url_to_authenticate, updated_at
+		FROM finance_of_consents
+		WHERE user_id = $1
+		ORDER BY updated_at DESC`, userID)
+	if err != nil {
+		return domainfinance.OFConsentList{}, fmt.Errorf("of consents: %w", err)
+	}
+	defer rows.Close()
+
+	out := domainfinance.OFConsentList{UserID: userID, Consents: []domainfinance.OFConsent{}}
+	for rows.Next() {
+		var (
+			c        domainfinance.OFConsent
+			products []string
+			updated  time.Time
+		)
+		if err := rows.Scan(&c.ID, &c.PolpConsentID, &c.InstitutionID, &c.InstitutionName,
+			&c.Status, &c.ExecutionStatus, &products, &c.URLToAuthenticate, &updated); err != nil {
+			return domainfinance.OFConsentList{}, fmt.Errorf("scan of consent: %w", err)
+		}
+		c.Products = products
+		c.UpdatedAt = updated.UTC().Format(time.RFC3339)
+		out.Consents = append(out.Consents, c)
+	}
+	return out, rows.Err()
+}
+
+func (r *FinanceReadRepository) OFAccounts(ctx context.Context, userID string) (domainfinance.OFAccountList, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, polp_account_id, polp_consent_id, name, type, currency,
+		       COALESCE(balance_amount, 0)::numeric(14,2)::text, balance_updated_at
+		FROM finance_of_accounts
+		WHERE user_id = $1
+		ORDER BY name ASC`, userID)
+	if err != nil {
+		return domainfinance.OFAccountList{}, fmt.Errorf("of accounts: %w", err)
+	}
+	defer rows.Close()
+
+	out := domainfinance.OFAccountList{UserID: userID, Accounts: []domainfinance.OFAccount{}}
+	for rows.Next() {
+		var (
+			a         domainfinance.OFAccount
+			balanceAt *time.Time
+		)
+		if err := rows.Scan(&a.ID, &a.PolpAccountID, &a.PolpConsentID, &a.Name, &a.Type,
+			&a.Currency, &a.BalanceAmount, &balanceAt); err != nil {
+			return domainfinance.OFAccountList{}, fmt.Errorf("scan of account: %w", err)
+		}
+		if balanceAt != nil {
+			a.BalanceUpdatedAt = balanceAt.UTC().Format(time.RFC3339)
+		}
+		out.Accounts = append(out.Accounts, a)
+	}
+	return out, rows.Err()
 }

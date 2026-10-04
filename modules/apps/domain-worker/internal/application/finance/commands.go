@@ -15,6 +15,12 @@ type RegisterTransactionInput struct {
 	Category   string `json:"category"`
 	OccurredAt string `json:"occurred_at"`
 	SourceType string `json:"source_type,omitempty"`
+	// Open Finance (opcional): presentes quando a transação vem do import
+	// bancário. ExternalID é obrigatório nesse caso (idempotência).
+	ExternalID       string `json:"external_id,omitempty"`
+	OFAccountID      string `json:"of_account_id,omitempty"`
+	Counterparty     string `json:"counterparty,omitempty"`
+	ExternalCategory string `json:"external_category,omitempty"`
 }
 
 type CategorizeTransactionInput struct {
@@ -37,4 +43,35 @@ type SetCategoryBudgetInput struct {
 	Limit    string `json:"limit"`
 	Currency string `json:"currency"`
 	Period   string `json:"period"` // "YYYY-MM"; a finance-api emite `period`, não `month`
+}
+
+// Open Finance (Polp/Celcoin). A ACL cria o consentimento no provedor e publica
+// o comando; o conector publica os de sync. Quem grava é sempre o domain-worker.
+type ConsentCreatedInput struct {
+	UserID            string   `json:"user_id"`
+	PolpConsentID     string   `json:"polp_consent_id"`
+	InstitutionID     string   `json:"institution_id"`
+	InstitutionName   string   `json:"institution_name,omitempty"`
+	Status            string   `json:"status"`
+	ExecutionStatus   string   `json:"execution_status,omitempty"`
+	Products          []string `json:"products,omitempty"`
+	URLToAuthenticate string   `json:"url_to_authenticate,omitempty"`
+	URLExpiresAt      string   `json:"url_expires_at,omitempty"`
+}
+
+type ConsentUpdatedInput struct {
+	PolpConsentID   string `json:"polp_consent_id"`
+	Status          string `json:"status"`
+	ExecutionStatus string `json:"execution_status,omitempty"`
+}
+
+type AccountSyncedInput struct {
+	UserID          string `json:"user_id"`
+	PolpConsentID   string `json:"polp_consent_id"`
+	PolpAccountID   string `json:"polp_account_id"`
+	Name            string `json:"name,omitempty"`
+	AccountType     string `json:"account_type,omitempty"`
+	Currency        string `json:"currency,omitempty"`
+	BalanceAmount   string `json:"balance_amount,omitempty"`
+	BalanceUpdatedAt string `json:"balance_updated_at,omitempty"`
 }

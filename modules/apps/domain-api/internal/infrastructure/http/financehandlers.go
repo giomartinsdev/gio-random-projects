@@ -129,3 +129,31 @@ func (h *FinanceHandlers) GetCashFlowHistory(w http.ResponseWriter, r *http.Requ
 	}
 	writeJSON(w, http.StatusOK, history)
 }
+
+// GetOFConsents is §4.2: as conexões Open Finance (consentimentos) do usuário.
+func (h *FinanceHandlers) GetOFConsents(w http.ResponseWriter, r *http.Request) {
+	userID, ok := financeUserID(w, r)
+	if !ok {
+		return
+	}
+	list, err := h.reads.OFConsents(r.Context(), userID)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// GetOFAccounts is §4.2: as contas bancárias importadas, com saldo.
+func (h *FinanceHandlers) GetOFAccounts(w http.ResponseWriter, r *http.Request) {
+	userID, ok := financeUserID(w, r)
+	if !ok {
+		return
+	}
+	list, err := h.reads.OFAccounts(r.Context(), userID)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}

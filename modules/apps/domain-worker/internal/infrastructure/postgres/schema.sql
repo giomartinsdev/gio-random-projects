@@ -446,6 +446,17 @@ CREATE INDEX IF NOT EXISTS idx_finance_transactions_user_category_month
 CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_transactions_command
     ON finance_transactions (command_id) WHERE command_id IS NOT NULL;
 
+-- Open Finance: a transação importada do banco carrega o id dela no provedor.
+-- O índice único parcial por (source, external_id) é o que faz reprocessar o
+-- extrato inteiro não duplicar — a mesma disciplina do command_id. Expand:
+-- colunas adicionadas via ALTER para não quebrar o CREATE de bases existentes.
+ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS external_id TEXT;
+ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS of_account_id UUID;
+ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS counterparty TEXT NOT NULL DEFAULT '';
+ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS external_category TEXT NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_transactions_external
+    ON finance_transactions (source, external_id) WHERE external_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS finance_budgets (
     id          UUID PRIMARY KEY,
     user_id     TEXT NOT NULL,
@@ -475,8 +486,54 @@ CREATE TABLE IF NOT EXISTS finance_budget_thresholds (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_budget_thresholds
     ON finance_budget_thresholds (budget_id, threshold, period);
 
+-- ---------------------------------------------------------------------------
+-- Open Finance (docs/openfinance-spec.md)
+--
+-- O consentimento (a "conexão" com o banco) e as contas importadas via Polp.
+-- A ACL cria o consentimento no provedor, mas quem persiste é o domain-worker
+-- (o único escritor); o conector de sync também publica comandos. Dinheiro é
+-- NUMERIC(14,2), como o resto.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS finance_of_consents (
+    id                  UUID PRIMARY KEY,
+    polp_consent_id     TEXT NOT NULL UNIQUE,   -- id no provedor (Polp/Celcoin)
+    user_id             TEXT NOT NULL,          -- telefone, o mesmo do ledger
+    institution_id      TEXT NOT NULL,          -- id Polp da instituição
+    institution_name    TEXT NOT NULL DEFAULT '',
+    status              TEXT NOT NULL,          -- AWAITING_AUTHORIZATION|AUTHORISED|REJECTED|EXPIRED
+    execution_status    TEXT NOT NULL DEFAULT '', -- AWAITING_RESOURCES|SUCCESS|PARTIAL_SUCCESS
+    products            TEXT[] NOT NULL DEFAULT '{}',
+    url_to_authenticate TEXT NOT NULL DEFAULT '',
+    url_expires_at      TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_finance_of_consents_user ON finance_of_consents (user_id);
+-- No máximo UMA conexão ativa (AUTHORISED) por (usuário, banco): reconectar o
+-- mesmo banco não empilha consentimentos.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_of_consents_active
+    ON finance_of_consents (user_id, institution_id) WHERE status = 'AUTHORISED';
+
+CREATE TABLE IF NOT EXISTS finance_of_accounts (
+    id                UUID PRIMARY KEY,
+    polp_account_id   TEXT NOT NULL UNIQUE,     -- id da conta no provedor
+    polp_consent_id   TEXT NOT NULL,            -- consentimento do provedor
+    user_id           TEXT NOT NULL,
+    name              TEXT NOT NULL DEFAULT '',
+    type              TEXT NOT NULL DEFAULT '',
+    currency          TEXT NOT NULL DEFAULT 'BRL',
+    balance_amount    NUMERIC(14,2),
+    balance_updated_at TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_finance_of_accounts_user ON finance_of_accounts (user_id);
+
 -- ===========================================================================
--- Fim do Financeiro
+-- Fim do Open Finance
 -- ===========================================================================
 
 -- ===========================================================================

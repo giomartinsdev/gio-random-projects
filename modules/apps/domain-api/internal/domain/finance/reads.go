@@ -89,6 +89,43 @@ type CashFlowHistory struct {
 	Days     []CashFlowDay `json:"days"`
 }
 
+// OFConsent is one Open Finance connection as the SPA shows it.
+type OFConsent struct {
+	ID                string   `json:"id"`
+	PolpConsentID     string   `json:"consent_id"`
+	InstitutionID     string   `json:"institution_id"`
+	InstitutionName   string   `json:"institution_name"`
+	Status            string   `json:"status"`
+	ExecutionStatus   string   `json:"execution_status"`
+	Products          []string `json:"products"`
+	URLToAuthenticate string   `json:"url_to_authenticate,omitempty"`
+	UpdatedAt         string   `json:"updated_at"`
+}
+
+// OFConsentList is the §4.2 projection of the user's connections.
+type OFConsentList struct {
+	UserID   string      `json:"user_id"`
+	Consents []OFConsent `json:"consents"`
+}
+
+// OFAccount is one imported bank account with its balance.
+type OFAccount struct {
+	ID               string `json:"id"`
+	PolpAccountID    string `json:"account_id"`
+	PolpConsentID    string `json:"consent_id"`
+	Name             string `json:"name"`
+	Type             string `json:"account_type"`
+	Currency         string `json:"currency"`
+	BalanceAmount    string `json:"balance_amount"`
+	BalanceUpdatedAt string `json:"balance_updated_at,omitempty"`
+}
+
+// OFAccountList is the §4.2 projection of the user's connected accounts.
+type OFAccountList struct {
+	UserID   string      `json:"user_id"`
+	Accounts []OFAccount `json:"accounts"`
+}
+
 // ReadRepository is domain-api's read-only port over the finance tables.
 // Every method is a projection; none writes. A method per query in §4.2.
 type ReadRepository interface {
@@ -96,4 +133,6 @@ type ReadRepository interface {
 	MonthlyDashboard(ctx context.Context, userID, month string) (MonthlyDashboard, error)
 	CategoryBreakdown(ctx context.Context, userID, month string) (CategoryBreakdown, error)
 	CashFlowHistory(ctx context.Context, userID, month string) (CashFlowHistory, error)
+	OFConsents(ctx context.Context, userID string) (OFConsentList, error)
+	OFAccounts(ctx context.Context, userID string) (OFAccountList, error)
 }

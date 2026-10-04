@@ -127,8 +127,18 @@ ACTION_RECONCILE_OPEN_FINANCE_TRANSACTION: Final = (
     "finance.transaction.reconcileOpenFinance"  # Fase 2
 )
 
+# Open Finance (Polp/Celcoin). O ciclo do consentimento é síncrono e voltado ao
+# usuário (fica na ACL), mas cada mutação vira um comando para o domain-worker
+# persistir — a ACL não tem banco (§1.1). O conector de sync usa os mesmos para
+# gravar contas importadas.
+ACTION_OF_CONSENT_CREATED: Final = "finance.openfinance.consentCreated"
+ACTION_OF_CONSENT_UPDATED: Final = "finance.openfinance.consentUpdated"
+ACTION_OF_ACCOUNT_SYNCED: Final = "finance.openfinance.accountSynced"
+
 # Reads (spec §4.2) -- served by domain-api GETs, projections only.
 ACTION_GET_DAILY_SUMMARY: Final = "finance.query.dailySummary"
 ACTION_GET_MONTHLY_DASHBOARD: Final = "finance.query.monthlyDashboard"
 ACTION_GET_CATEGORY_BREAKDOWN: Final = "finance.query.categoryBreakdown"
 ACTION_GET_CASH_FLOW_HISTORY: Final = "finance.query.cashFlowHistory"
+ACTION_GET_OF_CONSENTS: Final = "finance.query.ofConsents"
+ACTION_GET_OF_ACCOUNTS: Final = "finance.query.ofAccounts"

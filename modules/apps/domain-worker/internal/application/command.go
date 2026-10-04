@@ -49,6 +49,11 @@ const (
 	ActionCategorizeTransaction  Action = "finance.transaction.categorize"
 	ActionTransferBetweenAccounts Action = "finance.transfer.betweenAccounts"
 	ActionSetCategoryBudget      Action = "finance.budget.setCategory"
+	// Open Finance (docs/openfinance-spec.md): o ciclo do consentimento e o
+	// sync de conta. Publicados pela ACL / pelo conector.
+	ActionOFConsentCreated Action = "finance.openfinance.consentCreated"
+	ActionOFConsentUpdated Action = "finance.openfinance.consentUpdated"
+	ActionOFAccountSynced  Action = "finance.openfinance.accountSynced"
 )
 
 type Command struct {

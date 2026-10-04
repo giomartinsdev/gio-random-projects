@@ -60,3 +60,16 @@ type BudgetThresholdReached struct {
 }
 
 func (BudgetThresholdReached) EventName() string { return "finance.budget.thresholdReached" }
+
+// ConsentUpdated diz que o estado de uma conexão Open Finance mudou (autorizada,
+// expirada, revogada). O worker conversacional usa para avisar "conta conectada".
+type ConsentUpdated struct {
+	PolpConsentID   string      `json:"polp_consent_id"`
+	UserID          string      `json:"user_id"`
+	InstitutionName string      `json:"institution_name"`
+	Status          ConsentStatus `json:"status"`
+	ExecutionStatus string      `json:"execution_status"`
+	OccurredAt      time.Time   `json:"occurred_at"`
+}
+
+func (ConsentUpdated) EventName() string { return "finance.openfinance.consentUpdated" }

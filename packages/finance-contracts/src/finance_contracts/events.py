@@ -20,6 +20,7 @@ EVENT_TRANSACTION_REGISTERED: Final = "finance.transaction.registered"
 EVENT_TRANSACTION_CATEGORIZED: Final = "finance.transaction.categorized"
 EVENT_TRANSFER_COMPLETED: Final = "finance.transfer.completed"
 EVENT_BUDGET_THRESHOLD_REACHED: Final = "finance.budget.thresholdReached"
+EVENT_OF_CONSENT_UPDATED: Final = "finance.openfinance.consentUpdated"
 
 
 @dataclass(frozen=True, slots=True)

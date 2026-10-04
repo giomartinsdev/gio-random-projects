@@ -36,6 +36,18 @@ func (s *Service) RegisterTransaction(ctx context.Context, in RegisterTransactio
 	if err != nil {
 		return domainfinance.Transaction{}, nil, err
 	}
+	// Open Finance: o id é DETERMINÍSTICO a partir de (source, external_id),
+	// então reimportar o mesmo extrato é um no-op — não um erro de índice único
+	// com um id novo. O import do banco é reprocessável por natureza (o cursor
+	// do conector reinicia no boot), então a chave precisa ser estável.
+	txID := id.String()
+	if in.ExternalID != "" {
+		src := in.SourceType
+		if src == "" {
+			src = "OPEN_FINANCE_SYNC"
+		}
+		txID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(src+"|"+in.ExternalID)).String()
+	}
 	// O sinal do amount codifica a DIREÇÃO (a mesma convenção da
 	// transferência, cujo débito é negado): EXPENSE grava negativo, senão a
 	// leitura — que soma SUM(amount) para o net e filtra EXPENSE — devolveria
@@ -45,11 +57,15 @@ func (s *Service) RegisterTransaction(ctx context.Context, in RegisterTransactio
 	if domainfinance.TransactionType(in.Type) == domainfinance.TypeExpense {
 		signed = amount.Neg()
 	}
-	tx, err := domainfinance.NewTransaction(id.String(), in.UserID, in.AccountID,
+	tx, err := domainfinance.NewTransaction(txID, in.UserID, in.AccountID,
 		domainfinance.TransactionType(in.Type), signed, in.Category, occurredAt, in.SourceType)
 	if err != nil {
 		return domainfinance.Transaction{}, nil, err
 	}
+	tx.ExternalID = in.ExternalID
+	tx.OFAccountID = in.OFAccountID
+	tx.Counterparty = in.Counterparty
+	tx.ExternalCategory = in.ExternalCategory
 	if _, err := s.repo.Insert(ctx, tx); err != nil {
 		return domainfinance.Transaction{}, nil, err
 	}
@@ -197,4 +213,90 @@ func parseOccurredAt(raw string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("%w: %q", domainfinance.ErrOccurredAtRequired, raw)
 	}
 	return t.UTC(), nil
+}
+
+// --------------------------------------------------------------- Open Finance
+
+// UpsertConsent grava o consentimento (idempotente por polp_consent_id).
+func (s *Service) UpsertConsent(ctx context.Context, in ConsentCreatedInput) (domainfinance.Consent, domainfinance.Event, error) {
+	if in.UserID == "" {
+		return domainfinance.Consent{}, nil, domainfinance.ErrUserIDRequired
+	}
+	if in.PolpConsentID == "" {
+		return domainfinance.Consent{}, nil, domainfinance.ErrConsentIDRequired
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return domainfinance.Consent{}, nil, err
+	}
+	var urlExpires time.Time
+	if in.URLExpiresAt != "" {
+		if t, perr := time.Parse(time.RFC3339, in.URLExpiresAt); perr == nil {
+			urlExpires = t.UTC()
+		}
+	}
+	c, err := domainfinance.NewConsent(id.String(), in.PolpConsentID, in.UserID, in.InstitutionID,
+		in.InstitutionName, domainfinance.ConsentStatus(in.Status), in.ExecutionStatus,
+		in.Products, in.URLToAuthenticate, urlExpires)
+	if err != nil {
+		return domainfinance.Consent{}, nil, err
+	}
+	if err := s.repo.UpsertConsent(ctx, c); err != nil {
+		return domainfinance.Consent{}, nil, err
+	}
+	return c, domainfinance.ConsentUpdated{
+		PolpConsentID:   c.PolpConsentID,
+		UserID:          c.UserID,
+		InstitutionName: c.InstitutionName,
+		Status:          c.Status,
+		ExecutionStatus: c.ExecutionStatus,
+		OccurredAt:      s.now(),
+	}, nil
+}
+
+// UpdateConsentStatus muda o estado de uma conexão existente.
+func (s *Service) UpdateConsentStatus(ctx context.Context, in ConsentUpdatedInput) (domainfinance.Event, error) {
+	if in.PolpConsentID == "" {
+		return nil, domainfinance.ErrConsentIDRequired
+	}
+	if err := s.repo.UpdateConsentStatus(ctx, in.PolpConsentID, domainfinance.ConsentStatus(in.Status), in.ExecutionStatus); err != nil {
+		return nil, err
+	}
+	// O evento carrega o que o aviso precisa; o user_id/institution saem da
+	// leitura do consentimento só quando notificamos — para o evento bastam os
+	// campos que temos do comando.
+	return domainfinance.ConsentUpdated{
+		PolpConsentID:   in.PolpConsentID,
+		Status:          domainfinance.ConsentStatus(in.Status),
+		ExecutionStatus: in.ExecutionStatus,
+		OccurredAt:      s.now(),
+	}, nil
+}
+
+// SyncAccount grava/atualiza a conta importada (idempotente por polp_account_id).
+// Não gera evento: a conta é dado de apoio; o aviso é da transação.
+func (s *Service) SyncAccount(ctx context.Context, in AccountSyncedInput) error {
+	if in.UserID == "" {
+		return domainfinance.ErrUserIDRequired
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+	var balanceAt time.Time
+	if in.BalanceUpdatedAt != "" {
+		if t, perr := time.Parse(time.RFC3339, in.BalanceUpdatedAt); perr == nil {
+			balanceAt = t.UTC()
+		}
+	}
+	currency := in.Currency
+	if currency == "" {
+		currency = "BRL"
+	}
+	a, err := domainfinance.NewOFAccount(id.String(), in.PolpAccountID, in.PolpConsentID, in.UserID,
+		in.Name, in.AccountType, currency, in.BalanceAmount, balanceAt)
+	if err != nil {
+		return err
+	}
+	return s.repo.UpsertOFAccount(ctx, a)
 }

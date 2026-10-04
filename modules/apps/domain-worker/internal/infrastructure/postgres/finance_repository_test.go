@@ -168,3 +168,78 @@ func TestFinanceSumSpentByPeriod(t *testing.T) {
 		t.Fatalf("soma de outubro = %d centavos; want 1550 (setembro fora)", spent)
 	}
 }
+
+// Open Finance: o import do extrato é idempotente por (source, external_id) —
+// reprocessar o mesmo lote não duplica a transação (§10 da spec).
+func TestFinanceOpenFinanceImportIsIdempotentByExternalID(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	repo := NewFinanceRepository(pool)
+	user := "fin-user-of"
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM finance_transactions WHERE user_id = $1`, user)
+		_, _ = pool.Exec(ctx, `DELETE FROM finance_of_accounts WHERE user_id = $1`, user)
+		_, _ = pool.Exec(ctx, `DELETE FROM finance_of_consents WHERE user_id = $1`, user)
+	})
+
+	// Consent + conta (upsert idempotente).
+	consent, err := domainfinance.NewConsent("11111111-1111-1111-1111-111111111111",
+		"polp-consent-1", user, "inst-itau", "Itaú", domainfinance.ConsentAuthorised, "SUCCESS", []string{"ACCOUNT"}, "", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpsertConsent(ctx, consent); err != nil {
+		t.Fatalf("upsert consent: %v", err)
+	}
+	// Reprocessar com status mudado: atualiza, não duplica.
+	consent.Status = domainfinance.ConsentExpired
+	if err := repo.UpsertConsent(ctx, consent); err != nil {
+		t.Fatalf("re-upsert consent: %v", err)
+	}
+	var consents int
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM finance_of_consents WHERE user_id=$1`, user).Scan(&consents)
+	if consents != 1 {
+		t.Fatalf("consents = %d; want 1 (idempotente)", consents)
+	}
+
+	acct, err := domainfinance.NewOFAccount("22222222-2222-2222-2222-222222222222",
+		"polp-acct-1", "polp-consent-1", user, "Itaú · Corrente", "CONTA_DEPOSITO_A_VISTA", "BRL", "1500.00", time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpsertOFAccount(ctx, acct); err != nil {
+		t.Fatalf("upsert account: %v", err)
+	}
+
+	// Duas transações do banco; importar de novo não duplica.
+	when := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	mk := func(id, external, amount string) domainfinance.Transaction {
+		tx, err := domainfinance.NewTransaction(id, user, "polp-acct-1", domainfinance.TypeExpense,
+			financeMoney(t, amount), "Alimentação", when, "OPEN_FINANCE_SYNC")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tx.ExternalID = external
+		tx.OFAccountID = "22222222-2222-2222-2222-222222222222"
+		tx.Counterparty = "Padaria"
+		tx.ExternalCategory = "FOOD_AND_DRINK"
+		return tx
+	}
+	txA := mk("33333333-3333-3333-3333-333333333333", "polp-tx-a", "-45.00")
+	if _, err := repo.Insert(ctx, txA); err != nil {
+		t.Fatalf("insert A: %v", err)
+	}
+	// Reimportar a MESMA transação (mesmo id e mesmo external) -> no-op.
+	ins, err := repo.Insert(ctx, txA)
+	if err != nil {
+		t.Fatalf("reinsert A: %v", err)
+	}
+	if ins {
+		t.Fatal("reimport não podia inserir de novo")
+	}
+	var n int
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM finance_transactions WHERE user_id=$1 AND source='OPEN_FINANCE_SYNC'`, user).Scan(&n)
+	if n != 1 {
+		t.Fatalf("transações OF = %d; want 1", n)
+	}
+}
