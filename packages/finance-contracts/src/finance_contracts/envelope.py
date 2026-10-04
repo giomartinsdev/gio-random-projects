@@ -133,6 +133,7 @@ ACTION_RECONCILE_OPEN_FINANCE_TRANSACTION: Final = (
 # gravar contas importadas.
 ACTION_OF_CONSENT_CREATED: Final = "finance.openfinance.consentCreated"
 ACTION_OF_CONSENT_UPDATED: Final = "finance.openfinance.consentUpdated"
+ACTION_OF_CONSENT_REMOVED: Final = "finance.openfinance.consentRemoved"
 ACTION_OF_ACCOUNT_SYNCED: Final = "finance.openfinance.accountSynced"
 
 # Reads (spec §4.2) -- served by domain-api GETs, projections only.

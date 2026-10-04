@@ -255,3 +255,26 @@ func (r *FinanceRepository) UpsertOFAccount(ctx context.Context, a domainfinance
 	}
 	return nil
 }
+
+// RemoveConsent apaga a conexão e as contas importadas dela, numa transação.
+// As transações importadas NÃO são apagadas (são lançamentos do ledger, com
+// auditoria); o vínculo of_account_id vira órfão, o que é aceitável — o
+// histórico do que entrou pelo banco permanece.
+func (r *FinanceRepository) RemoveConsent(ctx context.Context, polpConsentID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin remove consent: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `DELETE FROM finance_of_accounts WHERE polp_consent_id = $1`, polpConsentID); err != nil {
+		return fmt.Errorf("delete of accounts: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM finance_of_consents WHERE polp_consent_id = $1`, polpConsentID); err != nil {
+		return fmt.Errorf("delete consent: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit remove consent: %w", err)
+	}
+	return nil
+}

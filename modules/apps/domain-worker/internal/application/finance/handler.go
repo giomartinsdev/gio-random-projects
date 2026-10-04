@@ -89,6 +89,16 @@ func (h *CommandHandler) Handle(ctx context.Context, cmd application.Command) ([
 		}
 		return []domainfinance.Event{evt}, nil
 
+	case application.ActionOFConsentRemoved:
+		var in ConsentUpdatedInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode consent removed: %w", err)
+		}
+		if err := h.service.RemoveConsent(ctx, in.PolpConsentID); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
 	case application.ActionOFAccountSynced:
 		var in AccountSyncedInput
 		if err := json.Unmarshal(cmd.Payload, &in); err != nil {

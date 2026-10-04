@@ -79,14 +79,16 @@ def test_refresh_publishes_consent_updated():
     assert payload["status"] == "AUTHORISED"
 
 
-def test_revoke_calls_provider_and_publishes_expired():
+def test_revoke_calls_provider_and_publishes_removed():
     polp = FakePolp()
     cmds = FakeCommands()
     OpenFinanceService(polp, cmds).revoke(polp_consent_id="consent-1")
     assert polp.revoked == ["consent-1"]
     action, payload = cmds.relayed[-1]
-    assert action == "finance.openfinance.consentUpdated"
-    assert payload["status"] == "EXPIRED"
+    # Revogar REMOVE a conexão (o usuário pediu para tirar da lista), não a
+    # deixa como EXPIRED.
+    assert action == "finance.openfinance.consentRemoved"
+    assert payload["polp_consent_id"] == "consent-1"
 
 
 def test_configured_reflects_the_provider():

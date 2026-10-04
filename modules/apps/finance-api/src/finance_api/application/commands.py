@@ -22,6 +22,7 @@ from finance_contracts import (
     ACTION_CATEGORIZE_TRANSACTION,
     ACTION_OF_ACCOUNT_SYNCED,
     ACTION_OF_CONSENT_CREATED,
+    ACTION_OF_CONSENT_REMOVED,
     ACTION_OF_CONSENT_UPDATED,
     ACTION_REGISTER_TRANSACTION,
     ACTION_SET_CATEGORY_BUDGET,
@@ -68,6 +69,7 @@ _WRITE_COMMANDS: Final[Mapping[str, Callable[[Mapping[str, Any]], Any]]] = {
     # Open Finance: payload já montado pela ACL (ver _Prebuilt).
     ACTION_OF_CONSENT_CREATED: _Prebuilt,
     ACTION_OF_CONSENT_UPDATED: _Prebuilt,
+    ACTION_OF_CONSENT_REMOVED: _Prebuilt,
     ACTION_OF_ACCOUNT_SYNCED: _Prebuilt,
 }
 

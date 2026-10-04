@@ -300,3 +300,11 @@ func (s *Service) SyncAccount(ctx context.Context, in AccountSyncedInput) error 
 	}
 	return s.repo.UpsertOFAccount(ctx, a)
 }
+
+// RemoveConsent apaga uma conexão revogada (some da lista).
+func (s *Service) RemoveConsent(ctx context.Context, polpConsentID string) error {
+	if polpConsentID == "" {
+		return domainfinance.ErrConsentIDRequired
+	}
+	return s.repo.RemoveConsent(ctx, polpConsentID)
+}

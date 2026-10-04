@@ -53,6 +53,7 @@ const (
 	// sync de conta. Publicados pela ACL / pelo conector.
 	ActionOFConsentCreated Action = "finance.openfinance.consentCreated"
 	ActionOFConsentUpdated Action = "finance.openfinance.consentUpdated"
+	ActionOFConsentRemoved Action = "finance.openfinance.consentRemoved"
 	ActionOFAccountSynced  Action = "finance.openfinance.accountSynced"
 )
 

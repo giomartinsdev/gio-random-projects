@@ -18,6 +18,7 @@ from finance_api.application.commands import RELAY_MODE_ASYNC
 from finance_api.domain.errors import ValidationError
 from finance_contracts import (
     ACTION_OF_CONSENT_CREATED,
+    ACTION_OF_CONSENT_REMOVED,
     ACTION_OF_CONSENT_UPDATED,
 )
 
@@ -113,10 +114,15 @@ class OpenFinanceService:
         return consent
 
     def revoke(self, *, polp_consent_id: str) -> None:
-        """Revoga no provedor e publica o estado novo (EXPIRED)."""
+        """Revoga no provedor e remove a conexão do ledger.
+
+        Revogar é para a conexão **sumir** da lista, não ficar como EXPIRED — o
+        usuário pediu para remover. O provedor deixa o consentimento inativo; o
+        ``consentRemoved`` apaga a linha (e as contas importadas) no domain.
+        """
         self._polp.revoke_consent(polp_consent_id)
         self._commands.relay(
-            ACTION_OF_CONSENT_UPDATED,
-            {"polp_consent_id": polp_consent_id, "status": "EXPIRED", "execution_status": ""},
+            ACTION_OF_CONSENT_REMOVED,
+            {"polp_consent_id": polp_consent_id},
             mode=RELAY_MODE_ASYNC,
         )
