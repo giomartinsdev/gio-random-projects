@@ -73,7 +73,7 @@ services:
     networks: [apps]
 
   # Garante os buckets públicos dos SPAs (antes era um null_resource do TF,
-  # removido na migração). One-shot idempotente: roda no `up` e cria os 3
+  # removido na migração). One-shot idempotente: roda no `up` e cria os
   # buckets + leitura anônima. Um app estático novo só precisa da linha aqui
   # e da entrada em stacks/ingress/default.conf.
   minio-buckets:
@@ -87,7 +87,7 @@ services:
     command:
       - |
         mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
-        for b in tela-frontend hub-frontend clubs-frontend; do
+        for b in tela-frontend hub-frontend clubs-frontend finance-frontend; do
           mc mb --ignore-existing "local/$$b"
           mc anonymous set download "local/$$b"
         done
