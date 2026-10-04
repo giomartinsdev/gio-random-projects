@@ -20,6 +20,9 @@ from typing import Any, Callable, Final, Mapping
 
 from finance_contracts import (
     ACTION_CATEGORIZE_TRANSACTION,
+    ACTION_OF_ACCOUNT_SYNCED,
+    ACTION_OF_CONSENT_CREATED,
+    ACTION_OF_CONSENT_UPDATED,
     ACTION_REGISTER_TRANSACTION,
     ACTION_SET_CATEGORY_BUDGET,
     ACTION_TRANSFER_BETWEEN_ACCOUNTS,
@@ -36,6 +39,24 @@ from finance_api.domain.commands import (
 )
 from finance_api.domain.errors import ValidationError
 
+
+class _Prebuilt:
+    """Payload montado pela própria ACL (Open Finance).
+
+    As ações ``finance.openfinance.*`` não vêm do worker: quem as monta é o
+    ``OpenFinanceService`` (com os dados que o provedor devolveu). Não há modelo
+    de domínio a validar aqui além do que a ACL já validou ao montar — então a
+    "factory" apenas devolve o payload como está. As ações de escrita do worker
+    continuam com os modelos estritos abaixo.
+    """
+
+    def __init__(self, payload: Mapping[str, Any]) -> None:
+        self._payload = dict(payload)
+
+    def to_payload(self) -> dict[str, Any]:
+        return self._payload
+
+
 # action -> payload model. An action missing from here is a 422, not a
 # passthrough: unknown is unknown, and relaying it would push an
 # unvalidated body across the boundary.
@@ -44,6 +65,10 @@ _WRITE_COMMANDS: Final[Mapping[str, Callable[[Mapping[str, Any]], Any]]] = {
     ACTION_CATEGORIZE_TRANSACTION: CategorizeTransactionCommand.from_payload,
     ACTION_TRANSFER_BETWEEN_ACCOUNTS: TransferBetweenAccountsCommand.from_payload,
     ACTION_SET_CATEGORY_BUDGET: SetCategoryBudgetCommand.from_payload,
+    # Open Finance: payload já montado pela ACL (ver _Prebuilt).
+    ACTION_OF_CONSENT_CREATED: _Prebuilt,
+    ACTION_OF_CONSENT_UPDATED: _Prebuilt,
+    ACTION_OF_ACCOUNT_SYNCED: _Prebuilt,
 }
 
 RELAY_MODE_ASYNC: Final = "async"

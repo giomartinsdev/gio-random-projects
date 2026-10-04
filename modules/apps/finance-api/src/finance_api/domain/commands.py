@@ -68,8 +68,13 @@ def _require_mapping(value: object, field_name: str) -> Mapping[str, Any]:
 def _optional_text(value: object, field_name: str) -> str | None:
     if value is None:
         return None
-    if not isinstance(value, str) or not value.strip():
-        raise ValidationError(f"{field_name} must be a non-empty string when present")
+    if not isinstance(value, str):
+        raise ValidationError(f"{field_name} must be a string when present")
+    text = value.strip()
+    # Um campo opcional vazio ("") significa ausente, não erro: o conector do
+    # Open Finance manda "" para counterparty/categoria quando o provedor não
+    # enriqueceu, e recusar isso derrubaria o import.
+    return text or None
     return value.strip()
 
 
@@ -85,6 +90,9 @@ class RegisterTransactionCommand:
     category: str
     source_type: str = "WHATSAPP_MANUAL"
     external_id: str | None = None
+    of_account_id: str | None = None
+    counterparty: str | None = None
+    external_category: str | None = None
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> "RegisterTransactionCommand":
@@ -110,6 +118,9 @@ class RegisterTransactionCommand:
                 data.get("source_type", "WHATSAPP_MANUAL"), SOURCES, "source_type"
             ),
             external_id=_optional_text(data.get("external_id"), "external_id"),
+            of_account_id=_optional_text(data.get("of_account_id"), "of_account_id"),
+            counterparty=_optional_text(data.get("counterparty"), "counterparty"),
+            external_category=_optional_text(data.get("external_category"), "external_category"),
         )
 
     def to_payload(self) -> dict[str, Any]:
@@ -123,8 +134,16 @@ class RegisterTransactionCommand:
             "occurred_at": self.occurred_at.isoformat(),
             "source_type": self.source_type,
         }
-        if self.external_id is not None:
-            payload["external_id"] = self.external_id
+        # Campos do Open Finance: repassados só quando presentes, para o
+        # domain-worker gravar external_id/counterparty/categoria do provedor.
+        for key, value in (
+            ("external_id", self.external_id),
+            ("of_account_id", self.of_account_id),
+            ("counterparty", self.counterparty),
+            ("external_category", self.external_category),
+        ):
+            if value is not None:
+                payload[key] = value
         return payload
 
 
