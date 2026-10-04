@@ -622,6 +622,58 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
+  # Financeiro (docs/finance-system-spec.md §4.2): projeções de leitura sobre
+  # as tabelas finance_* que o domain-worker escreve. A finance-api relaya
+  # estes GETs; dinheiro sempre volta como string decimal canônica (§3.4 nº1).
+  /finance/daily-summary:
+    get:
+      tags: [finance]
+      summary: Resumo do dia (GET §4.2 GetDailySummaryQuery)
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { type: string } }
+        - { name: date, in: query, required: true, schema: { type: string, example: "2026-10-04" } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /finance/monthly-dashboard:
+    get:
+      tags: [finance]
+      summary: Dashboard do mês (§4.2 GetMonthlyDashboardQuery)
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { type: string } }
+        - { name: month, in: query, required: true, schema: { type: string, example: "2026-10" } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /finance/category-breakdown:
+    get:
+      tags: [finance]
+      summary: Despesas por categoria no mês (§4.2 GetCategoryBreakdownQuery)
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { type: string } }
+        - { name: month, in: query, required: true, schema: { type: string, example: "2026-10" } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /finance/cash-flow-history:
+    get:
+      tags: [finance]
+      summary: Fluxo de caixa por dia do mês (§4.2 GetCashFlowHistoryQuery)
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { type: string } }
+        - { name: month, in: query, required: true, schema: { type: string, example: "2026-10" } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
   /source-status:
     get:
       tags: [health]

@@ -1,0 +1,247 @@
+package postgres
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	domainfinance "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-api/internal/domain/finance"
+)
+
+// FinanceReadRepository implements domain/finance.ReadRepository against
+// Postgres. Read-only, matching what domain-api actually does with the finance
+// tables: all aggregation happens here in SQL rather than being materialized —
+// at this scale a query beats an invalidation policy (same choice as
+// ClubsRepository).
+//
+// Every money column is selected `::text` so it never passes through a float
+// in the driver; the canonical decimal string is carried to the wire verbatim
+// (§3.4 nº1).
+type FinanceReadRepository struct {
+	pool *pgxpool.Pool
+}
+
+func NewFinanceReadRepository(pool *pgxpool.Pool) *FinanceReadRepository {
+	return &FinanceReadRepository{pool: pool}
+}
+
+// periodClause is the month bucket key used by every monthly query: it must
+// match the stored `occurred_at` in UTC (the ledger is always UTC, §3.4 nº4)
+// and the Go-side "YYYY-MM" validation on the handler.
+const periodClause = `to_char(occurred_at AT TIME ZONE 'UTC', 'YYYY-MM') = $2`
+
+func (r *FinanceReadRepository) DailySummary(ctx context.Context, userID, date string) (domainfinance.DailySummary, error) {
+	out := domainfinance.DailySummary{
+		UserID:   userID,
+		Date:     date,
+		Income:   "0.00",
+		Expense:  "0.00",
+		Net:      "0.00",
+		Currency: "BRL",
+	}
+	err := r.pool.QueryRow(ctx, `
+		SELECT
+			COALESCE(SUM(amount) FILTER (WHERE type = 'INCOME'), 0)::numeric(14,2)::text,
+			COALESCE(SUM(amount) FILTER (WHERE type = 'EXPENSE'), 0)::numeric(14,2)::text,
+			COALESCE(SUM(amount), 0)::numeric(14,2)::text,
+			COUNT(*)::int
+		FROM finance_transactions
+		WHERE user_id = $1
+		  AND to_char(occurred_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') = $2`,
+		userID, date).Scan(&out.Income, &out.Expense, &out.Net, &out.TransactionCount)
+	if err != nil {
+		return domainfinance.DailySummary{}, fmt.Errorf("daily summary: %w", err)
+	}
+	return out, nil
+}
+
+// monthTotals is the shared income/expense/net/count aggregation the dashboard
+// and the breakdown both need.
+func (r *FinanceReadRepository) monthTotals(ctx context.Context, userID, month string) (income, expense, net string, count int, currency string, err error) {
+	currency = "BRL"
+	err = r.pool.QueryRow(ctx, `
+		SELECT
+			COALESCE(SUM(amount) FILTER (WHERE type = 'INCOME'), 0)::numeric(14,2)::text,
+			COALESCE(SUM(amount) FILTER (WHERE type = 'EXPENSE'), 0)::numeric(14,2)::text,
+			COALESCE(SUM(amount), 0)::numeric(14,2)::text,
+			COUNT(*)::int
+		FROM finance_transactions
+		WHERE user_id = $1 AND `+periodClause,
+		userID, month).Scan(&income, &expense, &net, &count)
+	if err != nil {
+		return "", "", "", 0, "", fmt.Errorf("month totals: %w", err)
+	}
+	return income, expense, net, count, currency, nil
+}
+
+func (r *FinanceReadRepository) MonthlyDashboard(ctx context.Context, userID, month string) (domainfinance.MonthlyDashboard, error) {
+	income, expense, net, count, currency, err := r.monthTotals(ctx, userID, month)
+	if err != nil {
+		return domainfinance.MonthlyDashboard{}, err
+	}
+	top, err := r.CategoryBreakdown(ctx, userID, month)
+	if err != nil {
+		return domainfinance.MonthlyDashboard{}, err
+	}
+	categories := top.Categories
+	if len(categories) > 5 {
+		categories = categories[:5]
+	}
+	budgets, err := r.budgetsForMonth(ctx, userID, month)
+	if err != nil {
+		return domainfinance.MonthlyDashboard{}, err
+	}
+	return domainfinance.MonthlyDashboard{
+		UserID:           userID,
+		Month:            month,
+		Income:           income,
+		Expense:          expense,
+		Net:              net,
+		Currency:         currency,
+		TransactionCount: count,
+		TopCategories:    categories,
+		Budgets:          budgets,
+	}, nil
+}
+
+func (r *FinanceReadRepository) CategoryBreakdown(ctx context.Context, userID, month string) (domainfinance.CategoryBreakdown, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT category, COALESCE(SUM(amount), 0)::numeric(14,2)::text, COUNT(*)::int
+		FROM finance_transactions
+		WHERE user_id = $1 AND type = 'EXPENSE' AND `+periodClause+`
+		GROUP BY category
+		ORDER BY SUM(amount) ASC, category ASC`,
+		userID, month)
+	if err != nil {
+		return domainfinance.CategoryBreakdown{}, fmt.Errorf("category breakdown: %w", err)
+	}
+	defer rows.Close()
+
+	categories := make([]domainfinance.CategoryAmount, 0)
+	for rows.Next() {
+		var c domainfinance.CategoryAmount
+		if err := rows.Scan(&c.Category, &c.Amount, &c.TransactionCount); err != nil {
+			return domainfinance.CategoryBreakdown{}, fmt.Errorf("scan category: %w", err)
+		}
+		c.Currency = "BRL"
+		categories = append(categories, c)
+	}
+	if err := rows.Err(); err != nil {
+		return domainfinance.CategoryBreakdown{}, fmt.Errorf("iterate categories: %w", err)
+	}
+	return domainfinance.CategoryBreakdown{
+		UserID:     userID,
+		Month:      month,
+		Currency:   "BRL",
+		Categories: categories,
+	}, nil
+}
+
+// budgetsForMonth returns each budget of the month with what was spent and the
+// thresholds that already fired. Spent is summed from EXPENSE rows of the same
+// category and period — the same computation SetCategoryBudget uses to decide
+// whether to fire, so the dashboard and the alert cannot disagree.
+func (r *FinanceReadRepository) budgetsForMonth(ctx context.Context, userID, month string) ([]domainfinance.BudgetStatus, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT b.category, b.limit_amount::text, b.currency,
+		       COALESCE(SUM(t.amount), 0)::numeric(14,2)::text
+		FROM finance_budgets b
+		LEFT JOIN finance_transactions t
+		  ON t.user_id = b.user_id
+		 AND t.category = b.category
+		 AND t.type = 'EXPENSE'
+		 AND to_char(t.occurred_at AT TIME ZONE 'UTC', 'YYYY-MM') = b.period
+		WHERE b.user_id = $1 AND b.period = $2
+		GROUP BY b.id, b.category, b.limit_amount, b.currency
+		ORDER BY b.category ASC`,
+		userID, month)
+	if err != nil {
+		return nil, fmt.Errorf("budgets for month: %w", err)
+	}
+	defer rows.Close()
+
+	budgets := make([]domainfinance.BudgetStatus, 0)
+	for rows.Next() {
+		var b domainfinance.BudgetStatus
+		if err := rows.Scan(&b.Category, &b.LimitAmount, &b.Currency, &b.SpentAmount); err != nil {
+			return nil, fmt.Errorf("scan budget: %w", err)
+		}
+		b.Thresholds = []int{}
+		budgets = append(budgets, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate budgets: %w", err)
+	}
+	// Second pass, per budget: which thresholds already fired. Kept as a
+	// separate small query per budget (there are a handful) rather than a
+	// join that would need DISTINCT to avoid duplicating the budget row.
+	for i := range budgets {
+		fired, err := r.firedThresholds(ctx, userID, budgets[i].Category, month)
+		if err != nil {
+			return nil, err
+		}
+		budgets[i].Thresholds = fired
+	}
+	return budgets, nil
+}
+
+func (r *FinanceReadRepository) firedThresholds(ctx context.Context, userID, category, period string) ([]int, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT th.threshold
+		FROM finance_budget_thresholds th
+		JOIN finance_budgets b ON b.id = th.budget_id
+		WHERE b.user_id = $1 AND b.category = $2 AND th.period = $3
+		ORDER BY th.threshold ASC`,
+		userID, category, period)
+	if err != nil {
+		return nil, fmt.Errorf("fired thresholds: %w", err)
+	}
+	defer rows.Close()
+
+	out := []int{}
+	for rows.Next() {
+		var t int
+		if err := rows.Scan(&t); err != nil {
+			return nil, fmt.Errorf("scan threshold: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (r *FinanceReadRepository) CashFlowHistory(ctx context.Context, userID, month string) (domainfinance.CashFlowHistory, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+			to_char(occurred_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+			COALESCE(SUM(amount) FILTER (WHERE type = 'INCOME'), 0)::numeric(14,2)::text,
+			COALESCE(SUM(amount) FILTER (WHERE type = 'EXPENSE'), 0)::numeric(14,2)::text,
+			COALESCE(SUM(amount), 0)::numeric(14,2)::text
+		FROM finance_transactions
+		WHERE user_id = $1 AND `+periodClause+`
+		GROUP BY day
+		ORDER BY day ASC`,
+		userID, month)
+	if err != nil {
+		return domainfinance.CashFlowHistory{}, fmt.Errorf("cash flow history: %w", err)
+	}
+	defer rows.Close()
+
+	days := make([]domainfinance.CashFlowDay, 0)
+	for rows.Next() {
+		var d domainfinance.CashFlowDay
+		if err := rows.Scan(&d.Date, &d.Income, &d.Expense, &d.Net); err != nil {
+			return domainfinance.CashFlowHistory{}, fmt.Errorf("scan cash flow day: %w", err)
+		}
+		days = append(days, d)
+	}
+	if err := rows.Err(); err != nil {
+		return domainfinance.CashFlowHistory{}, fmt.Errorf("iterate cash flow: %w", err)
+	}
+	return domainfinance.CashFlowHistory{
+		UserID:   userID,
+		Month:    month,
+		Currency: "BRL",
+		Days:     days,
+	}, nil
+}

@@ -12,7 +12,7 @@ import (
 // the apiKey security scheme (see openapi.yaml and Secure in
 // middleware.go). /sync is the synchronous-write exception — see
 // SyncHandlers.Sync's doc comment before reaching for it.
-func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWriteHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
+func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWriteHandlers, fin *FinanceHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Get("/healthz", h.Healthz)
@@ -118,6 +118,14 @@ func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWri
 		r.Post("/fetch-run/result", clw.SaveFetchRun)
 		r.Post("/search-run", clw.RequestSearch)
 		r.Post("/search-run/result", clw.SaveSearchRun)
+
+		// Financeiro (spec docs/finance-system-spec.md §4.2): leituras puras
+		// servidas das projeções. A finance-api não tem banco e relaya estes
+		// GETs; o domain-worker é o único escritor das tabelas finance_*.
+		r.Get("/finance/daily-summary", fin.GetDailySummary)
+		r.Get("/finance/monthly-dashboard", fin.GetMonthlyDashboard)
+		r.Get("/finance/category-breakdown", fin.GetCategoryBreakdown)
+		r.Get("/finance/cash-flow-history", fin.GetCashFlowHistory)
 	})
 
 	return r

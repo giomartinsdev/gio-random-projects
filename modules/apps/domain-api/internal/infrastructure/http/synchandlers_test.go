@@ -51,6 +51,7 @@ func newSyncServer(t *testing.T, publisher *spyPublisher, audits *stubAudits) ht
 		// only need them registered on the router.
 		NewClubsHandlers(nil, log),
 		NewClubsWriteHandlers(publisher, log),
+		NewFinanceHandlers(nil, log),
 		APIKeys{"k1": "test"},
 		NewIPRateLimiter(1000, 1000),
 		log,

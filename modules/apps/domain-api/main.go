@@ -89,9 +89,15 @@ func main() {
 	clubsHandlers := httpapi.NewClubsHandlers(clubsRepo, log)
 	clubsWriteHandlers := httpapi.NewClubsWriteHandlers(commands, log)
 
+	// Financeiro (§4.2): read-only projections over the finance tables the
+	// domain-worker owns. The finance-api relays these; this side is the only
+	// place that touches the database for the finance context (§1.1).
+	financeReads := postgres.NewFinanceReadRepository(pool)
+	financeHandlers := httpapi.NewFinanceHandlers(financeReads, log)
+
 	handlers := httpapi.NewHandlers(log)
 
-	router := httpapi.NewRouter(handlers, syncHandlers, clubsHandlers, clubsWriteHandlers, apiKeys, rateLimiter, log)
+	router := httpapi.NewRouter(handlers, syncHandlers, clubsHandlers, clubsWriteHandlers, financeHandlers, apiKeys, rateLimiter, log)
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: otelhttp.NewHandler(router, "domain-api",
 		// chi's route patterns aren't visible to otelhttp, so name the
