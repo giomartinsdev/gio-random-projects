@@ -30,6 +30,7 @@ import (
 	appclubsnapshot "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/clubsnapshot"
 	appfinance "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/finance"
 	appmatch "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/match"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/outbox"
 	apppreference "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/preference"
 	domainannouncement "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/announcement"
 	domainclub "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/club"
@@ -106,6 +107,13 @@ func main() {
 
 	auditRepo := postgres.NewAuditRepository(pool)
 
+	// Outbox durável (§4.3): cada evento vira uma linha pendente ANTES da
+	// tentativa de publish, então um broker fora do ar não perde um evento já
+	// aplicado. O relay em background reescreve os pendentes quando ele volta.
+	outboxRepo := postgres.NewOutboxRepository(pool)
+	relay := outbox.NewRelay(outboxRepo, eventBus, log)
+	go relay.Run(ctx, 5*time.Second)
+
 	// FC Clubs Hub (specs/003): public Pro Clubs data + the per-person
 	// preferences. Same wiring shape as every other aggregate above.
 	clubRepo := postgres.NewClubRepository(pool)
@@ -159,7 +167,7 @@ func main() {
 				log.Error("fetch command error", "error", err)
 				continue
 			}
-			process(ctx, log, hs, auditRepo, eventBus, cmd)
+			process(ctx, log, hs, auditRepo, relay, cmd)
 		}
 	}()
 
@@ -202,7 +210,7 @@ type handlers struct {
 	career *postgres.PlayerCareerRepository
 }
 
-func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Repository, eventBus *inamqp.EventBus, cmd application.Command) {
+func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Repository, relay *outbox.Relay, cmd application.Command) {
 	// One span per command: the handler, the audit write and the event
 	// publish below are the whole story of that write, and the
 	// trace_id stamped into the log lines ties every one of them to it.
@@ -363,20 +371,23 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 		span.SetStatus(codes.Error, err.Error())
 		entry.Error = err.Error()
 		log.ErrorContext(ctx, "command failed", "error", err, "command_id", cmd.ID, "action", cmd.Action)
-	} else if evt != nil {
-		if pubErr := eventBus.Publish(ctx, evt); pubErr != nil {
-			span.RecordError(pubErr)
-			log.ErrorContext(ctx, "publish event failed", "error", pubErr, "command_id", cmd.ID)
+	} else {
+		// Publica via outbox durável (§4.3/§12.5): grava pendente antes de
+		// tentar. Um broker fora do ar deixa a linha pendente para o relay —
+		// a escrita já aplicada nunca se perde. Relay.Publish devolve erro só
+		// quando o ENQUEUE falha (marshal/DB), não quando o publish atrasa.
+		events := make([]outbox.Event, 0, 1+len(financeEvents))
+		if evt != nil {
+			events = append(events, evt)
 		}
-	} else if len(financeEvents) > 0 {
-		// Publica cada régua/evento do financeiro; uma falha de publish não
-		// impede as demais (a outbox do domain-worker é o que garante a
-		// entrega at-least-once, e o consumidor é idempotente por event_id).
 		for _, fe := range financeEvents {
-			if pubErr := eventBus.Publish(ctx, fe); pubErr != nil {
-				span.RecordError(pubErr)
-				log.ErrorContext(ctx, "publish finance event failed", "error", pubErr, "command_id", cmd.ID)
-			}
+			events = append(events, fe)
+		}
+		if pubErr := relay.Publish(ctx, cmd.ID, events); pubErr != nil {
+			span.RecordError(pubErr)
+			entry.Error = pubErr.Error()
+			entry.Success = false
+			log.ErrorContext(ctx, "outbox enqueue failed", "error", pubErr, "command_id", cmd.ID)
 		}
 	}
 	if auditErr := audits.Record(ctx, entry); auditErr != nil {

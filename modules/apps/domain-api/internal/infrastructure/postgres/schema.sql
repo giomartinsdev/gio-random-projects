@@ -478,3 +478,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_budget_thresholds
 -- ===========================================================================
 -- Fim do Financeiro
 -- ===========================================================================
+
+-- ===========================================================================
+-- Outbox (docs/finance-system-spec.md §4.3/§12.5)
+--
+-- Um evento de domínio é gravado AQUI como pendente antes da tentativa de
+-- publish. Se o broker estiver fora do ar na hora, a linha continua pendente e
+-- o relay a publica quando ele voltar — sem perder uma escrita já aplicada. A
+-- entrega é at-least-once; o consumidor é idempotente por event_id (o `id`).
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS outbox (
+    id           UUID PRIMARY KEY,
+    event_name   TEXT NOT NULL,
+    payload      JSONB NOT NULL,          -- o envelope {event_name, occurred_at, payload}
+    occurred_at  TIMESTAMPTZ NOT NULL,
+    published_at TIMESTAMPTZ,             -- NULL = ainda pendente
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT NOT NULL DEFAULT '',
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- O relay lê só o que está pendente, mais antigo primeiro.
+CREATE INDEX IF NOT EXISTS idx_outbox_pending
+    ON outbox (created_at ASC) WHERE published_at IS NULL;
+
+-- ===========================================================================
+-- Fim do Outbox
+-- ===========================================================================

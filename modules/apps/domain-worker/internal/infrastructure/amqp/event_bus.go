@@ -83,12 +83,27 @@ func (b *EventBus) Publish(ctx context.Context, evt namedEvent) error {
 	if err != nil {
 		return fmt.Errorf("marshal event payload: %w", err)
 	}
-	env := envelope{EventName: evt.EventName(), OccurredAt: time.Now().UTC(), Payload: payload}
+	data, err := b.EnvelopeBytes(evt.EventName(), time.Now().UTC(), payload)
+	if err != nil {
+		return err
+	}
+	return b.PublishRaw(ctx, data)
+}
+
+// EnvelopeBytes wraps a payload in the wire envelope the bus (and the durable
+// outbox) store: {event_name, occurred_at, payload}. Kept separate so the
+// outbox can persist exactly the bytes the relay will later publish.
+func (b *EventBus) EnvelopeBytes(eventName string, occurredAt time.Time, payload json.RawMessage) ([]byte, error) {
+	env := envelope{EventName: eventName, OccurredAt: occurredAt, Payload: payload}
 	data, err := json.Marshal(env)
 	if err != nil {
-		return fmt.Errorf("marshal event envelope: %w", err)
+		return nil, fmt.Errorf("marshal event envelope: %w", err)
 	}
+	return data, nil
+}
 
+// PublishRaw publishes already-enveloped bytes (the outbox relay's path).
+func (b *EventBus) PublishRaw(ctx context.Context, data []byte) error {
 	b.mu.Lock()
 	ch := b.ch
 	b.mu.Unlock()
