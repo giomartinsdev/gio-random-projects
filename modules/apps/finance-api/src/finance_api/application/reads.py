@@ -29,7 +29,9 @@ from finance_api.domain.reads import (
     DailySummary,
     MonthlyDashboard,
     OFAccountList,
+    NotificationList,
     OFConsentList,
+    Transaction,
     TransactionList,
 )
 from finance_contracts import (
@@ -38,7 +40,9 @@ from finance_contracts import (
     ACTION_GET_DAILY_SUMMARY,
     ACTION_GET_MONTHLY_DASHBOARD,
     ACTION_GET_OF_ACCOUNTS,
+    ACTION_GET_NOTIFICATIONS,
     ACTION_GET_OF_CONSENTS,
+    ACTION_GET_TRANSACTION,
     ACTION_GET_TRANSACTIONS,
 )
 
@@ -115,6 +119,19 @@ _READS: Final[Mapping[str, ReadRoute]] = {
         TransactionList.from_wire,
         needs_month=False,
         optional_month=True,
+    ),
+    # Detalhe: user_id + transaction_id (sem mês).
+    ACTION_GET_TRANSACTION: ReadRoute(
+        ACTION_GET_TRANSACTION,
+        "/finance/transaction",
+        Transaction.from_wire,
+        needs_month=False,
+    ),
+    ACTION_GET_NOTIFICATIONS: ReadRoute(
+        ACTION_GET_NOTIFICATIONS,
+        "/finance/notifications",
+        NotificationList.from_wire,
+        needs_month=False,
     ),
     ACTION_GET_OF_CONSENTS: ReadRoute(
         ACTION_GET_OF_CONSENTS,

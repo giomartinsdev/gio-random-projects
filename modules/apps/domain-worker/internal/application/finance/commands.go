@@ -79,3 +79,19 @@ type AccountSyncedInput struct {
 	BalanceAmount   string `json:"balance_amount,omitempty"`
 	BalanceUpdatedAt string `json:"balance_updated_at,omitempty"`
 }
+
+// NotificationInput é a regra de aviso (finance.notification.set).
+type NotificationInput struct {
+	UserID    string `json:"user_id"`
+	ID        string `json:"notification_id,omitempty"`
+	Kind      string `json:"kind"`
+	Category  string `json:"category,omitempty"`
+	Threshold string `json:"threshold,omitempty"`
+	Channel   string `json:"channel,omitempty"`
+	Enabled   *bool  `json:"enabled,omitempty"`
+}
+
+type NotificationDeleteInput struct {
+	UserID         string `json:"user_id"`
+	NotificationID string `json:"notification_id"`
+}

@@ -9,6 +9,7 @@
 package httpapi
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -178,6 +179,43 @@ func (h *FinanceHandlers) GetTransactions(w http.ResponseWriter, r *http.Request
 		}
 	}
 	list, err := h.reads.Transactions(r.Context(), userID, month, limit)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// GetTransaction is one transaction by id (o detalhe profundo).
+func (h *FinanceHandlers) GetTransaction(w http.ResponseWriter, r *http.Request) {
+	userID, ok := financeUserID(w, r)
+	if !ok {
+		return
+	}
+	id := r.URL.Query().Get("transaction_id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "transaction_id is required"})
+		return
+	}
+	tx, err := h.reads.Transaction(r.Context(), userID, id)
+	if err != nil {
+		if errors.Is(err, domainfinance.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, errorBody{Error: "transaction not found"})
+			return
+		}
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tx)
+}
+
+// GetNotifications lists the user's alert rules.
+func (h *FinanceHandlers) GetNotifications(w http.ResponseWriter, r *http.Request) {
+	userID, ok := financeUserID(w, r)
+	if !ok {
+		return
+	}
+	list, err := h.reads.Notifications(r.Context(), userID)
 	if err != nil {
 		h.internalError(r, w, err)
 		return

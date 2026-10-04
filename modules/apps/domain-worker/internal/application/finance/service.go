@@ -312,3 +312,35 @@ func (s *Service) RemoveConsent(ctx context.Context, polpConsentID string) error
 	}
 	return s.repo.RemoveConsent(ctx, polpConsentID)
 }
+
+// ------------------------------------------------------------- Notificações
+
+func (s *Service) SetNotification(ctx context.Context, in NotificationInput) error {
+	if in.UserID == "" {
+		return domainfinance.ErrUserIDRequired
+	}
+	id := in.ID
+	if id == "" {
+		gen, err := uuid.NewV7()
+		if err != nil {
+			return err
+		}
+		id = gen.String()
+	}
+	enabled := true
+	if in.Enabled != nil {
+		enabled = *in.Enabled
+	}
+	n, err := domainfinance.NewNotification(id, in.UserID, in.Kind, in.Category, in.Threshold, in.Channel, enabled)
+	if err != nil {
+		return err
+	}
+	return s.repo.UpsertNotification(ctx, n)
+}
+
+func (s *Service) DeleteNotification(ctx context.Context, in NotificationDeleteInput) error {
+	if in.NotificationID == "" {
+		return domainfinance.ErrNotificationIDRequired
+	}
+	return s.repo.DeleteNotification(ctx, in.UserID, in.NotificationID)
+}

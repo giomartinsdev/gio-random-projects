@@ -134,6 +134,8 @@ func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWri
 		r.Get("/finance/cash-flow-history", fin.GetCashFlowHistory)
 		// Open Finance: conexões e contas importadas (projeções read-only).
 		r.Get("/finance/transactions", fin.GetTransactions)
+		r.Get("/finance/transaction", fin.GetTransaction)
+		r.Get("/finance/notifications", fin.GetNotifications)
 		r.Get("/finance/openfinance/consents", fin.GetOFConsents)
 		r.Get("/finance/openfinance/accounts", fin.GetOFAccounts)
 	})

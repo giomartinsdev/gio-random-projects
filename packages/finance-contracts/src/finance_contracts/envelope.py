@@ -136,11 +136,17 @@ ACTION_OF_CONSENT_UPDATED: Final = "finance.openfinance.consentUpdated"
 ACTION_OF_CONSENT_REMOVED: Final = "finance.openfinance.consentRemoved"
 ACTION_OF_ACCOUNT_SYNCED: Final = "finance.openfinance.accountSynced"
 
+# Notificações que a pessoa cadastra (regras).
+ACTION_NOTIF_SET: Final = "finance.notification.set"
+ACTION_NOTIF_DELETE: Final = "finance.notification.delete"
+
 # Reads (spec §4.2) -- served by domain-api GETs, projections only.
 ACTION_GET_DAILY_SUMMARY: Final = "finance.query.dailySummary"
 ACTION_GET_MONTHLY_DASHBOARD: Final = "finance.query.monthlyDashboard"
 ACTION_GET_CATEGORY_BREAKDOWN: Final = "finance.query.categoryBreakdown"
 ACTION_GET_CASH_FLOW_HISTORY: Final = "finance.query.cashFlowHistory"
 ACTION_GET_TRANSACTIONS: Final = "finance.query.transactions"
+ACTION_GET_TRANSACTION: Final = "finance.query.transaction"
+ACTION_GET_NOTIFICATIONS: Final = "finance.query.notifications"
 ACTION_GET_OF_CONSENTS: Final = "finance.query.ofConsents"
 ACTION_GET_OF_ACCOUNTS: Final = "finance.query.ofAccounts"

@@ -349,3 +349,47 @@ func (r *FinanceReadRepository) Transactions(ctx context.Context, userID, month 
 	}
 	return out, rows.Err()
 }
+
+// Transaction is one transaction by id, do usuário — a base do detalhe profundo.
+func (r *FinanceReadRepository) Transaction(ctx context.Context, userID, id string) (domainfinance.Transaction, error) {
+	var (
+		t  domainfinance.Transaction
+		at time.Time
+	)
+	err := r.pool.QueryRow(ctx, `
+		SELECT id::text, occurred_at, type, amount::text, currency, category, account_id,
+		       source, counterparty, description, external_category
+		FROM finance_transactions
+		WHERE user_id = $1 AND id = $2`, userID, id).Scan(
+		&t.ID, &at, &t.Type, &t.Amount, &t.Currency, &t.Category, &t.AccountID,
+		&t.Source, &t.Counterparty, &t.Description, &t.ExternalCategory)
+	if err != nil {
+		return domainfinance.Transaction{}, fmt.Errorf("transaction: %w", err)
+	}
+	t.OccurredAt = at.UTC().Format(time.RFC3339)
+	return t, nil
+}
+
+// -------------------------------------------------------------- Notificações
+
+func (r *FinanceReadRepository) Notifications(ctx context.Context, userID string) (domainfinance.NotificationList, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, kind, category, COALESCE(threshold, 0)::numeric(14,2)::text, channel, enabled
+		FROM finance_notifications
+		WHERE user_id = $1
+		ORDER BY created_at DESC`, userID)
+	if err != nil {
+		return domainfinance.NotificationList{}, fmt.Errorf("notifications: %w", err)
+	}
+	defer rows.Close()
+
+	out := domainfinance.NotificationList{UserID: userID, Notifications: []domainfinance.Notification{}}
+	for rows.Next() {
+		var n domainfinance.Notification
+		if err := rows.Scan(&n.ID, &n.Kind, &n.Category, &n.Threshold, &n.Channel, &n.Enabled); err != nil {
+			return domainfinance.NotificationList{}, fmt.Errorf("scan notification: %w", err)
+		}
+		out.Notifications = append(out.Notifications, n)
+	}
+	return out, rows.Err()
+}

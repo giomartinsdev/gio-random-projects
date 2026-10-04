@@ -94,7 +94,11 @@ const QUERY_DASHBOARD = "finance.query.monthlyDashboard";
 const QUERY_BREAKDOWN = "finance.query.categoryBreakdown";
 const QUERY_CASHFLOW = "finance.query.cashFlowHistory";
 const QUERY_TRANSACTIONS = "finance.query.transactions";
+const QUERY_TRANSACTION = "finance.query.transaction";
 const QUERY_OF_CONSENTS = "finance.query.ofConsents";
+const QUERY_NOTIFICATIONS = "finance.query.notifications";
+const ACTION_NOTIF_SET = "finance.notification.set";
+const ACTION_NOTIF_DELETE = "finance.notification.delete";
 const QUERY_OF_ACCOUNTS = "finance.query.ofAccounts";
 
 export interface Transaction {
@@ -109,6 +113,15 @@ export interface Transaction {
   counterparty: string;
   description: string;
   external_category: string;
+}
+
+export interface Notification {
+  id: string;
+  kind: string;
+  category: string;
+  threshold: string;
+  channel: string;
+  enabled: boolean;
 }
 
 export interface OFInstitution {
@@ -212,6 +225,21 @@ export const api = {
 
   transactions(month: string): Promise<{ transactions: Transaction[] }> {
     return post("/queries", { action: QUERY_TRANSACTIONS, payload: month ? { month } : {} });
+  },
+
+  transaction(id: string): Promise<Transaction> {
+    return post("/queries", { action: QUERY_TRANSACTION, payload: { transaction_id: id } });
+  },
+
+  // ---- Notificações ----
+  notifications(): Promise<{ notifications: Notification[] }> {
+    return post("/queries", { action: QUERY_NOTIFICATIONS, payload: {} });
+  },
+  setNotification(input: { id?: string; kind: string; category?: string; threshold?: string; enabled?: boolean }): Promise<{ status: string }> {
+    return post("/commands", { action: ACTION_NOTIF_SET, payload: input });
+  },
+  deleteNotification(id: string): Promise<{ status: string }> {
+    return post("/commands", { action: ACTION_NOTIF_DELETE, payload: { notification_id: id } });
   },
 
   // ---- Open Finance (Polp) ----

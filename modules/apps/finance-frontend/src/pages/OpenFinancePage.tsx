@@ -45,8 +45,9 @@ export function OpenFinancePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Open Finance</h1>
-          <p className="text-sm text-muted-foreground">Conecte seus bancos e acompanhe o saldo.</p>
+          <p className="eyebrow mb-1">conexões</p>
+          <h1 className="text-2xl">Open Finance</h1>
+          <p className="mt-1 text-[13px] text-muted-foreground">Conecte seus bancos e acompanhe o saldo.</p>
         </div>
         <Button variant="outline" size="icon" onClick={load} disabled={loading} title="Atualizar">
           <RefreshCw className={loading ? "animate-spin" : ""} />

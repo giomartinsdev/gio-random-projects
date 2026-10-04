@@ -21,6 +21,8 @@ from typing import Any, Callable, Final, Mapping
 from finance_contracts import (
     ACTION_CATEGORIZE_TRANSACTION,
     ACTION_OF_ACCOUNT_SYNCED,
+    ACTION_NOTIF_DELETE,
+    ACTION_NOTIF_SET,
     ACTION_OF_CONSENT_CREATED,
     ACTION_OF_CONSENT_REMOVED,
     ACTION_OF_CONSENT_UPDATED,
@@ -70,6 +72,9 @@ _WRITE_COMMANDS: Final[Mapping[str, Callable[[Mapping[str, Any]], Any]]] = {
     ACTION_OF_CONSENT_CREATED: _Prebuilt,
     ACTION_OF_CONSENT_UPDATED: _Prebuilt,
     ACTION_OF_CONSENT_REMOVED: _Prebuilt,
+    # Notificações: payload montado pela ACL.
+    ACTION_NOTIF_SET: _Prebuilt,
+    ACTION_NOTIF_DELETE: _Prebuilt,
     ACTION_OF_ACCOUNT_SYNCED: _Prebuilt,
 }
 

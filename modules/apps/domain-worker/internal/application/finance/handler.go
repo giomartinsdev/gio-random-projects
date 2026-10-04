@@ -99,6 +99,26 @@ func (h *CommandHandler) Handle(ctx context.Context, cmd application.Command) ([
 		}
 		return nil, nil
 
+	case application.ActionNotifSet:
+		var in NotificationInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode notif set: %w", err)
+		}
+		if err := h.service.SetNotification(ctx, in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
+	case application.ActionNotifDelete:
+		var in NotificationDeleteInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode notif delete: %w", err)
+		}
+		if err := h.service.DeleteNotification(ctx, in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
 	case application.ActionOFAccountSynced:
 		var in AccountSyncedInput
 		if err := json.Unmarshal(cmd.Payload, &in); err != nil {

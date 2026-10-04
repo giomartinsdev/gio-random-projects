@@ -55,6 +55,9 @@ const (
 	ActionOFConsentUpdated Action = "finance.openfinance.consentUpdated"
 	ActionOFConsentRemoved Action = "finance.openfinance.consentRemoved"
 	ActionOFAccountSynced  Action = "finance.openfinance.accountSynced"
+	// Notificações (regras que a pessoa cadastra).
+	ActionNotifSet    Action = "finance.notification.set"
+	ActionNotifDelete Action = "finance.notification.delete"
 )
 
 type Command struct {

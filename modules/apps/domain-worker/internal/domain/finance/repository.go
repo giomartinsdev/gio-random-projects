@@ -30,6 +30,10 @@ type Repository interface {
 	UpdateConsentStatus(ctx context.Context, polpConsentID string, status ConsentStatus, executionStatus string) error
 	// UpsertOFAccount grava/atualiza uma conta importada por polp_account_id.
 	UpsertOFAccount(ctx context.Context, a OFAccount) error
+	// UpsertNotification grava/atualiza uma regra de aviso.
+	UpsertNotification(ctx context.Context, n Notification) error
+	// DeleteNotification remove uma regra do usuário.
+	DeleteNotification(ctx context.Context, userID, id string) error
 	// RemoveConsent apaga uma conexão (e as contas importadas dela) — é o que
 	// revogar faz de fato: a linha some da lista, não fica como EXPIRED.
 	RemoveConsent(ctx context.Context, polpConsentID string) error

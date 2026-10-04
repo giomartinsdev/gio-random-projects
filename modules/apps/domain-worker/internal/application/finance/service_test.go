@@ -78,6 +78,8 @@ func (f *fakeRepo) UpdateConsentStatus(_ context.Context, _ string, _ domainfina
 }
 func (f *fakeRepo) UpsertOFAccount(_ context.Context, _ domainfinance.OFAccount) error { return nil }
 func (f *fakeRepo) RemoveConsent(_ context.Context, _ string) error                  { return nil }
+func (f *fakeRepo) UpsertNotification(_ context.Context, _ domainfinance.Notification) error { return nil }
+func (f *fakeRepo) DeleteNotification(_ context.Context, _, _ string) error          { return nil }
 
 // O import do Open Finance tem id DETERMINÍSTICO por (source, external_id):
 // reimportar o mesmo extrato (com id de comando novo) é no-op, não duplicata.

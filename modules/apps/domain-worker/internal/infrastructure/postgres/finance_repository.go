@@ -295,3 +295,28 @@ func (r *FinanceRepository) RemoveConsent(ctx context.Context, polpConsentID str
 	}
 	return nil
 }
+
+// ------------------------------------------------------------- Notificações
+
+func (r *FinanceRepository) UpsertNotification(ctx context.Context, n domainfinance.Notification) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO finance_notifications (id, user_id, kind, category, threshold, channel, enabled, created_at, updated_at)
+		VALUES ($1,$2,$3,$4, NULLIF($5,'')::numeric, $6, $7, now(), now())
+		ON CONFLICT (id) DO UPDATE SET
+			kind = EXCLUDED.kind, category = EXCLUDED.category,
+			threshold = EXCLUDED.threshold, channel = EXCLUDED.channel,
+			enabled = EXCLUDED.enabled, updated_at = now()`,
+		n.ID, n.UserID, n.Kind, n.Category, n.Threshold, n.Channel, n.Enabled)
+	if err != nil {
+		return fmt.Errorf("upsert notification: %w", err)
+	}
+	return nil
+}
+
+func (r *FinanceRepository) DeleteNotification(ctx context.Context, userID, id string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM finance_notifications WHERE user_id = $1 AND id = $2`, userID, id)
+	if err != nil {
+		return fmt.Errorf("delete notification: %w", err)
+	}
+	return nil
+}

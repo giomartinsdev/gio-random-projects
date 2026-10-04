@@ -2,64 +2,64 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Duas cores: um acento (verde-dinheiro) e neutros quentes. O resto do
-   sistema de tokens (card, muted, border…) é derivado desses neutros, então
-   trocar o acento troca a identidade inteira sem tocar em componente nenhum.
-   Modo claro e escuro são o MESMO conjunto de variáveis em `:root` e `.dark`,
-   só com valores diferentes — nada de `dark:` espalhado pelo JSX. */
+/* Linguagem visual: editorial, densa, "data-heavy" (referência: seuimposto.com).
+   Fundo preto QUENTE (não cinza-azulado), superfícies marrom-escuras, texto
+   quase branco, e UM acento azul. Os títulos usam serifa (Faustina) e o corpo
+   sans (Geist) — o contraste serifa/sans é o que dá o ar editorial. Modo claro
+   e escuro são o mesmo conjunto de variáveis, só com valores diferentes. */
 @layer base {
   :root {
-    --background: 40 33% 99%;
-    --foreground: 24 10% 10%;
+    --background: 30 8% 97%;
+    --foreground: 30 6% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 24 10% 10%;
+    --card-foreground: 30 6% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 24 10% 10%;
-    /* Acento: verde. */
-    --primary: 160 84% 30%;
+    --popover-foreground: 30 6% 12%;
+    /* Acento: azul. */
+    --primary: 228 73% 57%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 40 20% 95%;
-    --secondary-foreground: 24 10% 18%;
-    --muted: 40 20% 95%;
-    --muted-foreground: 24 6% 42%;
-    --accent: 160 40% 94%;
-    --accent-foreground: 160 84% 22%;
-    --destructive: 0 72% 45%;
+    --secondary: 30 8% 93%;
+    --secondary-foreground: 30 6% 20%;
+    --muted: 30 8% 93%;
+    --muted-foreground: 30 5% 40%;
+    --accent: 228 60% 95%;
+    --accent-foreground: 228 73% 40%;
+    --destructive: 358 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --success: 160 84% 30%;
+    --success: 140 55% 34%;
     --success-foreground: 0 0% 100%;
-    --warning: 35 92% 42%;
+    --warning: 38 92% 42%;
     --warning-foreground: 0 0% 100%;
-    --border: 30 12% 89%;
-    --input: 30 12% 87%;
-    --ring: 160 84% 30%;
-    --radius: 0.75rem;
+    --border: 30 8% 88%;
+    --input: 30 8% 86%;
+    --ring: 228 73% 57%;
+    --radius: 0.5rem;
   }
 
   .dark {
-    --background: 24 12% 7%;
-    --foreground: 40 20% 96%;
-    --card: 24 10% 10%;
-    --card-foreground: 40 20% 96%;
-    --popover: 24 10% 10%;
-    --popover-foreground: 40 20% 96%;
-    --primary: 158 64% 45%;
-    --primary-foreground: 24 12% 7%;
-    --secondary: 24 8% 16%;
-    --secondary-foreground: 40 20% 96%;
-    --muted: 24 8% 16%;
-    --muted-foreground: 40 8% 62%;
-    --accent: 160 30% 18%;
-    --accent-foreground: 158 64% 70%;
-    --destructive: 0 62% 50%;
+    --background: 40 6% 5%;       /* #0f0e0d — preto quente */
+    --foreground: 40 20% 98%;     /* #fafaf9 */
+    --card: 40 11% 9%;            /* #1b1a17 */
+    --card-foreground: 40 8% 83%; /* #d6d4cf */
+    --popover: 40 11% 9%;
+    --popover-foreground: 40 8% 83%;
+    --primary: 228 73% 57%;       /* #4162e2 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 10% 13%;
+    --secondary-foreground: 40 12% 72%;
+    --muted: 40 10% 13%;
+    --muted-foreground: 40 6% 60%; /* #a6a39c */
+    --accent: 228 45% 18%;
+    --accent-foreground: 228 80% 78%;
+    --destructive: 358 82% 55%;   /* #ee2d35 */
     --destructive-foreground: 0 0% 100%;
-    --success: 158 64% 45%;
-    --success-foreground: 24 12% 7%;
+    --success: 140 55% 48%;
+    --success-foreground: 40 6% 5%;
     --warning: 40 90% 55%;
-    --warning-foreground: 24 12% 7%;
-    --border: 24 8% 18%;
-    --input: 24 8% 20%;
-    --ring: 158 64% 45%;
+    --warning-foreground: 40 6% 5%;
+    --border: 40 8% 16%;
+    --input: 40 8% 18%;
+    --ring: 228 73% 57%;
   }
 
   * {
@@ -75,12 +75,37 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
     overscroll-behavior: none;
+  }
+
+  /* Títulos em serifa: o contraste editorial com o corpo sans. */
+  h1, h2, h3, .display {
+    font-family: "Faustina", Georgia, "Times New Roman", serif;
+    font-weight: 400;
+    letter-spacing: -0.01em;
   }
 
   /* Números tabulares: valores monetários não "dançam" ao atualizar. */
   .tnum {
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Rótulo miúdo, caixa alta — o "eyebrow" das seções. */
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+}
+
+@layer utilities {
+  /* Barra de rolagem discreta, no tom da superfície. */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
   }
 }

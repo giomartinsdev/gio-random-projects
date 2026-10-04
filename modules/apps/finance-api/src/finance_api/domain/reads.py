@@ -459,3 +459,46 @@ class TransactionList:
             "month": self.month,
             "transactions": [t.to_wire() for t in self.transactions],
         }
+
+
+@dataclass(frozen=True, slots=True)
+class Notification:
+    id: str
+    kind: str
+    category: str
+    threshold: str
+    channel: str
+    enabled: bool
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "Notification":
+        return cls(
+            id=str(body.get("id", "")),
+            kind=str(body.get("kind", "")),
+            category=str(body.get("category", "")),
+            threshold=_amount_text(body.get("threshold", "0.00"), field_name="threshold"),
+            channel=str(body.get("channel", "WHATSAPP")),
+            enabled=bool(body.get("enabled", True)),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"id": self.id, "kind": self.kind, "category": self.category,
+                "threshold": self.threshold, "channel": self.channel, "enabled": self.enabled}
+
+
+@dataclass(frozen=True, slots=True)
+class NotificationList:
+    user_id: str
+    notifications: tuple[Notification, ...] = ()
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "NotificationList":
+        data = _require_object(body, field_name="notifications")
+        raw = data.get("notifications", [])
+        if not isinstance(raw, (list, tuple)):
+            raise ValidationError("notifications must be a list")
+        return cls(user_id=str(data.get("user_id", "")),
+                   notifications=tuple(Notification.from_wire(n) for n in raw))
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"user_id": self.user_id, "notifications": [n.to_wire() for n in self.notifications]}

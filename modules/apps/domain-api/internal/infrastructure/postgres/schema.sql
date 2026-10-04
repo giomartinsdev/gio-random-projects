@@ -533,6 +533,22 @@ CREATE TABLE IF NOT EXISTS finance_of_accounts (
 
 CREATE INDEX IF NOT EXISTS idx_finance_of_accounts_user ON finance_of_accounts (user_id);
 
+-- Notificações: regras que a pessoa cadastra (ex.: "avise quando Alimentação
+-- passar de R$ 300", "avise ao receber"). O worker conversacional decide o
+-- disparo; aqui mora a regra.
+CREATE TABLE IF NOT EXISTS finance_notifications (
+    id          UUID PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    kind        TEXT NOT NULL,              -- category_threshold | any_transaction | large_transaction
+    category    TEXT NOT NULL DEFAULT '',
+    threshold   NUMERIC(14,2),
+    channel     TEXT NOT NULL DEFAULT 'WHATSAPP',
+    enabled     BOOLEAN NOT NULL DEFAULT true,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_notifications_user ON finance_notifications (user_id);
+
 -- ===========================================================================
 -- Fim do Open Finance
 -- ===========================================================================

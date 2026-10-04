@@ -12,7 +12,13 @@
 // R$ 44,999999 in a dashboard.
 package finance
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrNotFound é devolvido quando a transação não existe (ou não é do usuário).
+var ErrNotFound = errors.New("transaction not found")
 
 // DailySummary is the §4.2 GetDailySummaryQuery result: one calendar day
 // (UTC) of income/expense/net for a user.
@@ -114,6 +120,22 @@ type TransactionList struct {
 	Transactions []Transaction `json:"transactions"`
 }
 
+// Notification is one alert rule the person registered.
+type Notification struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Category  string `json:"category"`
+	Threshold string `json:"threshold"`
+	Channel   string `json:"channel"`
+	Enabled   bool   `json:"enabled"`
+}
+
+// NotificationList is the alerts projection.
+type NotificationList struct {
+	UserID        string         `json:"user_id"`
+	Notifications []Notification `json:"notifications"`
+}
+
 // OFConsent is one Open Finance connection as the SPA shows it.
 type OFConsent struct {
 	ID                string   `json:"id"`
@@ -159,6 +181,8 @@ type ReadRepository interface {
 	CategoryBreakdown(ctx context.Context, userID, month string) (CategoryBreakdown, error)
 	CashFlowHistory(ctx context.Context, userID, month string) (CashFlowHistory, error)
 	Transactions(ctx context.Context, userID, month string, limit int) (TransactionList, error)
+	Transaction(ctx context.Context, userID, id string) (Transaction, error)
+	Notifications(ctx context.Context, userID string) (NotificationList, error)
 	OFConsents(ctx context.Context, userID string) (OFConsentList, error)
 	OFAccounts(ctx context.Context, userID string) (OFAccountList, error)
 }
