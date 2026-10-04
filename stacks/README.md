@@ -95,9 +95,11 @@ Evolution API).
 
 `finance.yml`: `FINANCE_API_KEYS`, `FINANCE_WORKER_API_KEY`,
 `FINANCE_DOMAIN_API_KEY` (a MESMA em `DOMAIN_API_KEYS` do `domain`),
-`RABBITMQ_PASSWORD`, `EVOLUTION_API_KEY`. Opcionais: `FINANCE_GOOGLE_CLIENT_ID`
-(tem default = o client público do clubs) e `FINANCE_SESSION_SECRET` (derivado
-do `FINANCE_DOMAIN_API_KEY` se ausente).
+`RABBITMQ_PASSWORD`, `EVOLUTION_API_KEY`. Open Finance (opcional):
+`POLP_OF_CLIENT_ID`, `POLP_OF_CLIENT_SECRET`, `FINANCE_OF_API_KEY` (uma key
+própria do conector em `FINANCE_API_KEYS`, rótulo `openfinance`). Opcionais
+também: `FINANCE_GOOGLE_CLIENT_ID` (default = o client público do clubs) e
+`FINANCE_SESSION_SECRET` (derivado do `FINANCE_DOMAIN_API_KEY` se ausente).
 
 > **SSO do financeiro reusa o client público do clubs.** O *client ID* do Google
 > é público (vai no bundle), então o mesmo valor commitado em `stacks/clubs.yml`

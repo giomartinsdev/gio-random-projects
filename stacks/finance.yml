@@ -67,6 +67,12 @@ services:
       # login funciona sem cadastrar mais nada; defina FINANCE_SESSION_SECRET
       # para desacoplar os dois. Ver load_settings em config.py.
       FINANCE_SESSION_SECRET: ${FINANCE_SESSION_SECRET:-}
+      # Open Finance (Polp/Celcoin). Vazios = integração desligada (as rotas de
+      # Open Finance respondem 503; o resto do app segue). Cadastrados no cofre
+      # como POLP_OF_CLIENT_ID/POLP_OF_CLIENT_SECRET.
+      POLP_OF_CLIENT_ID: ${POLP_OF_CLIENT_ID:-}
+      POLP_OF_CLIENT_SECRET: ${POLP_OF_CLIENT_SECRET:-}
+      POLP_OF_SANDBOX: ${POLP_OF_SANDBOX:-}
       RATE_LIMIT_RPS: "5"
       RATE_LIMIT_BURST: "20"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
@@ -97,6 +103,28 @@ services:
       EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-web-businesses}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: finance-customersupport-worker
+    networks: [apps]
+
+  # Conector de Open Finance: poller sem host que lê contas + transações do
+  # provedor (Polp/Celcoin) e as publica como comandos na finance-api. Sem
+  # banco, sem broker (§1.1). Credenciais OPCIONAIS: sem elas o processo sai 0
+  # com um aviso claro (o `restart: unless-stopped` não reinicia um exit 0),
+  # então o conector fica fora sem derrubar o resto do stack.
+  finance-openfinance-worker:
+    image: registry.giomartins.dev:5000/finance-openfinance-worker:latest
+    container_name: finance-openfinance-worker
+    restart: unless-stopped
+    environment:
+      FINANCE_API_BASE_URL: http://finance-api:8000
+      # Key própria do conector em FINANCE_API_KEYS (rótulo `openfinance`).
+      FINANCE_API_KEY: ${FINANCE_OF_API_KEY:-}
+      POLP_OF_CLIENT_ID: ${POLP_OF_CLIENT_ID:-}
+      POLP_OF_CLIENT_SECRET: ${POLP_OF_CLIENT_SECRET:-}
+      POLP_OF_SANDBOX: ${POLP_OF_SANDBOX:-}
+      OF_POLL_SECONDS: ${OF_POLL_SECONDS:-600}
+      OF_BACKFILL_DAYS: ${OF_BACKFILL_DAYS:-30}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: finance-openfinance-worker
     networks: [apps]
 
 networks:

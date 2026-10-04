@@ -61,11 +61,23 @@ export class ApiError extends Error {
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
+  return request<T>("POST", path, body);
+}
+
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(apiUrl(path), { credentials: "include" });
+  const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+  if (!res.ok) throw new ApiError(res.status, payload?.error ?? `falha (${res.status})`);
+  return payload as T;
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(apiUrl(path), {
-    method: "POST",
+    method,
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    ...(body !== undefined
+      ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      : {}),
   });
   const payload = (await res.json().catch(() => null)) as { error?: string } | null;
   if (!res.ok) {
@@ -81,6 +93,46 @@ const ACTION_TRANSFER = "finance.transfer.betweenAccounts";
 const QUERY_DASHBOARD = "finance.query.monthlyDashboard";
 const QUERY_BREAKDOWN = "finance.query.categoryBreakdown";
 const QUERY_CASHFLOW = "finance.query.cashFlowHistory";
+const QUERY_OF_CONSENTS = "finance.query.ofConsents";
+const QUERY_OF_ACCOUNTS = "finance.query.ofAccounts";
+
+export interface OFInstitution {
+  id: string;
+  name: string;
+  logo_url?: string | null;
+  status: string;
+  type: string;
+}
+
+export interface OFConsent {
+  id: string;
+  consent_id: string;
+  institution_id: string;
+  institution_name: string;
+  status: string;
+  execution_status: string;
+  products: string[];
+  url_to_authenticate?: string;
+  updated_at: string;
+}
+
+export interface OFAccount {
+  id: string;
+  account_id: string;
+  consent_id: string;
+  name: string;
+  account_type: string;
+  currency: string;
+  balance_amount: string;
+  balance_updated_at?: string;
+}
+
+export interface OFConnectResult {
+  consent_id: string;
+  status: string;
+  url_to_authenticate: string;
+  institution_name: string;
+}
 
 export interface NewTransaction {
   transaction_type: TransactionType;
@@ -141,6 +193,27 @@ export const api = {
 
   cashFlow(month: string): Promise<CashFlowHistory> {
     return post("/queries", { action: QUERY_CASHFLOW, payload: { month } });
+  },
+
+  // ---- Open Finance (Polp) ----
+  ofInstitutions(query = ""): Promise<{ institutions: OFInstitution[] }> {
+    const qs = query ? `?q=${encodeURIComponent(query)}` : "";
+    return get<{ institutions: OFInstitution[] }>(`/openfinance/institutions${qs}`);
+  },
+  ofConsents(): Promise<{ consents: OFConsent[] }> {
+    return post("/queries", { action: QUERY_OF_CONSENTS, payload: {} });
+  },
+  ofAccounts(): Promise<{ accounts: OFAccount[] }> {
+    return post("/queries", { action: QUERY_OF_ACCOUNTS, payload: {} });
+  },
+  ofConnect(input: { institution_id: string; cpf: string; cnpj?: string }): Promise<OFConnectResult> {
+    return post("/openfinance/consents", input);
+  },
+  ofRefresh(consentId: string): Promise<{ status: string }> {
+    return post(`/openfinance/consents/${consentId}/refresh`, {});
+  },
+  ofRevoke(consentId: string): Promise<{ status: string }> {
+    return request("DELETE", `/openfinance/consents/${consentId}`);
   },
 };
 

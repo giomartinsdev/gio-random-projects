@@ -6,7 +6,7 @@ import { fetchSession, logout, type SessionInfo } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LoginPage } from "@/pages/LoginPage";
-import { DashboardPage } from "@/pages/DashboardPage";
+import { HomePage } from "@/pages/HomePage";
 import { PhoneLinkPage } from "@/pages/PhoneLinkPage";
 
 type Gate =
@@ -58,7 +58,7 @@ export default function App() {
 
   return (
     <Shell session={gate.session} onLogout={refresh}>
-      <DashboardPage />
+      <HomePage />
     </Shell>
   );
 }
