@@ -57,7 +57,7 @@ class OpenFinanceService:
         needle = query.strip().lower()
         return [i for i in items if needle in str(i.get("name", "")).lower()]
 
-    def connect(self, *, user_id: str, institution_id: str, cpf: str, cnpj: str = "") -> ConsentCreated:
+    def connect(self, *, user_id: str, institution_id: str, cpf: str, cnpj: str = "", institution_name: str = "") -> ConsentCreated:
         """Cria o consentimento no provedor e publica ``consentCreated``."""
         if not user_id:
             raise ValidationError("vincule seu número do WhatsApp antes de conectar")
@@ -71,14 +71,16 @@ class OpenFinanceService:
         polp_id = str(consent.get("id", ""))
         if not polp_id:
             raise ValidationError("o provedor não devolveu o id do consentimento")
-        # O nome da instituição não vem no create; o SPA já o tem da lista.
+        # O create/show do Polp NÃO devolve o nome da instituição — o SPA já o
+        # tem da lista e o passa. Fallback: o que o provedor mandar (vazio).
+        name = institution_name or str(consent.get("institution_name", ""))
         self._commands.relay(
             ACTION_OF_CONSENT_CREATED,
             {
                 "user_id": user_id,
                 "polp_consent_id": polp_id,
                 "institution_id": institution_id,
-                "institution_name": str(consent.get("institution_name", "")),
+                "institution_name": name,
                 "status": str(consent.get("status", "AWAITING_AUTHORIZATION")),
                 "execution_status": str(consent.get("execution_status", "") or ""),
                 "products": consent.get("products") or OF_PRODUCTS,
@@ -91,7 +93,7 @@ class OpenFinanceService:
             consent_id=polp_id,
             status=str(consent.get("status", "AWAITING_AUTHORIZATION")),
             url_to_authenticate=str(consent.get("url_to_authenticate", "") or ""),
-            institution_name=str(consent.get("institution_name", "")),
+            institution_name=name,
         )
 
     def refresh(self, *, polp_consent_id: str) -> Mapping[str, Any]:

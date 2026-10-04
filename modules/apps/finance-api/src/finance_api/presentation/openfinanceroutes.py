@@ -70,6 +70,7 @@ def connect(
             institution_id=str(body.get("institution_id", "")),
             cpf=str(body.get("cpf", "")),
             cnpj=str(body.get("cnpj", "") or ""),
+            institution_name=str(body.get("institution_name", "") or ""),
         )
     except ValidationError as exc:
         return JSONResponse(status_code=422, content={"error": exc.message})

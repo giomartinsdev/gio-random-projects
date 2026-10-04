@@ -47,13 +47,14 @@ class FakeCommands:
 def test_connect_publishes_consent_created_with_the_contract_action():
     polp = FakePolp()
     cmds = FakeCommands()
-    result = OpenFinanceService(polp, cmds).connect(user_id="5521", institution_id="i1", cpf="12345678900")
+    result = OpenFinanceService(polp, cmds).connect(user_id="5521", institution_id="i1", cpf="12345678900", institution_name="Itaú")
     assert result.consent_id == "consent-1"
     action, payload = cmds.relayed[-1]
     assert action == "finance.openfinance.consentCreated"
     assert payload["polp_consent_id"] == "consent-1"
     assert payload["user_id"] == "5521"
     assert payload["products"] == ["ACCOUNT"]
+    assert payload["institution_name"] == "Itaú"
 
 
 def test_connect_requires_cpf_and_institution():

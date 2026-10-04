@@ -206,7 +206,7 @@ export const api = {
   ofAccounts(): Promise<{ accounts: OFAccount[] }> {
     return post("/queries", { action: QUERY_OF_ACCOUNTS, payload: {} });
   },
-  ofConnect(input: { institution_id: string; cpf: string; cnpj?: string }): Promise<OFConnectResult> {
+  ofConnect(input: { institution_id: string; cpf: string; cnpj?: string; institution_name?: string }): Promise<OFConnectResult> {
     return post("/openfinance/consents", input);
   },
   ofRefresh(consentId: string): Promise<{ status: string }> {

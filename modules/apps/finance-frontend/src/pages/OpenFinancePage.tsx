@@ -214,7 +214,12 @@ function ConnectCard({ onConnected }: { onConnected: () => void }) {
     setError("");
     setNote("");
     try {
-      const res = await api.ofConnect({ institution_id: institution.id, cpf, cnpj: needsBusiness ? cnpj : "" });
+      const res = await api.ofConnect({
+        institution_id: institution.id,
+        cpf,
+        cnpj: needsBusiness ? cnpj : "",
+        institution_name: institution.name,
+      });
       if (res.url_to_authenticate) {
         window.open(res.url_to_authenticate, "_blank", "noopener");
         setNote("Abrimos a autorização no banco. Depois de autorizar, clique em “Já autorizei” abaixo.");
