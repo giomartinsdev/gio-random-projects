@@ -12,9 +12,9 @@ Cada arquivo é um stack **independente** (sem agregado na raiz). Não há
 | Arquivo | O que migra | Serviços |
 | --- | --- | --- |
 | `bootstrap.yml` | infra compartilhada | `network-init` (cria a rede `apps`; suba ESTE primeiro numa VPS nova) |
-| `core.yml` | base da VPS | registry, htpasswd-init, registry-docker-config, dockhand (boot-only; **protegida**) |
+| `core.yml` | base da VPS | registry, htpasswd-init, registry-docker-config, dockhand, **ingress** (boot-only; **protegida**) |
 | `persistence.yml` | `modules/storage/*` | postgres, rabbitmq, minio, minio-buckets (+ volumes) |
-| `compute.yml` | `modules/compute/services/*` (menos observability e core) | vaultwarden, vaultwarden-api, adminer, 9router, evolution-api, evolution-redis, evolution-db-init, ingress |
+| `compute.yml` | `modules/compute/services/*` (menos observability e core) | vaultwarden, vaultwarden-api, adminer, 9router, evolution-api, evolution-redis, evolution-db-init |
 | `observability.yml` | `modules/compute/services/observability` | loki, prometheus, tempo, alloy, grafana (+ configs em `observability/`) |
 | `domain.yml` | `modules/compute/apps/domain_api` | domain-api, domain-worker |
 | `tela.yml` | `modules/compute/apps/tela_api` | tela-mediamtx, tela-coturn, tela-api (os 3 em host network) |
@@ -26,7 +26,9 @@ stacks; se ele estiver dentro de uma stack que ele mesmo recria, o deploy
 mata o processo que o está servindo (já aconteceu — derrubou o 9router e
 o resto do `compute`). Por isso registry + Dockhand vivem aqui, separados,
 e ficam **protegidos** no Dockhand (`force_redeploy=0`, `repull_images=0`,
-sem webhook). Numa VPS nova: `bootstrap → persistence → core →
+sem webhook). O **ingress** também mora aqui: é a frente de TODOS os
+hostnames do host — subir/derrubar plataforma não deve derrubar a porta 80.
+Numa VPS nova: `bootstrap → persistence → core →
 compute → observability → apps → maus`, e não se
 atualiza o `core` pelo Dockhand.
 
@@ -35,8 +37,8 @@ builds estáticos espelhados em bucket do MinIO — não são container, não
 entram aqui.
 
 O `ingress/default.conf` é o nginx renderizado (o TF gerava do
-`local.services`; agora é arquivo versionado). Se um app migrar e mudar a
-porta loopback, edite aqui.
+`local.services`; agora é arquivo versionado), montado pelo `core.yml`. Se
+um app migrar e mudar a porta loopback, edite aqui e recrie o `ingress`.
 
 > **Detalhe do git-backed:** com todos os arquivos na mesma pasta `stacks/`,
 > se você apontar o Dockhand pro mesmo *context directory* pra todos, um
