@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Activity, CheckCircle2, CircleAlert, KeyRound, Loader2, Send, Wallet } from "lucide-react";
+import { Activity, BarChart3, CheckCircle2, CircleAlert, KeyRound, Loader2, RefreshCw, Send, Wallet } from "lucide-react";
 import { api, ApiError, readApiKey, rememberApiKey, type RelayOutcome } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +36,24 @@ const PRESETS = [
 
 type Health = "checking" | "up" | "down";
 
+// The contract action names (packages/finance-contracts/src/finance_contracts/
+// envelope.py). Imported conceptually — kept here as one place to change.
+const QUERY_MONTHLY_DASHBOARD = "finance.query.monthlyDashboard";
+
+// The dashboard projection shape domain-api returns (§4.2). Money fields are
+// decimal strings, never numbers (§3.4 nº1).
+type Dashboard = {
+  user_id: string;
+  month: string;
+  income: string;
+  expense: string;
+  net: string;
+  currency: string;
+  transaction_count: number;
+  top_categories: { category: string; amount: string; currency: string; transaction_count: number }[];
+  budgets: { category: string; limit_amount: string; spent_amount: string; currency: string; thresholds_reached: number[] }[];
+};
+
 export default function Home() {
   const [health, setHealth] = useState<Health>("checking");
   const [apiKey, setApiKey] = useState(readApiKey());
@@ -44,6 +62,13 @@ export default function Home() {
   const [sending, setSending] = useState(false);
   const [outcome, setOutcome] = useState<RelayOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Read side (§4.2): the operator names the owner and the month; the read
+  // door is `api.query`, which relays to domain-api's GET.
+  const [userId, setUserId] = useState("");
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [reading, setReading] = useState(false);
+  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
 
   const probe = useCallback(() => {
     setHealth("checking");
@@ -61,6 +86,25 @@ export default function Home() {
     setOutcome(null);
     setError(null);
   };
+
+  const loadDashboard = useCallback(async () => {
+    if (!apiKey.trim() || !userId.trim()) return;
+    setReadError(null);
+    setReading(true);
+    try {
+      rememberApiKey(apiKey.trim());
+      const body = (await api.query(QUERY_MONTHLY_DASHBOARD, {
+        user_id: userId.trim(),
+        month: month.trim(),
+      })) as Dashboard;
+      setDashboard(body);
+    } catch (err) {
+      setDashboard(null);
+      setReadError(err instanceof Error ? err.message : "falha ao ler o dashboard");
+    } finally {
+      setReading(false);
+    }
+  }, [apiKey, userId, month]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -211,10 +255,119 @@ export default function Home() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BarChart3 className="size-4 text-primary" />
+            Dashboard do mês
+          </CardTitle>
+          <CardDescription>
+            Leitura via <code className="font-mono">POST /queries</code> →{" "}
+            <code className="font-mono">finance.query.monthlyDashboard</code> (§4.2). Dinheiro sempre em string decimal.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="user_id">user_id</Label>
+              <Input
+                id="user_id"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+                placeholder="E.164, ex. 5521981962914"
+                autoComplete="off"
+                spellCheck={false}
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="month">month</Label>
+              <Input
+                id="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                placeholder="YYYY-MM"
+                autoComplete="off"
+                spellCheck={false}
+                className="font-mono text-xs"
+              />
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={loadDashboard}
+            disabled={reading || !apiKey.trim() || !userId.trim()}
+          >
+            {reading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+            {reading ? "Lendo…" : "Carregar"}
+          </Button>
+
+          {readError && (
+            <Alert variant="destructive">
+              <CircleAlert />
+              <AlertDescription>{readError}</AlertDescription>
+            </Alert>
+          )}
+
+          {dashboard && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                <Stat label="Receitas" value={dashboard.income} />
+                <Stat label="Despesas" value={dashboard.expense} />
+                <Stat label="Saldo" value={dashboard.net} />
+              </div>
+              {dashboard.top_categories.length > 0 && (
+                <div>
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">Top categorias (despesa)</p>
+                  <ul className="space-y-1">
+                    {dashboard.top_categories.map((c) => (
+                      <li key={c.category} className="flex justify-between text-sm">
+                        <span>{c.category}</span>
+                        <span className="font-mono">{c.amount}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {dashboard.budgets.length > 0 && (
+                <div>
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">Orçamentos</p>
+                  <ul className="space-y-1">
+                    {dashboard.budgets.map((b) => (
+                      <li key={b.category} className="flex justify-between text-sm">
+                        <span>
+                          {b.category}{" "}
+                          <span className="text-xs text-muted-foreground">
+                            (réguas: {b.thresholds_reached.join(", ") || "—"})
+                          </span>
+                        </span>
+                        <span className="font-mono">
+                          {b.spent_amount} / {b.limit_amount}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <p className="text-center text-xs text-muted-foreground">
-        A leitura (dashboards, extrato) chega na próxima fatia — {""}
-        a superfície de escrita já é real.
+        A escrita e a leitura (§4.2) já são reais — o dashboard acima fala com o domain-api.
       </p>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border/60 px-3 py-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="font-mono text-sm">{value}</p>
     </div>
   );
 }

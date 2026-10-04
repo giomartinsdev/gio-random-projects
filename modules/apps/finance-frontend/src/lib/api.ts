@@ -96,4 +96,20 @@ export const api = {
     }
     return { http: res.status, ...body };
   },
+
+  // The read door (spec §4.2). Reads are unambiguous: a 200 carries the
+  // projection, anything else is an error (401 bad key, 422 bad query, 502
+  // upstream, 504 client timeout). Unlike a write there is no "queued".
+  async query(action: string, payload: Record<string, unknown>): Promise<unknown> {
+    const res = await fetch(`${API_URL}/queries`, {
+      method: "POST",
+      headers: await jsonHeaders(),
+      body: JSON.stringify({ action, payload }),
+    });
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    if (!res.ok) {
+      throw new ApiError(res.status, body?.error ?? `falha na leitura (${res.status})`);
+    }
+    return body;
+  },
 };
