@@ -142,6 +142,25 @@ locals {
       port     = 8799
     },
     {
+      # finance-api -- o backend do bounded context financeiro
+      # (stacks/finance.yml). A porta e a loopback publicada pelo stack
+      # (127.0.0.1:8018) e tem de bater com o server{} de
+      # stacks/ingress/default.conf. Fica ATRAS do Access (nao esta em
+      # excluded_hostnames): o consumidor e maquina-a-maquina, entao o
+      # caminho normal e service token; ver §10.5 da spec.
+      hostname = "finance.giomartins.dev"
+      port     = 8018
+    },
+    {
+      # finance-webhook -- webhook do WhatsApp Cloud API entregue ao
+      # finance-whatsapp-worker (loopback 127.0.0.1:8019, o mesmo do
+      # ingress). PUBLICO de proposito (esta em excluded_hostnames): a Meta
+      # nao consegue passar por um login Google. A defesa e a assinatura
+      # X-Hub-Signature-256 + verificacao de origem, nao o Access.
+      hostname = "finance-webhook.giomartins.dev"
+      port     = 8019
+    },
+    {
       # Alloy's OTLP/HTTP endpoint for the SPAs' browsers (see that
       # module's README for the whole data flow). Deliberately excluded
       # from Access via excluded_hostnames — a public visitor's browser

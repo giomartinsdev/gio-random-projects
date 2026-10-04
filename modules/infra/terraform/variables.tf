@@ -48,6 +48,7 @@ variable "excluded_hostnames" {
     "ai.giomartins.dev",        # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
     "otel.giomartins.dev",      # public visitors' browsers send SPA telemetry here — a Google SSO redirect would break every one of them; alloy's OTLP receiver CORS allowlist (the SPA origins only) is the access control (stacks/observability.yml)
     "maus.giomartins.dev",      # only the DNS record lives in Terraform (the OpenMausBot stack is a Dockhand git stack, like the other apps); no Access app — OpenMausBot's own pairing login is the gate, and its SSE chat must not sit behind a browser SSO redirect
+    "finance-webhook.giomartins.dev", # webhook do WhatsApp (Meta) entregue ao finance-whatsapp-worker -- a Meta nao passa por um redirect de SSO Google; a defesa e a assinatura X-Hub-Signature-256 + verificacao de origem (ver stacks/finance.yml e §10.5)
   ]
 }
 
