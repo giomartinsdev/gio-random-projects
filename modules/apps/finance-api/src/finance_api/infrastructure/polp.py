@@ -122,7 +122,16 @@ class PolpClient:
             parsed = resp.json()
         except ValueError:
             return {}
-        return parsed if isinstance(parsed, Mapping) else {}
+        if not isinstance(parsed, Mapping):
+            return {}
+        # O Polp embrulha objetos em ``{"data": {...}}`` (o show do consentimento
+        # e o create devolvem o objeto lá dentro; as listagens também usam
+        # ``data`` como array). Desembrulha o objeto para o chamador não precisar
+        # saber do envelope — foi exatamente o que fez o create não achar o `id`.
+        inner = parsed.get("data")
+        if isinstance(inner, Mapping):
+            return inner
+        return parsed
 
 
 def _provider_error(resp: httpx.Response) -> str:

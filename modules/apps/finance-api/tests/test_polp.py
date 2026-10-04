@@ -50,13 +50,35 @@ def test_consent_uses_the_right_path_and_body():
     def handler(req: httpx.Request) -> httpx.Response:
         seen["path"] = req.url.path
         seen["body"] = req.read().decode()
-        return httpx.Response(201, json={"id": "consent-1", "status": "AWAITING_AUTHORIZATION", "url_to_authenticate": "https://bank/x"})
+        # O Polp embrulha o objeto em {"data": {...}} — o cliente tem de
+        # desembrulhar, senão o `id` se perde (foi o bug do "não devolveu o id").
+        return httpx.Response(
+            201,
+            json={"data": {"id": "consent-1", "status": "AWAITING_AUTHORIZATION", "url_to_authenticate": "https://bank/x"}},
+        )
 
     out = client_for(handler).create_consent(institution_id="i1", cpf="12345678900", user_id="5521")
     assert out["id"] == "consent-1"
+    assert out["url_to_authenticate"] == "https://bank/x"
     assert seen["path"].endswith("/consents")
     assert '"institution_id":"i1"' in seen["body"].replace(" ", "")
     assert '"avoidDuplicates":true' in seen["body"].replace(" ", "")
+
+
+def test_consent_show_unwraps_the_data_envelope():
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"id": "c9", "status": "AUTHORISED", "execution_status": "SUCCESS"}})
+
+    out = client_for(handler).consent("c9")
+    assert out["id"] == "c9"
+    assert out["status"] == "AUTHORISED"
+
+
+def test_list_endpoints_still_extract_the_data_array():
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"id": "a"}, {"id": "b"}], "meta": {"per_page": 15}})
+
+    assert [i["id"] for i in client_for(handler).consents()] == ["a", "b"]
 
 
 def test_sandbox_prefixes_the_base_url():
