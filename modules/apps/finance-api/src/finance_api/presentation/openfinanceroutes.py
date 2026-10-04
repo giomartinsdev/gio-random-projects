@@ -1,0 +1,112 @@
+"""Rotas do Open Finance na ACL (§7 da spec).
+
+- ``GET /openfinance/institutions`` — proxy à lista pública do provedor (cache curto).
+- ``POST /openfinance/consents`` — conecta uma conta: cria no provedor, publica
+  o comando e devolve a URL do banco.
+- ``POST /openfinance/consents/{id}/refresh`` — relê o status (o SPA chama ao voltar do banco).
+- ``DELETE /openfinance/consents/{id}`` — revoga.
+- ``GET /openfinance/consents`` / ``accounts`` — leem o estado aplicado (§4.2).
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
+
+from finance_api.application.openfinance import OpenFinanceService
+from finance_api.domain.errors import DomainApiError, ValidationError
+from finance_api.presentation.dependencies import Container, get_container, require_session
+from finance_api.presentation.session import Session
+
+
+openfinance_router = APIRouter(prefix="/openfinance")
+
+
+def get_of(container: Container = Depends(get_container)) -> OpenFinanceService:
+    if container.openfinance is None:  # pragma: no cover - wiring bug
+        raise RuntimeError("Open Finance não configurado")
+    return container.openfinance
+
+
+def user_id_of(session: Session = Depends(require_session)) -> str:
+    if not session.phone:
+        raise ValidationError("vincule seu número do WhatsApp antes de conectar")
+    return session.phone
+
+
+@openfinance_router.get("/institutions")
+def list_institutions(
+    q: str = "",
+    _: str = Depends(user_id_of),
+    of: OpenFinanceService = Depends(get_of),
+) -> JSONResponse:
+    try:
+        items = of.institutions(query=q)
+    except DomainApiError as exc:
+        return JSONResponse(status_code=exc.status, content={"error": exc.message})
+    # Só os campos que o SPA usa — não repassar o corpo inteiro do provedor.
+    lean = [
+        {
+            "id": str(i.get("id", "")),
+            "name": str(i.get("name", "")),
+            "logo_url": i.get("logo_url"),
+            "status": str(i.get("status", "")),
+            "type": str(i.get("type", "")),
+        }
+        for i in items
+    ]
+    return JSONResponse(status_code=200, content={"institutions": lean})
+
+
+@openfinance_router.post("/consents")
+def connect(
+    body: dict,
+    user_id: str = Depends(user_id_of),
+    of: OpenFinanceService = Depends(get_of),
+) -> JSONResponse:
+    try:
+        result = of.connect(
+            user_id=user_id,
+            institution_id=str(body.get("institution_id", "")),
+            cpf=str(body.get("cpf", "")),
+            cnpj=str(body.get("cnpj", "") or ""),
+        )
+    except ValidationError as exc:
+        return JSONResponse(status_code=422, content={"error": exc.message})
+    except DomainApiError as exc:
+        return JSONResponse(status_code=exc.status, content={"error": exc.message})
+    return JSONResponse(
+        status_code=201,
+        content={
+            "consent_id": result.consent_id,
+            "status": result.status,
+            "url_to_authenticate": result.url_to_authenticate,
+            "institution_name": result.institution_name,
+        },
+    )
+
+
+@openfinance_router.post("/consents/{consent_id}/refresh")
+def refresh(
+    consent_id: str,
+    _: str = Depends(user_id_of),
+    of: OpenFinanceService = Depends(get_of),
+) -> JSONResponse:
+    try:
+        of.refresh(polp_consent_id=consent_id)
+    except DomainApiError as exc:
+        return JSONResponse(status_code=exc.status, content={"error": exc.message})
+    return JSONResponse(status_code=202, content={"status": "accepted"})
+
+
+@openfinance_router.delete("/consents/{consent_id}")
+def revoke(
+    consent_id: str,
+    _: str = Depends(user_id_of),
+    of: OpenFinanceService = Depends(get_of),
+) -> JSONResponse:
+    try:
+        of.revoke(polp_consent_id=consent_id)
+    except DomainApiError as exc:
+        return JSONResponse(status_code=exc.status, content={"error": exc.message})
+    return JSONResponse(status_code=202, content={"status": "accepted"})

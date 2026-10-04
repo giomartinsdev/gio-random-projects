@@ -17,8 +17,10 @@ import uvicorn
 from finance_api.infrastructure.config import ConfigError, Settings, load_settings
 from finance_api.infrastructure.domain_api import DomainApiClient
 from finance_api.infrastructure.google import GoogleVerifier
+from finance_api.infrastructure.polp import DEFAULT_BASE_URL, PolpClient
 from finance_api.infrastructure.telemetry import configure_telemetry
 from finance_api.application.commands import CommandRouter
+from finance_api.application.openfinance import OpenFinanceService
 from finance_api.application.reads import QueryRouter
 from finance_api.presentation.app import create_app
 from finance_api.presentation.dependencies import Container
@@ -33,14 +35,22 @@ def build_app(settings: Settings) -> object:
         api_key=settings.domain_api_key,
         timeout_s=settings.domain_timeout_s,
     )
+    router = CommandRouter(client)
+    polp = PolpClient(
+        settings.polp_client_id,
+        settings.polp_client_secret,
+        base_url=settings.polp_base_url or DEFAULT_BASE_URL,
+        sandbox=settings.polp_sandbox,
+    )
     container = Container(
-        router=CommandRouter(client),
+        router=router,
         api_keys=settings.finance_api_keys,
         queries=QueryRouter(client),
         google=GoogleVerifier(settings.google_client_id) if settings.google_client_id else None,
         google_client_id=settings.google_client_id,
         session_secret=settings.session_secret,
         session_ttl_s=settings.session_ttl_s,
+        openfinance=OpenFinanceService(polp, router),
     )
     return create_app(
         container,

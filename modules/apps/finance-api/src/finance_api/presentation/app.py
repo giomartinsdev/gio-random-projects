@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from finance_api.domain.errors import UnauthorizedError
 from finance_api.presentation.authroutes import auth_router
 from finance_api.presentation.dependencies import Container
+from finance_api.presentation.openfinanceroutes import openfinance_router
 from finance_api.presentation.routes import router
 
 # Headers the SPA's fetch instrumentation adds and the write routes need.
@@ -71,6 +72,7 @@ def create_app(
         return JSONResponse(status_code=exc.status, content={"error": exc.message})
 
     app.include_router(auth_router)
+    app.include_router(openfinance_router)
     app.include_router(router)
 
     if instrument:

@@ -58,6 +58,12 @@ class Settings:
     google_client_id: str = ""
     session_secret: str = ""
     session_ttl_s: int = DEFAULT_SESSION_TTL_S
+    # Open Finance (Polp/Celcoin). Vazios = integração desligada; as rotas de OF
+    # respondem 503 e o resto do app segue (§7 da spec de Open Finance).
+    polp_client_id: str = ""
+    polp_client_secret: str = ""
+    polp_base_url: str = ""
+    polp_sandbox: bool = False
 
 
 def parse_api_keys(raw: str) -> dict[str, str]:
@@ -147,6 +153,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         google_client_id=source.get("FINANCE_GOOGLE_CLIENT_ID", "").strip(),
         session_secret=session_secret,
         session_ttl_s=int(source.get("FINANCE_SESSION_TTL_S") or DEFAULT_SESSION_TTL_S),
+        polp_client_id=source.get("POLP_OF_CLIENT_ID", "").strip(),
+        polp_client_secret=source.get("POLP_OF_CLIENT_SECRET", "").strip(),
+        polp_base_url=source.get("POLP_API_BASE_URL", "").strip(),
+        polp_sandbox=source.get("POLP_OF_SANDBOX", "").strip().lower() in ("1", "true", "yes"),
     )
 
 

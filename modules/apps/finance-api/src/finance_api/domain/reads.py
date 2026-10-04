@@ -259,3 +259,131 @@ class CashFlowDay:
             "expense": self.expense.to_wire(),
             "net": self.net.to_wire(),
         }
+
+
+# ---------------------------------------------------------------- Open Finance
+
+@dataclass(frozen=True, slots=True)
+class OFConsent:
+    id: str
+    consent_id: str
+    institution_id: str
+    institution_name: str
+    status: str
+    execution_status: str
+    products: tuple[str, ...]
+    url_to_authenticate: str
+    updated_at: str
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "OFConsent":
+        products = body.get("products") or []
+        if not isinstance(products, (list, tuple)):
+            raise ValidationError("products must be a list")
+        return cls(
+            id=str(body.get("id", "")),
+            consent_id=str(body.get("consent_id", "")),
+            institution_id=str(body.get("institution_id", "")),
+            institution_name=str(body.get("institution_name", "")),
+            status=str(body.get("status", "")),
+            execution_status=str(body.get("execution_status", "")),
+            products=tuple(str(p) for p in products),
+            url_to_authenticate=str(body.get("url_to_authenticate", "")),
+            updated_at=str(body.get("updated_at", "")),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "consent_id": self.consent_id,
+            "institution_id": self.institution_id,
+            "institution_name": self.institution_name,
+            "status": self.status,
+            "execution_status": self.execution_status,
+            "products": list(self.products),
+            "url_to_authenticate": self.url_to_authenticate,
+            "updated_at": self.updated_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class OFConsentList:
+    user_id: str
+    consents: tuple[OFConsent, ...] = ()
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "OFConsentList":
+        data = _require_object(body, field_name="of consents")
+        raw = data.get("consents", [])
+        if not isinstance(raw, (list, tuple)):
+            raise ValidationError("consents must be a list")
+        return cls(
+            user_id=str(data.get("user_id", "")),
+            consents=tuple(OFConsent.from_wire(c) for c in raw),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "user_id": self.user_id,
+            "consents": [c.to_wire() for c in self.consents],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class OFAccount:
+    id: str
+    account_id: str
+    consent_id: str
+    name: str
+    account_type: str
+    currency: str
+    balance_amount: str
+    balance_updated_at: str
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "OFAccount":
+        return cls(
+            id=str(body.get("id", "")),
+            account_id=str(body.get("account_id", "")),
+            consent_id=str(body.get("consent_id", "")),
+            name=str(body.get("name", "")),
+            account_type=str(body.get("account_type", "")),
+            currency=str(body.get("currency", "BRL")),
+            balance_amount=_amount_text(body.get("balance_amount", "0.00"), field_name="balance_amount"),
+            balance_updated_at=str(body.get("balance_updated_at", "")),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "account_id": self.account_id,
+            "consent_id": self.consent_id,
+            "name": self.name,
+            "account_type": self.account_type,
+            "currency": self.currency,
+            "balance_amount": self.balance_amount,
+            "balance_updated_at": self.balance_updated_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class OFAccountList:
+    user_id: str
+    accounts: tuple[OFAccount, ...] = ()
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "OFAccountList":
+        data = _require_object(body, field_name="of accounts")
+        raw = data.get("accounts", [])
+        if not isinstance(raw, (list, tuple)):
+            raise ValidationError("accounts must be a list")
+        return cls(
+            user_id=str(data.get("user_id", "")),
+            accounts=tuple(OFAccount.from_wire(a) for a in raw),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "user_id": self.user_id,
+            "accounts": [a.to_wire() for a in self.accounts],
+        }

@@ -18,10 +18,12 @@ from typing import Mapping, Protocol
 from fastapi import Request
 
 from finance_api.application.commands import CommandRouter
+from finance_api.application.openfinance import OpenFinanceService
 from finance_api.application.reads import QueryRouter
 from finance_api.domain.errors import UnauthorizedError
 from finance_api.infrastructure.domain_api import DomainApiClient
 from finance_api.infrastructure.google import GoogleIdentity, GoogleVerifier
+from finance_api.infrastructure.polp import DEFAULT_BASE_URL, PolpClient
 from finance_api.presentation.security import authenticate
 from finance_api.presentation.session import Session, identify
 
@@ -49,6 +51,9 @@ class Container:
     google_client_id: str = ""
     session_secret: str = ""
     session_ttl_s: int = 30 * 24 * 3600
+    # Open Finance (Polp). ``None`` = desligado (sem credenciais); as rotas
+    # respondem 503, o resto do app segue.
+    openfinance: "OpenFinanceService | None" = None
 
 
 def build_container(
@@ -60,20 +65,32 @@ def build_container(
     google_client_id: str = "",
     session_secret: str = "",
     session_ttl_s: int = 30 * 24 * 3600,
+    polp_client_id: str = "",
+    polp_client_secret: str = "",
+    polp_base_url: str = "",
+    polp_sandbox: bool = False,
 ) -> Container:
     client = DomainApiClient(
         base_url=domain_api_base_url,
         api_key=domain_api_key,
         timeout_s=timeout_s,
     )
+    router = CommandRouter(client)
+    polp = PolpClient(
+        polp_client_id,
+        polp_client_secret,
+        base_url=polp_base_url or DEFAULT_BASE_URL,
+        sandbox=polp_sandbox,
+    )
     return Container(
-        router=CommandRouter(client),
+        router=router,
         api_keys=api_keys,
         queries=QueryRouter(client),
         google=GoogleVerifier(google_client_id) if google_client_id else None,
         google_client_id=google_client_id,
         session_secret=session_secret,
         session_ttl_s=session_ttl_s,
+        openfinance=OpenFinanceService(polp, router),
     )
 
 
@@ -86,6 +103,7 @@ def build_container_with_router(
     google_client_id: str = "",
     session_secret: str = "",
     session_ttl_s: int = 30 * 24 * 3600,
+    openfinance: "OpenFinanceService | None" = None,
 ) -> Container:
     """For tests: a real container around an injected router."""
     return Container(
@@ -96,6 +114,7 @@ def build_container_with_router(
         google_client_id=google_client_id,
         session_secret=session_secret,
         session_ttl_s=session_ttl_s,
+        openfinance=openfinance,
     )
 
 

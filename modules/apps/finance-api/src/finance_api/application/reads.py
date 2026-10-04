@@ -28,12 +28,16 @@ from finance_api.domain.reads import (
     CategoryBreakdown,
     DailySummary,
     MonthlyDashboard,
+    OFAccountList,
+    OFConsentList,
 )
 from finance_contracts import (
     ACTION_GET_CASH_FLOW_HISTORY,
     ACTION_GET_CATEGORY_BREAKDOWN,
     ACTION_GET_DAILY_SUMMARY,
     ACTION_GET_MONTHLY_DASHBOARD,
+    ACTION_GET_OF_ACCOUNTS,
+    ACTION_GET_OF_CONSENTS,
 )
 
 # ``user_id`` is the identity the worker resolved from the WhatsApp number;
@@ -56,6 +60,7 @@ class ReadRoute:
     path: str
     parse: Callable[[Mapping[str, Any]], Any]
     needs_date: bool = False
+    needs_month: bool = True
 
 
 def _require_user_id(params: Mapping[str, str]) -> None:
@@ -99,6 +104,19 @@ _READS: Final[Mapping[str, ReadRoute]] = {
         "/finance/cash-flow-history",
         CashFlowHistory.from_wire,
     ),
+    # Open Finance: só user_id (sem mês).
+    ACTION_GET_OF_CONSENTS: ReadRoute(
+        ACTION_GET_OF_CONSENTS,
+        "/finance/openfinance/consents",
+        OFConsentList.from_wire,
+        needs_month=False,
+    ),
+    ACTION_GET_OF_ACCOUNTS: ReadRoute(
+        ACTION_GET_OF_ACCOUNTS,
+        "/finance/openfinance/accounts",
+        OFAccountList.from_wire,
+        needs_month=False,
+    ),
 }
 
 
@@ -131,7 +149,7 @@ class QueryRouter:
         _require_user_id(clean)
         if route.needs_date:
             _require_date(clean)
-        else:
+        elif route.needs_month:
             _require_month(clean)
 
         body = self._domain_api.get(route.path, clean)
