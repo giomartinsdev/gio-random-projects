@@ -64,8 +64,8 @@ def _upsert(text: str, phone: str = "5521981962914", event_id: str = "msg-1") ->
     }
 
 
-def _event(event_name: str, payload: dict, *, command_id: str) -> dict:
-    return {"event_id": f"evt-{command_id}", "command_id": command_id, "event_name": event_name, "occurred_at": "2026-10-04T12:00:00Z", "payload": payload}
+def _event(event_name: str, payload: dict, *, command_id: str, event_id: str | None = None) -> dict:
+    return {"event_id": event_id or f"evt-{command_id}", "command_id": command_id, "event_name": event_name, "occurred_at": "2026-10-04T12:00:00Z", "payload": payload}
 
 
 def test_self_originated_transaction_event_does_not_double_reply():
@@ -85,15 +85,47 @@ def test_self_originated_transaction_event_does_not_double_reply():
 
 
 def test_external_transaction_event_still_notifies():
-    # Open Finance (futuro): o comando não foi originado por este worker, então
-    # a confirmação proativa DEVE sair.
+    # Uma transação que NÃO é do Open Finance (ex.: o conector de outra fonte no
+    # futuro) continua notificando, porque não foi este worker que a originou.
     evo = FakeEvolution()
     worker = _worker(FakeFinance(), evo)
     asyncio.run(worker.handle_domain_event(
-        _event("finance.transaction.registered", {"user_id": "5521981962914", "transaction_type": "EXPENSE", "amount": "-70.00", "category": "Transporte"}, command_id="cmd-openfinance")
+        _event("finance.transaction.registered", {"user_id": "5521981962914", "transaction_type": "EXPENSE", "amount": "-70.00", "category": "Transporte"}, command_id="cmd-other")
     ))
     assert len(evo.sent) == 1
     assert "Despesa" in evo.sent[0][1]
+
+
+def test_open_finance_import_does_not_notify():
+    # O import do Open Finance pode trazer centenas de transações de uma vez
+    # (o backfill inicial). Notificar cada uma metralha o WhatsApp — então o
+    # evento com source OPEN_FINANCE_SYNC é silencioso. O dado entra no painel;
+    # o aviso, não.
+    evo = FakeEvolution()
+    worker = _worker(FakeFinance(), evo)
+    for i in range(5):
+        asyncio.run(worker.handle_domain_event(
+            _event(
+                "finance.transaction.registered",
+                {"user_id": "5521981962914", "transaction_type": "EXPENSE", "amount": "-10.00", "category": "Outros",
+                 "source_type": "OPEN_FINANCE_SYNC"},
+                command_id=f"cmd-of-{i}",
+                event_id=f"evt-of-{i}",
+            )
+        ))
+    assert evo.sent == [], "o import do Open Finance não pode notificar transação a transação"
+
+
+def test_budget_alert_still_notifies_even_amid_open_finance_import():
+    # O silêncio é só da CONFIRMAÇÃO de transação do OF. Um alerta de orçamento
+    # (informação nova) continua saindo.
+    evo = FakeEvolution()
+    worker = _worker(FakeFinance(), evo)
+    asyncio.run(worker.handle_domain_event(
+        _event("finance.budget.thresholdReached", {"user_id": "5521981962914", "category": "Alimentação", "threshold": 80, "spent_amount": "-80.00", "limit_amount": "100.00"}, command_id="cmd-bud")
+    ))
+    assert len(evo.sent) == 1
+    assert "80%" in evo.sent[0][1]
 
 
 def test_budget_alert_is_not_suppressed_by_a_self_originated_command():

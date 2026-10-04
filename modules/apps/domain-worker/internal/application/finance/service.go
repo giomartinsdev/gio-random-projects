@@ -78,6 +78,7 @@ func (s *Service) RegisterTransaction(ctx context.Context, in RegisterTransactio
 		Currency:      tx.Amount.Currency,
 		Category:      tx.Category,
 		OccurredAt:    tx.OccurredAt,
+		SourceType:    tx.Source,
 	}, nil
 }
 

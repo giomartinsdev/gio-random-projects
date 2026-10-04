@@ -18,6 +18,10 @@ type TransactionRegistered struct {
 	Category      string          `json:"category"`
 	OccurredAt    time.Time       `json:"occurred_at"`
 	OccurredBy    time.Time       `json:"occurred_by,omitempty"`
+	// SourceType é a origem do lançamento. O worker conversacional usa para NÃO
+	// notificar o import do Open Finance (que chega em lote — centenas de
+	// transações de uma vez metralhariam o WhatsApp).
+	SourceType string `json:"source_type,omitempty"`
 }
 
 func (TransactionRegistered) EventName() string { return "finance.transaction.registered" }

@@ -185,6 +185,17 @@ class Worker:
         if text is None:
             return  # evento de outra família: não é atendimento deste worker
 
+        # Import do Open Finance: chega em LOTE (o backfill inicial pode trazer
+        # centenas de transações de uma vez). Notificar cada uma metralha o
+        # WhatsApp do usuário — então a confirmação de transação com essa origem
+        # é silenciosa. O dado entra no painel; o aviso, não. Alertas de
+        # orçamento seguem saindo (são informação nova, não import em massa).
+        if (
+            event_name in _CONFIRMATION_EVENTS
+            and str(payload.get("source_type", "")) == "OPEN_FINANCE_SYNC"
+        ):
+            return
+
         command_id = event.get("command_id")
         # Sem eco: se ESTE worker originou o comando e o evento é a
         # CONFIRMAÇÃO dele (transação/transferência/categoria), o usuário já
