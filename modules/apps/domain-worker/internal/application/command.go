@@ -41,6 +41,14 @@ const (
 	// ainda não viu.
 	ActionRequestSearchRun Action = "clubs.searchRun"
 	ActionSaveSearchRun    Action = "clubs.searchRunSave"
+
+	// Financeiro (docs/finance-system-spec.md §4.1): a família finance.* do
+	// bounded context financeiro. A finance-api traduz o comando do worker
+	// conversacional e repassa; o domain-worker aplica e grava a auditoria.
+	ActionRegisterTransaction    Action = "finance.transaction.register"
+	ActionCategorizeTransaction  Action = "finance.transaction.categorize"
+	ActionTransferBetweenAccounts Action = "finance.transfer.betweenAccounts"
+	ActionSetCategoryBudget      Action = "finance.budget.setCategory"
 )
 
 type Command struct {

@@ -1,0 +1,73 @@
+package finance
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
+	domainfinance "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/finance"
+)
+
+// CommandHandler é o que o domain-worker chama para cada application.Command
+// da família finance.*. Devolve uma LISTA de eventos: um comando de orçamento
+// pode cruzar várias réguas de uma vez (50 e 80 num só gasto), e cada régua é
+// um evento próprio para o worker conversacional avisar.
+type CommandHandler struct {
+	service *Service
+}
+
+func NewCommandHandler(service *Service) *CommandHandler {
+	return &CommandHandler{service: service}
+}
+
+func (h *CommandHandler) Handle(ctx context.Context, cmd application.Command) ([]domainfinance.Event, error) {
+	switch cmd.Action {
+	case application.ActionRegisterTransaction:
+		var in RegisterTransactionInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode register transaction: %w", err)
+		}
+		_, evt, err := h.service.RegisterTransaction(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return []domainfinance.Event{evt}, nil
+
+	case application.ActionCategorizeTransaction:
+		var in CategorizeTransactionInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode categorize transaction: %w", err)
+		}
+		evt, err := h.service.Categorize(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return []domainfinance.Event{evt}, nil
+
+	case application.ActionTransferBetweenAccounts:
+		var in TransferBetweenAccountsInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode transfer: %w", err)
+		}
+		_, evt, err := h.service.Transfer(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return []domainfinance.Event{evt}, nil
+
+	case application.ActionSetCategoryBudget:
+		var in SetCategoryBudgetInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode set budget: %w", err)
+		}
+		_, events, err := h.service.SetCategoryBudget(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return events, nil
+
+	default:
+		return nil, fmt.Errorf("unknown action: %q", cmd.Action)
+	}
+}

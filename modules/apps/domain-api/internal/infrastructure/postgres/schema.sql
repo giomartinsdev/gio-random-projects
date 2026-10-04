@@ -403,3 +403,78 @@ ALTER TABLE clubs_preferences ADD COLUMN IF NOT EXISTS public_handle TEXT NOT NU
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_clubs_preferences_handle
     ON clubs_preferences (lower(public_handle)) WHERE public_handle <> '';
+
+-- ===========================================================================
+-- Financeiro (docs/finance-system-spec.md)
+--
+-- Bounded context financeiro, acumulado via domain-api/domain-worker (a
+-- finance-api é ACL e NÃO tem banco; o worker conversacional consome eventos e
+-- fala com a finance-api). Tabelas prefixadas `finance_` no mesmo database
+-- `domain` — mesma decisão do clubs_*: nada de um database próprio, que exigiria
+-- bootstrap no persistence.yml (§8.1). Quem escreve é SEMPRE o domain-worker.
+--
+-- Dinheiro é NUMERIC(14,2): nunca float (§3.4 nº1). O app usa Money em centavos
+-- (inteiro) e serializa para NUMERIC exato; a leitura devolve texto para não
+-- passar por float no driver.
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS finance_transactions (
+    id            UUID PRIMARY KEY,
+    user_id       TEXT NOT NULL,
+    account_id    TEXT NOT NULL DEFAULT '',
+    type          TEXT NOT NULL,                 -- INCOME | EXPENSE | TRANSFER
+    amount        NUMERIC(14,2) NOT NULL,        -- nunca float (§3.4)
+    currency      TEXT NOT NULL DEFAULT 'BRL',
+    category      TEXT NOT NULL DEFAULT '',
+    source        TEXT NOT NULL DEFAULT 'WHATSAPP_MANUAL',
+    occurred_at   TIMESTAMPTZ NOT NULL,          -- sempre UTC
+    -- Para uma transferência, o par débito/crédito compartilha command_id e o
+    -- sinal do amount distingue os lados (débito negativo, crédito positivo).
+    command_id    UUID,
+    transfer_id   UUID,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- O painel lê por usuário e ordena por data descendente; o extrato por
+-- categoria e mês. Os dois índices que a spec §8.2 exige.
+CREATE INDEX IF NOT EXISTS idx_finance_transactions_user_time
+    ON finance_transactions (user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_finance_transactions_user_category_month
+    ON finance_transactions (user_id, category, occurred_at DESC);
+-- Idempotência por comando: reinserir o mesmo command_id é no-op. Índice único
+-- parcial: só vale quando há command_id (o id da transação já é único).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_transactions_command
+    ON finance_transactions (command_id) WHERE command_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS finance_budgets (
+    id          UUID PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    category    TEXT NOT NULL,
+    limit_amount NUMERIC(14,2) NOT NULL,
+    currency    TEXT NOT NULL DEFAULT 'BRL',
+    period      TEXT NOT NULL,                  -- YYYY-MM
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_budgets_user_category_period
+    ON finance_budgets (user_id, category, period);
+
+-- Régua de orçamento disparada: UMA linha por (budget_id, threshold, period).
+-- O índice único é o que faz "dispara uma vez por limiar" ser garantido pelo
+-- banco (§3.4 nº5), não por sorte de timing.
+CREATE TABLE IF NOT EXISTS finance_budget_thresholds (
+    budget_id  UUID NOT NULL,
+    threshold  INTEGER NOT NULL,                -- 50 | 80 | 100
+    period     TEXT NOT NULL,
+    spent_amount NUMERIC(14,2) NOT NULL,
+    limit_amount NUMERIC(14,2) NOT NULL,
+    currency   TEXT NOT NULL DEFAULT 'BRL',
+    fired_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_budget_thresholds
+    ON finance_budget_thresholds (budget_id, threshold, period);
+
+-- ===========================================================================
+-- Fim do Financeiro
+-- ===========================================================================

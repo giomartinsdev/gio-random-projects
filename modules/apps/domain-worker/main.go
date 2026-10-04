@@ -28,10 +28,12 @@ import (
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/audit"
 	appclub "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/club"
 	appclubsnapshot "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/clubsnapshot"
+	appfinance "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/finance"
 	appmatch "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/match"
 	apppreference "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/preference"
 	domainannouncement "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/announcement"
 	domainclub "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/club"
+	domainfinance "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/finance"
 	domainmatch "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/match"
 	domainpref "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/preference"
 	inamqp "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/amqp"
@@ -127,11 +129,19 @@ func main() {
 	preferenciaService := apppreference.NewService(preferenciaRepo)
 	preferenciaHandler := apppreference.NewCommandHandler(preferenciaService)
 
+	// Financeiro (docs/finance-system-spec.md): a finance-api relaya o comando,
+	// o worker aplica e grava a auditoria. Sem banco na ACL — a escrita é toda
+	// aqui (§1.1).
+	financeRepo := postgres.NewFinanceRepository(pool)
+	financeService := appfinance.NewService(financeRepo)
+	financeHandler := appfinance.NewCommandHandler(financeService)
+
 	// Every aggregate's handler in one place: process() takes this
 	// struct rather than a growing parameter list.
 	hs := handlers{
 		club: clubHandler, partida: partidaHandler, snapshot: snapshotHandler,
 		anuncio: anuncioHandler, preferencia: preferenciaHandler,
+		finance:      financeHandler,
 		ingestEstado: postgres.NewIngestEstadoRepository(pool),
 		fetchRun:     postgres.NewFetchRunRepository(pool),
 		searchRun:    postgres.NewSearchRunRepository(pool),
@@ -172,6 +182,10 @@ type handlers struct {
 	snapshot    *appclubsnapshot.CommandHandler
 	anuncio     *appannouncement.CommandHandler
 	preferencia *apppreference.CommandHandler
+	// Financeiro (finance.*): o handler devolve uma LISTA de eventos (um
+	// comando de orçamento pode cruzar várias réguas), por isso o case dele é
+	// tratado à parte no process().
+	finance *appfinance.CommandHandler
 	// Saúde do worker de ingestão: um upsert direto, não um agregado -- o
 	// worker é um poller sem host, e esta é a única forma de a saúde dele
 	// chegar até a API.
@@ -204,6 +218,9 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 		err        error
 		entityType string
 		id         string
+		// O financeiro devolve N eventos (réguas de orçamento). Ficam aqui e
+		// são publicados todos, além do evt único das outras famílias.
+		financeEvents []domainfinance.Event
 	)
 
 	// A família clubs tem três destinos que se parecem por prefixo; a decisão
@@ -309,6 +326,19 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 		// only producer; no domain event is raised (nothing subscribes).
 		entityType = "preferencia"
 		err = h.preferencia.Handle(ctx, cmd)
+	case strings.HasPrefix(string(cmd.Action), "finance."):
+		// Financeiro (§4.1): o handler devolve N eventos (réguas de orçamento
+		// podem cruzar várias de uma vez). O id da entidade vem do próprio
+		// payload/evento -- não há um agregado único. Publicamos todos aqui.
+		entityType = "finance"
+		var events []domainfinance.Event
+		events, err = h.finance.Handle(ctx, cmd)
+		if err == nil {
+			financeEvents = events
+			if len(events) > 0 {
+				id = financeEntityID(events[0])
+			}
+		}
 	default:
 		err = fmt.Errorf("unknown action: %q", cmd.Action)
 	}
@@ -337,6 +367,16 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 		if pubErr := eventBus.Publish(ctx, evt); pubErr != nil {
 			span.RecordError(pubErr)
 			log.ErrorContext(ctx, "publish event failed", "error", pubErr, "command_id", cmd.ID)
+		}
+	} else if len(financeEvents) > 0 {
+		// Publica cada régua/evento do financeiro; uma falha de publish não
+		// impede as demais (a outbox do domain-worker é o que garante a
+		// entrega at-least-once, e o consumidor é idempotente por event_id).
+		for _, fe := range financeEvents {
+			if pubErr := eventBus.Publish(ctx, fe); pubErr != nil {
+				span.RecordError(pubErr)
+				log.ErrorContext(ctx, "publish finance event failed", "error", pubErr, "command_id", cmd.ID)
+			}
 		}
 	}
 	if auditErr := audits.Record(ctx, entry); auditErr != nil {
@@ -461,6 +501,24 @@ func partidaEntityID(evt domainmatch.Event) string {
 	switch e := evt.(type) {
 	case domainmatch.Upserted:
 		return e.MatchID
+	default:
+		return ""
+	}
+}
+
+// financeEntityID extrai o id relevante de um evento financeiro para a linha
+// de auditoria: a transação (registered/categorized), a transferência, ou a
+// régua de orçamento. Um evento que não casa devolve "".
+func financeEntityID(evt domainfinance.Event) string {
+	switch e := evt.(type) {
+	case domainfinance.TransactionRegistered:
+		return e.TransactionID
+	case domainfinance.TransactionCategorized:
+		return e.TransactionID
+	case domainfinance.TransferCompleted:
+		return e.TransactionID
+	case domainfinance.BudgetThresholdReached:
+		return e.BudgetID
 	default:
 		return ""
 	}

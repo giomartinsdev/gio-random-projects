@@ -37,6 +37,14 @@ const (
 	// Busca ao vivo na fonte, para um clube que o hub ainda não viu.
 	ActionRequestSearch Action = "clubs.searchRun"
 	ActionSaveSearch    Action = "clubs.searchRunSave"
+
+	// Financeiro (docs/finance-system-spec.md §4.1): a família finance.* que a
+	// finance-api relaya. O domain-api só a publica; quem aplica é o
+	// domain-worker.
+	ActionRegisterTransaction     Action = "finance.transaction.register"
+	ActionCategorizeTransaction   Action = "finance.transaction.categorize"
+	ActionTransferBetweenAccounts Action = "finance.transfer.betweenAccounts"
+	ActionSetCategoryBudget       Action = "finance.budget.setCategory"
 )
 
 type Command struct {
