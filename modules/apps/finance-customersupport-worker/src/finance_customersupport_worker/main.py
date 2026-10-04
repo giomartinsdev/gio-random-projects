@@ -1,4 +1,4 @@
-"""Entrypoint: ``python -m finance_whatsapp_worker.main``.
+"""Entrypoint: ``python -m finance_customersupport_worker.main``.
 
 Lê a configuração uma vez e valida o obrigatório antes de subir: um worker que
 sobe sem conseguir falar nem com a finance-api nem com a Evolution é pior que
@@ -11,10 +11,10 @@ import logging
 import os
 import sys
 
-from finance_whatsapp_worker.clients.finance_api import FinanceApiClient
-from finance_whatsapp_worker.consumers.evolution import consume_forever
-from finance_whatsapp_worker.gateway.evolution import EvolutionClient
-from finance_whatsapp_worker.worker import Worker
+from finance_customersupport_worker.clients.finance_api import FinanceApiClient
+from finance_customersupport_worker.consumers.evolution import consume_forever
+from finance_customersupport_worker.gateway.evolution import EvolutionClient
+from finance_customersupport_worker.worker import Worker
 
 REQUIRED = (
     "FINANCE_API_BASE_URL",
@@ -54,7 +54,7 @@ def main() -> int:
         ),
     )
 
-    logging.getLogger("finance-whatsapp-worker").info(
+    logging.getLogger("finance-customersupport-worker").info(
         "worker iniciado; instância %s", os.environ.get("EVOLUTION_INSTANCE", "web-businesses")
     )
     consume_forever(os.environ["RABBITMQ_URL"], worker)

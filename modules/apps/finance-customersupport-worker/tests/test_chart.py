@@ -15,7 +15,7 @@ SRC = Path(__file__).resolve().parent.parent / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from finance_whatsapp_worker.rendering import chart
+from finance_customersupport_worker.rendering import chart
 
 
 HISTORY = {

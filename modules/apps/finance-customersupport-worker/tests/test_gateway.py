@@ -15,8 +15,8 @@ SRC = Path(__file__).resolve().parent.parent / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from finance_whatsapp_worker.gateway.evolution import jid_to_number
-from finance_whatsapp_worker.worker import extract_text
+from finance_customersupport_worker.gateway.evolution import jid_to_number
+from finance_customersupport_worker.worker import extract_text
 
 
 def test_jid_to_number_tira_dominio():

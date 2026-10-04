@@ -1,6 +1,6 @@
 """§12.6 isolamento, do lado do worker: prova estrutural, não promessa.
 
-O `finance-whatsapp-worker` consome eventos (do Evolution e de domínio) mas
+O `finance-customersupport-worker` consome eventos (do Evolution e de domínio) mas
 **nunca** publica comando, **nunca** abre banco e **nunca** carrega driver de
 banco — a persistência é do stack `domain` (§1.1). A checagem é sobre o
 código-fonte lido via AST (comentários/docstrings não disparam), então uma
@@ -19,7 +19,7 @@ from pathlib import Path
 
 APP_ROOT = Path(__file__).resolve().parent.parent
 SRC = APP_ROOT / "src"
-PKG = SRC / "finance_whatsapp_worker"
+PKG = SRC / "finance_customersupport_worker"
 
 FORBIDDEN_IMPORTS = frozenset(
     {

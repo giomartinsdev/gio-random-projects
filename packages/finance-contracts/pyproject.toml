@@ -9,7 +9,7 @@ description = "Shared contracts of the finance bounded context: the {action, pay
 # Mesma baseline do resto do repo (python-ci-cd.yml: python-version 3.12).
 requires-python = ">=3.12"
 # Zero dependencias de runtime de proposito: e o contrato que os dois apps
-# (finance-api, finance-whatsapp-worker) importam, entao nao pode arrastar
+# (finance-api, finance-customersupport-worker) importam, entao nao pode arrastar
 # nada para dentro deles. pydantic nao entra aqui -- o contrato e dataclass
 # puro, e quem precisa de validacao de schema faz no proprio app.
 dependencies = []

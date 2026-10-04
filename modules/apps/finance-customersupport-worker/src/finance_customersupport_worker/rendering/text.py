@@ -10,7 +10,7 @@ import math
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
-from finance_whatsapp_worker.nlu.parser import Intent
+from finance_customersupport_worker.nlu.parser import Intent
 
 
 def render(intent: Intent, outcome: str, *, entity_id: str = "", error: str = "") -> str:

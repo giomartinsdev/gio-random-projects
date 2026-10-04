@@ -15,10 +15,10 @@ import aio_pika
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from finance_whatsapp_worker.clients.finance_api import FinanceApiClient
-from finance_whatsapp_worker.consumers.evolution import EvolutionConsumer
-from finance_whatsapp_worker.gateway.evolution import EvolutionClient
-from finance_whatsapp_worker.worker import Worker
+from finance_customersupport_worker.clients.finance_api import FinanceApiClient
+from finance_customersupport_worker.consumers.evolution import EvolutionConsumer
+from finance_customersupport_worker.gateway.evolution import EvolutionClient
+from finance_customersupport_worker.worker import Worker
 
 scenarios("../features/consume.feature")
 

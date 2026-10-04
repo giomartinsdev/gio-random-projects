@@ -8,10 +8,9 @@ name: Python deploy
 # deliberate: a filter that names one app while the discover step knows about
 # two is a silent hole — a push touching only the un-listed app starts no run
 # at all, so the image is never rebuilt and nothing reports a problem (§11-1).
-# finance-whatsapp-worker/** is deliberately NOT here yet: its app does not
-# exist in the repo (stacks/finance.yml marks that service as a contract for
-# the next slice), and listing a path with nothing behind it would only
-# advertise a pipeline that cannot do anything.
+# finance-customersupport-worker/** IS listed below: the app exists in the repo
+# (the conversational consumer/gateway for the finance context, see
+# modules/apps/finance-customersupport-worker and stacks/finance.yml).
 # packages/** is a trigger too (§11-2): a change there rebuilds the apps that
 # import that package (map in the discover step below), never all of them.
 # Go apps go through go-ci-cd.yml, TypeScript frontends through
@@ -34,7 +33,7 @@ on:
       # app would build never and say nothing. The filter and the discover rule
       # have to name the same apps or one of them is dead code.
       - "modules/apps/finance-api/**"
-      - "modules/apps/finance-whatsapp-worker/**"
+      - "modules/apps/finance-customersupport-worker/**"
       # Shared code lives in packages/ (§7). Without this, a commit that only
       # edits the shared contract triggers NOTHING and production keeps the
       # stale contract (§11-2) — the discover rule below needs the run to
@@ -75,7 +74,7 @@ jobs:
             # whose change rebuilds nobody is the §11 risk -- green build with a
             # stale contract in production. Adding a package here is a one-line
             # change; the assertion below stops the map from rotting silently.
-            declare -A PACKAGE_APPS=( [packages/finance-contracts]="finance-api finance-whatsapp-worker" )
+            declare -A PACKAGE_APPS=( [packages/finance-contracts]="finance-api finance-customersupport-worker" )
             for pkg in "${!PACKAGE_APPS[@]}"; do
               dependents="${PACKAGE_APPS[$pkg]}"
               for dependent in $dependents; do
@@ -282,10 +281,10 @@ jobs:
           #   [finance-api]=14 -- the numeric id of the `finance` stack
           #   (stacks/finance.yml, env 1/prd, repo 1), created 2026-10-04.
           #   Only readable from the Dockhand UI after login: never invent one.
-          #   [finance-whatsapp-worker]=14 -- SAME stack (one compose, one
+          #   [finance-customersupport-worker]=14 -- SAME stack (one compose, one
           #   webhook), so it reuses the finance id: deploying the worker is
           #   deploying the stack. An app with no id here fails loudly below.
-          declare -A STACK=( [clubs-ingest]=5 [finance-api]=14 [finance-whatsapp-worker]=14 )
+          declare -A STACK=( [clubs-ingest]=5 [finance-api]=14 [finance-customersupport-worker]=14 )
           if [ -z "$APPS" ] || [ "$APPS" = "[]" ]; then
             echo "nada a deployar (nenhum app descoberto)"
             exit 0

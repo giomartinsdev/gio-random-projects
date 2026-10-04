@@ -11,22 +11,22 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from finance_whatsapp_worker.clients.finance_api import (
+from finance_customersupport_worker.clients.finance_api import (
     FinanceApiClient,
     FinanceQueued,
     FinanceRejected,
 )
-from finance_whatsapp_worker.gateway.evolution import EvolutionClient
-from finance_whatsapp_worker.nlu.parser import parse
-from finance_whatsapp_worker.rendering import chart
-from finance_whatsapp_worker.rendering.text import (
+from finance_customersupport_worker.gateway.evolution import EvolutionClient
+from finance_customersupport_worker.nlu.parser import parse
+from finance_customersupport_worker.rendering import chart
+from finance_customersupport_worker.rendering.text import (
     render,
     render_breakdown,
     render_chart_caption,
     render_dashboard,
 )
 
-log = logging.getLogger("finance-whatsapp-worker")
+log = logging.getLogger("finance-customersupport-worker")
 
 EVENT_MESSAGES_UPSERT = "messages.upsert"
 

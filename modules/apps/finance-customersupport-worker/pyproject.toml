@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "finance-whatsapp-worker"
+name = "finance-customersupport-worker"
 version = "0.1.0"
 description = "Worker conversacional do financeiro: consome eventos do Evolution API e fala com a finance-api. Sem banco."
 requires-python = ">=3.12"
@@ -20,7 +20,7 @@ dependencies = [
 dev = ["pytest>=8.0", "pytest-bdd>=8.0", "pytest-asyncio>=0.23", "testcontainers>=4.0", "docker>=7.0"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/finance_whatsapp_worker"]
+packages = ["src/finance_customersupport_worker"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

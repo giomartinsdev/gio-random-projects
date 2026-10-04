@@ -5,7 +5,7 @@ into ``domain-api``, which republishes it with a **fresh server-side id**
 and answers either ``202 {command_id, status: "accepted"}`` (async) or the
 ``/sync`` outcomes below. This module is the single source of truth for
 that shape for the finance bounded context -- it lives in ``packages/``
-precisely so ``finance-api`` and ``finance-whatsapp-worker`` import the
+precisely so ``finance-api`` and ``finance-customersupport-worker`` import the
 same bytes instead of each carrying a copy (spec §7, §12.6).
 
 Two rules are worth stating where the code is, because they are the ones

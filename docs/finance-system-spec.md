@@ -19,7 +19,7 @@ Architecture**, com tipagem estrita.
 
 ### 1.1. Princípio Fundamental — Regra de Isolamento de Domínio
 
-> O `finance-whatsapp-worker` **NUNCA** acessa banco de dados diretamente.
+> O `finance-customersupport-worker` **NUNCA** acessa banco de dados diretamente.
 > Toda persistência e consulta passa pela `finance-api` — via REST tipado — e,
 > dela, pelo `domain-api`, que é o front door do CQRS deste repo.
 
@@ -38,13 +38,13 @@ criar um segundo CQRS:
 - `domain-api` publica o comando no RabbitMQ; o `domain-worker` o consome,
   aplica, grava a auditoria (sucesso **ou** falha) e publica o evento. São os
   dois — stack `domain` — que detêm `DATABASE_URL` e são donos da persistência.
-- `finance-whatsapp-worker` não tem banco, não importa driver de banco, e fala
+- `finance-customersupport-worker` não tem banco, não importa driver de banco, e fala
   só com a `finance-api` por HTTP.
 
 ### 1.2. Decisões — o que já está fechado e o que falta dono
 
 **Fechado: D1 — `finance-api` em Python 3.12 + FastAPI** (§6.3). O
-`finance-whatsapp-worker` também é Python 3.12.
+`finance-customersupport-worker` também é Python 3.12.
 
 | # | Decisão | Opções | Recomendação |
 | --- | --- | --- | --- |
@@ -68,7 +68,7 @@ criar um segundo CQRS:
                            │ envia por POST /message/sendText (apikey)
                            ▼
 ┌────────────────────────────────────────────────────────┐
-│            finance-whatsapp-worker                     │
+│            finance-customersupport-worker                     │
 │  ├─ NLU & Intent Parser                                │
 │  ├─ Conversational State & Session Manager             │
 │  ├─ Interactive UX Renderer (cards, emojis, menus)     │
@@ -111,7 +111,7 @@ criar um segundo CQRS:
              │ (finance.*, exchange       │
              │  `domain.events`, fanout)  │
              ▼                            ▼
-   finance-whatsapp-worker      PostgreSQL 17 (stack persistence,
+   finance-customersupport-worker      PostgreSQL 17 (stack persistence,
    (assina p/ avisar o          DB/schema do §8)
     usuário — §13)
 ```
@@ -322,21 +322,21 @@ mensagem é registrada como falha e o loop segue (§12.9).
   `packages = ["src/finance_api"]` — **a chave `packages` do hatchling é do build
   da wheel, não o diretório `packages/` do §7**.
 
-**`finance-whatsapp-worker`** — Python 3.12:
+**`finance-customersupport-worker`** — Python 3.12:
 - Mesmo esqueleto de `clubs-ingest`: `pyproject.toml` (hatchling), `pytest` +
   `pytest-bdd` + `testcontainers` + `docker` nos extras `dev`.
 - `httpx` para falar com a `finance-api`; `aio-pika` para **consumir** os eventos
   do Evolution (`evolution.messages.upsert`) e os eventos de domínio (§13) —
   nunca para publicar comando (§1.1); Pydantic v2 para contratos; nenhum driver
   de banco.
-- `packages = ["src/finance_whatsapp_worker"]`, entrypoint
-  `python -m finance_whatsapp_worker.main`.
+- `packages = ["src/finance_customersupport_worker"]`, entrypoint
+  `python -m finance_customersupport_worker.main`.
 
 ### 6.3. D1 — decidido: Python 3.12 + FastAPI
 
 Decisão fechada (encerra a antiga dúvida de versão e de linguagem):
 
-- **`finance-api` e `finance-whatsapp-worker`: Python 3.12.** É o que o CI já
+- **`finance-api` e `finance-customersupport-worker`: Python 3.12.** É o que o CI já
   constrói (`python-version: "3.12"`, imagem `python:3.12-slim`) — nada de 3.14,
   que exigiria subir a imagem base em todo o pipeline.
 - **A `finance-api` usa FastAPI** para servir as rotas HTTP; o worker continua um
@@ -375,10 +375,10 @@ modules/
         presentation/              # rotas FastAPI, schemas, DI
       tests/
         features/                  # cenários BDD
-    finance-whatsapp-worker/       # worker conversacional — sem banco
+    finance-customersupport-worker/       # worker conversacional — sem banco
       pyproject.toml
       Dockerfile
-      src/finance_whatsapp_worker/
+      src/finance_customersupport_worker/
         nlu/                       # intent + extração (regras/LLM)
         rendering/                 # templates WhatsApp + gerador de PNG
         state/                     # sessão de conversa
@@ -460,7 +460,7 @@ ENTRYPOINT ["python", "-m", "<pkg>.main"]
 ## 9. Observabilidade
 
 - `OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318` e
-  `OTEL_SERVICE_NAME=finance-api` / `finance-whatsapp-worker`.
+  `OTEL_SERVICE_NAME=finance-api` / `finance-customersupport-worker`.
 - Logs já fluem (o alloy faz scrape do stdout de todo container) — basta não
   escrever segredo no log (ver §11.2).
 - Métricas de negócio sugeridas: comandos aceitos/rejeitados por tipo,
@@ -533,9 +533,9 @@ services:
   # Consumidor + gateway do WhatsApp. SEM porta e SEM host: o worker não serve
   # nada — recebe mensagem por AMQP (a Evolution publica) e envia por HTTP à
   # Evolution (§5.3). Um port publish seria superfície sem contrato.
-  finance-whatsapp-worker:
-    image: registry.giomartins.dev:5000/finance-whatsapp-worker:latest
-    container_name: finance-whatsapp-worker
+  finance-customersupport-worker:
+    image: registry.giomartins.dev:5000/finance-customersupport-worker:latest
+    container_name: finance-customersupport-worker
     restart: unless-stopped
     environment:
       # SEM DATABASE_URL — regra de isolamento (§1.1)
@@ -550,7 +550,7 @@ services:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?defina EVOLUTION_API_KEY}
       EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-web-businesses}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
-      OTEL_SERVICE_NAME: finance-whatsapp-worker
+      OTEL_SERVICE_NAME: finance-customersupport-worker
     networks: [apps]
 
 networks:
@@ -589,7 +589,7 @@ gateway.
    compose file `finance.yml`, nome `finance`.
 3. Cadastrar as variáveis de stack da tabela §10.3.
 4. Ajustar o CI: `python-ci-cd.yml` — (a) adicionar
-   `modules/apps/finance-api/**` e `modules/apps/finance-whatsapp-worker/**`
+   `modules/apps/finance-api/**` e `modules/apps/finance-customersupport-worker/**`
    ao filtro `paths:`; (b) adicionar as duas entradas ao
    `declare -A STACK=( ... )` do job `deploy`.
 5. Preencher o mapa do passo 4 com o **id numérico** da stack nova. Para o
@@ -597,8 +597,8 @@ gateway.
    repo 1), criada e verificada via Dockhand em 2026-10-04 (`dockhand create`
    + `dockhand ls`; o webhook sem segredo responde `401 Invalid webhook secret`,
    ou seja está registrado e alcançável). Logo `[finance-api]=14`.
-   O `finance-whatsapp-worker` fica **vazio de propósito** enquanto
-   `modules/apps/finance-whatsapp-worker/` não existir: os dois serviços são
+   O `finance-customersupport-worker` fica **vazio de propósito** enquanto
+   `modules/apps/finance-customersupport-worker/` não existir: os dois serviços são
    o MESMO stack (um webhook só), e app descoberto sem id falha alto.
 6. `python-ci-cd.yml` já usa contexto de build = raiz do repo; **não** alterar.
 7. Primeiro deploy: rodar o workflow à mão
@@ -677,7 +677,7 @@ Não confiar no check verde — a `:latest` nunca muda de tag, então um deploy
 curl -s https://finance-api.giomartins.dev/healthz
 # 3. a imagem em execução é a que o CI acabou de publicar
 ssh ubuntu@$VPS_HOST \
-  'docker inspect -f "{{.Image}} {{.Config.Image}}" finance-api finance-whatsapp-worker'
+  'docker inspect -f "{{.Image}} {{.Config.Image}}" finance-api finance-customersupport-worker'
 # 4. o digest bate com o :<sha> recém-publicado
 # 5. smoke real: mandar uma mensagem no WhatsApp e ver a resposta do worker
 ```
@@ -709,7 +709,7 @@ publica `:latest` + `:<sha>` e chama o webhook do Dockhand.
 Mudanças necessárias:
 
 1. **Filtro `paths:`** — hoje só `modules/apps/clubs-ingest/**`; adicionar
-   `modules/apps/finance-api/**`, `modules/apps/finance-whatsapp-worker/**`
+   `modules/apps/finance-api/**`, `modules/apps/finance-customersupport-worker/**`
    **e `packages/finance-contracts/**`**.
 2. **`packages/**` como gatilho dos dependentes.** O `discover` só casa um app
    quando o diff contém `^modules/apps/<app>/`. Um commit que mexe **só** em
@@ -721,7 +721,7 @@ Mudanças necessárias:
    compartilhado precisa entrar no mesmo comando
    (`... /packages/finance-contracts ...`), senão o `pytest` nem importa.
 4. **`declare -A STACK=( ... )`** no job `deploy` — `[finance-api]=14` e
-   `[finance-whatsapp-worker]=14`: os dois serviços são o MESMO stack
+   `[finance-customersupport-worker]=14`: os dois serviços são o MESMO stack
    (`stacks/finance.yml`, um webhook por stack), então o worker reusa o id da
    stack. Sem a entrada, o app descoberto com id vazio **falha alto** (não é
    "nada a deployar") — o guarda que impede o verde silencioso.
@@ -790,7 +790,7 @@ isolamento do §1.1 é estrutural, não uma promessa.
   publicado depois (sem perder a escrita).
 
 ### 12.6. Isolamento (§1.1) — como provar, não prometer
-- **Estático:** nem `finance-whatsapp-worker` nem `finance-api` podem ter
+- **Estático:** nem `finance-customersupport-worker` nem `finance-api` podem ter
   dependência de driver de banco, nem `DATABASE_URL` no compose (o teste lê
   `stacks/finance.yml`). Banco só existe no stack `domain`.
 - **Dinâmico:** durante o E2E, nem o worker nem a `finance-api` abrem socket

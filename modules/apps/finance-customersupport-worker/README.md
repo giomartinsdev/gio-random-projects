@@ -1,4 +1,4 @@
-# finance-whatsapp-worker
+# finance-customersupport-worker
 
 O worker conversacional do bounded context financeiro. Roda como um processo
 Python **sem porta e sem host** (não serve HTTP): ele **consome** os eventos da
@@ -16,7 +16,7 @@ WhatsApp ──► Evolution API (stack compute, Baileys)
         fila evolution.messages.upsert
                  │ o worker consome (AMQP)
                  ▼
-      finance-whatsapp-worker
+      finance-customersupport-worker
         ├─ NLU por regras (nlu/parser.py)  → intent + payload
         ├─ POST finance-api /commands       → {action, payload} (X-API-Key)   [escrita]
         ├─ POST finance-api /queries        → leitura (§4.2)                  [leitura]
@@ -89,4 +89,4 @@ travessia de rede, não um mock dela.
 - proibido: `DATABASE_URL` e qualquer driver de banco (provado em
   `tests/test_isolation.py`).
 - build context: a **raiz do repo**, para alcançar `packages/finance-contracts`.
-  `ENTRYPOINT ["python", "-m", "finance_whatsapp_worker.main"]`.
+  `ENTRYPOINT ["python", "-m", "finance_customersupport_worker.main"]`.

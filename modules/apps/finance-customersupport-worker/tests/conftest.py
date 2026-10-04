@@ -1,4 +1,4 @@
-"""Fixtures dos testes do finance-whatsapp-worker.
+"""Fixtures dos testes do finance-customersupport-worker.
 
 Sobe UM container com os dois stubs HTTP (finance-api em /commands, gateway em
 /message/sendText) e aponta o worker para ele. O broker é um RabbitMQ real

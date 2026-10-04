@@ -22,8 +22,8 @@ from finance_contracts import (
     ACTION_GET_CATEGORY_BREAKDOWN,
     ACTION_GET_MONTHLY_DASHBOARD,
 )
-from finance_whatsapp_worker.nlu.parser import parse
-from finance_whatsapp_worker.rendering.text import (
+from finance_customersupport_worker.nlu.parser import parse
+from finance_customersupport_worker.rendering.text import (
     render,
     render_breakdown,
     render_chart_caption,

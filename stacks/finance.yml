@@ -1,4 +1,4 @@
-# finance.yml — bounded context financeiro (finance-api + finance-whatsapp-worker).
+# finance.yml — bounded context financeiro (finance-api + finance-customersupport-worker).
 # Depende de persistence.yml (postgres, rabbitmq) e do compute (alloy p/ OTLP,
 # evolution-api) pela rede externa `apps`.
 #
@@ -63,9 +63,9 @@ services:
   # único serviço daqui que consome o broker — eventos do Evolution e de
   # domínio `finance.*` — e NUNCA publica comando (§1.1). Um port publish seria
   # superfície sem contrato.
-  finance-whatsapp-worker:
-    image: registry.giomartins.dev:5000/finance-whatsapp-worker:latest
-    container_name: finance-whatsapp-worker
+  finance-customersupport-worker:
+    image: registry.giomartins.dev:5000/finance-customersupport-worker:latest
+    container_name: finance-customersupport-worker
     restart: unless-stopped
     environment:
       # SEM DATABASE_URL — regra de isolamento (§1.1)
@@ -78,7 +78,7 @@ services:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?defina EVOLUTION_API_KEY}
       EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-web-businesses}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
-      OTEL_SERVICE_NAME: finance-whatsapp-worker
+      OTEL_SERVICE_NAME: finance-customersupport-worker
     networks: [apps]
 
 networks:

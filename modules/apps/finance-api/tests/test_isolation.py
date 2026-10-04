@@ -297,14 +297,14 @@ def test_no_action_string_literal_is_redefined_in_the_app() -> None:
 # §12.6's static clause says the *test* reads the stack file -- the app's own
 # source cannot prove anything about the compose that runs it. It is parsed as
 # YAML and inspected PER SERVICE, never grepped as text: the
-# `finance-whatsapp-worker` legitimately carries a broker URL (§1.1 -- it
+# `finance-customersupport-worker` legitimately carries a broker URL (§1.1 -- it
 # consumes the `finance.*` events), so a file-level ban would either kill the
 # worker or force the check to be deleted.
 #
 # Two scoping rules, and both are load-bearing:
 #
 #  * EVERY service in the file is inspected, not a pair of hard-coded names.
-#    While the check named `finance-api` and `finance-whatsapp-worker`
+#    While the check named `finance-api` and `finance-customersupport-worker`
 #    literally, a *third* service added in slice 3 carrying a `DATABASE_URL`
 #    passed in silence -- the assertion had no opinion about it.
 #  * The broker exemption is keyed on the `-worker` SUFFIX, never on a literal
@@ -460,7 +460,7 @@ def test_stack_check_is_not_vacuous() -> None:
       empty environment), and
     - the broker exemption never running, because no `-worker` service is
       present. The production stack does not carry one yet -- the
-      `finance-whatsapp-worker` block is deliberately commented out until
+      `finance-customersupport-worker` block is deliberately commented out until
       slice 2/3 lands (a service for an app that does not exist would break
       the deploy), so the exemption is exercised against a synthetic stack
       rather than by demanding the production file carry a service it must
@@ -498,7 +498,7 @@ def test_an_added_service_carrying_a_database_is_caught() -> None:
     """Regression: the ban is not scoped to the two names of slice 2.
 
     The previous scoping inspected only `finance-api` and
-    `finance-whatsapp-worker` by literal name, so a third service -- exactly
+    `finance-customersupport-worker` by literal name, so a third service -- exactly
     the shape slice 3 takes -- could carry a `DATABASE_URL` with every test
     still green. A worker renamed out of the literal name skipped the check the
     same way; the suffix rule closes both.
@@ -506,7 +506,7 @@ def test_an_added_service_carrying_a_database_is_caught() -> None:
     stack = {
         "services": {
             THIS_SERVICE: {"environment": ["HTTP_ADDR=:8000"]},
-            "finance-whatsapp-worker": {"environment": ["RABBITMQ_URL=amqp://guest@rabbitmq:5672/"]},
+            "finance-customersupport-worker": {"environment": ["RABBITMQ_URL=amqp://guest@rabbitmq:5672/"]},
             "finance-audit-worker": {"environment": ["DATABASE_URL=postgres://u@db:5432/f"]},
             "finance-notifier": {"environment": ["AMQP_URL=amqp://guest@rabbitmq:5672/"]},
         }
@@ -519,7 +519,7 @@ def test_an_added_service_carrying_a_database_is_caught() -> None:
     renamed = _offenders_for("finance-notifier", _environment_of(stack, "finance-notifier"))
     assert renamed, "a non-`-worker` service must not inherit the broker exemption"
     keeper = _offenders_for(
-        "finance-whatsapp-worker", _environment_of(stack, "finance-whatsapp-worker")
+        "finance-customersupport-worker", _environment_of(stack, "finance-customersupport-worker")
     )
     assert keeper == [], keeper
 
@@ -540,7 +540,7 @@ def test_stack_environment_list_form_is_inspected() -> None:
     guilty = {
         "services": {
             "finance-api": {"environment": ["HTTP_ADDR=:8000", "DATABASE_URL=postgres://u@db:5432/f"]},
-            "finance-whatsapp-worker": {"environment": ["RABBITMQ_URL=amqp://guest@rabbitmq:5672/"]},
+            "finance-customersupport-worker": {"environment": ["RABBITMQ_URL=amqp://guest@rabbitmq:5672/"]},
         }
     }
     offenders = _offenders_for(THIS_SERVICE, _environment_of(guilty, THIS_SERVICE))
@@ -548,8 +548,8 @@ def test_stack_environment_list_form_is_inspected() -> None:
     assert "DATABASE_URL (key)" in offenders, offenders
 
     # the worker's list-form exemption stays broker-only (§1.1)
-    worker_env = _environment_of(guilty, "finance-whatsapp-worker")
-    assert _offenders_for("finance-whatsapp-worker", worker_env) == []
+    worker_env = _environment_of(guilty, "finance-customersupport-worker")
+    assert _offenders_for("finance-customersupport-worker", worker_env) == []
     worker_env["DATABASE_URL"] = "postgres://u@db:5432/f"
-    worker_db = _offenders_for("finance-whatsapp-worker", worker_env)
+    worker_db = _offenders_for("finance-customersupport-worker", worker_env)
     assert "DATABASE_URL (key)" in worker_db, worker_db

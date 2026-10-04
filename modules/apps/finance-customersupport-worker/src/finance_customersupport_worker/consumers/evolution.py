@@ -18,9 +18,9 @@ import logging
 
 import aio_pika
 
-from finance_whatsapp_worker.worker import EVENT_MESSAGES_UPSERT, Worker
+from finance_customersupport_worker.worker import EVENT_MESSAGES_UPSERT, Worker
 
-log = logging.getLogger("finance-whatsapp-worker")
+log = logging.getLogger("finance-customersupport-worker")
 
 EXCHANGE = "evolution"
 QUEUE = "evolution.messages.upsert"
