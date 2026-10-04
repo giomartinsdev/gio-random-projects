@@ -122,6 +122,13 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     host, port = parse_http_addr(source.get("HTTP_ADDR", ":8000"))
 
+    # Segredo do cookie de sessão. Se FINANCE_SESSION_SECRET não vier, deriva um
+    # do DOMAIN_API_KEY (que já é um segredo do stack) via HKDF. Assim o login
+    # funciona sem cadastrar mais nenhuma variável, e o cookie nunca é assinado
+    # com uma chave pública/conhecida. O sufixo separa os domínios: essa chave
+    # assina SESSÃO, não fala com o domain-api.
+    session_secret = source.get("FINANCE_SESSION_SECRET", "").strip() or derive_session_secret(api_key)
+
     return Settings(
         domain_api_base_url=base_url.rstrip("/"),
         domain_api_key=api_key,
@@ -138,9 +145,27 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             source.get("FINANCE_CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
         ),
         google_client_id=source.get("FINANCE_GOOGLE_CLIENT_ID", "").strip(),
-        session_secret=source.get("FINANCE_SESSION_SECRET", "").strip(),
+        session_secret=session_secret,
         session_ttl_s=int(source.get("FINANCE_SESSION_TTL_S") or DEFAULT_SESSION_TTL_S),
     )
+
+
+def derive_session_secret(seed: str) -> str:
+    """Deriva a chave de assinatura da sessão do segredo que já existe.
+
+    HKDF-SHA256 separado por rótulo (``finance.session.v1``): a mesma semente
+    (a key do domain-api) nunca é reusada como chave de outro propósito. O
+    resultado tem 32 bytes — acima do mínimo do HS256. Uma semente vazia devolve
+    vazio, e aí o login fica desabilitado em vez de assinar com chave previsível.
+    """
+    if not seed:
+        return ""
+    import hashlib
+    import hmac
+
+    return hmac.new(
+        b"finance.session.v1", seed.encode(), hashlib.sha256
+    ).hexdigest()
 
 
 def parse_cors_origins(raw: str) -> tuple[str, ...]:

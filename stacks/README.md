@@ -95,8 +95,18 @@ Evolution API).
 
 `finance.yml`: `FINANCE_API_KEYS`, `FINANCE_WORKER_API_KEY`,
 `FINANCE_DOMAIN_API_KEY` (a MESMA em `DOMAIN_API_KEYS` do `domain`),
-`RABBITMQ_PASSWORD`, `EVOLUTION_API_KEY`, `FINANCE_GOOGLE_CLIENT_ID`,
-`FINANCE_SESSION_SECRET`.
+`RABBITMQ_PASSWORD`, `EVOLUTION_API_KEY`. Opcionais: `FINANCE_GOOGLE_CLIENT_ID`
+(tem default = o client público do clubs) e `FINANCE_SESSION_SECRET` (derivado
+do `FINANCE_DOMAIN_API_KEY` se ausente).
+
+> **SSO do financeiro reusa o client público do clubs.** O *client ID* do Google
+> é público (vai no bundle), então o mesmo valor commitado em `stacks/clubs.yml`
+> é o default aqui e no `ts-frontend-ci-cd.yml`. Um client OAuth aceita várias
+> *authorized JavaScript origins*, então `https://finance.giomartins.dev`
+> precisa estar na lista desse client no Google Cloud Console — foi o
+> `origin_mismatch` que o comentário do workflow registra. Para um client
+> próprio, defina `FINANCE_GOOGLE_CLIENT_ID` (stack) e
+> `FINANCE_GOOGLE_OAUTH_CLIENT_ID` (secret do CI).
 
 `tela.yml`: `TELA_TURN_SECRET`.
 

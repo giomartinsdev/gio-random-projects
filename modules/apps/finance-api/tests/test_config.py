@@ -99,3 +99,40 @@ def test_defaults_match_the_documented_stack_values() -> None:
     assert (settings.rate_limit_rps, settings.rate_limit_burst) == (5, 20)
     assert settings.service_name == "finance-api"
     assert settings.otlp_endpoint == ""  # empty = telemetry off
+
+
+# ------------------------------------------------------------------- SSO §5
+
+def test_session_secret_is_derived_when_not_provided() -> None:
+    # Sem FINANCE_SESSION_SECRET, o segredo é derivado do DOMAIN_API_KEY — o
+    # login funciona sem cadastrar mais nenhuma variável, e o cookie nunca é
+    # assinado com uma chave pública.
+    settings = load_settings(dict(MINIMAL))
+    assert len(settings.session_secret) >= 32
+    assert settings.session_secret != MINIMAL["DOMAIN_API_KEY"]
+
+
+def test_explicit_session_secret_wins() -> None:
+    settings = load_settings(dict(MINIMAL, FINANCE_SESSION_SECRET="a" * 40))
+    assert settings.session_secret == "a" * 40
+
+
+def test_derived_secret_is_stable_and_domain_separated() -> None:
+    from finance_api.infrastructure.config import derive_session_secret
+
+    a = derive_session_secret("domain-key")
+    assert a == derive_session_secret("domain-key")  # determinístico
+    assert a != derive_session_secret("other-key")
+    assert len(a) == 64  # hex sha256
+
+
+def test_empty_seed_means_no_session_secret() -> None:
+    from finance_api.infrastructure.config import derive_session_secret
+
+    assert derive_session_secret("") == ""
+
+
+def test_google_client_id_is_optional() -> None:
+    # Sem client ID o login fica desabilitado, mas o boot não quebra.
+    settings = load_settings(dict(MINIMAL))
+    assert settings.google_client_id == ""

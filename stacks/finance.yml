@@ -51,14 +51,21 @@ services:
       # em finance-api.giomartins.dev: CORS e obrigatorio). Default do app ja e
       # finance.giomartins.dev; explicito aqui pra dev local tb.
       FINANCE_CORS_ORIGINS: ${FINANCE_CORS_ORIGINS:-https://finance.giomartins.dev}
-      # SSO do SPA (§5). Sem FINANCE_GOOGLE_CLIENT_ID o login fica desabilitado
-      # (o worker com X-API-Key segue funcionando); sem FINANCE_SESSION_SECRET
-      # não há como assinar a sessão. NÃO usamos `:?` aqui de propósito: um
-      # segredo ausente derrubaria o stack INTEIRO, incluindo o worker do
-      # WhatsApp — que não depende do SSO. Com default vazio o stack sobe, o
-      # login aparece como "não configurado", e ligar o SSO é só cadastrar as
-      # duas variáveis no Dockhand. Ver stacks/README.md.
-      FINANCE_GOOGLE_CLIENT_ID: ${FINANCE_GOOGLE_CLIENT_ID:-}
+      # SSO do SPA (§5). O client ID do Google é PÚBLICO (vai no bundle da SPA
+      # de qualquer forma) — o mesmo valor que o clubs.yml commita. Reusamos o
+      # MESMO client do clubs: um client OAuth do Google aceita várias
+      # "authorized JavaScript origins", então finance.giomartins.dev precisa
+      # estar na lista desse client no Google Cloud Console (foi o
+      # origin_mismatch que o comentário do ts-frontend-ci-cd.yml registra).
+      # Sem FINANCE_GOOGLE_CLIENT_ID o login fica desabilitado (o worker com
+      # X-API-Key segue funcionando). Ver stacks/README.md.
+      FINANCE_GOOGLE_CLIENT_ID: ${FINANCE_GOOGLE_CLIENT_ID:-45441571832-4vldrm5h9ef87c82m1spuu6g8foa0k8c.apps.googleusercontent.com}
+      # Segredo HS256 do cookie de sessão. NÃO usamos `:?` de propósito: um
+      # segredo ausente derrubaria o stack INTEIRO (inclusive o worker do
+      # WhatsApp, que não depende do SSO). Vazio = a app deriva um segredo
+      # forte do FINANCE_DOMAIN_API_KEY (que já é um segredo do stack), então o
+      # login funciona sem cadastrar mais nada; defina FINANCE_SESSION_SECRET
+      # para desacoplar os dois. Ver load_settings em config.py.
       FINANCE_SESSION_SECRET: ${FINANCE_SESSION_SECRET:-}
       RATE_LIMIT_RPS: "5"
       RATE_LIMIT_BURST: "20"

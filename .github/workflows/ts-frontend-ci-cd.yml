@@ -148,19 +148,26 @@ jobs:
       # telemetry also get VITE_OTEL_EXPORTER_OTLP_ENDPOINT (unused here
       # is a no-op -- see src/telemetry.ts in each app).
       #
-      # VITE_GOOGLE_CLIENT_ID is NOT shared between products: Google
-      # registers the authorized JavaScript origins per client, so one
-      # client cannot serve two apps on different hosts -- that is
-      # precisely what produced clubs' `origin_mismatch` in production.
-      # Each app with a sign-in button therefore gets its own client,
-      # resolved per matrix.app.
+      # VITE_GOOGLE_CLIENT_ID is resolved per app. The client ID is PUBLIC
+      # (it ships in the bundle either way) -- the same value is committed in
+      # stacks/clubs.yml. A single Google OAuth client can serve several
+      # origins as long as each is in its "authorized JavaScript origins";
+      # the secret overrides exist for when a product gets its OWN client.
       - name: Resolve the app's Google OAuth client ID
         working-directory: modules/apps/${{ matrix.app }}
         run: |
+          # The public fallback: the shared client whose JS origins include
+          # both clubs. and finance. (same one stacks/clubs.yml commits).
+          shared="45441571832-4vldrm5h9ef87c82m1spuu6g8foa0k8c.apps.googleusercontent.com"
           case "${{ matrix.app }}" in
-            clubs-frontend) id="${{ secrets.CLUBS_GOOGLE_OAUTH_CLIENT_ID }}" ;;
+            clubs-frontend)   id="${{ secrets.CLUBS_GOOGLE_OAUTH_CLIENT_ID }}" ;;
             finance-frontend) id="${{ secrets.FINANCE_GOOGLE_OAUTH_CLIENT_ID }}" ;;
-            *)              id="" ;;
+            *)                id="" ;;
+          esac
+          # Fall back to the shared public client so a product whose own
+          # secret isn't set still gets a working sign-in button.
+          case "${{ matrix.app }}" in
+            clubs-frontend|finance-frontend) [ -n "$id" ] || id="$shared" ;;
           esac
           echo "VITE_GOOGLE_CLIENT_ID=$id" >> "$GITHUB_ENV"
 
