@@ -18,6 +18,8 @@ import os
 from dataclasses import dataclass
 from typing import Mapping
 
+from finance_api.infrastructure import secrets_bridge
+
 DEFAULT_SERVICE_NAME = "finance-api"
 # domain-api holds /sync open for 10s by design; the client must outlast it,
 # or every slow-but-successful write would surface as a transport error
@@ -128,12 +130,24 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     host, port = parse_http_addr(source.get("HTTP_ADDR", ":8000"))
 
-    # Segredo do cookie de sessão. Se FINANCE_SESSION_SECRET não vier, deriva um
+    # Os SEGREDOS passam pela ponte do Vaultwarden quando ela está configurada
+    # (SECRETS_BRIDGE_URL/API_KEY) — é o que faz um item do cofre chegar ao
+    # container sem cadastrar variável de stack. Sem ponte, lê do ambiente.
+    resolve = secrets_bridge.resolver(source)
+
+    # Segredo do cookie de sessão. Se nem o cofre nem o env tiverem, deriva um
     # do DOMAIN_API_KEY (que já é um segredo do stack) via HKDF. Assim o login
     # funciona sem cadastrar mais nenhuma variável, e o cookie nunca é assinado
-    # com uma chave pública/conhecida. O sufixo separa os domínios: essa chave
-    # assina SESSÃO, não fala com o domain-api.
-    session_secret = source.get("FINANCE_SESSION_SECRET", "").strip() or derive_session_secret(api_key)
+    # com uma chave pública/conhecida.
+    session_secret = (
+        resolve("FINANCE_SESSION_SECRET")
+        or resolve("SESSION_SECRET")
+        or derive_session_secret(api_key)
+    )
+    # Open Finance (Polp). Nomes do cofre: POLP_OF_CLIENT_ID/SECRET. Vazios =
+    # integração desligada (503), o resto do app segue.
+    polp_client_id = resolve("POLP_OF_CLIENT_ID")
+    polp_client_secret = resolve("POLP_OF_CLIENT_SECRET")
 
     return Settings(
         domain_api_base_url=base_url.rstrip("/"),
@@ -153,8 +167,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         google_client_id=source.get("FINANCE_GOOGLE_CLIENT_ID", "").strip(),
         session_secret=session_secret,
         session_ttl_s=int(source.get("FINANCE_SESSION_TTL_S") or DEFAULT_SESSION_TTL_S),
-        polp_client_id=source.get("POLP_OF_CLIENT_ID", "").strip(),
-        polp_client_secret=source.get("POLP_OF_CLIENT_SECRET", "").strip(),
+        polp_client_id=polp_client_id,
+        polp_client_secret=polp_client_secret,
         polp_base_url=source.get("POLP_API_BASE_URL", "").strip(),
         polp_sandbox=source.get("POLP_OF_SANDBOX", "").strip().lower() in ("1", "true", "yes"),
     )

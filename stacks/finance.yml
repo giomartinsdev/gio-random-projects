@@ -73,6 +73,11 @@ services:
       POLP_OF_CLIENT_ID: ${POLP_OF_CLIENT_ID:-}
       POLP_OF_CLIENT_SECRET: ${POLP_OF_CLIENT_SECRET:-}
       POLP_OF_SANDBOX: ${POLP_OF_SANDBOX:-}
+      # Ponte do Vaultwarden: quando configurada, POLP_OF_CLIENT_ID/SECRET (e
+      # FINANCE_SESSION_SECRET) vêm do cofre, não do env. É assim que os itens
+      # que já estão no Vaultwarden chegam ao container. Sem a ponte, lê env.
+      SECRETS_BRIDGE_URL: ${SECRETS_BRIDGE_URL:-http://vaultwarden-api:8080}
+      SECRETS_BRIDGE_API_KEY: ${VAULTWARDEN_BRIDGE_API_KEY:-}
       RATE_LIMIT_RPS: "5"
       RATE_LIMIT_BURST: "20"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
@@ -118,6 +123,9 @@ services:
       FINANCE_API_BASE_URL: http://finance-api:8000
       # Key própria do conector em FINANCE_API_KEYS (rótulo `openfinance`).
       FINANCE_API_KEY: ${FINANCE_OF_API_KEY:-}
+      # Do cofre via ponte (mesma convenção da finance-api).
+      SECRETS_BRIDGE_URL: ${SECRETS_BRIDGE_URL:-http://vaultwarden-api:8080}
+      SECRETS_BRIDGE_API_KEY: ${VAULTWARDEN_BRIDGE_API_KEY:-}
       POLP_OF_CLIENT_ID: ${POLP_OF_CLIENT_ID:-}
       POLP_OF_CLIENT_SECRET: ${POLP_OF_CLIENT_SECRET:-}
       POLP_OF_SANDBOX: ${POLP_OF_SANDBOX:-}

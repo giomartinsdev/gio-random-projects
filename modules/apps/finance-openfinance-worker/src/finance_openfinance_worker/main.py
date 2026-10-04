@@ -15,11 +15,11 @@ import time
 
 from finance_openfinance_worker.api import FinanceApiClient
 from finance_openfinance_worker.polp.client import PolpClient
+from finance_openfinance_worker.secrets_bridge import resolver
 from finance_openfinance_worker.sync.runner import Syncer
 
 REQUIRED = (
     "FINANCE_API_BASE_URL",
-    "FINANCE_API_KEY",
     "POLP_OF_CLIENT_ID",
     "POLP_OF_CLIENT_SECRET",
 )
@@ -34,15 +34,19 @@ def _configure_logging() -> None:
 
 
 def build_syncer() -> tuple[Syncer, float]:
+    # Segredos do cofre via ponte (SECRETS_BRIDGE_URL/API_KEY) quando presentes;
+    # senão, do ambiente. É o que faz POLP_OF_CLIENT_ID/SECRET do Vaultwarden
+    # chegarem ao conector.
+    resolve = resolver()
     polp = PolpClient(
-        os.environ["POLP_OF_CLIENT_ID"],
-        os.environ["POLP_OF_CLIENT_SECRET"],
-        base_url=os.environ.get("POLP_API_BASE_URL", "").strip() or "https://api.polp.com.br/api/v2",
-        sandbox=os.environ.get("POLP_OF_SANDBOX", "").strip().lower() in ("1", "true", "yes"),
+        resolve("POLP_OF_CLIENT_ID"),
+        resolve("POLP_OF_CLIENT_SECRET"),
+        base_url=resolve("POLP_API_BASE_URL") or "https://api.polp.com.br/api/v2",
+        sandbox=resolve("POLP_OF_SANDBOX").lower() in ("1", "true", "yes"),
     )
     finance = FinanceApiClient(
         os.environ["FINANCE_API_BASE_URL"],
-        os.environ["FINANCE_API_KEY"],
+        resolve("FINANCE_OF_API_KEY") or os.environ.get("FINANCE_API_KEY", ""),
         timeout_s=float(os.environ.get("FINANCE_API_TIMEOUT_S", "15")),
     )
     poll = float(os.environ.get("OF_POLL_SECONDS", "600"))
@@ -53,7 +57,8 @@ def build_syncer() -> tuple[Syncer, float]:
 def main() -> int:
     _configure_logging()
     log = logging.getLogger("finance-openfinance-worker")
-    missing = [k for k in REQUIRED if not os.environ.get(k)]
+    resolve = resolver()
+    missing = [k for k in REQUIRED if not (resolve(k) if k.startswith("POLP_") else os.environ.get(k))]
     if missing:
         # Sem as credenciais o conector fica fora — mas com exit 0, para o
         # `restart: unless-stopped` NÃO entrar em loop (um exit não-zero o
