@@ -43,10 +43,13 @@ def _publish(rabbit_url: str, event: dict) -> None:
         try:
             ch = await conn.channel()
             exchange = await ch.declare_exchange("evolution", aio_pika.ExchangeType.TOPIC, durable=True)
-            # A Evolution declara a fila global por evento (RABBITMQ_GLOBAL_
-            # ENABLED); sem isso um publish antes do consumidor existir cairia
-            # no vazio (exchange topic sem fila bound descarta).
-            queue = await ch.declare_queue("evolution.messages.upsert", durable=True)
+            # A Evolution declara a fila global por evento como **quorum**
+            # (RABBITMQ_GLOBAL_ENABLED); sem os mesmos arguments um publish
+            # antes do consumidor cairia no vazio, e o declare do worker
+            # colidiria (quorum vs classic).
+            queue = await ch.declare_queue(
+                "evolution.messages.upsert", durable=True, arguments={"x-queue-type": "quorum"}
+            )
             await queue.bind(exchange, routing_key="evolution.messages.upsert")
             await exchange.publish(
                 aio_pika.Message(body=json.dumps(event).encode()),

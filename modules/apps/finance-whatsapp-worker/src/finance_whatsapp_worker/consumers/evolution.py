@@ -25,6 +25,12 @@ log = logging.getLogger("finance-whatsapp-worker")
 EXCHANGE = "evolution"
 QUEUE = "evolution.messages.upsert"
 ROUTING_KEY = "evolution.messages.upsert"
+# A Evolution declara a fila como **quorum** (RABBITMQ_GLOBAL_ENABLED), não
+# classic. Declarar como classic aqui explode com PRECONDITION_FAILED 406 no
+# primeiro boot (a fila já existe, com outra arg) — então o worker declara com
+# a MESMA arg, exatamente. Trocar este valor quebra o consumo contra a Evolution
+# real (os testes declaram igual, para o verde local valer em produção).
+QUEUE_ARGS = {"x-queue-type": "quorum"}
 
 
 class EvolutionConsumer:
@@ -34,7 +40,7 @@ class EvolutionConsumer:
 
     async def _declare(self, channel: aio_pika.abc.AbstractChannel):
         exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
-        queue = await channel.declare_queue(QUEUE, durable=True)
+        queue = await channel.declare_queue(QUEUE, durable=True, arguments=QUEUE_ARGS)
         await queue.bind(exchange, routing_key=ROUTING_KEY)
         return queue
 
