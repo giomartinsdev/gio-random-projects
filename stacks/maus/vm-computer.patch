@@ -1,0 +1,61 @@
+diff --git a/server/container-computer.ts b/server/container-computer.ts
+index 1fa88a0..1c61e50 100644
+--- a/server/container-computer.ts
++++ b/server/container-computer.ts
+@@ -37,7 +37,7 @@ export const BASE_IMAGE = `${BASE_IMAGE_REPOSITORY}@${BASE_IMAGE_DIGEST}`;
+ // Image and container labels below remain the authoritative compatibility
+ // check, not the mutable tag.
+ export const IMAGE_REPOSITORY = "localhost/openmausbot/cua-local-vm";
+-export const IMAGE_LAYER_VERSION = "5";
++export const IMAGE_LAYER_VERSION = "7";
+ export const IMAGE_LAYER_LABEL = "com.openmausbot.image-layer";
+ export const IMAGE = `${IMAGE_REPOSITORY}:driver-${CUA_DRIVER_VERSION}-v${IMAGE_LAYER_VERSION}`;
+ export const CONTAINER = "openmausbot-computer";
+@@ -223,6 +223,24 @@ RUN printf '%s\\n' \\
+       'stderr_logfile=/var/log/supervisor/cua-driver.error.log' \\
+       'priority=30' \\
+       >> /etc/supervisor/supervisord.conf
++# Git push credentials: read the token from the DURABLE workspace bind
++# (/home/cua/workspace survives VM recreation), never baked into this image.
++# Put your token in <vm-home>/.git-credentials on the host (mode 600).
++RUN set -eux; \
++    apt-get update; \
++    apt-get install -y --no-install-recommends git ca-certificates openssh-client; \
++    rm -rf /var/lib/apt/lists/*; \
++    git config --system credential.helper 'store --file=/home/cua/workspace/.git-credentials'; \
++    git config --system user.name 'giomartinsdev'; \
++    git config --system user.email 'giomartinsdev@users.noreply.github.com'
++# Dockhand CLI helper on PATH: lets a bot create/deploy stacks on this VPS
++# through the Dockhand API. The token itself lives in the durable workspace
++# (/home/cua/workspace/.dockhand-token), never in this image.
++RUN printf '%s\\n' \\
++      '#!/bin/sh' \\
++      'exec /home/cua/workspace/dockhand "$@"' \\
++      > /usr/local/bin/dockhand \\
++    && chmod 0755 /usr/local/bin/dockhand
+ LABEL ${MANAGED_LABEL}="1" \\
+       ${DRIVER_LABEL}="${CUA_DRIVER_VERSION}" \\
+       ${BASE_IMAGE_LABEL}="${BASE_IMAGE_DIGEST}" \\
+diff --git a/server/system-prompt.ts b/server/system-prompt.ts
+index 651ccff..56f5789 100644
+--- a/server/system-prompt.ts
++++ b/server/system-prompt.ts
+@@ -82,15 +82,15 @@ export const SIGN_IN_PROMPT =
+ 
+ const COMPUTER_PARAGRAPH: Record<ComputerPromptKind, string> = {
+   "vm-private":
+-    " You have your own isolated Cua sandbox: a Linux desktop in a container reserved for this bot. Only /home/cua/workspace is durable; save downloads, repositories, working files, and browser profiles there because everything else inside the VM is disposable. No other host folder is mounted. Run every command with vm_exec, which returns the exit code and the output as text; do not type commands into a terminal window and read screenshots. Create files there with vm_exec too (a shell heredoc or a script it runs); your host file tools cannot reach the VM. To give the user a file you made there (a report, image, audio, video, spreadsheet or slides), call attach_file with its path once it is saved; it reports an error if the file is missing. A path inside the VM cannot be opened from chat, so do not paste one as a link. Use the computer tools for the desktop, accessibility and windows. Inspect the desktop state before acting, prefer accessibility targets over raw coordinates, and work carefully.",
++    " You have your own isolated Cua sandbox: a Linux desktop in a container reserved for this bot. Only /home/cua/workspace is durable; save downloads, repositories, working files, and browser profiles there because everything else inside the VM is disposable. No other host folder is mounted. Run every command with vm_exec, which returns the exit code and the output as text; do not type commands into a terminal window and read screenshots. Create files there with vm_exec too (a shell heredoc or a script it runs); your host file tools cannot reach the VM. To give the user a file you made there (a report, image, audio, video, spreadsheet or slides), call attach_file with its path once it is saved; it reports an error if the file is missing. A path inside the VM cannot be opened from chat, so do not paste one as a link. Use the computer tools for the desktop, accessibility and windows. Inspect the desktop state before acting, prefer accessibility targets over raw coordinates, and work carefully. A `dockhand` helper is on PATH in the VM: it talks to this VPS's Dockhand (the Docker stack manager) using a token at /home/cua/workspace/.dockhand-token. Use `dockhand ls` to list stacks and `dockhand help` for the rest (create/deploy/sync/env/rm). A stack you create/deploy runs on the host with access to this VPS's data and secrets, so treat it as a privileged, destructive action: only when the user explicitly asked, and never expose the token.",
+   "vm-shared":
+-    " You have a shared, isolated Cua sandbox: a Linux desktop in a container on this machine. Only /home/cua/workspace is durable; save downloads, repositories, working files, and browser profiles there because everything else inside the VM is disposable. No other host folder is mounted. Run every command with vm_exec, which returns the exit code and the output as text; do not type commands into a terminal window and read screenshots. Create files there with vm_exec too (a shell heredoc or a script it runs); your host file tools cannot reach the VM. To give the user a file you made there (a report, image, audio, video, spreadsheet or slides), call attach_file with its path once it is saved; it reports an error if the file is missing. A path inside the VM cannot be opened from chat, so do not paste one as a link. Use the computer tools for the desktop, accessibility and windows. Inspect the desktop state before acting, prefer accessibility targets over raw coordinates, and work carefully.",
++    " You have a shared, isolated Cua sandbox: a Linux desktop in a container on this machine. Only /home/cua/workspace is durable; save downloads, repositories, working files, and browser profiles there because everything else inside the VM is disposable. No other host folder is mounted. Run every command with vm_exec, which returns the exit code and the output as text; do not type commands into a terminal window and read screenshots. Create files there with vm_exec too (a shell heredoc or a script it runs); your host file tools cannot reach the VM. To give the user a file you made there (a report, image, audio, video, spreadsheet or slides), call attach_file with its path once it is saved; it reports an error if the file is missing. A path inside the VM cannot be opened from chat, so do not paste one as a link. Use the computer tools for the desktop, accessibility and windows. Inspect the desktop state before acting, prefer accessibility targets over raw coordinates, and work carefully. A `dockhand` helper is on PATH in the VM: it talks to this VPS's Dockhand (the Docker stack manager) using a token at /home/cua/workspace/.dockhand-token. Use `dockhand ls` to list stacks and `dockhand help` for the rest (create/deploy/sync/env/rm). A stack you create/deploy runs on the host with access to this VPS's data and secrets, so treat it as a privileged, destructive action: only when the user explicitly asked, and never expose the token.",
+   box: " You control the assigned cloud computer. Inspect it with screenshots; click coordinates refer to the full image. Use the advertised computer tools for desktop actions and shell commands.",
+   "box-agent": "",
+   vps:
+     " You have your own self-hosted remote Linux computer through the official Cua tools. This is a VPS, not Boat; using it does not require a Boat API key. Its filesystem is disposable: everything on it is wiped whenever its container is recreated, so keep long-lived work somewhere durable — push it to a remote, or hand the results back in chat — instead of leaving it only on that computer. Inspect the desktop state before acting, prefer accessibility targets over raw coordinates, and act carefully.",
+   local:
+-    " You can act on the user's computer through the computer tools. Discover the target app/window and inspect its state first. Prefer window-targeted accessibility actions with background delivery so the user can keep working in another app; do not bring OpenMausBot or another app to the front just to inspect it. Use the dedicated browser tools for browser work when available, keeping the user's intended browser profile/account, and OpenMausBot's configuration/proposal tools for supported bot setup rather than clicking through this app. Full-desktop input, app activation, and foreground delivery can move the real cursor, change focus, or switch desktops: use them only when the user asked for foreground control or agrees after background control reports it cannot perform the action. Do not silently retry a background refusal as foreground input, including through shell scripts, AppleScript/System Events, or another automation tool. If a background action unexpectedly changes focus, report it and stop that route rather than continuing to interrupt the user. Never promise that arbitrary desktop actions can run in the background.",
++    " You can act on the user's computer through the computer tools. Discover the target app/window and inspect its state first. Prefer window-targeted accessibility actions with background delivery so the user can keep working in another app; do not bring OpenMausBot or another app to the front just to inspect it. Use the dedicated browser tools for browser work when available, keeping the user's intended browser profile/account, and OpenMausBot's configuration/proposal tools for supported bot setup rather than clicking through this app. Full-desktop input, app activation, and foreground delivery can move the real cursor, change focus, or switch desktops: use them only when  the user asked for foreground control or agrees after background control reports it cannot perform the action. Do not silently retry a background refusal as foreground input, including through shell scripts, AppleScript/System Events, or another automation tool. If a background action unexpectedly changes focus, report it and stop that route rather than continuing to interrupt the user. Never promise that arbitrary desktop actions can run in the background.",
+ };
+ 
+ /** The computer paragraph plus the shared sign-in policy. A boat driven by

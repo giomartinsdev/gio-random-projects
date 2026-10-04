@@ -112,7 +112,7 @@ jobs:
           cp stacks/maus/Dockerfile _maus-upstream/Dockerfile
           git -C _maus-upstream apply --verbose "$GITHUB_WORKSPACE/stacks/maus/newbot-full.patch"
           git -C _maus-upstream apply --verbose "$GITHUB_WORKSPACE/stacks/maus/agentic-rounds.patch"
-          git -C _maus-upstream apply --verbose "$GITHUB_WORKSPACE/stacks/maus/vm-git-credentials.patch"
+          git -C _maus-upstream apply --verbose "$GITHUB_WORKSPACE/stacks/maus/vm-computer.patch"
 
       - name: Build and push maus (arm64)
         uses: docker/build-push-action@v6
