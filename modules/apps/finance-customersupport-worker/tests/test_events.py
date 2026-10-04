@@ -31,7 +31,9 @@ def test_render_registered_expense():
         EVENT_TRANSACTION_REGISTERED,
         {"transaction_type": "EXPENSE", "amount": "-45.00", "category": "Alimentação"},
     )
-    assert out == "💸 Despesa de R$ -45,00 em *Alimentação* registrada ✅"
+    # Despesa é exibida em módulo: o rótulo "Despesa" já diz a direção; o
+    # sinal negativo no amount é convenção de armazenamento, não de conversa.
+    assert out == "💸 Despesa de R$ 45,00 em *Alimentação* registrada ✅"
 
 
 def test_render_registered_income():
@@ -57,7 +59,7 @@ def test_render_budget_warning_and_exceeded():
         EVENT_BUDGET_THRESHOLD_REACHED,
         {"category": "Alimentação", "threshold": 80, "spent_amount": "-80.00", "limit_amount": "100.00"},
     )
-    assert warn == "⚠️ Você atingiu *80%* do orçamento de *Alimentação* (R$ -80,00 de R$ 100,00)"
+    assert warn == "⚠️ Você atingiu *80%* do orçamento de *Alimentação* (R$ 80,00 de R$ 100,00)"
     over = render_event(
         EVENT_BUDGET_THRESHOLD_REACHED,
         {"category": "Alimentação", "threshold": 100, "spent_amount": "-110.00", "limit_amount": "100.00"},

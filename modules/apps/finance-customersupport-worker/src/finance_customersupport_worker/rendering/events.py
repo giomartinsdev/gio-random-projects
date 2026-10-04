@@ -50,18 +50,31 @@ def _label(kind: str) -> tuple[str, str]:
     }.get(kind, ("🧾", "Lançamento"))
 
 
+def _abs_br(amount: object) -> str:
+    """Valor em módulo para exibição: o rótulo já diz a direção do dinheiro.
+
+    O sinal negativo é convenção de ARMAZENAMENTO (o net soma ``SUM(amount)``),
+    não de conversa — mostrar "Despesa de R$ -70,00" é ruído. ``-0,00`` e
+    ``0,00`` viram ``0,00``.
+    """
+    text = str(amount)
+    if text.startswith("-"):
+        text = text[1:]
+    return _br(text)
+
+
 def render_event(event_name: str, payload: Mapping[str, Any]) -> str | None:
     """Traduz um evento de domínio na mensagem de atendimento, ou ``None``."""
     if event_name == TRANSACTION_REGISTERED:
         emoji, label = _label(str(payload.get("transaction_type", "")))
         return (
-            f"{emoji} {label} de R$ {_br(str(payload.get('amount', '0')))} "
+            f"{emoji} {label} de R$ {_abs_br(payload.get('amount', '0'))} "
             f"em *{payload.get('category', '')}* registrada ✅"
         )
 
     if event_name == TRANSFER_COMPLETED:
         return (
-            f"🔁 Transferência de R$ {_br(str(payload.get('amount', '0')))} "
+            f"🔁 Transferência de R$ {_abs_br(payload.get('amount', '0'))} "
             f"concluída ✅"
         )
 
@@ -75,8 +88,8 @@ def render_event(event_name: str, payload: Mapping[str, Any]) -> str | None:
         return (
             f"{emoji} Você atingiu *{threshold}%* do orçamento de "
             f"*{payload.get('category', '')}* "
-            f"(R$ {_br(str(payload.get('spent_amount', '0')))} de "
-            f"R$ {_br(str(payload.get('limit_amount', '0')))})"
+            f"(R$ {_abs_br(payload.get('spent_amount', '0'))} de "
+            f"R$ {_abs_br(payload.get('limit_amount', '0'))})"
         )
 
     return None

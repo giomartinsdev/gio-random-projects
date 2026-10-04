@@ -19,7 +19,14 @@ from finance_customersupport_worker.clients.finance_api import (
 from finance_customersupport_worker.gateway.evolution import EvolutionClient
 from finance_customersupport_worker.nlu.parser import parse
 from finance_customersupport_worker.rendering import chart
-from finance_customersupport_worker.rendering.events import phone_to_jid, render_event
+from finance_customersupport_worker.rendering.events import (
+    BUDGET_THRESHOLD_REACHED,
+    TRANSACTION_CATEGORIZED,
+    TRANSACTION_REGISTERED,
+    TRANSFER_COMPLETED,
+    phone_to_jid,
+    render_event,
+)
 from finance_customersupport_worker.rendering.text import (
     render,
     render_breakdown,
@@ -30,6 +37,11 @@ from finance_customersupport_worker.rendering.text import (
 log = logging.getLogger("finance-customersupport-worker")
 
 EVENT_MESSAGES_UPSERT = "messages.upsert"
+
+# Eventos que são a CONFIRMAÇÃO de um comando que este worker pode ter
+# originado: se o command_id bate, o usuário já recebeu a resposta na hora e a
+# proativa seria duplicada. Alerta de orçamento NÃO entra aqui (informação nova).
+_CONFIRMATION_EVENTS = frozenset({TRANSACTION_REGISTERED, TRANSFER_COMPLETED, TRANSACTION_CATEGORIZED})
 
 
 def extract_text(data: dict) -> str | None:
@@ -59,6 +71,12 @@ class Worker:
         # Idempotência do atendimento proativo: a mesma transação aplicada
         # (mesmo command_id) não vira dois avisos.
         self._seen_events: set[str] = set()
+        # Comandos que ESTE worker originou. Quando o evento do mesmo comando
+        # chega pelo ``domain.events``, o worker já respondeu o desfecho na
+        # hora — confirmar de novo seria a mensagem duplicada ("R$ 70" e
+        # "R$ -70"). Guardamos só a CONFIRMAÇÃO de transação/transferência; um
+        # alerta de orçamento é informação nova e sempre passa.
+        self._self_commands: set[str] = set()
 
     async def handle(self, event: dict) -> None:
         """Processa um evento do Evolution. Eventos irrelevantes são no-op."""
@@ -103,6 +121,11 @@ class Worker:
             body = await self._finance.submit(intent.action, intent.payload)
             outcome = body.get("status", "written")
             entity_id = body.get("entity_id", "")
+            # Lembra o comando que originamos: o evento de confirmação dele
+            # (mesmo command_id) não deve virar uma segunda mensagem.
+            command_id = body.get("command_id")
+            if isinstance(command_id, str) and command_id:
+                self._self_commands.add(command_id)
         except FinanceRejected as exc:
             outcome, error = "failed", str(exc)
         except FinanceQueued as exc:
@@ -157,16 +180,30 @@ class Worker:
         payload = event.get("payload") or {}
         if not isinstance(event_name, str) or not isinstance(payload, dict):
             return
-        # Idempotência: o envelope carrega event_id (estável por entrega), com
-        # command_id como reserva. O mesmo evento reentregue é no-op (§12.5).
-        key = str(event.get("event_id") or event.get("command_id") or f"{event_name}:{event.get('occurred_at')}")
-        if key in self._seen_events:
-            return
-        self._seen_events.add(key)
 
         text = render_event(event_name, payload)
         if text is None:
             return  # evento de outra família: não é atendimento deste worker
+
+        command_id = event.get("command_id")
+        # Sem eco: se ESTE worker originou o comando e o evento é a
+        # CONFIRMAÇÃO dele (transação/transferência/categoria), o usuário já
+        # recebeu a resposta na hora — repetir seria a mensagem duplicada
+        # ("R$ 70" e "R$ -70"). Um alerta de orçamento NÃO é confirmação: é
+        # informação nova, e passa mesmo carregando o mesmo command_id.
+        if (
+            event_name in _CONFIRMATION_EVENTS
+            and isinstance(command_id, str)
+            and command_id in self._self_commands
+        ):
+            return
+
+        # Idempotência: o envelope carrega event_id (estável por entrega), com
+        # command_id como reserva. O mesmo evento reentregue é no-op (§12.5).
+        key = str(event.get("event_id") or command_id or f"{event_name}:{event.get('occurred_at')}")
+        if key in self._seen_events:
+            return
+        self._seen_events.add(key)
 
         user_id = payload.get("user_id")
         if not isinstance(user_id, str) or not user_id:
