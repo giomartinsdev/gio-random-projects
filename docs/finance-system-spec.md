@@ -50,8 +50,9 @@ criar um segundo CQRS:
 | --- | --- | --- | --- |
 | D2 | Banco | (a) schema `finance` dentro do DB `domain` · (b) database próprio | (a) — (b) exige bootstrap em `persistence.yml` |
 | D3 | Stack | (a) stack nova `finance` · (b) entrar no stack `domain` | (a) — ver §10 |
-| D4 | Hostnames | nomes definitivos de API e webhook | §10.5 |
-| D5 | Acesso | webhook do WhatsApp **público** (sem SSO); API com acesso | §10.5 |
+| D4 | Hostnames | nomes definitivos de API e SPA | `finance.giomartins.dev` (SPA), `finance-api.giomartins.dev` (API) — ver §10.5 |
+| D5 | Acesso | SPA público (iframe no hub), API com auth própria | SPA em `excluded_hostnames`; API com `X-API-Key`, sem Access — ver §10.5 |
+| D6 | Gate do WhatsApp | Meta Cloud API vs **Evolution API** | **Evolution API** (já roda no stack `compute`): o worker consome os eventos do RabbitMQ e envia por `POST /message/sendText`. Sem webhook HTTP, sem `X-Hub-Signature-256` — ver §5.3 |
 
 ---
 
@@ -59,9 +60,12 @@ criar um segundo CQRS:
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│        Meta Cloud API (WhatsApp)  /  webhook gateway    │
+│        Evolution API (gateway WhatsApp, stack compute) │
+│  Baileys: recebe/envia mensagens; publica TODO evento  │
+│  no RabbitMQ (exchange topic `evolution`)              │
 └──────────────────────────┬─────────────────────────────┘
-                           │ HTTPS POST /webhook (assinatura)
+                           │ consome `evolution.messages.upsert` (AMQP)
+                           │ envia por POST /message/sendText (apikey)
                            ▼
 ┌────────────────────────────────────────────────────────┐
 │            finance-whatsapp-worker                     │
@@ -104,7 +108,8 @@ criar um segundo CQRS:
 │  (DATABASE_URL — stacks/domain.yml)                    │
 └────────────┬───────────────────────────┬───────────────┘
              │ eventos de domínio         │
-             │ (finance.*, via broker)    │
+             │ (finance.*, exchange       │
+             │  `domain.events`, fanout)  │
              ▼                            ▼
    finance-whatsapp-worker      PostgreSQL 17 (stack persistence,
    (assina p/ avisar o          DB/schema do §8)
@@ -113,10 +118,24 @@ criar um segundo CQRS:
 
 **Transporte — o que o repo já tem, sem inventar:**
 
-- **Broker:** RabbitMQ do `stacks/persistence.yml` (usuário `domain`), na rede
-  externa `apps`. Nada de subir um broker próprio. Quem **publica** comando nele
-  é o `domain-api`; a `finance-api` não fala broker, e o worker só o consome
-  (eventos, §13).
+- **Entrada (WhatsApp → worker):** a **Evolution API** (stack `compute`,
+  `evolution-api`), não a Meta Cloud API. Ela roda Baileys, e publica **todo**
+  evento no RabbitMQ do `persistence`: exchange topic **`evolution`**, routing
+  key `evolution.<evento>` (ex.: `evolution.messages.upsert`) e uma fila global
+  por evento (`evolution.messages.upsert`). O worker **consome** a fila de
+  `evolution.messages.upsert` — não há webhook HTTP nem assinatura
+  `X-Hub-Signature-256` (isso era da Meta; ver §5.3). Payload real (v2.3.7):
+  `{event, instance, data:{key:{remoteJid, fromMe}, message:{conversation |
+  extendedTextMessage.text}, pushName, messageTimestamp}, ...}`.
+- **Saída (worker → WhatsApp):** `POST {EVOLUTION_API_URL}/message/sendText/{instance}`
+  com header `apikey: {EVOLUTION_API_KEY}` e corpo
+  `{"number": "<E.164 sem +>", "text": "<texto>"}`. A instância é a mesma que
+  publica os eventos (`EVOLUTION_INSTANCE`, hoje `web-businesses`).
+- **Broker de comando:** o RabbitMQ do `stacks/persistence.yml` (usuário
+  `domain`), na rede externa `apps`. Nada de subir um broker próprio. Quem
+  **publica** comando nele é o `domain-api`; a `finance-api` não fala broker, e
+  o worker só o consome (eventos de domínio, §13) **além** de consumir os
+  eventos do Evolution.
 - **Rede:** externa `apps` (`external: true`). Não criar rede nova.
 - **Observabilidade:** `alloy:4318` já recebe OTLP; incluir
   `OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_SERVICE_NAME` desde o primeiro deploy.
@@ -224,6 +243,44 @@ Card em texto (receitas/despesas/saldo, top categorias com barra, alertas) e
 gráfico PNG quando o usuário pedir *gráfico*; *extrato* devolve a lista
 detalhada. Os templates e o PNG entram em teste de golden file (§12.4).
 
+### 5.3. Transporte pelo Evolution API (não pela Meta)
+
+O gateway do WhatsApp é a **Evolution API** que já roda no stack `compute`
+(`evolution-api`, `ghcr`/`evoapicloud`, Baileys, v2.3.7). O worker não fala com
+a Meta: nenhum webhook HTTP, nenhum `WHATSAPP_VERIFY_TOKEN`, nenhum
+`X-Hub-Signature-256`. O que existe é:
+
+**Entrada (mensagem do usuário):** a Evolution publica cada evento no RabbitMQ
+do `persistence` — exchange topic `evolution`, routing key `evolution.<evento>`,
+uma fila global por evento. O worker consome a fila **`evolution.messages.upsert`**
+e extrai:
+
+| Campo | Onde | Uso |
+| --- | --- | --- |
+| remetente | `data.key.remoteJid` (`<E.164>@s.whatsapp.net`) | id do `User` |
+| quem mandou | `data.key.fromMe` | ignora ecos das próprias respostas |
+| texto | `data.message.conversation` ou `data.message.extendedTextMessage.text` | o que o NLU lê |
+| nome | `data.pushName` | saudação |
+| instância | `instance` | a que responde (`EVOLUTION_INSTANCE`) |
+
+Eventos que **não** são `messages.upsert` (ou mensagens `fromMe`, ou sem texto —
+áudio/imagem ainda não suportados) são reconhecidos e descartados sem erro. A
+entrega é at-least-once, então o consumo é **idempotente por `data.key.id`**
+(mesma disciplina dos eventos de domínio, §12.5).
+
+**Saída (resposta do bot):** `POST {EVOLUTION_API_URL}/message/sendText/{instance}`
+com header `apikey: {EVOLUTION_API_KEY}` e corpo
+`{"number": "<E.164 sem +>", "text": "<texto>"}`. O `number` é o `remoteJid`
+sem o sufixo `@s.whatsapp.net`. Um envio que falha **não** derruba o consumo: a
+mensagem é registrada como falha e o loop segue (§12.9).
+
+> **Por que o Evolution e não a Meta:** o repo já opera um gateway WhatsApp com
+> instância conectada (o número de negócio), persistência e broker próprios. Usar
+> a Meta exigiria um segundo canal, token de sistema e um webhook público novo —
+> nada disso se justifica quando o Evolution já entrega os mesmos eventos e um
+> endpoint de envio. O hostname `finance-webhook.giomartins.dev` previsto na
+> fatia 1 **deixa de existir** (não há webhook); ver §10.5.
+
 ---
 
 ## 6. Stack Tecnológica & Tipagem
@@ -251,8 +308,10 @@ detalhada. Os templates e o PNG entram em teste de golden file (§12.4).
 **`finance-whatsapp-worker`** — Python 3.12:
 - Mesmo esqueleto de `clubs-ingest`: `pyproject.toml` (hatchling), `pytest` +
   `pytest-bdd` + `testcontainers` + `docker` nos extras `dev`.
-- `httpx` para falar com a `finance-api`; `aio-pika` só para **consumir** os
-  eventos de domínio (§13); Pydantic v2 para contratos; nenhum driver de banco.
+- `httpx` para falar com a `finance-api`; `aio-pika` para **consumir** os eventos
+  do Evolution (`evolution.messages.upsert`) e os eventos de domínio (§13) —
+  nunca para publicar comando (§1.1); Pydantic v2 para contratos; nenhum driver
+  de banco.
 - `packages = ["src/finance_whatsapp_worker"]`, entrypoint
   `python -m finance_whatsapp_worker.main`.
 
@@ -307,8 +366,8 @@ modules/
         rendering/                 # templates WhatsApp + gerador de PNG
         state/                     # sessão de conversa
         clients/                   # cliente HTTP da finance-api
-        consumers/                 # consumidores do broker
-        gateway/                   # integração Meta Cloud API
+        consumers/                 # consumidor dos eventos (Evolution + domínio)
+        gateway/                   # integração Evolution API (AMQP in, sendText out)
       tests/
         features/
 stacks/
@@ -421,19 +480,16 @@ só `${VAR}`.
 
 ```yaml
 # finance.yml — bounded context financeiro. Depende de persistence.yml
-# (postgres, rabbitmq) e do compute (alloy p/ OTLP), pela rede `apps`.
+# (postgres, rabbitmq), do compute (alloy p/ OTLP, evolution-api) pela rede `apps`.
 #
 # Segredos (variáveis de stack no Dockhand — NÃO no git):
-#   POSTGRES_PASSWORD   (a MESMA do persistence.yml)
-#   RABBITMQ_PASSWORD   (a MESMA do persistence.yml)
+#   RABBITMQ_PASSWORD       (a MESMA do persistence.yml)
 #   FINANCE_API_KEYS        (lista key:label, um caller por serviço)
 #   FINANCE_WORKER_API_KEY  (a key do worker, espelhada em FINANCE_API_KEYS)
 #   FINANCE_DOMAIN_API_KEY  (a key da finance-api, espelhada em DOMAIN_API_KEYS
 #                            do stack `domain` — ver §10.3)
-#   WHATSAPP_VERIFY_TOKEN / WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID
-# FATIA 1 (o que já existe no repo): só o `finance-api`. O bloco do worker abaixo
-# é contrato para a fatia 2/3 — ajustar env/porta/healthcheck quando o app
-# existir, antes de subir aquele serviço, e derivar daí o `paths:`/`STACK` do CI.
+#   EVOLUTION_API_KEY       (a MESMA do compute.yml — apikey global da Evolution)
+#   EVOLUTION_INSTANCE      (opcional, default web-businesses)
 name: finance
 
 services:
@@ -446,15 +502,20 @@ services:
       DOMAIN_API_BASE_URL: http://domain-api:8000
       DOMAIN_API_KEY: ${FINANCE_DOMAIN_API_KEY:?defina FINANCE_DOMAIN_API_KEY}
       HTTP_ADDR: ":8000"
+      DOMAIN_API_TIMEOUT_S: "12"
       FINANCE_API_KEYS: ${FINANCE_API_KEYS:?defina FINANCE_API_KEYS}
+      FINANCE_CORS_ORIGINS: ${FINANCE_CORS_ORIGINS:-https://finance.giomartins.dev}
       RATE_LIMIT_RPS: "5"
       RATE_LIMIT_BURST: "20"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: finance-api
     ports:
-      - "127.0.0.1:8018:8000"      # porta loopback nova — ver §10.5
+      - "127.0.0.1:8018:8000"      # porta loopback — ver §10.5
     networks: [apps]
 
+  # Consumidor + gateway do WhatsApp. SEM porta e SEM host: o worker não serve
+  # nada — recebe mensagem por AMQP (a Evolution publica) e envia por HTTP à
+  # Evolution (§5.3). Um port publish seria superfície sem contrato.
   finance-whatsapp-worker:
     image: registry.giomartins.dev:5000/finance-whatsapp-worker:latest
     container_name: finance-whatsapp-worker
@@ -463,15 +524,16 @@ services:
       # SEM DATABASE_URL — regra de isolamento (§1.1)
       FINANCE_API_BASE_URL: http://finance-api:8000
       FINANCE_API_KEY: ${FINANCE_WORKER_API_KEY:?defina FINANCE_WORKER_API_KEY}
+      # Consome os eventos do Evolution (messages.upsert) e os de domínio
+      # (finance.*). É o único broker; nenhum comando é publicado por aqui.
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-domain}:${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}@rabbitmq:5672/
-      HTTP_ADDR: ":8080"
-      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:?defina WHATSAPP_VERIFY_TOKEN}
-      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:?defina WHATSAPP_ACCESS_TOKEN}
-      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:?defina WHATSAPP_PHONE_NUMBER_ID}
+      # Envio da resposta (POST /message/sendText/{instance}). A Evolution roda
+      # no stack compute, na mesma rede `apps`.
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?defina EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-web-businesses}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: finance-whatsapp-worker
-    ports:
-      - "127.0.0.1:8019:8080"      # webhook do WhatsApp — ver §10.5
     networks: [apps]
 
 networks:
@@ -488,19 +550,20 @@ senhas já existentes:
 
 | Variável | Escopo | Valor |
 | --- | --- | --- |
-| `RABBITMQ_PASSWORD` | worker | a MESMA de `persistence.yml` (consumo de eventos) |
+| `RABBITMQ_PASSWORD` | worker | a MESMA de `persistence.yml` (consome os eventos) |
 | `FINANCE_DOMAIN_API_KEY` | finance-api | a key da finance-api — **também** na lista `DOMAIN_API_KEYS` do stack `domain` |
 | `FINANCE_API_KEYS` | finance-api | lista `key:label`, um caller por serviço |
 | `FINANCE_WORKER_API_KEY` | worker | a key do worker, espelhada em `FINANCE_API_KEYS` |
-| `WHATSAPP_VERIFY_TOKEN` | worker | token do webhook (Meta) |
-| `WHATSAPP_ACCESS_TOKEN` | worker | token de envio (Meta Cloud API) |
-| `WHATSAPP_PHONE_NUMBER_ID` | worker | id do número |
+| `EVOLUTION_API_KEY` | worker | a MESMA de `compute.yml` (apikey global da Evolution) |
+| `EVOLUTION_INSTANCE` | worker | opcional; default `web-businesses` (a instância conectada) |
 
 `DATABASE_URL` e o broker de comandos **não** pertencem a este stack: banco,
 `domain-api` e `domain-worker` são do stack `domain` (§1.1). A dependência
 cruzada que precisa existir é `FINANCE_DOMAIN_API_KEY` (aqui) ⊆
 `DOMAIN_API_KEYS` (no stack `domain`) — sem ela a `finance-api` leva 401 do
-`domain-api` e o deploy fica verde sem funcionar.
+`domain-api` e o deploy fica verde sem funcionar. A `EVOLUTION_API_KEY` é a
+**mesma** do `compute.yml` (uma apikey global do Evolution); não é um segundo
+gateway.
 
 ### 10.4. Passo a passo (o que fazer, na ordem)
 
@@ -537,56 +600,53 @@ cruzada que precisa existir é `FINANCE_DOMAIN_API_KEY` (aqui) ⊆
 > Se isso incomodar, ponha `finance.yml` na própria subpasta e aponte o context
 > do stack para ela.
 
-### 10.5. Ingress & Cloudflare Access (as três edições que importam)
+### 10.5. Ingress & Cloudflare Access (o que importa)
 
-`stacks/ingress/default.conf` é o nginx versionado (o TF não gera mais isso):
-adicionar dois `server`, com a porta batendo com o `ports` do §10.2.
+`stacks/ingress/default.conf` é o nginx versionado (o TF não gera mais isso).
+Como o gateway é a **Evolution API** (§5.3), **não há webhook** e **não há**
+`finance-webhook.giomartins.dev` — a comunicação com o WhatsApp é AMQP de
+entrada + HTTP de saída, ambos internos à rede `apps`. Sobram dois hostnames,
+espelhando o padrão `clubs` / `clubs-api`:
 
 ```nginx
+# finance-api.giomartins.dev -> 127.0.0.1:8018  (a API; auth própria X-API-Key)
 server {
   listen 80;
-  server_name finance.giomartins.dev;
+  server_name finance-api.giomartins.dev;
   location / { proxy_pass http://127.0.0.1:8018; }
 }
 
+# finance.giomartins.dev -> bucket finance-frontend (a SPA; estática, pública)
 server {
   listen 80;
-  server_name finance-webhook.giomartins.dev;
-  location / { proxy_pass http://127.0.0.1:8019; }
+  server_name finance.giomartins.dev;
+  location ~ ^/.*\.[a-zA-Z0-9]+$ { proxy_pass http://127.0.0.1:9000/finance-frontend$uri; }
+  location / { rewrite ^ /finance-frontend/index.html break; proxy_pass http://127.0.0.1:9000; }
 }
 ```
 
 Portas loopback **já usadas** (conferidas nas stacks): 5000 (registry — a
 única publicada em todas as interfaces), 8000 (domain-api), 8007 (tela-api),
-8017 (clubs-api), 8080 (evolution), 8092 (adminer), 8093 (dockhand),
-8222 (vaultwarden), 8799 (omb/maus), 9000/9001 (minio — S3 API/console),
-20128 (9router), 3000 (grafana), 4318 (alloy/OTLP), 15672 (rabbit — só
-management). O `ingress` em si é nginx em `network_mode: host` escutando
-**somente :80**, então não ocupa porta loopback. `8018`/`8019` estão livres.
+8017 (clubs-api), 8018 (finance-api), 8080 (evolution), 8092 (adminer),
+8093 (dockhand), 8222 (vaultwarden), 8799 (omb/maus), 9000/9001 (minio — S3
+API/console), 20128 (9router), 3000 (grafana), 4318 (alloy/OTLP),
+15672 (rabbit — só management). O `ingress` em si é nginx em
+`network_mode: host` escutando **somente :80**, então não ocupa porta loopback.
+O worker **não publica porta** (não serve nada).
 
-No Terraform (que **segue** cuidando de DNS/Access), duas edições:
+No Terraform (que **segue** cuidando de DNS/Access):
 
-1. **`modules/infra/terraform/locals.tf`** — adicionar os **dois** hostnames a
-   `local.services`, com a porta loopback do §10.2:
-
-   ```hcl
-   { hostname = "finance.giomartins.dev",         port = 8018 },
-   { hostname = "finance-webhook.giomartins.dev", port = 8019 },
-   ```
-
-   É **daqui** que sai o A record: `main.tf` monta
-   `hostnames = concat([for s in local.services : s.hostname], ...)` e
-   `modules/cloud/cloudflare/dns.tf` faz `for_each = toset(var.hostnames)`.
-   Sem esta entrada **não há DNS** — `excluded_hostnames` sozinho não cria
-   registro nenhum.
-2. **`modules/infra/terraform/variables.tf`** —
-   **`finance-webhook.giomartins.dev` → adicionar a `excluded_hostnames`.**
-   A Meta não consegue passar por um login Google; o webhook precisa ser
-   público e se defender por assinatura (`X-Hub-Signature-256`) + verificação de
-   origem. Comente o porquê na linha, como manda o padrão do repo.
-- **`finance.giomartins.dev`** — decidir: se a API for só máquina-a-máquina
-  (worker + Open Finance), o caminho normal é ficar **atrás** do Access e usar
-  service token; se for consumida por SPA, precisa da decisão de auth própria.
+1. **`modules/infra/terraform/locals.tf`** — `finance-api.giomartins.dev` em
+   `local.services` (porta 8018) e `finance.giomartins.dev` como **static site**
+   (bucket `finance-frontend`). É **daqui** que sai o A record: `main.tf` monta
+   `hostnames = concat([for s in local.services : s.hostname], [for s in
+   local.static_sites : s.hostname])` e `modules/cloud/cloudflare/dns.tf` faz
+   `for_each = toset(var.hostnames)`. Sem a entrada **não há DNS**.
+2. **`modules/infra/terraform/variables.tf`** — `finance-api.giomartins.dev` e
+   `finance.giomartins.dev` em **`excluded_hostnames`**: a API tem auth própria
+   (`X-API-Key`) e a SPA chama ela cross-origin pelo browser — um redirect de
+   SSO Google quebraria toda chamada (mesma razão de `clubs-api`); a SPA é
+   pública e precisa ser iframe-embeddable no hub. Comente o porquê na linha.
 
 ### 10.6. Conferir que subiu de verdade
 
@@ -597,19 +657,20 @@ Não confiar no check verde — a `:latest` nunca muda de tag, então um deploy
 # 1. o webhook do Dockhand respondeu sucesso?
 #    (o workflow já falha se não vier "success":true)
 # 2. o processo está no ar e saudável
-curl -s https://finance.giomartins.dev/healthz
+curl -s https://finance-api.giomartins.dev/healthz
 # 3. a imagem em execução é a que o CI acabou de publicar
 ssh ubuntu@$VPS_HOST \
   'docker inspect -f "{{.Image}} {{.Config.Image}}" finance-api finance-whatsapp-worker'
 # 4. o digest bate com o :<sha> recém-publicado
-# 5. smoke real: um comando ponta a ponta pelo worker
+# 5. smoke real: mandar uma mensagem no WhatsApp e ver a resposta do worker
 ```
 
 ### 10.7. Onde a stack entra na ordem de subida
 
 `bootstrap → persistence → core → compute → observability → domain → clubs →
 tela → finance → maus`. A `finance` depende de `persistence` (postgres,
-rabbitmq), `core` (registry) e `compute`/`observability` (alloy p/ OTLP).
+rabbitmq), `core` (registry) e `compute`/`observability` (alloy p/ OTLP,
+evolution-api).
 
 ### 10.8. Rollback
 
@@ -642,12 +703,11 @@ Mudanças necessárias:
    `pip install "${{ github.workspace }}/modules/apps/${{ matrix.app }}"`; o pacote
    compartilhado precisa entrar no mesmo comando
    (`... /packages/finance-contracts ...`), senão o `pytest` nem importa.
-4. **`declare -A STACK=( ... )`** no job `deploy` — adicionar
-   `[finance-api]=<id>` (§10.4 passos 4–5). O `[finance-whatsapp-worker]` fica
-   **vazio de propósito** enquanto `modules/apps/finance-whatsapp-worker/` não
-   existir: os dois serviços são o MESMO stack (um webhook), então preencher o
-   slot com o mesmo id não muda o deploy de `finance-api` — só desarma o guarda
-   que avisa quando o worker passa a ser descoberto (ver §10.4-5).
+4. **`declare -A STACK=( ... )`** no job `deploy` — `[finance-api]=14` e
+   `[finance-whatsapp-worker]=14`: os dois serviços são o MESMO stack
+   (`stacks/finance.yml`, um webhook por stack), então o worker reusa o id da
+   stack. Sem a entrada, o app descoberto com id vazio **falha alto** (não é
+   "nada a deployar") — o guarda que impede o verde silencioso.
 
 ### 11.1. Regra de não-pular
 Os extras `dev` (`pytest-bdd`, `testcontainers`, `docker`) são o que faz os
@@ -658,8 +718,8 @@ se falhar, o job tem de ficar vermelho — *um teste que se pula não existe*.
 O repo busca credencial do registry no Vaultwarden via
 `modules/infra/terraform/scripts/fetch_vault_secret.sh`, com máscara
 `::add-mask::`. (Caminho com `modules/infra/...`: **não** existe `scripts/` na
-raiz — conferido.) Novos segredos do
-financeiro (tokens do WhatsApp) entram como **variáveis de stack no Dockhand**
+raiz — conferido.) Os segredos do financeiro (`EVOLUTION_API_KEY`, as chaves do
+`domain-api`/`finance-api`) entram como **variáveis de stack no Dockhand**
 (§10.3), não como GitHub Secret nem no compose.
 
 ---
@@ -677,7 +737,7 @@ isolamento do §1.1 é estrutural, não uma promessa.
 | Componente | handlers com portas falsas (sem broker/DB); rotas da `finance-api` via `TestClient` do FastAPI | `pytest` + `TestClient`/`httpx` | todo push |
 | Contrato | worker↔api: schemas de request/response e de eventos batem com a fonte única | `pytest` + validação de schema | todo push |
 | Integração | Postgres+RabbitMQ reais, outbox, idempotência, auditoria | `pytest-bdd` + `testcontainers` + `docker` | todo push |
-| E2E (worker) | webhook → NLU → API → evento → resposta → PNG | `pytest` + broker/DB reais | nightly + manual |
+| E2E (worker) | evento do Evolution → NLU → API → evento → resposta → PNG | `pytest` + broker/DB reais | nightly + manual |
 | Isolamento | worker **não** abre conexão de banco | teste estático + teste de rede | todo push |
 | Não-funcional | rate limit, fila, latência da query | `pytest` + métricas | nightly |
 
@@ -725,19 +785,25 @@ isolamento do §1.1 é estrutural, não uma promessa.
   nenhum `src/` de app pode conter uma cópia do contrato.
 
 ### 12.7. Verificação de deploy (o teste que o check verde não faz)
-- `curl https://finance.giomartins.dev/healthz` → 200.
+- `curl https://finance-api.giomartins.dev/healthz` → 200.
 - Digest da imagem em execução == o `:<sha>` publicado neste build.
 - Webhook do Dockhand respondeu `"success":true` (o workflow já barra se não).
-- Smoke pós-deploy: enviar um comando e assertar o efeito via query — se o
-  digest não mudou, o smoke falha de propósito (é o sintoma da `:latest`).
+- Smoke pós-deploy: mandar uma mensagem no WhatsApp e ver a resposta do worker —
+  se o digest não mudou, o smoke falha de propósito (é o sintoma da `:latest`).
 
 ### 12.8. E2E — cenários BDD (esqueleto)
 ```gherkin
 Cenário: Despesa por mensagem gera transação e resposta visual
   Dado um usuário cadastrado com telefone "+55..."
-  Quando ele envia "Gastei 45 no almoço hoje"
+  Quando ele envia "Gastei 45 no almoço hoje" pelo WhatsApp
   Então uma transação EXPENSE de R$ 45,00 em Alimentação é registrada
   E ele recebe o resumo do dia com o valor atualizado
+
+Cenário: Evento do Evolution vira comando na finance-api
+  Dado o Evolution publica um `messages.upsert` com texto do usuário
+  Quando o worker consome a fila
+  Então a finance-api recebe o envelope finance.transaction.register
+  E a resposta sai por POST /message/sendText
 
 Cenário: Aviso de orçamento dispara uma única vez
   Dado um orçamento de Alimentação de R$ 100,00
@@ -772,8 +838,9 @@ Cenário: Broker indisponível não perde a escrita
 2. O conector Open Finance consome dados bancários e chama os endpoints/eventos
    da `finance-api` (mais um `X-API-Key` próprio em `FINANCE_API_KEYS`).
 3. A `finance-api` roda a engine de conciliação/deduplicação
-   (`TransactionFingerprint`) e notifica o worker por evento assíncrono, que
-   avisa o usuário no WhatsApp.
+   (`TransactionFingerprint`) e publica um evento de domínio; o worker o consome
+   (o mesmo consumidor dos eventos `finance.*`) e avisa o usuário no WhatsApp via
+   Evolution.
 
 ---
 
@@ -785,6 +852,7 @@ Cenário: Broker indisponível não perde a escrita
 | Contexto `stacks/` compartilhado | commit em um arquivo redeploya vários | subpasta própria se incomodar (§10.4) |
 | `:latest` não muda | "deploy" que não muda nada | verificação por digest (§10.6) |
 | `packages/` fora do `paths:`/install do CI | build verde com contrato velho em produção | incluir `packages/**` no filtro e no install local (§11) |
-| Webhook sem proteção | endpoint público | assinatura Meta + rate limit + verificação de origem |
+| Instância do Evolution desconectada | mensagens não entram (o worker fica ocioso) | monitorar `connection.update`; o worker loga a fila vazia sem erro — a saúde da instância é do Evolution, não deste worker |
+| Evento do Evolution duplicado (at-least-once) | comando aplicado duas vezes | consumo idempotente por `data.key.id` (§5.3, §12.5) |
 | Migração incompatível com rollback | rollback quebra schema | expand-contract (§10.8) |
 | Key da `finance-api` fora de `DOMAIN_API_KEYS` | deploy verde, 401 em todo request | conferir §10.3; smoke §12.7 pega |

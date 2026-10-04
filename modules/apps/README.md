@@ -46,14 +46,17 @@ only ever fit one.
   camada pessoal atrás do login próprio no `/api`; `clubs-frontend` é uma
   SPA React estática em bucket, sem container, que entra no hub como
   microfrontend. O design system vive em `clubs-frontend/ui.pen`.
-- **`finance-api/`** / **`finance-frontend/`** — o bounded context
-  financeiro (gestão conversacional via WhatsApp, spec em
+- **`finance-api/`** / **`finance-whatsapp-worker/`** / **`finance-frontend/`** — o
+  bounded context financeiro (gestão conversacional via WhatsApp, spec em
   `docs/finance-system-spec.md`). `finance-api` é a ACL do contexto (Python
   3.12 + FastAPI): valida o comando e o relaya ao `domain-api`, o dono da
   persistência — **sem banco e sem broker** (regra de isolamento §1.1);
-  `finance-frontend` é uma SPA React estática em bucket com a tela de
-  operação (liveness, chave de API, envio de comando). O contrato
-  compartilhado vive em `packages/finance-contracts/`.
+  `finance-whatsapp-worker` (Python, sem porta, sem host) consome os eventos da
+  **Evolution API** (o gateway WhatsApp que roda no stack `compute`) pelo
+  RabbitMQ e envia a resposta por `POST /message/sendText` — também sem banco;
+  `finance-frontend` é uma SPA React estática em bucket com a tela de operação
+  (liveness, chave de API, envio de comando). O contrato compartilhado vive em
+  `packages/finance-contracts/`.
 - **`hub-frontend/`** — o hub: chrome em volta das SPAs acima (sidebar +
   um renderer que as iframeia) mais atalhos de nova aba para os painéis
   protegidos por Access. Também é uma SPA estática em bucket.

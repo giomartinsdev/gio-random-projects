@@ -153,15 +153,6 @@ locals {
       port     = 8018
     },
     {
-      # finance-webhook -- webhook do WhatsApp Cloud API entregue ao
-      # finance-whatsapp-worker (loopback 127.0.0.1:8019, o mesmo do
-      # ingress). PUBLICO de proposito (esta em excluded_hostnames): a Meta
-      # nao consegue passar por um login Google. A defesa e a assinatura
-      # X-Hub-Signature-256 + verificacao de origem, nao o Access.
-      hostname = "finance-webhook.giomartins.dev"
-      port     = 8019
-    },
-    {
       # Alloy's OTLP/HTTP endpoint for the SPAs' browsers (see that
       # module's README for the whole data flow). Deliberately excluded
       # from Access via excluded_hostnames — a public visitor's browser
