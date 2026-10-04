@@ -36,8 +36,17 @@ func (s *Service) RegisterTransaction(ctx context.Context, in RegisterTransactio
 	if err != nil {
 		return domainfinance.Transaction{}, nil, err
 	}
+	// O sinal do amount codifica a DIREÇÃO (a mesma convenção da
+	// transferência, cujo débito é negado): EXPENSE grava negativo, senão a
+	// leitura — que soma SUM(amount) para o net e filtra EXPENSE — devolveria
+	// uma despesa SOMANDO ao saldo. A borda manda o valor absoluto; quem
+	// aplica decide o sinal.
+	signed := amount
+	if domainfinance.TransactionType(in.Type) == domainfinance.TypeExpense {
+		signed = amount.Neg()
+	}
 	tx, err := domainfinance.NewTransaction(id.String(), in.UserID, in.AccountID,
-		domainfinance.TransactionType(in.Type), amount, in.Category, occurredAt, in.SourceType)
+		domainfinance.TransactionType(in.Type), signed, in.Category, occurredAt, in.SourceType)
 	if err != nil {
 		return domainfinance.Transaction{}, nil, err
 	}

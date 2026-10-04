@@ -95,6 +95,41 @@ func TestRegisterTransactionRequiresTZAware(t *testing.T) {
 	}
 }
 
+// O sinal do amount codifica a direção: EXPENSE grava NEGATIVO, senão o net
+// (SUM(amount)) somaria a despesa ao saldo. Este é o bug que o teste ponta a
+// ponta revelou: a leitura devolvia expense +45 e net +45.
+func TestRegisterTransactionSignsExpenseNegative(t *testing.T) {
+	repo := newFakeRepo()
+	s := NewService(repo)
+	tx, _, err := s.RegisterTransaction(context.Background(), RegisterTransactionInput{
+		UserID: "u", AccountID: "a", Type: "EXPENSE", Amount: "45.00", Currency: "BRL",
+		Category: "Alimentação", OccurredAt: "2026-10-04T12:00:00+00:00",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tx.Amount.Decimal(); got != "-45.00" {
+		t.Fatalf("EXPENSE deveria gravar -45.00 (sinal = direção); veio %s", got)
+	}
+	if _, ok := repo.txs[tx.ID]; !ok {
+		t.Fatal("transação devia ter sido persistida")
+	}
+}
+
+func TestRegisterTransactionLeavesIncomePositive(t *testing.T) {
+	s := NewService(newFakeRepo())
+	tx, _, err := s.RegisterTransaction(context.Background(), RegisterTransactionInput{
+		UserID: "u", AccountID: "a", Type: "INCOME", Amount: "3500.00", Currency: "BRL",
+		Category: "Renda Extra", OccurredAt: "2026-10-04T12:00:00+00:00",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tx.Amount.Decimal(); got != "3500.00" {
+		t.Fatalf("INCOME deveria permanecer positivo; veio %s", got)
+	}
+}
+
 func TestTransferRejectsSameAccount(t *testing.T) {
 	s := NewService(newFakeRepo())
 	_, _, err := s.Transfer(context.Background(), TransferBetweenAccountsInput{
