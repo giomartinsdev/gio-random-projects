@@ -53,9 +53,13 @@ services:
       FINANCE_CORS_ORIGINS: ${FINANCE_CORS_ORIGINS:-https://finance.giomartins.dev}
       # SSO do SPA (§5). Sem FINANCE_GOOGLE_CLIENT_ID o login fica desabilitado
       # (o worker com X-API-Key segue funcionando); sem FINANCE_SESSION_SECRET
-      # não há como assinar a sessão. Os dois são obrigatórios para o SPA.
-      FINANCE_GOOGLE_CLIENT_ID: ${FINANCE_GOOGLE_CLIENT_ID:?defina FINANCE_GOOGLE_CLIENT_ID}
-      FINANCE_SESSION_SECRET: ${FINANCE_SESSION_SECRET:?defina FINANCE_SESSION_SECRET}
+      # não há como assinar a sessão. NÃO usamos `:?` aqui de propósito: um
+      # segredo ausente derrubaria o stack INTEIRO, incluindo o worker do
+      # WhatsApp — que não depende do SSO. Com default vazio o stack sobe, o
+      # login aparece como "não configurado", e ligar o SSO é só cadastrar as
+      # duas variáveis no Dockhand. Ver stacks/README.md.
+      FINANCE_GOOGLE_CLIENT_ID: ${FINANCE_GOOGLE_CLIENT_ID:-}
+      FINANCE_SESSION_SECRET: ${FINANCE_SESSION_SECRET:-}
       RATE_LIMIT_RPS: "5"
       RATE_LIMIT_BURST: "20"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
