@@ -5,12 +5,8 @@ Three routes, and the split between them is the contract:
 - ``GET /healthz`` -- public, no key, matching domain-api's liveness route.
   This is what §10.6 curls after a deploy.
 - ``POST /commands`` -- the worker's default door. Validates, relays, and
-  answers with the relayed outcome. **Today that is the ``/sync``
-  outcome**, because ``domain-api`` has no asynchronous envelope door for
-  arbitrary actions (see CommandRouter's docstring); the route returns the
-  same shape as ``/commands/sync`` and a 202 only once such a door exists.
-  This mirrors the spec's "default: assíncrono" intent without inventing a
-  capability upstream does not have.
+  answers the async ``202 {status:"accepted"}`` from domain-api's
+  ``/commands``: the command is published and the worker applies it (§4.1).
 - ``POST /commands/sync`` -- the same envelope on the explicitly blocking
   path. A ``504`` from domain-api is reported as ``504`` **with** its "still
   queued, may still land" message: timeout is not failure.
@@ -30,8 +26,9 @@ from finance_contracts import (
     SYNC_STATUS_WRITTEN,
 )
 from finance_api.application.commands import (
-    AsyncRelayUnavailable,
+    RELAY_MODE_ASYNC,
     RELAY_MODE_SYNC,
+    AsyncRelayUnavailable,
     CommandRouter,
 )
 from finance_api.application.reads import QueryRouter
@@ -102,17 +99,17 @@ def submit_command(
     caller: str = Depends(get_caller_label),
     commands: CommandRouter = Depends(get_router),
 ) -> JSONResponse:
-    """Relay a command on the default path.
+    """Relay a command on the default (asynchronous) path.
 
-    The default path is sync rather than async because ``domain-api`` offers
-    no asynchronous envelope door today -- see CommandRouter. The response is
-    therefore the same 200/422/504 shape as ``/commands/sync``, and the
-    ``relay`` field says which one was used. A 202 would be a lie until that
-    door exists.
+    The house default is async (§4.1): the command is published and answered
+    ``202 {status:"accepted"}``; the domain-worker applies it. A caller that
+    must not proceed until the write is durable uses ``/commands/sync``. The
+    ``relay`` field names the path actually used, so a log reader can tell
+    the two apart.
     """
     try:
-        outcome = commands.relay(body.action, body.payload, mode=RELAY_MODE_SYNC)
-    except AsyncRelayUnavailable as exc:  # pragma: no cover - default is sync
+        outcome = commands.relay(body.action, body.payload, mode=RELAY_MODE_ASYNC)
+    except AsyncRelayUnavailable as exc:  # pragma: no cover - door exists by default
         return _error(409, exc.message)
     except ValidationError as exc:
         return _error(422, exc.message)
@@ -121,18 +118,15 @@ def submit_command(
     except DomainApiError as exc:
         return _error(502, exc.message)
 
-    status_code = _STATUS_BY_OUTCOME.get(outcome.status)
-    if status_code is None:  # pragma: no cover - guarded by the port contract
-        return _error(502, f"unexpected relay outcome {outcome.status!r}")
+    # 202 accepted by domain-api; the async status IS the response status.
     payload = RelayResponse(
         command_id=outcome.command_id,
         status=outcome.status,
-        entity_id=outcome.entity_id,
         error=outcome.error,
-        relay=RELAY_MODE_SYNC,
+        relay=RELAY_MODE_ASYNC,
     )
     return JSONResponse(
-        status_code=status_code, content=payload.model_dump(exclude_none=True)
+        status_code=202, content=payload.model_dump(exclude_none=True)
     )
 
 

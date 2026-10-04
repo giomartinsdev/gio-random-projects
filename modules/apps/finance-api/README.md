@@ -12,12 +12,21 @@ trusting it.
 | Route | Purpose |
 | --- | --- |
 | `GET /healthz` | Liveness. Public, no key — what §10.6 curls after a deploy. |
-| `POST /commands` | The default write door. Validates and relays; reports the relayed outcome (`200 written` / `422 failed` / `504 queued`). |
-| `POST /commands/sync` | Same envelope, explicitly blocking path. Same outcome shape. |
+| `POST /commands` | The default write door. Validates and relays on the **async** path: `202 {status:"accepted"}` from `domain-api`'s `/commands`; the worker applies it. |
+| `POST /commands/sync` | Same envelope, explicitly blocking path. `200 written` / `422 failed` / `504 queued`. |
 | `POST /queries` | The read door (§4.2). Validates the query, relays it to a `domain-api` GET, and returns the projection. `422` bad query / `504` client timeout / `502` upstream. |
 
 All routes need `X-API-Key`; the key's **label** names the caller in the
 audit trail (§12.3).
+
+## Writes: async by default
+
+The house default is asynchronous (§4.1): `POST /commands` relays to
+`domain-api`'s `POST /commands`, which publishes the envelope and answers
+`202 accepted`. The ACL passes that 202 straight back; the worker does not wait
+for the write to be durable. `POST /commands/sync` is for the rare caller that
+must not proceed until the record landed — it relays to `/sync` and returns the
+documented `200`/`422`/`504`.
 
 ## Reads (§4.2)
 
@@ -37,21 +46,6 @@ Unlike the write door there is no `202`/`504` ambiguity: a read either returns
 the projection (`200`) or is an error. Money is validated as an exact decimal
 **string** on the way out too — a numeric amount in a projection is rejected,
 not silently accepted (§3.4-1).
-
-## Why `/commands` does not answer a bare `202` yet
-
-The spec's default is asynchronous (`202`) because the WhatsApp worker
-replies to the user asynchronously. `domain-api`, however, has **no
-asynchronous door that accepts the `{action, payload}` envelope**: every
-`202` route in its `router.go` takes a route-specific payload
-(`UpsertClubInput`, …), and `POST /sync` is the only handler that decodes
-the envelope. So the only relay that can work today is the blocking one, and
-this service refuses to answer a `202` nothing upstream accepted.
-
-The guard lives in one place — `CommandRouter(supports_async=...)` — and two
-tests pin it: one asserts the refusal today, one asserts the async relay
-works the moment the capability is declared. When slice 2 adds the door,
-flip the flag and update the pair.
 
 ## The part that is easy to get wrong
 

@@ -398,14 +398,28 @@ function HealthBadge({ state }: { state: Health }) {
 // (504) is deliberately NOT shown as an error: domain-api timed out
 // waiting, but the command may still land (spec §4.1).
 function Outcome({ outcome }: { outcome: RelayOutcome }) {
-  const variant = outcome.status === "written" ? "success" : outcome.status === "failed" ? "destructive" : "warning";
-  const icon = outcome.status === "written" ? <CheckCircle2 /> : outcome.status === "failed" ? <CircleAlert /> : <Activity />;
-  const headline =
-    outcome.status === "written"
-      ? "Aplicado"
+  const variant =
+    outcome.status === "written" || outcome.status === "accepted"
+      ? "success"
       : outcome.status === "failed"
-        ? "Rejeitado"
-        : "Na fila (timeout não é falha)";
+        ? "destructive"
+        : "warning";
+  const icon =
+    outcome.status === "written" || outcome.status === "accepted" ? (
+      <CheckCircle2 />
+    ) : outcome.status === "failed" ? (
+      <CircleAlert />
+    ) : (
+      <Activity />
+    );
+  const headline =
+    outcome.status === "accepted"
+      ? "Aceito (assíncrono)"
+      : outcome.status === "written"
+        ? "Aplicado"
+        : outcome.status === "failed"
+          ? "Rejeitado"
+          : "Na fila (timeout não é falha)";
   return (
     <Alert variant={variant} className="mt-4">
       {icon}

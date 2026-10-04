@@ -205,10 +205,16 @@ devolve `200 written` / `422 failed` / `504 queued`. Essa **não é** a superfí
 de erro inteira: um pedido assíncrono que a ACL não pode relaya responde `409`
 (`AsyncRelayUnavailable`), e falha de transporte ou status não documentado do
 `domain-api` vira `502` — `_error(409|502, ...)` em `presentation/routes.py`,
-pinado por `tests/test_routes.py`. O default assíncrono segue
-sendo a **intenção** da casa e **passa a valer** quando o `domain-api` ganhar a
-porta envelope assíncrona (fatia 2, no stack `domain`) — até lá, `202` aqui é
-intenção, não contrato do que existe.
+pinado por `tests/test_routes.py`.
+
+**Fatia 3 (feita):** o `domain-api` ganhou a **porta envelope assíncrona** —
+`POST /commands` decodifica o `{action, payload}`, publica com id de servidor e
+responde `202 accepted` (ver `internal/infrastructure/http/envelopehandlers.go`).
+Com a porta de pé, a `finance-api` passou a usá-la como **default** (§4.1): o
+`POST /commands` da ACL relaya para `/commands` e devolve `202 accepted`; o
+`/commands/sync` continua no `/sync` `200`/`422`/`504`. O `supports_async` do
+`CommandRouter` virou `True` por default; a checagem `AsyncRelayUnavailable`
+segue pinada para o caso de a capability ser desligada.
 
 ### 4.2. Read Side — Queries (`finance-api` → `domain-api`)
 - `GetDailySummaryQuery`
@@ -222,11 +228,22 @@ A `finance-api` **não tem banco**, então as leituras também passam pelo
 mas não consulta tabela nenhuma.
 
 ### 4.3. Outbox & entrega
-A outbox e a publicação de evento são do **`domain-worker`**, na mesma transação
-da escrita (a `finance-api` não participa: hoje ela só recebe o
-`200`/`422`/`504` do `/sync`; o `202` quando a porta assíncrona existir).
-Entrega é at-least-once → todo consumidor precisa ser **idempotente** por
-`command_id`/`event_id` (testado em §12.5).
+A outbox e a publicação de evento são do **`domain-worker`** (tabela `outbox`):
+o evento é gravado como pendente ANTES da tentativa de publish, então um broker
+fora do ar não perde um evento já aplicado — o relay em background republica os
+pendentes quando ele volta (`internal/application/outbox`).
+
+Nota de honestidade: o enqueue da outbox acontece logo APÓS a aplicação do
+comando, **não** na mesma transação SQL da escrita do agregado. Isso satisfaz o
+cenário do §12.5 (broker fora ⇒ evento fica pendente e é publicado depois), mas
+deixa uma janela estreita: um crash do worker entre aplicar e enfileirar perde o
+evento (a escrita em si permanece). Fechar essa janela exige o enqueue dentro da
+transação de cada agregado — trabalho futuro, não prometido aqui.
+
+A `finance-api` não participa da outbox: ela só recebe o `202 accepted`
+(default) ou o `200`/`422`/`504` do `/sync`. Entrega é at-least-once → todo
+consumidor precisa ser **idempotente** por `command_id`/`event_id` (testado em
+§12.5).
 
 ---
 

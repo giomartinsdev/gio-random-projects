@@ -13,13 +13,14 @@ export type Envelope = { action: string; payload: Record<string, unknown> };
 // finance-api/src/finance_api/presentation/schemas.py: `entity_id` and
 // `error` appear only when they apply (exclude_none on the server).
 export type RelayOutcome = {
-  // The HTTP status the ACL answered with. Only `written` is 200; the
-  // other two keep the status domain-api gave them.
+  // The HTTP status the ACL answered with. The default door is async and
+  // answers 202 `accepted`; `/commands/sync` answers 200/422/504.
   http: number;
   command_id: string;
-  // "written" (confirmed) | "failed" (422, rejected) | "queued" (504:
-  // timeout is NOT failure -- the command may still land).
-  status: "written" | "failed" | "queued" | string;
+  // "accepted" (202, published — the worker applies it) | "written"
+  // (confirmed) | "failed" (422, rejected) | "queued" (504: timeout is NOT
+  // failure).
+  status: "accepted" | "written" | "failed" | "queued" | string;
   entity_id?: string;
   error?: string;
 };

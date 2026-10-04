@@ -95,16 +95,11 @@ def test_schema_version_is_pinned() -> None:
     assert ENVELOPE_SCHEMA_VERSION == "1"
 
 
-def test_the_only_envelope_door_is_the_sync_one() -> None:
-    # router.go wires POST /sync as the only route that decodes a bare
-    # {action, payload} envelope; every 202 route takes a route-specific
-    # payload. If slice 2 adds an async envelope door, this test is the
-    # tripwire that says so.
+def test_both_envelope_doors_are_declared() -> None:
+    # domain-api now wires two routes that decode a bare {action, payload}:
+    # POST /commands (async, 202 — the default) and POST /sync (blocking).
+    # The constants are the shared truth the ACL relays to.
     import finance_contracts
 
     assert SYNC_COMMAND_PATH == "/sync"
-    assert not hasattr(finance_contracts, "ASYNC_COMMAND_PATH"), (
-        "an async envelope door is now assumed to exist: wire it in "
-        "CommandRouter (supports_async) and document the path before "
-        "exporting a constant for it"
-    )
+    assert finance_contracts.ASYNC_COMMAND_PATH == "/commands"

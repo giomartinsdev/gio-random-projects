@@ -31,6 +31,7 @@ from typing import Any, Final, Mapping
 import httpx
 
 from finance_contracts import (
+    ASYNC_COMMAND_PATH,
     STATUS_ACCEPTED,
     SYNC_COMMAND_PATH,
     SYNC_HTTP_TO_STATUS,
@@ -66,11 +67,10 @@ class DomainApiClient:
         *,
         timeout_s: float = 12.0,
         client: httpx.Client | None = None,
-        # Both paths resolve to /sync today: it is the only door that decodes
-        # the {action, payload} envelope (see the contract's SYNC_COMMAND_PATH
-        # note). They stay separate parameters so the async door, when it
-        # exists, is a one-line change rather than a rewrite.
-        async_command_path: str = SYNC_COMMAND_PATH,
+        # ``/commands`` is the async envelope door (202); ``/sync`` is the
+        # blocking exception. Both decode the same {action, payload}; the
+        # default async path is the house default (§4.1).
+        async_command_path: str = ASYNC_COMMAND_PATH,
         sync_command_path: str = SYNC_COMMAND_PATH,
     ) -> None:
         self._async_path = async_command_path

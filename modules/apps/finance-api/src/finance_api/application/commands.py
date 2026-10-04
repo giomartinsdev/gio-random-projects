@@ -73,12 +73,11 @@ class RelayOutcome:
 class AsyncRelayUnavailable(ValidationError):
     """No ``202`` door exists for this action on ``domain-api`` today.
 
-    Surfaced as a distinct error instead of a plain 422 so the reason is
-    unmistakable in a log: this is a **missing capability upstream**, not a
-    bad request from the worker. When slice 2 adds the async envelope door to
-    ``domain-api``, ``supports_async`` flips and this disappears -- and the
-    test that pins today's behaviour is the tripwire telling whoever adds the
-    door to flip it deliberately.
+    Kept as a distinct error for the case where the capability is explicitly
+    disabled (``supports_async=False``): the reason is then unmistakable in a
+    log — a **missing capability upstream**, not a bad request. Since slice 3
+    added ``POST /commands`` the capability exists and the default is on; the
+    flag stays so a test can still pin the disabled behaviour.
     """
 
 
@@ -89,21 +88,14 @@ def known_write_actions() -> tuple[str, ...]:
 class CommandRouter:
     """Validates a command and relays it to ``domain-api``.
 
-    The relay-mode flag is **not** a client choice: it is a fact about the
-    upstream surface. ``domain-api`` publishes an *arbitrary* action only
-    through ``POST /sync`` (verified in its ``router.go``: every 202 route
-    takes a route-specific payload such as ``UpsertClubInput``, while
-    ``/sync`` is the only handler that decodes the bare
-    ``{action, payload}`` envelope). There is therefore no asynchronous
-    envelope door for ``finance.*`` today, and pretending otherwise would
-    let the ACL answer a 202 that nothing upstream ever accepted.
-
-    ``supports_async`` exists so that decision lives in one place: it is
-    wired here as ``False`` for exactly that reason. When the door is added,
-    flip it and both the mode check and the test stop asserting otherwise.
+    The relay-mode flag is a fact about the upstream surface, not a client
+    choice. ``domain-api`` publishes an arbitrary action through two doors now:
+    ``POST /commands`` (async, 202) and ``POST /sync`` (blocking). The house
+    default is async (§4.1), so ``supports_async`` defaults to ``True``;
+    ``/commands/sync`` passes ``mode="sync"`` explicitly.
     """
 
-    def __init__(self, domain_api: DomainApiPort, *, supports_async: bool = False) -> None:
+    def __init__(self, domain_api: DomainApiPort, *, supports_async: bool = True) -> None:
         self._domain_api = domain_api
         self._supports_async = supports_async
 

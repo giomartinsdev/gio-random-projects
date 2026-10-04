@@ -8,13 +8,14 @@ else on the network.
 
 ## Writes: commands, not CRUD
 
-`POST` to any write door answers `202 {"command_id": ..., "status":
-"accepted"}` — the API publishes the command to RabbitMQ, the
-domain-worker consumes `domain.commands.queue`, dispatches by action
-family (`club.`, `partida.`, `clubs.*`, `preferencia.`, ...), writes the
-audit row (success or failure, always), and publishes the resulting
-domain event only on success. Nothing here writes application tables in
-the HTTP handler.
+`POST /commands` is the default write door: it decodes the bare
+`{"action", "payload"}` envelope, publishes it with a fresh server-side id,
+and answers `202 {"command_id": ..., "status": "accepted"}`. The
+domain-worker consumes `domain.commands.queue`, dispatches by action family
+(`club.`, `partida.`, `clubs.*`, `finance.*`, `preferencia.`, ...), writes
+the audit row (success or failure, always), and publishes the resulting
+domain event only on success. Nothing here writes application tables in the
+HTTP handler.
 
 The current surface is the **FC Clubs Hub**: public Pro Clubs data
 (clubs, squads, matches, analytics) plus the per-person preferences the

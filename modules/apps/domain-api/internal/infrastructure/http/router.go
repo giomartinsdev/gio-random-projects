@@ -12,7 +12,7 @@ import (
 // the apiKey security scheme (see openapi.yaml and Secure in
 // middleware.go). /sync is the synchronous-write exception — see
 // SyncHandlers.Sync's doc comment before reaching for it.
-func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWriteHandlers, fin *FinanceHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
+func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWriteHandlers, fin *FinanceHandlers, env *EnvelopeHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Get("/healthz", h.Healthz)
@@ -27,6 +27,12 @@ func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWri
 		// /sync is the documented synchronous-write exception: the
 		// caller waits for the worker's audit row before moving on.
 		r.Post("/sync", sync.Sync)
+
+		// /commands is the asynchronous envelope door (§4.1): it decodes the
+		// bare {action, payload} and answers 202 immediately. This is what the
+		// finance-api's default write path relays to; /sync stays for callers
+		// that must not proceed until the write is durable.
+		r.Post("/commands", env.Publish)
 
 		// FC Clubs Hub (specs/003). Reads are public data + per-person
 		// preferences; writes are the doors the clubs services call --

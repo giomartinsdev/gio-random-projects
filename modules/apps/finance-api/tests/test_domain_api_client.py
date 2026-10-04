@@ -43,14 +43,14 @@ def test_async_accepted_returns_the_202_shape() -> None:
     assert (result.command_id, result.status) == ("cmd-42", "accepted")
 
 
-def test_async_posts_the_bare_envelope_to_sync() -> None:
-    # Verified from router.go: POST /sync is the only route that takes the
-    # {action, payload} envelope. There is no generic async door today.
+def test_async_posts_the_bare_envelope_to_the_async_door() -> None:
+    # Slice 3 added POST /commands: the async envelope door. The default async
+    # relay goes there; /sync stays for the blocking path.
     stub = DomainApiStub.accepted()
     client_for(stub).send_async(ENVELOPE)
     sent = stub.requests[-1]
     assert sent.method == "POST"
-    assert sent.path == "/sync"
+    assert sent.path == "/commands"
     assert sent.body == {"action": ACTION_REGISTER_TRANSACTION, "payload": {"amount": "45.00"}}
 
 

@@ -64,45 +64,33 @@ def test_healthz_is_public_and_ok() -> None:
 
 # ------------------------------------------------------------------------ 202
 
-def test_post_commands_reports_the_relayed_outcome() -> None:
-    """The default door relays on the sync path -- and says so.
-
-    domain-api has no asynchronous envelope door for arbitrary actions (see
-    CommandRouter), so a 202 here would claim an acceptance nothing upstream
-    gave. The relay field names the path actually used.
-    """
-    stub = DomainApiStub.written("cmd-1", "tx-9")
+def test_post_commands_relays_async_and_answers_202() -> None:
+    """The default door is async (§4.1): the ACL relays to /commands and
+    answers 202 accepted; the worker applies it."""
+    stub = DomainApiStub.accepted("cmd-1")
     response = make_client(stub).post("/commands", json=envelope(), headers=auth())
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert response.json() == {
         "command_id": "cmd-1",
-        "status": "written",
-        "entity_id": "tx-9",
-        "relay": "sync",
+        "status": "accepted",
+        "relay": "async",
     }
+    assert stub.requests[-1].path == "/commands"
 
 
-def test_post_commands_never_answers_202_while_no_async_door_exists() -> None:
-    """Tripwire: flips when slice 2 adds the async envelope door.
+def test_async_relay_is_the_declared_default() -> None:
+    # The capability exists upstream now (slice 3 added POST /commands);
+    # the default is on, and the guard still pins the disabled behaviour.
+    router = CommandRouter(_RecordingPort())
+    outcome = router.relay(ACTION_REGISTER_TRANSACTION, VALID_PAYLOAD, mode="async")
+    assert outcome.status == "accepted"
+    assert outcome.relay == "async"
 
-    202 is documented as the finance default (§4.1), but the capability does
-    not exist upstream yet. Rather than fake it, the ACL refuses it -- and
-    this test is what tells whoever adds the door that it is now real.
-    """
+
+def test_disabled_async_capability_still_refuses() -> None:
     router = CommandRouter(_RecordingPort(), supports_async=False)
     with pytest.raises(AsyncRelayUnavailable):
         router.relay(ACTION_REGISTER_TRANSACTION, VALID_PAYLOAD, mode="async")
-
-
-def test_async_relay_works_once_the_capability_is_declared() -> None:
-    """The same call succeeds when the door is declared -- so the guard is
-    about the upstream surface, not about disabling a code path."""
-    port = _RecordingPort()
-    outcome = CommandRouter(port, supports_async=True).relay(
-        ACTION_REGISTER_TRANSACTION, VALID_PAYLOAD, mode="async"
-    )
-    assert outcome.status == "accepted"
-    assert outcome.relay == "async"
 
 
 class _RecordingPort:
@@ -121,10 +109,10 @@ class _RecordingPort:
 
 
 def test_post_commands_relays_the_translated_envelope() -> None:
-    stub = DomainApiStub.written()
+    stub = DomainApiStub.accepted()
     make_client(stub).post("/commands", json=envelope(), headers=auth())
     sent = stub.requests[-1]
-    assert sent.path == "/sync"
+    assert sent.path == "/commands"
     # The ACL's translation, not the caller's body: the tz-aware input is
     # normalised to UTC and money crosses as an exact string.
     assert sent.body["action"] == ACTION_REGISTER_TRANSACTION
@@ -164,18 +152,18 @@ def test_post_commands_rejects_a_naive_timestamp_locally() -> None:
     assert stub.requests == []
 
 
-def test_post_commands_domain_api_failure_is_502_not_a_write_outcome() -> None:
+def test_post_commands_domain_api_5xx_is_502_not_a_fabricated_202() -> None:
+    # A 500 from the async door must never be reported as accepted.
     stub = DomainApiStub(status_code=500, body={"error": "boom"})
     response = make_client(stub).post("/commands", json=envelope(), headers=auth())
     assert response.status_code == 502
 
 
-def test_post_commands_queued_504_says_it_may_still_land() -> None:
-    stub = DomainApiStub.queued("cmd-1")
+def test_post_commands_401_from_domain_api_is_502_here_not_401() -> None:
+    stub = DomainApiStub(status_code=401, body={"error": "missing or invalid API key"})
     response = make_client(stub).post("/commands", json=envelope(), headers=auth())
-    assert response.status_code == 504
-    assert response.json()["status"] == "queued"
-    assert "still land" in response.json()["error"]
+    assert response.status_code == 502
+    assert "DOMAIN_API_KEYS" in response.json()["error"]
 
 
 # ------------------------------------------------------------ /sync outcomes

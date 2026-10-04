@@ -33,18 +33,14 @@ ENVELOPE_SCHEMA_VERSION: Final = "1"
 # round trip.
 ACTION_MAX_LENGTH: Final = 128
 
-# The write door of domain-api, as verified in
+# The write doors of domain-api, as verified in
 # modules/apps/domain-api/internal/infrastructure/http/router.go.
 #
-# There is currently NO *asynchronous* door that accepts the bare
-# {action, payload} envelope: every 202 route takes a route-specific payload
-# (``UpsertClubInput`` and friends), and ``/sync`` is the only handler that
-# decodes the envelope. So the finance context's only possible relay today is
-# the blocking one, and the contract does not pretend a second path exists --
-# an ``ASYNC_COMMAND_PATH`` constant would be a lie the apps could import.
-#
-# When domain-api grows the async envelope door, add the constant AND the
-# CommandRouter capability flag in the same change; the sync path stays.
+# ``/commands`` is the **asynchronous envelope door** (added in slice 3): it
+# decodes the bare {action, payload} and answers ``202`` immediately, which is
+# the house default (spec §4.1). ``/sync`` is the documented blocking exception
+# — the same envelope, but the caller waits for the worker's audit row.
+ASYNC_COMMAND_PATH: Final = "/commands"
 SYNC_COMMAND_PATH: Final = "/sync"
 
 

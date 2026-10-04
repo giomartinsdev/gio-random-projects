@@ -30,6 +30,34 @@ paths:
                     type: string
                     example: ok
 
+  /commands:
+    post:
+      summary: Asynchronous envelope write (the default)
+      description: >
+        Decodes the bare {action, payload} envelope and publishes it with a
+        fresh server-side id, answering 202 immediately. The domain-worker
+        applies it. This is the house default write path (§4.1); use /sync
+        only when the caller must not proceed until the write is durable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Command"
+      responses:
+        "202":
+          description: Published; applied asynchronously by domain-worker.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
   /sync:
     post:
       summary: Synchronous write (the exception)

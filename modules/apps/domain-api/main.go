@@ -81,6 +81,9 @@ func main() {
 	// audit row is its "written" proof.
 	audits := postgres.NewAuditRepository(pool)
 	syncHandlers := httpapi.NewSyncHandlers(commands, audits, log)
+	// /commands: a porta envelope assíncrona (§4.1). Mesmo broker do /sync,
+	// mas responde 202 na hora — o worker aplica depois.
+	envelopeHandlers := httpapi.NewEnvelopeHandlers(commands, log)
 
 	// FC Clubs Hub (specs/003): read models + the write doors the clubs
 	// services call. domain-api is read-only against these tables --
@@ -97,7 +100,7 @@ func main() {
 
 	handlers := httpapi.NewHandlers(log)
 
-	router := httpapi.NewRouter(handlers, syncHandlers, clubsHandlers, clubsWriteHandlers, financeHandlers, apiKeys, rateLimiter, log)
+	router := httpapi.NewRouter(handlers, syncHandlers, clubsHandlers, clubsWriteHandlers, financeHandlers, envelopeHandlers, apiKeys, rateLimiter, log)
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: otelhttp.NewHandler(router, "domain-api",
 		// chi's route patterns aren't visible to otelhttp, so name the
