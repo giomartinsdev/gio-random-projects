@@ -136,6 +136,31 @@ class DomainApiClient:
         )
 
     # ---------------------------------------------------------------- helpers
+    def get(self, path: str, params: Mapping[str, str]) -> Mapping[str, Any]:
+        """GET a read projection (§4.2) and return the JSON object.
+
+        Reads are synchronous and unremarkable: a non-200 is an error, never
+        a "queued" outcome (that distinction belongs to writes only). A
+        transport failure maps to ``DomainApiError``/``DomainApiTimeout`` just
+        like a write, so the caller has one set of failure semantics.
+        """
+        try:
+            response = self._client.get(
+                path,
+                params=dict(params),
+                headers={API_KEY_HEADER: self._api_key},
+            )
+        except httpx.TimeoutException as exc:
+            raise DomainApiTimeout(
+                "domain-api did not answer the read within the client timeout"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise DomainApiError(f"could not reach domain-api: {type(exc).__name__}") from exc
+
+        if response.status_code != 200:
+            raise self._unexpected(response, expected="200 read")
+        return self._json_object(response, context="read")
+
     def _post(self, path: str, envelope: CommandEnvelope) -> httpx.Response:
         try:
             # The key rides on every request rather than on the client's

@@ -25,6 +25,17 @@ class CommandRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class QueryRequest(BaseModel):
+    """A read query: same envelope shape, params instead of a command body.
+
+    Reusing ``{action, payload}`` keeps the worker learning one shape on both
+    sides of the ACL. ``payload`` carries ``user_id`` plus ``date``/``month``.
+    """
+
+    action: str = Field(min_length=1, max_length=128)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class AcceptedResponse(BaseModel):
     """The documented ``202`` body of an asynchronous write door.
 

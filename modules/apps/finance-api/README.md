@@ -14,9 +14,29 @@ trusting it.
 | `GET /healthz` | Liveness. Public, no key — what §10.6 curls after a deploy. |
 | `POST /commands` | The default write door. Validates and relays; reports the relayed outcome (`200 written` / `422 failed` / `504 queued`). |
 | `POST /commands/sync` | Same envelope, explicitly blocking path. Same outcome shape. |
+| `POST /queries` | The read door (§4.2). Validates the query, relays it to a `domain-api` GET, and returns the projection. `422` bad query / `504` client timeout / `502` upstream. |
 
-All three write routes need `X-API-Key`; the key's **label** names the
-caller in the audit trail (§12.3). Read routes (§4.2) are the next slice.
+All routes need `X-API-Key`; the key's **label** names the caller in the
+audit trail (§12.3).
+
+## Reads (§4.2)
+
+`POST /queries` takes the same `{action, payload}` envelope, where `payload`
+carries `user_id` plus `date` (daily summary) or `month` (the other three).
+The action names come from `finance_contracts` (`finance.query.*`) and map to
+`domain-api` GETs:
+
+| action | domain-api |
+| --- | --- |
+| `finance.query.dailySummary` | `GET /finance/daily-summary?user_id=&date=YYYY-MM-DD` |
+| `finance.query.monthlyDashboard` | `GET /finance/monthly-dashboard?user_id=&month=YYYY-MM` |
+| `finance.query.categoryBreakdown` | `GET /finance/category-breakdown?user_id=&month=YYYY-MM` |
+| `finance.query.cashFlowHistory` | `GET /finance/cash-flow-history?user_id=&month=YYYY-MM` |
+
+Unlike the write door there is no `202`/`504` ambiguity: a read either returns
+the projection (`200`) or is an error. Money is validated as an exact decimal
+**string** on the way out too — a numeric amount in a projection is rejected,
+not silently accepted (§3.4-1).
 
 ## Why `/commands` does not answer a bare `202` yet
 

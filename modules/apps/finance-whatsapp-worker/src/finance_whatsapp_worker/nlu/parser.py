@@ -83,7 +83,7 @@ def parse(text: str, *, phone: str, occurred_at: str) -> Intent:
                 "category": _category(clean),
                 "limit": _to_decimal_str(budget.group(2)),
                 "currency": "BRL",
-                "month": occurred_at[:7],
+                "period": occurred_at[:7],
             },
             "orcamento",
         )

@@ -14,9 +14,9 @@ Three routes, and the split between them is the contract:
 - ``POST /commands/sync`` -- the same envelope on the explicitly blocking
   path. A ``504`` from domain-api is reported as ``504`` **with** its "still
   queued, may still land" message: timeout is not failure.
-
-Reads (spec §4.2) are not here yet: the read side goes to domain-api's
-GETs and is the next slice, not something to fake with a write route.
+- ``POST /queries`` -- the read door (spec §4.2). The same envelope, with
+  ``payload`` carrying ``user_id``/``date``/``month``; relays to a domain-api
+  GET and returns the projection. Reads are unambiguous: 200 or an error.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from finance_api.application.commands import (
     RELAY_MODE_SYNC,
     CommandRouter,
 )
+from finance_api.application.reads import QueryRouter
 from finance_api.domain.errors import (
     DomainApiError,
     DomainApiTimeout,
@@ -44,6 +45,7 @@ from finance_api.presentation.schemas import (
     CommandRequest,
     ErrorResponse,
     HealthResponse,
+    QueryRequest,
     RelayResponse,
 )
 from finance_api.presentation.security import authenticate
@@ -69,6 +71,12 @@ def get_container(request: Request) -> Container:
 
 def get_router(container: Container = Depends(get_container)) -> CommandRouter:
     return container.router
+
+
+def get_query_router(container: Container = Depends(get_container)) -> QueryRouter:
+    if container.queries is None:  # pragma: no cover - wiring bug, not a request case
+        raise RuntimeError("read router is not configured")
+    return container.queries
 
 
 def get_caller_label(
@@ -168,5 +176,31 @@ def _error(status: int, message: str) -> JSONResponse:
     return JSONResponse(
         status_code=status, content=ErrorResponse(error=message).model_dump()
     )
+
+
+@router.post("/queries")
+def run_query(
+    body: QueryRequest,
+    caller: str = Depends(get_caller_label),
+    queries: QueryRouter = Depends(get_query_router),
+) -> JSONResponse:
+    """Relay a read query (spec §4.2) to a domain-api GET.
+
+    Reads are synchronous on both sides: the ACL validates the action and its
+    params, relays them as query string, parses the projection, and answers the
+    projection JSON. Unlike the write door there is no 202/504 ambiguity — a
+    read either happened or is an error. Errors keep domain-api's/ACL's shape:
+    422 for a bad query, 502 for an upstream fault.
+    """
+    try:
+        result = queries.relay(body.action, body.payload)
+    except ValidationError as exc:
+        return _error(422, exc.message)
+    except DomainApiTimeout as exc:
+        return _error(504, exc.message)
+    except DomainApiError as exc:
+        return _error(502, exc.message)
+
+    return JSONResponse(status_code=200, content=result.to_wire())
 
 

@@ -45,7 +45,9 @@ def test_parse_orcamento_usa_mes_do_occurred_at():
     intent = parse("orçamento de 600 pra alimentação", phone="55", occurred_at=WHEN)
     assert intent.kind == "orcamento"
     assert intent.payload["limit"] == "600"
-    assert intent.payload["month"] == "2026-10"
+    # `period` é o nome canônico no envelope (finance-api domain/commands.py);
+    # `month` aqui seria um campo zero do outro lado.
+    assert intent.payload["period"] == "2026-10"
 
 
 def test_parse_desconhecido_nao_inventa_transacao():

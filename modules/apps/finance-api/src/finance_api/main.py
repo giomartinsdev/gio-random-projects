@@ -18,6 +18,7 @@ from finance_api.infrastructure.config import ConfigError, Settings, load_settin
 from finance_api.infrastructure.domain_api import DomainApiClient
 from finance_api.infrastructure.telemetry import configure_telemetry
 from finance_api.application.commands import CommandRouter
+from finance_api.application.reads import QueryRouter
 from finance_api.presentation.app import create_app
 from finance_api.presentation.dependencies import Container
 
@@ -31,7 +32,11 @@ def build_app(settings: Settings) -> object:
         api_key=settings.domain_api_key,
         timeout_s=settings.domain_timeout_s,
     )
-    container = Container(router=CommandRouter(client), api_keys=settings.finance_api_keys)
+    container = Container(
+        router=CommandRouter(client),
+        api_keys=settings.finance_api_keys,
+        queries=QueryRouter(client),
+    )
     return create_app(
         container,
         instrument=bool(settings.otlp_endpoint),

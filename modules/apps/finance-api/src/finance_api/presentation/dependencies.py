@@ -11,15 +11,22 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from finance_api.application.commands import CommandRouter
+from finance_api.application.reads import QueryRouter
 from finance_api.infrastructure.domain_api import DomainApiClient
 
 
 @dataclass(frozen=True, slots=True)
 class Container:
-    """Everything the routes need, already assembled."""
+    """Everything the routes need, already assembled.
+
+    ``queries`` is optional so the write-only component tests can build a
+    container around a ``CommandRouter`` alone; a read route reached without
+    it is a 500 (wiring bug), not a silent empty answer.
+    """
 
     router: CommandRouter
     api_keys: Mapping[str, str]
+    queries: QueryRouter | None = None
 
 
 def build_container(
@@ -34,11 +41,18 @@ def build_container(
         api_key=domain_api_key,
         timeout_s=timeout_s,
     )
-    return Container(router=CommandRouter(client), api_keys=api_keys)
+    return Container(
+        router=CommandRouter(client),
+        api_keys=api_keys,
+        queries=QueryRouter(client),
+    )
 
 
 def build_container_with_router(
-    router: CommandRouter, api_keys: Mapping[str, str]
+    router: CommandRouter,
+    api_keys: Mapping[str, str],
+    *,
+    queries: QueryRouter | None = None,
 ) -> Container:
     """For tests: a real container around an injected router."""
-    return Container(router=router, api_keys=api_keys)
+    return Container(router=router, api_keys=api_keys, queries=queries)
