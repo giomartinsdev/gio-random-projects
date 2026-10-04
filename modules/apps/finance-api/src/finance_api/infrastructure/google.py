@@ -9,9 +9,7 @@ o nosso client ID, mais ``email_verified``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +20,19 @@ class GoogleIdentity:
 
 class GoogleAuthError(Exception):
     """O token do Google é inválido, expirado ou não é para o nosso client ID."""
+
+
+def _verify_google_token(credential: str, client_id: str) -> dict[str, Any]:
+    """Chama a google-auth para validar o ID token.
+
+    Import preguiçoso de propósito: a biblioteca (e o `requests` que ela usa)
+    vive atrás desta função, então uma imagem sem esses pacotes ainda sobe —
+    o login responde "não configurado" em vez de derrubar o processo no import.
+    """
+    from google.auth.transport import requests as google_requests
+    from google.oauth2 import id_token
+
+    return id_token.verify_oauth2_token(credential, google_requests.Request(), client_id)
 
 
 class GoogleVerifier:
@@ -36,11 +47,12 @@ class GoogleVerifier:
         if not credential or not self._client_id:
             raise GoogleAuthError("token ausente ou login não configurado")
         try:
-            payload = id_token.verify_oauth2_token(
-                credential,
-                google_requests.Request(),
-                self._client_id,
-            )
+            payload = _verify_google_token(credential, self._client_id)
+        except GoogleAuthError:
+            raise
+        except ImportError as exc:
+            # A lib do Google não está na imagem: é configuração, não token ruim.
+            raise GoogleAuthError("verificação do Google indisponível neste build") from exc
         except Exception as exc:  # noqa: BLE001 -- google-auth levanta tipos variados
             raise GoogleAuthError("token do Google inválido ou expirado") from exc
 

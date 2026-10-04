@@ -34,6 +34,11 @@ dependencies = [
     # sessão (o mesmo desenho do clubs-api, que usa idtoken+jwt/v5). Nenhum
     # dos dois fala banco nem broker — a regra de isolamento (§1.1) continua.
     "google-auth>=2.30",
+    # google-auth's `transport.requests` (usado pela verificação do ID token)
+    # importa `requests`, mas ele NÃO é dependência obrigatória do google-auth
+    # — sem isto o import quebra no boot da imagem slim (reproduzido: a imagem
+    # subia e dava 502). Declarado aqui para não depender do transitivo.
+    "requests>=2.31",
     "PyJWT>=2.8",
     "finance-contracts",
 ]
