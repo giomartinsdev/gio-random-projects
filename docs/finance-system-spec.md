@@ -182,7 +182,11 @@ faz o request. O contrato é o já documentado em
 
 **Consequência prática (fatia 1):** a `finance-api` é ACL e **recusa** emitir um
 `202` que nada upstream aceitou, então ela relaya o envelope por `/sync` e
-devolve `200 written` / `422 failed` / `504 queued`. O default assíncrono segue
+devolve `200 written` / `422 failed` / `504 queued`. Essa **não é** a superfície
+de erro inteira: um pedido assíncrono que a ACL não pode relaya responde `409`
+(`AsyncRelayUnavailable`), e falha de transporte ou status não documentado do
+`domain-api` vira `502` — `_error(409|502, ...)` em `presentation/routes.py`,
+pinado por `tests/test_routes.py`. O default assíncrono segue
 sendo a **intenção** da casa e **passa a valer** quando o `domain-api` ganhar a
 porta envelope assíncrona (fatia 2, no stack `domain`) — até lá, `202` aqui é
 intenção, não contrato do que existe.
@@ -639,7 +643,11 @@ Mudanças necessárias:
    compartilhado precisa entrar no mesmo comando
    (`... /packages/finance-contracts ...`), senão o `pytest` nem importa.
 4. **`declare -A STACK=( ... )`** no job `deploy` — adicionar
-   `[finance-api]=<id> [finance-whatsapp-worker]=<id>` (§10.4 passos 4–5).
+   `[finance-api]=<id>` (§10.4 passos 4–5). O `[finance-whatsapp-worker]` fica
+   **vazio de propósito** enquanto `modules/apps/finance-whatsapp-worker/` não
+   existir: os dois serviços são o MESMO stack (um webhook), então preencher o
+   slot com o mesmo id não muda o deploy de `finance-api` — só desarma o guarda
+   que avisa quando o worker passa a ser descoberto (ver §10.4-5).
 
 ### 11.1. Regra de não-pular
 Os extras `dev` (`pytest-bdd`, `testcontainers`, `docker`) são o que faz os
@@ -687,8 +695,6 @@ isolamento do §1.1 é estrutural, não uma promessa.
   não-escrito**. Enquanto a porta envelope assíncrona não existir no
   `domain-api`, **nenhum** teste exige `202`: exigir seria testar o que não
   existe.
-- `/sync` (se existir) devolve 200 aplicado / 422 rejeitado / 504 timeout — e o
-  teste deixa explícito que **timeout ≠ não-escrito**.
 - Evento publicado no broker tem `event_id`/`command_id` e schema versionado.
 - `X-API-Key` inválida/ausente → 401; a key identifica o caller na auditoria.
 
