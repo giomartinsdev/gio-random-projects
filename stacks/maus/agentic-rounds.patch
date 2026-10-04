@@ -1,0 +1,57 @@
+diff --git a/server/drivers/openai-chat-protocol.ts b/server/drivers/openai-chat-protocol.ts
+index 216a9e2..71029d5 100644
+--- a/server/drivers/openai-chat-protocol.ts
++++ b/server/drivers/openai-chat-protocol.ts
+@@ -5,7 +5,7 @@ export interface ChatToolCall {
+   function: { name: string; arguments: string };
+ }
+ 
+-export const MAX_CHAT_TOOL_CALLS = 32;
++export const MAX_CHAT_TOOL_CALLS = 100000;
+ const MAX_ARGUMENT_CHARS = 256_000;
+ 
+ export class ChatProtocolError extends Error {}
+diff --git a/server/drivers/openai-chat.ts b/server/drivers/openai-chat.ts
+index 13f8ea8..fdcfd82 100644
+--- a/server/drivers/openai-chat.ts
++++ b/server/drivers/openai-chat.ts
+@@ -16,10 +16,19 @@ import { ChatToolSessionError, mountChatTools, type ChatToolDefinition, type Cha
+ import { assertImageTransport, chatImageBudget, chatToolImages, chatUserContent, type ChatContentPart } from "./chat-images.ts";
+ import { promptHalves, volatileContextNote, withContextNote } from "./prompt-split.ts";
+ import { createChatToolApproval } from "./chat-tool-approval.ts";
+-import { ChatProtocolError, ChatReasoningDetails, ChatToolCalls, MAX_CHAT_TOOL_CALLS, object, type ChatToolCall } from "./openai-chat-protocol.ts";
++import { ChatProtocolError, ChatReasoningDetails, ChatToolCalls, object, type ChatToolCall } from "./openai-chat-protocol.ts";
+ import { appendNative } from "./native.ts";
+ import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
+ 
++/** Local patch NO LIMIT: upstream caps a turn at 16 model calls, too small
++ * for OpenAI-compatible/9router agentic work. Removed: effectively unlimited
++ * rounds. Set OPENMAUS_OPENAI_COMPAT_MAX_ROUNDS to a positive integer to cap
++ * it again. */
++function chatMaxRounds(): number {
++  const raw = Number(process.env.OPENMAUS_OPENAI_COMPAT_MAX_ROUNDS);
++  return Number.isSafeInteger(raw) && raw >= 1 ? raw : Number.MAX_SAFE_INTEGER;
++}
++
+ export interface OpenAIChatMessage {
+   role: "system" | "user" | "assistant" | "tool";
+   content: string | ChatContentPart[] | null;
+@@ -495,7 +504,8 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
+         if (questionAllowed && !tools.definitions.some((definition) => definition.function.name === ASK_USER_TOOL)) {
+           tools.definitions.push(ASK_USER_TOOL_DEFINITION);
+         }
+-        for (let round = 0; round < 16; round++) {
++        const maxRounds = chatMaxRounds();
++        for (let round = 0; round < maxRounds; round++) {
+           abort.signal.throwIfAborted();
+           // Drain parked mid-turn input here, before the next completion
+           // request: the previous round's tool results are complete, so a
+@@ -598,7 +608,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
+             if (seenCalls.has(call.id)) throw new ChatProtocolError("provider reused a tool-call ID; refusing to repeat an operation");
+             seenCalls.add(call.id);
+           }
+-          if (seenCalls.size > MAX_CHAT_TOOL_CALLS) throw new ChatProtocolError("tool-call limit reached");
++          // Local patch NO LIMIT: removed the accumulated tool-call cap.
+           messages.push({ role: "assistant", content: completion.text || null, tool_calls: completion.toolCalls,
+             ...(completion.protocolReasoning && !reasoningReplayRejected.has(model) ? { [options.reasoningReplayField ?? "reasoning_content"]: completion.protocolReasoning } : {}),
+             ...(completion.protocolReasoningDetails.length ? { reasoning_details: completion.protocolReasoningDetails } : {}),

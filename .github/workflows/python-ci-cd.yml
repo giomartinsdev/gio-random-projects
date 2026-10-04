@@ -274,15 +274,20 @@ jobs:
             echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a :latest já foi publicada)."
             exit 0
           fi
-          # §10.4-4/§10.4-5. The two finance entries exist so that the map
-          # covers every app the discover step can emit -- an app missing from
-          # this map is the §14 risk "build verde, nada sobe". Their ids are
-          # deliberately EMPTY: the numeric Dockhand stack id is only readable
-          # from the Dockhand UI after login, and inventing a number here would
-          # put a wrong value into the map the deploy actually fires. Fill them
-          # in (§10.4 step 5) in the same commit that first deploys that app;
-          # until then this job fails loudly instead of reporting success.
-          declare -A STACK=( [clubs-ingest]=5 [finance-api]= [finance-whatsapp-worker]= )
+          # §10.4-4/§10.4-5. Every app the discover step can emit needs an
+          # entry here -- an app missing from this map is the §14 risk
+          # "build verde, nada sobe", so a discovered app with no id fails
+          # loudly below instead of reporting success.
+          #   [finance-api]=14 -- the numeric id of the `finance` stack
+          #   (stacks/finance.yml, env 1/prd, repo 1), created 2026-10-04.
+          #   Only readable from the Dockhand UI after login: never invent one.
+          #   [finance-whatsapp-worker] stays EMPTY on purpose: it is the same
+          #   stack as finance-api (one compose, one webhook, so both would
+          #   collapse to one id), and the app does not exist yet
+          #   (0 files under modules/apps/finance-whatsapp-worker/). The moment
+          #   discover can emit it, the fail-loud branch below fires and the id
+          #   must be filled in the same commit that first deploys it.
+          declare -A STACK=( [clubs-ingest]=5 [finance-api]=14 [finance-whatsapp-worker]= )
           if [ -z "$APPS" ] || [ "$APPS" = "[]" ]; then
             echo "nada a deployar (nenhum app descoberto)"
             exit 0

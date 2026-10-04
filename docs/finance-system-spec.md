@@ -508,10 +508,14 @@ cruzada que precisa existir é `FINANCE_DOMAIN_API_KEY` (aqui) ⊆
    `modules/apps/finance-api/**` e `modules/apps/finance-whatsapp-worker/**`
    ao filtro `paths:`; (b) adicionar as duas entradas ao
    `declare -A STACK=( ... )` do job `deploy`.
-5. Descobrir o **id numérico** da stack nova (o URL do webhook na UI do
-   Dockhand mostra: `/api/git/stacks/<ID>/webhook`) e colar no mapa do passo 4.
-   Este passo exige **acesso ao Dockhand** (login): sem credencial, nem criar a
-   stack nem ler o id é possível — é passo humano, não de agente.
+5. Preencher o mapa do passo 4 com o **id numérico** da stack nova. Para o
+   financeiro ele existe: **14** (`finance` → `stacks/finance.yml`, env 1/prd,
+   repo 1), criada e verificada via Dockhand em 2026-10-04 (`dockhand create`
+   + `dockhand ls`; o webhook sem segredo responde `401 Invalid webhook secret`,
+   ou seja está registrado e alcançável). Logo `[finance-api]=14`.
+   O `finance-whatsapp-worker` fica **vazio de propósito** enquanto
+   `modules/apps/finance-whatsapp-worker/` não existir: os dois serviços são
+   o MESMO stack (um webhook só), e app descoberto sem id falha alto.
 6. `python-ci-cd.yml` já usa contexto de build = raiz do repo; **não** alterar.
 7. Primeiro deploy: rodar o workflow à mão
    (`gh workflow run python-ci-cd.yml -f app=finance-api`, idem worker).

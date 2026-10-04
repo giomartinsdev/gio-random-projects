@@ -1,0 +1,73 @@
+#!/bin/sh
+# dockhand — fala com o Dockhand da VPS a partir do Local VM.
+#
+# O Dockhand gerencia as stacks desta VPS. Este helper lê o token de
+# /home/cua/workspace/.dockhand-token e chama a API (o mesmo caminho que a UI
+# usa). Sem argumentos, mostra o uso.
+#
+#   dockhand ls                       lista as stacks
+#   dockhand stacks                   idem
+#   dockhand create <nome> <compose>  cria um git stack (ex.: create finance stacks/finance.yml)
+#   dockhand deploy <id-ou-nome>      dá deploy (puxa imagem e sobe)
+#   dockhand sync <id-ou-nome>        git pull do clone do stack
+#   dockhand env <id-ou-nome>         mostra as variáveis de stack
+#   dockhand rm <id-ou-nome>          remove o stack (NÃO apaga volumes)
+#   dockhand get <id-ou-nome>         detalhe de um stack
+#
+# Repo/environment default: repositório 1 (gio-random-projects), environment 1
+# (prd) — os mesmos que a UI usa. Sobrescreva com REPO= / ENV=.
+set -eu
+
+TOKEN_FILE="${DOCKHAND_TOKEN_FILE:-/home/cua/workspace/.dockhand-token}"
+HOSTHDR="${DOCKHAND_HOST:-dockhand.giomartins.dev}"
+REPO="${REPO:-1}"
+ENV_ID="${ENV:-1}"
+
+# Endereço do Dockhand. O VM está na bridge do Docker; o host (que roda o
+# ingress na :80) é o gateway default. Deriva-o de /proc/net/route (o `ip` não
+# existe na imagem, e o gateway pode mudar) para não fixar 172.17.0.1.
+# Sobrescreva com DOCKHAND_BASE se um dia o Docker for reconfigurado.
+hexbyte() { printf '%d' "0x$(printf '%s' "$1" | cut -c$2-$3)"; }
+host_gateway() {
+  g=$(awk 'NR>1 && $2=="00000000" {print $3; exit}' /proc/net/route 2>/dev/null)
+  [ -n "$g" ] || return 1
+  # little-endian: bytes 3,2,1,0
+  printf '%s.%s.%s.%s' \
+    "$(hexbyte "$g" 7 8)" "$(hexbyte "$g" 5 6)" \
+    "$(hexbyte "$g" 3 4)" "$(hexbyte "$g" 1 2)"
+}
+GW=$(host_gateway || true)
+BASE="${DOCKHAND_BASE:-http://${GW:-172.17.0.1}}"
+
+[ -f "$TOKEN_FILE" ] || { echo "sem token em $TOKEN_FILE" >&2; exit 1; }
+TOKEN=$(cat "$TOKEN_FILE")
+
+api() { # method path [json]
+  m="$1"; p="$2"; body="${3:-}"
+  if [ -n "$body" ]; then
+    curl -fsS -m 30 -H "Host: $HOSTHDR" -H "Authorization: Bearer $TOKEN" \
+      -H "content-type: application/json" -X "$m" "$BASE$p" -d "$body"
+  else
+    curl -fsS -m 30 -H "Host: $HOSTHDR" -H "Authorization: Bearer $TOKEN" -X "$m" "$BASE$p"
+  fi
+}
+
+resolve_id() { # id-or-name -> numeric id
+  case "$1" in
+    ''|*[!0-9]*) api GET /api/git/stacks | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const a=JSON.parse(d);const t=process.argv[1];const x=a.find(s=>s.stackName===t||String(s.id)===t);console.log(x?x.id:'')})" "$1" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+cmd="${1:-help}"; shift 2>/dev/null || true
+case "$cmd" in
+  ls|stacks) api GET /api/git/stacks | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{for(const s of JSON.parse(d))console.log(String(s.id).padEnd(4),s.stackName.padEnd(22),s.composePath)})" ;;
+  get) api GET "/api/git/stacks/$(resolve_id "$1")" ;;
+  create) api POST /api/git/stacks "{\"stackName\":\"$1\",\"environmentId\":$ENV_ID,\"repositoryId\":$REPO,\"composePath\":\"$2\"}" ;;
+  deploy) api POST "/api/git/stacks/$(resolve_id "$1")/deploy" '{}' ;;
+  sync)   api POST "/api/git/stacks/$(resolve_id "$1")/sync" '{}' ;;
+  env)    api GET  "/api/git/stacks/$(resolve_id "$1")/env-files" ;;
+  rm)     api DELETE "/api/git/stacks/$(resolve_id "$1")" ;;
+  help|*)
+    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
+esac

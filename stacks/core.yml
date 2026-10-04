@@ -89,6 +89,19 @@ services:
       - registry_registry-auth:/auth:ro
     networks: [apps]
 
+  # --- ingress (host network, a única porta HTTP aberta) ------------------
+  # Fica no core (não no compute): é a frente de TODOS os hostnames do host —
+  # se cair, cai tudo. Subir/derrubar serviços de plataforma não deve mexer
+  # nele. Roda em host network, então alcança cada app pelo loopback
+  # (127.0.0.1:<porta>) — o ingress/default.conf mapeia hostname -> porta.
+  ingress:
+    image: nginx:1.27-alpine
+    container_name: ingress
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./ingress/default.conf:/etc/nginx/conf.d/default.conf:ro
+
   # --- Dockhand (gerencia as stacks; roda a partir daqui) -----------------
   dockhand:
     image: fnsys/dockhand:latest
