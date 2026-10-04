@@ -94,6 +94,7 @@ class RegisterTransactionCommand:
     counterparty: str | None = None
     external_category: str | None = None
     description: str | None = None
+    historical: bool = False
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> "RegisterTransactionCommand":
@@ -123,6 +124,7 @@ class RegisterTransactionCommand:
             counterparty=_optional_text(data.get("counterparty"), "counterparty"),
             external_category=_optional_text(data.get("external_category"), "external_category"),
             description=_optional_text(data.get("description"), "description"),
+            historical=bool(data.get("historical", False)),
         )
 
     def to_payload(self) -> dict[str, Any]:
@@ -147,6 +149,9 @@ class RegisterTransactionCommand:
         ):
             if value is not None:
                 payload[key] = value
+        # O histórico (backfill do Open Finance) é sempre repassado, mesmo
+        # False, para o worker saber que é dia a dia e notificar.
+        payload["historical"] = self.historical
         return payload
 
 

@@ -45,6 +45,7 @@ type Transaction struct {
 	Counterparty     string
 	ExternalCategory string
 	Description      string
+	Historical       bool
 }
 
 // NewTransaction valida as invariantes do §3.4 na construção:

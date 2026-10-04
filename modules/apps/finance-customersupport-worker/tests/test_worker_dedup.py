@@ -96,11 +96,10 @@ def test_external_transaction_event_still_notifies():
     assert "Despesa" in evo.sent[0][1]
 
 
-def test_open_finance_import_does_not_notify():
-    # O import do Open Finance pode trazer centenas de transações de uma vez
-    # (o backfill inicial). Notificar cada uma metralha o WhatsApp — então o
-    # evento com source OPEN_FINANCE_SYNC é silencioso. O dado entra no painel;
-    # o aviso, não.
+def test_open_finance_backfill_does_not_notify():
+    # O backfill inicial (historical=true) pode trazer centenas de transações
+    # ao conectar; notificar cada uma metralha o WhatsApp. O dado entra no
+    # painel; o aviso, não.
     evo = FakeEvolution()
     worker = _worker(FakeFinance(), evo)
     for i in range(5):
@@ -108,12 +107,29 @@ def test_open_finance_import_does_not_notify():
             _event(
                 "finance.transaction.registered",
                 {"user_id": "5521981962914", "transaction_type": "EXPENSE", "amount": "-10.00", "category": "Outros",
-                 "source_type": "OPEN_FINANCE_SYNC"},
+                 "source_type": "OPEN_FINANCE_SYNC", "historical": True},
                 command_id=f"cmd-of-{i}",
                 event_id=f"evt-of-{i}",
             )
         ))
-    assert evo.sent == [], "o import do Open Finance não pode notificar transação a transação"
+    assert evo.sent == [], "o backfill do Open Finance não pode notificar"
+
+
+def test_open_finance_daily_transaction_notifies():
+    # Já o DIA A DIA (historical=false) do Open Finance notifica normalmente:
+    # é o gasto que acabou de acontecer.
+    evo = FakeEvolution()
+    worker = _worker(FakeFinance(), evo)
+    asyncio.run(worker.handle_domain_event(
+        _event(
+            "finance.transaction.registered",
+            {"user_id": "5521981962914", "transaction_type": "EXPENSE", "amount": "-12.50", "category": "Alimentação",
+             "source_type": "OPEN_FINANCE_SYNC", "historical": False},
+            command_id="cmd-of-daily",
+        )
+    ))
+    assert len(evo.sent) == 1
+    assert "Despesa" in evo.sent[0][1]
 
 
 def test_budget_alert_still_notifies_even_amid_open_finance_import():

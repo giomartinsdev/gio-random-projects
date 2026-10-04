@@ -22,6 +22,8 @@ type TransactionRegistered struct {
 	// notificar o import do Open Finance (que chega em lote — centenas de
 	// transações de uma vez metralhariam o WhatsApp).
 	SourceType string `json:"source_type,omitempty"`
+	// Historical marca o backfill inicial do Open Finance (não notificar).
+	Historical bool `json:"historical,omitempty"`
 }
 
 func (TransactionRegistered) EventName() string { return "finance.transaction.registered" }

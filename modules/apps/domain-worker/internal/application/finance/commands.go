@@ -22,6 +22,9 @@ type RegisterTransactionInput struct {
 	Counterparty     string `json:"counterparty,omitempty"`
 	ExternalCategory string `json:"external_category,omitempty"`
 	Description      string `json:"description,omitempty"`
+	// Historical=true no backfill inicial do Open Finance: o worker
+	// conversacional NÃO notifica (senão conectar espalha centenas de msgs).
+	Historical bool `json:"historical,omitempty"`
 }
 
 type CategorizeTransactionInput struct {

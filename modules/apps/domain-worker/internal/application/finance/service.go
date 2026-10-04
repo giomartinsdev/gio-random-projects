@@ -67,6 +67,7 @@ func (s *Service) RegisterTransaction(ctx context.Context, in RegisterTransactio
 	tx.Counterparty = in.Counterparty
 	tx.ExternalCategory = in.ExternalCategory
 	tx.Description = in.Description
+	tx.Historical = in.Historical
 	if _, err := s.repo.Insert(ctx, tx); err != nil {
 		return domainfinance.Transaction{}, nil, err
 	}
@@ -80,6 +81,7 @@ func (s *Service) RegisterTransaction(ctx context.Context, in RegisterTransactio
 		Category:      tx.Category,
 		OccurredAt:    tx.OccurredAt,
 		SourceType:    tx.Source,
+		Historical:    tx.Historical,
 	}, nil
 }
 

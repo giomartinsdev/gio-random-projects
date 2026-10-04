@@ -62,8 +62,23 @@ def test_run_once_publishes_account_and_transactions():
     assert account["balance_amount"] == "1500.00"
     assert account["user_id"] == "5521"
 
-    # A janela de busca usa updated_at (pega novas e atualizadas).
-    assert "fromUpdatedAt" in polp.tx_params[0]
+    # A PRIMEIRA passada é o backfill: janela por DATA e transações marcadas
+    # historical=True (silenciosas).
+    assert "fromDate" in polp.tx_params[0]
+    assert all(c["historical"] is True for a, c in finance.calls if a == ACTION_REGISTER_TRANSACTION)
+
+
+def test_second_pass_is_incremental_and_notifies():
+    # Depois do backfill, o incremental filtra por created_at e NÃO marca
+    # historical — é o dia a dia, que notifica.
+    finance = FakeFinance()
+    polp = FakePolp()
+    syncer = Syncer(polp=polp, finance=finance, backfill_days=7)
+    syncer.run_once()  # backfill
+    finance.calls.clear()
+    syncer.run_once()  # incremental
+    assert "fromCreatedAt" in polp.tx_params[-1]
+    assert all(c["historical"] is False for a, c in finance.calls if a == ACTION_REGISTER_TRANSACTION)
 
 
 def test_non_authorised_consent_is_skipped():
