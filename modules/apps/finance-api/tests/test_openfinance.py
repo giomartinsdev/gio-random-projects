@@ -8,6 +8,7 @@ import pytest
 
 from finance_api.application.openfinance import OpenFinanceService
 from finance_api.domain.errors import ValidationError
+from finance_api.infrastructure.polp import PolpError
 
 
 class FakePolp:
@@ -94,3 +95,15 @@ def test_revoke_calls_provider_and_publishes_removed():
 def test_configured_reflects_the_provider():
     assert OpenFinanceService(FakePolp(configured=True), FakeCommands()).configured() is True
     assert OpenFinanceService(FakePolp(configured=False), FakeCommands()).configured() is False
+
+
+def test_revoke_still_removes_locally_when_provider_refuses():
+    # Consentimento já EXPIRED no provedor: o DELETE responde erro, mas a
+    # remoção local (limpar a lista) ainda deve sair.
+    class RefusingPolp(FakePolp):
+        def revoke_consent(self, consent_id: str) -> None:
+            raise PolpError("consentimento já expirado")
+
+    cmds = FakeCommands()
+    OpenFinanceService(RefusingPolp(), cmds).revoke(polp_consent_id="consent-1")
+    assert cmds.relayed[-1][0] == "finance.openfinance.consentRemoved"

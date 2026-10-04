@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
 from finance_api.application.commands import RELAY_MODE_ASYNC
-from finance_api.domain.errors import ValidationError
+from finance_api.domain.errors import DomainApiError, ValidationError
 from finance_contracts import (
     ACTION_OF_CONSENT_CREATED,
     ACTION_OF_CONSENT_REMOVED,
@@ -119,8 +119,20 @@ class OpenFinanceService:
         Revogar é para a conexão **sumir** da lista, não ficar como EXPIRED — o
         usuário pediu para remover. O provedor deixa o consentimento inativo; o
         ``consentRemoved`` apaga a linha (e as contas importadas) no domain.
+
+        Se o provedor recusar (ex.: o consentimento já está EXPIRED e o DELETE
+        responde erro), a remoção local **ainda** acontece: o objetivo do
+        usuário é limpar a lista, não preservar um registro de um consentimento
+        que já morreu. Só um erro de configuração (não configurado) impede.
         """
-        self._polp.revoke_consent(polp_consent_id)
+        try:
+            self._polp.revoke_consent(polp_consent_id)
+        except DomainApiError as exc:
+            # 503 (não configurado) é problema nosso: não adianta fingir que
+            # removeu. Os demais (consentimento já inativo no provedor) não
+            # impedem a limpeza local.
+            if getattr(exc, "status", None) == 503:
+                raise
         self._commands.relay(
             ACTION_OF_CONSENT_REMOVED,
             {"polp_consent_id": polp_consent_id},
