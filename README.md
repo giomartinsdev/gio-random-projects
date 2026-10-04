@@ -41,6 +41,9 @@ in each.
 
 ## Docs
 
+- [`docs/architecture.md`](docs/architecture.md) — a arquitetura de hoje em
+  diagramas Mermaid: host/stacks, fluxo do WhatsApp (financeiro), CQRS,
+  deploy e observabilidade.
 - [`docs/servidor-zomboid.md`](docs/servidor-zomboid.md) — the Project
   Zomboid dedicated server: why it runs natively (arm64/x86), systemd +
   box64 architecture, ports/firewall, data layout, ops runbook.
