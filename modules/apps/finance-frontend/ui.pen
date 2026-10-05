@@ -4,8 +4,8 @@
     {
       "type": "frame",
       "id": "ESuri",
-      "x": 0,
-      "y": 0,
+      "x": 4860,
+      "y": 13864,
       "name": "Design System",
       "theme": {
         "Mode": "Dark"
@@ -3599,9 +3599,8 @@
     {
       "type": "frame",
       "id": "EBjwp",
-      "layoutPosition": "absolute",
-      "x": 1060,
-      "y": 0,
+      "x": 5920,
+      "y": 13864,
       "name": "Painel",
       "theme": {
         "Mode": "Dark"
@@ -4969,9 +4968,8 @@
     {
       "type": "frame",
       "id": "J0SoZ5",
-      "layoutPosition": "absolute",
-      "x": 1060,
-      "y": 1020,
+      "x": 5920,
+      "y": 14884,
       "name": "Painel · claro",
       "theme": {
         "Mode": "Light"
@@ -6339,8 +6337,8 @@
     {
       "type": "frame",
       "id": "x6tct",
-      "x": 0,
-      "y": 1020,
+      "x": 4860,
+      "y": 14884,
       "name": "Design System · claro",
       "theme": {
         "Mode": "Light"
@@ -7436,9 +7434,8 @@
     {
       "type": "frame",
       "id": "mtIY1",
-      "layoutPosition": "absolute",
-      "x": 2540,
-      "y": 0,
+      "x": 7400,
+      "y": 13864,
       "name": "Transações",
       "theme": {
         "Mode": "Dark"
@@ -8658,9 +8655,8 @@
     {
       "type": "frame",
       "id": "emMX0",
-      "layoutPosition": "absolute",
-      "x": 4020,
-      "y": 0,
+      "x": 8880,
+      "y": 13864,
       "name": "Contas",
       "theme": {
         "Mode": "Dark"
@@ -9571,9 +9567,8 @@
     {
       "type": "frame",
       "id": "qo5FM",
-      "layoutPosition": "absolute",
-      "x": 5500,
-      "y": 0,
+      "x": 10360,
+      "y": 13864,
       "name": "Limites",
       "theme": {
         "Mode": "Dark"
@@ -10496,9 +10491,8 @@
     {
       "type": "frame",
       "id": "GGroM",
-      "layoutPosition": "absolute",
-      "x": 6980,
-      "y": 0,
+      "x": 11840,
+      "y": 13864,
       "name": "Avisos",
       "theme": {
         "Mode": "Dark"
@@ -11222,9 +11216,8 @@
     {
       "type": "frame",
       "id": "q0Ctr",
-      "layoutPosition": "absolute",
-      "x": 8460,
-      "y": 0,
+      "x": 13320,
+      "y": 13864,
       "name": "Open Finance",
       "theme": {
         "Mode": "Dark"
@@ -12082,9 +12075,8 @@
     {
       "type": "frame",
       "id": "YkpEt",
-      "layoutPosition": "absolute",
-      "x": 9940,
-      "y": 0,
+      "x": 14800,
+      "y": 13864,
       "name": "Detalhe",
       "theme": {
         "Mode": "Dark"
@@ -12861,9 +12853,8 @@
     {
       "type": "frame",
       "id": "X2EHx",
-      "layoutPosition": "absolute",
-      "x": 11420,
-      "y": 0,
+      "x": 16280,
+      "y": 13864,
       "name": "Ajustes",
       "theme": {
         "Mode": "Dark"
@@ -13555,9 +13546,8 @@
     {
       "type": "frame",
       "id": "qGoCm",
-      "layoutPosition": "absolute",
-      "x": 2540,
-      "y": 1020,
+      "x": 7400,
+      "y": 14884,
       "name": "Transações · claro",
       "theme": {
         "Mode": "Light"
@@ -16082,9 +16072,8 @@
     {
       "type": "frame",
       "id": "bPQm1",
-      "layoutPosition": "absolute",
-      "x": 4020,
-      "y": 1020,
+      "x": 8880,
+      "y": 14884,
       "name": "Contas · claro",
       "theme": {
         "Mode": "Light"
@@ -17244,9 +17233,8 @@
     {
       "type": "frame",
       "id": "vvnhy",
-      "layoutPosition": "absolute",
-      "x": 5500,
-      "y": 1020,
+      "x": 10360,
+      "y": 14884,
       "name": "Limites · claro",
       "theme": {
         "Mode": "Light"
@@ -18420,9 +18408,8 @@
     {
       "type": "frame",
       "id": "Ix185",
-      "layoutPosition": "absolute",
-      "x": 12900,
-      "y": 0,
+      "x": 17760,
+      "y": 13864,
       "name": "Personalizar",
       "theme": {
         "Mode": "Dark"
@@ -19394,9 +19381,8 @@
     {
       "type": "frame",
       "id": "N5m2UQ",
-      "layoutPosition": "absolute",
-      "x": 14380,
-      "y": 0,
+      "x": 19240,
+      "y": 13864,
       "name": "Buscar",
       "theme": {
         "Mode": "Dark"
@@ -20799,9 +20785,8 @@
     {
       "type": "frame",
       "id": "vglBb",
-      "layoutPosition": "absolute",
-      "x": 6980,
-      "y": 1020,
+      "x": 11840,
+      "y": 14884,
       "name": "Buscar · claro",
       "theme": {
         "Mode": "Light"
@@ -22204,9 +22189,8 @@
     {
       "type": "frame",
       "id": "gko9i",
-      "layoutPosition": "absolute",
-      "x": 6980,
-      "y": 1020,
+      "x": 11840,
+      "y": 14884,
       "name": "Avisos · claro",
       "theme": {
         "Mode": "Light"
@@ -23235,9 +23219,8 @@
     {
       "type": "frame",
       "id": "I5zPLb",
-      "layoutPosition": "absolute",
-      "x": 8460,
-      "y": 1020,
+      "x": 13320,
+      "y": 14884,
       "name": "Open Finance · claro",
       "theme": {
         "Mode": "Light"
@@ -24360,9 +24343,8 @@
     {
       "type": "frame",
       "id": "VCxJ9",
-      "layoutPosition": "absolute",
-      "x": 9940,
-      "y": 1020,
+      "x": 14800,
+      "y": 14884,
       "name": "Detalhe · claro",
       "theme": {
         "Mode": "Light"
@@ -25337,9 +25319,8 @@
     {
       "type": "frame",
       "id": "BUus8",
-      "layoutPosition": "absolute",
-      "x": 11420,
-      "y": 1020,
+      "x": 16280,
+      "y": 14884,
       "name": "Ajustes · claro",
       "theme": {
         "Mode": "Light"
@@ -26365,9 +26346,8 @@
     {
       "type": "frame",
       "id": "hQRoi",
-      "layoutPosition": "absolute",
-      "x": 12900,
-      "y": 1020,
+      "x": 17760,
+      "y": 14884,
       "name": "Personalizar · claro",
       "theme": {
         "Mode": "Light"
@@ -28348,8 +28328,8 @@
     {
       "type": "frame",
       "id": "WpKCk",
-      "x": 0,
-      "y": 3560,
+      "x": 4860,
+      "y": 17424,
       "name": "v2test",
       "width": 232,
       "height": 100,
@@ -28372,8 +28352,8 @@
     {
       "type": "frame",
       "id": "N8s7f",
-      "x": 0,
-      "y": 3560,
+      "x": 4860,
+      "y": 17424,
       "name": "V2 · Sidebar",
       "reusable": true,
       "clip": true,
@@ -28886,8 +28866,8 @@
     {
       "type": "frame",
       "id": "UeeVa",
-      "x": 280,
-      "y": 3560,
+      "x": 5140,
+      "y": 17424,
       "name": "V2 · Painel",
       "clip": true,
       "width": 1440,
@@ -31914,8 +31894,8 @@
     {
       "type": "frame",
       "id": "BxoJA",
-      "x": 1780,
-      "y": 3560,
+      "x": 6640,
+      "y": 17424,
       "name": "V2 · Transações",
       "clip": true,
       "width": 1440,
@@ -34263,8 +34243,8 @@
     {
       "type": "frame",
       "id": "wasSq",
-      "x": 3280,
-      "y": 3560,
+      "x": 8140,
+      "y": 17424,
       "name": "V2 · Contas",
       "clip": true,
       "width": 1440,
@@ -35136,8 +35116,8 @@
     {
       "type": "frame",
       "id": "u0ceF",
-      "x": 4780,
-      "y": 3560,
+      "x": 9640,
+      "y": 17424,
       "name": "V2 · Limites",
       "clip": true,
       "width": 1440,
@@ -36037,8 +36017,8 @@
     {
       "type": "frame",
       "id": "JHZA2",
-      "x": 6280,
-      "y": 3560,
+      "x": 11140,
+      "y": 17424,
       "name": "V2 · Avisos",
       "clip": true,
       "width": 1440,
@@ -36997,8 +36977,8 @@
     {
       "type": "frame",
       "id": "ev2rY",
-      "x": 7780,
-      "y": 3560,
+      "x": 12640,
+      "y": 17424,
       "name": "V2 · Open Finance",
       "clip": true,
       "width": 1440,
@@ -37894,8 +37874,8 @@
     {
       "type": "frame",
       "id": "LnjY0",
-      "x": 9280,
-      "y": 3560,
+      "x": 14140,
+      "y": 17424,
       "name": "V2 · Detalhe",
       "clip": true,
       "width": 1440,
@@ -38864,8 +38844,8 @@
     {
       "type": "frame",
       "id": "E8z5QH",
-      "x": 10780,
-      "y": 3560,
+      "x": 15640,
+      "y": 17424,
       "name": "V2 · Personalizar",
       "clip": true,
       "width": 1440,
@@ -39916,8 +39896,8 @@
     {
       "type": "frame",
       "id": "nfCnd",
-      "x": 12280,
-      "y": 3560,
+      "x": 17140,
+      "y": 17424,
       "name": "V2 · Ajustes",
       "clip": true,
       "width": 1440,
@@ -40529,8 +40509,8 @@
     {
       "type": "frame",
       "id": "OmQZG",
-      "x": 280,
-      "y": 4640,
+      "x": 5140,
+      "y": 18504,
       "name": "V2 · Painel · claro",
       "theme": {
         "Mode": "Light"
@@ -43560,8 +43540,8 @@
     {
       "type": "frame",
       "id": "roleX",
-      "x": 1780,
-      "y": 4640,
+      "x": 6640,
+      "y": 18504,
       "name": "V2 · Transações · claro",
       "theme": {
         "Mode": "Light"
@@ -45912,8 +45892,8 @@
     {
       "type": "frame",
       "id": "ttLEU",
-      "x": 3280,
-      "y": 4640,
+      "x": 8140,
+      "y": 18504,
       "name": "V2 · Contas · claro",
       "theme": {
         "Mode": "Light"
@@ -46788,8 +46768,8 @@
     {
       "type": "frame",
       "id": "lLiWa",
-      "x": 4780,
-      "y": 4640,
+      "x": 9640,
+      "y": 18504,
       "name": "V2 · Limites · claro",
       "theme": {
         "Mode": "Light"
@@ -47692,8 +47672,8 @@
     {
       "type": "frame",
       "id": "RPBhY",
-      "x": 6280,
-      "y": 4640,
+      "x": 11140,
+      "y": 18504,
       "name": "V2 · Avisos · claro",
       "theme": {
         "Mode": "Light"
@@ -48655,8 +48635,8 @@
     {
       "type": "frame",
       "id": "xmm9f",
-      "x": 7780,
-      "y": 4640,
+      "x": 12640,
+      "y": 18504,
       "name": "V2 · Open Finance · claro",
       "theme": {
         "Mode": "Light"
@@ -49555,8 +49535,8 @@
     {
       "type": "frame",
       "id": "qh1KE",
-      "x": 9280,
-      "y": 4640,
+      "x": 14140,
+      "y": 18504,
       "name": "V2 · Detalhe · claro",
       "theme": {
         "Mode": "Light"
@@ -50528,8 +50508,8 @@
     {
       "type": "frame",
       "id": "hKPqy",
-      "x": 10780,
-      "y": 4640,
+      "x": 15640,
+      "y": 18504,
       "name": "V2 · Personalizar · claro",
       "theme": {
         "Mode": "Light"
@@ -51583,8 +51563,8 @@
     {
       "type": "frame",
       "id": "PnnWg",
-      "x": 12280,
-      "y": 4640,
+      "x": 17140,
+      "y": 18504,
       "name": "V2 · Ajustes · claro",
       "theme": {
         "Mode": "Light"
@@ -52756,7 +52736,7 @@
                         "enabled": true,
                         "url": "pen/ai-dots.glsl",
                         "uniforms": {
-                          "u_fig": "#6366F1",
+                          "u_fig": "#059669",
                           "u_dot": "#D4D4D8"
                         }
                       },
@@ -52774,7 +52754,7 @@
                         "enabled": true,
                         "url": "pen/ai-dots.glsl",
                         "uniforms": {
-                          "u_fig": "#6366F1",
+                          "u_fig": "#D97706",
                           "u_dot": "#D4D4D8"
                         }
                       },
@@ -52792,7 +52772,7 @@
                         "enabled": true,
                         "url": "pen/ai-dots.glsl",
                         "uniforms": {
-                          "u_fig": "#6366F1",
+                          "u_fig": "#DC2626",
                           "u_dot": "#D4D4D8"
                         }
                       },
@@ -53280,7 +53260,16 @@
                           "ref": "OafP2",
                           "name": "dots",
                           "width": 26,
-                          "height": 24
+                          "height": 24,
+                          "fill": {
+                            "type": "shader",
+                            "enabled": true,
+                            "url": "pen/ai-dots.glsl",
+                            "uniforms": {
+                              "u_fig": "#818CF8",
+                              "u_dot": "#3F3F46"
+                            }
+                          }
                         },
                         {
                           "type": "text",
@@ -54583,7 +54572,16 @@
                               "ref": "OafP2",
                               "name": "dots",
                               "width": 24,
-                              "height": 22
+                              "height": 22,
+                              "fill": {
+                                "type": "shader",
+                                "enabled": true,
+                                "url": "pen/ai-dots.glsl",
+                                "uniforms": {
+                                  "u_fig": "#818CF8",
+                                  "u_dot": "#3F3F46"
+                                }
+                              }
                             },
                             {
                               "type": "text",
@@ -54876,7 +54874,16 @@
                               "ref": "OafP2",
                               "name": "dots",
                               "width": 24,
-                              "height": 22
+                              "height": 22,
+                              "fill": {
+                                "type": "shader",
+                                "enabled": true,
+                                "url": "pen/ai-dots.glsl",
+                                "uniforms": {
+                                  "u_fig": "#818CF8",
+                                  "u_dot": "#3F3F46"
+                                }
+                              }
                             },
                             {
                               "type": "text",
@@ -54988,7 +54995,16 @@
                           "ref": "OafP2",
                           "name": "dots",
                           "width": 22,
-                          "height": 20
+                          "height": 20,
+                          "fill": {
+                            "type": "shader",
+                            "enabled": true,
+                            "url": "pen/ai-dots.glsl",
+                            "uniforms": {
+                              "u_fig": "#818CF8",
+                              "u_dot": "#3F3F46"
+                            }
+                          }
                         },
                         {
                           "type": "text",
@@ -59876,7 +59892,16 @@
                               "ref": "OafP2",
                               "name": "dots",
                               "width": 24,
-                              "height": 22
+                              "height": 22,
+                              "fill": {
+                                "type": "shader",
+                                "enabled": true,
+                                "url": "pen/ai-dots.glsl",
+                                "uniforms": {
+                                  "u_fig": "#818CF8",
+                                  "u_dot": "#3F3F46"
+                                }
+                              }
                             },
                             {
                               "type": "text",
@@ -61612,7 +61637,16 @@
                                   "ref": "m3Hcnt",
                                   "name": "dots",
                                   "width": 24,
-                                  "height": 22
+                                  "height": 22,
+                                  "fill": {
+                                    "type": "shader",
+                                    "enabled": true,
+                                    "url": "pen/ai-dots.glsl",
+                                    "uniforms": {
+                                      "u_fig": "#818CF8",
+                                      "u_dot": "#3F3F46"
+                                    }
+                                  }
                                 },
                                 {
                                   "type": "text",
@@ -62791,7 +62825,16 @@
                                   "ref": "m3Hcnt",
                                   "name": "dots",
                                   "width": 24,
-                                  "height": 22
+                                  "height": 22,
+                                  "fill": {
+                                    "type": "shader",
+                                    "enabled": true,
+                                    "url": "pen/ai-dots.glsl",
+                                    "uniforms": {
+                                      "u_fig": "#818CF8",
+                                      "u_dot": "#3F3F46"
+                                    }
+                                  }
                                 },
                                 {
                                   "type": "text",
@@ -64290,7 +64333,16 @@
                                   "ref": "OafP2",
                                   "name": "dots",
                                   "width": 24,
-                                  "height": 22
+                                  "height": 22,
+                                  "fill": {
+                                    "type": "shader",
+                                    "enabled": true,
+                                    "url": "pen/ai-dots.glsl",
+                                    "uniforms": {
+                                      "u_fig": "#818CF8",
+                                      "u_dot": "#3F3F46"
+                                    }
+                                  }
                                 },
                                 {
                                   "type": "text",
@@ -65629,7 +65681,16 @@
                                   "ref": "OafP2",
                                   "name": "dots",
                                   "width": 24,
-                                  "height": 22
+                                  "height": 22,
+                                  "fill": {
+                                    "type": "shader",
+                                    "enabled": true,
+                                    "url": "pen/ai-dots.glsl",
+                                    "uniforms": {
+                                      "u_fig": "#818CF8",
+                                      "u_dot": "#3F3F46"
+                                    }
+                                  }
                                 },
                                 {
                                   "type": "text",
@@ -67524,7 +67585,16 @@
                                   "ref": "OafP2",
                                   "name": "dots",
                                   "width": 24,
-                                  "height": 22
+                                  "height": 22,
+                                  "fill": {
+                                    "type": "shader",
+                                    "enabled": true,
+                                    "url": "pen/ai-dots.glsl",
+                                    "uniforms": {
+                                      "u_fig": "#818CF8",
+                                      "u_dot": "#3F3F46"
+                                    }
+                                  }
                                 },
                                 {
                                   "type": "text",
@@ -67542,7 +67612,17 @@
                               "id": "w2HL4",
                               "type": "ref",
                               "ref": "b6ku3",
-                              "name": "tctl"
+                              "name": "tctl",
+                              "descendants": {
+                                "G2Y918": {
+                                  "flipX": false,
+                                  "flipY": false,
+                                  "width": 190,
+                                  "height": "fit_content",
+                                  "x": 42,
+                                  "y": 4
+                                }
+                              }
                             },
                             {
                               "type": "text",
@@ -70041,7 +70121,16 @@
                               "ref": "OafP2",
                               "name": "dots",
                               "width": 24,
-                              "height": 22
+                              "height": 22,
+                              "fill": {
+                                "type": "shader",
+                                "enabled": true,
+                                "url": "pen/ai-dots.glsl",
+                                "uniforms": {
+                                  "u_fig": "#818CF8",
+                                  "u_dot": "#3F3F46"
+                                }
+                              }
                             },
                             {
                               "type": "text",
@@ -70334,7 +70423,16 @@
                               "ref": "OafP2",
                               "name": "dots",
                               "width": 24,
-                              "height": 22
+                              "height": 22,
+                              "fill": {
+                                "type": "shader",
+                                "enabled": true,
+                                "url": "pen/ai-dots.glsl",
+                                "uniforms": {
+                                  "u_fig": "#818CF8",
+                                  "u_dot": "#3F3F46"
+                                }
+                              }
                             },
                             {
                               "type": "text",
@@ -70446,7 +70544,16 @@
                           "ref": "OafP2",
                           "name": "dots",
                           "width": 22,
-                          "height": 20
+                          "height": 20,
+                          "fill": {
+                            "type": "shader",
+                            "enabled": true,
+                            "url": "pen/ai-dots.glsl",
+                            "uniforms": {
+                              "u_fig": "#818CF8",
+                              "u_dot": "#3F3F46"
+                            }
+                          }
                         },
                         {
                           "type": "text",
@@ -75334,7 +75441,16 @@
                               "ref": "OafP2",
                               "name": "dots",
                               "width": 24,
-                              "height": 22
+                              "height": 22,
+                              "fill": {
+                                "type": "shader",
+                                "enabled": true,
+                                "url": "pen/ai-dots.glsl",
+                                "uniforms": {
+                                  "u_fig": "#818CF8",
+                                  "u_dot": "#3F3F46"
+                                }
+                              }
                             },
                             {
                               "type": "text",
@@ -77070,7 +77186,16 @@
                                   "ref": "m3Hcnt",
                                   "name": "dots",
                                   "width": 24,
-                                  "height": 22
+                                  "height": 22,
+                                  "fill": {
+                                    "type": "shader",
+                                    "enabled": true,
+                                    "url": "pen/ai-dots.glsl",
+                                    "uniforms": {
+                                      "u_fig": "#818CF8",
+                                      "u_dot": "#3F3F46"
+                                    }
+                                  }
                                 },
                                 {
                                   "type": "text",
@@ -78249,7 +78374,16 @@
                                   "ref": "m3Hcnt",
                                   "name": "dots",
                                   "width": 24,
-                                  "height": 22
+                                  "height": 22,
+                                  "fill": {
+                                    "type": "shader",
+                                    "enabled": true,
+                                    "url": "pen/ai-dots.glsl",
+                                    "uniforms": {
+                                      "u_fig": "#818CF8",
+                                      "u_dot": "#3F3F46"
+                                    }
+                                  }
                                 },
                                 {
                                   "type": "text",
@@ -79748,7 +79882,16 @@
                                   "ref": "OafP2",
                                   "name": "dots",
                                   "width": 24,
-                                  "height": 22
+                                  "height": 22,
+                                  "fill": {
+                                    "type": "shader",
+                                    "enabled": true,
+                                    "url": "pen/ai-dots.glsl",
+                                    "uniforms": {
+                                      "u_fig": "#818CF8",
+                                      "u_dot": "#3F3F46"
+                                    }
+                                  }
                                 },
                                 {
                                   "type": "text",
@@ -81087,7 +81230,16 @@
                                   "ref": "OafP2",
                                   "name": "dots",
                                   "width": 24,
-                                  "height": 22
+                                  "height": 22,
+                                  "fill": {
+                                    "type": "shader",
+                                    "enabled": true,
+                                    "url": "pen/ai-dots.glsl",
+                                    "uniforms": {
+                                      "u_fig": "#818CF8",
+                                      "u_dot": "#3F3F46"
+                                    }
+                                  }
                                 },
                                 {
                                   "type": "text",
@@ -82982,7 +83134,16 @@
                                   "ref": "OafP2",
                                   "name": "dots",
                                   "width": 24,
-                                  "height": 22
+                                  "height": 22,
+                                  "fill": {
+                                    "type": "shader",
+                                    "enabled": true,
+                                    "url": "pen/ai-dots.glsl",
+                                    "uniforms": {
+                                      "u_fig": "#818CF8",
+                                      "u_dot": "#3F3F46"
+                                    }
+                                  }
                                 },
                                 {
                                   "type": "text",
@@ -83000,7 +83161,17 @@
                               "id": "iUBDJ",
                               "type": "ref",
                               "ref": "b6ku3",
-                              "name": "tctl"
+                              "name": "tctl",
+                              "descendants": {
+                                "G2Y918": {
+                                  "flipX": false,
+                                  "flipY": false,
+                                  "width": 266,
+                                  "height": "fit_content",
+                                  "x": 42,
+                                  "y": 11
+                                }
+                              }
                             },
                             {
                               "type": "text",
@@ -84830,22 +85001,58 @@
                     {
                       "id": "zcPur",
                       "type": "ref",
-                      "ref": "OafP2"
+                      "ref": "OafP2",
+                      "fill": {
+                        "type": "shader",
+                        "enabled": true,
+                        "url": "pen/ai-dots.glsl",
+                        "uniforms": {
+                          "u_fig": "#818CF8",
+                          "u_dot": "#3F3F46"
+                        }
+                      }
                     },
                     {
                       "id": "KZ7CE",
                       "type": "ref",
-                      "ref": "c1UBW"
+                      "ref": "c1UBW",
+                      "fill": {
+                        "type": "shader",
+                        "enabled": true,
+                        "url": "pen/ai-dots.glsl",
+                        "uniforms": {
+                          "u_fig": "#818CF8",
+                          "u_dot": "#3F3F46"
+                        }
+                      }
                     },
                     {
                       "id": "uKOQy",
                       "type": "ref",
-                      "ref": "m3Hcnt"
+                      "ref": "m3Hcnt",
+                      "fill": {
+                        "type": "shader",
+                        "enabled": true,
+                        "url": "pen/ai-dots.glsl",
+                        "uniforms": {
+                          "u_fig": "#818CF8",
+                          "u_dot": "#3F3F46"
+                        }
+                      }
                     },
                     {
                       "id": "d7LXF",
                       "type": "ref",
-                      "ref": "O27ny6"
+                      "ref": "O27ny6",
+                      "fill": {
+                        "type": "shader",
+                        "enabled": true,
+                        "url": "pen/ai-dots.glsl",
+                        "uniforms": {
+                          "u_fig": "#818CF8",
+                          "u_dot": "#3F3F46"
+                        }
+                      }
                     }
                   ]
                 }
