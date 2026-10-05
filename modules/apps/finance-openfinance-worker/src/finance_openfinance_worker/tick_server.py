@@ -45,22 +45,34 @@ def make_handler(secret: str, sync_fn) -> type:
                 self._reply(404, '{"error":"not found"}')
 
         def do_POST(self) -> None:  # noqa: N802 - nome da API base
-            global _COUNTS
             expected = f"/tick/{secret}"
             if secret != "" and self.path == expected:
-                # serializa syncs: webhook duplicado não faz duas passadas
                 got = _LOCK.acquire(timeout=0)
                 if not got:
+                    # sync já rodando (este webhook ou o poll): o resultado
+                    # desse sync cobre o push atual — 200 honesto.
                     self._reply(200, '{"status":"already-running"}')
                     return
                 try:
-                    counts = sync_fn()
-                    self._reply(200, '{"status":"synced","counts":' + str(counts).replace("'", '"') + "}")
-                except Exception as exc:  # noqa: BLE001 - resposta 5xx não derruba o conector
-                    log.error("sync do tick falhou: %s", exc)
-                    self._reply(500, '{"error":"sync failed"}')
-                finally:
+                    # O poke responde NA HORA: o sync pode levar dezenas de
+                    # segundos (Celcoin), e o provedor não precisa esperar.
+                    # Roda em thread daemonic; o lock garante um por vez.
+                    import threading as _t
+
+                    def _run() -> None:
+                        try:
+                            counts = sync_fn()
+                            log.info("tick sincronizou: %s", counts)
+                        except Exception as exc:  # noqa: BLE001 - o poll cobre
+                            log.error("sync do tick falhou: %s", exc)
+                        finally:
+                            _LOCK.release()
+
+                    _t.Thread(target=_run, name="tick-sync", daemon=True).start()
+                    self._reply(200, '{"status":"accepted","mode":"tick"}')
+                except Exception:  # noqa: BLE001 - resposta 5xx não derruba o conector
                     _LOCK.release()
+                    self._reply(500, '{"error":"tick refused"}')
                 return
             # path errado/segredo errado: 404 — a porta não informa existência
             self._reply(404, '{"error":"not found"}')

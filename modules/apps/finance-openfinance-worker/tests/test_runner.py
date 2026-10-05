@@ -126,7 +126,13 @@ def test_tick_runs_sync_and_secret_gates():
     with _Server() as s:
         r = urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:18091/tick/sek", method="POST", data=b"anything"))
         assert r.status == 200
-        assert "synced" in r.read().decode()
+        assert "accepted" in r.read().decode()
+        # o sync roda em thread: aguardar concluir antes do assert de contagem
+        for _ in range(50):
+            if s.syncs:
+                break
+            time.sleep(0.05)
+        assert len(s.syncs) >= 1
         try:
             urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:18091/tick/wrong", method="POST", data=b"{}"))
             raise AssertionError("segredo errado devia ser 404")

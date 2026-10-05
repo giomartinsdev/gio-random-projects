@@ -159,7 +159,7 @@ async def polp_webhook(
     if not base:
         return JSONResponse(status_code=202, content={"status": "accepted", "mode": "poll-only"})
     try:
-        r = httpx.post(f"{base}/tick/{secret}", timeout=20.0)
+        r = httpx.post(f"{base}/tick/{secret}", timeout=10.0)
         if r.status_code == 200:
             return JSONResponse(status_code=202, content={"status": "accepted", "mode": "tick"})
         return JSONResponse(status_code=202, content={"status": "accepted", "mode": "poll-fallback"})
