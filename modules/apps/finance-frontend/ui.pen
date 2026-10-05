@@ -52199,8 +52199,8 @@
     {
       "type": "frame",
       "id": "t5kxM",
-      "x": 0,
-      "y": 5720,
+      "x": 1179,
+      "y": 6231,
       "name": "V3 · Design System",
       "theme": {
         "Mode": "Dark"
@@ -53493,8 +53493,8 @@
     {
       "type": "frame",
       "id": "YtaFp",
-      "x": 3200,
-      "y": 5720,
+      "x": 3260,
+      "y": 6231,
       "name": "V3 · Painel · dark",
       "theme": {
         "Mode": "Dark"
@@ -56239,8 +56239,8 @@
     {
       "type": "frame",
       "id": "ThLCS",
-      "x": 4800,
-      "y": 5720,
+      "x": 4860,
+      "y": 6231,
       "name": "V3 · Transações · dark",
       "theme": {
         "Mode": "Dark"
@@ -58930,8 +58930,8 @@
     {
       "type": "frame",
       "id": "zjKaM",
-      "x": 6400,
-      "y": 5720,
+      "x": 6460,
+      "y": 6231,
       "name": "V3 · Contas · dark",
       "theme": {
         "Mode": "Dark"
@@ -60343,8 +60343,8 @@
     {
       "type": "frame",
       "id": "tG5JC",
-      "x": 8000,
-      "y": 5720,
+      "x": 8060,
+      "y": 6231,
       "name": "V3 · Limites · dark",
       "theme": {
         "Mode": "Dark"
@@ -61680,8 +61680,8 @@
     {
       "type": "frame",
       "id": "JkMIL",
-      "x": 9600,
-      "y": 5720,
+      "x": 9660,
+      "y": 6231,
       "name": "V3 · Avisos · dark",
       "theme": {
         "Mode": "Dark"
@@ -63138,11 +63138,11 @@
     {
       "type": "frame",
       "id": "d4wWUG",
-      "x": 11200,
-      "y": 6240,
+      "x": 11260,
+      "y": 7493,
       "name": "V3 · Open Finance · claro",
       "theme": {
-        "Mode": "Dark"
+        "Mode": "Light"
       },
       "clip": true,
       "width": 1520,
@@ -64525,11 +64525,11 @@
     {
       "type": "frame",
       "id": "xBbU0",
-      "x": 12800,
-      "y": 6240,
+      "x": 12860,
+      "y": 7493,
       "name": "V3 · Detalhe · claro",
       "theme": {
-        "Mode": "Dark"
+        "Mode": "Light"
       },
       "clip": true,
       "width": 1520,
@@ -66074,11 +66074,11 @@
     {
       "type": "frame",
       "id": "ih5wG",
-      "x": 14400,
-      "y": 6240,
+      "x": 14460,
+      "y": 7493,
       "name": "V3 · Personalizar · claro",
       "theme": {
-        "Mode": "Dark"
+        "Mode": "Light"
       },
       "clip": true,
       "width": 1520,
@@ -67713,11 +67713,11 @@
     {
       "type": "frame",
       "id": "B5EJik",
-      "x": 16000,
-      "y": 6240,
+      "x": 16060,
+      "y": 7493,
       "name": "V3 · Ajustes · claro",
       "theme": {
-        "Mode": "Dark"
+        "Mode": "Light"
       },
       "clip": true,
       "width": 1520,
@@ -68925,8 +68925,8 @@
     {
       "type": "frame",
       "id": "xndIq",
-      "x": 3200,
-      "y": 6240,
+      "x": 3260,
+      "y": 7493,
       "name": "V3 · Painel · claro",
       "theme": {
         "Mode": "Light"
@@ -71671,8 +71671,8 @@
     {
       "type": "frame",
       "id": "Ilsv5",
-      "x": 4800,
-      "y": 6240,
+      "x": 4860,
+      "y": 7493,
       "name": "V3 · Transações · claro",
       "theme": {
         "Mode": "Light"
@@ -74362,8 +74362,8 @@
     {
       "type": "frame",
       "id": "o9BJzg",
-      "x": 6400,
-      "y": 6240,
+      "x": 6460,
+      "y": 7493,
       "name": "V3 · Contas · claro",
       "theme": {
         "Mode": "Light"
@@ -75775,8 +75775,8 @@
     {
       "type": "frame",
       "id": "PQUgK",
-      "x": 8000,
-      "y": 6240,
+      "x": 8060,
+      "y": 7493,
       "name": "V3 · Limites · claro",
       "theme": {
         "Mode": "Light"
@@ -77112,8 +77112,8 @@
     {
       "type": "frame",
       "id": "N5mGs",
-      "x": 9600,
-      "y": 6240,
+      "x": 9660,
+      "y": 7493,
       "name": "V3 · Avisos · claro",
       "theme": {
         "Mode": "Light"
@@ -78570,8 +78570,8 @@
     {
       "type": "frame",
       "id": "JcjE2",
-      "x": 11200,
-      "y": 5720,
+      "x": 11260,
+      "y": 6231,
       "name": "V3 · Open Finance · dark",
       "theme": {
         "Mode": "Dark"
@@ -79957,8 +79957,8 @@
     {
       "type": "frame",
       "id": "c5VMPE",
-      "x": 12800,
-      "y": 5720,
+      "x": 12860,
+      "y": 6231,
       "name": "V3 · Detalhe · dark",
       "theme": {
         "Mode": "Dark"
@@ -81506,8 +81506,8 @@
     {
       "type": "frame",
       "id": "i4g8k",
-      "x": 14400,
-      "y": 5720,
+      "x": 14460,
+      "y": 6231,
       "name": "V3 · Personalizar · dark",
       "theme": {
         "Mode": "Dark"
@@ -83145,8 +83145,8 @@
     {
       "type": "frame",
       "id": "D0Co4",
-      "x": 16000,
-      "y": 5720,
+      "x": 16060,
+      "y": 6231,
       "name": "V3 · Ajustes · dark",
       "theme": {
         "Mode": "Dark"
@@ -84357,8 +84357,8 @@
     {
       "type": "frame",
       "id": "AIt3B",
-      "x": 1580,
-      "y": 5720,
+      "x": 1179,
+      "y": 6876,
       "name": "V3 · Design System · claro",
       "theme": {
         "Mode": "Light"
