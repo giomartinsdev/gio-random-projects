@@ -59,22 +59,6 @@ class PolpClient:
     def account_transactions(self, account_id: str, params: Mapping[str, str] | None = None) -> list[Mapping[str, Any]]:
         return _data(self._get(f"/accounts/{account_id}/transactions", params))
 
-
-def _short(resp: httpx.Response) -> str:
-    try:
-        body = resp.json()
-        if isinstance(body, Mapping):
-            return str(body.get("message") or body.get("error") or resp.status_code)
-    except ValueError:
-        pass
-    return str(resp.status_code)
-
-
-def _data(body: Mapping[str, Any]) -> list[Mapping[str, Any]]:
-    data = body.get("data")
-    if isinstance(data, list):
-        return [d for d in data if isinstance(d, Mapping)]
-    return []
     def investments(self, consent_id: str) -> list[Mapping[str, Any]]:
         """Posições de investimento do consentimento (Celcoin/Polp).
 
@@ -96,3 +80,20 @@ def _data(body: Mapping[str, Any]) -> list[Mapping[str, Any]]:
             if "404" in str(exc):
                 return []
             raise
+
+
+def _short(resp: httpx.Response) -> str:
+    try:
+        body = resp.json()
+        if isinstance(body, Mapping):
+            return str(body.get("message") or body.get("error") or resp.status_code)
+    except ValueError:
+        pass
+    return str(resp.status_code)
+
+
+def _data(body: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    data = body.get("data")
+    if isinstance(data, list):
+        return [d for d in data if isinstance(d, Mapping)]
+    return []
