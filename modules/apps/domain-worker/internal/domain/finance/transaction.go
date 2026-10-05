@@ -15,6 +15,9 @@ var (
 	// ErrNotTransactionOwner: tentativa de editar/remover lançamento de outro
 	// user — a invariant #3 (§3.4) aplicada na correção, não só na leitura.
 	ErrNotTransactionOwner = errors.New("transaction does not belong to this user")
+	// ErrNoChange: operação aplicada não alteraria nada (flag já no estado
+	// pedido). No-op honesto, sem evento.
+	ErrNoChange = errors.New("nothing to change")
 )
 
 // TransactionType é o enum do §3.2.
@@ -49,7 +52,16 @@ type Transaction struct {
 	ExternalCategory string
 	Description      string
 	Historical       bool
+	// Inactive marca "movimentação entre contas próprias" (ex.: BTG → MP):
+	// o mesmo dinheiro entra e sai, e contar duas vezes infla receitas e
+	// despesas sem mudar nada real. Inativo = fora de receitas/despesas/net/
+	// categorias/cashflow, MAS dentro do saldo da conta (que soma tudo, para
+	// não descasar com o extrato do banco). O dono alterna pela UI.
+	Inactive bool
 }
+
+// IsActive diz se a transação conta para as métricas da perna financeira.
+func (t Transaction) IsActive() bool { return !t.Inactive }
 
 // NewTransaction valida as invariantes do §3.4 na construção:
 //   - user_id obrigatório;

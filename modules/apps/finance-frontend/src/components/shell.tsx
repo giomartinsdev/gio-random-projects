@@ -65,7 +65,7 @@ export function Shell({
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border/60 px-4">
+      <header className="flex h-13 shrink-0 items-center gap-3 border-b border-border/60 px-5 md:px-7">
         <a href={hrefFor({ name: "dashboard" })} className="flex items-center gap-2">
           <span className="flex size-6 items-center justify-center rounded-md bg-primary/15 text-primary">
             <Wallet className="size-3.5" />
@@ -95,7 +95,7 @@ export function Shell({
       </header>
 
       {/* Nav rolável em telas pequenas (a segmentada some no lg). */}
-      <nav className="seg m-3 overflow-x-auto lg:hidden">
+      <nav className="seg mx-5 mt-3 mb-1 overflow-x-auto md:mx-7 lg:hidden">
         {TABS.map((t) => (
           <a key={t.route.name} href={hrefFor(t.route)} data-on={active === t.route.name}>
             {t.label}

@@ -17,6 +17,9 @@ type Repository interface {
 	// RemoveTransaction apaga o lançamento. `false` = não existia ou não é
 	// do user (mesma resposta, mesma razão da posse acima).
 	RemoveTransaction(ctx context.Context, id, userID string) (bool, error)
+	// SetTransactionActive alterna a flag de inativa (movimentação entre
+	// contas próprias). `false` = não achou para este user.
+	SetTransactionActive(ctx context.Context, id, userID string, active bool) error
 	// InsertTransfer grava o par débito+crédito numa única transação SQL
 	// (§3.4 nº2: atômica). As duas linhas compartilham command_id.
 	InsertTransfer(ctx context.Context, debit, credit Transaction) error

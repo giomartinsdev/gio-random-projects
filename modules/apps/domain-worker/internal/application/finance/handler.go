@@ -71,6 +71,17 @@ func (h *CommandHandler) Handle(ctx context.Context, cmd application.Command) ([
 		}
 		return []domainfinance.Event{evt}, nil
 
+	case application.ActionSetTransactionActive:
+		var in SetTransactionActiveInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode set transaction active: %w", err)
+		}
+		evt, err := h.service.SetTransactionActive(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return []domainfinance.Event{evt}, nil
+
 	case application.ActionTransferBetweenAccounts:
 		var in TransferBetweenAccountsInput
 		if err := json.Unmarshal(cmd.Payload, &in); err != nil {

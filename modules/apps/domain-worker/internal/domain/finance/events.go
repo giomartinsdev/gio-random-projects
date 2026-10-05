@@ -63,6 +63,18 @@ type TransactionRemoved struct {
 
 func (TransactionRemoved) EventName() string { return "finance.transaction.removed" }
 
+// TransactionActivityChanged avisa que a flag inativa/ativa mudou
+// (movimentação entre contas próprias). Active=false = o lançamento saiu das
+// métricas (receitas/despesas/net/categorias); o saldo da conta intacto.
+type TransactionActivityChanged struct {
+	TransactionID string    `json:"transaction_id"`
+	UserID        string    `json:"user_id"`
+	Active        bool      `json:"active"`
+	OccurredAt    time.Time `json:"occurred_at"`
+}
+
+func (TransactionActivityChanged) EventName() string { return "finance.transaction.activityChanged" }
+
 // TransferCompleted fecha a transferência atômica (§3.4 nº2).
 type TransferCompleted struct {
 	TransactionID string    `json:"transaction_id"`

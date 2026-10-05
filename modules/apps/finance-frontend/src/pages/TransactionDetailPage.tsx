@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, ArrowRightLeft, CalendarClock, Landmark, Pencil, Tag, Trash2, TrendingDown, TrendingUp } from "lucide-react";
-import { api, formatBRL, type OFAccount, type Transaction } from "@/lib/api";
+import { api, apiUrl, formatBRL, type OFAccount, type Transaction } from "@/lib/api";
 import { Card, Cockpit, Empty } from "@/components/primitives";
 import { hrefFor } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -17,9 +17,11 @@ export function TransactionDetailPage({ id }: { id: string }) {
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [confirmingActivate, setConfirmingActivate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [gone, setGone] = useState(false);
+  const [sessionName, setSessionName] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,6 +40,13 @@ export function TransactionDetailPage({ id }: { id: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    fetch(apiUrl("/auth/me"), { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => setSessionName(String(s?.name ?? "")))
+      .catch(() => {});
+  }, []);
 
   // depois de editar/remover: o evento do domínio chega ao WhatsApp; aqui
   // refetch para a UI mostrar o estado aplicado (async: pode levar um instante)
@@ -86,6 +95,36 @@ export function TransactionDetailPage({ id }: { id: string }) {
   const account = accounts.find((a) => a.account_id === tx.account_id || a.id === tx.account_id);
   const accountLabel = account?.name || tx.account_id || "—";
 
+  // Detector de movimentação própria: o recebedor tem o MESMO nome do dono
+  // (ex.: BTG → Mercado Pago, ambos "Giovanni Martins") e o documento crava —
+  // a conta de origem é do próprio user (contas do Open Finance). Sugerimos a
+  // flag, mas quem decide é o usuário (warning antes de aplicar).
+  const normalized = (s: string) =>
+    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const counterpartyName = normalized(tx.counterparty || "");
+  const ownName = normalized(sessionName);
+  const nameTokens = ownName.split(/\s+/).filter((w) => w.length > 2);
+  const nameLooksOwn = ownName.length > 0 && nameTokens.length > 0 && nameTokens.every((w) => counterpartyName.includes(w));
+  const isOwnAccount = !!account && tx.account_id !== "web" && tx.account_id !== "";
+  const txInactive = !!tx.inactive;
+  const suggestOwnTransfer = !txInactive && (nameLooksOwn || isOwnAccount) && tx.transaction_type !== "TRANSFER";
+
+  async function onToggleActive(nextActive: boolean) {
+    setBusy(true);
+    setStatus("");
+    try {
+      await api.setTransactionActive(tx!.id, nextActive);
+      setStatus(nextActive ? "reativada ✓ voltou a contar em receitas/despesas" : "marcada como movimentação própria ✓");
+      setConfirmingActivate(false);
+      refreshAfter();
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "não consegui aplicar a flag");
+      setConfirmingActivate(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onEditSave(patch: {
     category?: string;
     counterparty?: string;
@@ -124,15 +163,70 @@ export function TransactionDetailPage({ id }: { id: string }) {
 
   const left = (
     <Card>
-      <div className="kick mb-3">{income ? "entrada" : "saída"}</div>
-      <p className={cn("fig tnum", income ? "text-up" : "text-fg")}>
+      <div className="kick mb-3">{txInactive ? "movimentação entre contas próprias · inativa" : income ? "entrada" : "saída"}</div>
+      <p className={cn("fig tnum", txInactive ? "text-fg-dim line-through decoration-fg/30" : income ? "text-up" : "text-fg")}>
         {income ? "+" : "−"} {formatBRL(String(Math.abs(Number(tx.amount))))}
       </p>
       <p className="mt-1 text-[13px]">{tx.counterparty || tx.description || "Lançamento"}</p>
-      <span className={cn("pill mt-3", income ? "text-up" : "text-down")}>
+      <span className={cn("pill mt-3", txInactive ? "" : income ? "text-up" : "text-down")}>
         {income ? <TrendingUp className="size-3.5" /> : <TrendingDown className="size-3.5" />}
-        {tx.transaction_type}
+        {txInactive ? "inativa (não conta em receitas/despesas)" : tx.transaction_type}
       </span>
+
+      {/* Warning: ativar devolve o lançamento às métricas — numa perna própria
+          isso demonstra receita/despesa que não existiu de fato. */}
+      {txInactive && (
+        <div className="mt-4 rounded-[10px] border border-warn/50 bg-warn/10 p-3">
+          <p className="text-[12.5px] leading-relaxed text-warn">
+            Ativar devolve este lançamento às <b>receitas/despesas</b>. Se ele for
+            movimentação entre suas próprias contas (o mesmo dinheiro que saiu e
+            voltou), ativar vai demonstrar um gasto/ganho que não existiu de fato —
+            mas o saldo da conta continua exato dos dois jeitos.
+          </p>
+          {!confirmingActivate ? (
+            <button onClick={() => setConfirmingActivate(true)} disabled={busy} className="mt-2 h-8 rounded-full border border-warn/60 px-3 text-[12.5px] text-warn hover:bg-warn/15">
+              {busy ? "…" : "ativar mesmo assim"}
+            </button>
+          ) : (
+            <span className="mt-2 inline-flex h-8 items-center gap-2 text-[12.5px]">
+              tem certeza?
+              <button onClick={() => onToggleActive(true)} disabled={busy} className="h-7 rounded-full bg-warn px-2.5 text-[12px] text-bg">
+                {busy ? "…" : "sim, ativar"}
+              </button>
+              <button onClick={() => setConfirmingActivate(false)} className="text-[12px] dim">não</button>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Sugestão de movimentação própria: recebedor com o MESMO nome do dono
+          (ex.: BTG → MP) — oferecemos, com warning antes de aplicar. */}
+      {suggestOwnTransfer && (
+        <div className="mt-3 rounded-[10px] border border-border bg-bg-soft p-3">
+          <p className="text-[12.5px] leading-relaxed dim">
+            {nameLooksOwn
+              ? <>O recebedor <b className="text-fg">{tx.counterparty}</b> parece ser você mesmo ({sessionName}) — isto não é uma compra, é movimentação entre suas contas. Marcar como inativa tira de receitas/despesas (o saldo da conta segue exato).</>
+              : <>Este lançamento veio de uma <b className="text-fg">conta sua conectada</b> (movimentação entre contas próprias costuma ter o mesmo nome de recebedor). Marcar como inativa tira de receitas/despesas (o saldo da conta segue exato).</>}
+          </p>
+          <button onClick={() => { setConfirmingActivate(true); setConfirmingRemove(false); }} className="mt-2 h-8 rounded-full border border-border-strong px-3 text-[12.5px] hover:bg-fg/8">
+            marcar como movimentação própria
+          </button>
+          {confirmingActivate && (
+            <div className="mt-2 rounded-[8px] border border-warn/50 bg-warn/10 p-2.5 text-[12px] text-warn">
+              Ao inativar, este lançamento deixa de contar em receitas/despesas/net e
+              categorias — se na verdade for um gasto real, os números vão demonstrar
+              errado (o saldo da conta segue exato dos dois jeitos). Confirmar?
+              <span className="mt-1.5 flex gap-2">
+                <button onClick={() => onToggleActive(false)} disabled={busy} className="h-7 rounded-full bg-warn px-2.5 text-[12px] text-bg disabled:opacity-50">
+                  {busy ? "…" : "confirmar"}
+                </button>
+                <button onClick={() => setConfirmingActivate(false)} className="text-[12px] dim hover:text-fg">cancelar</button>
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {status && <p className="mt-3 text-[12px] dim">{status}</p>}
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -167,27 +261,33 @@ export function TransactionDetailPage({ id }: { id: string }) {
   const center = (
     <div className="space-y-3">
       <BackLink />
-      <Card title="Quando">
+      <Card title="Ficha completa">
         <Row icon={<CalendarClock />} label="Data">
           {when.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
         </Row>
         <Row icon={<CalendarClock />} label="Horário">{when.toLocaleTimeString("pt-BR")}</Row>
-      </Card>
-      <Card title="Classificação">
+        <Row icon={<ArrowRightLeft />} label="Recebedor">{tx.counterparty || "—"}</Row>
+        <Row icon={<Landmark />} label="Conta debitada/creditada">{accountLabel}</Row>
+        <Row icon={<ArrowRightLeft />} label="Origem">{originLabel(tx.source)}</Row>
         <Row icon={<Tag />} label="Categoria">
           <a className="hover:text-primary" href={hrefFor({ name: "limits" })}>{tx.category || "Outros"}</a>
         </Row>
-        <Row icon={<ArrowRightLeft />} label="Origem">{originLabel(tx.source)}</Row>
         {tx.external_category && (
           <Row icon={<Tag />} label="Taxonomia do banco"><span className="font-mono text-[11px]">{tx.external_category}</span></Row>
         )}
+        <Row icon={<ArrowRightLeft />} label="Estado">
+          {txInactive
+            ? <span className="text-warn">inativa — movimentação entre contas próprias (fora das métricas, dentro do saldo da conta)</span>
+            : "ativa — conta em receitas/despesas"}
+        </Row>
       </Card>
       <Card title="Detalhes do lançamento">
         {tx.description && <Row label="Descrição">{tx.description}</Row>}
         {tx.counterparty && <Row label="Estabelecimento / pessoa">{tx.counterparty}</Row>}
         <Row label="Moeda">{tx.currency}</Row>
         <Row label="Valor cru"><span className="tnum font-mono">{tx.amount}</span></Row>
-        <Row label="ID"><span className="font-mono text-[11px]">{tx.id}</span></Row>
+        <Row label="ID da transação"><span className="font-mono text-[11px]">{tx.id}</span></Row>
+        <Row label="ID da conta"><span className="font-mono text-[11px]">{tx.account_id || "—"}</span></Row>
       </Card>
     </div>
   );

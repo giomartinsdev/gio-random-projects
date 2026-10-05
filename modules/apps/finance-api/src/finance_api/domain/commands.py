@@ -405,6 +405,35 @@ class UpdateTransactionCommand:
 
 
 @dataclass(frozen=True, slots=True)
+class SetTransactionActiveCommand:
+    """``finance.transaction.setActive`` — flag de movimentação entre contas.
+
+    ``active=false`` marca o lançamento como movimentação PRÓPRIA (ex.:
+    BTG → MP): sai de receitas/despesas/net/categorias/cashflow, mas continua
+    valendo no saldo da conta (que soma TUDO — senão descasa do extrato).
+    """
+
+    user_id: str
+    transaction_id: str
+    active: bool
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> "SetTransactionActiveCommand":
+        data = _require_mapping(payload, "payload")
+        raw = data.get("active")
+        if not isinstance(raw, bool):
+            raise ValidationError("active must be a boolean")
+        return cls(
+            user_id=_require_id(data.get("user_id"), "user_id"),
+            transaction_id=_require_id(data.get("transaction_id"), "transaction_id"),
+            active=raw,
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"user_id": self.user_id, "transaction_id": self.transaction_id, "active": self.active}
+
+
+@dataclass(frozen=True, slots=True)
 class RemoveTransactionCommand:
     """``finance.transaction.remove`` — apaga o lançamento do dono."""
 

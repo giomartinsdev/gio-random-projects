@@ -236,6 +236,37 @@ func (s *Service) RemoveTransaction(ctx context.Context, in RemoveTransactionInp
 	}, nil
 }
 
+// SetTransactionActive alterna a flag de movimentação entre contas próprias.
+// Inativo = fora de receitas/despesas/net/categorias/cashflow, MAS dentro do
+// saldo da conta (o repo de saldo soma tudo). Pedir o estado atual = no-op.
+func (s *Service) SetTransactionActive(ctx context.Context, in SetTransactionActiveInput) (domainfinance.Event, error) {
+	if in.UserID == "" {
+		return nil, fmt.Errorf("%w: user_id", domainfinance.ErrUserIDRequired)
+	}
+	if in.TransactionID == "" {
+		return nil, fmt.Errorf("%w: transaction_id", domainfinance.ErrTransactionIDRequired)
+	}
+	current, err := s.repo.FindByID(ctx, in.TransactionID)
+	if err != nil {
+		return nil, err
+	}
+	if current.UserID != in.UserID {
+		return nil, domainfinance.ErrNotTransactionOwner
+	}
+	if current.IsActive() == in.Active {
+		return nil, domainfinance.ErrNoChange
+	}
+	if err := s.repo.SetTransactionActive(ctx, in.TransactionID, in.UserID, in.Active); err != nil {
+		return nil, err
+	}
+	return domainfinance.TransactionActivityChanged{
+		TransactionID: in.TransactionID,
+		UserID:        in.UserID,
+		Active:        in.Active,
+		OccurredAt:    s.now(),
+	}, nil
+}
+
 // Transfer grava débito+crédito atômicos (§3.4 nº2). Os dois lados recebem
 // UUIDv7 distintos; o crédito é o valor com sinal trocado.
 func (s *Service) Transfer(ctx context.Context, in TransferBetweenAccountsInput) (domainfinance.Transaction, domainfinance.Event, error) {

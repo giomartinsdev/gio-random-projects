@@ -95,6 +95,15 @@ func (f *fakeRepo) RemoveTransaction(_ context.Context, id, userID string) (bool
 	delete(f.txs, id)
 	return true, nil
 }
+func (f *fakeRepo) SetTransactionActive(_ context.Context, id, userID string, active bool) error {
+	t, ok := f.txs[id]
+	if !ok || t.UserID != userID {
+		return domainfinance.ErrNotFound
+	}
+	t.Inactive = !active
+	f.txs[id] = t
+	return nil
+}
 
 // O import do Open Finance tem id DETERMINÍSTICO por (source, external_id):
 // reimportar o mesmo extrato (com id de comando novo) é no-op, não duplicata.
@@ -324,5 +333,45 @@ func TestUpdateTransactionTypeFlipsSign(t *testing.T) {
 	upd := evt.(domainfinance.TransactionUpdated)
 	if upd.Amount != "45.00" {
 		t.Fatalf("INCOME devia ficar positivo (45.00), veio %s", upd.Amount)
+	}
+}
+
+// Flag de movimentação própria: inativa sai das métricas; pedir o estado
+// atual é no-op; posse obrigatória.
+func TestSetTransactionActive(t *testing.T) {
+	s := NewService(newFakeRepo())
+	tx := txForOwner(t, s)
+	// marca inativa (movimentação BTG -> MP)
+	evt, err := s.SetTransactionActive(context.Background(), SetTransactionActiveInput{
+		UserID: "u", TransactionID: tx.ID, Active: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chg, ok := evt.(domainfinance.TransactionActivityChanged)
+	if !ok || chg.Active {
+		t.Fatalf("evento devia ser activityChanged(active=false), veio %T %+v", evt, chg)
+	}
+	// pedir o mesmo estado de novo = no-op
+	if _, err := s.SetTransactionActive(context.Background(), SetTransactionActiveInput{
+		UserID: "u", TransactionID: tx.ID, Active: false,
+	}); err != domainfinance.ErrNoChange {
+		t.Fatalf("re-marcar devia ser ErrNoChange, veio %v", err)
+	}
+	// intruso
+	if _, err := s.SetTransactionActive(context.Background(), SetTransactionActiveInput{
+		UserID: "intruso", TransactionID: tx.ID, Active: true,
+	}); err != domainfinance.ErrNotTransactionOwner {
+		t.Fatalf("flag de outro user devia ser ErrNotTransactionOwner, veio %v", err)
+	}
+	// reativa
+	if _, err := s.SetTransactionActive(context.Background(), SetTransactionActiveInput{
+		UserID: "u", TransactionID: tx.ID, Active: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := s.repo.FindByID(context.Background(), tx.ID)
+	if !after.IsActive() {
+		t.Fatal("reativação devia voltar para active")
 	}
 }

@@ -110,6 +110,12 @@ type Transaction struct {
 	Counterparty     string `json:"counterparty"`
 	Description      string `json:"description"`
 	ExternalCategory string `json:"external_category"`
+	// Inactive marca movimentação entre contas PRÓPRIAS (ex.: BTG → MP): o
+	// mesmo dinheiro entra e sai. Fora de receitas/despesas/net/categorias/
+	// cashflow — MAS vale no saldo da conta (que soma tudo, senão descasa com
+	// o extrato do banco). O dono alterna pela UI; o valor do lançamento é
+	// mostrado esmaecido quando ativo=false.
+	Inactive bool `json:"inactive"`
 }
 
 // TransactionList is the extrato: the user's transactions in a window, newest

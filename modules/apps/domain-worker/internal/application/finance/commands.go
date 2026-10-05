@@ -55,6 +55,16 @@ type RemoveTransactionInput struct {
 	TransactionID string `json:"transaction_id"`
 }
 
+// SetTransactionActiveInput é o finance.transaction.setActive: a flag de
+// movimentação entre contas próprias. inactive=true tira o lançamento de
+// receitas/despesas/net/categorias/cashflow (a perna financeira), mas o
+// REGISTRO continua — e o saldo da conta (que soma tudo) fica exato.
+type SetTransactionActiveInput struct {
+	UserID        string `json:"user_id"`
+	TransactionID string `json:"transaction_id"`
+	Active        bool   `json:"active"`
+}
+
 type TransferBetweenAccountsInput struct {
 	UserID        string `json:"user_id"`
 	FromAccountID string `json:"from_account_id"`

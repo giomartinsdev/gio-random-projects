@@ -48,6 +48,9 @@ const (
 	// nº3) é o domain-worker.
 	ActionUpdateTransaction       Action = "finance.transaction.update"
 	ActionRemoveTransaction       Action = "finance.transaction.remove"
+	// Flag de movimentação entre contas próprias (BTG → MP): inativo sai de
+	// receitas/despesas/net/categorias/cashflow, mas fica no saldo da conta.
+	ActionSetTransactionActive    Action = "finance.transaction.setActive"
 	ActionTransferBetweenAccounts Action = "finance.transfer.betweenAccounts"
 	ActionSetCategoryBudget       Action = "finance.budget.setCategory"
 )

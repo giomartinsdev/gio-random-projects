@@ -111,19 +111,29 @@ export function TransactionsPage({ month: initialMonth }: { month?: string }) {
         ) : (
           <ul>
             {rows.map((t) => (
-              <li key={t.id}>
-                <a href={hrefFor({ name: "transaction", id: t.id })} className="row px-4 hover:bg-fg/4">
-                  <span className={cn("flex size-6 items-center justify-center rounded-md", t.transaction_type === "INCOME" ? "bg-up/15 text-up" : "bg-down/15 text-down")}>
+              <li key={t.id} className={cn(t.inactive && "opacity-55")}>
+                <a href={hrefFor({ name: "transaction", id: t.id })} className="row px-3 hover:bg-fg/4">
+                  <span className={cn(
+                    "flex size-6 items-center justify-center rounded-md",
+                    t.inactive ? "bg-fg/8 text-fg-dim" : t.transaction_type === "INCOME" ? "bg-up/15 text-up" : "bg-down/15 text-down",
+                  )}>
                     {t.transaction_type === "INCOME" ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-[13px]">{t.counterparty || t.description || t.category || "Lançamento"}</span>
+                    <span className="block truncate text-[13px]">
+                      {t.counterparty || t.description || t.category || "Lançamento"}
+                      {t.inactive && (
+                        <span className="ml-2 rounded-full border border-border px-1.5 py-px align-middle font-mono text-[9.5px] uppercase tracking-wide text-fg-dim">
+                          entre contas
+                        </span>
+                      )}
+                    </span>
                     <span className="block truncate text-[11px] dim">
                       {new Date(t.occurred_at).toLocaleDateString("pt-BR")} · {t.category || "Outros"}
                       {t.source === "OPEN_FINANCE_SYNC" ? " · banco" : ""}
                     </span>
                   </span>
-                  <span className={cn("tnum text-[13px]", t.transaction_type === "INCOME" && "text-up")}>
+                  <span className={cn("tnum text-[13px]", t.inactive ? "text-fg-dim" : t.transaction_type === "INCOME" && "text-up")}>
                     {t.transaction_type === "INCOME" ? "+" : "−"} {formatBRL(String(Math.abs(Number(t.amount))))}
                   </span>
                 </a>

@@ -92,10 +92,13 @@ export function Cockpit({
   right?: ReactNode;
 }) {
   return (
-    <div className="grid h-full grid-cols-1 gap-3 overflow-hidden p-3 lg:grid-cols-[300px_1fr_280px]">
-      {left && <aside className="hidden min-h-0 flex-col gap-3 overflow-y-auto scroll-thin lg:flex">{left}</aside>}
+    // Espaço de segurança: as colunas não colam nas bordas da janela — padding
+    // generoso (px-5 py-4) + gutters maiores entre os rails. Em telas menores
+    // os rails somem e o centro respira no mesmo padding.
+    <div className="grid h-full grid-cols-1 gap-4 overflow-hidden px-5 py-4 md:px-7 md:py-5 lg:grid-cols-[300px_minmax(0,1fr)_300px] lg:gap-5 xl:px-8">
+      {left && <aside className="hidden min-h-0 flex-col gap-4 overflow-y-auto scroll-thin pr-1 lg:flex">{left}</aside>}
       <main className="min-h-0 overflow-y-auto scroll-thin">{center}</main>
-      {right && <aside className="hidden min-h-0 flex-col gap-3 overflow-y-auto scroll-thin xl:flex">{right}</aside>}
+      {right && <aside className="hidden min-h-0 flex-col gap-4 overflow-y-auto scroll-thin pr-1 xl:flex">{right}</aside>}
     </div>
   );
 }

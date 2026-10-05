@@ -92,6 +92,7 @@ const ACTION_BUDGET = "finance.budget.setCategory";
 const ACTION_TRANSFER = "finance.transfer.betweenAccounts";
 const ACTION_TX_UPDATE = "finance.transaction.update";
 const ACTION_TX_REMOVE = "finance.transaction.remove";
+const ACTION_TX_SET_ACTIVE = "finance.transaction.setActive";
 const QUERY_DASHBOARD = "finance.query.monthlyDashboard";
 const QUERY_BREAKDOWN = "finance.query.categoryBreakdown";
 const QUERY_CASHFLOW = "finance.query.cashFlowHistory";
@@ -115,6 +116,9 @@ export interface Transaction {
   counterparty: string;
   description: string;
   external_category: string;
+  // Movimentação entre contas PRÓPRIAS (ex.: BTG → MP): inativo sai de
+  // receitas/despesas/net/categorias/cashflow, mas vale no saldo da conta.
+  inactive?: boolean;
 }
 
 export interface Notification {
@@ -207,6 +211,13 @@ export const api = {
 
   removeTransaction(id: string): Promise<{ status: string }> {
     return post("/commands", { action: ACTION_TX_REMOVE, payload: { transaction_id: id } });
+  },
+
+  // Flag de movimentação entre contas próprias: active=false tira o
+  // lançamento de receitas/despesas/net/categorias/cashflow, mas ele segue no
+  // saldo da conta (que soma tudo — não descasa com o extrato do banco).
+  setTransactionActive(id: string, active: boolean): Promise<{ status: string }> {
+    return post("/commands", { action: ACTION_TX_SET_ACTIVE, payload: { transaction_id: id, active } });
   },
 
   setBudget(input: { category: string; limit: string; period: string }): Promise<{ status: string }> {

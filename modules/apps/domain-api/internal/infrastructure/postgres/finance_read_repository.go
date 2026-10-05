@@ -49,7 +49,7 @@ func (r *FinanceReadRepository) DailySummary(ctx context.Context, userID, date s
 			COALESCE(SUM(amount), 0)::numeric(14,2)::text,
 			COUNT(*)::int
 		FROM finance_transactions
-		WHERE user_id = $1
+		WHERE user_id = $1 AND NOT inactive
 		  AND to_char(occurred_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') = $2`,
 		userID, date).Scan(&out.Income, &out.Expense, &out.Net, &out.TransactionCount)
 	if err != nil {
@@ -69,7 +69,7 @@ func (r *FinanceReadRepository) monthTotals(ctx context.Context, userID, month s
 			COALESCE(SUM(amount), 0)::numeric(14,2)::text,
 			COUNT(*)::int
 		FROM finance_transactions
-		WHERE user_id = $1 AND `+periodClause,
+		WHERE user_id = $1 AND NOT inactive AND `+periodClause,
 		userID, month).Scan(&income, &expense, &net, &count)
 	if err != nil {
 		return "", "", "", 0, "", fmt.Errorf("month totals: %w", err)
@@ -111,7 +111,7 @@ func (r *FinanceReadRepository) CategoryBreakdown(ctx context.Context, userID, m
 	rows, err := r.pool.Query(ctx, `
 		SELECT category, COALESCE(SUM(amount), 0)::numeric(14,2)::text, COUNT(*)::int
 		FROM finance_transactions
-		WHERE user_id = $1 AND type = 'EXPENSE' AND `+periodClause+`
+		WHERE NOT inactive AND user_id = $1 AND type = 'EXPENSE' AND `+periodClause+`
 		GROUP BY category
 		ORDER BY SUM(amount) ASC, category ASC`,
 		userID, month)
@@ -220,7 +220,7 @@ func (r *FinanceReadRepository) CashFlowHistory(ctx context.Context, userID, mon
 			COALESCE(SUM(amount) FILTER (WHERE type = 'EXPENSE'), 0)::numeric(14,2)::text,
 			COALESCE(SUM(amount), 0)::numeric(14,2)::text
 		FROM finance_transactions
-		WHERE user_id = $1 AND `+periodClause+`
+		WHERE user_id = $1 AND NOT inactive AND `+periodClause+`
 		GROUP BY day
 		ORDER BY day ASC`,
 		userID, month)
@@ -318,7 +318,7 @@ func (r *FinanceReadRepository) Transactions(ctx context.Context, userID, month 
 	}
 	query := `
 		SELECT id::text, occurred_at, type, amount::text, currency, category, account_id,
-		       source, counterparty, description, external_category
+		       source, counterparty, description, external_category, inactive
 		FROM finance_transactions
 		WHERE user_id = $1`
 	args := []any{userID}
@@ -341,7 +341,7 @@ func (r *FinanceReadRepository) Transactions(ctx context.Context, userID, month 
 			at time.Time
 		)
 		if err := rows.Scan(&t.ID, &at, &t.Type, &t.Amount, &t.Currency, &t.Category, &t.AccountID,
-			&t.Source, &t.Counterparty, &t.Description, &t.ExternalCategory); err != nil {
+			&t.Source, &t.Counterparty, &t.Description, &t.ExternalCategory, &t.Inactive); err != nil {
 			return domainfinance.TransactionList{}, fmt.Errorf("scan transaction: %w", err)
 		}
 		t.OccurredAt = at.UTC().Format(time.RFC3339)
@@ -358,11 +358,11 @@ func (r *FinanceReadRepository) Transaction(ctx context.Context, userID, id stri
 	)
 	err := r.pool.QueryRow(ctx, `
 		SELECT id::text, occurred_at, type, amount::text, currency, category, account_id,
-		       source, counterparty, description, external_category
+		       source, counterparty, description, external_category, inactive
 		FROM finance_transactions
 		WHERE user_id = $1 AND id = $2`, userID, id).Scan(
 		&t.ID, &at, &t.Type, &t.Amount, &t.Currency, &t.Category, &t.AccountID,
-		&t.Source, &t.Counterparty, &t.Description, &t.ExternalCategory)
+		&t.Source, &t.Counterparty, &t.Description, &t.ExternalCategory, &t.Inactive)
 	if err != nil {
 		return domainfinance.Transaction{}, fmt.Errorf("transaction: %w", err)
 	}

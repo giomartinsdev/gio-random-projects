@@ -128,6 +128,8 @@ ACTION_SET_CATEGORY_BUDGET: Final = "finance.budget.setCategory"
 # registro — e o worker valida posse antes de aplicar (§3.4 nº3).
 ACTION_UPDATE_TRANSACTION: Final = "finance.transaction.update"
 ACTION_REMOVE_TRANSACTION: Final = "finance.transaction.remove"
+# Flag de movimentação entre contas próprias (BTG → MP): ativa/inativa.
+ACTION_SET_TRANSACTION_ACTIVE: Final = "finance.transaction.setActive"
 ACTION_RECONCILE_OPEN_FINANCE_TRANSACTION: Final = (
     "finance.transaction.reconcileOpenFinance"  # Fase 2
 )

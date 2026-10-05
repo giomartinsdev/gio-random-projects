@@ -23,7 +23,7 @@ func NewFinanceRepository(pool *pgxpool.Pool) *FinanceRepository {
 }
 
 const financeTxColumns = `id, user_id, account_id, type, amount::text, currency, category,
-	source, occurred_at, created_at, external_id, of_account_id, counterparty, external_category, description`
+	source, occurred_at, created_at, external_id, of_account_id, counterparty, external_category, description, inactive`
 
 func scanFinanceTx(row pgx.Row) (domainfinance.Transaction, error) {
 	var (
@@ -34,7 +34,7 @@ func scanFinanceTx(row pgx.Row) (domainfinance.Transaction, error) {
 	)
 	if err := row.Scan(&t.ID, &t.UserID, &t.AccountID, &t.Type, &amountDecimal,
 		&t.Amount.Currency, &t.Category, &t.Source, &t.OccurredAt, &t.CreatedAt,
-		&externalID, &ofAccountID, &t.Counterparty, &t.ExternalCategory, &t.Description); err != nil {
+		&externalID, &ofAccountID, &t.Counterparty, &t.ExternalCategory, &t.Description, &t.Inactive); err != nil {
 		return domainfinance.Transaction{}, err
 	}
 	// amount vem como texto (`amount::text`) para NÃO passar por float no
@@ -145,6 +145,21 @@ func (r *FinanceRepository) RemoveTransaction(ctx context.Context, id, userID st
 		return false, fmt.Errorf("remove transaction: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// SetTransactionActive alterna a flag de inativa (movimentação entre contas
+// próprias). O user_id no WHERE é a segunda barreira da posse.
+func (r *FinanceRepository) SetTransactionActive(ctx context.Context, id, userID string, active bool) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE finance_transactions SET inactive = $3 WHERE id = $1 AND user_id = $2`,
+		id, userID, !active)
+	if err != nil {
+		return fmt.Errorf("set transaction active: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domainfinance.ErrNotFound
+	}
+	return nil
 }
 
 // InsertTransfer grava débito + crédito numa única transação SQL (§3.4 nº2:

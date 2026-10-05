@@ -16,6 +16,7 @@ from typing import Any, Mapping
 
 from finance_contracts import (
     EVENT_BUDGET_THRESHOLD_REACHED,
+    EVENT_TRANSACTION_ACTIVITY_CHANGED,
     EVENT_TRANSACTION_CATEGORIZED,
     EVENT_TRANSACTION_REMOVED,
     EVENT_TRANSACTION_REGISTERED,
@@ -30,6 +31,7 @@ TRANSACTION_REGISTERED = EVENT_TRANSACTION_REGISTERED
 TRANSACTION_CATEGORIZED = EVENT_TRANSACTION_CATEGORIZED
 TRANSACTION_UPDATED = EVENT_TRANSACTION_UPDATED
 TRANSACTION_REMOVED = EVENT_TRANSACTION_REMOVED
+TRANSACTION_ACTIVITY_CHANGED = EVENT_TRANSACTION_ACTIVITY_CHANGED
 TRANSFER_COMPLETED = EVENT_TRANSFER_COMPLETED
 BUDGET_THRESHOLD_REACHED = EVENT_BUDGET_THRESHOLD_REACHED
 
@@ -96,6 +98,17 @@ def render_event(event_name: str, payload: Mapping[str, Any]) -> str | None:
 
     if event_name == TRANSACTION_REMOVED:
         return "🗑️ Lançamento removido do extrato."
+
+    if event_name == TRANSACTION_ACTIVITY_CHANGED:
+        # Movimentação entre contas próprias (ex.: BTG -> MP): inativo sai das
+        # métricas de receita/despesa, mas segue no saldo da conta.
+        active = bool(payload.get("active", True))
+        if active:
+            return "🟢 Lançamento reativado — voltou a contar em receitas/despesas."
+        return (
+            "🔄 Marquei como *movimentação entre suas contas* — não conta mais "
+            "como receita/despesa (era o mesmo dinheiro). O saldo da conta "
+            "segue exato. Reative na tela se eu errei." )
 
     if event_name == BUDGET_THRESHOLD_REACHED:
         threshold = payload.get("threshold", 0)

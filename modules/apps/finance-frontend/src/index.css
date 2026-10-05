@@ -63,12 +63,13 @@
 }
 
 @layer components {
-  /* Card translúcido, raio 16px, borda fina — a superfície base. */
+  /* Card translúcido, raio 16px, borda fina — a superfície base. O padding
+     generoso (18px) é o espaço de segurança que evita o conteúdo colado. */
   .card {
     background: hsl(var(--surface) / 0.84);
     border: 0.5px solid hsl(0 0% 50% / 0.16);
     border-radius: 16px;
-    padding: 16px;
+    padding: 18px;
     backdrop-filter: blur(8px);
   }
   .dark .card { border-color: hsl(40 40% 98% / 0.08); }
@@ -148,8 +149,8 @@
     display: grid;
     grid-template-columns: 25px 1fr auto;
     align-items: center;
-    gap: 10px;
-    padding: 7px 0;
+    gap: 12px;
+    padding: 9px 2px;
     border-radius: 8px;
     transition: background 120ms;
   }
@@ -168,7 +169,7 @@
     display: grid;
     grid-template-columns: 42px 22px 1fr;
     gap: 10px;
-    padding: 9px 0;
+    padding: 10px 0;
     border-bottom: 0.5px solid hsl(0 0% 50% / 0.1);
   }
   .dark .ev { border-color: hsl(40 40% 98% / 0.06); }

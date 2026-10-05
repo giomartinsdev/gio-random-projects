@@ -29,6 +29,7 @@ from finance_contracts import (
     ACTION_REGISTER_TRANSACTION,
     ACTION_REMOVE_TRANSACTION,
     ACTION_SET_CATEGORY_BUDGET,
+    ACTION_SET_TRANSACTION_ACTIVE,
     ACTION_TRANSFER_BETWEEN_ACCOUNTS,
     ACTION_UPDATE_TRANSACTION,
     AcceptedResult,
@@ -41,6 +42,7 @@ from finance_api.domain.commands import (
     RegisterTransactionCommand,
     RemoveTransactionCommand,
     SetCategoryBudgetCommand,
+    SetTransactionActiveCommand,
     TransferBetweenAccountsCommand,
     UpdateTransactionCommand,
 )
@@ -74,6 +76,7 @@ _WRITE_COMMANDS: Final[Mapping[str, Callable[[Mapping[str, Any]], Any]]] = {
     # é amarrado à sessão pelo _scoped_payload (§3.4 nº3) antes do relay.
     ACTION_UPDATE_TRANSACTION: UpdateTransactionCommand.from_payload,
     ACTION_REMOVE_TRANSACTION: RemoveTransactionCommand.from_payload,
+    ACTION_SET_TRANSACTION_ACTIVE: SetTransactionActiveCommand.from_payload,
     ACTION_TRANSFER_BETWEEN_ACCOUNTS: TransferBetweenAccountsCommand.from_payload,
     ACTION_SET_CATEGORY_BUDGET: SetCategoryBudgetCommand.from_payload,
     # Open Finance: payload já montado pela ACL (ver _Prebuilt).

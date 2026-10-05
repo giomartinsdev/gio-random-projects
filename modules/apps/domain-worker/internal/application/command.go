@@ -51,6 +51,12 @@ const (
 	// registrado. O worker valida a posse (user_id) antes de aplicar.
 	ActionUpdateTransaction      Action = "finance.transaction.update"
 	ActionRemoveTransaction      Action = "finance.transaction.remove"
+	// Flag de movimentação entre contas PRÓPRIAS (ex.: BTG → MP): o mesmo
+	// dinheiro entra e sai do ledger. Marcar inativo tira o lançamento de
+	// receitas/despesas/net/categorias/cashflow (senão dobra o mesmo gasto),
+	// MAS ele continua valendo no saldo da conta — senão dessasenta com o
+	// extrato do banco. É o usuário que ativa/desativa pela UI.
+	ActionSetTransactionActive   Action = "finance.transaction.setActive"
 	ActionTransferBetweenAccounts Action = "finance.transfer.betweenAccounts"
 	ActionSetCategoryBudget      Action = "finance.budget.setCategory"
 	// Open Finance (docs/openfinance-spec.md): o ciclo do consentimento e o
