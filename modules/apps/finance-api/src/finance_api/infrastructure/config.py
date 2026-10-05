@@ -156,7 +156,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     polp_client_id = resolve("POLP_OF_CLIENT_ID")
     polp_client_secret = resolve("POLP_OF_CLIENT_SECRET")
     of_webhook_sign_key = resolve("POLP_OF_WEBHOOK_SIGN_KEY")
-    of_webhook_secret = (source.get("OF_TICK_SECRET") or "").strip()
+    of_webhook_secret = (source.get("OF_WEBHOOK_SECRET") or source.get("OF_TICK_SECRET") or "").strip()
     of_tick_base_url = (source.get("OF_TICK_BASE_URL") or "").strip()
 
     return Settings(
