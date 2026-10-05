@@ -28,6 +28,7 @@ from finance_api.domain.reads import (
     CategoryBreakdown,
     DailySummary,
     MonthlyDashboard,
+    InvestmentList,
     OFAccountList,
     NotificationList,
     OFConsentList,
@@ -39,6 +40,7 @@ from finance_contracts import (
     ACTION_GET_CATEGORY_BREAKDOWN,
     ACTION_GET_DAILY_SUMMARY,
     ACTION_GET_MONTHLY_DASHBOARD,
+    ACTION_GET_INVESTMENTS,
     ACTION_GET_OF_ACCOUNTS,
     ACTION_GET_NOTIFICATIONS,
     ACTION_GET_OF_CONSENTS,
@@ -140,9 +142,16 @@ _READS: Final[Mapping[str, ReadRoute]] = {
         needs_month=False,
     ),
     ACTION_GET_OF_ACCOUNTS: ReadRoute(
-        ACTION_GET_OF_ACCOUNTS,
+        ACTION_GET_INVESTMENTS,
+    ACTION_GET_OF_ACCOUNTS,
         "/finance/openfinance/accounts",
         OFAccountList.from_wire,
+        needs_month=False,
+    ),
+    ACTION_GET_INVESTMENTS: ReadRoute(
+        ACTION_GET_INVESTMENTS,
+        "/finance/investments",
+        InvestmentList.from_wire,
         needs_month=False,
     ),
 }

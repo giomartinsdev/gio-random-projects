@@ -24,7 +24,11 @@ from finance_contracts import (
 
 # Só os produtos que o ledger do finance usa hoje (conta + extrato). Cartão,
 # empréstimo e investimento ficam fora do escopo v1 (spec §1).
-OF_PRODUCTS = ["ACCOUNT"]
+# Recursos pedidos no consentimento (§2.2): conta (transações/saldo) e
+# investimentos (posições + rendimentos). O Celcoin expõe investimentos
+# apenas quando o consent nasce com o product — um consent só-ACCOUNT
+# responde 404 em /consents/{id}/investments.
+OF_PRODUCTS = ["ACCOUNT", "INVESTMENTS"]
 
 
 class DomainApiPort(Protocol):

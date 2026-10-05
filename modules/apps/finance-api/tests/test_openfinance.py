@@ -54,7 +54,7 @@ def test_connect_publishes_consent_created_with_the_contract_action():
     assert action == "finance.openfinance.consentCreated"
     assert payload["polp_consent_id"] == "consent-1"
     assert payload["user_id"] == "5521"
-    assert payload["products"] == ["ACCOUNT"]
+    assert payload["products"] == ["ACCOUNT", "INVESTMENTS"]
     assert payload["institution_name"] == "Itaú"
 
 

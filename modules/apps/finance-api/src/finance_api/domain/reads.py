@@ -390,6 +390,74 @@ class OFAccountList:
 
 
 @dataclass(frozen=True, slots=True)
+class Investment:
+    """Uma posição de investimento importada (Celcoin/Polp)."""
+
+    id: str
+    name: str
+    type: str
+    institution_name: str
+    currency: str
+    invested_amount: str
+    gross_amount: str
+    yield_amount: str
+    yield_percent: str
+    updated_at: str
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "Investment":
+        return cls(
+            id=_id(body.get("id"), field_name="investments id"),
+            name=str(body.get("name", "")),
+            type=str(body.get("type", "OUTRO")),
+            institution_name=str(body.get("institution_name", "")),
+            currency=str(body.get("currency", "BRL")),
+            invested_amount=_amount_text(body.get("invested_amount", "0.00"), field_name="invested_amount"),
+            gross_amount=_amount_text(body.get("gross_amount", "0.00"), field_name="gross_amount"),
+            yield_amount=_amount_text(body.get("yield_amount", "0.00"), field_name="yield_amount"),
+            yield_percent=str(body.get("yield_percent", "0")),
+            updated_at=str(body.get("updated_at", "")),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "type": self.type,
+            "institution_name": self.institution_name,
+            "currency": self.currency,
+            "invested_amount": self.invested_amount,
+            "gross_amount": self.gross_amount,
+            "yield_amount": self.yield_amount,
+            "yield_percent": self.yield_percent,
+            "updated_at": self.updated_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class InvestmentList:
+    user_id: str
+    investments: tuple[Investment, ...] = ()
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "InvestmentList":
+        data = _require_object(body, field_name="investments")
+        raw = data.get("investments", [])
+        if not isinstance(raw, (list, tuple)):
+            raise ValidationError("investments must be a list")
+        return cls(
+            user_id=str(data.get("user_id", "")),
+            investments=tuple(Investment.from_wire(i) for i in raw),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "user_id": self.user_id,
+            "investments": [i.to_wire() for i in self.investments],
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class Transaction:
     id: str
     occurred_at: str
