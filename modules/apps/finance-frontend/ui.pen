@@ -53493,8 +53493,8 @@
     {
       "type": "frame",
       "id": "YtaFp",
-      "x": 0,
-      "y": 6740,
+      "x": 3200,
+      "y": 5720,
       "name": "V3 · Painel · dark",
       "theme": {
         "Mode": "Dark"
@@ -56239,8 +56239,8 @@
     {
       "type": "frame",
       "id": "ThLCS",
-      "x": 0,
-      "y": 8920,
+      "x": 4800,
+      "y": 5720,
       "name": "V3 · Transações · dark",
       "theme": {
         "Mode": "Dark"
@@ -58930,8 +58930,8 @@
     {
       "type": "frame",
       "id": "zjKaM",
-      "x": 0,
-      "y": 9900,
+      "x": 6400,
+      "y": 5720,
       "name": "V3 · Contas · dark",
       "theme": {
         "Mode": "Dark"
@@ -60343,8 +60343,8 @@
     {
       "type": "frame",
       "id": "tG5JC",
-      "x": 0,
-      "y": 10880,
+      "x": 8000,
+      "y": 5720,
       "name": "V3 · Limites · dark",
       "theme": {
         "Mode": "Dark"
@@ -61680,8 +61680,8 @@
     {
       "type": "frame",
       "id": "JkMIL",
-      "x": 0,
-      "y": 11860,
+      "x": 9600,
+      "y": 5720,
       "name": "V3 · Avisos · dark",
       "theme": {
         "Mode": "Dark"
@@ -63138,8 +63138,8 @@
     {
       "type": "frame",
       "id": "d4wWUG",
-      "x": 0,
-      "y": 13360,
+      "x": 11200,
+      "y": 6240,
       "name": "V3 · Open Finance · claro",
       "theme": {
         "Mode": "Dark"
@@ -64525,8 +64525,8 @@
     {
       "type": "frame",
       "id": "xBbU0",
-      "x": 0,
-      "y": 14340,
+      "x": 12800,
+      "y": 6240,
       "name": "V3 · Detalhe · claro",
       "theme": {
         "Mode": "Dark"
@@ -66074,8 +66074,8 @@
     {
       "type": "frame",
       "id": "ih5wG",
-      "x": 0,
-      "y": 15320,
+      "x": 14400,
+      "y": 6240,
       "name": "V3 · Personalizar · claro",
       "theme": {
         "Mode": "Dark"
@@ -67713,8 +67713,8 @@
     {
       "type": "frame",
       "id": "B5EJik",
-      "x": 0,
-      "y": 16300,
+      "x": 16000,
+      "y": 6240,
       "name": "V3 · Ajustes · claro",
       "theme": {
         "Mode": "Dark"
@@ -68925,8 +68925,8 @@
     {
       "type": "frame",
       "id": "xndIq",
-      "x": 0,
-      "y": 7260,
+      "x": 3200,
+      "y": 6240,
       "name": "V3 · Painel · claro",
       "theme": {
         "Mode": "Light"
@@ -71671,8 +71671,8 @@
     {
       "type": "frame",
       "id": "Ilsv5",
-      "x": 0,
-      "y": 9440,
+      "x": 4800,
+      "y": 6240,
       "name": "V3 · Transações · claro",
       "theme": {
         "Mode": "Light"
@@ -74362,8 +74362,8 @@
     {
       "type": "frame",
       "id": "o9BJzg",
-      "x": 0,
-      "y": 10420,
+      "x": 6400,
+      "y": 6240,
       "name": "V3 · Contas · claro",
       "theme": {
         "Mode": "Light"
@@ -75775,8 +75775,8 @@
     {
       "type": "frame",
       "id": "PQUgK",
-      "x": 0,
-      "y": 11400,
+      "x": 8000,
+      "y": 6240,
       "name": "V3 · Limites · claro",
       "theme": {
         "Mode": "Light"
@@ -77112,8 +77112,8 @@
     {
       "type": "frame",
       "id": "N5mGs",
-      "x": 0,
-      "y": 12380,
+      "x": 9600,
+      "y": 6240,
       "name": "V3 · Avisos · claro",
       "theme": {
         "Mode": "Light"
@@ -78570,11 +78570,11 @@
     {
       "type": "frame",
       "id": "JcjE2",
-      "x": 0,
-      "y": 12840,
+      "x": 11200,
+      "y": 5720,
       "name": "V3 · Open Finance · dark",
       "theme": {
-        "Mode": "Light"
+        "Mode": "Dark"
       },
       "clip": true,
       "width": 1520,
@@ -79957,11 +79957,11 @@
     {
       "type": "frame",
       "id": "c5VMPE",
-      "x": 0,
-      "y": 13820,
+      "x": 12800,
+      "y": 5720,
       "name": "V3 · Detalhe · dark",
       "theme": {
-        "Mode": "Light"
+        "Mode": "Dark"
       },
       "clip": true,
       "width": 1520,
@@ -81506,11 +81506,11 @@
     {
       "type": "frame",
       "id": "i4g8k",
-      "x": 0,
-      "y": 14800,
+      "x": 14400,
+      "y": 5720,
       "name": "V3 · Personalizar · dark",
       "theme": {
-        "Mode": "Light"
+        "Mode": "Dark"
       },
       "clip": true,
       "width": 1520,
@@ -83145,11 +83145,11 @@
     {
       "type": "frame",
       "id": "D0Co4",
-      "x": 0,
-      "y": 15780,
+      "x": 16000,
+      "y": 5720,
       "name": "V3 · Ajustes · dark",
       "theme": {
-        "Mode": "Light"
+        "Mode": "Dark"
       },
       "clip": true,
       "width": 1520,
