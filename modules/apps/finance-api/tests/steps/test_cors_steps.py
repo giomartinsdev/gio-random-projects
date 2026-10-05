@@ -59,13 +59,13 @@ def get_com_origem(contexto: dict, path: str) -> None:
     )
 
 
-@when(parsers.parse('eu faço um preflight de POST em "{path}" com essa origem'))
-def preflight(contexto: dict, path: str) -> None:
+@when(parsers.parse('eu faço um preflight de {method} em "{path}" com essa origem'))
+def preflight(contexto: dict, path: str, method: str) -> None:
     contexto["response"] = contexto["client"].options(
         path,
         headers={
             "Origin": contexto["origin"],
-            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Method": method,
             "Access-Control-Request-Headers": "content-type,x-api-key,traceparent",
         },
     )

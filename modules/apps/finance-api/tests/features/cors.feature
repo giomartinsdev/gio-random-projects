@@ -34,3 +34,9 @@ Funcionalidade: CORS da finance-api para a SPA
     Dado que a origem "https://evil.example" não está na allowlist
     Quando eu faço um GET de "/healthz" com essa origem
     Então a resposta não tem Access-Control-Allow-Origin
+
+  Cenário: O preflight permite o DELETE (revogar conexão)
+    Dado que a origem "https://finance.giomartins.dev" está na allowlist
+    Quando eu faço um preflight de DELETE em "/openfinance/consents/x" com essa origem
+    Então a resposta tem Access-Control-Allow-Origin igual à origem
+    E o preflight não chega no handler
