@@ -19,6 +19,7 @@ class FakePolp:
         self._status = consent_status
         self._user = user_id
         self.tx_params: list[Mapping[str, str]] = []
+        self.investments_called = False
 
     def consents(self) -> list[Mapping[str, Any]]:
         return [{"id": "c1", "status": self._status, "cliente_user_id": self._user}]
@@ -27,6 +28,13 @@ class FakePolp:
         return [{"id": "acct-1", "consent_id": "c1", "type": "CONTA_DEPOSITO_A_VISTA",
                  "branch_code": "0001", "number": "123",
                  "balance": {"available_amount": {"amount": "1500.00", "currency": "BRL"}, "updated_at": "2026-10-04T10:00:00Z"}}]
+
+    def investments(self, _: str) -> list[Mapping[str, Any]]:
+        self.investments_called = True
+        return []
+
+    def investment_transactions(self, _: str) -> list[Mapping[str, Any]]:
+        return []
 
     def account_transactions(self, _: str, params=None) -> list[Mapping[str, Any]]:
         self.tx_params.append(params or {})
@@ -52,7 +60,7 @@ def test_run_once_publishes_account_and_transactions():
     polp = FakePolp()
     counts = Syncer(polp=polp, finance=finance, backfill_days=7).run_once()
 
-    assert counts == {"consents": 1, "accounts": 1, "transactions": 2}
+    assert counts == {"consents": 1, "accounts": 1, "transactions": 2, "investments": 0}
     actions = [a for a, _ in finance.calls]
     assert actions.count(ACTION_OF_ACCOUNT_SYNCED) == 1
     assert actions.count(ACTION_REGISTER_TRANSACTION) == 2

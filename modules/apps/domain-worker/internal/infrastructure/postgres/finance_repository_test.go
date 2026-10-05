@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	domainfinance "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/finance"
 )
 
@@ -248,5 +250,43 @@ func TestFinanceOpenFinanceImportIsIdempotentByExternalID(t *testing.T) {
 	}
 	if got.Category != "Transporte" || got.Counterparty != "Uber" {
 		t.Fatalf("re-sync devia atualizar categoria/lugar; veio %q / %q", got.Category, got.Counterparty)
+	}
+}
+
+func TestFinanceInvestmentUpsertByPrimaryKeyExternal(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	r := NewFinanceRepository(pool)
+	{
+		id1 := uuid.Must(uuid.NewV7())
+		id2 := uuid.Must(uuid.NewV7())
+		inv, err := domainfinance.NewInvestment(id1.String(), "u", "consent", "polp-1",
+			"BTG Pactual", "CDB", "CDB pós", domainfinance.Money{Cents: 100000, Currency: "BRL"},
+			domainfinance.Money{Cents: 112550, Currency: "BRL"}, "11.25", time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.UpsertInvestment(context.Background(), inv); err != nil {
+			t.Fatal(err)
+		}
+		// reimport com id novo e gross maior: upsert por polp_invest_id
+		inv2, err := domainfinance.NewInvestment(id2.String(), "u", "consent", "polp-1",
+			"BTG Pactual", "CDB", "CDB pós", domainfinance.Money{Cents: 100000, Currency: "BRL"},
+			domainfinance.Money{Cents: 118000, Currency: "BRL"}, "11.80", time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.UpsertInvestment(context.Background(), inv2); err != nil {
+			t.Fatal(err)
+		}
+		var gross string
+		if err := pool.QueryRow(ctx,
+			`SELECT gross_amount::text FROM finance_investments WHERE polp_invest_id = 'polp-1'`,
+		).Scan(&gross); err != nil {
+			t.Fatal(err)
+		}
+		if gross != "1180.00" {
+			t.Fatalf("gross atualizado, veio %s", gross)
+		}
 	}
 }

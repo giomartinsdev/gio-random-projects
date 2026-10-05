@@ -116,3 +116,32 @@ type ConsentUpdated struct {
 }
 
 func (ConsentUpdated) EventName() string { return "finance.openfinance.consentUpdated" }
+
+// InvestmentSynced diz que a posição importada upsertou (idempotente por
+// polp_invest_id). O consumidor atualiza a view de investimentos.
+type InvestmentSynced struct {
+	InvestID   string    `json:"invest_id"`
+	UserID     string    `json:"user_id"`
+	Institution string   `json:"institution_name"`
+	Type       string    `json:"type"`
+	Name       string    `json:"name"`
+	InvestedAmount string   `json:"invested_amount"`
+	GrossAmount    string `json:"gross_amount"`
+	YieldAmount    string `json:"yield_amount"`
+	YieldPercent   string `json:"yield_percent,omitempty"`
+	OccurredAt     time.Time `json:"occurred_at"`
+}
+
+func (InvestmentSynced) EventName() string { return "finance.investment.synced" }
+
+// InvestmentTransactionSynced diz que um rendimento/atividade de ativo entrou.
+type InvestmentTransactionSynced struct {
+	InvestID   string   `json:"invest_id"`
+	UserID     string   `json:"user_id"`
+	Name       string   `json:"name"`
+	Amount     string   `json:"amount"`
+	Currency   string   `json:"currency"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
+func (InvestmentTransactionSynced) EventName() string { return "finance.investment.transactionSynced" }

@@ -143,6 +143,12 @@ ACTION_OF_CONSENT_UPDATED: Final = "finance.openfinance.consentUpdated"
 ACTION_OF_CONSENT_REMOVED: Final = "finance.openfinance.consentRemoved"
 ACTION_OF_ACCOUNT_SYNCED: Final = "finance.openfinance.accountSynced"
 
+# Open Finance — investimentos (o conector publica; worker aplica). O Polp/
+# Celcoin entrega posições e transações de investimento (webhooks
+# ``investments`` / ``investments.transactions``, portal §Webhooks).
+ACTION_INVESTMENT_SYNCED: Final = "finance.investment.synced"
+ACTION_INVESTMENT_TRANSACTION_SYNCED: Final = "finance.investment.transactionSynced"
+
 # Notificações que a pessoa cadastra (regras).
 ACTION_NOTIF_SET: Final = "finance.notification.set"
 ACTION_NOTIF_DELETE: Final = "finance.notification.delete"
@@ -157,3 +163,4 @@ ACTION_GET_TRANSACTION: Final = "finance.query.transaction"
 ACTION_GET_NOTIFICATIONS: Final = "finance.query.notifications"
 ACTION_GET_OF_CONSENTS: Final = "finance.query.ofConsents"
 ACTION_GET_OF_ACCOUNTS: Final = "finance.query.ofAccounts"
+ACTION_GET_INVESTMENTS: Final = "finance.query.investments"

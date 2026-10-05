@@ -222,3 +222,17 @@ func (h *FinanceHandlers) GetNotifications(w http.ResponseWriter, r *http.Reques
 	}
 	writeJSON(w, http.StatusOK, list)
 }
+
+// GetInvestments lista as posições de investimento importadas do Open Finance.
+func (h *FinanceHandlers) GetInvestments(w http.ResponseWriter, r *http.Request) {
+	userID, ok := financeUserID(w, r)
+	if !ok {
+		return
+	}
+	out, err := h.reads.Investments(r.Context(), userID)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}

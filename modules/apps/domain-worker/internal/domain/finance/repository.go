@@ -20,6 +20,8 @@ type Repository interface {
 	// SetTransactionActive alterna a flag de inativa (movimentação entre
 	// contas próprias). `false` = não achou para este user.
 	SetTransactionActive(ctx context.Context, id, userID string, active bool) error
+	// UpsertInvestment grava/atualiza uma posição por polp_invest_id.
+	UpsertInvestment(ctx context.Context, i Investment) error
 	// InsertTransfer grava o par débito+crédito numa única transação SQL
 	// (§3.4 nº2: atômica). As duas linhas compartilham command_id.
 	InsertTransfer(ctx context.Context, debit, credit Transaction) error

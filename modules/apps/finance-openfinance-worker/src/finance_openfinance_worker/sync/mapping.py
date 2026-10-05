@@ -139,3 +139,43 @@ def transaction_to_command(
         "external_category": str(tx.get("category_ref") or ""),
         "description": str(tx.get("transaction_name", "") or ""),
     }
+
+
+def investment_to_command(inv: Mapping[str, Any], *, user_id: str, consent_id: str) -> dict[str, Any] | None:
+    """Mapeia uma posição de investimento do provedor no comando
+    ``finance.investment.synced``. Campos de money são sempre strings decimais.
+
+    Formas aceitas (o provedor varia): ``balance.amount`` OU
+    ``invested_amount``/``gross_amount`` diretos; rendimento percentual em
+    ``yield_percent``/``rate``.
+    """
+    def _money(obj: Any) -> tuple[str, str]:
+        if isinstance(obj, Mapping):
+            return str(obj.get("amount", "0.00")), str(obj.get("currency", "BRL") or "BRL")
+        return str(obj or "0.00"), "BRL"
+
+    inv_invested = inv.get("invested_amount") or inv.get("invested") or {}
+    inv_gross = (inv.get("balance") if isinstance(inv.get("balance"), Mapping) else inv.get("gross_amount") or inv.get("gross") or {})
+    invested_amount, currency = _money(inv_invested)
+    gross_amount, currency2 = _money(inv_gross)
+    if currency2 and not currency:
+        currency = currency2
+    yield_pct = str(inv.get("yield_percent") or inv.get("rate") or "0")
+    inv_type = str(inv.get("type") or inv.get("investment_type") or "OUTRO")
+    name = str(inv.get("name") or inv.get("asset_name") or inv_type)
+    institution = str(inv.get("issuer_name") or inv.get("institution_name") or "")
+    if not institution:
+        return None
+    return {
+        "user_id": user_id,
+        "polp_consent_id": consent_id,
+        "polp_invest_id": str(inv.get("id", "")),
+        "institution_name": institution,
+        "type": inv_type,
+        "name": name,
+        "currency": currency or "BRL",
+        "invested_amount": invested_amount,
+        "gross_amount": gross_amount,
+        "yield_percent": yield_pct,
+        "updated_at": str(inv.get("update_date_time") or inv.get("updated_at") or ""),
+    }

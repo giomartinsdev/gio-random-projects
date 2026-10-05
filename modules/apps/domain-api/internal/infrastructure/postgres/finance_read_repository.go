@@ -393,3 +393,32 @@ func (r *FinanceReadRepository) Notifications(ctx context.Context, userID string
 	}
 	return out, rows.Err()
 }
+
+// Investments is the investimento projection: positions by gross desc.
+func (r *FinanceReadRepository) Investments(ctx context.Context, userID string) (domainfinance.InvestmentList, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, name, type, institution_name, currency,
+		       invested_amount::text, gross_amount::text,
+		       (gross_amount - invested_amount)::numeric(18,2)::text AS yield_amount,
+		       yield_percent, updated_at
+		FROM finance_investments
+		WHERE user_id = $1
+		ORDER BY gross_amount DESC`, userID)
+	if err != nil {
+		return domainfinance.InvestmentList{}, fmt.Errorf("investimens list: %w", err)
+	}
+	defer rows.Close()
+
+	out := domainfinance.InvestmentList{UserID: userID}
+	for rows.Next() {
+		var i domainfinance.Investment
+		var at time.Time
+		if err := rows.Scan(&i.ID, &i.Name, &i.Type, &i.InstitutionName, &i.Currency,
+			&i.InvestedAmount, &i.GrossAmount, &i.YieldAmount, &i.YieldPercent, &at); err != nil {
+			return domainfinance.InvestmentList{}, fmt.Errorf("scan investment: %w", err)
+		}
+		i.UpdatedAt = at.UTC().Format(time.RFC3339)
+		out.Investments = append(out.Investments, i)
+	}
+	return out, rows.Err()
+}

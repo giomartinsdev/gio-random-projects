@@ -17,6 +17,7 @@ const TABS: Tab[] = [
   { route: { name: "limits" }, label: "Limites" },
   { route: { name: "notifications" }, label: "Avisos" },
   { route: { name: "openfinance" }, label: "Open Finance" },
+  { route: { name: "investments" }, label: "Investimentos" },
   { route: { name: "personalize" }, label: "Personalizar" },
 ];
 

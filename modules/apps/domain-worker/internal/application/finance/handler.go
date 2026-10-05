@@ -71,6 +71,16 @@ func (h *CommandHandler) Handle(ctx context.Context, cmd application.Command) ([
 		}
 		return []domainfinance.Event{evt}, nil
 
+	case application.ActionInvestmentSynced:
+		var in InvestmentSyncedInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode investment synced: %w", err)
+		}
+		if err := h.service.UpsertInvestment(ctx, in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
 	case application.ActionSetTransactionActive:
 		var in SetTransactionActiveInput
 		if err := json.Unmarshal(cmd.Payload, &in); err != nil {

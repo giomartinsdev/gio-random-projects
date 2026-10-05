@@ -581,3 +581,22 @@ CREATE INDEX IF NOT EXISTS idx_outbox_pending
 -- ===========================================================================
 -- Fim do Outbox
 -- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS finance_investments (
+    id              UUID PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    polp_consent_id TEXT NOT NULL DEFAULT '',
+    polp_invest_id  TEXT NOT NULL,
+    institution_name TEXT NOT NULL DEFAULT '',
+    type            TEXT NOT NULL DEFAULT 'OUTRO',
+    name            TEXT NOT NULL DEFAULT '',
+    currency        TEXT NOT NULL DEFAULT 'BRL',
+    invested_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+    gross_amount    NUMERIC(18,2) NOT NULL DEFAULT 0,
+    yield_percent   TEXT NOT NULL DEFAULT '0',
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_investments_user
+    ON finance_investments (user_id, gross_amount DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_investments_external
+    ON finance_investments (polp_invest_id);

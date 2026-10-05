@@ -507,3 +507,45 @@ func (s *Service) DeleteNotification(ctx context.Context, in NotificationDeleteI
 	}
 	return s.repo.DeleteNotification(ctx, in.UserID, in.NotificationID)
 }
+
+// ---------------------------------------------------------------- Investimentos
+
+// UpsertInvestment grava/atualiza a posição importada (idempotente por
+// polp_invest_id). Não gera evento: o rendimento é atualização de estado
+// de apoio; o aviso de RENDIMENTO é da transação do ativo (se vier).
+func (s *Service) UpsertInvestment(ctx context.Context, in InvestmentSyncedInput) error {
+	if in.UserID == "" {
+		return domainfinance.ErrUserIDRequired
+	}
+	if in.PolpInvestID == "" {
+		return domainfinance.ErrInvestExternalIDRequired
+	}
+	institution := in.InstitutionName
+	if institution == "" {
+		return domainfinance.ErrInvestInstitutionRequired
+	}
+	invested, err := domainfinance.ParseMoney(in.InvestedAmount, in.Currency)
+	if err != nil {
+		return err
+	}
+	gross, err := domainfinance.ParseMoney(in.GrossAmount, in.Currency)
+	if err != nil {
+		return err
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+	var updatedAt time.Time
+	if in.UpdatedAt != "" {
+		if t, perr := time.Parse(time.RFC3339, in.UpdatedAt); perr == nil {
+			updatedAt = t.UTC()
+		}
+	}
+	i, err := domainfinance.NewInvestment(id.String(), in.UserID, in.PolpConsentID, in.PolpInvestID,
+		institution, in.Type, in.Name, invested, gross, in.YieldPercent, updatedAt)
+	if err != nil {
+		return err
+	}
+	return s.repo.UpsertInvestment(ctx, i)
+}

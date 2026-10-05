@@ -103,6 +103,7 @@ const QUERY_NOTIFICATIONS = "finance.query.notifications";
 const ACTION_NOTIF_SET = "finance.notification.set";
 const ACTION_NOTIF_DELETE = "finance.notification.delete";
 const QUERY_OF_ACCOUNTS = "finance.query.ofAccounts";
+const QUERY_INVESTMENTS = "finance.query.investments";
 
 export interface Transaction {
   id: string;
@@ -166,6 +167,19 @@ export interface OFConnectResult {
   status: string;
   url_to_authenticate: string;
   institution_name: string;
+}
+
+export interface Investment {
+  id: string;
+  name: string;
+  type: string;
+  institution_name: string;
+  currency: string;
+  invested_amount: string;
+  gross_amount: string;
+  yield_amount: string;
+  yield_percent: string;
+  updated_at: string;
 }
 
 export interface NewTransaction {
@@ -286,6 +300,9 @@ export const api = {
   },
   ofAccounts(): Promise<{ accounts: OFAccount[] }> {
     return post("/queries", { action: QUERY_OF_ACCOUNTS, payload: {} });
+  },
+  investments(): Promise<{ investments: Investment[] }> {
+    return post("/queries", { action: QUERY_INVESTMENTS, payload: {} });
   },
   ofConnect(input: { institution_id: string; cpf: string; cnpj?: string; institution_name?: string }): Promise<OFConnectResult> {
     return post("/openfinance/consents", input);

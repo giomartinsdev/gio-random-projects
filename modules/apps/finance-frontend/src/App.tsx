@@ -13,6 +13,7 @@ import { AccountsPage } from "@/pages/AccountsPage";
 import { LimitsPage } from "@/pages/LimitsPage";
 import { NotificationsPage } from "@/pages/NotificationsPage";
 import { OpenFinancePage } from "@/pages/OpenFinancePage";
+import { InvestmentsPage } from "@/pages/InvestmentsPage";
 import { PersonalizePage } from "@/pages/PersonalizePage";
 import { SettingsPage } from "@/pages/SettingsPage";
 
@@ -78,6 +79,8 @@ function renderRoute(route: ReturnType<typeof useHashRoute>) {
       return <NotificationsPage />;
     case "openfinance":
       return <OpenFinancePage />;
+    case "investments":
+      return <InvestmentsPage />;
     case "personalize":
       return <PersonalizePage />;
     case "settings":

@@ -191,4 +191,25 @@ type ReadRepository interface {
 	Notifications(ctx context.Context, userID string) (NotificationList, error)
 	OFConsents(ctx context.Context, userID string) (OFConsentList, error)
 	OFAccounts(ctx context.Context, userID string) (OFAccountList, error)
+	Investments(ctx context.Context, userID string) (InvestmentList, error)
+}
+
+// Investment is one investment position imported from Open Finance.
+type Investment struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Type            string `json:"type"`
+	InstitutionName string `json:"institution_name"`
+	Currency        string `json:"currency"`
+	InvestedAmount  string `json:"invested_amount"`
+	GrossAmount     string `json:"gross_amount"`
+	YieldAmount     string `json:"yield_amount"`
+	YieldPercent    string `json:"yield_percent"`
+	UpdatedAt       string `json:"updated_at"`
+}
+
+// InvestmentList is the investments projection.
+type InvestmentList struct {
+	UserID       string        `json:"user_id"`
+	Investments  []Investment  `json:"investments"`
 }

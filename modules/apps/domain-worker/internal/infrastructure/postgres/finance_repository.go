@@ -365,3 +365,26 @@ func (r *FinanceRepository) DeleteNotification(ctx context.Context, userID, id s
 	}
 	return nil
 }
+
+// UpsertInvestment grava/atualiza a posição de investimento por polp_invest_id.
+func (r *FinanceRepository) UpsertInvestment(ctx context.Context, i domainfinance.Investment) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO finance_investments
+			(id, user_id, polp_consent_id, polp_invest_id, institution_name, type, name,
+			 currency, invested_amount, gross_amount, yield_percent, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::numeric,$10::numeric,$11,$12)
+		ON CONFLICT (polp_invest_id) DO UPDATE SET
+			institution_name = EXCLUDED.institution_name,
+			type = EXCLUDED.type,
+			name = EXCLUDED.name,
+			invested_amount = EXCLUDED.invested_amount,
+			gross_amount = EXCLUDED.gross_amount,
+			yield_percent = EXCLUDED.yield_percent,
+			updated_at = EXCLUDED.updated_at`,
+		i.ID, i.UserID, i.PolpConsentID, i.PolpInvestID, i.InstitutionName, i.Type, i.Name,
+		i.Currency, i.InvestedAmount.Decimal(), i.GrossAmount.Decimal(), i.YieldPercent, i.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("upsert investment: %w", err)
+	}
+	return nil
+}

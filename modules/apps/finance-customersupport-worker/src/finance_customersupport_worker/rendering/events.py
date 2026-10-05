@@ -16,6 +16,8 @@ from typing import Any, Mapping
 
 from finance_contracts import (
     EVENT_BUDGET_THRESHOLD_REACHED,
+    EVENT_INVESTMENT_SYNCED,
+    EVENT_INVESTMENT_TRANSACTION_SYNCED,
     EVENT_TRANSACTION_ACTIVITY_CHANGED,
     EVENT_TRANSACTION_CATEGORIZED,
     EVENT_TRANSACTION_REMOVED,
@@ -99,6 +101,13 @@ def render_event(event_name: str, payload: Mapping[str, Any]) -> str | None:
     if event_name == TRANSACTION_REMOVED:
         return "🗑️ Lançamento removido do extrato."
 
+    if event_name == INVESTMENT_TX_SYNCED:
+        emoji = "📈" if float(str(payload.get("amount", "0")) or 0) >= 0 else "📉"
+        return (
+            f"{emoji} Rendimento de R$ {_abs_br(payload.get('amount', '0'))} "
+            f"em *{payload.get('name', 'investimento')}*"
+        )
+
     if event_name == TRANSACTION_ACTIVITY_CHANGED:
         # Movimentação entre contas próprias (ex.: BTG -> MP): inativo sai das
         # métricas de receita/despesa, mas segue no saldo da conta.
@@ -122,3 +131,6 @@ def render_event(event_name: str, payload: Mapping[str, Any]) -> str | None:
         )
 
     return None
+
+INVESTMENT_SYNCED = EVENT_INVESTMENT_SYNCED
+INVESTMENT_TX_SYNCED = EVENT_INVESTMENT_TRANSACTION_SYNCED

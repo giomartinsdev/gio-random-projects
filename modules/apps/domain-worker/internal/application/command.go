@@ -57,6 +57,8 @@ const (
 	// MAS ele continua valendo no saldo da conta — senão dessasenta com o
 	// extrato do banco. É o usuário que ativa/desativa pela UI.
 	ActionSetTransactionActive   Action = "finance.transaction.setActive"
+	// Open Finance — investimentos (posições e rendimentos do Celcoin/Polp).
+	ActionInvestmentSynced       Action = "finance.investment.synced"
 	ActionTransferBetweenAccounts Action = "finance.transfer.betweenAccounts"
 	ActionSetCategoryBudget      Action = "finance.budget.setCategory"
 	// Open Finance (docs/openfinance-spec.md): o ciclo do consentimento e o

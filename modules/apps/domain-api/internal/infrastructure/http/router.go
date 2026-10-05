@@ -138,6 +138,8 @@ func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWri
 		r.Get("/finance/notifications", fin.GetNotifications)
 		r.Get("/finance/openfinance/consents", fin.GetOFConsents)
 		r.Get("/finance/openfinance/accounts", fin.GetOFAccounts)
+		// Investimentos (posições/rendimentos importados do Open Finance).
+		r.Get("/finance/investments", fin.GetInvestments)
 	})
 
 	return r

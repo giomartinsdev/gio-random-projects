@@ -15,6 +15,7 @@ type fakeRepo struct {
 	spentCents int64
 	fired      map[string]bool
 	budgets    map[string]string // (user|category|period) -> id estável
+	invests    map[string]domainfinance.Investment
 }
 
 func newFakeRepo() *fakeRepo {
@@ -22,6 +23,7 @@ func newFakeRepo() *fakeRepo {
 		txs:     map[string]domainfinance.Transaction{},
 		fired:   map[string]bool{},
 		budgets: map[string]string{},
+		invests: map[string]domainfinance.Investment{},
 	}
 }
 
@@ -94,6 +96,10 @@ func (f *fakeRepo) RemoveTransaction(_ context.Context, id, userID string) (bool
 	}
 	delete(f.txs, id)
 	return true, nil
+}
+func (f *fakeRepo) UpsertInvestment(_ context.Context, i domainfinance.Investment) error {
+	f.invests[i.PolpInvestID] = i
+	return nil
 }
 func (f *fakeRepo) SetTransactionActive(_ context.Context, id, userID string, active bool) error {
 	t, ok := f.txs[id]
@@ -373,5 +379,40 @@ func TestSetTransactionActive(t *testing.T) {
 	after, _ := s.repo.FindByID(context.Background(), tx.ID)
 	if !after.IsActive() {
 		t.Fatal("reativação devia voltar para active")
+	}
+}
+
+// Investimento: upsert idempotente por polp_invest_id, rendimento precomputado.
+func TestUpsertInvestmentComputesYield(t *testing.T) {
+	s := NewService(newFakeRepo())
+	in := InvestmentSyncedInput{
+		UserID: "u", PolpConsentID: "c1", PolpInvestID: "inv-1",
+		InstitutionName: "BTG Pactual", Type: "CDB", Name: "CDB pós 110% CDI",
+		Currency: "BRL", InvestedAmount: "10000.00", GrossAmount: "11125.50",
+		YieldPercent: "11.25", UpdatedAt: "2026-10-05T12:00:00Z",
+	}
+	if err := s.UpsertInvestment(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	repo := s.repo.(*fakeRepo)
+	if repo.invests["inv-1"].YieldAmount.Cents != 112550 {
+		t.Fatalf("rendimento esperado 1112,55, veio %v", repo.invests["inv-1"].YieldAmount.Decimal())
+	}
+	// reimportar é upsert, não linha nova
+	if err := s.UpsertInvestment(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.invests) != 1 {
+		t.Fatalf("upsert por external id devia manter 1, veio %d", len(repo.invests))
+	}
+}
+
+func TestUpsertInvestmentRequiresInstitutionAndAmount(t *testing.T) {
+	s := NewService(newFakeRepo())
+	if err := s.UpsertInvestment(context.Background(), InvestmentSyncedInput{
+		UserID: "u", PolpInvestID: "inv-2", Currency: "BRL",
+		InvestedAmount: "10.00", GrossAmount: "11.00",
+	}); err != domainfinance.ErrInvestInstitutionRequired {
+		t.Fatalf("instituição obrigatória, veio %v", err)
 	}
 }

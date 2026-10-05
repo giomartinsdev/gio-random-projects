@@ -128,3 +128,20 @@ type NotificationDeleteInput struct {
 	UserID         string `json:"user_id"`
 	NotificationID string `json:"notification_id"`
 }
+
+// InvestmentSyncedInput é o finance.investment.synced (do conector). Valores
+// monetários chegam como STRING decimal (§3.4) e o sinal é o natural: bruto
+// >= investido em ativos com lucro.
+type InvestmentSyncedInput struct {
+	UserID          string `json:"user_id"`
+	PolpConsentID   string `json:"polp_consent_id"`
+	PolpInvestID    string `json:"polp_invest_id"`
+	InstitutionName string `json:"institution_name"`
+	Type            string `json:"type"`
+	Name            string `json:"name"`
+	Currency        string `json:"currency"`
+	InvestedAmount  string `json:"invested_amount"`
+	GrossAmount     string `json:"gross_amount"`
+	YieldPercent    string `json:"yield_percent"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
+}

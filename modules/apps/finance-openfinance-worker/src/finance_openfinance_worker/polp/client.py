@@ -75,3 +75,24 @@ def _data(body: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     if isinstance(data, list):
         return [d for d in data if isinstance(d, Mapping)]
     return []
+    def investments(self, consent_id: str) -> list[Mapping[str, Any]]:
+        """Posições de investimento do consentimento (Celcoin/Polp).
+
+        O provedor entrega as posições com rendimentos (webhooks
+        ``investments``/``investments.transactions``). Ausência/404 é
+        honesta: lista vazia, o sync segue.
+        """
+        try:
+            return _data(self._get(f"/consents/{consent_id}/investments"))
+        except PolpError as exc:
+            if "404" in str(exc):
+                return []
+            raise
+
+    def investment_transactions(self, invest_id: str) -> list[Mapping[str, Any]]:
+        try:
+            return _data(self._get(f"/investments/{invest_id}/transactions"))
+        except PolpError as exc:
+            if "404" in str(exc):
+                return []
+            raise

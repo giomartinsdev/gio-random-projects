@@ -14,9 +14,13 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
-from finance_contracts import ACTION_OF_ACCOUNT_SYNCED, ACTION_REGISTER_TRANSACTION
+from finance_contracts import (
+    ACTION_INVESTMENT_SYNCED,
+    ACTION_OF_ACCOUNT_SYNCED,
+    ACTION_REGISTER_TRANSACTION,
+)
 
-from finance_openfinance_worker.sync.mapping import transaction_to_command
+from finance_openfinance_worker.sync.mapping import investment_to_command, transaction_to_command
 
 log = logging.getLogger("finance-openfinance-worker")
 
@@ -39,7 +43,7 @@ class Syncer:
 
     def run_once(self) -> dict[str, int]:
         """Uma passada completa. Devolve contadores para o log."""
-        counts = {"consents": 0, "accounts": 0, "transactions": 0}
+        counts = {"consents": 0, "accounts": 0, "transactions": 0, "investments": 0}
         for consent in self._polp.consents():
             if str(consent.get("status", "")) != "AUTHORISED":
                 continue
@@ -53,6 +57,7 @@ class Syncer:
             for account in self._polp.consent_accounts(consent_id):
                 counts["accounts"] += 1
                 counts["transactions"] += self._sync_account(account, user_id=user_id)
+            counts["investments"] = self._sync_investments(consent_id, user_id=user_id)
         return counts
 
     def _sync_account(self, account: Mapping[str, Any], *, user_id: str) -> int:
@@ -101,6 +106,20 @@ class Syncer:
         self._cursor[account_id] = datetime.now(timezone.utc).isoformat()
         return published
 
+    def _sync_investments(self, consent_id: str, *, user_id: str) -> int:
+        """Investimentos do consentimento: posições (upsert por polp_invest_id)."""
+        published = 0
+        for inv in self._polp.investments(consent_id):
+            command = investment_to_command(inv, user_id=user_id, consent_id=consent_id)
+            if command is None:
+                continue
+            try:
+                self._finance.submit(ACTION_INVESTMENT_SYNCED, command)
+                published += 1
+            except Exception as exc:  # noqa: BLE001 - um ativo ruim não para o lote
+                log.error("falha ao publicar investimento %s: %s", command.get("polp_invest_id"), exc)
+        return published
+
     def _window(self, account_id: str, *, first: bool) -> dict[str, str]:
         """Janela de busca.
 
@@ -133,3 +152,17 @@ def _balance_str(available: Mapping[str, Any] | None) -> str:
     from finance_openfinance_worker.sync.mapping import amount_decimal
 
     return amount_decimal(available) if available else ""
+
+    def _sync_investments(self, consent_id: str, *, user_id: str) -> int:
+        """Investimentos do consentimento: posições (upsert por polp_invest_id)."""
+        published = 0
+        for inv in self._polp.investments(consent_id):
+            command = investment_to_command(inv, user_id=user_id, consent_id=consent_id)
+            if command is None:
+                continue
+            try:
+                self._finance.submit(ACTION_INVESTMENT_SYNCED, command)
+                published += 1
+            except Exception as exc:  # noqa: BLE001 - um ativo ruim não para o lote
+                log.error("falha ao publicar investimento %s: %s", command.get("polp_invest_id"), exc)
+        return published
