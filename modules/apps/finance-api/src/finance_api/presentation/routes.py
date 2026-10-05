@@ -232,6 +232,11 @@ def run_query(
     try:
         result = queries.relay(body.action, params)
     except ValidationError as exc:
+        import logging
+        logging.getLogger("finance_api.queries").warning(
+            "query 422 action=%s payload_keys=%s err=%s",
+            body.action, sorted(dict(params or {}).keys()), exc.message,
+        )
         return _error(422, exc.message)
     except DomainApiTimeout as exc:
         return _error(504, exc.message)
