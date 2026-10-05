@@ -19,6 +19,7 @@ export default defineConfig({
       "/commands": "http://localhost:8018",
       "/queries": "http://localhost:8018",
       "/auth": "http://localhost:8018",
+      "/openfinance": "http://localhost:8018",
     },
   },
 });

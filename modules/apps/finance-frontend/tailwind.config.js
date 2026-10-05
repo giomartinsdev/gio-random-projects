@@ -17,6 +17,7 @@ export default {
         warn: "hsl(var(--warn))",
         // Aliases shadcn (os componentes de ui usam estes nomes).
         border: "hsl(var(--line))",
+        "line-strong": "hsl(var(--line-strong))",
         input: "hsl(var(--line-strong))",
         ring: "hsl(var(--accent))",
         background: "hsl(var(--bg))",

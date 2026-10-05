@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Building2, Link2, Loader2, RefreshCw, Trash2, Wallet } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Building2, Link2, Loader2, RefreshCw, Search, Trash2 } from "lucide-react";
 import {
   api,
   formatBRL,
@@ -7,20 +7,21 @@ import {
   type OFConsent,
   type OFInstitution,
 } from "@/lib/api";
-import { Button } from "@/components/ui/button";
+import { Card, Cockpit, Empty } from "@/components/primitives";
+import { AiDots } from "@/components/aidots";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAutoRefresh } from "@/lib/useAutoRefresh";
+import { cn } from "@/lib/utils";
 
-// A seção de Open Finance: conectar conta (consentimento), ver as contas com
-// saldo, e revogar. O fluxo de autorização acontece no site do banco
-// (url_to_authenticate); ao voltar, o usuário clica "Já autorizei" para o app
-// reler o status.
+// Open Finance V3 (ui.pen §V3): cards de conta (status ONLINE mono), tabela
+// de conexões com badge e último sync, conectar na coluna direita. Zero
+// "cockpit editorial" — superfícies sólidas, hairline, mono caps.
 export function OpenFinancePage() {
   const [consents, setConsents] = useState<OFConsent[]>([]);
   const [accounts, setAccounts] = useState<OFAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  void loading;
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -40,78 +41,101 @@ export function OpenFinancePage() {
   useEffect(() => {
     load();
   }, [load]);
+  useAutoRefresh(load, 30);
 
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="kick mb-1">conexões</p>
-          <h2 className="sent">Open Finance</h2>
-          <p className="mt-1 text-[13px] dim">Conecte seus bancos e acompanhe o saldo.</p>
+  const total = useMemo(() => accounts.reduce((s, a) => s + Number(a.balance_amount), 0), [accounts]);
+
+  const left = (
+    <>
+      <Card>
+        <p className="kick mb-1">{accounts.length} contas · {consents.filter((c) => c.status === "AUTHORISED").length} conectadas</p>
+        <p className="kick">Saldo consolidado</p>
+        <p className="mono tnum text-[22px] font-semibold tracking-tight">{formatBRL(String(total))}</p>
+        <p className="mt-1.5 text-[10.5px] dim">webhook Celcoin ativo · poll 120s</p>
+      </Card>
+
+      <Card title="Como funciona" right={<AiDots width={26} height={24} />}>
+        <p className="text-[11.5px] leading-[1.6] text-fg-dim">
+          Conecte um banco e o consentimento passa a pedir <span className="mono text-fg">conta + investimentos</span>. O
+          push do provedor (assina com HMAC) dispara o sync em segundos — o dado real vem sempre da releitura da API.
+          Revogar apaga tudo do servidor.
+        </p>
+      </Card>
+    </>
+  );
+
+  const center = (
+    <div className="flex flex-col gap-4">
+      {error && <p className="text-[13px] text-down">{error}</p>}
+      <Card className="!p-0 overflow-hidden">
+        <div className="hd !mb-0 border-b border-border px-4 py-3">
+          <p className="text-[13px] font-semibold">Conexões</p>
+          <span className="mono text-[9px] uppercase tracking-widest text-fg-dim">{consents.length} consentimentos</span>
         </div>
-        <Button variant="outline" size="icon" onClick={load} disabled={loading} title="Atualizar">
-          <RefreshCw className={loading ? "animate-spin" : ""} />
-        </Button>
-      </div>
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
+        {consents.length === 0 ? (
+          <div className="px-4 py-8"><Empty text="Nenhuma conexão ainda. Conecte um banco ao lado." /></div>
+        ) : (
+          <div className="mono grid grid-cols-[1fr_150px_104px] items-center gap-3 border-b border-border bg-surface-2 px-4 py-1.5">
+            <span className="font-mono text-[8.5px] font-medium uppercase tracking-[0.08em] text-fg-dim">instituição</span>
+            <span className="font-mono text-[8.5px] font-medium uppercase tracking-[0.08em] text-fg-dim">estado</span>
+            <span className="font-mono text-right text-[8.5px] font-medium uppercase tracking-[0.08em] text-fg-dim">ações</span>
+          </div>
+        )}
+        <ul>
+          {consents.map((c) => <ConsentRow key={c.id} consent={c} onChanged={load} />)}
+        </ul>
+      </Card>
 
       {accounts.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {accounts.map((a) => (
-            <Card key={a.id}>
-              <CardContent className="space-y-1 p-4">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Wallet className="size-4" />
-                  {a.name || "Conta"}
-                </div>
-                <p className="tnum text-2xl font-semibold">{formatBRL(a.balance_amount)}</p>
-                {a.balance_updated_at && (
-                  <p className="text-xs text-muted-foreground">
-                    saldo de {new Date(a.balance_updated_at).toLocaleString("pt-BR")}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {consents.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Conexões</CardTitle>
-            <CardDescription>Bancos autorizados e o estado de cada um.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {consents.map((c) => (
-              <ConsentRow key={c.id} consent={c} onChanged={load} />
+        <Card className="!p-0 overflow-hidden">
+          <div className="hd !mb-0 border-b border-border px-4 py-3">
+            <p className="text-[13px] font-semibold">Contas importadas</p>
+            <span className="mono text-[9px] uppercase tracking-widest text-fg-dim">{accounts.length} contas</span>
+          </div>
+          <div className="mono grid grid-cols-[1fr_150px_110px] items-center gap-3 border-b border-border bg-surface-2 px-4 py-1.5">
+            <span className="font-mono text-[8.5px] font-medium uppercase tracking-[0.08em] text-fg-dim">conta</span>
+            <span className="font-mono text-[8.5px] font-medium uppercase tracking-[0.08em] text-fg-dim">tipo</span>
+            <span className="font-mono text-right text-[8.5px] font-medium uppercase tracking-[0.08em] text-fg-dim">saldo</span>
+          </div>
+          <ul>
+            {accounts.map((a) => (
+              <li key={a.id} className="grid grid-cols-[1fr_150px_110px] items-center gap-3 border-b border-border px-4 py-2.5 last:border-0">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="mono size-[5px] shrink-0 rounded-full bg-accent" aria-hidden />
+                  <span className="truncate text-[12px] font-medium text-fg">{a.name}</span>
+                </span>
+                <span className="truncate text-[11px] text-fg-dim">{a.account_type || "—"}</span>
+                <span className="mono text-right text-[11.5px] font-semibold">{formatBRL(a.balance_amount)}</span>
+              </li>
             ))}
-          </CardContent>
+          </ul>
         </Card>
       )}
-
-      <ConnectCard onConnected={load} />
     </div>
   );
+
+  const right = <ConnectCard onConnected={load} />;
+
+  return <Cockpit left={left} center={center} right={right} />;
 }
 
-function statusBadge(c: OFConsent) {
-  switch (c.status) {
-    case "AUTHORISED":
-      if (c.execution_status === "AWAITING_RESOURCES") {
-        return <Badge variant="warning">o banco está enviando seus dados</Badge>;
-      }
-      return <Badge variant="success">conectado</Badge>;
-    case "AWAITING_AUTHORIZATION":
-      return <Badge variant="warning">aguardando autorização</Badge>;
-    case "REJECTED":
-      return <Badge variant="destructive">rejeitado</Badge>;
-    case "EXPIRED":
-      return <Badge variant="secondary">expirado</Badge>;
-    default:
-      return <Badge variant="secondary">{c.status}</Badge>;
-  }
+function stateBadge(c: OFConsent) {
+  const awaiting = c.status === "AWAITING_AUTHORIZATION";
+  const awaitingRes = c.status === "AUTHORISED" && c.execution_status === "AWAITING_RESOURCES";
+  const rejected = c.status === "REJECTED";
+  const expired = c.status === "EXPIRED";
+  return (
+    <span className={cn(
+      "pill !py-0.5 !px-2 font-mono !text-[9px]",
+      awaitingRes && "!bg-accent/20 text-accent",
+      awaiting && "!bg-warn/20 text-warn",
+      rejected && "!bg-down/20 text-down",
+      expired && "!bg-transparent border border-border text-fg-dim",
+    )}>
+      <span className={cn("dot", awaitingRes ? "bg-accent" : awaiting ? "bg-warn" : rejected ? "bg-down" : expired ? "bg-fg-dim" : "bg-up")} />
+      {expired ? "expirado" : awaiting ? "aguardando" : awaitingRes ? "recebendo dados" : rejected ? "rejeitado" : "conectado"}
+    </span>
+  );
 }
 
 function ConsentRow({ consent, onChanged }: { consent: OFConsent; onChanged: () => void }) {
@@ -123,7 +147,6 @@ function ConsentRow({ consent, onChanged }: { consent: OFConsent; onChanged: () 
     setError("");
     try {
       await api.ofRefresh(consent.consent_id);
-      // dá um instante para o comando aplicar e relê
       setTimeout(onChanged, 800);
     } catch (err) {
       setError(err instanceof Error ? err.message : "falha ao atualizar");
@@ -149,33 +172,29 @@ function ConsentRow({ consent, onChanged }: { consent: OFConsent; onChanged: () 
   const canAuthorize = consent.status === "AWAITING_AUTHORIZATION" && consent.url_to_authenticate;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
-      <div className="flex items-center gap-3">
-        <Building2 className="size-4 text-muted-foreground" />
-        <div>
-          <p className="text-sm font-medium">{consent.institution_name || consent.institution_id}</p>
-          <div className="mt-0.5">{statusBadge(consent)}</div>
-          {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
+    <li className="grid grid-cols-[1fr_150px_104px] items-center gap-3 border-b border-border px-4 py-2.5 last:border-0">
+      <span className="flex min-w-0 items-center gap-2">
+        <Building2 className="size-3.5 shrink-0 text-fg-dim" />
+        <span className="min-w-0">
+          <span className="block truncate text-[12px] font-medium text-fg">{consent.institution_name || consent.institution_id}</span>
+          {error && <span className="block text-[10.5px] text-down">{error}</span>}
+        </span>
+      </span>
+      <span>{stateBadge(consent)}</span>
+      <span className="flex items-center justify-end gap-1">
         {canAuthorize && (
-          <Button
-            size="sm"
-            onClick={() => window.open(consent.url_to_authenticate, "_blank", "noopener")}
-          >
-            Autorizar no banco
-          </Button>
+          <button onClick={() => window.open(consent.url_to_authenticate, "_blank", "noopener")} className="rounded-[8px] bg-fg px-2.5 py-1 font-mono text-[9px] font-medium text-bg">
+            AUTORIZAR
+          </button>
         )}
-        <Button size="sm" variant="outline" onClick={refresh} disabled={busy}>
-          {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-          Já autorizei
-        </Button>
-        <Button size="sm" variant="ghost" onClick={revoke} disabled={busy} title="Revogar">
-          <Trash2 className="size-4" />
-        </Button>
-      </div>
-    </div>
+        <button onClick={refresh} disabled={busy} title="Reler status" className="grid size-6 place-items-center rounded-[6px] text-fg-dim hover:bg-surface-2 hover:text-fg">
+          <RefreshCw className={cn("size-3", busy && "animate-spin")} />
+        </button>
+        <button onClick={revoke} disabled={busy} title="Revogar" className="grid size-6 place-items-center rounded-[6px] text-fg-dim hover:bg-down/10 hover:text-down">
+          <Trash2 className="size-3" />
+        </button>
+      </span>
+    </li>
   );
 }
 
@@ -204,6 +223,7 @@ function ConnectCard({ onConnected }: { onConnected: () => void }) {
   }, [search]);
 
   const needsBusiness = institution?.type === "BUSINESS";
+  const operational = institutions.filter((i) => i.status === "OPERATIONAL");
 
   async function connect(e: React.FormEvent) {
     e.preventDefault();
@@ -223,7 +243,7 @@ function ConnectCard({ onConnected }: { onConnected: () => void }) {
       });
       if (res.url_to_authenticate) {
         window.open(res.url_to_authenticate, "_blank", "noopener");
-        setNote("Abrimos a autorização no banco. Depois de autorizar, clique em “Já autorizei” abaixo.");
+        setNote("Abrimos a autorização no banco. Depois de autorizar, clique em “Já autorizei” na conexão.");
       } else {
         setNote("Conexão criada.");
       }
@@ -237,73 +257,57 @@ function ConnectCard({ onConnected }: { onConnected: () => void }) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Link2 className="size-4 text-primary" />
-          Conectar conta
-        </CardTitle>
-        <CardDescription>Escolha o banco e informe o CPF do titular.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={connect} className="space-y-4">
+      <div className="hd">
+        <p className="flex items-center gap-2 text-[13px] font-semibold">
+          <AiDots width={26} height={24} /> Conectar instituição
+        </p>
+      </div>
+      <form onSubmit={connect} className="space-y-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="busca" className="text-[11px] text-fg-dim">Buscar banco</Label>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3 -translate-y-1/2 text-fg-dim" />
+            <Input id="busca" placeholder="Itaú, Nubank…" value={query} onChange={(e) => setQuery(e.target.value)} className="pl-8" />
+          </div>
+        </div>
+
+        {operational.length > 0 && (
+          <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto scroll-thin">
+            {operational.map((i) => (
+              <button
+                key={i.id}
+                type="button"
+                onClick={() => setInstitution(i)}
+                className={cn(
+                  "rounded-[8px] border px-2.5 py-1.5 text-[11.5px] transition-colors",
+                  institution?.id === i.id ? "border-accent bg-accent/15 text-accent" : "border-border text-fg hover:bg-surface-2",
+                )}
+              >
+                {i.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <Label htmlFor="cpf" className="text-[11px] text-fg-dim">CPF do titular</Label>
+          <Input id="cpf" inputMode="numeric" placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(e.target.value)} className="mono" />
+        </div>
+        {needsBusiness && (
           <div className="space-y-1.5">
-            <Label htmlFor="busca">Buscar banco</Label>
-            <div className="flex gap-2">
-              <Input
-                id="busca"
-                placeholder="Itaú, Nubank…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-              <Button type="button" variant="outline" onClick={search}>
-                Buscar
-              </Button>
-            </div>
+            <Label htmlFor="cnpj" className="text-[11px] text-fg-dim">CNPJ da empresa</Label>
+            <Input id="cnpj" inputMode="numeric" placeholder="00.000.000/0000-00" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="mono" />
           </div>
+        )}
 
-          {institutions.length > 0 && (
-            <div className="flex max-h-48 flex-wrap gap-2 overflow-auto">
-              {institutions.map((i) => (
-                <button
-                  key={i.id}
-                  type="button"
-                  onClick={() => setInstitution(i)}
-                  disabled={i.status !== "OPERATIONAL"}
-                  className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                    institution?.id === i.id ? "border-primary bg-accent" : "hover:bg-accent"
-                  } ${i.status !== "OPERATIONAL" ? "opacity-50" : ""}`}
-                >
-                  {i.name}
-                  {i.status !== "OPERATIONAL" && (
-                    <span className="block text-xs text-muted-foreground">indisponível</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
+        {error && <p className="text-[11.5px] text-down">{error}</p>}
+        {note && <p className="text-[11.5px] text-up">{note}</p>}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="cpf">CPF do titular</Label>
-              <Input id="cpf" inputMode="numeric" placeholder="00000000000" value={cpf} onChange={(e) => setCpf(e.target.value)} />
-            </div>
-            {needsBusiness && (
-              <div className="space-y-1.5">
-                <Label htmlFor="cnpj">CNPJ da empresa</Label>
-                <Input id="cnpj" inputMode="numeric" placeholder="00000000000000" value={cnpj} onChange={(e) => setCnpj(e.target.value)} />
-              </div>
-            )}
-          </div>
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {note && <p className="text-sm text-success">{note}</p>}
-
-          <Button type="submit" disabled={busy || !institution || !cpf.trim()}>
-            {busy ? <Loader2 className="animate-spin" /> : <Link2 />}
-            {busy ? "Conectando…" : "Conectar"}
-          </Button>
-        </form>
-      </CardContent>
+        <button type="submit" disabled={busy || !institution || !cpf.trim()} className="flex h-[34px] w-full items-center justify-center gap-2 rounded-[10px] bg-accent text-[12px] font-medium text-white disabled:opacity-50">
+          {busy ? <Loader2 className="animate-spin" /> : <Link2 className="size-3.5" />}
+          {busy ? "Conectando…" : "Conectar"}
+        </button>
+      </form>
     </Card>
   );
 }

@@ -406,8 +406,11 @@ class Investment:
 
     @classmethod
     def from_wire(cls, body: Mapping[str, Any]) -> "Investment":
+        raw_id = str(body.get("id", ""))
+        if not raw_id.strip():
+            raise ValidationError("investments id is required")
         return cls(
-            id=_id(body.get("id"), field_name="investments id"),
+            id=raw_id,
             name=str(body.get("name", "")),
             type=str(body.get("type", "OUTRO")),
             institution_name=str(body.get("institution_name", "")),
@@ -442,12 +445,14 @@ class InvestmentList:
     @classmethod
     def from_wire(cls, body: Mapping[str, Any]) -> "InvestmentList":
         data = _require_object(body, field_name="investments")
-        raw = data.get("investments", [])
-        if not isinstance(raw, (list, tuple)):
+        raw = data.get("investments") or []
+        if isinstance(raw, Mapping):
+            raw = raw.get("investments") or []  # envelope duplo vindo de proxy
+        if isinstance(raw, Mapping) or not isinstance(raw, (list, tuple)):
             raise ValidationError("investments must be a list")
         return cls(
             user_id=str(data.get("user_id", "")),
-            investments=tuple(Investment.from_wire(i) for i in raw),
+            investments=tuple(Investment.from_wire(i) for i in raw if isinstance(i, Mapping)),
         )
 
     def to_wire(self) -> dict[str, Any]:
