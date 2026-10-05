@@ -71,7 +71,7 @@ export function Empty({ text }: { text: string }) {
 // Barra de progresso com valor (réguas/metas do original `.goal/.gb`).
 export function Progress({ used, total, tone }: { used: number; total: number; tone?: string }) {
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
-  const color = tone ?? (pct >= 100 ? "hsl(var(--down))" : pct >= 80 ? "hsl(var(--warn))" : "hsl(var(--up))");
+  const color = tone ?? (pct >= 100 ? "hsl(var(--down))" : pct >= 80 ? "hsl(var(--warn))" : "hsl(var(--accent))");
   return (
     <div className="bar">
       <i style={{ width: `${pct}%`, background: color }} />

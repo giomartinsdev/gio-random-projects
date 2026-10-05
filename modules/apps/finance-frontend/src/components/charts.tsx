@@ -40,7 +40,7 @@ export function CashFlowBars({ points, height = 220 }: { points: Point[]; height
         const y = positive ? mid - h : mid;
         // destaque: só o maior saldo do período recebe accent; negativos recebem down
         const isPeak = Math.abs(p.value) === peak && positive;
-        const cls = !positive ? "fill-down" : isPeak ? "fill-accent-real" : "fill-fg/14";
+        const cls = !positive ? "fill-down" : isPeak ? "fill-accent-real" : "fill-line-strong";
         return (
           <g key={p.label}>
             <rect

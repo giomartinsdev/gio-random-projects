@@ -5,21 +5,19 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Superfícies/linguagem do cockpit (novos tokens).
+        // V3 shadcn tokens (iguais ao ui.pen §V3).
         bg: "hsl(var(--bg))",
-        "bg-soft": "hsl(var(--bg-soft))",
+        "bg-soft": "hsl(var(--surface-2))",
         fg: "hsl(var(--fg))",
         "fg-dim": "hsl(var(--fg-dim))",
         "accent-real": "hsl(var(--accent))",
         surface: "hsl(var(--surface))",
-        "surface-2": "hsl(var(--bg-soft))",
-        "surface-3": "hsl(var(--line))",
         up: "hsl(var(--up))",
         down: "hsl(var(--down))",
         warn: "hsl(var(--warn))",
         // Aliases shadcn (os componentes de ui usam estes nomes).
-        border: "hsl(0 0% 50% / 0.16)",
-        input: "hsl(0 0% 50% / 0.2)",
+        border: "hsl(var(--line))",
+        input: "hsl(var(--line-strong))",
         ring: "hsl(var(--accent))",
         background: "hsl(var(--bg))",
         foreground: "hsl(var(--fg))",
@@ -34,7 +32,7 @@ export default {
         card: { DEFAULT: "hsl(var(--surface))", foreground: "hsl(var(--fg))" },
       },
       borderRadius: {
-        lg: "16px",
+        lg: "14px",
         md: "10px",
         sm: "8px",
       },

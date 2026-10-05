@@ -2,37 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Réplica da linguagem do seuimposto.com: cockpit editorial denso.
-   - fundo preto QUENTE (#0f0e0d), superfícies translúcidas rgba(21,20,18,.84)
-   - borda fina rgba(250,250,249,.08), raio 16px (cards) / 100px (pílulas)
-   - serifa (Faustina) nos títulos e nos números GRANDES; sans (Geist) no corpo
-   - controles segmentados em pílula, texto 11–13px
-   Modo claro e escuro = mesmo conjunto de variáveis, valores diferentes. */
+/* V3 — shadcn minimalista + dots de IA (tokens EXATOS do ui.pen §V3).
+   Dark de verdade: bg #09090B → card #101013 → elev #18181B; bordas
+   #27272A/#3F3F46; accent indigo único #818CF8; números em Geist Mono. */
 @layer base {
   :root {
-    --bg: 30 8% 97%;
-    --bg-soft: 30 8% 94%;
-    --fg: 30 7% 10%;
-    --fg-dim: 30 5% 40%;
+    --bg: 0 0% 98%;
+    --bg-soft: 240 4.8% 95.9%;
+    --fg: 240 10% 3.9%;
+    --fg-dim: 240 3.8% 46.1%;
     --surface: 0 0% 100%;
-    --line: 30 8% 88%;
-    /* preto e branco (tokens do ui.pen): acento = quase branco no claro; hierarquia up/down/warn por tom de cinza, sem cor */
-    --accent: 40 5% 86%;   /* #d9d7d2 */
-    --up: 40 4% 26%;       /* #3d3b37 */
-    --down: 40 4% 45%;     /* #6f6c66 */
-    --warn: 30 4% 58%;     /* #85827c */
+    --surface-2: 240 4.8% 95.9%;
+    --surface-3: 240 4.8% 92%;
+    --line: 240 5.9% 90%;
+    --line-strong: 240 3.7% 82%;
+    --accent: 239 84% 67%;
+    --up: 160 84% 39%;
+    --down: 0 72% 51%;
+    --warn: 38 92% 50%;
   }
   .dark {
-    --bg: 40 6% 5%;        /* #0f0e0d */
-    --bg-soft: 40 9% 9%;   /* #1b1a17 */
-    --fg: 40 20% 98%;      /* #fafaf9 */
-    --fg-dim: 40 6% 60%;   /* #a6a39c */
-    --surface: 40 12% 8%;  /* ~#151412 */
-    --line: 40 200% 98%;   /* usada com opacidade abaixo */
-    --accent: 40 20% 98%;  /* #fafaf9 */
-    --up: 40 5% 82%;       /* #d6d4cf */
-    --down: 30 4% 50%;     /* #85827c */
-    --warn: 30 4% 65%;     /* #a6a39c */
+    --bg: 240 10% 3.9%;     /* #09090B */
+    --bg-soft: 240 5.9% 7.5%;  /* ~#101013 */
+    --fg: 0 0% 98%;         /* #fafafa */
+    --fg-dim: 240 5% 64.9%; /* #a1a1aa */
+    --surface: 240 5.9% 7.5%;
+    --surface-2: 240 5.2% 9.5%;   /* #1C1C20 muted */
+    --surface-3: 240 4% 14%;      /* #18181B elev */
+    --line: 240 3.7% 15.9%;       /* #27272A */
+    --line-strong: 240 3.7% 26%;  /* #3F3F46 */
+    --accent: 239 87% 76%;        /* #818CF8 */
+    --up: 158 64% 52%;
+    --down: 0 91% 71%;
+    --warn: 43 96% 56%;
   }
 
   * { @apply border-border; }
@@ -44,107 +46,97 @@
     color: hsl(var(--fg));
     font-family: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     font-size: 13px;
-    line-height: 1.45;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     overscroll-behavior: none;
   }
 
-  h1, h2, h3, .display {
-    font-family: "Faustina", Georgia, "Times New Roman", serif;
-    font-weight: 400;
-    letter-spacing: -0.01em;
+  .mono {
+    font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .caps {
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 8.5px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: hsl(var(--fg-dim));
   }
 
-  .tnum { font-variant-numeric: tabular-nums; }
-
-  /* A borda fina de 0.5px do original. */
-  .hairline { border: 0.5px solid hsl(0 0% 50% / 0.18); }
-  .dark .hairline { border-color: hsl(40 40% 98% / 0.08); }
+  /* A borda fina (1px real, discreta — nada de 0.5px ghost). */
+  .hairline { border: 1px solid hsl(var(--line)); }
 }
 
 @layer components {
-  /* Card translúcido, raio 16px, borda fina — a superfície base. O padding
-     generoso (18px) é o espaço de segurança que evita o conteúdo colado. */
+  /* Card shadcn: sólido, raio 14, borda 1px. */
   .card {
-    background: hsl(var(--surface) / 0.84);
-    border: 0.5px solid hsl(0 0% 50% / 0.16);
-    border-radius: 16px;
-    padding: 18px;
-    backdrop-filter: blur(8px);
+    background: hsl(var(--surface));
+    border: 1px solid hsl(var(--line));
+    border-radius: 14px;
+    padding: 16px;
   }
-  .dark .card { border-color: hsl(40 40% 98% / 0.08); }
 
-  /* Eyebrow/label: miúdo, dim, leve. */
-  .kick {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 12px;
-    font-weight: 500;
-    color: hsl(var(--fg-dim));
-    letter-spacing: 0.01em;
-  }
   .dim { color: hsl(var(--fg-dim)); }
 
-  /* Número grande de destaque (serifa leve). */
-  .fig { font-family: "Faustina", serif; font-weight: 300; font-size: 42px; line-height: 1.05; }
-  .sent { font-family: "Faustina", serif; font-weight: 400; font-size: 27px; line-height: 1.14; }
+  /* Cabeçalho de card: título 13/600 + slot à direita. */
+  .hd { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .hd h3 { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: hsl(var(--fg)); }
 
-  /* Cabeçalho de card: título serifa 15-16 + slot à direita. */
-  .hd { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-  .hd h3 { font-size: 15px; }
-
-  /* Controle segmentado em pílula (a navegação do topo). */
+  /* Controle segmentado (tabs shadcn): fundo muted, item ativo = card elevado. */
   .seg {
     display: inline-flex;
-    padding: 2px;
+    padding: 3px;
     gap: 2px;
-    border-radius: 100px;
-    background: hsl(var(--bg-soft) / 0.85);
-    border: 0.5px solid hsl(0 0% 50% / 0.16);
+    border-radius: 10px;
+    background: hsl(var(--surface-2));
+    border: 1px solid hsl(var(--line));
   }
-  .dark .seg { border-color: hsl(40 40% 98% / 0.08); }
   .seg > button, .seg > a {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 5px 14px;
-    border-radius: 100px;
-    font-size: 13px;
-    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 400;
     color: hsl(var(--fg-dim));
     white-space: nowrap;
     transition: background 120ms, color 120ms;
   }
   .seg > button:hover, .seg > a:hover { color: hsl(var(--fg)); }
   .seg > button[data-on="true"], .seg > a[data-on="true"] {
-    background: hsl(var(--fg) / 0.14);
+    background: hsl(var(--bg));
     color: hsl(var(--fg));
-    box-shadow: 0 0 0 1px hsl(var(--fg) / 0.12);
+    font-weight: 500;
+    border: 1px solid hsl(var(--line));
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
   }
 
-  /* Pílulas de status/ação. */
+  /* Pílula de status: bg muted, mono, com dot. */
   .pill {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 5px 11px;
-    border-radius: 100px;
-    font-size: 12px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
     font-weight: 500;
-    background: hsl(var(--fg) / 0.07);
+    background: hsl(var(--surface-2));
     color: hsl(var(--fg));
   }
+  .pill .dot { width: 6px; height: 6px; border-radius: 999px; }
 
-  /* KPI: label miúdo + valor. */
+  /* KPI: label miúdo + valor mono. */
   .kpi .k { font-size: 11px; font-weight: 500; color: hsl(var(--fg-dim)); }
-  .kpi .v { font-size: 16px; font-weight: 500; margin-top: 2px; }
+  .kpi .v { font-size: 15px; font-weight: 500; margin-top: 2px; font-family: "Geist Mono", monospace; font-variant-numeric: tabular-nums; }
 
-  /* Barra de progresso (réguas/metas). */
-  .bar { height: 7px; border-radius: 100px; background: hsl(var(--fg) / 0.1); overflow: hidden; }
-  .bar > i { display: block; height: 100%; border-radius: 100px; }
+  /* Barra de progresso (réguas). */
+  .bar { height: 8px; border-radius: 999px; background: hsl(var(--surface-2)); overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 999px; transition: width 400ms cubic-bezier(0.16, 1, 0.3, 1); }
 
-  /* Linha de ranking (avatar + nome + valor). */
+  /* Linha de ranking/lista. */
   .row {
     display: grid;
     grid-template-columns: 25px 1fr auto;
@@ -154,14 +146,15 @@
     border-radius: 8px;
     transition: background 120ms;
   }
-  .row:hover { background: hsl(var(--fg) / 0.04); }
+  .row:hover { background: hsl(var(--surface-2)); }
   .av {
     width: 25px; height: 25px;
     display: grid; place-items: center;
     border-radius: 8px;
-    background: hsl(var(--accent) / 0.16);
-    color: hsl(var(--accent));
+    background: hsl(var(--surface-2));
+    color: hsl(var(--fg));
     font-size: 11px; font-weight: 600;
+    font-family: "Geist Mono", monospace;
   }
 
   /* Feed ao vivo: hora + ícone + texto. */
@@ -170,14 +163,13 @@
     grid-template-columns: 42px 22px 1fr;
     gap: 10px;
     padding: 10px 0;
-    border-bottom: 0.5px solid hsl(0 0% 50% / 0.1);
+    border-bottom: 1px solid hsl(var(--line));
   }
-  .dark .ev { border-color: hsl(40 40% 98% / 0.06); }
-  .ev time { font-size: 10px; color: hsl(var(--fg-dim)); padding-top: 2px; }
+  .ev time { font-size: 10px; color: hsl(var(--fg-dim)); padding-top: 2px; font-family: "Geist Mono", monospace; }
 }
 
 @layer utilities {
-  .scroll-thin { scrollbar-width: thin; scrollbar-color: hsl(0 0% 50% / 0.25) transparent; }
+  .scroll-thin { scrollbar-width: thin; scrollbar-color: hsl(var(--line-strong)) transparent; }
   .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
-  .scroll-thin::-webkit-scrollbar-thumb { background: hsl(0 0% 50% / 0.25); border-radius: 100px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: hsl(var(--line-strong)); border-radius: 100px; }
 }
