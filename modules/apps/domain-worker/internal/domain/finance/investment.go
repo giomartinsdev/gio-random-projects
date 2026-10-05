@@ -10,20 +10,30 @@ import (
 // nunca float. Rendimento = bruto - investido (precomputado pelo conector,
 // já que o provedor entrega os dois valores).
 type Investment struct {
-	ID             string
-	UserID         string
-	PolpConsentID  string
-	PolpInvestID   string
+	ID              string
+	UserID          string
+	PolpConsentID   string
+	PolpInvestID    string
+	Family          string // bank-fixed-incomes | credit-fixed-incomes | funds | treasure-titles | variable-incomes
 	InstitutionName string
-	Type           string // CDB | LCI | LCA | TESOURO_DIRETO | FUNDO | CRIPTO | OUTRO
-	Name           string
-	Currency       string
-	InvestedAmount Money
-	GrossAmount    Money
-	YieldAmount    Money
-	YieldPercent   string // decimal canônico, ex. "12.55"
-	UpdatedAt      time.Time
-	UpdatedAtStr   string // RFC3339 como veio do provedor
+	Type            string // CDB | LCI | LCA | TESOURO_DIRETO | FUNDO | ACAO | DEBENTURE | OUTRO
+	Name            string
+	Currency        string
+	InvestedAmount  Money // vazio Cents=0 = desconhecido (ações/fundos) — UI mostra "—"
+	GrossAmount     Money
+	NetAmount       Money // líquido após IR/IOF (é o que cai na conta do usuário)
+	IncomeTax       Money
+	IOF             Money
+	Quantity        string
+	PurchaseUnit    Money
+	Indexer         string // CDI | SELIC | IPCA | PRE_FIXADO…
+	IndexerRate     string // decimal canônico ("0.98" = 98% do indexador)
+	YieldLabel      string // a string pronta do conector: "98% CDI"
+	YieldPercent    string // % no custo (derivado)
+	DueDate         string
+	IsinCode        string
+	Ticker          string
+	UpdatedAt       time.Time
 }
 
 func (i Investment) YieldOnCostPercent() string { return i.YieldPercent }
@@ -54,7 +64,6 @@ func NewInvestment(id, userID, polpConsentID, polpInvestID, institution, itype, 
 		ID: id, UserID: userID, PolpConsentID: polpConsentID, PolpInvestID: polpInvestID,
 		InstitutionName: institution, Type: itype, Name: name,
 		Currency: currency, InvestedAmount: invested, GrossAmount: gross,
-		YieldAmount: Money{Cents: gross.Cents - invested.Cents, Currency: currency},
 		YieldPercent: yieldPct, UpdatedAt: updatedAt,
 	}, nil
 }

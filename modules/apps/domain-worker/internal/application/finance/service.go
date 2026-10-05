@@ -510,9 +510,10 @@ func (s *Service) DeleteNotification(ctx context.Context, in NotificationDeleteI
 
 // ---------------------------------------------------------------- Investimentos
 
-// UpsertInvestment grava/atualiza a posição importada (idempotente por
-// polp_invest_id). Não gera evento: o rendimento é atualização de estado
-// de apoio; o aviso de RENDIMENTO é da transação do ativo (se vier).
+// UpsertInvestment grava/atualiza a posição importada das 5 famílias do
+// Celcoin/Polp (idempotente por polp_invest_id). Investido vazio (ações/
+// fundos) = desconhecido (Cents 0) — a UI mostra "—", o yield percentual de
+// custo é derivado somente quando o investido existe.
 func (s *Service) UpsertInvestment(ctx context.Context, in InvestmentSyncedInput) error {
 	if in.UserID == "" {
 		return domainfinance.ErrUserIDRequired
@@ -524,11 +525,27 @@ func (s *Service) UpsertInvestment(ctx context.Context, in InvestmentSyncedInput
 	if institution == "" {
 		return domainfinance.ErrInvestInstitutionRequired
 	}
-	invested, err := domainfinance.ParseMoney(in.InvestedAmount, in.Currency)
+	gross, err := domainfinance.ParseMoney(in.GrossAmount, in.Currency)
 	if err != nil {
 		return err
 	}
-	gross, err := domainfinance.ParseMoney(in.GrossAmount, in.Currency)
+	net, err := domainfinance.ParseMoney(orDefault(in.NetAmount, in.GrossAmount), in.Currency)
+	if err != nil {
+		return err
+	}
+	invested, err := domainfinance.ParseMoney(orDefault(in.InvestedAmount, in.GrossAmount), in.Currency)
+	if err != nil {
+		return err
+	}
+	tax, err := domainfinance.ParseMoney(orDefault(in.IncomeTax, "0.00"), in.Currency)
+	if err != nil {
+		return err
+	}
+	iof, err := domainfinance.ParseMoney(orDefault(in.IOF, "0.00"), in.Currency)
+	if err != nil {
+		return err
+	}
+	pu, err := domainfinance.ParseMoney(orDefault(in.PurchaseUnit, "0.00"), in.Currency)
 	if err != nil {
 		return err
 	}
@@ -542,10 +559,27 @@ func (s *Service) UpsertInvestment(ctx context.Context, in InvestmentSyncedInput
 			updatedAt = t.UTC()
 		}
 	}
-	i, err := domainfinance.NewInvestment(id.String(), in.UserID, in.PolpConsentID, in.PolpInvestID,
-		institution, in.Type, in.Name, invested, gross, in.YieldPercent, updatedAt)
-	if err != nil {
-		return err
+	i := domainfinance.Investment{
+		ID: id.String(), UserID: in.UserID, PolpConsentID: in.PolpConsentID,
+		PolpInvestID: in.PolpInvestID, Family: in.Family, InstitutionName: institution,
+		Type: in.Type, Name: in.Name, Currency: in.Currency,
+		InvestedAmount: invested, GrossAmount: gross, NetAmount: net,
+		IncomeTax: tax, IOF: iof,
+		Quantity: in.Quantity, PurchaseUnit: pu,
+		Indexer: in.Indexer, IndexerRate: in.IndexerRate, YieldLabel: in.YieldLabel,
+		DueDate: in.DueDate, IsinCode: in.IsinCode, Ticker: in.Ticker,
+		UpdatedAt: updatedAt,
+	}
+	if invested.Cents > 0 {
+		i.YieldPercent = fmt.Sprintf("%.2f", (float64(gross.Cents-invested.Cents)/float64(invested.Cents))*100)
 	}
 	return s.repo.UpsertInvestment(ctx, i)
 }
+
+func orDefault(v, fallback string) string {
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+

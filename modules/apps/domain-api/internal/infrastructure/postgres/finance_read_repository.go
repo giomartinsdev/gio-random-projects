@@ -397,10 +397,12 @@ func (r *FinanceReadRepository) Notifications(ctx context.Context, userID string
 // Investments is the investimento projection: positions by gross desc.
 func (r *FinanceReadRepository) Investments(ctx context.Context, userID string) (domainfinance.InvestmentList, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, name, type, institution_name, currency,
-		       invested_amount::text, gross_amount::text,
+		SELECT id::text, name, type, family, institution_name, currency,
+		       invested_amount::text, gross_amount::text, net_amount::text,
+		       income_tax::text, iof::text,
 		       (gross_amount - invested_amount)::numeric(18,2)::text AS yield_amount,
-		       yield_percent, updated_at
+		       yield_percent, indexer, indexer_rate, yield_label,
+		       quantity, due_date, isin_code, ticker, updated_at
 		FROM finance_investments
 		WHERE user_id = $1
 		ORDER BY gross_amount DESC`, userID)
@@ -413,8 +415,10 @@ func (r *FinanceReadRepository) Investments(ctx context.Context, userID string) 
 	for rows.Next() {
 		var i domainfinance.Investment
 		var at time.Time
-		if err := rows.Scan(&i.ID, &i.Name, &i.Type, &i.InstitutionName, &i.Currency,
-			&i.InvestedAmount, &i.GrossAmount, &i.YieldAmount, &i.YieldPercent, &at); err != nil {
+		if err := rows.Scan(&i.ID, &i.Name, &i.Type, &i.Family, &i.InstitutionName, &i.Currency,
+			&i.InvestedAmount, &i.GrossAmount, &i.NetAmount, &i.IncomeTax, &i.IOF,
+			&i.YieldAmount, &i.YieldPercent, &i.Indexer, &i.IndexerRate, &i.YieldLabel,
+			&i.Quantity, &i.DueDate, &i.IsinCode, &i.Ticker, &at); err != nil {
 			return domainfinance.InvestmentList{}, fmt.Errorf("scan investment: %w", err)
 		}
 		i.UpdatedAt = at.UTC().Format(time.RFC3339)

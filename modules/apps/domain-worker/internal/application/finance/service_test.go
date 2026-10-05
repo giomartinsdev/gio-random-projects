@@ -389,14 +389,18 @@ func TestUpsertInvestmentComputesYield(t *testing.T) {
 		UserID: "u", PolpConsentID: "c1", PolpInvestID: "inv-1",
 		InstitutionName: "BTG Pactual", Type: "CDB", Name: "CDB pós 110% CDI",
 		Currency: "BRL", InvestedAmount: "10000.00", GrossAmount: "11125.50",
-		YieldPercent: "11.25", UpdatedAt: "2026-10-05T12:00:00Z",
+		UpdatedAt: "2026-10-05T12:00:00Z",
 	}
 	if err := s.UpsertInvestment(context.Background(), in); err != nil {
 		t.Fatal(err)
 	}
 	repo := s.repo.(*fakeRepo)
-	if repo.invests["inv-1"].YieldAmount.Cents != 112550 {
-		t.Fatalf("rendimento esperado 1112,55, veio %v", repo.invests["inv-1"].YieldAmount.Decimal())
+	yieldCents := repo.invests["inv-1"].GrossAmount.Cents - repo.invests["inv-1"].InvestedAmount.Cents
+	if yieldCents != 112550 {
+		t.Fatalf("rendimento esperado 1112,55, veio %v", yieldCents)
+	}
+	if repo.invests["inv-1"].YieldPercent != "11.25" {
+		t.Fatalf("yield percent derivado 11.25, veio %q", repo.invests["inv-1"].YieldPercent)
 	}
 	// reimportar é upsert, não linha nova
 	if err := s.UpsertInvestment(context.Background(), in); err != nil {

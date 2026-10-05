@@ -53,14 +53,16 @@ export function InvestmentsPage() {
       </Card>
 
       {best && (
-        <Card title="Melhor posição">
+        <Card title="Melhor posição" right={<span className="mono text-[9px] uppercase tracking-widest text-fg-dim">{best.ticker || best.type}</span>}>
           <p className="text-[13px] font-medium">{best.name}</p>
           <p className="mt-0.5 text-[11.5px] dim">
             {best.institution_name} · {best.type}
+            {best.due_date ? ` · vence ${new Date(best.due_date + "T12:00").toLocaleDateString("pt-BR", { month: "short", year: "numeric" })}` : ""}
           </p>
-          <p className="mt-2 fig tnum text-up">{best.yield_percent}%</p>
-          <p className="text-[11px] dim">
-            rendimento {formatBRL(best.yield_amount, { signed: true })} em {formatBRL(best.invested_amount)}
+          <p className="mono tnum mt-2 text-[20px] font-semibold text-up">{best.yield_percent}%</p>
+          {best.yield_label && <p className="mono text-[10px] text-fg-dim">{best.yield_label}</p>}
+          <p className="mt-1.5 text-[11px] dim">
+            rendimento {formatBRL(best.yield_amount, { signed: true })} · líquido {formatBRL(String(Number(best.net_amount ?? best.gross_amount)))}
           </p>
           <p className="mt-2 text-[10.5px] dim">atualizado {new Date(best.updated_at).toLocaleString("pt-BR")}</p>
         </Card>
@@ -85,16 +87,23 @@ export function InvestmentsPage() {
                     {positive ? <TrendingUp className="size-3.5" /> : <TrendingDown className="size-3.5" />}
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-[13px] font-medium">{i.name}</span>
+                    <span className="block truncate text-[13px] font-medium text-fg">
+                      {i.ticker ? <span className="mono mr-2 text-[10px] text-fg-dim">{i.ticker}</span> : null}
+                      {i.name}
+                    </span>
                     <span className="block truncate text-[11px] dim">
-                      {i.institution_name} · {i.type} · {formatBRL(String(Number(i.invested_amount)))}
+                      {i.institution_name} · {i.type}
+                      {i.invested_amount && Number(i.invested_amount) > 0 ? ` · investido ${formatBRL(i.invested_amount)}` : ""}
+                      {i.due_date ? ` · vence ${new Date(i.due_date + "T12:00").toLocaleDateString("pt-BR", { month: "short", year: "numeric" })}` : ""}
                     </span>
                   </span>
                   <span className="min-w-0 text-right">
-                    <span className={cn("tnum block text-[13px]", positive ? "text-up" : "text-down")}>
+                    <span className={cn("mono block text-[13px] font-semibold", positive ? "text-up" : "text-down")}>
                       {formatBRL(String(y), { signed: true })}
                     </span>
-                    <span className="tnum block text-[10.5px] dim">{Number(i.yield_percent).toFixed(2)}%</span>
+                    <span className="mono block text-[10.5px] dim">
+                      {i.yield_label ? i.yield_label : `${Number(i.yield_percent).toFixed(2)}% do custo`}
+                    </span>
                   </span>
                 </li>
               );

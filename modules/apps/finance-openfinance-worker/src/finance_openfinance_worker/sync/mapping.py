@@ -141,41 +141,103 @@ def transaction_to_command(
     }
 
 
-def investment_to_command(inv: Mapping[str, Any], *, user_id: str, consent_id: str) -> dict[str, Any] | None:
-    """Mapeia uma posição de investimento do provedor no comando
-    ``finance.investment.synced``. Campos de money são sempre strings decimais.
-
-    Formas aceitas (o provedor varia): ``balance.amount`` OU
-    ``invested_amount``/``gross_amount`` diretos; rendimento percentual em
-    ``yield_percent``/``rate``.
-    """
-    def _money(obj: Any) -> tuple[str, str]:
-        if isinstance(obj, Mapping):
-            return str(obj.get("amount", "0.00")), str(obj.get("currency", "BRL") or "BRL")
-        return str(obj or "0.00"), "BRL"
-
-    inv_invested = inv.get("invested_amount") or inv.get("invested") or {}
-    inv_gross = (inv.get("balance") if isinstance(inv.get("balance"), Mapping) else inv.get("gross_amount") or inv.get("gross") or {})
-    invested_amount, currency = _money(inv_invested)
-    gross_amount, currency2 = _money(inv_gross)
-    if currency2 and not currency:
-        currency = currency2
-    yield_pct = str(inv.get("yield_percent") or inv.get("rate") or "0")
-    inv_type = str(inv.get("type") or inv.get("investment_type") or "OUTRO")
-    name = str(inv.get("name") or inv.get("asset_name") or inv_type)
-    institution = str(inv.get("issuer_name") or inv.get("institution_name") or "")
-    if not institution:
+_INVESTMENT_TYPES: dict[str, str] = {
+    "BANK_FIXED_INCOMES": "RENDA_FIXA_BANCARIA",
+    "CDB": "CDB", "RDB": "RDB", "LCI": "LCI", "LCA": "LCA",
+    "DEBENTURES": "DEBENTURE", "CRI": "CRI", "CRA": "CRA",
+    "FUNDS": "FUNDO",
+    "TREASURE_TITLES": "TESOURO_DIRETO",
+    "VARIABLE_INCOMES": "ACAO",
+}
+def investment_to_command(inv, *, user_id: str, consent_id: str) -> dict[str, Any] | None:
+    """Normaliza UMA posição de investimento (qualquer das 5 famílias do
+    Celcoin/Polp) no comando ``finance.investment.synced``. Money sempre
+    string decimal (§3.4). Investido = quantidade × preço de compra; bruto =
+    balance.gross_amount; rendimento = derivado no worker."""
+    fam = str(inv.get("_family", ""))
+    balance = inv.get("balance") if isinstance(inv.get("balance"), Mapping) else {}
+    if not isinstance(balance, Mapping) or not balance:
         return None
+
+    rem = inv.get("remuneration") if isinstance(inv.get("remuneration"), Mapping) else {}
+    indexers = []
+    if rem.get("indexer"):
+        part = str(rem.get("indexer"))
+        pct_p = rem.get("post_fixed_indexer_percentage")
+        pre = rem.get("pre_fixed_rate")
+        if pct_p is not None:
+            indexers.append(f"{float(str(pct_p)) * 100:.0f}% {part}")
+        elif pre is not None:
+            indexers.append(f"{float(str(pre)) * 100:.2f}% {part}")
+    yield_label = (" · ".join(indexers)) if indexers else str(inv.get("indexer") or "")
+    yield_pct = (str(rem.get("post_fixed_indexer_percentage") or "")
+                 if rem.get("post_fixed_indexer_percentage") is not None else str(rem.get("pre_fixed_rate") or ""))
+
+    # invested: purchase_unit_price × quantity (bank/credit) — nos demais, net
+    # não existe: invested é bruto na compra; o provedor dá purchase_unit_price
+    qty = str(balance.get("quantity") or balance.get("quota_quantity") or balance.get("transaction_quantity") or "0")
+    try:
+        qty_f = float(qty)
+    except ValueError:
+        qty_f = 0.0
+    pu = balance.get("purchase_unit_price") or inv.get("issue_unit_price") or {}
+    pu_amount = str((pu or {}).get("amount", "0.00"))
+    # Ações/fundos não entregam preço de compra confiável: invested desconhecido
+    # é string vazia (a UI mostra "—"), nunca um zero mentiroso.
+    if fam in ("variable-incomes", "funds") or float(pu_amount or 0) <= 0:
+        invested = ""
+    else:
+        try:
+            invested = f"{qty_f * float(pu_amount):.2f}"
+        except (ValueError, TypeError):
+            invested = ""
+
+    gross = str((balance.get("gross_amount") or {}).get("amount", "0.00"))
+    net = str((balance.get("net_amount") or {}).get("amount", gross))
+    income_tax = str((balance.get("income_tax") or {}).get("amount", "0.00"))
+    iof = str((balance.get("financial_transaction_tax") or {}).get("amount", "0.00"))
+    currency = str((balance.get("gross_amount") or {}).get("currency", "BRL") or "BRL")
+
+    # identity
+    name = (str(inv.get("product_name") or "")
+            or str(inv.get("name") or "")
+            or (str(inv.get("ticker") or ""))
+            or (str(inv.get("debtor_name") or "").title())
+            or str(inv.get("investment_type") or fam))
+    if fam == "variable-incomes":
+        ticker = str(inv.get("ticker") or "")
+        if ticker and not name.startswith(ticker):
+            name = f"{ticker} · {name}"
+    institution = str(inv.get("issuer_institution_cnpj_number") or inv.get("debtor_cnpj_number") or "")
+    institution_label = {
+        "60746948000112": "Itaú Unibanco",
+        "33000167000101": "Petrobras (emissor)",
+    }.get(institution) or (f"emissor {institution[:8]}…" if institution else "B3")
+    fam_key = fam.replace("-", "_").upper()
+    itype = (_INVESTMENT_TYPES.get(str(inv.get("investment_type") or "").upper())
+             or _INVESTMENT_TYPES.get(fam_key) or "OUTRO")
+
     return {
         "user_id": user_id,
         "polp_consent_id": consent_id,
         "polp_invest_id": str(inv.get("id", "")),
-        "institution_name": institution,
-        "type": inv_type,
+        "family": fam,
+        "institution_name": institution_label,
+        "type": itype,
         "name": name,
-        "currency": currency or "BRL",
-        "invested_amount": invested_amount,
-        "gross_amount": gross_amount,
-        "yield_percent": yield_pct,
-        "updated_at": str(inv.get("update_date_time") or inv.get("updated_at") or ""),
+        "currency": currency,
+        "invested_amount": invested,
+        "gross_amount": gross,
+        "net_amount": net,
+        "income_tax": income_tax,
+        "iof": iof,
+        "quantity": qty,
+        "purchase_unit_price": pu_amount,
+        "indexer": str(rem.get("indexer") or "") if isinstance(rem, Mapping) else "",
+        "indexer_rate": yield_pct,
+        "yield_label": yield_label,
+        "due_date": str(inv.get("due_date") or ""),
+        "isin_code": str(inv.get("isin_code") or ""),
+        "ticker": str(inv.get("ticker") or ""),
+        "updated_at": str((balance.get("updated_at")) or inv.get("updated_at") or ""),
     }

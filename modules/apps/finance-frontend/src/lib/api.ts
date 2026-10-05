@@ -177,8 +177,19 @@ export interface Investment {
   currency: string;
   invested_amount: string;
   gross_amount: string;
+  net_amount?: string;
+  income_tax?: string;
+  iof?: string;
   yield_amount: string;
   yield_percent: string;
+  indexer?: string;
+  indexer_rate?: string;
+  yield_label?: string;
+  quantity?: string;
+  due_date?: string;
+  isin_code?: string;
+  ticker?: string;
+  family?: string;
   updated_at: string;
 }
 

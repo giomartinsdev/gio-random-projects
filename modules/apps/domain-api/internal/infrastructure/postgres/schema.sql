@@ -598,5 +598,17 @@ CREATE TABLE IF NOT EXISTS finance_investments (
 );
 CREATE INDEX IF NOT EXISTS idx_finance_investments_user
     ON finance_investments (user_id, gross_amount DESC);
+ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS net_amount NUMERIC(18,2) NOT NULL DEFAULT 0;
+ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS income_tax NUMERIC(18,2) NOT NULL DEFAULT 0;
+ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS iof NUMERIC(18,2) NOT NULL DEFAULT 0;
+ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS quantity TEXT NOT NULL DEFAULT '0';
+ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS purchase_unit_price NUMERIC(18,2) NOT NULL DEFAULT 0;
+ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS indexer TEXT NOT NULL DEFAULT '';
+ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS indexer_rate TEXT NOT NULL DEFAULT '';
+ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS yield_label TEXT NOT NULL DEFAULT '';
+ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS due_date TEXT NOT NULL DEFAULT '';
+ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS isin_code TEXT NOT NULL DEFAULT '';
+ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS ticker TEXT NOT NULL DEFAULT '';
+ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS family TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_investments_external
     ON finance_investments (polp_invest_id);

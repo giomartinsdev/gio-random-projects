@@ -59,23 +59,37 @@ class PolpClient:
     def account_transactions(self, account_id: str, params: Mapping[str, str] | None = None) -> list[Mapping[str, Any]]:
         return _data(self._get(f"/accounts/{account_id}/transactions", params))
 
-    def investments(self, consent_id: str) -> list[Mapping[str, Any]]:
-        """Posições de investimento do consentimento (Celcoin/Polp).
+    # As cinco famílias de investimento do Open Finance (webhooks
+    # ``investments``/``investments.transactions`` chegam por aqui). Ausência
+    # (404 — consent sem o product, Sandbox sem rota) é lista vazia honesta.
+    INVESTMENT_FAMILIES: tuple = (
+        "bank-fixed-incomes",      # CDB, RDB, LCI, LCA
+        "credit-fixed-incomes",    # Debêntures, CRI, CRA
+        "funds",                   # Fundos de investimento
+        "treasure-titles",         # Tesouro Direto
+        "variable-incomes",        # Ações/BDR
+    )
 
-        O provedor entrega as posições com rendimentos (webhooks
-        ``investments``/``investments.transactions``). Ausência/404 é
-        honesta: lista vazia, o sync segue.
-        """
-        try:
-            return _data(self._get(f"/consents/{consent_id}/investments"))
-        except PolpError as exc:
-            if "404" in str(exc):
-                return []
-            raise
+    def investments(self, consent_id: str, *, family: str | None = None) -> list[Mapping[str, Any]]:
+        """Posições do consentimento, todas as famílias (ou uma específica)."""
+        out: list[Mapping[str, Any]] = []
+        families = (family,) if family else self.INVESTMENT_FAMILIES
+        for fam in families:
+            try:
+                for item in _data(self._get(f"/consents/{consent_id}/{fam}")):
+                    tagged = dict(item)
+                    tagged["_family"] = fam
+                    out.append(tagged)
+            except PolpError as exc:
+                if "404" in str(exc):
+                    continue
+                raise
+        return out
 
-    def investment_transactions(self, invest_id: str) -> list[Mapping[str, Any]]:
+    def investment_transactions(self, invest_id: str, *, family: str) -> list[Mapping[str, Any]]:
+        """Movimentações de um ativo (aplicação/resgate/rendimento)."""
         try:
-            return _data(self._get(f"/investments/{invest_id}/transactions"))
+            return _data(self._get(f"/{family}/{invest_id}/transactions"))
         except PolpError as exc:
             if "404" in str(exc):
                 return []

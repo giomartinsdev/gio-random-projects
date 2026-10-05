@@ -366,23 +366,33 @@ func (r *FinanceRepository) DeleteNotification(ctx context.Context, userID, id s
 	return nil
 }
 
-// UpsertInvestment grava/atualiza a posição de investimento por polp_invest_id.
+// UpsertInvestment grava/atualiza a posição de investimento por polp_invest_id
+// (all-famílias: campos de renda/vencimento/liquidez junto).
 func (r *FinanceRepository) UpsertInvestment(ctx context.Context, i domainfinance.Investment) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO finance_investments
 			(id, user_id, polp_consent_id, polp_invest_id, institution_name, type, name,
-			 currency, invested_amount, gross_amount, yield_percent, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::numeric,$10::numeric,$11,$12)
+			 currency, invested_amount, gross_amount, yield_percent, updated_at,
+			 family, net_amount, income_tax, iof, quantity, purchase_unit_price,
+			 indexer, indexer_rate, yield_label, due_date, isin_code, ticker)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::numeric,$10::numeric,$11,$12,
+		        $13,$14::numeric,$15::numeric,$16::numeric,$17,$18::numeric,
+		        $19,$20,$21,$22,$23,$24)
 		ON CONFLICT (polp_invest_id) DO UPDATE SET
-			institution_name = EXCLUDED.institution_name,
-			type = EXCLUDED.type,
-			name = EXCLUDED.name,
-			invested_amount = EXCLUDED.invested_amount,
-			gross_amount = EXCLUDED.gross_amount,
-			yield_percent = EXCLUDED.yield_percent,
-			updated_at = EXCLUDED.updated_at`,
+			institution_name = EXCLUDED.institution_name, type = EXCLUDED.type,
+			name = EXCLUDED.name, invested_amount = EXCLUDED.invested_amount,
+			gross_amount = EXCLUDED.gross_amount, yield_percent = EXCLUDED.yield_percent,
+			updated_at = EXCLUDED.updated_at, family = EXCLUDED.family,
+			net_amount = EXCLUDED.net_amount, income_tax = EXCLUDED.income_tax,
+			iof = EXCLUDED.iof, quantity = EXCLUDED.quantity,
+			purchase_unit_price = EXCLUDED.purchase_unit_price,
+			indexer = EXCLUDED.indexer, indexer_rate = EXCLUDED.indexer_rate,
+			yield_label = EXCLUDED.yield_label, due_date = EXCLUDED.due_date,
+			isin_code = EXCLUDED.isin_code, ticker = EXCLUDED.ticker`,
 		i.ID, i.UserID, i.PolpConsentID, i.PolpInvestID, i.InstitutionName, i.Type, i.Name,
-		i.Currency, i.InvestedAmount.Decimal(), i.GrossAmount.Decimal(), i.YieldPercent, i.UpdatedAt)
+		i.Currency, i.InvestedAmount.Decimal(), i.GrossAmount.Decimal(), i.YieldPercent, i.UpdatedAt,
+		i.Family, i.NetAmount.Decimal(), i.IncomeTax.Decimal(), i.IOF.Decimal(), i.Quantity, i.PurchaseUnit.Decimal(),
+		i.Indexer, i.IndexerRate, i.YieldLabel, i.DueDate, i.IsinCode, i.Ticker)
 	if err != nil {
 		return fmt.Errorf("upsert investment: %w", err)
 	}

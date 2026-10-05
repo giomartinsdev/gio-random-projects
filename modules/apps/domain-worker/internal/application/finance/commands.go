@@ -133,15 +133,26 @@ type NotificationDeleteInput struct {
 // monetários chegam como STRING decimal (§3.4) e o sinal é o natural: bruto
 // >= investido em ativos com lucro.
 type InvestmentSyncedInput struct {
-	UserID          string `json:"user_id"`
-	PolpConsentID   string `json:"polp_consent_id"`
-	PolpInvestID    string `json:"polp_invest_id"`
+	UserID       string `json:"user_id"`
+	PolpConsentID string `json:"polp_consent_id"`
+	PolpInvestID string `json:"polp_invest_id"`
+	Family       string `json:"family,omitempty"`
 	InstitutionName string `json:"institution_name"`
-	Type            string `json:"type"`
-	Name            string `json:"name"`
-	Currency        string `json:"currency"`
+	Type         string `json:"type"`
+	Name         string `json:"name"`
+	Currency     string `json:"currency"`
 	InvestedAmount  string `json:"invested_amount"`
 	GrossAmount     string `json:"gross_amount"`
-	YieldPercent    string `json:"yield_percent"`
+	NetAmount       string `json:"net_amount,omitempty"`
+	IncomeTax       string `json:"income_tax,omitempty"`
+	IOF             string `json:"iof,omitempty"`
+	Quantity        string `json:"quantity,omitempty"`
+	PurchaseUnit    string `json:"purchase_unit_price,omitempty"`
+	Indexer         string `json:"indexer,omitempty"`
+	IndexerRate     string `json:"indexer_rate,omitempty"`
+	YieldLabel      string `json:"yield_label,omitempty"`
+	DueDate         string `json:"due_date,omitempty"`
+	IsinCode        string `json:"isin_code,omitempty"`
+	Ticker          string `json:"ticker,omitempty"`
 	UpdatedAt       string `json:"updated_at,omitempty"`
 }

@@ -199,12 +199,23 @@ type Investment struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
 	Type            string `json:"type"`
+	Family          string `json:"family,omitempty"`
 	InstitutionName string `json:"institution_name"`
 	Currency        string `json:"currency"`
 	InvestedAmount  string `json:"invested_amount"`
 	GrossAmount     string `json:"gross_amount"`
+	NetAmount       string `json:"net_amount"`
+	IncomeTax       string `json:"income_tax"`
+	IOF             string `json:"iof"`
 	YieldAmount     string `json:"yield_amount"`
 	YieldPercent    string `json:"yield_percent"`
+	Indexer         string `json:"indexer,omitempty"`
+	IndexerRate     string `json:"indexer_rate,omitempty"`
+	YieldLabel      string `json:"yield_label,omitempty"`
+	Quantity        string `json:"quantity,omitempty"`
+	DueDate         string `json:"due_date,omitempty"`
+	IsinCode        string `json:"isin_code,omitempty"`
+	Ticker          string `json:"ticker,omitempty"`
 	UpdatedAt       string `json:"updated_at"`
 }
 
