@@ -44,7 +44,7 @@ export function SettingsPage() {
   const initials = (session?.name || session?.email || "GM").slice(0, 2).toUpperCase();
 
   const row1 = (
-    <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
+    <div className="flex flex-col gap-4">
       {/* Perfil */}
       <Card className="space-y-4 !p-[18px]">
         <div className="flex items-center gap-3">
@@ -119,7 +119,7 @@ export function SettingsPage() {
   ] as const;
 
   const danger = (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="flex flex-col gap-4">
       <Card className="space-y-2 border-down/40">
         <p className="caps !text-down">zona de risco</p>
         <p className="text-[11.5px] leading-[1.55] text-fg-dim">

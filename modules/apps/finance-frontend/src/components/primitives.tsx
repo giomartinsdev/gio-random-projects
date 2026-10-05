@@ -97,7 +97,7 @@ export function Cockpit({
     // os rails somem e o centro respira no mesmo padding.
     <div className="grid h-full grid-cols-1 gap-4 overflow-hidden px-5 py-4 md:px-7 md:py-5 lg:grid-cols-[300px_minmax(0,1fr)_300px] lg:gap-5 xl:px-8">
       {left && <aside className="hidden min-h-0 flex-col gap-4 overflow-y-auto scroll-thin pr-1 lg:flex">{left}</aside>}
-      <main className="min-h-0 overflow-y-auto scroll-thin">{center}</main>
+      <main className="min-h-0 overflow-y-auto scroll-thin pb-8">{center}</main>
       {right && <aside className="hidden min-h-0 flex-col gap-4 overflow-y-auto scroll-thin pr-1 xl:flex">{right}</aside>}
     </div>
   );
