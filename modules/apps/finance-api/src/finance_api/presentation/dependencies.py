@@ -54,6 +54,11 @@ class Container:
     # Open Finance (Polp). ``None`` = desligado (sem credenciais); as rotas
     # respondem 503, o resto do app segue.
     openfinance: "OpenFinanceService | None" = None
+    # Webhook do provedor (§2.6): chave HMAC (X-Webhook-Signature) do cofre,
+    # segredo do caminho e endereço interno do tick do conector.
+    of_webhook_sign_key: str = ""
+    of_webhook_secret: str = ""
+    of_tick_base_url: str = ""
 
 
 def build_container(

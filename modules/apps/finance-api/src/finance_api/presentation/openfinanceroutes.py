@@ -130,12 +130,14 @@ async def polp_webhook(
     """Push do provedor (§2.6): *dica de frescor*, nunca dado — mesmo com HMAC.
 
     Duas camadas de validação:
-    - Segredo no caminho (comparação constante) — quem não sabe recebe 404,
-      sem vazar que a rota existe.
-    - ``X-Webhook-Signature`` (HMAC-SHA256 do corpo cru com o MESMO segredo,
-      ``secrets.compare_digest``) — o portal do provedor documenta a assinatura.
-      Header presente e errado é push falsificado: 404. Header ausente (probe
-      antigo) aceito como frescor, porque o dado real vem da releitura da API.
+    - Segredo no caminho (``OF_TICK_SECRET``, comparação constante) — quem não
+      sabe recebe 404, sem vazar que a rota existe.
+    - ``X-Webhook-Signature`` (HMAC-SHA256 do corpo cru) — a chave vem do cofre
+      (``POLP_OF_WEBHOOK_SIGN_KEY``, ponte Vaultwarden). Header presente:
+      assinatura é OBRIGATÓRIA e conferida com ``compare_digest``; push
+      falsificado é 404 e não toca o conector. Header ausente (assim que o
+      portal entrega docs de assinatura variável): aceito como frescor, porque
+      o dado real vem da releitura da API.
 
     O corpo nunca alimenta o ledger: o "poke" manda o conector reler a API
     (mesma leitura do poll, acionada sob demanda — a compra chega em segundos).
@@ -144,18 +146,30 @@ async def polp_webhook(
     import hmac as _hmac
     from secrets import compare_digest as _timing_safe
 
-    secret = os.environ.get("OF_WEBHOOK_SECRET") or ""
-    if (not secret) or (not secret_path) or (not _hmac.compare_digest(secret, secret_path)):
+    def _env(name: str) -> str:
+        # variáveis de stack (não-cofre): só estas duas existem aqui
+        import os
+
+        return os.environ.get(name) or ""
+
+    sign_key = container.of_webhook_sign_key or ""
+    secret = container.of_webhook_secret or _env("OF_TICK_SECRET") or ""
+    if (not secret) or (not secret_path) or (not _timing_safe(secret, secret_path)):
         return JSONResponse(status_code=404, content={"error": "not found"})
 
     signature = (request.headers.get("x-webhook-signature") or "").strip()
     if signature:
+        if not sign_key:
+            # assinatura chegou sem chave configurada: não validar é aceitar
+            # FALSIFICAÇÃO. O provedor documentou que assina; sem chave a
+            # entrega é recusada (o poll cobre).
+            return JSONResponse(status_code=404, content={"error": "not found"})
         body_bytes = await request.body()
-        expected = _hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+        expected = _hmac.new(sign_key.encode(), body_bytes, hashlib.sha256).hexdigest()
         if not _timing_safe(expected, signature.lower()):
             return JSONResponse(status_code=404, content={"error": "not found"})
 
-    base = os.environ.get("OF_TICK_BASE_URL") or ""
+    base = container.of_tick_base_url or _env("OF_TICK_BASE_URL") or ""
     if not base:
         return JSONResponse(status_code=202, content={"status": "accepted", "mode": "poll-only"})
     try:

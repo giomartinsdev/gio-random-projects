@@ -66,6 +66,13 @@ class Settings:
     polp_client_secret: str = ""
     polp_base_url: str = ""
     polp_sandbox: bool = False
+    # Webhook do provedor (§2.6, fase 2). of_webhook_sign_key = chave HMAC
+    # (X-Webhook-Signature) que o cofre entrega como POLP_OF_WEBHOOK_SIGN_KEY.
+    # Vazia = verificação por assinatura desligada (o segredo do caminho
+    # OF_TICK_SECRET continua valendo como segunda camada).
+    of_webhook_sign_key: str = ""
+    of_webhook_secret: str = ""
+    of_tick_base_url: str = ""
 
 
 def parse_api_keys(raw: str) -> dict[str, str]:
@@ -148,6 +155,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     # integração desligada (503), o resto do app segue.
     polp_client_id = resolve("POLP_OF_CLIENT_ID")
     polp_client_secret = resolve("POLP_OF_CLIENT_SECRET")
+    of_webhook_sign_key = resolve("POLP_OF_WEBHOOK_SIGN_KEY")
+    of_webhook_secret = (source.get("OF_TICK_SECRET") or "").strip()
+    of_tick_base_url = (source.get("OF_TICK_BASE_URL") or "").strip()
 
     return Settings(
         domain_api_base_url=base_url.rstrip("/"),
@@ -170,6 +180,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         polp_client_id=polp_client_id,
         polp_client_secret=polp_client_secret,
         polp_base_url=source.get("POLP_API_BASE_URL", "").strip(),
+        of_webhook_sign_key=of_webhook_sign_key,
+        of_webhook_secret=of_webhook_secret,
+        of_tick_base_url=of_tick_base_url,
         polp_sandbox=source.get("POLP_OF_SANDBOX", "").strip().lower() in ("1", "true", "yes"),
     )
 

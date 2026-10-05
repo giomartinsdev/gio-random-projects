@@ -416,18 +416,20 @@ def test_webhook_hmac_signature_valid_and_invalid(monkeypatch) -> None:
         return _Fake()
 
     monkeypatch.setattr(routes.httpx, "post", fake_post)
-    monkeypatch.setenv("OF_TICK_BASE_URL", "http://tick:8088")
-    monkeypatch.setenv("OF_WEBHOOK_SECRET", "sekret123")
 
     class _Router:
         def build_envelope(self, *a, **k): ...
 
-    container = Container(router=_Router(), api_keys={"k": "test"})
+    container = Container(
+        router=_Router(), api_keys={"k": "test"},
+        of_webhook_sign_key="sign-key-456", of_webhook_secret="sekret123",
+        of_tick_base_url="http://tick:8088",
+    )
     app = create_app(container)
     client = TestClient(app)
 
     body = b'{"event": "accounts.transactions"}'
-    good = _h.new(b"sekret123", body, hashlib.sha256).hexdigest()
+    good = _h.new(b"sign-key-456", body, hashlib.sha256).hexdigest()
     bad = _h.new(b"outro", body, hashlib.sha256).hexdigest()
 
     r_ok = client.post(

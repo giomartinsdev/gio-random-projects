@@ -51,6 +51,9 @@ def build_app(settings: Settings) -> object:
         session_secret=settings.session_secret,
         session_ttl_s=settings.session_ttl_s,
         openfinance=OpenFinanceService(polp, router),
+        of_webhook_sign_key=settings.of_webhook_sign_key,
+        of_webhook_secret=settings.of_webhook_secret,
+        of_tick_base_url=settings.of_tick_base_url,
     )
     return create_app(
         container,
