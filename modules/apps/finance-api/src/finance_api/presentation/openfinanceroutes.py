@@ -122,32 +122,46 @@ def revoke(
 
 
 @openfinance_router.post("/webhooks/polp/{secret_path}")
-def polp_webhook(
+async def polp_webhook(
     secret_path: str,
     request: Request,
     container: Container = Depends(get_container),
 ) -> JSONResponse:
-    """Push do provedor (§2.6): *dica de frescor*, nunca dado.
+    """Push do provedor (§2.6): *dica de frescor*, nunca dado — mesmo com HMAC.
 
-    Segredo no caminho (comparação constante) — quem não sabe recebe 404, sem
-    vazar que a rota existe. O corpo é IGNORADO: o "poke" manda o conector reler
-    a API do Polp (mesma leitura do poll, agora acionada sob demanda — a compra
-    do usuário chega em segundos ao ledger e ao WhatsApp).
+    Duas camadas de validação:
+    - Segredo no caminho (comparação constante) — quem não sabe recebe 404,
+      sem vazar que a rota existe.
+    - ``X-Webhook-Signature`` (HMAC-SHA256 do corpo cru com o MESMO segredo,
+      ``secrets.compare_digest``) — o portal do provedor documenta a assinatura.
+      Header presente e errado é push falsificado: 404. Header ausente (probe
+      antigo) aceito como frescor, porque o dado real vem da releitura da API.
+
+    O corpo nunca alimenta o ledger: o "poke" manda o conector reler a API
+    (mesma leitura do poll, acionada sob demanda — a compra chega em segundos).
     """
+    import hashlib
+    import hmac as _hmac
+    from secrets import compare_digest as _timing_safe
+
     secret = os.environ.get("OF_WEBHOOK_SECRET") or ""
-    if (not secret) or (not secret_path) or (secret != secret_path):
+    if (not secret) or (not secret_path) or (not _hmac.compare_digest(secret, secret_path)):
         return JSONResponse(status_code=404, content={"error": "not found"})
+
+    signature = (request.headers.get("x-webhook-signature") or "").strip()
+    if signature:
+        body_bytes = await request.body()
+        expected = _hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+        if not _timing_safe(expected, signature.lower()):
+            return JSONResponse(status_code=404, content={"error": "not found"})
+
     base = os.environ.get("OF_TICK_BASE_URL") or ""
     if not base:
-        # Conector sem porta de tick (deploy antigo): o poll cobre. Um 202
-        # honesto — o provedor não precisa saber da arquitetura interna.
         return JSONResponse(status_code=202, content={"status": "accepted", "mode": "poll-only"})
     try:
         r = httpx.post(f"{base}/tick/{secret}", timeout=20.0)
         if r.status_code == 200:
             return JSONResponse(status_code=202, content={"status": "accepted", "mode": "tick"})
-        # tick falhou (redeploy/conector off): 202 mesmo — o poll é a rede de
-        # segurança, o webhook é optimização. Logar para o operador ver.
         return JSONResponse(status_code=202, content={"status": "accepted", "mode": "poll-fallback"})
     except httpx.HTTPError:
         return JSONResponse(status_code=202, content={"status": "accepted", "mode": "poll-fallback"})

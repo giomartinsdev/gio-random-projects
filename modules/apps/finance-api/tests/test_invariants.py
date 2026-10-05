@@ -387,3 +387,70 @@ def test_acl_routes_update_and_remove_actions() -> None:
     names = set(known_write_actions())
     assert "finance.transaction.update" in names
     assert "finance.transaction.remove" in names
+
+
+# ------------------------------------------------------------------ webhook
+
+
+# ------------------------------------------------------------------ webhook
+
+def test_webhook_hmac_signature_valid_and_invalid(monkeypatch) -> None:
+    import hashlib
+    import hmac as _h
+    import os
+
+    from fastapi.testclient import TestClient
+
+    from finance_api.application.ports import DomainApiPort
+    from finance_api.presentation import openfinanceroutes as routes
+    from finance_api.presentation.app import create_app
+    from finance_api.presentation.dependencies import Container
+
+    class _Fake:
+        status_code = 200
+
+    calls = []
+
+    def fake_post(url, timeout):
+        calls.append(url)
+        return _Fake()
+
+    monkeypatch.setattr(routes.httpx, "post", fake_post)
+    monkeypatch.setenv("OF_TICK_BASE_URL", "http://tick:8088")
+    monkeypatch.setenv("OF_WEBHOOK_SECRET", "sekret123")
+
+    class _Router:
+        def build_envelope(self, *a, **k): ...
+
+    container = Container(router=_Router(), api_keys={"k": "test"})
+    app = create_app(container)
+    client = TestClient(app)
+
+    body = b'{"event": "accounts.transactions"}'
+    good = _h.new(b"sekret123", body, hashlib.sha256).hexdigest()
+    bad = _h.new(b"outro", body, hashlib.sha256).hexdigest()
+
+    r_ok = client.post(
+        "/openfinance/webhooks/polp/sekret123",
+        content=body,
+        headers={"X-Webhook-Signature": good, "Content-Type": "application/json"},
+    )
+    assert r_ok.status_code == 202, r_ok.text
+    assert r_ok.json()["mode"] == "tick"
+    assert calls == ["http://tick:8088/tick/sekret123"]
+
+    r_bad = client.post(
+        "/openfinance/webhooks/polp/sekret123",
+        content=body,
+        headers={"X-Webhook-Signature": bad, "Content-Type": "application/json"},
+    )
+    assert r_bad.status_code == 404
+    assert calls == ["http://tick:8088/tick/sekret123"], "assinatura errada não pode tocar o conector"
+
+    # sem assinatura (probe): frescor mesmo assim
+    r_bare = client.post("/openfinance/webhooks/polp/sekret123", content=b"{}")
+    assert r_bare.status_code == 202
+
+    # segredo do caminho errado: 404
+    r_path = client.post("/openfinance/webhooks/polp/wrong", content=b"{}")
+    assert r_path.status_code == 404
