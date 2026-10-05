@@ -142,8 +142,7 @@ _READS: Final[Mapping[str, ReadRoute]] = {
         needs_month=False,
     ),
     ACTION_GET_OF_ACCOUNTS: ReadRoute(
-        ACTION_GET_INVESTMENTS,
-    ACTION_GET_OF_ACCOUNTS,
+        ACTION_GET_OF_ACCOUNTS,
         "/finance/openfinance/accounts",
         OFAccountList.from_wire,
         needs_month=False,

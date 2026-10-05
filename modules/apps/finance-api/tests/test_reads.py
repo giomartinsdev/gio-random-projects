@@ -169,3 +169,22 @@ def test_queries_route_rejects_an_unknown_read_with_422() -> None:
         headers={"X-API-Key": CALLER_KEY},
     )
     assert response.status_code == 422
+
+
+def test_of_accounts_route_is_intact_after_investments_insertion() -> None:
+    """Regressão: a ReadRoute de ofAccounts tinha recebido os ARGUMENTOS da
+    investimentos (action/path/parse/needs_date tortos) e toda leitura de
+    contas respondia 'date must be YYYY-MM-DD'."""
+    from finance_api.application.reads import _READS
+    from finance_api.domain.reads import OFAccountList
+
+    route = _READS["finance.query.ofAccounts"]
+    assert route.action == "finance.query.ofAccounts"
+    assert route.path == "/finance/openfinance/accounts"
+    assert route.parse == OFAccountList.from_wire  # bound method: igualdade não é identidade
+    assert route.needs_month is False
+    assert isinstance(route.needs_date, bool) and route.needs_date is False
+
+    route_inv = _READS["finance.query.investments"]
+    assert route_inv.action == "finance.query.investments"
+    assert route_inv.path == "/finance/investments"
