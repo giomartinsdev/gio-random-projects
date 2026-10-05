@@ -16,10 +16,11 @@
     --fg-dim: 30 5% 40%;
     --surface: 0 0% 100%;
     --line: 30 8% 88%;
-    --accent: 228 73% 57%;
-    --up: 140 55% 34%;
-    --down: 358 72% 51%;
-    --warn: 38 92% 42%;
+    /* preto e branco (tokens do ui.pen): acento = quase branco no claro; hierarquia up/down/warn por tom de cinza, sem cor */
+    --accent: 40 5% 86%;   /* #d9d7d2 */
+    --up: 40 4% 26%;       /* #3d3b37 */
+    --down: 40 4% 45%;     /* #6f6c66 */
+    --warn: 30 4% 58%;     /* #85827c */
   }
   .dark {
     --bg: 40 6% 5%;        /* #0f0e0d */
@@ -28,10 +29,10 @@
     --fg-dim: 40 6% 60%;   /* #a6a39c */
     --surface: 40 12% 8%;  /* ~#151412 */
     --line: 40 200% 98%;   /* usada com opacidade abaixo */
-    --accent: 228 73% 62%; /* #5d7ee9 */
-    --up: 100 45% 55%;     /* #84c65c */
-    --down: 358 82% 60%;   /* #f14242 */
-    --warn: 44 85% 55%;
+    --accent: 40 20% 98%;  /* #fafaf9 */
+    --up: 40 5% 82%;       /* #d6d4cf */
+    --down: 30 4% 50%;     /* #85827c */
+    --warn: 30 4% 65%;     /* #a6a39c */
   }
 
   * { @apply border-border; }

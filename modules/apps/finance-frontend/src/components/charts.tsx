@@ -11,7 +11,10 @@ export interface Point {
   value: number; // em reais, já assinado (negativo = saída)
 }
 
-/** Barras do fluxo de caixa diário: verde para saldo do dia >= 0, vermelho < 0. */
+/** Barras do fluxo de caixa diário — no molde do ui.pen: largura fixa por barra,
+ *  alturas respeitando a escala (orgânicas), saldos negativos com o cinza `down`
+ *  e o pico do mês destacado com o `accent`; o resto neutro. Sem verde/vermelho
+ *  gritados: preto e branco com hierarquia por tom. */
 export function CashFlowBars({ points, height = 220 }: { points: Point[]; height?: number }) {
   const W = 720;
   const pad = { t: 16, r: 8, b: 28, l: 8 };
@@ -24,7 +27,7 @@ export function CashFlowBars({ points, height = 220 }: { points: Point[]; height
   }
   const peak = Math.max(1, ...points.map((p) => Math.abs(p.value)));
   const slot = iw / points.length;
-  const barW = Math.max(2, slot * 0.62);
+  const barW = Math.min(46, Math.max(3, slot * 0.55));
   const half = ih / 2 - 6;
 
   return (
@@ -35,6 +38,9 @@ export function CashFlowBars({ points, height = 220 }: { points: Point[]; height
         const h = (Math.abs(p.value) / peak) * half;
         const positive = p.value >= 0;
         const y = positive ? mid - h : mid;
+        // destaque: só o maior saldo do período recebe accent; negativos recebem down
+        const isPeak = Math.abs(p.value) === peak && positive;
+        const cls = !positive ? "fill-down" : isPeak ? "fill-accent-real" : "fill-fg/14";
         return (
           <g key={p.label}>
             <rect
@@ -42,13 +48,18 @@ export function CashFlowBars({ points, height = 220 }: { points: Point[]; height
               y={y}
               width={barW}
               height={Math.max(1, h)}
-              rx={2}
-              className={positive ? "fill-primary" : "fill-destructive"}
-              opacity={0.9}
+              rx={3}
+              className={cls}
             />
           </g>
         );
       })}
+      <text x={pad.l} y={height - 8} className="fill-fg-dim font-mono" fontSize={9.5}>
+        {points[0]?.label}
+      </text>
+      <text x={W - pad.r} y={height - 8} textAnchor="end" className="fill-fg-dim font-mono" fontSize={9.5}>
+        {points[points.length - 1]?.label}
+      </text>
     </svg>
   );
 }
@@ -70,7 +81,7 @@ export function CategoryBars({ points }: { points: Point[] }) {
               <span className="tnum shrink-0 text-muted-foreground">{formatBRL(String(Math.abs(p.value)))}</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+              <div className="h-full rounded-full bg-fg/25" style={{ width: `${pct}%` }} />
             </div>
           </li>
         );
@@ -79,11 +90,12 @@ export function CategoryBars({ points }: { points: Point[] }) {
   );
 }
 
-/** Barra de progresso de orçamento com as réguas 50/80/100 marcadas. */
+/** Barra de progresso de orçamento com as réguas 50/80/100 marcadas. Tone p&b:
+ *  até 80% usa `up` (cinza claro), 80–100% `warn`, >=100% `down`. */
 export function BudgetBar({ spent, limit }: { spent: number; limit: number }) {
   const ratio = limit > 0 ? Math.min(1.2, Math.abs(spent) / limit) : 0;
   const pct = Math.min(100, ratio * 100);
-  const tone = ratio >= 1 ? "bg-destructive" : ratio >= 0.8 ? "bg-warning" : "bg-primary";
+  const tone = ratio >= 1 ? "bg-down" : ratio >= 0.8 ? "bg-warn" : "bg-up";
   return (
     <div className="relative h-2.5 overflow-hidden rounded-full bg-muted">
       <div className={cn("h-full rounded-full", tone)} style={{ width: `${pct}%` }} />

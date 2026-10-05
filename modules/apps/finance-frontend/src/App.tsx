@@ -13,6 +13,7 @@ import { AccountsPage } from "@/pages/AccountsPage";
 import { LimitsPage } from "@/pages/LimitsPage";
 import { NotificationsPage } from "@/pages/NotificationsPage";
 import { OpenFinancePage } from "@/pages/OpenFinancePage";
+import { PersonalizePage } from "@/pages/PersonalizePage";
 import { SettingsPage } from "@/pages/SettingsPage";
 
 type Gate =
@@ -77,6 +78,8 @@ function renderRoute(route: ReturnType<typeof useHashRoute>) {
       return <NotificationsPage />;
     case "openfinance":
       return <OpenFinancePage />;
+    case "personalize":
+      return <PersonalizePage />;
     case "settings":
       return <SettingsPage />;
   }

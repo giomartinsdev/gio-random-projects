@@ -1,8 +1,10 @@
-import type { ReactNode } from "react";
-import { Search, Wallet } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Wallet } from "lucide-react";
 import { hrefFor, type Route } from "@/lib/router";
 import type { SessionInfo } from "@/lib/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SearchOverlay, SearchTrigger } from "@/components/search";
+import { api, type OFAccount, type Transaction } from "@/lib/api";
 
 type Tab = { route: Route; label: string };
 
@@ -15,11 +17,12 @@ const TABS: Tab[] = [
   { route: { name: "limits" }, label: "Limites" },
   { route: { name: "notifications" }, label: "Avisos" },
   { route: { name: "openfinance" }, label: "Open Finance" },
+  { route: { name: "personalize" }, label: "Personalizar" },
 ];
 
 // Shell de tela cheia: barra de topo fixa + frame que ocupa o resto, sem scroll
 // de página (o scroll vive dentro das colunas). Espelha a estrutura `.pbar` +
-// `.frame` do original.
+// `.frame` do original. A busca global (⌘K) abre por cima de qualquer tela.
 export function Shell({
   route,
   session,
@@ -32,6 +35,34 @@ export function Shell({
   children: ReactNode;
 }) {
   const active = topLevel(route);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [txs, setTxs] = useState<Transaction[]>([]);
+  const [accs, setAccs] = useState<OFAccount[]>([]);
+  const [indexed, setIndexed] = useState(false);
+
+  useEffect(() => {
+    const open = () => setSearchOpen(true);
+    window.addEventListener("finance:open-search", open);
+    return () => window.removeEventListener("finance:open-search", open);
+  }, []);
+
+  // índice leve para a busca: carrega uma única vez por sessão
+  useEffect(() => {
+    if (indexed) return;
+    let alive = true;
+    Promise.all([api.transactions(""), api.ofAccounts().catch(() => ({ accounts: [] }))])
+      .then(([t, a]) => {
+        if (!alive) return;
+        setTxs((t.transactions ?? []).slice(0, 200));
+        setAccs(a.accounts ?? []);
+        setIndexed(true);
+      })
+      .catch(() => setIndexed(true));
+    return () => {
+      alive = false;
+    };
+  }, [indexed]);
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border/60 px-4">
@@ -42,7 +73,7 @@ export function Shell({
           <span className="display text-[15px]">finance</span>
         </a>
 
-        <nav className="seg ml-2 hidden md:inline-flex">
+        <nav className="seg ml-2 hidden lg:inline-flex">
           {TABS.map((t) => (
             <a key={t.route.name} href={hrefFor(t.route)} data-on={active === t.route.name}>
               {t.label}
@@ -51,10 +82,8 @@ export function Shell({
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="pill hidden lg:inline-flex">
-            <Search className="size-3" />
-            {session.name || session.email}
-          </span>
+          <SearchTrigger onClick={() => setSearchOpen(true)} />
+          <span className="pill hidden lg:inline-flex">{session.name || session.email}</span>
           <ThemeToggle />
           <button
             onClick={onLogout}
@@ -65,8 +94,8 @@ export function Shell({
         </div>
       </header>
 
-      {/* Nav rolável em telas pequenas (a segmentada some no md). */}
-      <nav className="seg m-3 overflow-x-auto md:hidden">
+      {/* Nav rolável em telas pequenas (a segmentada some no lg). */}
+      <nav className="seg m-3 overflow-x-auto lg:hidden">
         {TABS.map((t) => (
           <a key={t.route.name} href={hrefFor(t.route)} data-on={active === t.route.name}>
             {t.label}
@@ -75,6 +104,8 @@ export function Shell({
       </nav>
 
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+
+      <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} transactions={txs} accounts={accs} />
     </div>
   );
 }
