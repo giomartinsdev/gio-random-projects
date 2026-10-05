@@ -123,6 +123,11 @@ ACTION_REGISTER_TRANSACTION: Final = "finance.transaction.register"
 ACTION_CATEGORIZE_TRANSACTION: Final = "finance.transaction.categorize"
 ACTION_TRANSFER_BETWEEN_ACCOUNTS: Final = "finance.transfer.betweenAccounts"
 ACTION_SET_CATEGORY_BUDGET: Final = "finance.budget.setCategory"
+# Correção pelo próprio usuário (SPA): editar campos de um lançamento já
+# registrado ou removê-lo do ledger. Ambos carregam user_id — o dono do
+# registro — e o worker valida posse antes de aplicar (§3.4 nº3).
+ACTION_UPDATE_TRANSACTION: Final = "finance.transaction.update"
+ACTION_REMOVE_TRANSACTION: Final = "finance.transaction.remove"
 ACTION_RECONCILE_OPEN_FINANCE_TRANSACTION: Final = (
     "finance.transaction.reconcileOpenFinance"  # Fase 2
 )

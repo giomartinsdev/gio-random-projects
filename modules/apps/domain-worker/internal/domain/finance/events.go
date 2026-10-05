@@ -38,6 +38,31 @@ type TransactionCategorized struct {
 
 func (TransactionCategorized) EventName() string { return "finance.transaction.categorized" }
 
+// TransactionUpdated diz que o dono corrigiu um lançamento (UI/NLU). O payload
+// é o estado NOVO da transação — o consumidor re-renderiza com o que veio.
+type TransactionUpdated struct {
+	TransactionID string          `json:"transaction_id"`
+	UserID        string          `json:"user_id"`
+	Type          TransactionType `json:"transaction_type"`
+	Amount        string          `json:"amount"`
+	Currency      string          `json:"currency"`
+	Category      string          `json:"category"`
+	OccurredAt    time.Time       `json:"occurred_at"`
+}
+
+func (TransactionUpdated) EventName() string { return "finance.transaction.updated" }
+
+// TransactionRemoved diz que o dono apagou o lançamento. É o aviso de que o
+// registro saiu do ledger (a régua de orçamento não é reavaliada aqui — a
+// próxima avaliação parte da soma vigente).
+type TransactionRemoved struct {
+	TransactionID string    `json:"transaction_id"`
+	UserID        string    `json:"user_id"`
+	OccurredAt    time.Time `json:"occurred_at"`
+}
+
+func (TransactionRemoved) EventName() string { return "finance.transaction.removed" }
+
 // TransferCompleted fecha a transferência atômica (§3.4 nº2).
 type TransferCompleted struct {
 	TransactionID string    `json:"transaction_id"`

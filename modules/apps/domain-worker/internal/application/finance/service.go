@@ -104,6 +104,138 @@ func (s *Service) Categorize(ctx context.Context, in CategorizeTransactionInput)
 	}, nil
 }
 
+// UpdateTransaction aplica a correção do dono (payload parcial: campo vazio
+// mantém o atual). A posse é verificada ANTES (FindByID + user) para o erro
+// certo, e de novo no UPDATE (user_id no WHERE) — segunda barreira sem custo.
+func (s *Service) UpdateTransaction(ctx context.Context, in UpdateTransactionInput) (domainfinance.Event, error) {
+	if in.UserID == "" {
+		return nil, fmt.Errorf("%w: user_id", domainfinance.ErrUserIDRequired)
+	}
+	if in.TransactionID == "" {
+		return nil, fmt.Errorf("%w: transaction_id", domainfinance.ErrTransactionIDRequired)
+	}
+	current, err := s.repo.FindByID(ctx, in.TransactionID)
+	if err != nil {
+		return domainfinance.TransactionRemoved{}, err
+	}
+	if current.UserID != in.UserID {
+		return domainfinance.TransactionRemoved{}, domainfinance.ErrNotTransactionOwner
+	}
+
+	next := current
+	changed := false
+
+	if in.Category != "" && in.Category != current.Category {
+		next.Category = in.Category
+		changed = true
+	}
+	if in.Counterparty != "" && in.Counterparty != current.Counterparty {
+		next.Counterparty = in.Counterparty
+		changed = true
+	}
+	if in.Description != "" && in.Description != current.Description {
+		next.Description = in.Description
+		changed = true
+	}
+	if in.OccurredAt != "" {
+		t, err := parseOccurredAt(in.OccurredAt)
+		if err != nil {
+			return domainfinance.TransactionRemoved{}, err
+		}
+		if !t.Equal(current.OccurredAt) {
+			next.OccurredAt = t
+			changed = true
+		}
+	}
+	if in.Amount != "" {
+		if in.TransactionType != "" && in.TransactionType != string(current.Type) {
+			tt := domainfinance.TransactionType(in.TransactionType)
+			if tt != domainfinance.TypeIncome && tt != domainfinance.TypeExpense && tt != domainfinance.TypeTransfer {
+				return domainfinance.TransactionRemoved{}, domainfinance.ErrTypeInvalid
+			}
+			next.Type = tt
+		}
+		currency := in.Currency
+		if currency == "" {
+			currency = current.Amount.Currency
+		}
+		amount, err := domainfinance.ParseMoney(in.Amount, currency)
+		if err != nil {
+			return domainfinance.TransactionRemoved{}, err
+		}
+		// Mesma convenção do register: EXPENSE grava negativo; INCOME/TRANSFER
+		// positivo. A borda manda o valor absoluto; quem aplica decide o sinal.
+		if next.Type == domainfinance.TypeExpense {
+			amount = amount.Neg()
+		}
+		if amount.Cents != current.Amount.Cents || next.Type != current.Type {
+			next.Amount = amount
+			changed = true
+		}
+	} else if in.TransactionType != "" && in.TransactionType != string(current.Type) {
+		// troca de tipo sem amount: o sinal precisa acompanhar o novo tipo
+		tt := domainfinance.TransactionType(in.TransactionType)
+		if tt != domainfinance.TypeIncome && tt != domainfinance.TypeExpense && tt != domainfinance.TypeTransfer {
+			return domainfinance.TransactionRemoved{}, domainfinance.ErrTypeInvalid
+		}
+		next.Type = tt
+		if tt == domainfinance.TypeExpense && current.Amount.Cents > 0 {
+			next.Amount = current.Amount.Neg()
+		} else if tt != domainfinance.TypeExpense && current.Amount.Cents < 0 {
+			next.Amount = current.Amount.Neg()
+		}
+		changed = true
+	}
+
+	if !changed {
+		// nada mudou: no-op honesto, sem evento (não metralha o whatsapp)
+		return nil, nil
+	}
+	if err := s.repo.UpdateTransaction(ctx, next); err != nil {
+		return domainfinance.TransactionRemoved{}, err
+	}
+	return domainfinance.TransactionUpdated{
+		TransactionID: next.ID,
+		UserID:        next.UserID,
+		Type:          next.Type,
+		Amount:        next.Amount.Decimal(),
+		Currency:      next.Amount.Currency,
+		Category:      next.Category,
+		OccurredAt:    next.OccurredAt,
+	}, nil
+}
+
+// RemoveTransaction apaga o lançamento do dono. Posse dupla: leitura antes
+// (erro certo) e user_id no DELETE (segunda barreira). `false` do repo é
+// not-found para ambos os casos (não vaza existência).
+func (s *Service) RemoveTransaction(ctx context.Context, in RemoveTransactionInput) (domainfinance.Event, error) {
+	if in.UserID == "" {
+		return nil, fmt.Errorf("%w: user_id", domainfinance.ErrUserIDRequired)
+	}
+	if in.TransactionID == "" {
+		return nil, fmt.Errorf("%w: transaction_id", domainfinance.ErrTransactionIDRequired)
+	}
+	current, err := s.repo.FindByID(ctx, in.TransactionID)
+	if err != nil {
+		return nil, err
+	}
+	if current.UserID != in.UserID {
+		return nil, domainfinance.ErrNotTransactionOwner
+	}
+	removed, err := s.repo.RemoveTransaction(ctx, in.TransactionID, in.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if !removed {
+		return nil, domainfinance.ErrNotFound
+	}
+	return domainfinance.TransactionRemoved{
+		TransactionID: in.TransactionID,
+		UserID:        in.UserID,
+		OccurredAt:    s.now(),
+	}, nil
+}
+
 // Transfer grava débito+crédito atômicos (§3.4 nº2). Os dois lados recebem
 // UUIDv7 distintos; o crédito é o valor com sinal trocado.
 func (s *Service) Transfer(ctx context.Context, in TransferBetweenAccountsInput) (domainfinance.Transaction, domainfinance.Event, error) {

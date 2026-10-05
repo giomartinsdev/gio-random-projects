@@ -18,6 +18,8 @@ EVENT_SCHEMA_VERSION: Final = "1"
 
 EVENT_TRANSACTION_REGISTERED: Final = "finance.transaction.registered"
 EVENT_TRANSACTION_CATEGORIZED: Final = "finance.transaction.categorized"
+EVENT_TRANSACTION_UPDATED: Final = "finance.transaction.updated"
+EVENT_TRANSACTION_REMOVED: Final = "finance.transaction.removed"
 EVENT_TRANSFER_COMPLETED: Final = "finance.transfer.completed"
 EVENT_BUDGET_THRESHOLD_REACHED: Final = "finance.budget.thresholdReached"
 EVENT_OF_CONSENT_UPDATED: Final = "finance.openfinance.consentUpdated"

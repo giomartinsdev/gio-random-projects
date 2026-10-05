@@ -6,6 +6,7 @@ import { CategoryBars } from "@/components/charts";
 import { Input } from "@/components/ui/input";
 import { hrefFor } from "@/lib/router";
 import { cn } from "@/lib/utils";
+import { useAutoRefresh } from "@/lib/useAutoRefresh";
 
 type Filter = "all" | "INCOME" | "EXPENSE";
 
@@ -35,6 +36,9 @@ export function TransactionsPage({ month: initialMonth }: { month?: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // tempo real: a compra do momento entra na lista em segundos após o sync
+  useAutoRefresh(load, 20);
 
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();

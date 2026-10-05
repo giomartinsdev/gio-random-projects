@@ -73,6 +73,12 @@ services:
       POLP_OF_CLIENT_ID: ${POLP_OF_CLIENT_ID:-}
       POLP_OF_CLIENT_SECRET: ${POLP_OF_CLIENT_SECRET:-}
       POLP_OF_SANDBOX: ${POLP_OF_SANDBOX:-}
+      # Webhook do Polp (§2.6, fase 2): o push chega em
+      # POST /openfinance/webhooks/polp/<secret> e é uma *dica de frescor* —
+      # valida o segredo no caminho (sem match: 404, sem vazar existência) e
+      # faz o "poke" no conector, que relê a API. Corpo do push: ignorado.
+      OF_WEBHOOK_SECRET: ${OF_TICK_SECRET:-}
+      OF_TICK_BASE_URL: ${OF_TICK_BASE_URL:-http://finance-openfinance-worker:8088}
       # Ponte do Vaultwarden: quando configurada, POLP_OF_CLIENT_ID/SECRET (e
       # FINANCE_SESSION_SECRET) vêm do cofre, não do env. É assim que os itens
       # que já estão no Vaultwarden chegam ao container. Sem a ponte, lê env.
@@ -129,8 +135,13 @@ services:
       POLP_OF_CLIENT_ID: ${POLP_OF_CLIENT_ID:-}
       POLP_OF_CLIENT_SECRET: ${POLP_OF_CLIENT_SECRET:-}
       POLP_OF_SANDBOX: ${POLP_OF_SANDBOX:-}
-      OF_POLL_SECONDS: ${OF_POLL_SECONDS:-600}
+      OF_POLL_SECONDS: ${OF_POLL_SECONDS:-120}
       OF_BACKFILL_DAYS: ${OF_BACKFILL_DAYS:-365}
+      # Porta do webhook tick (§2.6, fase 2): o push do Polp chega na ACL
+      # (POST /openfinance/webhooks/polp), que valida o segredo do caminho e
+      # faz o "poke" aqui — a compra entra em segundos, não no próximo poll.
+      OF_LISTEN_ADDR: ":8088"
+      OF_TICK_SECRET: ${OF_TICK_SECRET:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: finance-openfinance-worker
     networks: [apps]

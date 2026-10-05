@@ -6,6 +6,7 @@ import { CashFlowBars, CategoryBars } from "@/components/charts";
 import { TransactionForm } from "@/components/forms";
 import { hrefFor } from "@/lib/router";
 import { cn } from "@/lib/utils";
+import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { loadLayout, timingFor, type DashboardLayout } from "@/lib/dashboardLayout";
 
 // O painel no formato cockpit. A HOME É CUSTOMIZÁVEL: os widgets (saldo, fluxo,
@@ -52,6 +53,10 @@ export function DashboardPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // tempo real: refetch periódico + ao voltar o foco — a compra feita na rua
+  // aparece em segundos depois do webhook do Polp sincronizar
+  useAutoRefresh(load, 25);
 
   const income = Number(dash?.income ?? 0);
   const expense = Math.abs(Number(dash?.expense ?? 0));

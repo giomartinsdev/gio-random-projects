@@ -341,3 +341,49 @@ class _NullPort:
     def send_sync(self, envelope: object) -> object:
         self.calls.append(envelope)
         raise AssertionError("send_sync must not be reached")
+
+
+# ------------------------------------------------------------- update/remove
+
+def test_update_transaction_accepts_partial_patch_and_abs_amount() -> None:
+    from finance_api.domain.commands import UpdateTransactionCommand
+
+    cmd = UpdateTransactionCommand.from_payload(
+        {
+            "user_id": "5511000000000",
+            "transaction_id": "01HX",
+            "amount": "-45.00",  # negativo chega aqui? a UI manda absoluto; a borda absolui
+            "transaction_type": "EXPENSE",
+        }
+    )
+    payload = cmd.to_payload()
+    assert payload["amount"] == "45.00"  # absoluto, sinal decidido no worker
+    assert payload["transaction_type"] == "EXPENSE"
+    assert "occurred_at" not in payload  # não veio — patch parcial
+
+
+def test_update_transaction_requires_all_owner_fields() -> None:
+    import pytest
+
+    from finance_api.domain.commands import UpdateTransactionCommand
+    from finance_api.domain.errors import ValidationError
+
+    with pytest.raises(ValidationError):
+        UpdateTransactionCommand.from_payload({"transaction_id": "x"})
+
+
+def test_remove_transaction_round_trips() -> None:
+    from finance_api.domain.commands import RemoveTransactionCommand
+
+    cmd = RemoveTransactionCommand.from_payload(
+        {"user_id": "5511000000000", "transaction_id": "01HX"}
+    )
+    assert cmd.to_payload() == {"user_id": "5511000000000", "transaction_id": "01HX"}
+
+
+def test_acl_routes_update_and_remove_actions() -> None:
+    from finance_api.application.commands import known_write_actions
+
+    names = set(known_write_actions())
+    assert "finance.transaction.update" in names
+    assert "finance.transaction.remove" in names

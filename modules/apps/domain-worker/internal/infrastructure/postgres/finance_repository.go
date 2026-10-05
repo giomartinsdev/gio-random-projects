@@ -117,6 +117,36 @@ func (r *FinanceRepository) UpdateCategory(ctx context.Context, id, category str
 	return nil
 }
 
+// UpdateTransaction aplica a correção do dono. O user_id no WHERE é a segunda
+// barreira da posse: o Service já verificou por leitura, e a query garante que
+// nenhum UPDATE toca linha de outro user (§3.4 nº3) mesmo sob corrida.
+func (r *FinanceRepository) UpdateTransaction(ctx context.Context, t domainfinance.Transaction) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE finance_transactions SET
+			type = $3, amount = $4::numeric, currency = $5, category = $6,
+			counterparty = $7, description = $8, occurred_at = $9
+		WHERE id = $1 AND user_id = $2
+	`, t.ID, t.UserID, string(t.Type), t.Amount.Decimal(), t.Amount.Currency,
+		t.Category, t.Counterparty, t.Description, t.OccurredAt)
+	if err != nil {
+		return fmt.Errorf("update transaction: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domainfinance.ErrNotFound
+	}
+	return nil
+}
+
+// RemoveTransaction apaga o lançamento do dono. false = não existia para ESTE
+// user (id de outro user responde igual — não vaza existência).
+func (r *FinanceRepository) RemoveTransaction(ctx context.Context, id, userID string) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM finance_transactions WHERE id = $1 AND user_id = $2`, id, userID)
+	if err != nil {
+		return false, fmt.Errorf("remove transaction: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // InsertTransfer grava débito + crédito numa única transação SQL (§3.4 nº2:
 // ou os dois entram, ou nenhum). As duas linhas compartilham transfer_id.
 func (r *FinanceRepository) InsertTransfer(ctx context.Context, debit, credit domainfinance.Transaction) error {

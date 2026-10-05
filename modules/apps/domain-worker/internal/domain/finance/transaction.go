@@ -12,6 +12,9 @@ var (
 	ErrOccurredAtRequired    = errors.New("occurred_at is required")
 	ErrOccurredAtNotUTC      = errors.New("occurred_at must be timezone-aware (stored in UTC)")
 	ErrTransferNeedsAccounts = errors.New("a transfer needs distinct source and destination accounts")
+	// ErrNotTransactionOwner: tentativa de editar/remover lançamento de outro
+	// user — a invariant #3 (§3.4) aplicada na correção, não só na leitura.
+	ErrNotTransactionOwner = errors.New("transaction does not belong to this user")
 )
 
 // TransactionType é o enum do §3.2.

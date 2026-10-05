@@ -93,3 +93,48 @@ def test_consent_without_user_is_skipped():
     counts = Syncer(polp=FakePolp(user_id=""), finance=finance).run_once()
     assert counts["accounts"] == 0
     assert finance.calls == []
+# o tick server: segredo no caminho + corpo ignorado + sync serializado
+import threading
+import time
+import urllib.error
+import urllib.request
+
+from finance_openfinance_worker.tick_server import start_tick_server
+
+
+class _Server:
+    def __enter__(self):
+        self.syncs: list[int] = []
+        self.lock = threading.Lock()
+
+        def sync():
+            with self.lock:
+                self.syncs.append(1)
+            time.sleep(0.1)  # deixa a corrida acontecer
+            return {"transactions": len(self.syncs)}
+
+        self.server = start_tick_server("127.0.0.1:18091", "sek", sync)
+        time.sleep(0.2)
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        return False
+
+
+def test_tick_runs_sync_and_secret_gates():
+    with _Server() as s:
+        r = urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:18091/tick/sek", method="POST", data=b"anything"))
+        assert r.status == 200
+        assert "synced" in r.read().decode()
+        try:
+            urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:18091/tick/wrong", method="POST", data=b"{}"))
+            raise AssertionError("segredo errado devia ser 404")
+        except urllib.error.HTTPError as e:
+            assert e.code == 404
+        assert len(s.syncs) == 1
+
+
+def test_no_secret_means_no_server():
+    from finance_openfinance_worker.tick_server import start_tick_server as st
+    assert st("127.0.0.1:18092", "", lambda: {}) is None

@@ -32,6 +32,29 @@ type CategorizeTransactionInput struct {
 	Category      string `json:"category"`
 }
 
+// UpdateTransactionInput é o finance.transaction.update: correção de um
+// lançamento já registrado, pela UI ou pelo WhatsApp. Campos vazios mantêm o
+// valor atual (patch parcial); amount/currency vão juntos e quando amount
+// vier, transaction_type vem junto — o sinal do amount é derivado do tipo.
+type UpdateTransactionInput struct {
+	UserID       string `json:"user_id"`
+	TransactionID string `json:"transaction_id"`
+	Category     string `json:"category,omitempty"`
+	Counterparty string `json:"counterparty,omitempty"`
+	Description  string `json:"description,omitempty"`
+	Amount       string `json:"amount,omitempty"`
+	Currency     string `json:"currency,omitempty"`
+	TransactionType string `json:"transaction_type,omitempty"`
+	OccurredAt   string `json:"occurred_at,omitempty"`
+}
+
+// RemoveTransactionInput é o finance.transaction.remove: apaga o lançamento do
+// ledger. Posse obrigatória: o worker recusa remover linha de outro user.
+type RemoveTransactionInput struct {
+	UserID        string `json:"user_id"`
+	TransactionID string `json:"transaction_id"`
+}
+
 type TransferBetweenAccountsInput struct {
 	UserID        string `json:"user_id"`
 	FromAccountID string `json:"from_account_id"`

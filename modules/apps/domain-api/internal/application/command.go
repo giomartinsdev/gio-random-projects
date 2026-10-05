@@ -43,6 +43,11 @@ const (
 	// domain-worker.
 	ActionRegisterTransaction     Action = "finance.transaction.register"
 	ActionCategorizeTransaction   Action = "finance.transaction.categorize"
+	// Correção pelo próprio usuário (SPA): editar/remover um lançamento já
+	// registrado. O domain-api só publica; quem aplica (e valida posse, §3.4
+	// nº3) é o domain-worker.
+	ActionUpdateTransaction       Action = "finance.transaction.update"
+	ActionRemoveTransaction       Action = "finance.transaction.remove"
 	ActionTransferBetweenAccounts Action = "finance.transfer.betweenAccounts"
 	ActionSetCategoryBudget       Action = "finance.budget.setCategory"
 )

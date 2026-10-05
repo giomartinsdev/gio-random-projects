@@ -17,6 +17,7 @@ from finance_openfinance_worker.api import FinanceApiClient
 from finance_openfinance_worker.polp.client import PolpClient
 from finance_openfinance_worker.secrets_bridge import resolver
 from finance_openfinance_worker.sync.runner import Syncer
+from finance_openfinance_worker.tick_server import start_tick_server
 
 REQUIRED = (
     "FINANCE_API_BASE_URL",
@@ -67,7 +68,10 @@ def main() -> int:
         return 0
 
     syncer, poll = build_syncer()
-    log.info("conector iniciado; poll a cada %.0fs", poll)
+    tick_listen = os.environ.get("OF_LISTEN_ADDR", ":8088")
+    tick_secret = os.environ.get("OF_TICK_SECRET", "")
+    server = start_tick_server(tick_listen, tick_secret, syncer.run_once)
+    log.info("conector iniciado; poll a cada %.0fs; webhook tick=%s", poll, bool(server))
 
     running = True
 

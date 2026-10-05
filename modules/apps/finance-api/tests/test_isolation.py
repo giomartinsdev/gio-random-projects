@@ -156,6 +156,11 @@ def test_every_environment_variable_read_is_an_allowed_one() -> None:
         "RATE_LIMIT_BURST",
         "OTEL_EXPORTER_OTLP_ENDPOINT",
         "OTEL_SERVICE_NAME",
+        # Open Finance webhook (§2.6, fase 2): o segredo do caminho e onde está
+        # a porta de tick do conector. Nenhum é persistência — a ACL continua
+        # sem banco/broker: guarda o segredo e o endereço interno do conector.
+        "OF_WEBHOOK_SECRET",
+        "OF_TICK_BASE_URL",
     }
     read: set[str] = set()
     for path in python_files():

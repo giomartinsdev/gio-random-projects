@@ -80,6 +80,21 @@ func (f *fakeRepo) UpsertOFAccount(_ context.Context, _ domainfinance.OFAccount)
 func (f *fakeRepo) RemoveConsent(_ context.Context, _ string) error                  { return nil }
 func (f *fakeRepo) UpsertNotification(_ context.Context, _ domainfinance.Notification) error { return nil }
 func (f *fakeRepo) DeleteNotification(_ context.Context, _, _ string) error          { return nil }
+func (f *fakeRepo) UpdateTransaction(_ context.Context, t domainfinance.Transaction) error {
+	if _, ok := f.txs[t.ID]; !ok {
+		return domainfinance.ErrNotFound
+	}
+	f.txs[t.ID] = t
+	return nil
+}
+func (f *fakeRepo) RemoveTransaction(_ context.Context, id, userID string) (bool, error) {
+	t, ok := f.txs[id]
+	if !ok || t.UserID != userID {
+		return false, nil
+	}
+	delete(f.txs, id)
+	return true, nil
+}
 
 // O import do Open Finance tem id DETERMINÍSTICO por (source, external_id):
 // reimportar o mesmo extrato (com id de comando novo) é no-op, não duplicata.
@@ -207,5 +222,107 @@ func TestServiceIDIsUUIDv7(t *testing.T) {
 	// UUIDv7: o primeiro nibble do 3º grupo é '7'.
 	if len(tx.ID) != 36 || tx.ID[14] != '7' {
 		t.Fatalf("id não parece UUIDv7: %s", tx.ID)
+	}
+}
+
+func txForOwner(t *testing.T, s *Service) domainfinance.Transaction {
+	t.Helper()
+	tx, _, err := s.RegisterTransaction(context.Background(), RegisterTransactionInput{
+		UserID: "u", AccountID: "acct", Type: "EXPENSE", Amount: "45.00", Currency: "BRL",
+		Category: "Alimentação", OccurredAt: "2026-10-04T12:00:00+00:00",
+		SourceType: "WEB_MANUAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tx
+}
+
+// Correção do dono: patch parcial muda só o que veio; o evento carrega o novo estado.
+func TestUpdateTransactionPartialPatch(t *testing.T) {
+	s := NewService(newFakeRepo())
+	tx := txForOwner(t, s)
+	evt, err := s.UpdateTransaction(context.Background(), UpdateTransactionInput{
+		UserID: "u", TransactionID: tx.ID, Category: "Mercado",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upd, ok := evt.(domainfinance.TransactionUpdated)
+	if !ok {
+		t.Fatalf("evento devia ser TransactionUpdated, veio %T", evt)
+	}
+	if upd.Category != "Mercado" {
+		t.Fatalf("categoria nova esperada, veio %q", upd.Category)
+	}
+	after, _ := s.repo.FindByID(context.Background(), tx.ID)
+	if after.Category != "Mercado" || after.Amount.Cents != tx.Amount.Cents {
+		t.Fatalf("patch parcial devia preservar amount: %+v", after)
+	}
+}
+
+// Editar sem mudança efetiva: no-op, sem evento (não metralha o WhatsApp).
+func TestUpdateTransactionNoChangeIsNoEvent(t *testing.T) {
+	s := NewService(newFakeRepo())
+	tx := txForOwner(t, s)
+	evt, err := s.UpdateTransaction(context.Background(), UpdateTransactionInput{
+		UserID: "u", TransactionID: tx.ID, Category: "Alimentação",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evt != nil {
+		t.Fatalf("sem mudança não devia ter evento, veio %T", evt)
+	}
+}
+
+// Posse: outro user não edita nem remove (§3.4 nº3 aplicado à correção).
+func TestUpdateAndRemoveRequireOwner(t *testing.T) {
+	s := NewService(newFakeRepo())
+	tx := txForOwner(t, s)
+	if _, err := s.UpdateTransaction(context.Background(), UpdateTransactionInput{
+		UserID: "intruso", TransactionID: tx.ID, Category: "X",
+	}); err != domainfinance.ErrNotTransactionOwner {
+		t.Fatalf("update de outro user devia ser ErrNotTransactionOwner, veio %v", err)
+	}
+	if _, err := s.RemoveTransaction(context.Background(), RemoveTransactionInput{
+		UserID: "intruso", TransactionID: tx.ID,
+	}); err != domainfinance.ErrNotTransactionOwner {
+		t.Fatalf("remove de outro user devia ser ErrNotTransactionOwner, veio %v", err)
+	}
+}
+
+// Remoção do dono: some do repo e o evento carrega o id.
+func TestRemoveTransactionByOwner(t *testing.T) {
+	s := NewService(newFakeRepo())
+	tx := txForOwner(t, s)
+	evt, err := s.RemoveTransaction(context.Background(), RemoveTransactionInput{
+		UserID: "u", TransactionID: tx.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rem, ok := evt.(domainfinance.TransactionRemoved)
+	if !ok || rem.TransactionID != tx.ID {
+		t.Fatalf("evento devia ser TransactionRemoved com o id, veio %T", evt)
+	}
+	if _, err := s.repo.FindByID(context.Background(), tx.ID); err != domainfinance.ErrNotFound {
+		t.Fatalf("removido devia ser not-found, veio %v", err)
+	}
+}
+
+// Troca de tipo: EXPENSE grava negativo, trocar para INCOME reverte o sinal.
+func TestUpdateTransactionTypeFlipsSign(t *testing.T) {
+	s := NewService(newFakeRepo())
+	tx := txForOwner(t, s) // EXPENSE 45.00 -> armazenado -45
+	evt, err := s.UpdateTransaction(context.Background(), UpdateTransactionInput{
+		UserID: "u", TransactionID: tx.ID, TransactionType: "INCOME",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upd := evt.(domainfinance.TransactionUpdated)
+	if upd.Amount != "45.00" {
+		t.Fatalf("INCOME devia ficar positivo (45.00), veio %s", upd.Amount)
 	}
 }

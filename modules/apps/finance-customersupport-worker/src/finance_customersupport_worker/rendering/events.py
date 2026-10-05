@@ -17,7 +17,9 @@ from typing import Any, Mapping
 from finance_contracts import (
     EVENT_BUDGET_THRESHOLD_REACHED,
     EVENT_TRANSACTION_CATEGORIZED,
+    EVENT_TRANSACTION_REMOVED,
     EVENT_TRANSACTION_REGISTERED,
+    EVENT_TRANSACTION_UPDATED,
     EVENT_TRANSFER_COMPLETED,
 )
 from finance_customersupport_worker.rendering.text import _br
@@ -26,6 +28,8 @@ from finance_customersupport_worker.rendering.text import _br
 # única; re-exportados aqui só para o handler por event_name.
 TRANSACTION_REGISTERED = EVENT_TRANSACTION_REGISTERED
 TRANSACTION_CATEGORIZED = EVENT_TRANSACTION_CATEGORIZED
+TRANSACTION_UPDATED = EVENT_TRANSACTION_UPDATED
+TRANSACTION_REMOVED = EVENT_TRANSACTION_REMOVED
 TRANSFER_COMPLETED = EVENT_TRANSFER_COMPLETED
 BUDGET_THRESHOLD_REACHED = EVENT_BUDGET_THRESHOLD_REACHED
 
@@ -80,6 +84,18 @@ def render_event(event_name: str, payload: Mapping[str, Any]) -> str | None:
 
     if event_name == TRANSACTION_CATEGORIZED:
         return f"🏷️ Categorizado como *{payload.get('category', '')}* ✅"
+
+    if event_name == TRANSACTION_UPDATED:
+        # Correção do dono (UI): mostra o estado NOVO. O valor vem ABSOLUTO no
+        # evento (a direção está no tipo), mesmo padrão do registered.
+        emoji, label = _label(str(payload.get("transaction_type", "")))
+        return (
+            f"✏️ {label} corrigida: R$ {_abs_br(payload.get('amount', '0'))} "
+            f"em *{payload.get('category', '')}*"
+        )
+
+    if event_name == TRANSACTION_REMOVED:
+        return "🗑️ Lançamento removido do extrato."
 
     if event_name == BUDGET_THRESHOLD_REACHED:
         threshold = payload.get("threshold", 0)

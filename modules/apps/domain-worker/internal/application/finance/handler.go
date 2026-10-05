@@ -45,6 +45,32 @@ func (h *CommandHandler) Handle(ctx context.Context, cmd application.Command) ([
 		}
 		return []domainfinance.Event{evt}, nil
 
+	case application.ActionUpdateTransaction:
+		var in UpdateTransactionInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode update transaction: %w", err)
+		}
+		evt, err := h.service.UpdateTransaction(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		// Sem mudança efetiva devolve nil (no-op) — processo aceita zero eventos.
+		if evt == nil {
+			return nil, nil
+		}
+		return []domainfinance.Event{evt}, nil
+
+	case application.ActionRemoveTransaction:
+		var in RemoveTransactionInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode remove transaction: %w", err)
+		}
+		evt, err := h.service.RemoveTransaction(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return []domainfinance.Event{evt}, nil
+
 	case application.ActionTransferBetweenAccounts:
 		var in TransferBetweenAccountsInput
 		if err := json.Unmarshal(cmd.Payload, &in); err != nil {

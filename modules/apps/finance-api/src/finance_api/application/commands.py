@@ -27,8 +27,10 @@ from finance_contracts import (
     ACTION_OF_CONSENT_REMOVED,
     ACTION_OF_CONSENT_UPDATED,
     ACTION_REGISTER_TRANSACTION,
+    ACTION_REMOVE_TRANSACTION,
     ACTION_SET_CATEGORY_BUDGET,
     ACTION_TRANSFER_BETWEEN_ACCOUNTS,
+    ACTION_UPDATE_TRANSACTION,
     AcceptedResult,
     CommandEnvelope,
     SyncResult,
@@ -37,8 +39,10 @@ from finance_api.application.ports import DomainApiPort
 from finance_api.domain.commands import (
     CategorizeTransactionCommand,
     RegisterTransactionCommand,
+    RemoveTransactionCommand,
     SetCategoryBudgetCommand,
     TransferBetweenAccountsCommand,
+    UpdateTransactionCommand,
 )
 from finance_api.domain.errors import ValidationError
 
@@ -66,6 +70,10 @@ class _Prebuilt:
 _WRITE_COMMANDS: Final[Mapping[str, Callable[[Mapping[str, Any]], Any]]] = {
     ACTION_REGISTER_TRANSACTION: RegisterTransactionCommand.from_payload,
     ACTION_CATEGORIZE_TRANSACTION: CategorizeTransactionCommand.from_payload,
+    # Correção pelo próprio usuário (SPA): editar/remover lançamento. O user_id
+    # é amarrado à sessão pelo _scoped_payload (§3.4 nº3) antes do relay.
+    ACTION_UPDATE_TRANSACTION: UpdateTransactionCommand.from_payload,
+    ACTION_REMOVE_TRANSACTION: RemoveTransactionCommand.from_payload,
     ACTION_TRANSFER_BETWEEN_ACCOUNTS: TransferBetweenAccountsCommand.from_payload,
     ACTION_SET_CATEGORY_BUDGET: SetCategoryBudgetCommand.from_payload,
     # Open Finance: payload já montado pela ACL (ver _Prebuilt).

@@ -333,6 +333,97 @@ class CategorizeTransactionCommand:
 
 
 @dataclass(frozen=True, slots=True)
+class UpdateTransactionCommand:
+    """``finance.transaction.update`` — correção do dono (payload parcial).
+
+    Campos ausentes mantêm o valor atual no worker. O amount, quando vem, é
+    o valor ABSOLUTO (o worker decide o sinal pelo tipo) e a moeda segue o
+    padrão BRL se não vier (a correção troca de moeda é caso raro e suportado).
+    O worker também exige transaction_type quando amount muda o sentido do
+    gasto; aqui aceitamos os dois campos como patch.
+    """
+
+    user_id: str
+    transaction_id: str
+    category: str | None = None
+    counterparty: str | None = None
+    description: str | None = None
+    amount: Money | None = None
+    transaction_type: str | None = None
+    occurred_at: datetime | None = None
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> "UpdateTransactionCommand":
+        data = _require_mapping(payload, "payload")
+        amount = None
+        if data.get("amount") not in (None, ""):
+            try:
+                money = Money.from_wire(data.get("amount"), data.get("currency", "BRL"))
+            except MoneyError as exc:
+                raise ValidationError(str(exc)) from exc
+            # a borda manda o valor ABSOLUTO: quem decide o sinal é o worker
+            amount = Money(amount=abs(money.amount), currency=money.currency)
+        occurred_at = None
+        if data.get("occurred_at") not in (None, ""):
+            try:
+                occurred_at = parse_occurred_at(data.get("occurred_at"))
+            except TimestampError as exc:
+                raise ValidationError(str(exc)) from exc
+        ttype = data.get("transaction_type")
+        if ttype not in (None, ""):
+            ttype = _require_choice(ttype, TRANSACTION_TYPES, "transaction_type")
+        return cls(
+            user_id=_require_id(data.get("user_id"), "user_id"),
+            transaction_id=_require_id(data.get("transaction_id"), "transaction_id"),
+            category=_optional_text(data.get("category"), "category"),
+            counterparty=_optional_text(data.get("counterparty"), "counterparty"),
+            description=_optional_text(data.get("description"), "description"),
+            amount=amount,
+            transaction_type=ttype,
+            occurred_at=occurred_at,
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "user_id": self.user_id,
+            "transaction_id": self.transaction_id,
+        }
+        for key, value in (
+            ("category", self.category),
+            ("counterparty", self.counterparty),
+            ("description", self.description),
+            ("transaction_type", self.transaction_type),
+        ):
+            if value is not None and value != "":
+                out[key] = value
+        if self.amount is not None:
+            out["amount"] = self.amount.to_wire()
+            out["currency"] = self.amount.currency
+        if self.occurred_at is not None:
+            out["occurred_at"] = self.occurred_at.isoformat()
+        return out
+
+
+@dataclass(frozen=True, slots=True)
+class RemoveTransactionCommand:
+    """``finance.transaction.remove`` — apaga o lançamento do dono."""
+
+    user_id: str
+    transaction_id: str
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> "RemoveTransactionCommand":
+        data = _require_mapping(payload, "payload")
+        return cls(
+            user_id=_require_id(data.get("user_id"), "user_id"),
+            transaction_id=_require_id(data.get("transaction_id"), "transaction_id"),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"user_id": self.user_id, "transaction_id": self.transaction_id}
+
+
+@dataclass(frozen=True, slots=True)
 class BudgetPeriodState:
     """Invariant #5: the ruler fires **once** per threshold per period.
 

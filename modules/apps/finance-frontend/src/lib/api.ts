@@ -90,6 +90,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 const ACTION_REGISTER = "finance.transaction.register";
 const ACTION_BUDGET = "finance.budget.setCategory";
 const ACTION_TRANSFER = "finance.transfer.betweenAccounts";
+const ACTION_TX_UPDATE = "finance.transaction.update";
+const ACTION_TX_REMOVE = "finance.transaction.remove";
 const QUERY_DASHBOARD = "finance.query.monthlyDashboard";
 const QUERY_BREAKDOWN = "finance.query.categoryBreakdown";
 const QUERY_CASHFLOW = "finance.query.cashFlowHistory";
@@ -184,6 +186,27 @@ export const api = {
         source_type: "WEB_MANUAL",
       },
     });
+  },
+
+  // Correção do dono (patch parcial): campos ausentes mantêm o atual. O amount
+  // vai ABSOLUTO — quem decide o sinal pelo tipo é o worker (mesma convenção
+  // do register). Com amount é bom mandar o tipo junto, para virar o sentido.
+  updateTransaction(
+    id: string,
+    patch: {
+      category?: string;
+      counterparty?: string;
+      description?: string;
+      amount?: string;
+      transaction_type?: string; // "INCOME" | "EXPENSE" | "TRANSFER" (wire)
+      occurred_at?: string;
+    },
+  ): Promise<{ status: string }> {
+    return post("/commands", { action: ACTION_TX_UPDATE, payload: { transaction_id: id, ...patch } });
+  },
+
+  removeTransaction(id: string): Promise<{ status: string }> {
+    return post("/commands", { action: ACTION_TX_REMOVE, payload: { transaction_id: id } });
   },
 
   setBudget(input: { category: string; limit: string; period: string }): Promise<{ status: string }> {

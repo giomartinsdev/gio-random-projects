@@ -47,6 +47,10 @@ const (
 	// conversacional e repassa; o domain-worker aplica e grava a auditoria.
 	ActionRegisterTransaction    Action = "finance.transaction.register"
 	ActionCategorizeTransaction  Action = "finance.transaction.categorize"
+	// Correção pelo próprio usuário (SPA): editar/remover um lançamento já
+	// registrado. O worker valida a posse (user_id) antes de aplicar.
+	ActionUpdateTransaction      Action = "finance.transaction.update"
+	ActionRemoveTransaction      Action = "finance.transaction.remove"
 	ActionTransferBetweenAccounts Action = "finance.transfer.betweenAccounts"
 	ActionSetCategoryBudget      Action = "finance.budget.setCategory"
 	// Open Finance (docs/openfinance-spec.md): o ciclo do consentimento e o
