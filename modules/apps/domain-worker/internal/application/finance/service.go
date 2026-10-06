@@ -533,9 +533,16 @@ func (s *Service) UpsertInvestment(ctx context.Context, in InvestmentSyncedInput
 	if err != nil {
 		return err
 	}
-	invested, err := domainfinance.ParseMoney(orDefault(in.InvestedAmount, in.GrossAmount), in.Currency)
-	if err != nil {
-		return err
+	// Investido (custo) DESCONHECIDO quando o conector manda vazio (ações/fundos
+	// não entregam preço de compra). NÃO cair para o bruto: isso faria
+	// investido == bruto e o rendimento apareceria sempre 0. Zero = desconhecido;
+	// a leitura devolve rendimento vazio nesse caso.
+	invested := domainfinance.Money{Cents: 0, Currency: in.Currency}
+	if in.InvestedAmount != "" {
+		invested, err = domainfinance.ParseMoney(in.InvestedAmount, in.Currency)
+		if err != nil {
+			return err
+		}
 	}
 	tax, err := domainfinance.ParseMoney(orDefault(in.IncomeTax, "0.00"), in.Currency)
 	if err != nil {

@@ -379,17 +379,28 @@ def investment_transaction_to_command(tx: Mapping[str, Any], *, user_id: str, co
     tid = str(tx.get("id", "") or "")
     if not tid:
         return None
-    amount = tx.get("transaction_amount") or tx.get("amount") or {}
+    # Os nomes dos campos variam por família: renda variável usa
+    # ``transaction_value``; renda fixa bancária/crédito usa
+    # ``transaction_gross_value``; ``amount`` é fallback. O movimento em si é
+    # ``transaction_type`` (ALUGUEIS, APLICACAO, RESGATE, PAGAMENTO_JUROS…);
+    # ``type`` é só a direção (ENTRADA/SAIDA).
+    amount = (
+        tx.get("transaction_value")
+        or tx.get("transaction_gross_value")
+        or tx.get("transaction_net_value")
+        or tx.get("amount")
+        or {}
+    )
     return {
         "user_id": user_id,
         "polp_consent_id": consent_id,
         "polp_tx_id": tid,
-        "polp_invest_id": invest_id,
+        "polp_invest_id": str(tx.get("variable_income_id") or tx.get("bank_fixed_income_id") or invest_id),
         "family": family,
-        "type": str(tx.get("type") or tx.get("movement_type") or tx.get("transaction_type") or ""),
+        "type": str(tx.get("transaction_type") or tx.get("movement_type") or tx.get("type") or ""),
         "amount": amount_decimal(amount) if isinstance(amount, Mapping) else _amount_or_empty(amount),
         "currency": str((amount or {}).get("currency", "BRL")) if isinstance(amount, Mapping) else "BRL",
-        "occurred_at": occurred_at_iso(tx.get("transaction_date_time") or tx.get("occurred_at")),
+        "occurred_at": occurred_at_iso(tx.get("transaction_date") or tx.get("transaction_date_time") or tx.get("occurred_at")),
         "updated_at": str(tx.get("updated_at") or ""),
     }
 

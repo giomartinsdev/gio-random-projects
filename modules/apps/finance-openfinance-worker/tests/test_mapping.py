@@ -156,14 +156,19 @@ def test_exchange_maps_amount():
 
 
 def test_investment_transaction_maps_movement():
+    # Forma real de renda variável: valor em ``transaction_value``, o movimento
+    # em ``transaction_type`` (ALUGUEIS), a direção em ``type`` (SAIDA), e o
+    # vínculo em ``variable_income_id``.
     cmd = investment_transaction_to_command(
-        {"id": "it1", "type": "RENDIMENTO", "amount": {"amount": "12.34", "currency": "BRL"},
-         "occurred_at": "2026-10-02T10:00:00Z"},
-        user_id="u", consent_id="c1", invest_id="inv1", family="bank-fixed-incomes",
+        {"id": "it1", "type": "SAIDA", "transaction_type": "ALUGUEIS",
+         "transaction_value": {"amount": "5.88", "currency": "BRL"},
+         "variable_income_id": "inv-real", "transaction_date": "2026-08-14"},
+        user_id="u", consent_id="c1", invest_id="inv1", family="variable-incomes",
     )
     assert cmd["polp_tx_id"] == "it1"
-    assert cmd["polp_invest_id"] == "inv1"
-    assert cmd["amount"] == "12.34"
+    assert cmd["polp_invest_id"] == "inv-real"
+    assert cmd["type"] == "ALUGUEIS"
+    assert cmd["amount"] == "5.88"
 
 
 def test_raw_serializes_the_whole_payload():

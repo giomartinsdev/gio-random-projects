@@ -32,24 +32,36 @@ export function InvestmentsPage() {
   }, [load]);
   useAutoRefresh(load, 30);
 
-  const invested = items.reduce((s, i) => s + Number(i.invested_amount), 0);
-  const gross = items.reduce((s, i) => s + Number(i.gross_amount), 0);
-  const yieldAmt = gross - invested;
+  // Rendimento só existe quando o custo (investido) é conhecido. Ações/fundos
+  // não entregam preço de compra — investido vazio → rendimento vazio, a UI
+  // mostra "—" em vez de um 0 mentiroso.
+  const hasCost = (i: Investment) => i.invested_amount !== "" && Number(i.invested_amount) > 0;
+  const withCost = items.filter(hasCost);
+  const invested = withCost.reduce((s, i) => s + Number(i.invested_amount), 0);
+  const grossAll = items.reduce((s, i) => s + Number(i.gross_amount), 0);
+  const grossWithCost = withCost.reduce((s, i) => s + Number(i.gross_amount), 0);
+  const yieldAmt = grossWithCost - invested;
   const yieldPct = invested > 0 ? (yieldAmt / invested) * 100 : 0;
-  const best = items.filter((i) => Number(i.yield_amount) > 0).sort((a, b) => Number(b.yield_percent) - Number(a.yield_percent))[0];
-  const winners = items.filter((i) => Number(i.yield_amount) > 0);
+  const best = withCost.filter((i) => Number(i.yield_amount) > 0).sort((a, b) => Number(b.yield_percent) - Number(a.yield_percent))[0];
+  const winners = withCost.filter((i) => Number(i.yield_amount) > 0);
 
   const left = (
     <>
       <Card>
-        <p className="kick mb-1">{items.length} ativos · rendimento em 12 meses</p>
+        <p className="kick mb-1">{items.length} ativos · {withCost.length} com custo conhecido</p>
         <p className="kick">Total investido</p>
         <p className="fig tnum text-fg">{formatBRL(String(invested))}</p>
-        <p className="mt-1.5 text-[11px] dim">valor bruto {formatBRL(String(gross))}</p>
+        <p className="mt-1.5 text-[11px] dim">valor bruto {formatBRL(String(grossAll))}</p>
         <div className="mt-4 grid grid-cols-2 gap-3">
           <Kpi label="Rendimento" value={formatBRL(String(yieldAmt), { signed: true })} tone={yieldAmt >= 0 ? "up" : "down"} />
-          <Kpi label="% investido" value={yieldPct.toFixed(2) + "%"} />
+          <Kpi label="% sob o custo" value={yieldPct.toFixed(2) + "%"} />
         </div>
+        {withCost.length < items.length && (
+          <p className="mt-3 text-[10.5px] dim">
+            Ações/fundos não trazem preço de compra no Open Finance, então o rendimento deles
+            fica fora do cálculo.
+          </p>
+        )}
       </Card>
 
       {best && (
@@ -79,12 +91,13 @@ export function InvestmentsPage() {
         ) : (
           <ul>
             {items.map((i) => {
+              const known = hasCost(i);
               const y = Number(i.yield_amount);
               const positive = y >= 0;
               return (
                 <li key={i.id} className="row px-1">
-                  <span className={cn("flex size-6 items-center justify-center rounded-md bg-muted", positive ? "text-up" : "text-down")}>
-                    {positive ? <TrendingUp className="size-3.5" /> : <TrendingDown className="size-3.5" />}
+                  <span className={cn("flex size-6 items-center justify-center rounded-md bg-muted", !known ? "text-fg-dim" : positive ? "text-up" : "text-down")}>
+                    {!known ? <ChartLine className="size-3.5" /> : positive ? <TrendingUp className="size-3.5" /> : <TrendingDown className="size-3.5" />}
                   </span>
                   <span className="min-w-0">
                     <span className="block truncate text-[13px] font-medium text-fg">
@@ -93,16 +106,16 @@ export function InvestmentsPage() {
                     </span>
                     <span className="block truncate text-[11px] dim">
                       {i.institution_name} · {i.type}
-                      {i.invested_amount && Number(i.invested_amount) > 0 ? ` · investido ${formatBRL(i.invested_amount)}` : ""}
+                      {known ? ` · investido ${formatBRL(i.invested_amount)}` : ` · ${formatBRL(i.gross_amount)} em posição`}
                       {i.due_date ? ` · vence ${new Date(i.due_date + "T12:00").toLocaleDateString("pt-BR", { month: "short", year: "numeric" })}` : ""}
                     </span>
                   </span>
                   <span className="min-w-0 text-right">
-                    <span className={cn("mono block text-[13px] font-semibold", positive ? "text-up" : "text-down")}>
-                      {formatBRL(String(y), { signed: true })}
+                    <span className={cn("mono block text-[13px] font-semibold", known && positive ? "text-up" : known ? "text-down" : "text-fg-dim")}>
+                      {known ? formatBRL(String(y), { signed: true }) : "—"}
                     </span>
                     <span className="mono block text-[10.5px] dim">
-                      {i.yield_label ? i.yield_label : `${Number(i.yield_percent).toFixed(2)}% do custo`}
+                      {known ? (i.yield_label ? i.yield_label : `${Number(i.yield_percent).toFixed(2)}% do custo`) : "custo não informado"}
                     </span>
                   </span>
                 </li>

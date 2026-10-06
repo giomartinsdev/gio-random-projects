@@ -400,11 +400,18 @@ func (r *FinanceReadRepository) Investments(ctx context.Context, userID string) 
 		SELECT id::text, name, type, family, institution_name, currency,
 		       invested_amount::text, gross_amount::text, net_amount::text,
 		       income_tax::text, iof::text,
-		       (gross_amount - invested_amount)::numeric(18,2)::text AS yield_amount,
+		       -- investido desconhecido (ações/fundos: coluna 0) NÃO vira
+		       -- rendimento = bruto; fica vazio, e a UI mostra "—".
+		       CASE WHEN invested_amount > 0
+		            THEN (gross_amount - invested_amount)::numeric(18,2)::text
+		            ELSE '' END AS yield_amount,
 		       yield_percent, indexer, indexer_rate, yield_label,
 		       quantity, due_date, isin_code, ticker, updated_at
 		FROM finance_investments
 		WHERE user_id = $1
+		  -- posições zeradas (ativos 12/classes sem posição) não são posição:
+		  -- o dado cru segue em finance_of_raw, mas a tela não mostra lixo.
+		  AND (gross_amount <> 0 OR quantity ~ '[1-9]')
 		ORDER BY gross_amount DESC`, userID)
 	if err != nil {
 		return domainfinance.InvestmentList{}, fmt.Errorf("investimens list: %w", err)

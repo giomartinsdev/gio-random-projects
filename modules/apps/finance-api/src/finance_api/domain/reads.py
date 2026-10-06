@@ -400,8 +400,20 @@ class Investment:
     currency: str
     invested_amount: str
     gross_amount: str
+    net_amount: str
     yield_amount: str
     yield_percent: str
+    income_tax: str
+    iof: str
+    indexer: str
+    indexer_rate: str
+    yield_label: str
+    quantity: str
+    purchase_unit_price: str
+    due_date: str
+    isin_code: str
+    ticker: str
+    family: str
     updated_at: str
 
     @classmethod
@@ -417,8 +429,20 @@ class Investment:
             currency=str(body.get("currency", "BRL")),
             invested_amount=_amount_text(body.get("invested_amount", "0.00"), field_name="invested_amount"),
             gross_amount=_amount_text(body.get("gross_amount", "0.00"), field_name="gross_amount"),
-            yield_amount=_amount_text(body.get("yield_amount", "0.00"), field_name="yield_amount"),
+            net_amount=_opt_amount(body.get("net_amount"), field_name="net_amount"),
+            yield_amount=_opt_amount(body.get("yield_amount"), field_name="yield_amount"),
             yield_percent=str(body.get("yield_percent", "0")),
+            income_tax=_opt_amount(body.get("income_tax"), field_name="income_tax"),
+            iof=_opt_amount(body.get("iof"), field_name="iof"),
+            indexer=str(body.get("indexer", "")),
+            indexer_rate=str(body.get("indexer_rate", "")),
+            yield_label=str(body.get("yield_label", "")),
+            quantity=str(body.get("quantity", "")),
+            purchase_unit_price=_opt_amount(body.get("purchase_unit_price"), field_name="purchase_unit_price"),
+            due_date=str(body.get("due_date", "")),
+            isin_code=str(body.get("isin_code", "")),
+            ticker=str(body.get("ticker", "")),
+            family=str(body.get("family", "")),
             updated_at=str(body.get("updated_at", "")),
         )
 
@@ -431,8 +455,20 @@ class Investment:
             "currency": self.currency,
             "invested_amount": self.invested_amount,
             "gross_amount": self.gross_amount,
+            "net_amount": self.net_amount,
             "yield_amount": self.yield_amount,
             "yield_percent": self.yield_percent,
+            "income_tax": self.income_tax,
+            "iof": self.iof,
+            "indexer": self.indexer,
+            "indexer_rate": self.indexer_rate,
+            "yield_label": self.yield_label,
+            "quantity": self.quantity,
+            "purchase_unit_price": self.purchase_unit_price,
+            "due_date": self.due_date,
+            "isin_code": self.isin_code,
+            "ticker": self.ticker,
+            "family": self.family,
             "updated_at": self.updated_at,
         }
 
