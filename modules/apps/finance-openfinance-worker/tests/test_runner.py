@@ -33,7 +33,25 @@ class FakePolp:
         self.investments_called = True
         return []
 
-    def investment_transactions(self, _: str) -> list[Mapping[str, Any]]:
+    def investment_transactions(self, _: str, *, family: str = "") -> list[Mapping[str, Any]]:
+        return []
+
+    def credit_cards(self, _: str) -> list[Mapping[str, Any]]:
+        return []
+
+    def bills(self, _: str) -> list[Mapping[str, Any]]:
+        return []
+
+    def loans(self, _: str) -> list[Mapping[str, Any]]:
+        return []
+
+    def financings(self, _: str) -> list[Mapping[str, Any]]:
+        return []
+
+    def exchanges(self, _: str) -> list[Mapping[str, Any]]:
+        return []
+
+    def account_reserved_balances(self, _: str) -> list[Mapping[str, Any]]:
         return []
 
     def account_transactions(self, _: str, params=None) -> list[Mapping[str, Any]]:
@@ -60,7 +78,11 @@ def test_run_once_publishes_account_and_transactions():
     polp = FakePolp()
     counts = Syncer(polp=polp, finance=finance, backfill_days=7).run_once()
 
-    assert counts == {"consents": 1, "accounts": 1, "transactions": 2, "investments": 0}
+    assert counts == {
+        "consents": 1, "accounts": 1, "transactions": 2, "investments": 0,
+        "credit_cards": 0, "bills": 0, "loans": 0, "financings": 0,
+        "exchanges": 0, "investment_transactions": 0, "raw": 4,
+    }
     actions = [a for a, _ in finance.calls]
     assert actions.count(ACTION_OF_ACCOUNT_SYNCED) == 1
     assert actions.count(ACTION_REGISTER_TRANSACTION) == 2
@@ -101,6 +123,48 @@ def test_consent_without_user_is_skipped():
     counts = Syncer(polp=FakePolp(user_id=""), finance=finance).run_once()
     assert counts["accounts"] == 0
     assert finance.calls == []
+
+
+def test_investments_are_republished_every_pass_for_the_backfill():
+    # O "passado" volta sozinho: não há guarda de "já visto" para investimentos
+    # (diferente de contas/transações), então cada poll reenvia todas as posições
+    # e o upsert por polp_invest_id é idempotente. É isto que preenche o
+    # histórico que ficou preso no 422 da ACL.
+    from finance_contracts import ACTION_INVESTMENT_SYNCED
+
+    class WithInvestments(FakePolp):
+        def investments(self, _: str) -> list[Mapping[str, Any]]:
+            self.investments_called = True
+            return [
+                {
+                    "_family": "bank-fixed-incomes",
+                    "id": "inv-1",
+                    "product_name": "CDB Itaú",
+                    "balance": {
+                        "quantity": "10",
+                        "purchase_unit_price": {"amount": "100.00"},
+                        "gross_amount": {"amount": "1050.00"},
+                        "net_amount": {"amount": "1040.00"},
+                        "income_tax": {"amount": "10.00"},
+                        "financial_transaction_tax": {"amount": "0.00"},
+                        "updated_at": "2026-10-05T00:00:00Z",
+                    },
+                }
+            ]
+
+    finance = FakeFinance()
+    polp = WithInvestments()
+    syncer = Syncer(polp=polp, finance=finance, backfill_days=7)
+
+    counts = syncer.run_once()
+    assert counts["investments"] == 1
+    # Segunda passada: reenvia (o passado se recupera), não só o delta.
+    counts = syncer.run_once()
+    assert counts["investments"] == 1
+    published = [p for a, p in finance.calls if a == ACTION_INVESTMENT_SYNCED]
+    assert [p["polp_invest_id"] for p in published] == ["inv-1", "inv-1"]
+
+
 # o tick server: segredo no caminho + corpo ignorado + sync serializado
 import threading
 import time

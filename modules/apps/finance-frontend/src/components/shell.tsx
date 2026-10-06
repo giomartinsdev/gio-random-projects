@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowLeftRight,
   Bell,
+  CreditCard,
+  Database,
   Gauge,
   Landmark,
   LayoutDashboard,
@@ -23,9 +25,11 @@ const TABS: Tab[] = [
   { route: { name: "transactions" }, label: "Transações", icon: <ArrowLeftRight className="size-[15px]" /> },
   { route: { name: "accounts" }, label: "Contas", icon: <Landmark className="size-[15px]" /> },
   { route: { name: "investments" }, label: "Investimentos", icon: <span className="text-[15px] leading-none">{`📈`}</span> },
+  { route: { name: "credit" }, label: "Cartões e crédito", icon: <CreditCard className="size-[15px]" /> },
   { route: { name: "limits" }, label: "Limites", icon: <Gauge className="size-[15px]" /> },
   { route: { name: "notifications" }, label: "Avisos", icon: <Bell className="size-[15px]" /> },
   { route: { name: "openfinance" }, label: "Open Finance", icon: <Link className="size-[15px]" /> },
+  { route: { name: "raw" }, label: "Dados brutos", icon: <Database className="size-[15px]" /> },
   { route: { name: "personalize" }, label: "Personalizar", icon: <LayoutGrid className="size-[15px]" /> },
   { route: { name: "settings" }, label: "Ajustes", icon: <Settings className="size-[15px]" /> },
 ];

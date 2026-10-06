@@ -108,6 +108,39 @@ def refresh(
     return JSONResponse(status_code=202, content={"status": "accepted"})
 
 
+@openfinance_router.post("/consents/{consent_id}/recreate")
+def recreate(
+    consent_id: str,
+    body: dict,
+    user_id: str = Depends(user_id_of),
+    of: OpenFinanceService = Depends(get_of),
+) -> JSONResponse:
+    """Recria o consentimento para ampliar os produtos (ex.: incluir investimentos).
+
+    Devolve a nova ``url_to_authenticate``: o SPA reabre a autorização no banco.
+    Diferente de conectar de novo, mantém o mesmo ``polp_consent_id``.
+    """
+    try:
+        result = of.recreate(
+            polp_consent_id=consent_id,
+            user_id=user_id,
+            institution_name=str(body.get("institution_name", "") or ""),
+        )
+    except ValidationError as exc:
+        return JSONResponse(status_code=422, content={"error": exc.message})
+    except DomainApiError as exc:
+        return JSONResponse(status_code=exc.status, content={"error": exc.message})
+    return JSONResponse(
+        status_code=200,
+        content={
+            "consent_id": result.consent_id,
+            "status": result.status,
+            "url_to_authenticate": result.url_to_authenticate,
+            "institution_name": result.institution_name,
+        },
+    )
+
+
 @openfinance_router.delete("/consents/{consent_id}")
 def revoke(
     consent_id: str,

@@ -22,13 +22,20 @@ from finance_contracts import (
     ACTION_OF_CONSENT_UPDATED,
 )
 
-# Só os produtos que o ledger do finance usa hoje (conta + extrato). Cartão,
-# empréstimo e investimento ficam fora do escopo v1 (spec §1).
-# Recursos pedidos no consentimento (§2.2): conta (transações/saldo) e
-# investimentos (posições + rendimentos). O Celcoin expõe investimentos
-# apenas quando o consent nasce com o product — um consent só-ACCOUNT
-# responde 404 em /consents/{id}/investments.
-OF_PRODUCTS = ["ACCOUNT", "INVESTMENTS"]
+# Produtos pedidos no consentimento (§2.2): conta (transações/saldo),
+# investimentos (posições + rendimentos), cartão (limites/transações/faturas),
+# crédito (empréstimos/financiamentos/cheque especial) e câmbio. "Pegar tudo":
+# o provedor só expõe cada recurso quando o consent nasce com o product — um
+# consent só-ACCOUNT responde 404 nas demais rotas. Valores atuais recomendados
+# pela doc (Celcoin v2): ACCOUNT, CREDIT_CARD_ACCOUNT, CREDIT_OPERATIONS,
+# INVESTMENTS, EXCHANGE.
+OF_PRODUCTS = [
+    "ACCOUNT",
+    "CREDIT_CARD_ACCOUNT",
+    "CREDIT_OPERATIONS",
+    "INVESTMENTS",
+    "EXCHANGE",
+]
 
 
 class DomainApiPort(Protocol):
@@ -116,6 +123,44 @@ class OpenFinanceService:
             mode=RELAY_MODE_ASYNC,
         )
         return consent
+
+    def recreate(self, *, polp_consent_id: str, user_id: str = "", institution_name: str = "") -> ConsentCreated:
+        """Recria o consentimento no provedor para ampliar os produtos.
+
+        Usado quando a conexão nasceu só-ACCOUNT (antes de o ledger pedir
+        investimentos): o provedor cria um novo consentimento na Celcoin sob a
+        MESMA linha local, devolve nova ``url_to_authenticate`` e passa a
+        entregar INVESTMENTS. Publicamos ``consentCreated`` (upsert idempotente
+        por ``polp_consent_id``) com a URL e os produtos novos, para o SPA
+        reexibir o botão de autorizar.
+        """
+        consent = self._polp.recreate_consent(polp_consent_id, products=OF_PRODUCTS)
+        products = consent.get("products") or OF_PRODUCTS
+        status = str(consent.get("status", "AWAITING_AUTHORIZATION"))
+        execution = str(consent.get("execution_status", "") or "")
+        url = str(consent.get("url_to_authenticate", "") or "")
+        name = str(consent.get("institution_name", "") or "") or institution_name
+        self._commands.relay(
+            ACTION_OF_CONSENT_CREATED,
+            {
+                "user_id": str(consent.get("cliente_user_id") or "") or user_id,
+                "polp_consent_id": polp_consent_id,
+                "institution_id": str(consent.get("institution_id", "")),
+                "institution_name": name,
+                "status": status,
+                "execution_status": execution,
+                "products": products,
+                "url_to_authenticate": url,
+                "url_expires_at": str(consent.get("url_to_authenticate_expires_at", "") or ""),
+            },
+            mode=RELAY_MODE_ASYNC,
+        )
+        return ConsentCreated(
+            consent_id=polp_consent_id,
+            status=status,
+            url_to_authenticate=url,
+            institution_name=name,
+        )
 
     def revoke(self, *, polp_consent_id: str) -> None:
         """Revoga no provedor e remove a conexão do ledger.

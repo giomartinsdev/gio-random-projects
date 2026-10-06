@@ -10,6 +10,8 @@ export type Route =
   | { name: "notifications" }
   | { name: "openfinance" }
   | { name: "investments" }
+  | { name: "credit" }
+  | { name: "raw" }
   | { name: "personalize" }
   | { name: "settings" };
 
@@ -34,6 +36,10 @@ export function parseRoute(hash: string): Route {
       return { name: "openfinance" };
     case "investments":
       return { name: "investments" };
+    case "credit":
+      return { name: "credit" };
+    case "raw":
+      return { name: "raw" };
     case "personalize":
       return { name: "personalize" };
     case "settings":
@@ -61,6 +67,10 @@ export function hrefFor(route: Route): string {
       return "#/openfinance";
     case "investments":
       return "#/investments";
+    case "credit":
+      return "#/credit";
+    case "raw":
+      return "#/raw";
     case "personalize":
       return "#/personalize";
     case "settings":

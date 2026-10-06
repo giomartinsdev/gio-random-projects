@@ -241,3 +241,167 @@ def investment_to_command(inv, *, user_id: str, consent_id: str) -> dict[str, An
         "ticker": str(inv.get("ticker") or ""),
         "updated_at": str((balance.get("updated_at")) or inv.get("updated_at") or ""),
     }
+
+
+# ----------------------------------------------- "pegar tudo": demais recursos
+# Mappers defensivos dos recursos restantes do Celcoin. Todos devolvem None sem
+# id (sem id não há idempotência). A captura RAW (raw_to_command) preserva o
+# JSON cru — é a rede de segurança para qualquer campo que a normalização não
+# conheça ainda.
+
+def _amount_or_empty(value: Any) -> str:
+    """Aceita tanto ``{amount,currency}`` quanto um decimal solto (loans)."""
+    if isinstance(value, Mapping):
+        return amount_decimal(value) if value.get("amount") is not None else ""
+    if value in (None, ""):
+        return ""
+    return amount_decimal({"amount": value})
+
+
+def _first_limit(card: Mapping[str, Any]) -> Mapping[str, Any]:
+    limits = card.get("limits")
+    if isinstance(limits, list):
+        for lim in limits:
+            if isinstance(lim, Mapping):
+                return lim
+    return {}
+
+
+def credit_card_to_command(card: Mapping[str, Any], *, user_id: str, consent_id: str) -> dict[str, Any] | None:
+    cid = str(card.get("id", "") or "")
+    if not cid:
+        return None
+    lim = _first_limit(card)
+    payment = card.get("payment_methods")
+    last4 = ""
+    if isinstance(payment, list):
+        for p in payment:
+            if isinstance(p, Mapping) and p.get("identification_number"):
+                last4 = str(p["identification_number"])
+                break
+    used = _amount_or_empty(lim.get("used_amount"))
+    limit_amt = _amount_or_empty(lim.get("limit_amount"))
+    return {
+        "user_id": user_id,
+        "polp_consent_id": consent_id,
+        "polp_card_id": cid,
+        "name": str(card.get("name") or (card.get("identification") or {}).get("name") or ""),
+        "brand": str(card.get("credit_card_network") or ""),
+        "last4": last4,
+        "credit_limit": limit_amt,
+        "available_limit": _amount_or_empty(lim.get("available_amount")),
+        "balance": used,
+        "currency": str((lim.get("limit_amount") or {}).get("currency", "BRL")) if isinstance(lim.get("limit_amount"), Mapping) else "BRL",
+        "due_day": str(lim.get("due_day") or ""),
+        "updated_at": str(card.get("updated_at") or ""),
+    }
+
+
+def bill_to_command(bill: Mapping[str, Any], *, user_id: str, consent_id: str, card_id: str) -> dict[str, Any] | None:
+    bid = str(bill.get("id", "") or "")
+    if not bid:
+        return None
+    total = bill.get("total_amount") or bill.get("bill_total_amount") or {}
+    minimum = bill.get("minimum_amount") or bill.get("total_amount_currency") or {}
+    return {
+        "user_id": user_id,
+        "polp_consent_id": consent_id,
+        "polp_bill_id": bid,
+        "polp_card_id": card_id,
+        "due_date": str(bill.get("due_date") or ""),
+        "close_date": str(bill.get("close_date") or bill.get("bill_closing_date") or ""),
+        "total_amount": amount_decimal(total) if isinstance(total, Mapping) else "",
+        "minimum_amount": amount_decimal(minimum) if isinstance(minimum, Mapping) else "",
+        "currency": str((total or {}).get("currency", "BRL")) if isinstance(total, Mapping) else "BRL",
+        "status": str(bill.get("status") or ""),
+        "updated_at": str(bill.get("updated_at") or ""),
+    }
+
+
+def _contract_to_command(row: Mapping[str, Any], prefix: str) -> dict[str, Any]:
+    payments = row.get("payments") if isinstance(row.get("payments"), Mapping) else {}
+    scheduled = row.get("scheduled_instalments") if isinstance(row.get("scheduled_instalments"), Mapping) else {}
+    rates = row.get("interest_rates")
+    rate = ""
+    if isinstance(rates, list) and rates and isinstance(rates[0], Mapping):
+        rate = str(rates[0].get("pre_fixed_rate") or rates[0].get("post_fixed_indexer_percentage") or "")
+    return {
+        "name": str(row.get("product_name") or row.get("name") or ""),
+        "type": str(row.get("product_sub_type") or row.get("product_type") or ""),
+        "contract_amount": _amount_or_empty(row.get("contract_amount")),
+        "outstanding_balance": _amount_or_empty(payments.get("contract_outstanding_balance")),
+        "installment_amount": _amount_or_empty(row.get("next_instalment_amount") or row.get("installment_amount")),
+        "interest_rate": rate or str(row.get("cet") or ""),
+        "currency": str(row.get("currency") or "BRL"),
+        "contract_date": str(row.get("contract_date") or ""),
+        "due_date": str(row.get("due_date") or ""),
+        "total_installments": str(scheduled.get("total_number_of_instalments") or ""),
+        "paid_installments": str(scheduled.get("paid_instalments") or ""),
+        "updated_at": str(row.get("updated_at") or ""),
+    }
+
+
+def loan_to_command(row: Mapping[str, Any], *, user_id: str, consent_id: str) -> dict[str, Any] | None:
+    lid = str(row.get("id", "") or "")
+    if not lid:
+        return None
+    base = _contract_to_command(row, "polp_loan_id")
+    return {"user_id": user_id, "polp_consent_id": consent_id, "polp_loan_id": lid, **base}
+
+
+def financing_to_command(row: Mapping[str, Any], *, user_id: str, consent_id: str) -> dict[str, Any] | None:
+    fid = str(row.get("id", "") or "")
+    if not fid:
+        return None
+    base = _contract_to_command(row, "polp_financing_id")
+    return {"user_id": user_id, "polp_consent_id": consent_id, "polp_financing_id": fid, **base}
+
+
+def exchange_to_command(row: Mapping[str, Any], *, user_id: str, consent_id: str) -> dict[str, Any] | None:
+    xid = str(row.get("id", "") or "")
+    if not xid:
+        return None
+    return {
+        "user_id": user_id,
+        "polp_consent_id": consent_id,
+        "polp_exchange_id": xid,
+        "type": str(row.get("type") or row.get("operation_type") or ""),
+        "amount": _amount_or_empty(row.get("amount") or row.get("foreign_currency_amount")),
+        "currency": str(row.get("currency") or "BRL"),
+        "target_currency": str(row.get("target_currency") or row.get("foreign_currency") or ""),
+        "exchange_rate": str(row.get("exchange_rate") or ""),
+        "occurred_at": occurred_at_iso(row.get("occurred_at") or row.get("operation_date")),
+        "updated_at": str(row.get("updated_at") or ""),
+    }
+
+
+def investment_transaction_to_command(tx: Mapping[str, Any], *, user_id: str, consent_id: str, invest_id: str, family: str) -> dict[str, Any] | None:
+    tid = str(tx.get("id", "") or "")
+    if not tid:
+        return None
+    amount = tx.get("transaction_amount") or tx.get("amount") or {}
+    return {
+        "user_id": user_id,
+        "polp_consent_id": consent_id,
+        "polp_tx_id": tid,
+        "polp_invest_id": invest_id,
+        "family": family,
+        "type": str(tx.get("type") or tx.get("movement_type") or tx.get("transaction_type") or ""),
+        "amount": amount_decimal(amount) if isinstance(amount, Mapping) else _amount_or_empty(amount),
+        "currency": str((amount or {}).get("currency", "BRL")) if isinstance(amount, Mapping) else "BRL",
+        "occurred_at": occurred_at_iso(tx.get("transaction_date_time") or tx.get("occurred_at")),
+        "updated_at": str(tx.get("updated_at") or ""),
+    }
+
+
+def raw_to_command(item: Mapping[str, Any], *, user_id: str, consent_id: str, resource: str, external_id: str) -> dict[str, Any]:
+    """Captura o JSON cru de qualquer recurso — garantia de completude."""
+    import json
+
+    return {
+        "user_id": user_id,
+        "polp_consent_id": consent_id,
+        "resource": resource,
+        "external_id": external_id,
+        "payload": json.dumps(item, ensure_ascii=False, default=str),
+    }

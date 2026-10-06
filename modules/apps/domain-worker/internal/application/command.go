@@ -67,6 +67,15 @@ const (
 	ActionOFConsentUpdated Action = "finance.openfinance.consentUpdated"
 	ActionOFConsentRemoved Action = "finance.openfinance.consentRemoved"
 	ActionOFAccountSynced  Action = "finance.openfinance.accountSynced"
+	// Open Finance — "pegar tudo": cartões, faturas, empréstimos,
+	// financiamentos, câmbio, movimentações de investimento e a captura RAW.
+	ActionInvestmentTransactionSynced Action = "finance.investment.transactionSynced"
+	ActionOFCreditCardSynced         Action = "finance.openfinance.creditCardSynced"
+	ActionOFBillSynced               Action = "finance.openfinance.billSynced"
+	ActionOFLoanSynced               Action = "finance.openfinance.loanSynced"
+	ActionOFFinancingSynced          Action = "finance.openfinance.financingSynced"
+	ActionOFExchangeSynced           Action = "finance.openfinance.exchangeSynced"
+	ActionOFRawSynced                Action = "finance.openfinance.rawSynced"
 	// Notificações (regras que a pessoa cadastra).
 	ActionNotifSet    Action = "finance.notification.set"
 	ActionNotifDelete Action = "finance.notification.delete"

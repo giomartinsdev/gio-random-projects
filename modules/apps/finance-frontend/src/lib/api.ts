@@ -104,6 +104,13 @@ const ACTION_NOTIF_SET = "finance.notification.set";
 const ACTION_NOTIF_DELETE = "finance.notification.delete";
 const QUERY_OF_ACCOUNTS = "finance.query.ofAccounts";
 const QUERY_INVESTMENTS = "finance.query.investments";
+const QUERY_CREDIT_CARDS = "finance.query.creditCards";
+const QUERY_BILLS = "finance.query.bills";
+const QUERY_LOANS = "finance.query.loans";
+const QUERY_FINANCINGS = "finance.query.financings";
+const QUERY_EXCHANGES = "finance.query.exchanges";
+const QUERY_INVESTMENT_TRANSACTIONS = "finance.query.investmentTransactions";
+const QUERY_OF_RAW = "finance.query.ofRaw";
 
 export interface Transaction {
   id: string;
@@ -191,6 +198,94 @@ export interface Investment {
   ticker?: string;
   family?: string;
   updated_at: string;
+}
+
+export interface CreditCard {
+  id: string;
+  consent_id: string;
+  name: string;
+  brand: string;
+  last4: string;
+  credit_limit: string;
+  available_limit: string;
+  balance: string;
+  currency: string;
+  due_day: string;
+  updated_at: string;
+}
+
+export interface Bill {
+  id: string;
+  card_id: string;
+  due_date: string;
+  close_date: string;
+  total_amount: string;
+  minimum_amount: string;
+  currency: string;
+  status: string;
+  updated_at: string;
+}
+
+export interface Loan {
+  id: string;
+  name: string;
+  type: string;
+  contract_amount: string;
+  outstanding_balance: string;
+  installment_amount: string;
+  interest_rate: string;
+  currency: string;
+  contract_date: string;
+  due_date: string;
+  total_installments: string;
+  paid_installments: string;
+  updated_at: string;
+}
+
+export interface Financing {
+  id: string;
+  name: string;
+  type: string;
+  contract_amount: string;
+  outstanding_balance: string;
+  installment_amount: string;
+  interest_rate: string;
+  currency: string;
+  contract_date: string;
+  due_date: string;
+  total_installments: string;
+  paid_installments: string;
+  updated_at: string;
+}
+
+export interface Exchange {
+  id: string;
+  type: string;
+  amount: string;
+  currency: string;
+  target_currency: string;
+  exchange_rate: string;
+  occurred_at?: string;
+  updated_at: string;
+}
+
+export interface InvestmentTransaction {
+  id: string;
+  invest_id: string;
+  family: string;
+  type: string;
+  amount: string;
+  currency: string;
+  occurred_at?: string;
+  updated_at: string;
+}
+
+export interface OFRawRecord {
+  id: string;
+  resource: string;
+  external_id: string;
+  payload: string;
+  captured_at: string;
 }
 
 export interface NewTransaction {
@@ -315,11 +410,38 @@ export const api = {
   investments(): Promise<{ investments: Investment[] }> {
     return post("/queries", { action: QUERY_INVESTMENTS, payload: {} });
   },
+  creditCards(): Promise<{ credit_cards: CreditCard[] }> {
+    return post("/queries", { action: QUERY_CREDIT_CARDS, payload: {} });
+  },
+  bills(): Promise<{ bills: Bill[] }> {
+    return post("/queries", { action: QUERY_BILLS, payload: {} });
+  },
+  loans(): Promise<{ loans: Loan[] }> {
+    return post("/queries", { action: QUERY_LOANS, payload: {} });
+  },
+  financings(): Promise<{ financings: Financing[] }> {
+    return post("/queries", { action: QUERY_FINANCINGS, payload: {} });
+  },
+  exchanges(): Promise<{ exchanges: Exchange[] }> {
+    return post("/queries", { action: QUERY_EXCHANGES, payload: {} });
+  },
+  investmentTransactions(): Promise<{ investment_transactions: InvestmentTransaction[] }> {
+    return post("/queries", { action: QUERY_INVESTMENT_TRANSACTIONS, payload: {} });
+  },
+  ofRaw(): Promise<{ records: OFRawRecord[] }> {
+    return post("/queries", { action: QUERY_OF_RAW, payload: {} });
+  },
   ofConnect(input: { institution_id: string; cpf: string; cnpj?: string; institution_name?: string }): Promise<OFConnectResult> {
     return post("/openfinance/consents", input);
   },
   ofRefresh(consentId: string): Promise<{ status: string }> {
     return post(`/openfinance/consents/${consentId}/refresh`, {});
+  },
+  // Recria o consentimento mantendo o mesmo id local, para ampliar os produtos
+  // (ex.: conexões antigas só-ACCOUNT passam a pedir investimentos). Devolve a
+  // nova url_to_authenticate.
+  ofRecreate(consentId: string, institutionName = ""): Promise<OFConnectResult> {
+    return post(`/openfinance/consents/${consentId}/recreate`, { institution_name: institutionName });
   },
   ofRevoke(consentId: string): Promise<{ status: string }> {
     return request("DELETE", `/openfinance/consents/${consentId}`);

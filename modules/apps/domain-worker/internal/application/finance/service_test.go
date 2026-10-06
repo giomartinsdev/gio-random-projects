@@ -101,6 +101,17 @@ func (f *fakeRepo) UpsertInvestment(_ context.Context, i domainfinance.Investmen
 	f.invests[i.PolpInvestID] = i
 	return nil
 }
+func (f *fakeRepo) UpsertCreditCard(context.Context, domainfinance.CreditCard) error { return nil }
+func (f *fakeRepo) UpsertBill(context.Context, domainfinance.Bill) error             { return nil }
+func (f *fakeRepo) UpsertLoan(context.Context, domainfinance.CreditContract) error   { return nil }
+func (f *fakeRepo) UpsertFinancing(context.Context, domainfinance.CreditContract) error {
+	return nil
+}
+func (f *fakeRepo) UpsertExchange(context.Context, domainfinance.Exchange) error { return nil }
+func (f *fakeRepo) UpsertInvestmentTransaction(context.Context, domainfinance.InvestmentTransaction) error {
+	return nil
+}
+func (f *fakeRepo) UpsertOFRaw(context.Context, domainfinance.OFRaw) error { return nil }
 func (f *fakeRepo) SetTransactionActive(_ context.Context, id, userID string, active bool) error {
 	t, ok := f.txs[id]
 	if !ok || t.UserID != userID {

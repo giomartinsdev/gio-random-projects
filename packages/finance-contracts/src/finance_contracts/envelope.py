@@ -149,6 +149,20 @@ ACTION_OF_ACCOUNT_SYNCED: Final = "finance.openfinance.accountSynced"
 ACTION_INVESTMENT_SYNCED: Final = "finance.investment.synced"
 ACTION_INVESTMENT_TRANSACTION_SYNCED: Final = "finance.investment.transactionSynced"
 
+# Open Finance — demais recursos do provedor (o conector publica; o worker
+# aplica). "Pegar tudo": cartões, faturas, empréstimos, financiamentos, câmbio
+# e saldos reservados. Cada recurso tem sua tabela normalizada.
+ACTION_OF_CREDIT_CARD_SYNCED: Final = "finance.openfinance.creditCardSynced"
+ACTION_OF_BILL_SYNCED: Final = "finance.openfinance.billSynced"
+ACTION_OF_LOAN_SYNCED: Final = "finance.openfinance.loanSynced"
+ACTION_OF_FINANCING_SYNCED: Final = "finance.openfinance.financingSynced"
+ACTION_OF_EXCHANGE_SYNCED: Final = "finance.openfinance.exchangeSynced"
+
+# Captura RAW: o conector grava o JSON cru de QUALQUER recurso do provedor.
+# É a garantia de "não perder nada" — mesmo um recurso sem tabela normalizada
+# fica preservado e reprocessável. Idempotente por (resource, external_id).
+ACTION_OF_RAW_SYNCED: Final = "finance.openfinance.rawSynced"
+
 # Notificações que a pessoa cadastra (regras).
 ACTION_NOTIF_SET: Final = "finance.notification.set"
 ACTION_NOTIF_DELETE: Final = "finance.notification.delete"
@@ -164,3 +178,10 @@ ACTION_GET_NOTIFICATIONS: Final = "finance.query.notifications"
 ACTION_GET_OF_CONSENTS: Final = "finance.query.ofConsents"
 ACTION_GET_OF_ACCOUNTS: Final = "finance.query.ofAccounts"
 ACTION_GET_INVESTMENTS: Final = "finance.query.investments"
+ACTION_GET_CREDIT_CARDS: Final = "finance.query.creditCards"
+ACTION_GET_BILLS: Final = "finance.query.bills"
+ACTION_GET_LOANS: Final = "finance.query.loans"
+ACTION_GET_FINANCINGS: Final = "finance.query.financings"
+ACTION_GET_EXCHANGES: Final = "finance.query.exchanges"
+ACTION_GET_INVESTMENT_TRANSACTIONS: Final = "finance.query.investmentTransactions"
+ACTION_GET_OF_RAW: Final = "finance.query.ofRaw"

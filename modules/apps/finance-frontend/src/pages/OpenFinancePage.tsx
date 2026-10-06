@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Building2, Link2, Loader2, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Building2, Link2, Loader2, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import {
   api,
   formatBRL,
@@ -169,7 +169,25 @@ function ConsentRow({ consent, onChanged }: { consent: OFConsent; onChanged: () 
     }
   }
 
+  // Consentimento antigo (nasceu só-ACCOUNT) não entrega investimentos: recriar
+  // amplia os produtos e devolve uma nova URL para autorizar no banco.
+  async function recreate() {
+    if (!confirm(`Reconectar ${consent.institution_name || "o banco"} para incluir investimentos? Você precisará autorizar de novo no banco.`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api.ofRecreate(consent.consent_id, consent.institution_name);
+      if (res.url_to_authenticate) window.open(res.url_to_authenticate, "_blank", "noopener");
+      setTimeout(onChanged, 800);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "falha ao reconectar");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const canAuthorize = consent.status === "AWAITING_AUTHORIZATION" && consent.url_to_authenticate;
+  const missingInvestments = !consent.products?.includes("INVESTMENTS");
 
   return (
     <li className="grid grid-cols-[1fr_150px_104px] items-center gap-3 border-b border-border px-4 py-2.5 last:border-0">
@@ -177,6 +195,9 @@ function ConsentRow({ consent, onChanged }: { consent: OFConsent; onChanged: () 
         <Building2 className="size-3.5 shrink-0 text-fg-dim" />
         <span className="min-w-0">
           <span className="block truncate text-[12px] font-medium text-fg">{consent.institution_name || consent.institution_id}</span>
+          {missingInvestments && (
+            <span className="block truncate text-[10px] text-warn">sem investimentos — reconecte para incluir</span>
+          )}
           {error && <span className="block text-[10.5px] text-down">{error}</span>}
         </span>
       </span>
@@ -185,6 +206,11 @@ function ConsentRow({ consent, onChanged }: { consent: OFConsent; onChanged: () 
         {canAuthorize && (
           <button onClick={() => window.open(consent.url_to_authenticate, "_blank", "noopener")} className="rounded-[8px] bg-fg px-2.5 py-1 font-mono text-[9px] font-medium text-bg">
             AUTORIZAR
+          </button>
+        )}
+        {missingInvestments && !canAuthorize && (
+          <button onClick={recreate} disabled={busy} title="Recriar para incluir investimentos" className="grid size-6 place-items-center rounded-[6px] text-fg-dim hover:bg-warn/10 hover:text-warn">
+            <RotateCcw className="size-3" />
           </button>
         )}
         <button onClick={refresh} disabled={busy} title="Reler status" className="grid size-6 place-items-center rounded-[6px] text-fg-dim hover:bg-surface-2 hover:text-fg">

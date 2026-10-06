@@ -140,6 +140,13 @@ func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWri
 		r.Get("/finance/openfinance/accounts", fin.GetOFAccounts)
 		// Investimentos (posições/rendimentos importados do Open Finance).
 		r.Get("/finance/investments", fin.GetInvestments)
+		r.Get("/finance/credit-cards", fin.GetCreditCards)
+		r.Get("/finance/bills", fin.GetBills)
+		r.Get("/finance/loans", fin.GetLoans)
+		r.Get("/finance/financings", fin.GetFinancings)
+		r.Get("/finance/exchanges", fin.GetExchanges)
+		r.Get("/finance/investment-transactions", fin.GetInvestmentTransactions)
+		r.Get("/finance/openfinance/raw", fin.GetOFRaw)
 	})
 
 	return r

@@ -104,6 +104,16 @@ class PolpClient:
     def revoke_consent(self, consent_id: str) -> None:
         self._request("DELETE", f"/consents/{consent_id}")
 
+    def recreate_consent(self, consent_id: str, *, products: list[str] | None = None) -> Mapping[str, Any]:
+        """POST /consents/{id}/recreate — novo consentimento na Celcoin, mesma
+        linha local, nova URL de autorização. ``products`` opcional: se omitido
+        o provedor reusa os produtos já gravados; mandamos os atuais para um
+        consentimento antigo (só-ACCOUNT) passar a pedir INVESTMENTS também."""
+        payload: dict[str, Any] = {}
+        if products:
+            payload["products"] = products
+        return self._request("POST", f"/consents/{consent_id}/recreate", json=payload)
+
     # ------------------------------------------------------------- helpers
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Mapping[str, Any]:

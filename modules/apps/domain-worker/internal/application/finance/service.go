@@ -583,3 +583,217 @@ func orDefault(v, fallback string) string {
 	return v
 }
 
+// ------------------------------------------------- Open Finance "pegar tudo"
+
+func (s *Service) parseUpdatedAt(raw string) time.Time {
+	if raw == "" {
+		return time.Time{}
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t.UTC()
+	}
+	return time.Time{}
+}
+
+func (s *Service) moneyOrZero(raw, currency string) (domainfinance.Money, error) {
+	return domainfinance.ParseMoney(orDefault(raw, "0.00"), orDefault(currency, "BRL"))
+}
+
+func (s *Service) UpsertCreditCard(ctx context.Context, in CreditCardSyncedInput) error {
+	if in.UserID == "" {
+		return domainfinance.ErrUserIDRequired
+	}
+	if in.PolpCardID == "" {
+		return domainfinance.ErrCardExternalIDRequired
+	}
+	limit, err := s.moneyOrZero(in.CreditLimit, in.Currency)
+	if err != nil {
+		return err
+	}
+	available, err := s.moneyOrZero(in.AvailableLimit, in.Currency)
+	if err != nil {
+		return err
+	}
+	balance, err := s.moneyOrZero(in.Balance, in.Currency)
+	if err != nil {
+		return err
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+	return s.repo.UpsertCreditCard(ctx, domainfinance.CreditCard{
+		ID: id.String(), UserID: in.UserID, PolpConsentID: in.PolpConsentID, PolpCardID: in.PolpCardID,
+		Name: in.Name, Brand: in.Brand, Last4: in.Last4,
+		CreditLimit: limit, AvailableLimit: available, Balance: balance,
+		Currency: orDefault(in.Currency, "BRL"), DueDay: in.DueDay, UpdatedAt: s.parseUpdatedAt(in.UpdatedAt),
+	})
+}
+
+func (s *Service) UpsertBill(ctx context.Context, in BillSyncedInput) error {
+	if in.UserID == "" {
+		return domainfinance.ErrUserIDRequired
+	}
+	if in.PolpBillID == "" {
+		return domainfinance.ErrBillExternalIDRequired
+	}
+	total, err := s.moneyOrZero(in.TotalAmount, in.Currency)
+	if err != nil {
+		return err
+	}
+	minimum, err := s.moneyOrZero(in.MinimumAmount, in.Currency)
+	if err != nil {
+		return err
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+	return s.repo.UpsertBill(ctx, domainfinance.Bill{
+		ID: id.String(), UserID: in.UserID, PolpConsentID: in.PolpConsentID,
+		PolpBillID: in.PolpBillID, PolpCardID: in.PolpCardID,
+		DueDate: in.DueDate, CloseDate: in.CloseDate, TotalAmount: total, MinimumAmount: minimum,
+		Currency: orDefault(in.Currency, "BRL"), Status: in.Status, UpdatedAt: s.parseUpdatedAt(in.UpdatedAt),
+	})
+}
+
+func (s *Service) contractFrom(
+	id, externalID, userID, consentID, name, itype, contractAmount, outstanding, installment, rate, currency, contractDate, dueDate, total, paid, updatedAt string,
+) (domainfinance.CreditContract, error) {
+	amount, err := s.moneyOrZero(contractAmount, currency)
+	if err != nil {
+		return domainfinance.CreditContract{}, err
+	}
+	out, err := s.moneyOrZero(outstanding, currency)
+	if err != nil {
+		return domainfinance.CreditContract{}, err
+	}
+	inst, err := s.moneyOrZero(installment, currency)
+	if err != nil {
+		return domainfinance.CreditContract{}, err
+	}
+	return domainfinance.CreditContract{
+		ID: id, UserID: userID, PolpConsentID: consentID, ExternalID: externalID,
+		Name: name, Type: itype, ContractAmount: amount, OutstandingBalance: out, InstallmentAmount: inst,
+		InterestRate: rate, Currency: orDefault(currency, "BRL"), ContractDate: contractDate, DueDate: dueDate,
+		TotalInstallments: total, PaidInstallments: paid, UpdatedAt: s.parseUpdatedAt(updatedAt),
+	}, nil
+}
+
+func (s *Service) UpsertLoan(ctx context.Context, in LoanSyncedInput) error {
+	if in.UserID == "" {
+		return domainfinance.ErrUserIDRequired
+	}
+	if in.PolpLoanID == "" {
+		return domainfinance.ErrLoanExternalIDRequired
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+	c, err := s.contractFrom(id.String(), in.PolpLoanID, in.UserID, in.PolpConsentID,
+		in.Name, in.Type, in.ContractAmount, in.OutstandingBalance, in.InstallmentAmount, in.InterestRate,
+		in.Currency, in.ContractDate, in.DueDate, in.TotalInstallments, in.PaidInstallments, in.UpdatedAt)
+	if err != nil {
+		return err
+	}
+	return s.repo.UpsertLoan(ctx, c)
+}
+
+func (s *Service) UpsertFinancing(ctx context.Context, in FinancingSyncedInput) error {
+	if in.UserID == "" {
+		return domainfinance.ErrUserIDRequired
+	}
+	if in.PolpFinancingID == "" {
+		return domainfinance.ErrFinancingExternalIDRequired
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+	c, err := s.contractFrom(id.String(), in.PolpFinancingID, in.UserID, in.PolpConsentID,
+		in.Name, in.Type, in.ContractAmount, in.OutstandingBalance, in.InstallmentAmount, in.InterestRate,
+		in.Currency, in.ContractDate, in.DueDate, in.TotalInstallments, in.PaidInstallments, in.UpdatedAt)
+	if err != nil {
+		return err
+	}
+	return s.repo.UpsertFinancing(ctx, c)
+}
+
+func (s *Service) UpsertExchange(ctx context.Context, in ExchangeSyncedInput) error {
+	if in.UserID == "" {
+		return domainfinance.ErrUserIDRequired
+	}
+	if in.PolpExchangeID == "" {
+		return domainfinance.ErrExchangeExternalIDRequired
+	}
+	amount, err := s.moneyOrZero(in.Amount, in.Currency)
+	if err != nil {
+		return err
+	}
+	var occurred time.Time
+	if in.OccurredAt != "" {
+		if t, perr := time.Parse(time.RFC3339, in.OccurredAt); perr == nil {
+			occurred = t.UTC()
+		}
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+	return s.repo.UpsertExchange(ctx, domainfinance.Exchange{
+		ID: id.String(), UserID: in.UserID, PolpConsentID: in.PolpConsentID, PolpExchangeID: in.PolpExchangeID,
+		Type: in.Type, Amount: amount, Currency: orDefault(in.Currency, "BRL"),
+		TargetCurrency: in.TargetCurrency, ExchangeRate: in.ExchangeRate, OccurredAt: occurred,
+		UpdatedAt: s.parseUpdatedAt(in.UpdatedAt),
+	})
+}
+
+func (s *Service) UpsertInvestmentTransaction(ctx context.Context, in InvestmentTransactionSyncedInput) error {
+	if in.UserID == "" {
+		return domainfinance.ErrUserIDRequired
+	}
+	if in.PolpTxID == "" {
+		return domainfinance.ErrInvestTxExternalIDRequired
+	}
+	amount, err := s.moneyOrZero(in.Amount, in.Currency)
+	if err != nil {
+		return err
+	}
+	var occurred time.Time
+	if in.OccurredAt != "" {
+		if t, perr := time.Parse(time.RFC3339, in.OccurredAt); perr == nil {
+			occurred = t.UTC()
+		}
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+	return s.repo.UpsertInvestmentTransaction(ctx, domainfinance.InvestmentTransaction{
+		ID: id.String(), UserID: in.UserID, PolpConsentID: in.PolpConsentID, PolpTxID: in.PolpTxID,
+		PolpInvestID: in.PolpInvestID, Family: in.Family, Type: in.Type, Amount: amount,
+		Currency: orDefault(in.Currency, "BRL"), OccurredAt: occurred, UpdatedAt: s.parseUpdatedAt(in.UpdatedAt),
+	})
+}
+
+func (s *Service) UpsertOFRaw(ctx context.Context, in OFRawSyncedInput) error {
+	if in.UserID == "" {
+		return domainfinance.ErrUserIDRequired
+	}
+	if in.Resource == "" {
+		return domainfinance.ErrRawResourceRequired
+	}
+	if in.ExternalID == "" {
+		return domainfinance.ErrRawExternalIDRequired
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+	return s.repo.UpsertOFRaw(ctx, domainfinance.OFRaw{
+		ID: id.String(), UserID: in.UserID, PolpConsentID: in.PolpConsentID,
+		Resource: in.Resource, ExternalID: in.ExternalID, Payload: in.Payload, CapturedAt: s.now(),
+	})
+}
+

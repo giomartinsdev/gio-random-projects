@@ -188,3 +188,28 @@ def test_of_accounts_route_is_intact_after_investments_insertion() -> None:
     route_inv = _READS["finance.query.investments"]
     assert route_inv.action == "finance.query.investments"
     assert route_inv.path == "/finance/investments"
+
+
+def test_all_of_resource_routes_are_wired() -> None:
+    """Cada recurso do "pegar tudo" tem sua ReadRoute com path e parser certos."""
+    from finance_api.application.reads import _READS
+    from finance_api.domain.reads import (
+        BillList, CreditCardList, ExchangeList, FinancingList,
+        InvestmentTransactionList, LoanList, OFRawList,
+    )
+
+    expected = {
+        "finance.query.creditCards": ("/finance/credit-cards", CreditCardList.from_wire),
+        "finance.query.bills": ("/finance/bills", BillList.from_wire),
+        "finance.query.loans": ("/finance/loans", LoanList.from_wire),
+        "finance.query.financings": ("/finance/financings", FinancingList.from_wire),
+        "finance.query.exchanges": ("/finance/exchanges", ExchangeList.from_wire),
+        "finance.query.investmentTransactions": ("/finance/investment-transactions", InvestmentTransactionList.from_wire),
+        "finance.query.ofRaw": ("/finance/openfinance/raw", OFRawList.from_wire),
+    }
+    for action, (path, parse) in expected.items():
+        route = _READS[action]
+        assert route.action == action
+        assert route.path == path
+        assert route.parse == parse
+        assert route.needs_month is False and route.needs_date is False

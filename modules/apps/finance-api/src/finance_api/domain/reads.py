@@ -575,3 +575,365 @@ class NotificationList:
 
     def to_wire(self) -> dict[str, Any]:
         return {"user_id": self.user_id, "notifications": [n.to_wire() for n in self.notifications]}
+
+
+# --------------------------------------------------- Open Finance: "pegar tudo"
+# Cada recurso abaixo espelha uma tabela finance_of_* normalizada (ou
+# finance_investment_transactions). Dinheiro segue string decimal; a lista
+# sempre inicializa vazia para o JSON sair [] e não null.
+
+def _rows(body: Mapping[str, Any], key: str, *, field_name: str) -> tuple[Mapping[str, Any], ...]:
+    data = _require_object(body, field_name=field_name)
+    raw = data.get(key) or []
+    if isinstance(raw, Mapping):
+        raw = raw.get(key) or []  # envelope duplo vindo de proxy
+    if isinstance(raw, Mapping) or not isinstance(raw, (list, tuple)):
+        raise ValidationError(f"{field_name} must be a list")
+    return tuple(r for r in raw if isinstance(r, Mapping))
+
+
+def _opt_amount(value: object, *, field_name: str) -> str:
+    if value in (None, ""):
+        return ""
+    return _amount_text(value, field_name=field_name)
+
+
+@dataclass(frozen=True, slots=True)
+class CreditCard:
+    id: str
+    consent_id: str
+    name: str
+    brand: str
+    last4: str
+    credit_limit: str
+    available_limit: str
+    balance: str
+    currency: str
+    due_day: str
+    updated_at: str
+
+    @classmethod
+    def from_wire(cls, b: Mapping[str, Any]) -> "CreditCard":
+        return cls(
+            id=str(b.get("id", "")),
+            consent_id=str(b.get("consent_id", "")),
+            name=str(b.get("name", "")),
+            brand=str(b.get("brand", "")),
+            last4=str(b.get("last4", "")),
+            credit_limit=_opt_amount(b.get("credit_limit"), field_name="credit_limit"),
+            available_limit=_opt_amount(b.get("available_limit"), field_name="available_limit"),
+            balance=_opt_amount(b.get("balance"), field_name="balance"),
+            currency=str(b.get("currency", "BRL")),
+            due_day=str(b.get("due_day", "")),
+            updated_at=str(b.get("updated_at", "")),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "consent_id": self.consent_id, "name": self.name,
+            "brand": self.brand, "last4": self.last4, "credit_limit": self.credit_limit,
+            "available_limit": self.available_limit, "balance": self.balance,
+            "currency": self.currency, "due_day": self.due_day, "updated_at": self.updated_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CreditCardList:
+    user_id: str
+    credit_cards: tuple[CreditCard, ...] = ()
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "CreditCardList":
+        data = _require_object(body, field_name="credit cards")
+        return cls(user_id=str(data.get("user_id", "")),
+                   credit_cards=tuple(CreditCard.from_wire(r) for r in _rows(body, "credit_cards", field_name="credit cards")))
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"user_id": self.user_id, "credit_cards": [c.to_wire() for c in self.credit_cards]}
+
+
+@dataclass(frozen=True, slots=True)
+class Bill:
+    id: str
+    card_id: str
+    due_date: str
+    close_date: str
+    total_amount: str
+    minimum_amount: str
+    currency: str
+    status: str
+    updated_at: str
+
+    @classmethod
+    def from_wire(cls, b: Mapping[str, Any]) -> "Bill":
+        return cls(
+            id=str(b.get("id", "")), card_id=str(b.get("card_id", "")),
+            due_date=str(b.get("due_date", "")), close_date=str(b.get("close_date", "")),
+            total_amount=_opt_amount(b.get("total_amount"), field_name="total_amount"),
+            minimum_amount=_opt_amount(b.get("minimum_amount"), field_name="minimum_amount"),
+            currency=str(b.get("currency", "BRL")), status=str(b.get("status", "")),
+            updated_at=str(b.get("updated_at", "")),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "card_id": self.card_id, "due_date": self.due_date,
+            "close_date": self.close_date, "total_amount": self.total_amount,
+            "minimum_amount": self.minimum_amount, "currency": self.currency,
+            "status": self.status, "updated_at": self.updated_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class BillList:
+    user_id: str
+    bills: tuple[Bill, ...] = ()
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "BillList":
+        data = _require_object(body, field_name="bills")
+        return cls(user_id=str(data.get("user_id", "")),
+                   bills=tuple(Bill.from_wire(r) for r in _rows(body, "bills", field_name="bills")))
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"user_id": self.user_id, "bills": [b.to_wire() for b in self.bills]}
+
+
+@dataclass(frozen=True, slots=True)
+class Loan:
+    id: str
+    name: str
+    type: str
+    contract_amount: str
+    outstanding_balance: str
+    installment_amount: str
+    interest_rate: str
+    currency: str
+    contract_date: str
+    due_date: str
+    updated_at: str
+
+    @classmethod
+    def from_wire(cls, b: Mapping[str, Any]) -> "Loan":
+        return cls(
+            id=str(b.get("id", "")), name=str(b.get("name", "")), type=str(b.get("type", "")),
+            contract_amount=_opt_amount(b.get("contract_amount"), field_name="contract_amount"),
+            outstanding_balance=_opt_amount(b.get("outstanding_balance"), field_name="outstanding_balance"),
+            installment_amount=_opt_amount(b.get("installment_amount"), field_name="installment_amount"),
+            interest_rate=str(b.get("interest_rate", "")), currency=str(b.get("currency", "BRL")),
+            contract_date=str(b.get("contract_date", "")), due_date=str(b.get("due_date", "")),
+            updated_at=str(b.get("updated_at", "")),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "name": self.name, "type": self.type,
+            "contract_amount": self.contract_amount, "outstanding_balance": self.outstanding_balance,
+            "installment_amount": self.installment_amount, "interest_rate": self.interest_rate,
+            "currency": self.currency, "contract_date": self.contract_date,
+            "due_date": self.due_date, "updated_at": self.updated_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class LoanList:
+    user_id: str
+    loans: tuple[Loan, ...] = ()
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "LoanList":
+        data = _require_object(body, field_name="loans")
+        return cls(user_id=str(data.get("user_id", "")),
+                   loans=tuple(Loan.from_wire(r) for r in _rows(body, "loans", field_name="loans")))
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"user_id": self.user_id, "loans": [l.to_wire() for l in self.loans]}
+
+
+@dataclass(frozen=True, slots=True)
+class Financing:
+    id: str
+    name: str
+    type: str
+    contract_amount: str
+    outstanding_balance: str
+    installment_amount: str
+    interest_rate: str
+    currency: str
+    contract_date: str
+    due_date: str
+    updated_at: str
+
+    @classmethod
+    def from_wire(cls, b: Mapping[str, Any]) -> "Financing":
+        return cls(
+            id=str(b.get("id", "")), name=str(b.get("name", "")), type=str(b.get("type", "")),
+            contract_amount=_opt_amount(b.get("contract_amount"), field_name="contract_amount"),
+            outstanding_balance=_opt_amount(b.get("outstanding_balance"), field_name="outstanding_balance"),
+            installment_amount=_opt_amount(b.get("installment_amount"), field_name="installment_amount"),
+            interest_rate=str(b.get("interest_rate", "")), currency=str(b.get("currency", "BRL")),
+            contract_date=str(b.get("contract_date", "")), due_date=str(b.get("due_date", "")),
+            updated_at=str(b.get("updated_at", "")),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "name": self.name, "type": self.type,
+            "contract_amount": self.contract_amount, "outstanding_balance": self.outstanding_balance,
+            "installment_amount": self.installment_amount, "interest_rate": self.interest_rate,
+            "currency": self.currency, "contract_date": self.contract_date,
+            "due_date": self.due_date, "updated_at": self.updated_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class FinancingList:
+    user_id: str
+    financings: tuple[Financing, ...] = ()
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "FinancingList":
+        data = _require_object(body, field_name="financings")
+        return cls(user_id=str(data.get("user_id", "")),
+                   financings=tuple(Financing.from_wire(r) for r in _rows(body, "financings", field_name="financings")))
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"user_id": self.user_id, "financings": [f.to_wire() for f in self.financings]}
+
+
+@dataclass(frozen=True, slots=True)
+class Exchange:
+    id: str
+    type: str
+    amount: str
+    currency: str
+    target_currency: str
+    exchange_rate: str
+    occurred_at: str
+    updated_at: str
+
+    @classmethod
+    def from_wire(cls, b: Mapping[str, Any]) -> "Exchange":
+        return cls(
+            id=str(b.get("id", "")), type=str(b.get("type", "")),
+            amount=_opt_amount(b.get("amount"), field_name="amount"),
+            currency=str(b.get("currency", "BRL")), target_currency=str(b.get("target_currency", "")),
+            exchange_rate=str(b.get("exchange_rate", "")),
+            occurred_at=str(b.get("occurred_at", "")), updated_at=str(b.get("updated_at", "")),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "type": self.type, "amount": self.amount,
+            "currency": self.currency, "target_currency": self.target_currency,
+            "exchange_rate": self.exchange_rate, "occurred_at": self.occurred_at,
+            "updated_at": self.updated_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ExchangeList:
+    user_id: str
+    exchanges: tuple[Exchange, ...] = ()
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "ExchangeList":
+        data = _require_object(body, field_name="exchanges")
+        return cls(user_id=str(data.get("user_id", "")),
+                   exchanges=tuple(Exchange.from_wire(r) for r in _rows(body, "exchanges", field_name="exchanges")))
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"user_id": self.user_id, "exchanges": [e.to_wire() for e in self.exchanges]}
+
+
+@dataclass(frozen=True, slots=True)
+class InvestmentTransaction:
+    id: str
+    invest_id: str
+    family: str
+    type: str
+    amount: str
+    currency: str
+    occurred_at: str
+    updated_at: str
+
+    @classmethod
+    def from_wire(cls, b: Mapping[str, Any]) -> "InvestmentTransaction":
+        return cls(
+            id=str(b.get("id", "")), invest_id=str(b.get("invest_id", "")),
+            family=str(b.get("family", "")), type=str(b.get("type", "")),
+            amount=_opt_amount(b.get("amount"), field_name="amount"),
+            currency=str(b.get("currency", "BRL")),
+            occurred_at=str(b.get("occurred_at", "")), updated_at=str(b.get("updated_at", "")),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "invest_id": self.invest_id, "family": self.family,
+            "type": self.type, "amount": self.amount, "currency": self.currency,
+            "occurred_at": self.occurred_at, "updated_at": self.updated_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class InvestmentTransactionList:
+    user_id: str
+    investment_transactions: tuple[InvestmentTransaction, ...] = ()
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "InvestmentTransactionList":
+        data = _require_object(body, field_name="investment_transactions")
+        return cls(
+            user_id=str(data.get("user_id", "")),
+            investment_transactions=tuple(
+                InvestmentTransaction.from_wire(r)
+                for r in _rows(body, "investment_transactions", field_name="investment_transactions")
+            ),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "user_id": self.user_id,
+            "investment_transactions": [t.to_wire() for t in self.investment_transactions],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class OFRawRecord:
+    id: str
+    resource: str
+    external_id: str
+    payload: str
+    captured_at: str
+
+    @classmethod
+    def from_wire(cls, b: Mapping[str, Any]) -> "OFRawRecord":
+        payload = b.get("payload")
+        return cls(
+            id=str(b.get("id", "")),
+            resource=str(b.get("resource", "")),
+            external_id=str(b.get("external_id", "")),
+            payload=payload if isinstance(payload, str) else "",
+            captured_at=str(b.get("captured_at", "")),
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "id": self.id, "resource": self.resource, "external_id": self.external_id,
+            "payload": self.payload, "captured_at": self.captured_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class OFRawList:
+    user_id: str
+    records: tuple[OFRawRecord, ...] = ()
+
+    @classmethod
+    def from_wire(cls, body: Mapping[str, Any]) -> "OFRawList":
+        data = _require_object(body, field_name="of raw")
+        return cls(user_id=str(data.get("user_id", "")),
+                   records=tuple(OFRawRecord.from_wire(r) for r in _rows(body, "records", field_name="of raw")))
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"user_id": self.user_id, "records": [r.to_wire() for r in self.records]}

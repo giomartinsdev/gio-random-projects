@@ -81,6 +81,76 @@ func (h *CommandHandler) Handle(ctx context.Context, cmd application.Command) ([
 		}
 		return nil, nil
 
+	case application.ActionInvestmentTransactionSynced:
+		var in InvestmentTransactionSyncedInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode investment transaction synced: %w", err)
+		}
+		if err := h.service.UpsertInvestmentTransaction(ctx, in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
+	case application.ActionOFCreditCardSynced:
+		var in CreditCardSyncedInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode credit card synced: %w", err)
+		}
+		if err := h.service.UpsertCreditCard(ctx, in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
+	case application.ActionOFBillSynced:
+		var in BillSyncedInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode bill synced: %w", err)
+		}
+		if err := h.service.UpsertBill(ctx, in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
+	case application.ActionOFLoanSynced:
+		var in LoanSyncedInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode loan synced: %w", err)
+		}
+		if err := h.service.UpsertLoan(ctx, in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
+	case application.ActionOFFinancingSynced:
+		var in FinancingSyncedInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode financing synced: %w", err)
+		}
+		if err := h.service.UpsertFinancing(ctx, in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
+	case application.ActionOFExchangeSynced:
+		var in ExchangeSyncedInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode exchange synced: %w", err)
+		}
+		if err := h.service.UpsertExchange(ctx, in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
+	case application.ActionOFRawSynced:
+		var in OFRawSyncedInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, fmt.Errorf("decode raw synced: %w", err)
+		}
+		if err := h.service.UpsertOFRaw(ctx, in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
 	case application.ActionSetTransactionActive:
 		var in SetTransactionActiveInput
 		if err := json.Unmarshal(cmd.Payload, &in); err != nil {

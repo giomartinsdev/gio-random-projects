@@ -14,6 +14,8 @@ import { LimitsPage } from "@/pages/LimitsPage";
 import { NotificationsPage } from "@/pages/NotificationsPage";
 import { OpenFinancePage } from "@/pages/OpenFinancePage";
 import { InvestmentsPage } from "@/pages/InvestmentsPage";
+import { CreditPage } from "@/pages/CreditPage";
+import { RawDataPage } from "@/pages/RawDataPage";
 import { PersonalizePage } from "@/pages/PersonalizePage";
 import { SettingsPage } from "@/pages/SettingsPage";
 
@@ -81,6 +83,10 @@ function renderRoute(route: ReturnType<typeof useHashRoute>) {
       return <OpenFinancePage />;
     case "investments":
       return <InvestmentsPage />;
+    case "credit":
+      return <CreditPage />;
+    case "raw":
+      return <RawDataPage />;
     case "personalize":
       return <PersonalizePage />;
     case "settings":

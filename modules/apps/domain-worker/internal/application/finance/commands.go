@@ -156,3 +156,105 @@ type InvestmentSyncedInput struct {
 	Ticker          string `json:"ticker,omitempty"`
 	UpdatedAt       string `json:"updated_at,omitempty"`
 }
+
+// Open Finance — "pegar tudo". Cada input espelha o payload do conector; todo
+// dinheiro é STRING decimal (§3.4) e instante é RFC3339.
+
+type CreditCardSyncedInput struct {
+	UserID         string `json:"user_id"`
+	PolpConsentID  string `json:"polp_consent_id"`
+	PolpCardID     string `json:"polp_card_id"`
+	Name           string `json:"name,omitempty"`
+	Brand          string `json:"brand,omitempty"`
+	Last4          string `json:"last4,omitempty"`
+	CreditLimit    string `json:"credit_limit,omitempty"`
+	AvailableLimit string `json:"available_limit,omitempty"`
+	Balance        string `json:"balance,omitempty"`
+	Currency       string `json:"currency,omitempty"`
+	DueDay         string `json:"due_day,omitempty"`
+	UpdatedAt      string `json:"updated_at,omitempty"`
+}
+
+type BillSyncedInput struct {
+	UserID        string `json:"user_id"`
+	PolpConsentID string `json:"polp_consent_id"`
+	PolpBillID    string `json:"polp_bill_id"`
+	PolpCardID    string `json:"polp_card_id"`
+	DueDate       string `json:"due_date,omitempty"`
+	CloseDate     string `json:"close_date,omitempty"`
+	TotalAmount   string `json:"total_amount,omitempty"`
+	MinimumAmount string `json:"minimum_amount,omitempty"`
+	Currency      string `json:"currency,omitempty"`
+	Status        string `json:"status,omitempty"`
+	UpdatedAt     string `json:"updated_at,omitempty"`
+}
+
+type LoanSyncedInput struct {
+	UserID            string `json:"user_id"`
+	PolpConsentID     string `json:"polp_consent_id"`
+	PolpLoanID        string `json:"polp_loan_id"`
+	Name              string `json:"name,omitempty"`
+	Type              string `json:"type,omitempty"`
+	ContractAmount    string `json:"contract_amount,omitempty"`
+	OutstandingBalance string `json:"outstanding_balance,omitempty"`
+	InstallmentAmount string `json:"installment_amount,omitempty"`
+	InterestRate      string `json:"interest_rate,omitempty"`
+	Currency          string `json:"currency,omitempty"`
+	ContractDate      string `json:"contract_date,omitempty"`
+	DueDate           string `json:"due_date,omitempty"`
+	TotalInstallments string `json:"total_installments,omitempty"`
+	PaidInstallments  string `json:"paid_installments,omitempty"`
+	UpdatedAt         string `json:"updated_at,omitempty"`
+}
+
+type FinancingSyncedInput struct {
+	UserID            string `json:"user_id"`
+	PolpConsentID     string `json:"polp_consent_id"`
+	PolpFinancingID   string `json:"polp_financing_id"`
+	Name              string `json:"name,omitempty"`
+	Type              string `json:"type,omitempty"`
+	ContractAmount    string `json:"contract_amount,omitempty"`
+	OutstandingBalance string `json:"outstanding_balance,omitempty"`
+	InstallmentAmount string `json:"installment_amount,omitempty"`
+	InterestRate      string `json:"interest_rate,omitempty"`
+	Currency          string `json:"currency,omitempty"`
+	ContractDate      string `json:"contract_date,omitempty"`
+	DueDate           string `json:"due_date,omitempty"`
+	TotalInstallments string `json:"total_installments,omitempty"`
+	PaidInstallments  string `json:"paid_installments,omitempty"`
+	UpdatedAt         string `json:"updated_at,omitempty"`
+}
+
+type ExchangeSyncedInput struct {
+	UserID         string `json:"user_id"`
+	PolpConsentID  string `json:"polp_consent_id"`
+	PolpExchangeID string `json:"polp_exchange_id"`
+	Type           string `json:"type,omitempty"`
+	Amount         string `json:"amount,omitempty"`
+	Currency       string `json:"currency,omitempty"`
+	TargetCurrency string `json:"target_currency,omitempty"`
+	ExchangeRate   string `json:"exchange_rate,omitempty"`
+	OccurredAt     string `json:"occurred_at,omitempty"`
+	UpdatedAt      string `json:"updated_at,omitempty"`
+}
+
+type InvestmentTransactionSyncedInput struct {
+	UserID        string `json:"user_id"`
+	PolpConsentID string `json:"polp_consent_id"`
+	PolpTxID      string `json:"polp_tx_id"`
+	PolpInvestID  string `json:"polp_invest_id"`
+	Family        string `json:"family,omitempty"`
+	Type          string `json:"type,omitempty"`
+	Amount        string `json:"amount,omitempty"`
+	Currency      string `json:"currency,omitempty"`
+	OccurredAt    string `json:"occurred_at,omitempty"`
+	UpdatedAt     string `json:"updated_at,omitempty"`
+}
+
+type OFRawSyncedInput struct {
+	UserID        string `json:"user_id"`
+	PolpConsentID string `json:"polp_consent_id,omitempty"`
+	Resource      string `json:"resource"`
+	ExternalID    string `json:"external_id"`
+	Payload       string `json:"payload"`
+}

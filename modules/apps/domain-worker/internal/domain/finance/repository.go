@@ -22,6 +22,16 @@ type Repository interface {
 	SetTransactionActive(ctx context.Context, id, userID string, active bool) error
 	// UpsertInvestment grava/atualiza uma posição por polp_invest_id.
 	UpsertInvestment(ctx context.Context, i Investment) error
+	// UpsertCreditCard / UpsertBill / UpsertLoan / UpsertFinancing /
+	// UpsertExchange / UpsertInvestmentTransaction / UpsertOFRaw: recursos do
+	// Open Finance "pegar tudo", idempotentes pelo id do provedor.
+	UpsertCreditCard(ctx context.Context, c CreditCard) error
+	UpsertBill(ctx context.Context, b Bill) error
+	UpsertLoan(ctx context.Context, l CreditContract) error
+	UpsertFinancing(ctx context.Context, f CreditContract) error
+	UpsertExchange(ctx context.Context, e Exchange) error
+	UpsertInvestmentTransaction(ctx context.Context, t InvestmentTransaction) error
+	UpsertOFRaw(ctx context.Context, r OFRaw) error
 	// InsertTransfer grava o par débito+crédito numa única transação SQL
 	// (§3.4 nº2: atômica). As duas linhas compartilham command_id.
 	InsertTransfer(ctx context.Context, debit, credit Transaction) error

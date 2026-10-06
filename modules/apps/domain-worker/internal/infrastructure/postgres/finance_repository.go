@@ -266,7 +266,9 @@ func (r *FinanceRepository) UpsertConsent(ctx context.Context, c domainfinance.C
 		ON CONFLICT (polp_consent_id) DO UPDATE SET
 			status = EXCLUDED.status,
 			execution_status = EXCLUDED.execution_status,
-			institution_name = EXCLUDED.institution_name,
+			institution_id = COALESCE(NULLIF(EXCLUDED.institution_id, ''), finance_of_consents.institution_id),
+			institution_name = COALESCE(NULLIF(EXCLUDED.institution_name, ''), finance_of_consents.institution_name),
+			products = EXCLUDED.products,
 			url_to_authenticate = EXCLUDED.url_to_authenticate,
 			url_expires_at = EXCLUDED.url_expires_at,
 			updated_at = now()`,
@@ -395,6 +397,147 @@ func (r *FinanceRepository) UpsertInvestment(ctx context.Context, i domainfinanc
 		i.Indexer, i.IndexerRate, i.YieldLabel, i.DueDate, i.IsinCode, i.Ticker)
 	if err != nil {
 		return fmt.Errorf("upsert investment: %w", err)
+	}
+	return nil
+}
+
+func (r *FinanceRepository) UpsertCreditCard(ctx context.Context, c domainfinance.CreditCard) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO finance_credit_cards
+			(id, user_id, polp_consent_id, polp_card_id, name, brand, last4,
+			 credit_limit, available_limit, balance, currency, due_day, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8::numeric,$9::numeric,$10::numeric,$11,$12,$13)
+		ON CONFLICT (polp_card_id) DO UPDATE SET
+			name = EXCLUDED.name, brand = EXCLUDED.brand, last4 = EXCLUDED.last4,
+			credit_limit = EXCLUDED.credit_limit, available_limit = EXCLUDED.available_limit,
+			balance = EXCLUDED.balance, currency = EXCLUDED.currency,
+			due_day = EXCLUDED.due_day, updated_at = EXCLUDED.updated_at`,
+		c.ID, c.UserID, c.PolpConsentID, c.PolpCardID, c.Name, c.Brand, c.Last4,
+		c.CreditLimit.Decimal(), c.AvailableLimit.Decimal(), c.Balance.Decimal(),
+		c.Currency, c.DueDay, nullableTime(c.UpdatedAt))
+	if err != nil {
+		return fmt.Errorf("upsert credit card: %w", err)
+	}
+	return nil
+}
+
+func (r *FinanceRepository) UpsertBill(ctx context.Context, b domainfinance.Bill) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO finance_bills
+			(id, user_id, polp_consent_id, polp_bill_id, polp_card_id, due_date, close_date,
+			 total_amount, minimum_amount, currency, status, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8::numeric,$9::numeric,$10,$11,$12)
+		ON CONFLICT (polp_bill_id) DO UPDATE SET
+			polp_card_id = EXCLUDED.polp_card_id, due_date = EXCLUDED.due_date,
+			close_date = EXCLUDED.close_date, total_amount = EXCLUDED.total_amount,
+			minimum_amount = EXCLUDED.minimum_amount, currency = EXCLUDED.currency,
+			status = EXCLUDED.status, updated_at = EXCLUDED.updated_at`,
+		b.ID, b.UserID, b.PolpConsentID, b.PolpBillID, b.PolpCardID, b.DueDate, b.CloseDate,
+		b.TotalAmount.Decimal(), b.MinimumAmount.Decimal(), b.Currency, b.Status, nullableTime(b.UpdatedAt))
+	if err != nil {
+		return fmt.Errorf("upsert bill: %w", err)
+	}
+	return nil
+}
+
+func (r *FinanceRepository) UpsertLoan(ctx context.Context, l domainfinance.CreditContract) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO finance_loans
+			(id, user_id, polp_consent_id, polp_loan_id, name, type, contract_amount,
+			 outstanding_balance, installment_amount, interest_rate, currency,
+			 contract_date, due_date, total_installments, paid_installments, updated_at)
+		VALUES ($1,$2,$3,$16,$4,$5,$6::numeric,$7::numeric,$8::numeric,$9,$10,$11,$12,$13,$14,$15)
+		ON CONFLICT (polp_loan_id) DO UPDATE SET
+			name = EXCLUDED.name, type = EXCLUDED.type, contract_amount = EXCLUDED.contract_amount,
+			outstanding_balance = EXCLUDED.outstanding_balance,
+			installment_amount = EXCLUDED.installment_amount, interest_rate = EXCLUDED.interest_rate,
+			currency = EXCLUDED.currency, contract_date = EXCLUDED.contract_date,
+			due_date = EXCLUDED.due_date, total_installments = EXCLUDED.total_installments,
+			paid_installments = EXCLUDED.paid_installments, updated_at = EXCLUDED.updated_at`,
+		l.ID, l.UserID, l.PolpConsentID, l.Name, l.Type,
+		l.ContractAmount.Decimal(), l.OutstandingBalance.Decimal(), l.InstallmentAmount.Decimal(),
+		l.InterestRate, l.Currency, l.ContractDate, l.DueDate, l.TotalInstallments, l.PaidInstallments,
+		nullableTime(l.UpdatedAt), l.ExternalID)
+	if err != nil {
+		return fmt.Errorf("upsert loan: %w", err)
+	}
+	return nil
+}
+
+func (r *FinanceRepository) UpsertFinancing(ctx context.Context, f domainfinance.CreditContract) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO finance_financings
+			(id, user_id, polp_consent_id, polp_financing_id, name, type, contract_amount,
+			 outstanding_balance, installment_amount, interest_rate, currency,
+			 contract_date, due_date, total_installments, paid_installments, updated_at)
+		VALUES ($1,$2,$3,$16,$4,$5,$6::numeric,$7::numeric,$8::numeric,$9,$10,$11,$12,$13,$14,$15)
+		ON CONFLICT (polp_financing_id) DO UPDATE SET
+			name = EXCLUDED.name, type = EXCLUDED.type, contract_amount = EXCLUDED.contract_amount,
+			outstanding_balance = EXCLUDED.outstanding_balance,
+			installment_amount = EXCLUDED.installment_amount, interest_rate = EXCLUDED.interest_rate,
+			currency = EXCLUDED.currency, contract_date = EXCLUDED.contract_date,
+			due_date = EXCLUDED.due_date, total_installments = EXCLUDED.total_installments,
+			paid_installments = EXCLUDED.paid_installments, updated_at = EXCLUDED.updated_at`,
+		f.ID, f.UserID, f.PolpConsentID, f.Name, f.Type,
+		f.ContractAmount.Decimal(), f.OutstandingBalance.Decimal(), f.InstallmentAmount.Decimal(),
+		f.InterestRate, f.Currency, f.ContractDate, f.DueDate, f.TotalInstallments, f.PaidInstallments,
+		nullableTime(f.UpdatedAt), f.ExternalID)
+	if err != nil {
+		return fmt.Errorf("upsert financing: %w", err)
+	}
+	return nil
+}
+
+func (r *FinanceRepository) UpsertExchange(ctx context.Context, e domainfinance.Exchange) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO finance_exchanges
+			(id, user_id, polp_consent_id, polp_exchange_id, type, amount, currency,
+			 target_currency, exchange_rate, occurred_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6::numeric,$7,$8,$9,$10,$11)
+		ON CONFLICT (polp_exchange_id) DO UPDATE SET
+			type = EXCLUDED.type, amount = EXCLUDED.amount, currency = EXCLUDED.currency,
+			target_currency = EXCLUDED.target_currency, exchange_rate = EXCLUDED.exchange_rate,
+			occurred_at = EXCLUDED.occurred_at, updated_at = EXCLUDED.updated_at`,
+		e.ID, e.UserID, e.PolpConsentID, e.PolpExchangeID, e.Type, e.Amount.Decimal(), e.Currency,
+		e.TargetCurrency, e.ExchangeRate, nullableTime(e.OccurredAt), nullableTime(e.UpdatedAt))
+	if err != nil {
+		return fmt.Errorf("upsert exchange: %w", err)
+	}
+	return nil
+}
+
+func (r *FinanceRepository) UpsertInvestmentTransaction(ctx context.Context, t domainfinance.InvestmentTransaction) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO finance_investment_transactions
+			(id, user_id, polp_consent_id, polp_tx_id, polp_invest_id, family, type,
+			 amount, currency, occurred_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8::numeric,$9,$10,$11)
+		ON CONFLICT (polp_tx_id) DO UPDATE SET
+			polp_invest_id = EXCLUDED.polp_invest_id, family = EXCLUDED.family, type = EXCLUDED.type,
+			amount = EXCLUDED.amount, currency = EXCLUDED.currency,
+			occurred_at = EXCLUDED.occurred_at, updated_at = EXCLUDED.updated_at`,
+		t.ID, t.UserID, t.PolpConsentID, t.PolpTxID, t.PolpInvestID, t.Family, t.Type,
+		t.Amount.Decimal(), t.Currency, nullableTime(t.OccurredAt), nullableTime(t.UpdatedAt))
+	if err != nil {
+		return fmt.Errorf("upsert investment transaction: %w", err)
+	}
+	return nil
+}
+
+func (r *FinanceRepository) UpsertOFRaw(ctx context.Context, raw domainfinance.OFRaw) error {
+	payload := raw.Payload
+	if payload == "" {
+		payload = "{}"
+	}
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO finance_of_raw
+			(id, user_id, polp_consent_id, resource, external_id, payload, captured_at)
+		VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)
+		ON CONFLICT (resource, external_id) DO UPDATE SET
+			payload = EXCLUDED.payload, captured_at = EXCLUDED.captured_at`,
+		raw.ID, raw.UserID, raw.PolpConsentID, raw.Resource, raw.ExternalID, payload, nullableTime(raw.CapturedAt))
+	if err != nil {
+		return fmt.Errorf("upsert of raw: %w", err)
 	}
 	return nil
 }

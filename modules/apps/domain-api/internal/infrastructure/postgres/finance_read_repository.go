@@ -426,3 +426,191 @@ func (r *FinanceReadRepository) Investments(ctx context.Context, userID string) 
 	}
 	return out, rows.Err()
 }
+
+// ---------------------------------------------- Open Finance "pegar tudo"
+
+func (r *FinanceReadRepository) CreditCards(ctx context.Context, userID string) (domainfinance.CreditCardList, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, polp_consent_id, name, brand, last4,
+		       credit_limit::text, available_limit::text, balance::text,
+		       currency, due_day, updated_at
+		FROM finance_credit_cards
+		WHERE user_id = $1
+		ORDER BY name ASC`, userID)
+	if err != nil {
+		return domainfinance.CreditCardList{}, fmt.Errorf("credit cards list: %w", err)
+	}
+	defer rows.Close()
+	out := domainfinance.CreditCardList{UserID: userID, CreditCards: []domainfinance.CreditCard{}}
+	for rows.Next() {
+		var c domainfinance.CreditCard
+		var at time.Time
+		if err := rows.Scan(&c.ID, &c.ConsentID, &c.Name, &c.Brand, &c.Last4,
+			&c.CreditLimit, &c.AvailableLimit, &c.Balance, &c.Currency, &c.DueDay, &at); err != nil {
+			return domainfinance.CreditCardList{}, fmt.Errorf("scan credit card: %w", err)
+		}
+		c.UpdatedAt = at.UTC().Format(time.RFC3339)
+		out.CreditCards = append(out.CreditCards, c)
+	}
+	return out, rows.Err()
+}
+
+func (r *FinanceReadRepository) Bills(ctx context.Context, userID string) (domainfinance.BillList, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, polp_card_id, due_date, close_date,
+		       total_amount::text, minimum_amount::text, currency, status, updated_at
+		FROM finance_bills
+		WHERE user_id = $1
+		ORDER BY due_date DESC`, userID)
+	if err != nil {
+		return domainfinance.BillList{}, fmt.Errorf("bills list: %w", err)
+	}
+	defer rows.Close()
+	out := domainfinance.BillList{UserID: userID, Bills: []domainfinance.Bill{}}
+	for rows.Next() {
+		var b domainfinance.Bill
+		var at time.Time
+		if err := rows.Scan(&b.ID, &b.CardID, &b.DueDate, &b.CloseDate,
+			&b.TotalAmount, &b.MinimumAmount, &b.Currency, &b.Status, &at); err != nil {
+			return domainfinance.BillList{}, fmt.Errorf("scan bill: %w", err)
+		}
+		b.UpdatedAt = at.UTC().Format(time.RFC3339)
+		out.Bills = append(out.Bills, b)
+	}
+	return out, rows.Err()
+}
+
+func (r *FinanceReadRepository) Loans(ctx context.Context, userID string) (domainfinance.LoanList, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, name, type, contract_amount::text, outstanding_balance::text,
+		       installment_amount::text, interest_rate, currency, contract_date, due_date,
+		       total_installments, paid_installments, updated_at
+		FROM finance_loans
+		WHERE user_id = $1
+		ORDER BY outstanding_balance DESC`, userID)
+	if err != nil {
+		return domainfinance.LoanList{}, fmt.Errorf("loans list: %w", err)
+	}
+	defer rows.Close()
+	out := domainfinance.LoanList{UserID: userID, Loans: []domainfinance.Loan{}}
+	for rows.Next() {
+		var l domainfinance.Loan
+		var at time.Time
+		if err := rows.Scan(&l.ID, &l.Name, &l.Type, &l.ContractAmount, &l.OutstandingBalance,
+			&l.InstallmentAmount, &l.InterestRate, &l.Currency, &l.ContractDate, &l.DueDate,
+			&l.TotalInstallments, &l.PaidInstallments, &at); err != nil {
+			return domainfinance.LoanList{}, fmt.Errorf("scan loan: %w", err)
+		}
+		l.UpdatedAt = at.UTC().Format(time.RFC3339)
+		out.Loans = append(out.Loans, l)
+	}
+	return out, rows.Err()
+}
+
+func (r *FinanceReadRepository) Financings(ctx context.Context, userID string) (domainfinance.FinancingList, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, name, type, contract_amount::text, outstanding_balance::text,
+		       installment_amount::text, interest_rate, currency, contract_date, due_date,
+		       total_installments, paid_installments, updated_at
+		FROM finance_financings
+		WHERE user_id = $1
+		ORDER BY outstanding_balance DESC`, userID)
+	if err != nil {
+		return domainfinance.FinancingList{}, fmt.Errorf("financings list: %w", err)
+	}
+	defer rows.Close()
+	out := domainfinance.FinancingList{UserID: userID, Financings: []domainfinance.Financing{}}
+	for rows.Next() {
+		var f domainfinance.Financing
+		var at time.Time
+		if err := rows.Scan(&f.ID, &f.Name, &f.Type, &f.ContractAmount, &f.OutstandingBalance,
+			&f.InstallmentAmount, &f.InterestRate, &f.Currency, &f.ContractDate, &f.DueDate,
+			&f.TotalInstallments, &f.PaidInstallments, &at); err != nil {
+			return domainfinance.FinancingList{}, fmt.Errorf("scan financing: %w", err)
+		}
+		f.UpdatedAt = at.UTC().Format(time.RFC3339)
+		out.Financings = append(out.Financings, f)
+	}
+	return out, rows.Err()
+}
+
+func (r *FinanceReadRepository) Exchanges(ctx context.Context, userID string) (domainfinance.ExchangeList, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, type, amount::text, currency, target_currency, exchange_rate,
+		       occurred_at, updated_at
+		FROM finance_exchanges
+		WHERE user_id = $1
+		ORDER BY occurred_at DESC NULLS LAST`, userID)
+	if err != nil {
+		return domainfinance.ExchangeList{}, fmt.Errorf("exchanges list: %w", err)
+	}
+	defer rows.Close()
+	out := domainfinance.ExchangeList{UserID: userID, Exchanges: []domainfinance.Exchange{}}
+	for rows.Next() {
+		var e domainfinance.Exchange
+		var occurred *time.Time
+		var at time.Time
+		if err := rows.Scan(&e.ID, &e.Type, &e.Amount, &e.Currency, &e.TargetCurrency,
+			&e.ExchangeRate, &occurred, &at); err != nil {
+			return domainfinance.ExchangeList{}, fmt.Errorf("scan exchange: %w", err)
+		}
+		if occurred != nil {
+			e.OccurredAt = occurred.UTC().Format(time.RFC3339)
+		}
+		e.UpdatedAt = at.UTC().Format(time.RFC3339)
+		out.Exchanges = append(out.Exchanges, e)
+	}
+	return out, rows.Err()
+}
+
+func (r *FinanceReadRepository) InvestmentTransactions(ctx context.Context, userID string) (domainfinance.InvestmentTransactionList, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, polp_invest_id, family, type, amount::text, currency,
+		       occurred_at, updated_at
+		FROM finance_investment_transactions
+		WHERE user_id = $1
+		ORDER BY occurred_at DESC NULLS LAST`, userID)
+	if err != nil {
+		return domainfinance.InvestmentTransactionList{}, fmt.Errorf("investment transactions list: %w", err)
+	}
+	defer rows.Close()
+	out := domainfinance.InvestmentTransactionList{UserID: userID, InvestmentTransactions: []domainfinance.InvestmentTransaction{}}
+	for rows.Next() {
+		var t domainfinance.InvestmentTransaction
+		var occurred *time.Time
+		var at time.Time
+		if err := rows.Scan(&t.ID, &t.InvestID, &t.Family, &t.Type, &t.Amount, &t.Currency,
+			&occurred, &at); err != nil {
+			return domainfinance.InvestmentTransactionList{}, fmt.Errorf("scan investment transaction: %w", err)
+		}
+		if occurred != nil {
+			t.OccurredAt = occurred.UTC().Format(time.RFC3339)
+		}
+		t.UpdatedAt = at.UTC().Format(time.RFC3339)
+		out.InvestmentTransactions = append(out.InvestmentTransactions, t)
+	}
+	return out, rows.Err()
+}
+
+func (r *FinanceReadRepository) OFRaw(ctx context.Context, userID string) (domainfinance.OFRawList, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, resource, external_id, payload::text, captured_at
+		FROM finance_of_raw
+		WHERE user_id = $1
+		ORDER BY captured_at DESC`, userID)
+	if err != nil {
+		return domainfinance.OFRawList{}, fmt.Errorf("of raw list: %w", err)
+	}
+	defer rows.Close()
+	out := domainfinance.OFRawList{UserID: userID, Records: []domainfinance.OFRawRecord{}}
+	for rows.Next() {
+		var rec domainfinance.OFRawRecord
+		var at time.Time
+		if err := rows.Scan(&rec.ID, &rec.Resource, &rec.ExternalID, &rec.Payload, &at); err != nil {
+			return domainfinance.OFRawList{}, fmt.Errorf("scan of raw: %w", err)
+		}
+		rec.CapturedAt = at.UTC().Format(time.RFC3339)
+		out.Records = append(out.Records, rec)
+	}
+	return out, rows.Err()
+}

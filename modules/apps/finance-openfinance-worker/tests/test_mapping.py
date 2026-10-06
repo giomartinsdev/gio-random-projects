@@ -11,9 +11,16 @@ if str(SRC) not in sys.path:
 
 from finance_openfinance_worker.sync.mapping import (  # noqa: E402
     amount_decimal,
+    bill_to_command,
+    credit_card_to_command,
+    exchange_to_command,
+    financing_to_command,
+    investment_transaction_to_command,
+    loan_to_command,
     map_category,
     merchant_name,
     occurred_at_iso,
+    raw_to_command,
     transaction_to_command,
 )
 
@@ -90,3 +97,78 @@ def test_counterparty_alias_is_preferred():
         user_id="u", of_account_id="a",
     )
     assert cmd["counterparty"] == "Netflix"
+
+
+def test_credit_card_maps_limits_and_last4():
+    cmd = credit_card_to_command(
+        {"id": "cc1", "name": "Cartão Universitário", "credit_card_network": "VISA",
+         "payment_methods": [{"identification_number": "4453"}],
+         "limits": [{"limit_amount": {"amount": "5000.00", "currency": "BRL"},
+                      "available_amount": {"amount": "3800.00", "currency": "BRL"},
+                      "used_amount": {"amount": "1200.00", "currency": "BRL"}}]},
+        user_id="u", consent_id="c1",
+    )
+    assert cmd["polp_card_id"] == "cc1"
+    assert cmd["brand"] == "VISA"
+    assert cmd["last4"] == "4453"
+    assert cmd["credit_limit"] == "5000.00"
+    assert cmd["available_limit"] == "3800.00"
+    assert cmd["balance"] == "1200.00"
+
+
+def test_bill_maps_total():
+    cmd = bill_to_command(
+        {"id": "b1", "due_date": "2026-11-10", "status": "OPEN",
+         "total_amount": {"amount": "175.50", "currency": "BRL"}},
+        user_id="u", consent_id="c1", card_id="cc1",
+    )
+    assert cmd["polp_bill_id"] == "b1"
+    assert cmd["polp_card_id"] == "cc1"
+    assert cmd["total_amount"] == "175.50"
+
+
+def test_loan_maps_contract_and_outstanding():
+    cmd = loan_to_command(
+        {"id": "l1", "product_name": "Crédito Consignado", "product_type": "EMPRESTIMOS",
+         "product_sub_type": "CREDITO_PESSOAL_COM_CONSIGNACAO", "contract_amount": "50000.0000",
+         "next_instalment_amount": "1250.0000", "currency": "BRL", "due_date": "2028-01-15",
+         "interest_rates": [{"pre_fixed_rate": "0.150000"}],
+         "scheduled_instalments": {"total_number_of_instalments": 48, "paid_instalments": 12},
+         "payments": {"contract_outstanding_balance": "45000.00"}},
+        user_id="u", consent_id="c1",
+    )
+    assert cmd["polp_loan_id"] == "l1"
+    assert cmd["contract_amount"] == "50000.00"
+    assert cmd["outstanding_balance"] == "45000.00"
+    assert cmd["installment_amount"] == "1250.00"
+    assert cmd["total_installments"] == "48"
+
+
+def test_exchange_maps_amount():
+    cmd = exchange_to_command(
+        {"id": "x1", "type": "COMPRA", "amount": {"amount": "1000.00", "currency": "BRL"},
+         "target_currency": "USD", "occurred_at": "2026-10-01T10:00:00Z"},
+        user_id="u", consent_id="c1",
+    )
+    assert cmd["polp_exchange_id"] == "x1"
+    assert cmd["amount"] == "1000.00"
+    assert cmd["target_currency"] == "USD"
+
+
+def test_investment_transaction_maps_movement():
+    cmd = investment_transaction_to_command(
+        {"id": "it1", "type": "RENDIMENTO", "amount": {"amount": "12.34", "currency": "BRL"},
+         "occurred_at": "2026-10-02T10:00:00Z"},
+        user_id="u", consent_id="c1", invest_id="inv1", family="bank-fixed-incomes",
+    )
+    assert cmd["polp_tx_id"] == "it1"
+    assert cmd["polp_invest_id"] == "inv1"
+    assert cmd["amount"] == "12.34"
+
+
+def test_raw_serializes_the_whole_payload():
+    cmd = raw_to_command({"id": "r1", "any": ["field", 1]}, user_id="u", consent_id="c1",
+                         resource="credit_cards", external_id="r1")
+    assert cmd["resource"] == "credit_cards"
+    assert cmd["external_id"] == "r1"
+    assert '"any"' in cmd["payload"]

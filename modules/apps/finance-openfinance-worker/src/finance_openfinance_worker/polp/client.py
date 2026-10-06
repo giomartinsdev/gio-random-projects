@@ -95,6 +95,37 @@ class PolpClient:
                 return []
             raise
 
+    # ----------------------------------------------------- "pegar tudo"
+    # Cada recurso tem sua rota sob o consentimento. Ausência (404 — consent
+    # sem o product, Sandbox sem rota) é lista vazia honesta, nunca erro.
+    def _optional(self, path: str) -> list[Mapping[str, Any]]:
+        try:
+            return _data(self._get(path))
+        except PolpError as exc:
+            if "404" in str(exc):
+                return []
+            raise
+
+    def credit_cards(self, consent_id: str) -> list[Mapping[str, Any]]:
+        return self._optional(f"/consents/{consent_id}/credit-cards")
+
+    def bills(self, credit_card_id: str) -> list[Mapping[str, Any]]:
+        """Faturas de um cartão (a doc põe as faturas sob o cartão)."""
+        return self._optional(f"/credit-cards/{credit_card_id}/bills")
+
+    def loans(self, consent_id: str) -> list[Mapping[str, Any]]:
+        return self._optional(f"/consents/{consent_id}/loans")
+
+    def financings(self, consent_id: str) -> list[Mapping[str, Any]]:
+        return self._optional(f"/consents/{consent_id}/financings")
+
+    def exchanges(self, consent_id: str) -> list[Mapping[str, Any]]:
+        return self._optional(f"/consents/{consent_id}/exchanges")
+
+    # Saldos reservados por conta (nem toda conta tem; 404 é vazio).
+    def account_reserved_balances(self, account_id: str) -> list[Mapping[str, Any]]:
+        return self._optional(f"/accounts/{account_id}/reserved-balances")
+
 
 def _short(resp: httpx.Response) -> str:
     try:

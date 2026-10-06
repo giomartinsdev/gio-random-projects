@@ -9,6 +9,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -235,4 +236,47 @@ func (h *FinanceHandlers) GetInvestments(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// getOFProjection lê user_id e uma projeção; erro é interno. Helper dos
+// recursos do Open Finance "pegar tudo" (mesma forma de GetInvestments).
+func (h *FinanceHandlers) getOFProjection(w http.ResponseWriter, r *http.Request, read func(context.Context, string) (any, error)) {
+	userID, ok := financeUserID(w, r)
+	if !ok {
+		return
+	}
+	out, err := read(r.Context(), userID)
+	if err != nil {
+		h.internalError(r, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *FinanceHandlers) GetCreditCards(w http.ResponseWriter, r *http.Request) {
+	h.getOFProjection(w, r, func(ctx context.Context, u string) (any, error) { return h.reads.CreditCards(ctx, u) })
+}
+
+func (h *FinanceHandlers) GetBills(w http.ResponseWriter, r *http.Request) {
+	h.getOFProjection(w, r, func(ctx context.Context, u string) (any, error) { return h.reads.Bills(ctx, u) })
+}
+
+func (h *FinanceHandlers) GetLoans(w http.ResponseWriter, r *http.Request) {
+	h.getOFProjection(w, r, func(ctx context.Context, u string) (any, error) { return h.reads.Loans(ctx, u) })
+}
+
+func (h *FinanceHandlers) GetFinancings(w http.ResponseWriter, r *http.Request) {
+	h.getOFProjection(w, r, func(ctx context.Context, u string) (any, error) { return h.reads.Financings(ctx, u) })
+}
+
+func (h *FinanceHandlers) GetExchanges(w http.ResponseWriter, r *http.Request) {
+	h.getOFProjection(w, r, func(ctx context.Context, u string) (any, error) { return h.reads.Exchanges(ctx, u) })
+}
+
+func (h *FinanceHandlers) GetInvestmentTransactions(w http.ResponseWriter, r *http.Request) {
+	h.getOFProjection(w, r, func(ctx context.Context, u string) (any, error) { return h.reads.InvestmentTransactions(ctx, u) })
+}
+
+func (h *FinanceHandlers) GetOFRaw(w http.ResponseWriter, r *http.Request) {
+	h.getOFProjection(w, r, func(ctx context.Context, u string) (any, error) { return h.reads.OFRaw(ctx, u) })
 }

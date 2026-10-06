@@ -74,6 +74,25 @@ def test_consent_show_unwraps_the_data_envelope():
     assert out["status"] == "AUTHORISED"
 
 
+def test_recreate_posts_products_and_unwraps_the_new_consent():
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["method"] = req.method
+        seen["path"] = req.url.path
+        seen["body"] = req.read().decode()
+        return httpx.Response(
+            200,
+            json={"data": {"id": "c9", "status": "AWAITING_AUTHORIZATION", "url_to_authenticate": "https://bank/renew"}},
+        )
+
+    out = client_for(handler).recreate_consent("c9", products=["ACCOUNT", "INVESTMENTS"])
+    assert seen["method"] == "POST"
+    assert seen["path"].endswith("/consents/c9/recreate")
+    assert '"products":["ACCOUNT","INVESTMENTS"]' in seen["body"].replace(" ", "")
+    assert out["url_to_authenticate"] == "https://bank/renew"
+
+
 def test_list_endpoints_still_extract_the_data_array():
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": [{"id": "a"}, {"id": "b"}], "meta": {"per_page": 15}})

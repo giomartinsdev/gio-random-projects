@@ -192,6 +192,13 @@ type ReadRepository interface {
 	OFConsents(ctx context.Context, userID string) (OFConsentList, error)
 	OFAccounts(ctx context.Context, userID string) (OFAccountList, error)
 	Investments(ctx context.Context, userID string) (InvestmentList, error)
+	CreditCards(ctx context.Context, userID string) (CreditCardList, error)
+	Bills(ctx context.Context, userID string) (BillList, error)
+	Loans(ctx context.Context, userID string) (LoanList, error)
+	Financings(ctx context.Context, userID string) (FinancingList, error)
+	Exchanges(ctx context.Context, userID string) (ExchangeList, error)
+	InvestmentTransactions(ctx context.Context, userID string) (InvestmentTransactionList, error)
+	OFRaw(ctx context.Context, userID string) (OFRawList, error)
 }
 
 // Investment is one investment position imported from Open Finance.
@@ -223,4 +230,122 @@ type Investment struct {
 type InvestmentList struct {
 	UserID       string        `json:"user_id"`
 	Investments  []Investment  `json:"investments"`
+}
+
+// ------------------------------------------------- Open Finance "pegar tudo"
+
+type CreditCard struct {
+	ID             string `json:"id"`
+	ConsentID      string `json:"consent_id"`
+	Name           string `json:"name"`
+	Brand          string `json:"brand"`
+	Last4          string `json:"last4"`
+	CreditLimit    string `json:"credit_limit"`
+	AvailableLimit string `json:"available_limit"`
+	Balance        string `json:"balance"`
+	Currency       string `json:"currency"`
+	DueDay         string `json:"due_day"`
+	UpdatedAt      string `json:"updated_at"`
+}
+type CreditCardList struct {
+	UserID      string       `json:"user_id"`
+	CreditCards []CreditCard `json:"credit_cards"`
+}
+
+type Bill struct {
+	ID            string `json:"id"`
+	CardID        string `json:"card_id"`
+	DueDate       string `json:"due_date"`
+	CloseDate     string `json:"close_date"`
+	TotalAmount   string `json:"total_amount"`
+	MinimumAmount string `json:"minimum_amount"`
+	Currency      string `json:"currency"`
+	Status        string `json:"status"`
+	UpdatedAt     string `json:"updated_at"`
+}
+type BillList struct {
+	UserID string `json:"user_id"`
+	Bills  []Bill `json:"bills"`
+}
+
+type Loan struct {
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	Type               string `json:"type"`
+	ContractAmount     string `json:"contract_amount"`
+	OutstandingBalance string `json:"outstanding_balance"`
+	InstallmentAmount  string `json:"installment_amount"`
+	InterestRate       string `json:"interest_rate"`
+	Currency           string `json:"currency"`
+	ContractDate       string `json:"contract_date"`
+	DueDate            string `json:"due_date"`
+	TotalInstallments  string `json:"total_installments"`
+	PaidInstallments   string `json:"paid_installments"`
+	UpdatedAt          string `json:"updated_at"`
+}
+type LoanList struct {
+	UserID string `json:"user_id"`
+	Loans  []Loan `json:"loans"`
+}
+
+type Financing struct {
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	Type               string `json:"type"`
+	ContractAmount     string `json:"contract_amount"`
+	OutstandingBalance string `json:"outstanding_balance"`
+	InstallmentAmount  string `json:"installment_amount"`
+	InterestRate       string `json:"interest_rate"`
+	Currency           string `json:"currency"`
+	ContractDate       string `json:"contract_date"`
+	DueDate            string `json:"due_date"`
+	TotalInstallments  string `json:"total_installments"`
+	PaidInstallments   string `json:"paid_installments"`
+	UpdatedAt          string `json:"updated_at"`
+}
+type FinancingList struct {
+	UserID     string      `json:"user_id"`
+	Financings []Financing `json:"financings"`
+}
+
+type Exchange struct {
+	ID             string `json:"id"`
+	Type           string `json:"type"`
+	Amount         string `json:"amount"`
+	Currency       string `json:"currency"`
+	TargetCurrency string `json:"target_currency"`
+	ExchangeRate   string `json:"exchange_rate"`
+	OccurredAt     string `json:"occurred_at,omitempty"`
+	UpdatedAt      string `json:"updated_at"`
+}
+type ExchangeList struct {
+	UserID    string     `json:"user_id"`
+	Exchanges []Exchange `json:"exchanges"`
+}
+
+type InvestmentTransaction struct {
+	ID         string `json:"id"`
+	InvestID   string `json:"invest_id"`
+	Family     string `json:"family"`
+	Type       string `json:"type"`
+	Amount     string `json:"amount"`
+	Currency   string `json:"currency"`
+	OccurredAt string `json:"occurred_at,omitempty"`
+	UpdatedAt  string `json:"updated_at"`
+}
+type InvestmentTransactionList struct {
+	UserID                 string                  `json:"user_id"`
+	InvestmentTransactions []InvestmentTransaction `json:"investment_transactions"`
+}
+
+type OFRawRecord struct {
+	ID         string `json:"id"`
+	Resource   string `json:"resource"`
+	ExternalID string `json:"external_id"`
+	Payload    string `json:"payload"`
+	CapturedAt string `json:"captured_at"`
+}
+type OFRawList struct {
+	UserID  string        `json:"user_id"`
+	Records []OFRawRecord `json:"records"`
 }

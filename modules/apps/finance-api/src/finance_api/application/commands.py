@@ -20,7 +20,15 @@ from typing import Any, Callable, Final, Mapping
 
 from finance_contracts import (
     ACTION_CATEGORIZE_TRANSACTION,
+    ACTION_INVESTMENT_SYNCED,
+    ACTION_INVESTMENT_TRANSACTION_SYNCED,
     ACTION_OF_ACCOUNT_SYNCED,
+    ACTION_OF_BILL_SYNCED,
+    ACTION_OF_CREDIT_CARD_SYNCED,
+    ACTION_OF_EXCHANGE_SYNCED,
+    ACTION_OF_FINANCING_SYNCED,
+    ACTION_OF_LOAN_SYNCED,
+    ACTION_OF_RAW_SYNCED,
     ACTION_NOTIF_DELETE,
     ACTION_NOTIF_SET,
     ACTION_OF_CONSENT_CREATED,
@@ -87,6 +95,17 @@ _WRITE_COMMANDS: Final[Mapping[str, Callable[[Mapping[str, Any]], Any]]] = {
     ACTION_NOTIF_SET: _Prebuilt,
     ACTION_NOTIF_DELETE: _Prebuilt,
     ACTION_OF_ACCOUNT_SYNCED: _Prebuilt,
+    # Investimentos: o conector monta o payload das 5 famílias do Celcoin/Polp.
+    ACTION_INVESTMENT_SYNCED: _Prebuilt,
+    ACTION_INVESTMENT_TRANSACTION_SYNCED: _Prebuilt,
+    # Demais recursos do Open Finance ("pegar tudo"): o conector monta o payload
+    # normalizado de cada um; a captura raw preserva o JSON cru do provedor.
+    ACTION_OF_CREDIT_CARD_SYNCED: _Prebuilt,
+    ACTION_OF_BILL_SYNCED: _Prebuilt,
+    ACTION_OF_LOAN_SYNCED: _Prebuilt,
+    ACTION_OF_FINANCING_SYNCED: _Prebuilt,
+    ACTION_OF_EXCHANGE_SYNCED: _Prebuilt,
+    ACTION_OF_RAW_SYNCED: _Prebuilt,
 }
 
 RELAY_MODE_ASYNC: Final = "async"

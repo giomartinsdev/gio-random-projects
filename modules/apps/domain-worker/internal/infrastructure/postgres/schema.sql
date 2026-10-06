@@ -612,3 +612,134 @@ ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS ticker TEXT NOT NULL DE
 ALTER TABLE finance_investments ADD COLUMN IF NOT EXISTS family TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_investments_external
     ON finance_investments (polp_invest_id);
+
+-- ===========================================================================
+-- Open Finance "pegar tudo": cartões, faturas, empréstimos, financiamentos,
+-- câmbio, movimentações de investimento e a captura RAW. Cada tabela é
+-- idempotente pelo id do provedor (polp_*) e filtra por user_id.
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS finance_credit_cards (
+    id              UUID PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    polp_consent_id TEXT NOT NULL DEFAULT '',
+    polp_card_id    TEXT NOT NULL,
+    name            TEXT NOT NULL DEFAULT '',
+    brand           TEXT NOT NULL DEFAULT '',
+    last4           TEXT NOT NULL DEFAULT '',
+    credit_limit    NUMERIC(14,2) NOT NULL DEFAULT 0,
+    available_limit NUMERIC(14,2) NOT NULL DEFAULT 0,
+    balance         NUMERIC(14,2) NOT NULL DEFAULT 0,
+    currency        TEXT NOT NULL DEFAULT 'BRL',
+    due_day         TEXT NOT NULL DEFAULT '',
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_credit_cards_user ON finance_credit_cards (user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_credit_cards_external ON finance_credit_cards (polp_card_id);
+
+CREATE TABLE IF NOT EXISTS finance_bills (
+    id             UUID PRIMARY KEY,
+    user_id        TEXT NOT NULL,
+    polp_consent_id TEXT NOT NULL DEFAULT '',
+    polp_bill_id   TEXT NOT NULL,
+    polp_card_id   TEXT NOT NULL DEFAULT '',
+    due_date       TEXT NOT NULL DEFAULT '',
+    close_date     TEXT NOT NULL DEFAULT '',
+    total_amount   NUMERIC(14,2) NOT NULL DEFAULT 0,
+    minimum_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+    currency       TEXT NOT NULL DEFAULT 'BRL',
+    status         TEXT NOT NULL DEFAULT '',
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_bills_user ON finance_bills (user_id, due_date DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_bills_external ON finance_bills (polp_bill_id);
+
+CREATE TABLE IF NOT EXISTS finance_loans (
+    id                  UUID PRIMARY KEY,
+    user_id             TEXT NOT NULL,
+    polp_consent_id     TEXT NOT NULL DEFAULT '',
+    polp_loan_id        TEXT NOT NULL,
+    name                TEXT NOT NULL DEFAULT '',
+    type                TEXT NOT NULL DEFAULT '',
+    contract_amount     NUMERIC(14,2) NOT NULL DEFAULT 0,
+    outstanding_balance NUMERIC(14,2) NOT NULL DEFAULT 0,
+    installment_amount  NUMERIC(14,2) NOT NULL DEFAULT 0,
+    interest_rate       TEXT NOT NULL DEFAULT '',
+    currency            TEXT NOT NULL DEFAULT 'BRL',
+    contract_date       TEXT NOT NULL DEFAULT '',
+    due_date            TEXT NOT NULL DEFAULT '',
+    total_installments  TEXT NOT NULL DEFAULT '',
+    paid_installments   TEXT NOT NULL DEFAULT '',
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_loans_user ON finance_loans (user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_loans_external ON finance_loans (polp_loan_id);
+
+CREATE TABLE IF NOT EXISTS finance_financings (
+    id                  UUID PRIMARY KEY,
+    user_id             TEXT NOT NULL,
+    polp_consent_id     TEXT NOT NULL DEFAULT '',
+    polp_financing_id   TEXT NOT NULL,
+    name                TEXT NOT NULL DEFAULT '',
+    type                TEXT NOT NULL DEFAULT '',
+    contract_amount     NUMERIC(14,2) NOT NULL DEFAULT 0,
+    outstanding_balance NUMERIC(14,2) NOT NULL DEFAULT 0,
+    installment_amount  NUMERIC(14,2) NOT NULL DEFAULT 0,
+    interest_rate       TEXT NOT NULL DEFAULT '',
+    currency            TEXT NOT NULL DEFAULT 'BRL',
+    contract_date       TEXT NOT NULL DEFAULT '',
+    due_date            TEXT NOT NULL DEFAULT '',
+    total_installments  TEXT NOT NULL DEFAULT '',
+    paid_installments   TEXT NOT NULL DEFAULT '',
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_financings_user ON finance_financings (user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_financings_external ON finance_financings (polp_financing_id);
+
+CREATE TABLE IF NOT EXISTS finance_exchanges (
+    id               UUID PRIMARY KEY,
+    user_id          TEXT NOT NULL,
+    polp_consent_id  TEXT NOT NULL DEFAULT '',
+    polp_exchange_id TEXT NOT NULL,
+    type             TEXT NOT NULL DEFAULT '',
+    amount           NUMERIC(14,2) NOT NULL DEFAULT 0,
+    currency         TEXT NOT NULL DEFAULT 'BRL',
+    target_currency  TEXT NOT NULL DEFAULT '',
+    exchange_rate    TEXT NOT NULL DEFAULT '',
+    occurred_at      TIMESTAMPTZ,
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_exchanges_user ON finance_exchanges (user_id, occurred_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_exchanges_external ON finance_exchanges (polp_exchange_id);
+
+CREATE TABLE IF NOT EXISTS finance_investment_transactions (
+    id              UUID PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    polp_consent_id TEXT NOT NULL DEFAULT '',
+    polp_tx_id      TEXT NOT NULL,
+    polp_invest_id  TEXT NOT NULL DEFAULT '',
+    family          TEXT NOT NULL DEFAULT '',
+    type            TEXT NOT NULL DEFAULT '',
+    amount          NUMERIC(18,2) NOT NULL DEFAULT 0,
+    currency        TEXT NOT NULL DEFAULT 'BRL',
+    occurred_at     TIMESTAMPTZ,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_investment_tx_user ON finance_investment_transactions (user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_finance_investment_tx_invest ON finance_investment_transactions (polp_invest_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_investment_tx_external ON finance_investment_transactions (polp_tx_id);
+
+-- Captura RAW: o JSON cru de QUALQUER recurso do provedor. É a garantia de
+-- "não perder nada" — mesmo recurso sem tabela normalizada fica preservado.
+CREATE TABLE IF NOT EXISTS finance_of_raw (
+    id              UUID PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    polp_consent_id TEXT NOT NULL DEFAULT '',
+    resource        TEXT NOT NULL,
+    external_id     TEXT NOT NULL,
+    payload         JSONB NOT NULL,
+    captured_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_finance_of_raw_user ON finance_of_raw (user_id);
+CREATE INDEX IF NOT EXISTS idx_finance_of_raw_resource ON finance_of_raw (user_id, resource);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_of_raw_external ON finance_of_raw (resource, external_id);
