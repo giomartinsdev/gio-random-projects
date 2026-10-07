@@ -165,6 +165,16 @@ locals {
       hostname = "otel.giomartins.dev"
       port     = 4318
     },
+    {
+      # db-mcp -- MCP de leitura do banco (stacks/db-mcp.yml) para o agente.
+      # A porta e a loopback publicada pelo gateway (127.0.0.1:8021) e tem de
+      # bater com o server{} de stacks/ingress/default.conf. AUTH proprio
+      # (token bearer no gateway), sem Cloudflare Access -- um cliente MCP
+      # nao-browser nao completa o redirect de SSO. O hostname esta em
+      # excluded_hostnames.
+      hostname = "db-mcp.giomartins.dev"
+      port     = 8021
+    },
   ]
 
   # Static SPAs served straight out of a MinIO bucket -- no container

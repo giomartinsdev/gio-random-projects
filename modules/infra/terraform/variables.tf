@@ -50,6 +50,7 @@ variable "excluded_hostnames" {
     "maus.giomartins.dev",        # only the DNS record lives in Terraform (the OpenMausBot stack is a Dockhand git stack, like the other apps); no Access app — OpenMausBot's own pairing login is the gate, and its SSE chat must not sit behind a browser SSO redirect
     "finance-api.giomartins.dev", # no Cloudflare Access — own X-API-Key auth; the finance SPA calls it cross-origin from the browser, and a Google SSO redirect would break every fetch (same reason as clubs-api)
     "finance.giomartins.dev",     # the finance SPA is public and must be iframe-embeddable in the hub (like tela/clubs); the operator pastes the X-API-Key in the page itself, not an Access redirect
+    "db-mcp.giomartins.dev",      # MCP do banco: cliente não-browser (agente) não completa redirect de SSO; o gateway nginx valida um token bearer próprio (stack db-mcp, MCP_DB_TOKEN)
   ]
 }
 

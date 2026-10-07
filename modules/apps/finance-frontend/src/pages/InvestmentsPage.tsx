@@ -1,24 +1,29 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChartLine, TrendingDown, TrendingUp } from "lucide-react";
-import { api, formatBRL, type Investment } from "@/lib/api";
+import { api, formatBRL, type Investment, type InvestmentTransaction } from "@/lib/api";
 import { Card, Cockpit, Empty, Kpi } from "@/components/primitives";
 import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { cn } from "@/lib/utils";
 
 // Investimentos no formato cockpit: rail esquerdo com o consolidado (total
 // investido, bruto, rendimento e o insight da posição melhor), centro com as
-// posições, rail direito com os rendimentos recentes por ativo. Os dados vêm
-// do Open Finance (Celcoin via conector): posições + rendimentos, com o
-// webhook puxando na hora. Refetch a cada 30s (rendimento é lento por natureza).
+// posições, rail direito com as movimentações REAIS do provedor (aplicação,
+// aluguel/rendimento, resgate). Os dados vêm do Open Finance (Celcoin via
+// conector). Refetch a cada 30s.
 export function InvestmentsPage() {
   const [items, setItems] = useState<Investment[]>([]);
+  const [moves, setMoves] = useState<InvestmentTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const r = await api.investments();
-      setItems(r.investments ?? []);
+      const [inv, tx] = await Promise.all([
+        api.investments(),
+        api.investmentTransactions().catch(() => ({ investment_transactions: [] })),
+      ]);
+      setItems(inv.investments ?? []);
+      setMoves(tx.investment_transactions ?? []);
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "não consegui carregar os investimentos");
@@ -43,7 +48,20 @@ export function InvestmentsPage() {
   const yieldAmt = grossWithCost - invested;
   const yieldPct = invested > 0 ? (yieldAmt / invested) * 100 : 0;
   const best = withCost.filter((i) => Number(i.yield_amount) > 0).sort((a, b) => Number(b.yield_percent) - Number(a.yield_percent))[0];
-  const winners = withCost.filter((i) => Number(i.yield_amount) > 0);
+
+  // Nome do ativo por polp_invest_id, para rotular as movimentações.
+  const nameById = useMemo(() => {
+    const m = new Map<string, Investment>();
+    for (const i of items) m.set(i.id, i);
+    return m;
+  }, [items]);
+  const recentMoves = useMemo(
+    () =>
+      [...moves]
+        .sort((a, b) => (b.occurred_at || b.updated_at).localeCompare(a.occurred_at || a.updated_at))
+        .slice(0, 8),
+    [moves],
+  );
 
   const left = (
     <>
@@ -128,25 +146,45 @@ export function InvestmentsPage() {
   );
 
   const right = (
-    <Card title="Rendimentos recentes" right={<ChartLine className="size-3.5 text-fg-dim" />}>
-      {winners.length === 0 ? (
-        <Empty text="Sem rendimentos positivos ainda." />
+    <Card title="Movimentações" right={<ChartLine className="size-3.5 text-fg-dim" />}>
+      {recentMoves.length === 0 ? (
+        <Empty text="Sem movimentações ainda." />
       ) : (
         <ul>
-          {winners.slice(0, 7).map((i) => (
-            <li key={"y-" + i.id} className="ev" style={{ gridTemplateColumns: "64px 1fr auto" }}>
-              <time>{new Date(i.updated_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</time>
-              <p className="min-w-0">
-                <span className="block truncate text-[12px]">{i.name}</span>
-                <span className="block text-[10.5px] dim">{i.institution_name}</span>
-              </p>
-              <span className="tnum text-[12px] text-up">{formatBRL(i.yield_amount, { signed: true })}</span>
-            </li>
-          ))}
+          {recentMoves.map((t) => {
+            const inv = nameById.get(t.invest_id);
+            return (
+              <li key={t.id} className="ev" style={{ gridTemplateColumns: "56px 1fr auto" }}>
+                <time>
+                  {new Date((t.occurred_at || t.updated_at)).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                </time>
+                <p className="min-w-0">
+                  <span className="block truncate text-[12px]">{inv?.ticker || inv?.name || "Ativo"}</span>
+                  <span className="block text-[10.5px] dim">{moveLabel(t.type)}</span>
+                </p>
+                <span className="tnum text-[12px]">{formatBRL(t.amount, { signed: true })}</span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </Card>
   );
 
   return <Cockpit left={left} center={center} right={right} />;
+}
+
+// Rótulo curto do tipo de movimentação do provedor (renda variável/fixa).
+function moveLabel(type: string): string {
+  const t = (type || "").toUpperCase();
+  const map: Record<string, string> = {
+    ALUGUEIS: "aluguel",
+    APLICACAO: "aplicação",
+    RESGATE: "resgate",
+    PAGAMENTO_JUROS: "juros",
+    AMORTIZACAO: "amortização",
+    VENCIMENTO: "vencimento",
+    RENDIMENTO: "rendimento",
+  };
+  return map[t] || t.toLowerCase() || "movimentação";
 }

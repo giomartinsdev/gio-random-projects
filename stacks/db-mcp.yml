@@ -1,0 +1,61 @@
+# db-mcp.yml — MCP de leitura do banco (crystaldba/postgres-mcp) atrás de um
+# gateway nginx com token.
+#
+# Por que existe: dar ao agente (opencode) acesso de LEITURA ao Postgres para
+# responderes a perguntas com dados reais, sem nunca usar o usuário `domain`
+# (que é superuser/dono das tabelas) e sem expor o banco.
+#
+# Três camadas de segurança:
+#   1. Usuário `mcp_ro` — LOGIN, só SELECT nas tabelas `finance_*`, sem DDL,
+#      sem escrita (criado fora do compose, idempotente; ver README).
+#   2. postgres-mcp em `--access-mode=restricted` (transações read-only) —
+#      mesmo que o token vaze, o MCP não escreve.
+#   3. Gateway nginx com token bearer (`MCP_DB_TOKEN`, variável de stack no
+#      Dockhand) — única porta que o ingress alcança; sem token, 401.
+#
+# Segredos (variáveis de stack no Dockhand):
+#   MCP_DB_PASSWORD — senha do usuário mcp_ro (a mesma gravada no Postgres)
+#   MCP_DB_TOKEN    — token bearer do gateway (>=32 bytes)
+#
+# Porte: o postgres-mcp NÃO publica porta (só a rede `apps`); o gateway publica
+# 127.0.0.1:8021, que o ingress proxiará em db-mcp.giomartins.dev.
+name: db-mcp
+
+services:
+  db-mcp:
+    image: crystaldba/postgres-mcp:latest
+    container_name: db-mcp
+    restart: unless-stopped
+    command: ["--access-mode=restricted", "--transport=sse",
+              "--sse-host=0.0.0.0", "--sse-port=8000"]
+    environment:
+      # Usuário read-only; host `postgres` pela rede `apps`.
+      DATABASE_URI: postgresql://mcp_ro:${MCP_DB_PASSWORD:?defina MCP_DB_PASSWORD}@postgres:5432/domain
+    networks: [apps]
+
+  db-mcp-gateway:
+    image: nginx:1.27-alpine
+    container_name: db-mcp-gateway
+    restart: unless-stopped
+    depends_on: [db-mcp]
+    environment:
+      MCP_DB_TOKEN: ${MCP_DB_TOKEN:?defina MCP_DB_TOKEN}
+    # O config é renderizado no boot: o token vira literal no map de auth
+    # (não há env var em server_name). Assim o token nunca fica no git.
+    command:
+      - sh
+      - -c
+      - |
+        sed "s|__MCP_DB_TOKEN__|$$MCP_DB_TOKEN|g" /etc/nginx/mcp-gateway.conf.tmpl \
+          > /etc/nginx/conf.d/default.conf
+        exec nginx -g 'daemon off;'
+    volumes:
+      - ./db-mcp/mcp-gateway.conf.tmpl:/etc/nginx/mcp-gateway.conf.tmpl:ro
+    ports:
+      - "127.0.0.1:8021:8000"
+    networks: [apps]
+
+networks:
+  apps:
+    external: true
+    name: apps
