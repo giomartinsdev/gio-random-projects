@@ -19,6 +19,7 @@ export function LoginPage() {
   const [remember, setRemember] = useState(true);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [apiError, setApiError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   function validate(): boolean {
@@ -45,16 +46,26 @@ export function LoginPage() {
   }
 
   // Usuário existente: o AuthProvider já assume a sessão e seguimos pro app.
-  // Usuário novo: guardamos o rascunho e caímos direto no passo da empresa do
-  // cadastro (a conta já vem verificada pelo Google).
+  // Usuário novo: avisamos que não há conta e caímos no cadastro, já com a
+  // conta Google verificada (o rascunho pula o passo de senha).
   async function handleGoogle(credential: string) {
     setApiError(null);
+    setNotice(null);
     setBusy(true);
     try {
       const result = await googleLogin(credential);
       if ("needs_onboarding" in result) {
         setGoogleDraft({ email: result.email, name: result.name, google_credential: credential });
-        navigatePublic("signup");
+        setNotice("Não encontramos uma conta para " + result.email + ". Vamos criar a sua — continuando no cadastro.");
+        try {
+          sessionStorage.setItem(
+            "prospecta:auth-flash",
+            "Sua conta Google foi verificada. Falta só cadastrar a empresa para começar.",
+          );
+        } catch {
+          // storage indisponível: o aviso fica só nesta tela.
+        }
+        window.setTimeout(() => navigatePublic("signup"), 1400);
       } else {
         navigate("cockpit");
       }
@@ -77,6 +88,7 @@ export function LoginPage() {
           </div>
 
           {apiError && <AuthAlert kind="error">{apiError}</AuthAlert>}
+          {notice && <AuthAlert kind="info">{notice}</AuthAlert>}
 
           <AuthField label="E-mail" error={errors.email}>
             <AuthInput

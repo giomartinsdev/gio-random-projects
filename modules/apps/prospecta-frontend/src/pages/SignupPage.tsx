@@ -34,6 +34,17 @@ export function SignupPage() {
   // Pulamos o passo de conta/senha e caímos direto na empresa.
   const [googleDraft, setDraft] = useState<GoogleSignupDraft | null>(() => getGoogleDraft());
   const isGoogle = googleDraft !== null;
+  // Aviso vindo da tela de login (ex.: conta Google ainda sem cadastro). É um
+  // recado de sucesso, não um erro de formulário.
+  const [flash] = useState<string | null>(() => {
+    try {
+      const v = sessionStorage.getItem("prospecta:auth-flash");
+      if (v) sessionStorage.removeItem("prospecta:auth-flash");
+      return v;
+    } catch {
+      return null;
+    }
+  });
   const [step, setStep] = useState(isGoogle ? 1 : 0);
   const [account, setAccount] = useState<AccountForm>(() => ({
     name: googleDraft?.name ?? "",
@@ -188,6 +199,7 @@ export function SignupPage() {
           </div>
 
           {apiError && <AuthAlert kind="error">{apiError}</AuthAlert>}
+          {flash && <AuthAlert kind="info">{flash}</AuthAlert>}
 
           {step === 0 && (
             <>
