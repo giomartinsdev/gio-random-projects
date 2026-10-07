@@ -31,7 +31,7 @@ func (s *Service) CreateCompany(ctx context.Context, commandID string, in Create
 	if in.Name == "" {
 		return domainprospecta.Company{}, nil, domainprospecta.ErrNameRequired
 	}
-	id, err := uuid.NewV7()
+	id, err := uuid.Parse(commandID)
 	if err != nil {
 		return domainprospecta.Company{}, nil, err
 	}
@@ -77,7 +77,7 @@ func (s *Service) DefineICP(ctx context.Context, commandID string, in DefineICPI
 	if !exists {
 		return domainprospecta.ICP{}, nil, fmt.Errorf("%w: company %s", domainprospecta.ErrNotFound, in.CompanyID)
 	}
-	id, err := uuid.NewV7()
+	id, err := uuid.Parse(commandID)
 	if err != nil {
 		return domainprospecta.ICP{}, nil, err
 	}
@@ -115,7 +115,7 @@ func (s *Service) CreateCampaign(ctx context.Context, commandID string, in Creat
 	if in.Name == "" {
 		return nil, domainprospecta.ErrNameRequired
 	}
-	id, err := uuid.NewV7()
+	id, err := uuid.Parse(commandID)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func (s *Service) RequestProspect(ctx context.Context, commandID string, in Requ
 	if err != nil {
 		return nil, err
 	}
-	id, err := uuid.NewV7()
+	id, err := uuid.Parse(commandID)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +226,7 @@ func (s *Service) UpsertLead(ctx context.Context, commandID string, in UpsertLea
 	if err := domainprospecta.ValidateFit(in.Fit); err != nil {
 		return nil, err
 	}
-	id, err := uuid.NewV7()
+	id, err := uuid.Parse(commandID)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +319,7 @@ func (s *Service) DraftMessage(ctx context.Context, commandID string, in DraftMe
 	if in.Content == "" {
 		return nil, domainprospecta.ErrContentRequired
 	}
-	id, err := uuid.NewV7()
+	id, err := uuid.Parse(commandID)
 	if err != nil {
 		return nil, err
 	}
@@ -434,7 +434,7 @@ func (s *Service) ReceiveReply(ctx context.Context, commandID string, in Receive
 	if in.LeadID == "" {
 		return nil, domainprospecta.ErrLeadIDRequired
 	}
-	convID, err := uuid.NewV7()
+	convID, err := uuid.Parse(commandID)
 	if err != nil {
 		return nil, err
 	}
@@ -446,7 +446,7 @@ func (s *Service) ReceiveReply(ctx context.Context, commandID string, in Receive
 	if err != nil {
 		return nil, err
 	}
-	msgID, err := uuid.NewV7()
+	msgID, err := uuid.Parse(commandID)
 	if err != nil {
 		return nil, err
 	}
