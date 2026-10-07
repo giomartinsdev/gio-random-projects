@@ -28,6 +28,38 @@ func (s *stubProspectaReads) ICPByCompany(context.Context, string, string) (doma
 	return s.icp, s.err
 }
 
+func (s *stubProspectaReads) ListCampaigns(context.Context, string, int, string) (domainprospecta.Page[domainprospecta.CampaignView], error) {
+	return domainprospecta.Page[domainprospecta.CampaignView]{}, s.err
+}
+
+func (s *stubProspectaReads) GetCampaign(context.Context, string, string) (domainprospecta.CampaignView, error) {
+	return domainprospecta.CampaignView{}, s.err
+}
+
+func (s *stubProspectaReads) ListLeads(context.Context, string, domainprospecta.LeadFilter, int, string) (domainprospecta.Page[domainprospecta.LeadView], error) {
+	return domainprospecta.Page[domainprospecta.LeadView]{}, s.err
+}
+
+func (s *stubProspectaReads) GetLead(context.Context, string, string) (domainprospecta.LeadView, error) {
+	return domainprospecta.LeadView{}, s.err
+}
+
+func (s *stubProspectaReads) ListConversations(context.Context, string, int, string) (domainprospecta.Page[domainprospecta.ConversationView], error) {
+	return domainprospecta.Page[domainprospecta.ConversationView]{}, s.err
+}
+
+func (s *stubProspectaReads) GetConversation(context.Context, string, string) (domainprospecta.ConversationView, error) {
+	return domainprospecta.ConversationView{}, s.err
+}
+
+func (s *stubProspectaReads) GetMessage(context.Context, string, string) (domainprospecta.MessageView, error) {
+	return domainprospecta.MessageView{}, s.err
+}
+
+func (s *stubProspectaReads) ListActivity(context.Context, string, int) ([]domainprospecta.AgentRunEvent, error) {
+	return nil, s.err
+}
+
 func prospectaServer(reads domainprospecta.ReadRepository, pub *spyPublisher) http.Handler {
 	h := NewProspectaHandlers(reads, pub, discardLogger())
 	r := chi.NewRouter()

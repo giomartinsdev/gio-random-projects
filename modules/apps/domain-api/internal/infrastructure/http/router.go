@@ -153,6 +153,17 @@ func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWri
 		r.Post("/companies", pr.CreateCompany)
 		r.Get("/companies/{id}", pr.GetCompany)
 		r.Post("/companies/{companyId}/icp", pr.DefineICP)
+		// Leituras que a prospecta-api (ACL sem banco) consome. tenant_id vem
+		// por query, como em GetCompany.
+		r.Get("/campaigns", pr.ListCampaigns)
+		r.Get("/campaigns/{id}", pr.GetCampaign)
+		r.Get("/leads", pr.ListLeads)
+		r.Get("/leads/{id}", pr.GetLead)
+		r.Get("/conversations", pr.ListConversations)
+		r.Get("/conversations/{id}", pr.GetConversation)
+		r.Get("/messages/{id}", pr.GetMessage)
+		// Feed SSE dos runs de agente do tenant (text/event-stream).
+		r.Get("/agent/activity", pr.AgentActivity)
 	})
 
 	return r
