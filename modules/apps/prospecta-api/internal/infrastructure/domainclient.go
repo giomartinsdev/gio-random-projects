@@ -36,15 +36,28 @@ type DomainClient struct {
 	base string
 	key  string
 
+	// tenant is the MVP workspace id (multi-tenant RLS is enforced one level
+	// down, in the pair's Postgres). It is injected into every read as
+	// ?tenant_id= and into every command payload as tenant_id, because the
+	// pair requires it on both doors. Empty means "no tenant header" (dev).
+	tenant string
+
 	readHTTP   *http.Client
 	writeHTTP  *http.Client
 	streamHTTP *http.Client
 }
 
-func New(base, key string) *DomainClient {
+// New builds the client. tenant is optional (variadic so existing 2-arg call
+// sites keep working); when present it is attached to every request.
+func New(base, key string, tenant ...string) *DomainClient {
+	t := ""
+	if len(tenant) > 0 {
+		t = tenant[0]
+	}
 	return &DomainClient{
 		base:      strings.TrimRight(base, "/"),
 		key:       key,
+		tenant:    t,
 		readHTTP:  &http.Client{Timeout: 15 * time.Second},
 		writeHTTP: &http.Client{Timeout: 5 * time.Second},
 		// No timeout on the streaming client: the pair keeps the SSE body open
@@ -54,15 +67,23 @@ func New(base, key string) *DomainClient {
 	}
 }
 
-// NewFromEnv wires from PROSPECTA_DOMAIN_API_URL + PROSPECTA_DOMAIN_API_KEY,
-// the per-app prefix convention used across this repo. A nil *DomainClient is
-// valid and means "not configured".
+// DefaultTenantID is the single MVP workspace. Override with
+// PROSPECTA_TENANT_ID; it must be a UUID (the pair's tables are UUID NOT NULL).
+const DefaultTenantID = "00000000-0000-0000-0000-000000000001"
+
+// NewFromEnv wires from PROSPECTA_DOMAIN_API_URL + PROSPECTA_DOMAIN_API_KEY
+// (+ optional PROSPECTA_TENANT_ID), the per-app prefix convention used across
+// this repo. A nil *DomainClient is valid and means "not configured".
 func NewFromEnv() *DomainClient {
 	base, key := os.Getenv("PROSPECTA_DOMAIN_API_URL"), os.Getenv("PROSPECTA_DOMAIN_API_KEY")
 	if base == "" || key == "" {
 		return nil
 	}
-	return New(base, key)
+	tenant := os.Getenv("PROSPECTA_TENANT_ID")
+	if tenant == "" {
+		tenant = DefaultTenantID
+	}
+	return New(base, key, tenant)
 }
 
 func (c *DomainClient) Enabled() bool { return c != nil }
@@ -73,7 +94,7 @@ func (c *DomainClient) getJSON(ctx context.Context, path string, out any) error 
 	if c == nil {
 		return ErrNotConfigured
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+withTenant(path, c.tenant), nil)
 	if err != nil {
 		return err
 	}
@@ -206,7 +227,7 @@ func (c *DomainClient) StreamActivity(ctx context.Context) (<-chan domain.AgentR
 	if c == nil {
 		return nil, ErrNotConfigured
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/agent/activity", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+withTenant("/agent/activity", c.tenant), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -265,6 +286,19 @@ func withQuery(path string, q url.Values) string {
 	return path + "?" + q.Encode()
 }
 
+// withTenant appends ?tenant_id=<tenant> unless the tenant is unset or the
+// path already carries a query string (in which case it appends with &).
+func withTenant(path, tenant string) string {
+	if tenant == "" {
+		return path
+	}
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return path + sep + "tenant_id=" + url.QueryEscape(tenant)
+}
+
 // acceptedBody is the /commands 202 shape.
 type acceptedBody struct {
 	CommandID string `json:"command_id"`
@@ -277,7 +311,17 @@ func (c *DomainClient) Publish(ctx context.Context, action string, payload any) 
 	if c == nil {
 		return "", ErrNotConfigured
 	}
-	raw, err := json.Marshal(map[string]any{"action": action, "payload": payload})
+	envelope := map[string]any{"action": action, "payload": payload}
+	// The pair requires tenant_id on every command (UUID NOT NULL + RLS). It
+	// is a server-side concern, not part of the public request body, so it is
+	// folded into the payload here.
+	if c.tenant != "" {
+		if m, ok := payload.(map[string]any); ok {
+			m["tenant_id"] = c.tenant
+			envelope["payload"] = m
+		}
+	}
+	raw, err := json.Marshal(envelope)
 	if err != nil {
 		return "", err
 	}
@@ -293,8 +337,8 @@ func (c *DomainClient) Publish(ctx context.Context, action string, payload any) 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusAccepted {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", fmt.Errorf("domain pair POST /commands %s: %d %s", action, resp.StatusCode, body)
+		rawBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", fmt.Errorf("domain pair POST /commands %s: %d %s", action, resp.StatusCode, rawBody)
 	}
 	var body acceptedBody
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
