@@ -1,0 +1,86 @@
+# prospecta.yml — bounded context Prospecta (prospecta-api + prospecta-agent-worker).
+# Depende de persistence.yml (rabbitmq) e do compute (alloy p/ OTLP, evolution-api,
+# 9router) pela rede externa `apps`.
+#
+# Isolamento (§1.1): NENHUM serviço daqui tem DATABASE_URL nem driver de banco.
+# Banco e o par de domínio (domain-api leitura / domain-worker escritor) são do
+# stack `domain`; aqui só há HTTP tipado (X-API-Key) e broker.
+#
+# Segredos (variáveis de stack no Dockhand — NUNCA no git, só ${VAR}).
+# Lista conferida contra TODO `${...}` deste arquivo: uma variável referenciada
+# e não cadastrada é deploy vermelho (ou verde com o default errado).
+#   PROSPECTA_API_KEY         (chave que a SPA e o worker apresentam à prospecta-api;
+#                              a MESMA nos dois — se vazia, a API deixa passar, §D8)
+#   PROSPECTA_DOMAIN_API_KEY  (chave da prospecta-api p/ o domain-api; a MESMA tem
+#                              de estar em DOMAIN_API_KEYS do stack `domain`, senão
+#                              todo comando leva 401 com o deploy verde — §10.3)
+#   RABBITMQ_USER             (opcional, default `domain` — o MESMO do persistence.yml)
+#   RABBITMQ_PASSWORD         (a MESMA de persistence.yml)
+#   EVOLUTION_API_KEY         (a MESMA do compute.yml — apikey global da Evolution)
+#   EVOLUTION_INSTANCE        (opcional, default web-businesses)
+#   NINEROUTER_API_KEY        (opcional — hoje o 9router não exige chave; ver compute.yml)
+#
+# Fora daqui de propósito: POSTGRES_PASSWORD. Nenhum serviço do Prospecta fala
+# com o banco (§1.1) e este stack não publica serviço de banco — quem precisa
+# dela é o stack `domain`/`persistence`.
+name: prospecta
+
+services:
+  prospecta-api:
+    image: registry.giomartins.dev:5000/prospecta-api:latest
+    container_name: prospecta-api
+    restart: unless-stopped
+    environment:
+      # SEM DATABASE_URL / RABBITMQ_URL — a persistência e o broker são do
+      # stack `domain`/`persistence` (§1.1).
+      # 8000 é a porta do domain-api DENTRO do container (HTTP_ADDR ":8000" em
+      # stacks/domain.yml); o `127.0.0.1:8000:8000` de lá é só o publish para o
+      # host. Daqui o tráfego é container-a-container pela rede `apps`, então a
+      # porta certa é a interna — a externa não é alcançável pelo nome DNS.
+      PROSPECTA_DOMAIN_API_URL: http://domain-api:8000
+      PROSPECTA_DOMAIN_API_KEY: ${PROSPECTA_DOMAIN_API_KEY:?defina PROSPECTA_DOMAIN_API_KEY}
+      # Chave própria do BFF (§D8). Sem ela o middleware deixa passar; em prod
+      # tem de estar definida, senão o host fica público sem auth.
+      PROSPECTA_API_KEY: ${PROSPECTA_API_KEY:?defina PROSPECTA_API_KEY}
+      # Origem(ns) do SPA autorizada a chamar esta API pelo browser. Sem isto o
+      # browser bloqueia a resposta (o SPA vive em prospecta.giomartins.dev, a
+      # API em prospecta-api.giomartins.dev: CORS é obrigatório).
+      PROSPECTA_FRONTEND_ORIGINS: ${PROSPECTA_FRONTEND_ORIGINS:-https://prospecta.giomartins.dev}
+      PORT: "8022"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: prospecta-api
+    ports:
+      - "127.0.0.1:8022:8022"
+    networks: [apps]
+
+  # Núcleo agêntico. SEM porta e SEM host: o worker não serve nada — consome
+  # `ProspectRequested`/`evolution.messages.upsert` por AMQP e envia a abordagem
+  # pela Evolution (`POST /message/sendText`). Um port publish seria superfície
+  # sem contrato. Consome o broker e NUNCA toca o banco (§1.1).
+  prospecta-agent-worker:
+    image: registry.giomartins.dev:5000/prospecta-agent-worker:latest
+    container_name: prospecta-agent-worker
+    restart: unless-stopped
+    environment:
+      # SEM DATABASE_URL — regra de isolamento (§1.1)
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-domain}:${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}@rabbitmq:5672/
+      # A Evolution roda no stack compute, na mesma rede `apps`.
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?defina EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-web-businesses}
+      # 9router (IA), stack compute, mesma rede `apps` — OpenAI-compatible.
+      NINEROUTER_BASE_URL: http://9router:20128/v1
+      NINEROUTER_API_KEY: ${NINEROUTER_API_KEY:-}
+      # 8022 = porta da prospecta-api DENTRO do container (não a 8022 do host).
+      PROSPECTA_API_URL: http://prospecta-api:8022
+      PROSPECTA_API_KEY: ${PROSPECTA_API_KEY:?defina PROSPECTA_API_KEY}
+      # MVP (§D10): humano aprova cada abordagem.
+      PROSPECTA_APPROVAL_POLICY: ${PROSPECTA_APPROVAL_POLICY:-human}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: prospecta-agent-worker
+    networks: [apps]
+
+networks:
+  apps:
+    external: true
+    name: apps

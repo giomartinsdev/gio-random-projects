@@ -106,7 +106,10 @@ func TestClubsRoutingBdd(t *testing.T) {
 		},
 		Options: &godog.Options{
 			Format: "pretty",
-			Paths:  []string{"features"},
+			// Só este feature: o diretório features/ tem mais de um arquivo, e
+			// rodar todos aqui faria os steps do outro suite aparecerem como
+			// indefinidos (o Strict é false, então passariam em silêncio).
+			Paths: []string{"features/clubs_routing.feature"},
 			// `TestingT` liga o godog ao `go test`; `Dialect: "pt"` porque o
 			// produto é escrito em português (Funcionalidade/Cenário/...).
 			TestingT: t,

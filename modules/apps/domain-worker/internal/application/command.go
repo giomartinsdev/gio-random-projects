@@ -79,6 +79,24 @@ const (
 	// Notificações (regras que a pessoa cadastra).
 	ActionNotifSet    Action = "finance.notification.set"
 	ActionNotifDelete Action = "finance.notification.delete"
+
+	// Prospecta (specs/004-prospecta): o primeiro vertical slice do produto de
+	// prospecção agêntica. Diferente das demais famílias, a action é o nome do
+	// comando em PascalCase, o formato do contrato (§7.2/
+	// contracts/domain-api-extensions.md); a prospecta-api (ACL, sem banco)
+	// traduz o comando e o domain-worker aplica e grava a auditoria.
+	ActionCreateCompany Action = "CreateCompany"
+	ActionDefineICP     Action = "DefineICP"
+	ActionCreateCampaign  Action = "CreateCampaign"
+	ActionStartCampaign   Action = "StartCampaign"
+	ActionRequestProspect Action = "RequestProspect"
+	ActionUpsertLead      Action = "UpsertLead"
+	ActionQualifyLead     Action = "QualifyLead"
+	ActionDraftMessage    Action = "DraftMessage"
+	ActionApproveMessage  Action = "ApproveMessage"
+	ActionSendMessage     Action = "SendMessage"
+	ActionReceiveReply    Action = "ReceiveReply"
+	ActionBookMeeting     Action = "BookMeeting"
 )
 
 type Command struct {

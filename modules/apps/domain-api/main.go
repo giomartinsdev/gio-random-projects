@@ -98,9 +98,14 @@ func main() {
 	financeReads := postgres.NewFinanceReadRepository(pool)
 	financeHandlers := httpapi.NewFinanceHandlers(financeReads, log)
 
+	// Prospecta (specs/004-prospecta): projeções read-only das tabelas
+	// prospecta_* (o domain-worker é o único escritor) + as portas de comando.
+	prospectaReads := postgres.NewProspectaReadRepository(pool)
+	prospectaHandlers := httpapi.NewProspectaHandlers(prospectaReads, commands, log)
+
 	handlers := httpapi.NewHandlers(log)
 
-	router := httpapi.NewRouter(handlers, syncHandlers, clubsHandlers, clubsWriteHandlers, financeHandlers, envelopeHandlers, apiKeys, rateLimiter, log)
+	router := httpapi.NewRouter(handlers, syncHandlers, clubsHandlers, clubsWriteHandlers, financeHandlers, envelopeHandlers, prospectaHandlers, apiKeys, rateLimiter, log)
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: otelhttp.NewHandler(router, "domain-api",
 		// chi's route patterns aren't visible to otelhttp, so name the

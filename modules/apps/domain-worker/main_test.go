@@ -6,6 +6,7 @@ import (
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application"
 	appfinance "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/finance"
+	appprospecta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/prospecta"
 )
 
 // Os payloads abaixo são cópias BYTE A BYTE do que os produtores publicam:
@@ -144,4 +145,34 @@ func TestSearchActionsHaveTheirOwnDestinations(t *testing.T) {
 	if classifyClubsAction(application.ActionSaveSearchRun) == classifyClubsAction(application.ActionSaveFetchRun) {
 		t.Fatal("os dois saves não podem colidir")
 	}
+}
+
+// Os payloads do Prospecta são cópias do que a prospecta-api publica (o
+// envelope {action, payload}). Mesma regra de clubs/finance: um rename de um
+// lado só vira campo zero em silêncio. A action é o NOME do comando em
+// PascalCase (o formato do contrato §7.2), não a família dotted das outras.
+func TestProspectaCommandPayloadsMatchProducers(t *testing.T) {
+	if got := string(application.ActionCreateCompany); got != "CreateCompany" {
+		t.Fatalf("ActionCreateCompany = %q; want %q (contrato)", got, "CreateCompany")
+	}
+	if got := string(application.ActionDefineICP); got != "DefineICP" {
+		t.Fatalf("ActionDefineICP = %q; want %q (contrato)", got, "DefineICP")
+	}
+	t.Run("create company", func(t *testing.T) {
+		var in appprospecta.CreateCompanyInput
+		mustUnmarshal(t, `{"tenant_id":"t","name":"ACME","site":"acme.com","description":"vende"}`, &in)
+		if in.TenantID != "t" || in.Name != "ACME" || in.Site != "acme.com" || in.Description != "vende" {
+			t.Fatalf("payload de create company não decodificou: %+v", in)
+		}
+	})
+	t.Run("define icp", func(t *testing.T) {
+		var in appprospecta.DefineICPInput
+		mustUnmarshal(t, `{"tenant_id":"t","company_id":"c","definition":"transportadoras","signals":["frota","novo CD"]}`, &in)
+		if in.TenantID != "t" || in.CompanyID != "c" || in.Definition != "transportadoras" {
+			t.Fatalf("payload de define icp não decodificou: %+v", in)
+		}
+		if len(in.Signals) != 2 {
+			t.Fatalf("signals = %v; want 2", in.Signals)
+		}
+	})
 }

@@ -10,9 +10,11 @@ name: Go deploy
 # Deploys: este workflow só BUILD e PUSH da imagem pro registry. O
 # redeploy é do Dockhand (stacks persistidas em `stacks/`, ver
 # stacks/README.md) — o antigo deploy job que rodava `terraform apply`
-# foi removido na migração. Enquanto o Dockhand não dispara deploy por
-# webhook, um push novo atualiza a imagem `:latest` e o redeploy é feito
-# no Dockhand (ou `docker compose up -d` no stack).
+# foi removido na migração. O job `deploy` chama o webhook do git stack
+# no Dockhand (mapa app->id em `declare -A STACK` abaixo).
+# `prospecta-api` usa o id da stack `prospecta` (stacks/prospecta.yml) —
+# troque "PROSPECTA_STACK_ID" pelo id numérico depois de criar a stack no
+# Dockhand (só é legível na UI depois do login; nunca inventar).
 
 on:
   push:
@@ -222,7 +224,7 @@ jobs:
             echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a :latest já foi publicada)."
             exit 0
           fi
-          declare -A STACK=( [domain-api]=4 [domain-worker]=4 [tela-api]=6 [clubs-api]=5 )
+          declare -A STACK=( [domain-api]=4 [domain-worker]=4 [tela-api]=6 [clubs-api]=5 [prospecta-api]=17 )
           ids=$(echo "$APPS" | jq -r '.[]' | while read -r a; do echo "${STACK[$a]}"; done | grep -v '^$' | sort -u)
           [ -z "$ids" ] && { echo "nada a deployar"; exit 0; }
           for id in $ids; do

@@ -31,6 +31,7 @@ on:
       - "modules/apps/hub-frontend/**"
       - "modules/apps/clubs-frontend/**"
       - "modules/apps/finance-frontend/**"
+      - "modules/apps/prospecta-frontend/**"
   workflow_dispatch:
     inputs:
       app:
@@ -49,7 +50,7 @@ jobs:
 
       - id: list
         env:
-          ALLOWED_APPS: "tela-frontend hub-frontend clubs-frontend finance-frontend"
+          ALLOWED_APPS: "tela-frontend hub-frontend clubs-frontend finance-frontend prospecta-frontend"
         run: |
           all_apps=$(echo "$ALLOWED_APPS" | tr ' ' '\n')
 
@@ -181,6 +182,9 @@ jobs:
           # (finance.) -- apontar para o próprio host faria a SPA chamar a si
           # mesma e todo request virar 404.
           VITE_FINANCE_API_URL: https://finance-api.giomartins.dev
+          # O mesmo para o Prospecta: a API vive em prospecta-API., não no host
+          # da SPA (prospecta.).
+          VITE_PROSPECTA_API_URL: https://prospecta-api.giomartins.dev
         run: npm run build
 
       # scp (not the docker provider/API) because the files have to

@@ -743,3 +743,227 @@ CREATE TABLE IF NOT EXISTS finance_of_raw (
 CREATE INDEX IF NOT EXISTS idx_finance_of_raw_user ON finance_of_raw (user_id);
 CREATE INDEX IF NOT EXISTS idx_finance_of_raw_resource ON finance_of_raw (user_id, resource);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_of_raw_external ON finance_of_raw (resource, external_id);
+
+-- ===========================================================================
+-- Prospecta (specs/004-prospecta) — primeiro vertical slice: Company + ICP.
+--
+-- Multi-tenant por tenant_id (data-model.md). Toda tabela tem RLS: a sessão do
+-- domain-worker fixa app.current_tenant (SET LOCAL) na transação e as policies
+-- filtram por ele. Nota de CONFLITO com a spec: o data-model pede
+-- `embedding vector(1536)` com índice ivfflat, mas o Postgres deste repo é
+-- `postgres:17-alpine` (persistence.yml), SEM a extensão pgvector. O código
+-- manda: o embedding fica JSONB por enquanto (o worker agêntico preenche o
+-- vetor num passo posterior); o upgrade do Postgres para uma imagem com
+-- pgvector é o que habilita vector(1536) + ivfflat.
+--
+-- command_id é o id do comando aplicado: o índice único parcial é o que torna
+-- a aplicação idempotente (reentrega at-least-once = ON CONFLICT no-op), no
+-- mesmo espírito do uq_finance_transactions_command.
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS prospecta_company (
+    id           UUID PRIMARY KEY,
+    tenant_id    UUID NOT NULL,
+    name         TEXT NOT NULL,
+    site         TEXT NOT NULL DEFAULT '',
+    description  TEXT NOT NULL DEFAULT '',
+    command_id   UUID,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_prospecta_company_tenant ON prospecta_company (tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_company_tenant_site
+    ON prospecta_company (tenant_id, site) WHERE site <> '';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_company_command
+    ON prospecta_company (command_id) WHERE command_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS prospecta_icp (
+    id           UUID PRIMARY KEY,
+    tenant_id    UUID NOT NULL,
+    company_id   UUID NOT NULL REFERENCES prospecta_company(id) ON DELETE CASCADE,
+    definition   TEXT NOT NULL,
+    signals      TEXT[] NOT NULL DEFAULT '{}',
+    embedding    JSONB,
+    command_id   UUID,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_prospecta_icp_company ON prospecta_icp (company_id);
+CREATE INDEX IF NOT EXISTS idx_prospecta_icp_tenant ON prospecta_icp (tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_icp_command
+    ON prospecta_icp (command_id) WHERE command_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Agregados restantes do Prospecta (specs/004-prospecta, US2/US3): Campaign,
+-- Lead, Message, Conversation, AgentRun e a auditoria própria.
+--
+-- Mesmas regras do bloco Company/ICP: multi-tenant por tenant_id com RLS
+-- (SET LOCAL app.current_tenant na transação), command_id único parcial para a
+-- idempotência de reentrega, e embedding em JSONB (sem pgvector neste Postgres).
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS prospecta_campaign (
+    id              UUID PRIMARY KEY,
+    tenant_id       UUID NOT NULL,
+    company_id      UUID NOT NULL,
+    icp_id          UUID,
+    name            TEXT NOT NULL,
+    channels        TEXT[] NOT NULL DEFAULT '{}',
+    status          TEXT NOT NULL DEFAULT 'draft'
+                    CHECK (status IN ('draft','running','paused','done')),
+    approval_policy TEXT NOT NULL DEFAULT 'human',
+    command_id      UUID,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_prospecta_campaign_tenant_status ON prospecta_campaign (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_prospecta_campaign_company ON prospecta_campaign (company_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_campaign_command
+    ON prospecta_campaign (command_id) WHERE command_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS prospecta_lead (
+    id           UUID PRIMARY KEY,
+    tenant_id    UUID NOT NULL,
+    campaign_id  UUID NOT NULL,
+    company_name TEXT NOT NULL,
+    domain       TEXT NOT NULL,
+    segment      TEXT NOT NULL DEFAULT '',
+    channel      TEXT NOT NULL DEFAULT '',
+    fit          INTEGER NOT NULL DEFAULT 0 CHECK (fit BETWEEN 0 AND 100),
+    status       TEXT NOT NULL DEFAULT 'discovered'
+                 CHECK (status IN ('discovered','enriched','qualified','contacted','replied','meeting')),
+    source_url   TEXT NOT NULL DEFAULT '',
+    enriched     JSONB,
+    command_id   UUID,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Dedup: o mesmo prospect achado duas vezes é UM lead.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_lead_dedup
+    ON prospecta_lead (tenant_id, domain, company_name);
+CREATE INDEX IF NOT EXISTS idx_prospecta_lead_campaign_status ON prospecta_lead (campaign_id, status);
+CREATE INDEX IF NOT EXISTS idx_prospecta_lead_tenant_fit ON prospecta_lead (tenant_id, fit DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_lead_command
+    ON prospecta_lead (command_id) WHERE command_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS prospecta_message (
+    id          UUID PRIMARY KEY,
+    tenant_id   UUID NOT NULL,
+    lead_id     UUID NOT NULL,
+    channel     TEXT NOT NULL DEFAULT '',
+    direction   TEXT NOT NULL DEFAULT 'out' CHECK (direction IN ('out','in')),
+    content     TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'drafted'
+                CHECK (status IN ('drafted','approved','sent','failed','blocked')),
+    external_id TEXT NOT NULL DEFAULT '',
+    sent_at     TIMESTAMPTZ,
+    command_id  UUID,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_prospecta_message_lead ON prospecta_message (lead_id);
+CREATE INDEX IF NOT EXISTS idx_prospecta_message_tenant_status ON prospecta_message (tenant_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_message_command
+    ON prospecta_message (command_id) WHERE command_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS prospecta_conversation (
+    id         UUID PRIMARY KEY,
+    tenant_id  UUID NOT NULL,
+    lead_id    UUID NOT NULL,
+    thread_key TEXT NOT NULL,
+    state      TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open','waiting','closed')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- A chave da idempotência do ReceiveReply.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_conversation_thread
+    ON prospecta_conversation (tenant_id, thread_key);
+
+CREATE TABLE IF NOT EXISTS prospecta_agent_run (
+    id          UUID PRIMARY KEY,
+    tenant_id   UUID NOT NULL,
+    campaign_id UUID NOT NULL,
+    agent       TEXT NOT NULL,
+    state       TEXT NOT NULL DEFAULT 'running' CHECK (state IN ('running','done','failed')),
+    metrics     JSONB NOT NULL DEFAULT '{}',
+    command_id  UUID,
+    started_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_prospecta_agent_run_campaign_state ON prospecta_agent_run (campaign_id, state);
+CREATE INDEX IF NOT EXISTS idx_prospecta_agent_run_tenant_started ON prospecta_agent_run (tenant_id, started_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_agent_run_command
+    ON prospecta_agent_run (command_id) WHERE command_id IS NOT NULL;
+
+-- Auditoria própria do Prospecta (data-model §8): payload JÁ passado por PII
+-- scrubbing no handler antes de chegar aqui.
+CREATE TABLE IF NOT EXISTS prospecta_audit_log (
+    id         UUID PRIMARY KEY,
+    tenant_id  UUID NOT NULL,
+    command    TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    payload    JSONB,
+    error      TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_prospecta_audit_tenant_created ON prospecta_audit_log (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_prospecta_audit_command_status ON prospecta_audit_log (command, status);
+
+-- RLS por tenant_id. current_setting('app.current_tenant', true) é NULL quando
+-- a sessão não o fixou: o cast ''::uuid falha alto (erro) em vez de comparar
+-- NULL e vazar a linha. ENABLE + FORCE para a policy valer também para o owner.
+ALTER TABLE prospecta_company ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prospecta_company FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospecta_company_tenant ON prospecta_company;
+CREATE POLICY prospecta_company_tenant ON prospecta_company
+    USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
+
+ALTER TABLE prospecta_icp ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prospecta_icp FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospecta_icp_tenant ON prospecta_icp;
+CREATE POLICY prospecta_icp_tenant ON prospecta_icp
+    USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
+
+ALTER TABLE prospecta_campaign ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prospecta_campaign FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospecta_campaign_tenant ON prospecta_campaign;
+CREATE POLICY prospecta_campaign_tenant ON prospecta_campaign
+    USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
+
+ALTER TABLE prospecta_lead ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prospecta_lead FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospecta_lead_tenant ON prospecta_lead;
+CREATE POLICY prospecta_lead_tenant ON prospecta_lead
+    USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
+
+ALTER TABLE prospecta_message ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prospecta_message FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospecta_message_tenant ON prospecta_message;
+CREATE POLICY prospecta_message_tenant ON prospecta_message
+    USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
+
+ALTER TABLE prospecta_conversation ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prospecta_conversation FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospecta_conversation_tenant ON prospecta_conversation;
+CREATE POLICY prospecta_conversation_tenant ON prospecta_conversation
+    USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
+
+ALTER TABLE prospecta_agent_run ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prospecta_agent_run FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospecta_agent_run_tenant ON prospecta_agent_run;
+CREATE POLICY prospecta_agent_run_tenant ON prospecta_agent_run
+    USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
+
+ALTER TABLE prospecta_audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prospecta_audit_log FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospecta_audit_log_tenant ON prospecta_audit_log;
+CREATE POLICY prospecta_audit_log_tenant ON prospecta_audit_log
+    USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);

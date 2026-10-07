@@ -153,6 +153,17 @@ locals {
       port     = 8018
     },
     {
+      # prospecta-api -- o backend/BFF do contexto Prospecta (stacks/prospecta.yml).
+      # A porta e a loopback publicada pelo stack (127.0.0.1:8022) e tem de bater
+      # com o server{} de stacks/ingress/default.conf. AUTH proprio (X-API-Key),
+      # sem Cloudflare Access -- o SPA (prospecta.giomartins.dev) chama este host
+      # cross-origin pelo browser, e um redirect de SSO Google quebraria toda
+      # chamada (mesma razao de finance-api/clubs-api). O hostname esta em
+      # excluded_hostnames.
+      hostname = "prospecta-api.giomartins.dev"
+      port     = 8022
+    },
+    {
       # Alloy's OTLP/HTTP endpoint for the SPAs' browsers (see that
       # module's README for the whole data flow). Deliberately excluded
       # from Access via excluded_hostnames — a public visitor's browser
@@ -238,6 +249,16 @@ locals {
       # finance-api (finance-api.giomartins.dev) cross-origin por CORS.
       hostname = "finance.giomartins.dev"
       bucket   = "finance-frontend"
+    },
+    {
+      # prospecta-frontend: a SPA do contexto Prospecta (cockpit de prospeccao --
+      # empresas, campanhas, leads, conversas). Entra no hub como microfrontend,
+      # entao precisa ser publica e iframe-embeddable (em excluded_hostnames): o
+      # login e a X-API-Key que o operador cola na propria tela, nao um redirect
+      # de Access. Ela chama a prospecta-api (prospecta-api.giomartins.dev)
+      # cross-origin por CORS.
+      hostname = "prospecta.giomartins.dev"
+      bucket   = "prospecta-frontend"
     },
   ]
 

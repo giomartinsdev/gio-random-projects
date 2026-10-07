@@ -35,6 +35,10 @@ on:
       - "modules/apps/finance-api/**"
       - "modules/apps/finance-customersupport-worker/**"
       - "modules/apps/finance-openfinance-worker/**"
+      # Prospecta (stack stacks/prospecta.yml): o worker agêntico. Mesmo
+      # raciocínio do §11-1 acima -- o discover abaixo o reconstrói, então o
+      # filtro precisa nomeá-lo ou um push que só o toque não inicia run algum.
+      - "modules/apps/prospecta-agent-worker/**"
       # Shared code lives in packages/ (§7). Without this, a commit that only
       # edits the shared contract triggers NOTHING and production keeps the
       # stale contract (§11-2) — the discover rule below needs the run to
@@ -75,7 +79,7 @@ jobs:
             # whose change rebuilds nobody is the §11 risk -- green build with a
             # stale contract in production. Adding a package here is a one-line
             # change; the assertion below stops the map from rotting silently.
-            declare -A PACKAGE_APPS=( [packages/finance-contracts]="finance-api finance-customersupport-worker finance-openfinance-worker" )
+            declare -A PACKAGE_APPS=( [packages/finance-contracts]="finance-api finance-customersupport-worker finance-openfinance-worker" [packages/prospecta-contracts]="prospecta-agent-worker" )
             for pkg in "${!PACKAGE_APPS[@]}"; do
               dependents="${PACKAGE_APPS[$pkg]}"
               for dependent in $dependents; do
@@ -285,7 +289,7 @@ jobs:
           #   [finance-customersupport-worker]=14 -- SAME stack (one compose, one
           #   webhook), so it reuses the finance id: deploying the worker is
           #   deploying the stack. An app with no id here fails loudly below.
-          declare -A STACK=( [clubs-ingest]=5 [finance-api]=14 [finance-customersupport-worker]=14 [finance-openfinance-worker]=14 )
+          declare -A STACK=( [clubs-ingest]=5 [finance-api]=14 [finance-customersupport-worker]=14 [finance-openfinance-worker]=14 [prospecta-agent-worker]=17 )
           if [ -z "$APPS" ] || [ "$APPS" = "[]" ]; then
             echo "nada a deployar (nenhum app descoberto)"
             exit 0

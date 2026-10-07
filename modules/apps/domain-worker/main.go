@@ -32,11 +32,13 @@ import (
 	appmatch "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/match"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/outbox"
 	apppreference "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/preference"
+	appprospecta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/application/prospecta"
 	domainannouncement "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/announcement"
 	domainclub "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/club"
 	domainfinance "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/finance"
 	domainmatch "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/match"
 	domainpref "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/preference"
+	domainprospecta "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/domain/prospecta"
 	inamqp "github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/amqp"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/config"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/domain-worker/internal/infrastructure/postgres"
@@ -144,12 +146,20 @@ func main() {
 	financeService := appfinance.NewService(financeRepo)
 	financeHandler := appfinance.NewCommandHandler(financeService)
 
+	// Prospecta (specs/004-prospecta): primeiro vertical slice Company + ICP.
+	// A prospecta-api (ACL sem banco) publica os comandos; o worker é o único
+	// escritor das tabelas prospecta_* (§1.1).
+	prospectaRepo := postgres.NewProspectaRepository(pool)
+	prospectaService := appprospecta.NewService(prospectaRepo)
+	prospectaHandler := appprospecta.NewCommandHandler(prospectaService)
+
 	// Every aggregate's handler in one place: process() takes this
 	// struct rather than a growing parameter list.
 	hs := handlers{
 		club: clubHandler, partida: partidaHandler, snapshot: snapshotHandler,
 		anuncio: anuncioHandler, preferencia: preferenciaHandler,
 		finance:      financeHandler,
+		prospecta:    prospectaHandler,
 		ingestEstado: postgres.NewIngestEstadoRepository(pool),
 		fetchRun:     postgres.NewFetchRunRepository(pool),
 		searchRun:    postgres.NewSearchRunRepository(pool),
@@ -194,6 +204,9 @@ type handlers struct {
 	// comando de orçamento pode cruzar várias réguas), por isso o case dele é
 	// tratado à parte no process().
 	finance *appfinance.CommandHandler
+	// Prospecta (specs/004-prospecta): Company + ICP. Um evento por comando;
+	// a reentrega idempotente devolve nil e não republica.
+	prospecta *appprospecta.CommandHandler
 	// Saúde do worker de ingestão: um upsert direto, não um agregado -- o
 	// worker é um poller sem host, e esta é a única forma de a saúde dele
 	// chegar até a API.
@@ -346,6 +359,19 @@ func process(ctx context.Context, log *slog.Logger, h handlers, audits audit.Rep
 			if len(events) > 0 {
 				id = financeEntityID(events[0])
 			}
+		}
+	case isProspectaAction(cmd.Action):
+		// Prospecta (specs/004-prospecta): Company/ICP + os agregados de
+		// campanha, lead, mensagem e conversa. A action é o nome do comando em
+		// PascalCase (contrato §7.2), por isso o case casa por igualdade e não
+		// por prefixo. Um evento por comando; a reentrega idempotente devolve
+		// nil (sem republicar).
+		entityType = "prospecta"
+		var pevt domainprospecta.Event
+		pevt, err = h.prospecta.Handle(ctx, cmd)
+		if pevt != nil {
+			evt = pevt
+			id = prospectaEntityID(pevt)
 		}
 	default:
 		err = fmt.Errorf("unknown action: %q", cmd.Action)
@@ -534,6 +560,62 @@ func financeEntityID(evt domainfinance.Event) string {
 		return ""
 	}
 }
+
+// prospectaEntityID extrai o id relevante de um evento do Prospecta para a
+// linha de auditoria: a empresa no CompanyRegistered, o ICP no ICPDefined, e
+// assim por diante. A ação do Prospecta é o nome do comando em PascalCase, não
+// uma família dotted, então o roteamento é por igualdade (isProspectaAction).
+func prospectaEntityID(evt domainprospecta.Event) string {
+	switch e := evt.(type) {
+	case domainprospecta.CompanyRegistered:
+		return e.CompanyID
+	case domainprospecta.ICPDefined:
+		return e.ICPID
+	case domainprospecta.CampaignStarted:
+		return e.CampaignID
+	case domainprospecta.ProspectRequested:
+		return e.RunID
+	case domainprospecta.LeadDiscovered:
+		return e.LeadID
+	case domainprospecta.LeadEnriched:
+		return e.LeadID
+	case domainprospecta.LeadQualified:
+		return e.LeadID
+	case domainprospecta.MessageDrafted:
+		return e.MessageID
+	case domainprospecta.MessageApproved:
+		return e.MessageID
+	case domainprospecta.MessageSent:
+		return e.MessageID
+	case domainprospecta.ReplyReceived:
+		return e.ConversationID
+	case domainprospecta.MeetingBooked:
+		return e.LeadID
+	default:
+		return ""
+	}
+}
+
+// prospectaActions é o conjunto fechado de comandos da família Prospecta. A
+// action é o nome do comando em PascalCase (contrato §7.2) — diferente das
+// outras famílias, que usam prefixo dotted — então o process() casa por
+// pertinência a este conjunto, não por prefixo.
+var prospectaActions = map[application.Action]bool{
+	application.ActionCreateCompany:  true,
+	application.ActionDefineICP:      true,
+	application.ActionCreateCampaign: true,
+	application.ActionStartCampaign:  true,
+	application.ActionRequestProspect: true,
+	application.ActionUpsertLead:     true,
+	application.ActionQualifyLead:    true,
+	application.ActionDraftMessage:   true,
+	application.ActionApproveMessage: true,
+	application.ActionSendMessage:    true,
+	application.ActionReceiveReply:   true,
+	application.ActionBookMeeting:    true,
+}
+
+func isProspectaAction(a application.Action) bool { return prospectaActions[a] }
 
 // domainpref is imported for the preferencia handler's type; the blank
 // reference keeps the import meaningful even as the aggregate grows.

@@ -12,7 +12,7 @@ import (
 // the apiKey security scheme (see openapi.yaml and Secure in
 // middleware.go). /sync is the synchronous-write exception — see
 // SyncHandlers.Sync's doc comment before reaching for it.
-func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWriteHandlers, fin *FinanceHandlers, env *EnvelopeHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
+func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWriteHandlers, fin *FinanceHandlers, env *EnvelopeHandlers, pr *ProspectaHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Get("/healthz", h.Healthz)
@@ -147,6 +147,12 @@ func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWri
 		r.Get("/finance/exchanges", fin.GetExchanges)
 		r.Get("/finance/investment-transactions", fin.GetInvestmentTransactions)
 		r.Get("/finance/openfinance/raw", fin.GetOFRaw)
+
+		// Prospecta (specs/004-prospecta): leitura projeta direto do banco;
+		// escrita publica o comando (202) que o domain-worker aplica.
+		r.Post("/companies", pr.CreateCompany)
+		r.Get("/companies/{id}", pr.GetCompany)
+		r.Post("/companies/{companyId}/icp", pr.DefineICP)
 	})
 
 	return r

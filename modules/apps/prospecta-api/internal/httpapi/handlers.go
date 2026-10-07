@@ -1,0 +1,247 @@
+// Package httpapi is prospecta-api's interface layer: the JSON handlers for
+// every Prospecta slice, their error mapping, the X-API-Key guard, and the CORS
+// policy the SPA needs to call this host cross-origin.
+//
+// It holds no state beyond the application services and knows nothing about
+// HTTP clients or brokers -- those live in internal/infrastructure. NewRouter
+// wires the whole surface so main.go and the tests exercise the same routing.
+package httpapi
+
+import (
+	"crypto/subtle"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/application"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/domain"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/infrastructure"
+)
+
+// Services bundles the use cases the HTTP layer exposes, one per slice. Passing
+// them as a struct keeps NewRouter's signature stable as slices are added.
+type Services struct {
+	Companies *application.CompanyService
+	Campaigns *application.CampaignService
+	Leads     *application.LeadService
+	Messaging *application.MessagingService
+	Activity  *application.ActivityService
+}
+
+// Handlers is the transport surface for the Prospecta context.
+type Handlers struct {
+	services Services
+	log      *slog.Logger
+}
+
+func New(services Services, log *slog.Logger) *Handlers {
+	return &Handlers{services: services, log: log}
+}
+
+// NewRouter assembles the full HTTP surface:
+//
+//   - GET /healthz is public and unauthenticated (the deploy check reaches it
+//     by curl, contract §Health);
+//   - every business route sits behind the X-API-Key guard;
+//   - all of it is wrapped in the SPA's CORS policy.
+//
+// Kept in one place so main.go and the integration tests build the exact same
+// mux -- a test that re-implemented the routing would not be testing it.
+func NewRouter(apiKey string, origins []string, services Services, log *slog.Logger) http.Handler {
+	h := New(services, log)
+
+	business := http.NewServeMux()
+	business.HandleFunc("POST /companies", h.CreateCompany)
+	business.HandleFunc("GET /companies/{id}", h.GetCompany)
+	business.HandleFunc("POST /companies/{id}/icp", h.DefineICP)
+
+	business.HandleFunc("POST /campaigns", h.CreateCampaign)
+	business.HandleFunc("GET /campaigns", h.ListCampaigns)
+	business.HandleFunc("GET /campaigns/{id}", h.GetCampaign)
+	business.HandleFunc("POST /campaigns/{id}/start", h.StartCampaign)
+
+	business.HandleFunc("GET /leads", h.ListLeads)
+	business.HandleFunc("GET /leads/{id}", h.GetLead)
+	business.HandleFunc("POST /leads/{id}/qualify", h.QualifyLead)
+
+	business.HandleFunc("GET /conversations", h.ListConversations)
+	business.HandleFunc("GET /conversations/{id}", h.GetConversation)
+	business.HandleFunc("POST /messages", h.CreateMessage)
+	business.HandleFunc("POST /messages/{id}/approve", h.ApproveMessage)
+
+	business.HandleFunc("GET /agent/activity", h.AgentActivity)
+
+	root := http.NewServeMux()
+	root.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	root.Handle("/", requireAPIKey(apiKey, business))
+
+	return cors(origins, root)
+}
+
+// requireAPIKey is the X-API-Key guard. A missing configured key lets
+// everything through (dev); otherwise every request must carry the exact
+// header value, compared in constant time.
+func requireAPIKey(key string, next http.Handler) http.Handler {
+	if key == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := r.Header.Get("X-API-Key")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(key)) != 1 {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// CreateCompany handles POST /companies. Validates, publishes CreateCompany,
+// answers 202 with the command id.
+func (h *Handlers) CreateCompany(w http.ResponseWriter, r *http.Request) {
+	var in application.CreateCompanyInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "corpo inválido")
+		return
+	}
+	id, err := h.services.Companies.CreateCompany(r.Context(), in)
+	if err != nil {
+		h.writeCommandError(w, r, "CreateCompany", err)
+		return
+	}
+	writeAccepted(w, id)
+}
+
+// GetCompany handles GET /companies/{id}. A missing projection is 404.
+func (h *Handlers) GetCompany(w http.ResponseWriter, r *http.Request) {
+	company, err := h.services.Companies.GetCompany(r.Context(), r.PathValue("id"))
+	if err != nil {
+		h.writeReadError(w, r, "empresa não encontrada", "ler a empresa", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, company)
+}
+
+// DefineICP handles POST /companies/{id}/icp. The company id comes from the
+// path; an empty definition is rejected before publishing (422).
+func (h *Handlers) DefineICP(w http.ResponseWriter, r *http.Request) {
+	var in application.DefineICPInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "corpo inválido")
+		return
+	}
+	id, err := h.services.Companies.DefineICP(r.Context(), r.PathValue("id"), in)
+	if err != nil {
+		h.writeCommandError(w, r, "DefineICP", err)
+		return
+	}
+	writeAccepted(w, id)
+}
+
+// writeCommandError maps a publish failure to a status. Validation errors are
+// 422 (nothing was published); a not-drafted message is 409; a missing target
+// is 404; an unconfigured pair is 503; anything else is 502 because the command
+// did not reach the domain pair.
+func (h *Handlers) writeCommandError(w http.ResponseWriter, r *http.Request, action string, err error) {
+	switch {
+	case errors.Is(err, domain.ErrCompanyNameRequired),
+		errors.Is(err, domain.ErrCompanyIDRequired),
+		errors.Is(err, domain.ErrICPDefinitionRequired),
+		errors.Is(err, domain.ErrCampaignCompanyRequired),
+		errors.Is(err, domain.ErrCampaignNameRequired),
+		errors.Is(err, domain.ErrCampaignICPRequired),
+		errors.Is(err, domain.ErrCampaignIDRequired),
+		errors.Is(err, domain.ErrLeadIDRequired),
+		errors.Is(err, domain.ErrFitOutOfRange),
+		errors.Is(err, domain.ErrMessageLeadRequired),
+		errors.Is(err, domain.ErrMessageChannelRequired),
+		errors.Is(err, domain.ErrMessageContentRequired):
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+	case errors.Is(err, domain.ErrMessageNotDrafted):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, domain.ErrNotFound):
+		writeError(w, http.StatusNotFound, "recurso não encontrado")
+	case errors.Is(err, infrastructure.ErrNotConfigured):
+		writeError(w, http.StatusServiceUnavailable, "par de domínio não configurado")
+	default:
+		h.log.ErrorContext(r.Context(), "publish command", "action", action, "error", err)
+		writeError(w, http.StatusBadGateway, "falha ao publicar o comando")
+	}
+}
+
+// writeReadError maps a read failure to a status. A missing record is 404, an
+// unconfigured pair is 503, anything else is 502.
+func (h *Handlers) writeReadError(w http.ResponseWriter, r *http.Request, notFoundMsg, what string, err error) {
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		writeError(w, http.StatusNotFound, notFoundMsg)
+	case errors.Is(err, infrastructure.ErrNotConfigured):
+		writeError(w, http.StatusServiceUnavailable, "par de domínio não configurado")
+	default:
+		h.log.ErrorContext(r.Context(), "read", "what", what, "error", err)
+		writeError(w, http.StatusBadGateway, "falha ao ler do par de domínio")
+	}
+}
+
+// cors allows the SPA's origin(s) to call this host. An empty allowlist sends
+// no CORS headers (curl and server-to-server still work).
+func cors(origins []string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" && originAllowed(origins, origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Headers",
+				"Content-Type, X-API-Key, traceparent, tracestate, baggage")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func originAllowed(origins []string, origin string) bool {
+	for _, allowed := range origins {
+		if strings.TrimSpace(allowed) == origin {
+			return true
+		}
+	}
+	return false
+}
+
+// intQuery parses an optional integer query param; absent or malformed yields 0
+// (meaning "unset" for the service layer).
+func intQuery(r *http.Request, name string) int {
+	v := strings.TrimSpace(r.URL.Query().Get(name))
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// writeAccepted is the 202 command body: the pair's command id plus the status
+// marker the contract fixes.
+func writeAccepted(w http.ResponseWriter, id string) {
+	writeJSON(w, http.StatusAccepted, map[string]string{"id": id, "status": "accepted"})
+}

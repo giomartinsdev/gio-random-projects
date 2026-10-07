@@ -53,6 +53,22 @@ const (
 	ActionSetTransactionActive    Action = "finance.transaction.setActive"
 	ActionTransferBetweenAccounts Action = "finance.transfer.betweenAccounts"
 	ActionSetCategoryBudget       Action = "finance.budget.setCategory"
+
+	// Prospecta (specs/004-prospecta): Company + ICP. A action é o nome do
+	// comando em PascalCase, o formato do contrato (§7.2); a prospecta-api
+	// relaya este envelope e o domain-worker aplica.
+	ActionCreateCompany Action = "CreateCompany"
+	ActionDefineICP     Action = "DefineICP"
+	ActionCreateCampaign  Action = "CreateCampaign"
+	ActionStartCampaign   Action = "StartCampaign"
+	ActionRequestProspect Action = "RequestProspect"
+	ActionUpsertLead      Action = "UpsertLead"
+	ActionQualifyLead     Action = "QualifyLead"
+	ActionDraftMessage    Action = "DraftMessage"
+	ActionApproveMessage  Action = "ApproveMessage"
+	ActionSendMessage     Action = "SendMessage"
+	ActionReceiveReply    Action = "ReceiveReply"
+	ActionBookMeeting     Action = "BookMeeting"
 )
 
 type Command struct {

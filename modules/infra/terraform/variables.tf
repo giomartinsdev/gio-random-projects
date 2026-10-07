@@ -38,19 +38,21 @@ variable "excluded_hostnames" {
   EOT
   type        = list(string)
   default = [
-    "registry.giomartins.dev",    # docker login/push — own htpasswd auth + mTLS (modules/cloudflare/registry_mtls.tf); Docker tooling can't do a browser SSO redirect or send custom Access headers
-    "domain.giomartins.dev",      # REST API clients — own X-API-Key auth + a service-token Access application (modules/cloudflare/service_token_access.tf)
-    "tela.giomartins.dev",        # rooms are shared with people who have no account here; the room password is the access control
-    "tela-api.giomartins.dev",    # same tela-frontend page calls this cross-origin for signalling/SFU — a browser SSO redirect would break every fetch/WebSocket call
-    "hub.giomartins.dev",         # the hub is chrome around the public SPAs, so it's public too — its opt-in Google login lives on the /sso path instead (see path_protected_hostnames in locals.tf), which gates only the admin shortcuts tier
-    "clubs.giomartins.dev",       # the hub's SPA is public by design -- a visitor reads the whole dataset with no account, and it must be iframe-embeddable in the hub (same reasoning as tela); the opt-in login is clubs-api's own Google Sign-In, no Access app involved
-    "clubs-api.giomartins.dev",   # no Cloudflare Access at all -- its own Google Sign-In + session cookie is the gate (see stacks/clubs.yml); the bare hostname serves the public reads so an anonymous visitor can browse and the SPA can probe /api/me without a redirect
-    "ai.giomartins.dev",          # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
-    "otel.giomartins.dev",        # public visitors' browsers send SPA telemetry here — a Google SSO redirect would break every one of them; alloy's OTLP receiver CORS allowlist (the SPA origins only) is the access control (stacks/observability.yml)
-    "maus.giomartins.dev",        # only the DNS record lives in Terraform (the OpenMausBot stack is a Dockhand git stack, like the other apps); no Access app — OpenMausBot's own pairing login is the gate, and its SSE chat must not sit behind a browser SSO redirect
-    "finance-api.giomartins.dev", # no Cloudflare Access — own X-API-Key auth; the finance SPA calls it cross-origin from the browser, and a Google SSO redirect would break every fetch (same reason as clubs-api)
-    "finance.giomartins.dev",     # the finance SPA is public and must be iframe-embeddable in the hub (like tela/clubs); the operator pastes the X-API-Key in the page itself, not an Access redirect
-    "db-mcp.giomartins.dev",      # MCP do banco: cliente não-browser (agente) não completa redirect de SSO; o gateway nginx valida um token bearer próprio (stack db-mcp, MCP_DB_TOKEN)
+    "registry.giomartins.dev",      # docker login/push — own htpasswd auth + mTLS (modules/cloudflare/registry_mtls.tf); Docker tooling can't do a browser SSO redirect or send custom Access headers
+    "domain.giomartins.dev",        # REST API clients — own X-API-Key auth + a service-token Access application (modules/cloudflare/service_token_access.tf)
+    "tela.giomartins.dev",          # rooms are shared with people who have no account here; the room password is the access control
+    "tela-api.giomartins.dev",      # same tela-frontend page calls this cross-origin for signalling/SFU — a browser SSO redirect would break every fetch/WebSocket call
+    "hub.giomartins.dev",           # the hub is chrome around the public SPAs, so it's public too — its opt-in Google login lives on the /sso path instead (see path_protected_hostnames in locals.tf), which gates only the admin shortcuts tier
+    "clubs.giomartins.dev",         # the hub's SPA is public by design -- a visitor reads the whole dataset with no account, and it must be iframe-embeddable in the hub (same reasoning as tela); the opt-in login is clubs-api's own Google Sign-In, no Access app involved
+    "clubs-api.giomartins.dev",     # no Cloudflare Access at all -- its own Google Sign-In + session cookie is the gate (see stacks/clubs.yml); the bare hostname serves the public reads so an anonymous visitor can browse and the SPA can probe /api/me without a redirect
+    "ai.giomartins.dev",            # own dashboard login (INITIAL_PASSWORD) + API key auth on /v1 — browser SSO redirect breaks CLI/terminal AI clients
+    "otel.giomartins.dev",          # public visitors' browsers send SPA telemetry here — a Google SSO redirect would break every one of them; alloy's OTLP receiver CORS allowlist (the SPA origins only) is the access control (stacks/observability.yml)
+    "maus.giomartins.dev",          # only the DNS record lives in Terraform (the OpenMausBot stack is a Dockhand git stack, like the other apps); no Access app — OpenMausBot's own pairing login is the gate, and its SSE chat must not sit behind a browser SSO redirect
+    "finance-api.giomartins.dev",   # no Cloudflare Access — own X-API-Key auth; the finance SPA calls it cross-origin from the browser, and a Google SSO redirect would break every fetch (same reason as clubs-api)
+    "finance.giomartins.dev",       # the finance SPA is public and must be iframe-embeddable in the hub (like tela/clubs); the operator pastes the X-API-Key in the page itself, not an Access redirect
+    "prospecta-api.giomartins.dev", # no Cloudflare Access — own X-API-Key auth; the prospecta SPA calls it cross-origin from the browser, and a Google SSO redirect would break every fetch (same reason as finance-api/clubs-api)
+    "prospecta.giomartins.dev",     # the prospecta SPA is public and must be iframe-embeddable in the hub (like tela/clubs/finance); the operator pastes the X-API-Key in the page itself, not an Access redirect
+    "db-mcp.giomartins.dev",        # MCP do banco: cliente não-browser (agente) não completa redirect de SSO; o gateway nginx valida um token bearer próprio (stack db-mcp, MCP_DB_TOKEN)
   ]
 }
 

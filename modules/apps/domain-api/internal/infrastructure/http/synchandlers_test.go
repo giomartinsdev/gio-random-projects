@@ -53,6 +53,7 @@ func newSyncServer(t *testing.T, publisher *spyPublisher, audits *stubAudits) ht
 		NewClubsWriteHandlers(publisher, log),
 		NewFinanceHandlers(nil, log),
 		NewEnvelopeHandlers(publisher, log),
+		NewProspectaHandlers(nil, publisher, log),
 		APIKeys{"k1": "test"},
 		NewIPRateLimiter(1000, 1000),
 		log,

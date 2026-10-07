@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Prospecta — tokens do poc.pen §V1 (dark). Superfícies:
+   bg #0B0B0D → surface #141416 → elevated #1C1C20; linha #26262B;
+   texto #FFFFFF / #A8A8B0 / #6E6E76; acento #2563EB (ação) e
+   accent-light #7DA6FF (dado/estado de agente). */
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  * {
+    border-color: #26262b;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: #0b0b0d;
+    color: #ffffff;
+    font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+  }
+
+  ::selection {
+    background: rgba(37, 99, 235, 0.35);
+  }
+}
+
+@layer components {
+  /* Painel/card de superfície: raio 14, borda 1px. */
+  .card {
+    background: #141416;
+    border: 1px solid #26262b;
+    border-radius: 14px;
+  }
+
+  /* Rótulo miúdo em mono — cabeçalhos de coluna, metadados, tempos. */
+  .caps {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6e6e76;
+  }
+
+  .mono {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #33333a transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: #33333a;
+    border-radius: 100px;
+  }
+  .scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
