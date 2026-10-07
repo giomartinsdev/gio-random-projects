@@ -101,6 +101,9 @@ const (
 	// chega pronto (bcrypt) no payload — o worker só grava, nunca vê a senha
 	// em claro.
 	ActionCreateUser Action = "CreateUser"
+	// Troca/definição de senha: reescreve prospecta_user.password_hash. O hash
+	// já chega pronto (bcrypt); idempotente por command_id.
+	ActionUpdateUserPassword Action = "UpdateUserPassword"
 )
 
 type Command struct {

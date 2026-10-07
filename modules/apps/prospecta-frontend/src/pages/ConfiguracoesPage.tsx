@@ -1,225 +1,616 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { BadgeCheck, KeyRound, Mail, MessageCircle, Shield } from "lucide-react";
-import { api } from "@/lib/api";
-import { isConfigured, loadConfig, saveConfig, type ProspectaConfig } from "@/lib/config";
+import { useEffect, useState, type ComponentType, type InputHTMLAttributes } from "react";
+import {
+  Bell,
+  Building2,
+  ChevronDown,
+  KeyRound,
+  LogOut,
+  ShieldCheck,
+  Target,
+  UserRound,
+  type LucideProps,
+} from "lucide-react";
+import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { loadConfig, saveConfig, type ProspectaConfig } from "@/lib/config";
 import { useAsync } from "@/lib/useAsync";
-import { useConfig } from "@/lib/useConfig";
+import { useConfigured } from "@/lib/useConfig";
+import { isGoogleSession, markPasswordSession } from "@/lib/google";
 import { cn } from "@/lib/utils";
+import { navigatePublic } from "@/lib/useHashRoute";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHead } from "@/components/ui/Card";
 import { Input, Textarea } from "@/components/ui/Input";
-import { Orb } from "@/components/ui/Orb";
+import { StatusBadge } from "@/components/ui/Badge";
 import { ErrorState, LoadingState } from "@/components/ApiState";
 import { Topbar } from "@/components/Topbar";
 
-const TABS = ["Empresa", "Canais", "Agentes", "Integrações", "LGPD"] as const;
-type Tab = (typeof TABS)[number];
-
-// Informativo — não é estado do backend (a API não expõe config de agentes).
-const AGENT_TEAM: { name: string; role: string }[] = [
-  { name: "Prospectador", role: "Varre a web por prospects" },
-  { name: "Pesquisador", role: "Enriquece dados e valida sinais" },
-  { name: "Redator", role: "Escreve abordagens personalizadas" },
-  { name: "Qualificador", role: "Pontua o fit contra o ICP" },
+const TABS: { id: Tab; label: string; icon: ComponentType<LucideProps> }[] = [
+  { id: "Conta", label: "Conta", icon: UserRound },
+  { id: "Empresa", label: "Empresa", icon: Building2 },
+  { id: "Cliente ideal (ICP)", label: "Cliente ideal (ICP)", icon: Target },
+  { id: "Preferências", label: "Preferências", icon: Bell },
+  { id: "Privacidade", label: "Privacidade", icon: ShieldCheck },
 ];
+type Tab = "Conta" | "Empresa" | "Cliente ideal (ICP)" | "Preferências" | "Privacidade";
 
+// Configurações do cliente final: tudo gira em torno da sessão (useAuth). O
+// modo operador (URL/chave/id) existe, mas recolhido em "Avançado (operador)" —
+// quem entra com sessão nunca vê X-API-Key.
 export function ConfiguracoesPage() {
-  const [tab, setTab] = useState<Tab>("Empresa");
-  const saved = useConfig();
-  const [cfg, setCfg] = useState<ProspectaConfig>(() => loadConfig());
-  const [company, setCompany] = useState({ name: "", site: "", description: "" });
-  const [icp, setIcp] = useState("");
+  const [tab, setTab] = useState<Tab>("Conta");
+  const { user } = useAuth();
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Topbar title="Configurações" />
+      <div className="min-h-0 flex-1 overflow-y-auto scroll-thin p-7">
+        <div className="mx-auto flex w-full max-w-[880px] items-start gap-8">
+          <TabNav tab={tab} onTab={setTab} />
+          <div className="flex min-w-0 flex-1 flex-col gap-5">
+            {tab === "Conta" && <ContaTab />}
+            {tab === "Empresa" && <EmpresaTab />}
+            {tab === "Cliente ideal (ICP)" && <IcpTab />}
+            {tab === "Preferências" && <PreferenciasTab />}
+            {tab === "Privacidade" && <PrivacidadeTab />}
+            {!user && <AdvancedSection />}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabNav({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
+  return (
+    <nav className="flex w-[210px] shrink-0 flex-col gap-0.5">
+      {TABS.map(({ id, icon: Icon }) => {
+        const active = id === tab;
+        return (
+          <button
+            key={id}
+            onClick={() => onTab(id)}
+            className={cn(
+              "flex items-center gap-3 rounded-sm px-3 py-2.5 text-left text-[14px] transition-colors",
+              active ? "bg-elevated font-medium text-fg" : "text-fg-2 hover:bg-elevated/60 hover:text-fg",
+            )}
+          >
+            <Icon size={17} className={cn("shrink-0", active ? "text-accent-light" : "text-fg-3")} />
+            {id}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+// ---- Conta ----
+
+function ContaTab() {
+  const { user, company, logout } = useAuth();
+  if (!user) return <SignInPrompt />;
+
+  return (
+    <>
+      <Card className="flex flex-col gap-5 rounded-lg p-6">
+        <CardHead title="Sua conta" />
+        <div className="flex items-center gap-4">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-accent text-[18px] font-semibold text-white">
+            {user.name.slice(0, 1).toUpperCase()}
+          </span>
+          <div className="flex flex-col leading-tight">
+            <span className="text-[15px] font-semibold text-fg">{user.name}</span>
+            <span className="text-[13px] text-fg-2">{user.email}</span>
+          </div>
+        </div>
+        <ReadField label="Nome" value={user.name} />
+        <ReadField label="E-mail" value={user.email} hint="O e-mail de acesso não pode ser alterado." />
+        {company && <ReadField label="Empresa" value={company.name} />}
+      </Card>
+
+      <PasswordCard />
+
+      <Card className="flex flex-col gap-4 rounded-lg p-6">
+        <CardHead title="Sessão" />
+        <p className="text-[13px] text-fg-2">Encerrar sua sessão neste navegador.</p>
+        <Button
+          variant="secondary"
+          className="w-fit"
+          icon={<LogOut size={16} />}
+          onClick={async () => {
+            await logout();
+            navigatePublic("login");
+          }}
+        >
+          Sair
+        </Button>
+      </Card>
+    </>
+  );
+}
+
+// Troca de senha (POST /auth/password). Conta só-Google não tem senha local: o
+// formulário vira "defina uma senha". O backend pode não reportar has_password,
+// então usamos também a marca local de como este dispositivo entrou.
+function PasswordCard() {
+  const { user, refresh } = useAuth();
+  const [googleOnly, setGoogleOnly] = useState(false);
+  useEffect(() => {
+    setGoogleOnly(user?.has_password === false || (user?.has_password === undefined && isGoogleSession()));
+  }, [user]);
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [status, setStatus] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const configured = isConfigured(saved);
-  const loaded = useAsync(() => api.company(saved.companyId), [], configured);
+  if (!user) return null;
 
-  useEffect(() => {
-    if (!loaded.data) return;
-    setCompany({ name: loaded.data.name, site: loaded.data.site, description: loaded.data.description });
-    setIcp(loaded.data.icp?.definition ?? "");
-  }, [loaded.data]);
-
-  async function save() {
-    saveConfig(cfg);
-    setBusy(true);
+  async function submit() {
     setStatus(null);
+    if (!googleOnly && !current) {
+      setStatus({ kind: "err", text: "Informe sua senha atual." });
+      return;
+    }
+    if (next.length < 8) {
+      setStatus({ kind: "err", text: "A nova senha precisa ter ao menos 8 caracteres." });
+      return;
+    }
+    if (next !== confirm) {
+      setStatus({ kind: "err", text: "As senhas não conferem." });
+      return;
+    }
+    setBusy(true);
     try {
-      if (cfg.companyId.trim()) {
-        if (icp.trim()) await api.defineIcp(cfg.companyId.trim(), { definition: icp, signals: loaded.data?.icp?.signals ?? [] });
-        setStatus({ kind: "ok", text: "Configurações salvas" + (icp.trim() ? " · ICP atualizado" : "") });
-      } else {
-        const created = await api.createCompany(company);
-        const next = { ...cfg, companyId: created.id };
-        setCfg(next);
-        saveConfig(next);
-        if (icp.trim()) await api.defineIcp(created.id, { definition: icp, signals: [] });
-        setStatus({ kind: "ok", text: `Empresa ${created.id} criada` + (icp.trim() ? " · ICP definido" : "") });
-        loaded.reload();
-      }
+      await api.changePassword({ current_password: current, new_password: next });
+      markPasswordSession();
+      await refresh();
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      setGoogleOnly(false);
+      setStatus({ kind: "ok", text: "Senha atualizada." });
     } catch (err) {
-      setStatus({ kind: "err", text: err instanceof Error ? err.message : "falha ao falar com a API" });
+      setStatus({ kind: "err", text: err instanceof ApiError ? err.message : "não foi possível atualizar a senha" });
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <Topbar
-        title="Configurações"
-        right={
-          <nav className="flex items-center gap-1.5">
-            {TABS.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={cn(
-                  "rounded-sm px-3.5 py-2 text-[14px] transition-colors",
-                  t === tab ? "bg-elevated font-medium text-fg" : "text-fg-3 hover:text-fg",
-                )}
-              >
-                {t}
-              </button>
-            ))}
-          </nav>
-        }
-      />
+    <Card className="flex flex-col gap-4 rounded-lg p-6">
+      <div className="flex flex-col gap-1">
+        <CardHead title={googleOnly ? "Defina uma senha" : "Trocar senha"} />
+        <p className="text-[13px] text-fg-2">
+          {googleOnly
+            ? "Sua conta entra pelo Google. Defina uma senha para também acessar com e-mail e senha."
+            : "Use uma senha forte que você não use em outros lugares."}
+        </p>
+      </div>
 
-      {tab !== "Empresa" ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center p-7">
-          <Card className="max-w-md p-6 text-center">
-            <CardHead title={tab} className="justify-center" />
-            <p className="mt-2 text-[13px] text-fg-2">
-              Esta seção ainda não tem endpoint no backend — nada é simulado aqui. Entra nas próximas user stories.
-            </p>
-          </Card>
+      {googleOnly && (
+        <p className="flex items-center gap-2 text-[12px] text-fg-3">
+          <ShieldCheck size={14} className="text-accent-light" />
+          Sua conta já é protegida pelo Google.
+        </p>
+      )}
+
+      <div className="flex flex-col gap-4">
+        {!googleOnly && (
+          <Field label="Senha atual" type="password" value={current} onChange={setCurrent} placeholder="••••••••" autoComplete="current-password" />
+        )}
+        <div className="flex flex-col gap-4 sm:flex-row">
+          <Field label="Nova senha" type="password" value={next} onChange={setNext} placeholder="Mínimo 8 caracteres" autoComplete="new-password" />
+          <Field label="Confirmar senha" type="password" value={confirm} onChange={setConfirm} placeholder="Repita a nova senha" autoComplete="new-password" />
         </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <span className={cn("text-[13px]", status?.kind === "err" ? "text-danger" : "text-fg-2")}>{status?.text}</span>
+        <Button onClick={submit} disabled={busy}>
+          {busy ? "Salvando…" : googleOnly ? "Definir senha" : "Salvar nova senha"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+// ---- Empresa ----
+
+function EmpresaTab() {
+  const cfg = useConfigured();
+  const loaded = useAsync(() => api.company(cfg!.companyId), [cfg?.companyId], cfg !== null);
+
+  if (!cfg) return <SignInPrompt />;
+  if (loaded.loading) return <LoadingState label="Carregando empresa…" />;
+  if (loaded.error || !loaded.data) return <ErrorState error={loaded.error ?? "empresa indisponível"} onRetry={loaded.reload} />;
+
+  const company = loaded.data;
+  return (
+    <Card className="flex flex-col gap-5 rounded-lg p-6">
+      <div className="flex flex-col gap-1">
+        <CardHead
+          title="Sua empresa"
+          right={<StatusBadge tone="muted">Somente leitura</StatusBadge>}
+        />
+        <p className="text-[13px] text-fg-2">É com esses dados que os agentes descrevem sua oferta e encontram o ICP certo.</p>
+      </div>
+      <ReadField label="Nome da empresa" value={company.name || "—"} />
+      <ReadField label="Site" value={company.site || "—"} />
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[13px] text-fg-2">O que você vende</span>
+        <Textarea value={company.description || ""} readOnly className="min-h-[90px] cursor-default bg-elevated/60 text-fg-2 focus:border-line focus:ring-0" />
+      </label>
+      <p className="text-[12px] text-fg-3">Precisa atualizar algo? É só falar com o time — a edição acontece do nosso lado.</p>
+    </Card>
+  );
+}
+
+// ---- Cliente ideal (ICP) ----
+
+function IcpTab() {
+  const cfg = useConfigured();
+  const loaded = useAsync(() => api.company(cfg!.companyId), [cfg?.companyId], cfg !== null);
+  const [definition, setDefinition] = useState("");
+  const [signals, setSignals] = useState<string[]>([]);
+  const [signalInput, setSignalInput] = useState("");
+  const [status, setStatus] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!loaded.data) return;
+    setDefinition(loaded.data.icp?.definition ?? "");
+    setSignals(loaded.data.icp?.signals ?? []);
+  }, [loaded.data]);
+
+  if (!cfg) return <SignInPrompt />;
+
+  function addSignal() {
+    const value = signalInput.trim();
+    if (value && !signals.includes(value)) setSignals((prev) => [...prev, value]);
+    setSignalInput("");
+  }
+
+  async function save() {
+    setStatus(null);
+    if (!definition.trim()) {
+      setStatus({ kind: "err", text: "Descreva seu cliente ideal antes de salvar." });
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.defineIcp(cfg!.companyId, { definition: definition.trim(), signals });
+      setStatus({ kind: "ok", text: "Cliente ideal salvo. Os agentes passam a usá-lo nas próximas buscas." });
+    } catch (err) {
+      setStatus({ kind: "err", text: err instanceof ApiError ? err.message : "não foi possível salvar o ICP" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="flex flex-col gap-5 rounded-lg p-6">
+      <div className="flex flex-col gap-1">
+        <CardHead title="Cliente ideal (ICP)" />
+        <p className="text-[13px] text-fg-2">Descreva em linguagem natural quem faz sentido para você. Os agentes usam isso para qualificar cada lead.</p>
+      </div>
+
+      {loaded.loading ? (
+        <LoadingState label="Carregando…" />
+      ) : loaded.error ? (
+        <ErrorState error={loaded.error} onRetry={loaded.reload} compact />
       ) : (
-        <div className="flex min-h-0 flex-1 items-start gap-5 overflow-y-auto scroll-thin p-7">
-          <div className="flex min-w-0 flex-1 flex-col gap-5">
-            <Card className="flex flex-col gap-4 rounded-lg p-5">
-              <CardHead
-                title={<span className="flex items-center gap-2"><KeyRound size={16} className="text-accent-light" />Conexão com a API</span>}
-                right={<span className="font-mono text-[12px] text-fg-3">X-API-Key</span>}
-              />
-              <div className="flex gap-4">
-                <label className="flex flex-1 flex-col gap-1.5">
-                  <span className="text-[13px] text-fg-2">URL da prospecta-api</span>
-                  <Input value={cfg.apiUrl} onChange={(e) => setCfg({ ...cfg, apiUrl: e.target.value })} placeholder="http://localhost:8022" />
-                </label>
-                <label className="flex flex-1 flex-col gap-1.5">
-                  <span className="text-[13px] text-fg-2">Chave (X-API-Key)</span>
-                  <Input type="password" value={cfg.apiKey} onChange={(e) => setCfg({ ...cfg, apiKey: e.target.value })} placeholder="cole a chave aqui" />
-                </label>
+        <>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] text-fg-2">Descrição</span>
+            <Textarea
+              value={definition}
+              onChange={(e) => setDefinition(e.target.value)}
+              className="min-h-[130px]"
+              placeholder="ex.: SaaS B2B no Brasil, de 50 a 500 funcionários, com sinais de expansão…"
+            />
+          </label>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[13px] text-fg-2">Sinais de compra</span>
+            {signals.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {signals.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSignals((prev) => prev.filter((x) => x !== s))}
+                    title="Remover sinal"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-[13px] font-medium text-accent-light transition-colors hover:bg-accent-soft/70"
+                  >
+                    {s}
+                    <span className="text-[13px] opacity-70">×</span>
+                  </button>
+                ))}
               </div>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[13px] text-fg-2">ID da empresa</span>
-                <Input value={cfg.companyId} onChange={(e) => setCfg({ ...cfg, companyId: e.target.value })} placeholder="preenchido ao criar a empresa, ou cole um id existente" />
-              </label>
-              <p className="text-[12px] text-fg-3">A chave fica apenas no localStorage deste navegador e é enviada no header X-API-Key.</p>
-            </Card>
-
-            <Card className="flex flex-col gap-4 rounded-lg p-5">
-              <div className="flex flex-col gap-1">
-                <CardHead title="Perfil da empresa" />
-                <p className="text-[13px] text-fg-2">
-                  {saved.companyId
-                    ? "Dados reais de GET /companies/{id} (somente leitura — a API não expõe update de empresa)."
-                    : "Informe os dados para criar a empresa via POST /companies."}
-                </p>
-              </div>
-              {saved.companyId && loaded.loading ? (
-                <LoadingState label="Carregando empresa…" />
-              ) : saved.companyId && loaded.error ? (
-                <ErrorState error={loaded.error} onRetry={loaded.reload} compact />
-              ) : (
-                <>
-                  <div className="flex gap-4">
-                    <label className="flex flex-1 flex-col gap-1.5">
-                      <span className="text-[13px] text-fg-2">Nome da empresa</span>
-                      <Input value={company.name} onChange={(e) => setCompany({ ...company, name: e.target.value })} disabled={Boolean(saved.companyId)} />
-                    </label>
-                    <label className="flex flex-1 flex-col gap-1.5">
-                      <span className="text-[13px] text-fg-2">Site</span>
-                      <Input value={company.site} onChange={(e) => setCompany({ ...company, site: e.target.value })} disabled={Boolean(saved.companyId)} />
-                    </label>
-                  </div>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-[13px] text-fg-2">O que você vende</span>
-                    <Textarea value={company.description} onChange={(e) => setCompany({ ...company, description: e.target.value })} disabled={Boolean(saved.companyId)} />
-                  </label>
-                </>
-              )}
-            </Card>
-
-            <Card className="flex flex-col gap-4 rounded-lg p-5">
-              <CardHead title="Cliente ideal (ICP)" right={<BadgeCheck size={16} className="text-accent-light" />} />
-              <Textarea value={icp} onChange={(e) => setIcp(e.target.value)} className="min-h-[90px]" placeholder="Descreva o cliente ideal…" />
-              <p className="text-[12px] text-fg-3">Salvo via POST /companies/&lbrace;id&rbrace;/icp.</p>
-            </Card>
-
-            <div className="flex-1" />
-            {status && (
-              <p className={cn("text-right text-[13px]", status.kind === "err" ? "text-danger" : "text-fg-2")}>{status.text}</p>
             )}
-            <div className="flex justify-end gap-3">
-              <Button variant="secondary" onClick={() => { setCfg(loadConfig()); setStatus(null); }} disabled={busy}>
-                Cancelar
-              </Button>
-              <Button onClick={save} disabled={busy}>
-                Salvar
+            <div className="flex gap-2">
+              <Input
+                value={signalInput}
+                onChange={(e) => setSignalInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addSignal();
+                  }
+                }}
+                placeholder="ex.: expansão de frota, nova rodada de investimento…"
+              />
+              <Button variant="secondary" onClick={addSignal} className="shrink-0">
+                Adicionar
               </Button>
             </div>
           </div>
+        </>
+      )}
 
-          <div className="flex w-[420px] shrink-0 flex-col gap-4">
-            <Card elevated className="flex flex-col gap-4 rounded-lg p-5">
-              <CardHead title="Seus agentes" right={<span className="text-[12px] text-fg-3">informativo</span>} />
-              {AGENT_TEAM.map((agent) => (
-                <div key={agent.name} className="flex items-center gap-3 rounded-sm bg-bg p-3">
-                  <Orb state="idle" size={20} glow={false} />
-                  <div className="flex min-w-0 flex-1 flex-col leading-tight">
-                    <span className="text-[14px] font-medium text-fg">{agent.name}</span>
-                    <span className="truncate text-[12px] text-fg-2">{agent.role}</span>
-                  </div>
-                </div>
-              ))}
-              <p className="text-[12px] text-fg-3">A API ainda não expõe configuração/estado dos agentes.</p>
-            </Card>
+      <div className="flex items-center justify-between gap-3">
+        <span className={cn("text-[13px]", status?.kind === "err" ? "text-danger" : "text-fg-2")}>{status?.text}</span>
+        <Button onClick={save} disabled={busy || loaded.loading}>
+          {busy ? "Salvando…" : "Salvar ICP"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
 
-            <Card className="flex flex-col gap-4 rounded-lg p-5">
-              <CardHead title="Canais de abordagem" />
-              <ChannelRow icon={<Mail size={18} />} name="E-mail" hint="enviado pelo agente após aprovação" />
-              <ChannelRow icon={<MessageCircle size={18} />} name="WhatsApp" hint="enviado pelo agente após aprovação" />
-              <p className="text-[12px] text-fg-3">O backend não reporta o status de conexão dos canais.</p>
-            </Card>
+// ---- Preferências (locais, neste navegador) ----
 
-            <Card className="flex items-center gap-3 rounded-lg p-5">
-              <Shield size={20} className="shrink-0 text-accent-light" />
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[13px] font-medium text-fg">Privacidade e LGPD</span>
-                <span className="text-[12px] text-fg-2">
-                  Dados públicos, opt-out claro e registro de consentimento em cada abordagem.
-                </span>
-              </div>
-            </Card>
-          </div>
+interface Prefs {
+  weeklyDigest: boolean;
+  newLeads: boolean;
+  approvals: boolean;
+  productNews: boolean;
+}
+
+const PREFS_KEY = "prospecta:prefs";
+const PREFS_DEFAULT: Prefs = { weeklyDigest: true, newLeads: true, approvals: true, productNews: false };
+
+function useLocalPrefs() {
+  const [prefs, setPrefs] = useState<Prefs>(() => {
+    try {
+      const raw = localStorage.getItem(PREFS_KEY);
+      return raw ? { ...PREFS_DEFAULT, ...(JSON.parse(raw) as Partial<Prefs>) } : PREFS_DEFAULT;
+    } catch {
+      return PREFS_DEFAULT;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    } catch {
+      // storage indisponível: as preferências valem só nesta aba.
+    }
+  }, [prefs]);
+  const set = (key: keyof Prefs) => (value: boolean) => setPrefs((prev) => ({ ...prev, [key]: value }));
+  return { prefs, set };
+}
+
+function PreferenciasTab() {
+  const { prefs, set } = useLocalPrefs();
+  return (
+    <>
+      <Card className="flex flex-col gap-5 rounded-lg p-6">
+        <div className="flex flex-col gap-1">
+          <CardHead title="Notificações" />
+          <p className="text-[13px] text-fg-2">Escolha o que você quer receber enquanto os agentes trabalham.</p>
         </div>
+        <div className="flex flex-col gap-4">
+          <Toggle checked={prefs.newLeads} onChange={set("newLeads")} label="Novos leads qualificados" desc="Avisamos quando um lead cruza o corte do seu ICP." />
+          <Toggle checked={prefs.approvals} onChange={set("approvals")} label="Aprovação antes de enviar" desc="Você revisa a abordagem antes de qualquer mensagem sair." />
+          <Toggle checked={prefs.weeklyDigest} onChange={set("weeklyDigest")} label="Resumo semanal" desc="Um panorama do que os agentes encontraram e abordaram na semana." />
+          <Toggle checked={prefs.productNews} onChange={set("productNews")} label="Novidades do produto" desc="Recursos novos e dicas de uso. Sem enxurrada." />
+        </div>
+      </Card>
+      <Card className="flex items-center gap-3 rounded-lg p-5">
+        <Bell size={18} className="shrink-0 text-fg-3" />
+        <p className="text-[12px] text-fg-3">As preferências ficam salvas neste navegador. Em breve acompanham a sua conta.</p>
+      </Card>
+    </>
+  );
+}
+
+// ---- Privacidade / LGPD ----
+
+interface Consent {
+  dataProcessing: boolean;
+  productEmails: boolean;
+}
+
+const CONSENT_KEY = "prospecta:consent";
+const CONSENT_DEFAULT: Consent = { dataProcessing: true, productEmails: true };
+
+function useLocalConsent() {
+  const [consent, setConsent] = useState<Consent>(() => {
+    try {
+      const raw = localStorage.getItem(CONSENT_KEY);
+      return raw ? { ...CONSENT_DEFAULT, ...(JSON.parse(raw) as Partial<Consent>) } : CONSENT_DEFAULT;
+    } catch {
+      return CONSENT_DEFAULT;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(CONSENT_KEY, JSON.stringify(consent));
+    } catch {
+      // ignore
+    }
+  }, [consent]);
+  const set = (key: keyof Consent) => (value: boolean) => setConsent((prev) => ({ ...prev, [key]: value }));
+  return { consent, set };
+}
+
+function PrivacidadeTab() {
+  const { consent, set } = useLocalConsent();
+  return (
+    <>
+      <Card className="flex flex-col gap-5 rounded-lg p-6">
+        <div className="flex flex-col gap-2">
+          <CardHead title="Privacidade e LGPD" right={<ShieldCheck size={16} className="text-accent-light" />} />
+          <p className="text-[14px] leading-[1.6] text-fg-2">
+            Trabalhamos apenas com dados públicos. Cada abordagem tem opt-out claro e registro de consentimento, e você é
+            quem aprova o que sai em seu nome.
+          </p>
+        </div>
+      </Card>
+
+      <Card className="flex flex-col gap-5 rounded-lg p-6">
+        <CardHead title="Seus consentimentos" />
+        <div className="flex flex-col gap-4">
+          <Toggle
+            checked={consent.dataProcessing}
+            onChange={set("dataProcessing")}
+            label="Tratamento de dados para prospecção"
+            desc="Necessário para os agentes encontrarem e qualificarem leads do seu ICP."
+          />
+          <Toggle
+            checked={consent.productEmails}
+            onChange={set("productEmails")}
+            label="Comunicações do produto"
+            desc="Novidades, dicas e conteúdo. Você pode desligar quando quiser."
+          />
+        </div>
+      </Card>
+
+      <Card className="flex flex-col gap-3 rounded-lg p-6">
+        <CardHead title="Seus direitos" />
+        <p className="text-[13px] leading-[1.6] text-fg-2">
+          Você pode solicitar acesso, correção ou exclusão dos seus dados a qualquer momento. Fale com o time pelo suporte
+          e cuidamos disso para você.
+        </p>
+      </Card>
+    </>
+  );
+}
+
+// ---- Avançado (operador) — recolhido; só aparenta quando não há sessão ----
+
+function AdvancedSection() {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [cfg, setCfg] = useState<ProspectaConfig>(() => loadConfig());
+  const [status, setStatus] = useState<string | null>(null);
+
+  return (
+    <div className="flex flex-col gap-3 pt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-fit items-center gap-2 text-[12px] text-fg-3 transition-colors hover:text-fg-2"
+      >
+        <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} />
+        {user ? "Modo operador" : "Avançado (operador)"}
+      </button>
+
+      {open && (
+        <Card className="flex flex-col gap-4 rounded-lg p-5">
+          <CardHead
+            title={
+              <span className="flex items-center gap-2">
+                <KeyRound size={16} className="text-fg-3" />
+                Avançado (operador)
+              </span>
+            }
+            right={<span className="font-mono text-[12px] text-fg-3">X-API-Key</span>}
+          />
+          <p className="text-[12px] text-fg-3">Acesso técnico por chave e id da empresa. Use apenas se a sua operação pedir.</p>
+          <div className="flex gap-4">
+            <label className="flex flex-1 flex-col gap-1.5">
+              <span className="text-[13px] text-fg-2">URL da prospecta-api</span>
+              <Input value={cfg.apiUrl} onChange={(e) => setCfg({ ...cfg, apiUrl: e.target.value })} placeholder="https://prospecta-api…" />
+            </label>
+            <label className="flex flex-1 flex-col gap-1.5">
+              <span className="text-[13px] text-fg-2">Chave (X-API-Key)</span>
+              <Input type="password" value={cfg.apiKey} onChange={(e) => setCfg({ ...cfg, apiKey: e.target.value })} placeholder="cole a chave aqui" />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[13px] text-fg-2">ID da empresa</span>
+            <Input value={cfg.companyId} onChange={(e) => setCfg({ ...cfg, companyId: e.target.value })} placeholder="id da empresa" />
+          </label>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[12px] text-fg-3">A chave fica só neste navegador.</span>
+            <Button
+              onClick={() => {
+                saveConfig(cfg);
+                setStatus("Configuração salva neste navegador.");
+              }}
+            >
+              Salvar
+            </Button>
+          </div>
+          {status && <p className="text-right text-[13px] text-fg-2">{status}</p>}
+        </Card>
       )}
     </div>
   );
 }
 
-function ChannelRow({ icon, name, hint }: { icon: ReactNode; name: string; hint: string }) {
+// ---- Peças ----
+
+function SignInPrompt() {
   return (
-    <div className="flex items-center gap-3 rounded-sm bg-bg p-3">
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-accent-soft text-accent">{icon}</span>
-      <div className="flex min-w-0 flex-1 flex-col leading-tight">
-        <span className="text-[14px] font-medium text-fg">{name}</span>
-        <span className="truncate text-[12px] text-fg-3">{hint}</span>
+    <Card className="flex flex-col items-center gap-3 rounded-lg p-8 text-center">
+      <span className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent-light">
+        <UserRound size={22} />
+      </span>
+      <div className="flex flex-col gap-1">
+        <span className="text-[16px] font-semibold text-fg">Entre para ver sua conta</span>
+        <span className="text-[14px] text-fg-2">Sua conta e preferências aparecem aqui quando você entra.</span>
       </div>
-    </div>
+      <Button onClick={() => navigatePublic("login")}>Entrar</Button>
+    </Card>
+  );
+}
+
+function ReadField({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-[13px] text-fg-2">{label}</span>
+      <Input value={value} readOnly className="cursor-default bg-elevated/60 text-fg-2 focus:border-line focus:ring-0" />
+      {hint && <span className="text-[12px] text-fg-3">{hint}</span>}
+    </label>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  ...props
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  } & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
+  return (
+    <label className="flex flex-1 flex-col gap-1.5">
+      <span className="text-[13px] text-fg-2">{label}</span>
+      <Input value={value} onChange={(e) => onChange(e.target.value)} {...props} />
+    </label>
+  );
+}
+
+function Toggle({ checked, onChange, label, desc }: { checked: boolean; onChange: (v: boolean) => void; label: string; desc?: string }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className="flex w-full items-start gap-3.5 text-left">
+      <span
+        className={cn(
+          "mt-0.5 flex h-[22px] w-[38px] shrink-0 items-center rounded-full border transition-colors",
+          checked ? "border-accent bg-accent" : "border-line bg-bg",
+        )}
+      >
+        <span className={cn("h-[16px] w-[16px] rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-[18px]" : "translate-x-[3px]")} />
+      </span>
+      <span className="flex flex-col gap-0.5">
+        <span className="text-[14px] font-medium text-fg">{label}</span>
+        {desc && <span className="text-[12px] leading-[1.5] text-fg-3">{desc}</span>}
+      </span>
+    </button>
   );
 }

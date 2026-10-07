@@ -2,7 +2,8 @@ import { useState, type FormEvent } from "react";
 import { Check, Radar, Sparkles } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
-import { navigate } from "@/lib/useHashRoute";
+import { setGoogleDraft, googleConfigurado } from "@/lib/google";
+import { navigate, navigatePublic } from "@/lib/useHashRoute";
 import { Orb } from "@/components/ui/Orb";
 import { DotGrid, OrbGlow } from "@/components/landing/LandingUI";
 import { AuthAlert, AuthDivider, AuthField, AuthInput, AuthSubmit, GoogleButton } from "@/components/auth/AuthUI";
@@ -12,7 +13,7 @@ const FEATURES = ["Encontra quem você não acharia", "Personalização em escal
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, googleLogin } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
@@ -38,6 +39,27 @@ export function LoginPage() {
       navigate("cockpit");
     } catch (err) {
       setApiError(err instanceof ApiError ? err.message : "não foi possível entrar agora");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Usuário existente: o AuthProvider já assume a sessão e seguimos pro app.
+  // Usuário novo: guardamos o rascunho e caímos direto no passo da empresa do
+  // cadastro (a conta já vem verificada pelo Google).
+  async function handleGoogle(credential: string) {
+    setApiError(null);
+    setBusy(true);
+    try {
+      const result = await googleLogin(credential);
+      if ("needs_onboarding" in result) {
+        setGoogleDraft({ email: result.email, name: result.name, google_credential: credential });
+        navigatePublic("signup");
+      } else {
+        navigate("cockpit");
+      }
+    } catch (err) {
+      setApiError(err instanceof ApiError ? err.message : "não foi possível entrar com o Google agora");
     } finally {
       setBusy(false);
     }
@@ -103,8 +125,12 @@ export function LoginPage() {
             {busy ? "Entrando…" : "Entrar"}
           </AuthSubmit>
 
-          <AuthDivider />
-          <GoogleButton />
+          {googleConfigurado() && (
+            <>
+              <AuthDivider />
+              <GoogleButton onCredential={handleGoogle} busy={busy} />
+            </>
+          )}
 
           <p className="flex items-center justify-center gap-1.5 text-[14px] text-fg-2">
             Ainda não tem conta?

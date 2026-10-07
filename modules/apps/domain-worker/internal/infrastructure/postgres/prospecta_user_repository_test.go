@@ -87,3 +87,51 @@ func TestProspectaUserInsertIsIdempotentByCommandID(t *testing.T) {
 		t.Fatalf("reentrega = %v,%v; want false,nil", second, err)
 	}
 }
+
+// UpdateUserPassword: define/troca o hash de uma conta existente; a reentrega do
+// MESMO comando é no-op (changed=false); um usuário inexistente vira ErrNotFound
+// (não um no-op silencioso), para o comando não apontar para conta nenhuma.
+func TestProspectaUserUpdatePasswordIsIdempotentAndRejectsUnknown(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	repo := NewProspectaRepository(pool)
+
+	tenant := uuid.NewString()
+	email := "pw+" + uuid.NewString()[:8] + "@acme.com"
+	userID := uuid.NewString()
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM prospecta_user WHERE lower(email) = lower($1)`, email)
+	})
+
+	// Conta só-Google: nasce sem senha.
+	u, err := domainprospecta.NewUser(userID, tenant, uuid.NewString(), "Googler", email, "", "owner")
+	if err != nil {
+		t.Fatalf("new user: %v", err)
+	}
+	if _, err := repo.InsertUser(ctx, u, uuid.NewString()); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	next, err := domainprospecta.User{ID: userID, TenantID: tenant}.ApplyPasswordHash("hash-bcrypt-2")
+	if err != nil {
+		t.Fatalf("apply hash: %v", err)
+	}
+	changed, err := repo.UpdateUserPassword(ctx, next, uuid.NewString())
+	if err != nil || !changed {
+		t.Fatalf("update = %v,%v; want true,nil", changed, err)
+	}
+	var got string
+	if err := pool.QueryRow(ctx,
+		`SELECT password_hash FROM prospecta_user WHERE lower(email)=lower($1)`, email).Scan(&got); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if got != "hash-bcrypt-2" {
+		t.Fatalf("password_hash = %q; want hash-bcrypt-2", got)
+	}
+
+	// Usuário inexistente: ErrNotFound, nada escrito.
+	other := domainprospecta.User{ID: uuid.NewString(), TenantID: tenant}
+	if _, err := repo.UpdateUserPassword(ctx, other, uuid.NewString()); err != domainprospecta.ErrNotFound {
+		t.Fatalf("inexistente = %v; want ErrNotFound", err)
+	}
+}

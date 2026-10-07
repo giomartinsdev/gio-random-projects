@@ -110,7 +110,8 @@ type BookMeetingInput struct {
 
 // CreateUserInput é o payload do comando "CreateUser": a conta de autenticação
 // e-mail+senha. password_hash já chega pronto (bcrypt) — o worker grava o hash,
-// nunca a senha em claro.
+// nunca a senha em claro. Vazio para uma conta criada por Google SSO (sem
+// senha; o dono a define depois).
 type CreateUserInput struct {
 	TenantID     string `json:"tenant_id"`
 	CompanyID    string `json:"company_id"`
@@ -118,4 +119,13 @@ type CreateUserInput struct {
 	Email        string `json:"email"`
 	PasswordHash string `json:"password_hash"`
 	Role         string `json:"role"`
+}
+
+// UpdateUserPasswordInput é o payload do comando "UpdateUserPassword": a
+// troca/definição do hash da senha de uma conta existente. password_hash já
+// chega pronto (bcrypt). idempotente por command_id no repositório.
+type UpdateUserPasswordInput struct {
+	TenantID     string `json:"tenant_id"`
+	UserID       string `json:"user_id"`
+	PasswordHash string `json:"password_hash"`
 }

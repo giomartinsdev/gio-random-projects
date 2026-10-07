@@ -537,6 +537,46 @@ func (s *Service) CreateUser(ctx context.Context, commandID string, in CreateUse
 	}, nil
 }
 
+// UpdateUserPassword reescreve o hash da senha de uma conta existente. O hash
+// já chega pronto (bcrypt); o service nunca vê a senha em claro. Idempotente por
+// command_id. changed=false (comando já aplicado, ou usuário inexistente) não
+// levanta evento — evita um UserPasswordChanged duplicado.
+func (s *Service) UpdateUserPassword(ctx context.Context, commandID string, in UpdateUserPasswordInput) (domainprospecta.User, domainprospecta.Event, error) {
+	if in.TenantID == "" {
+		return domainprospecta.User{}, nil, domainprospecta.ErrTenantIDRequired
+	}
+	if in.UserID == "" {
+		return domainprospecta.User{}, nil, domainprospecta.ErrUserIDRequired
+	}
+	id, err := uuid.Parse(commandID)
+	if err != nil {
+		return domainprospecta.User{}, nil, err
+	}
+	if _, err := uuid.Parse(in.UserID); err != nil {
+		return domainprospecta.User{}, nil, err
+	}
+	// A troca só toca id/tenant/hash; os demais campos da linha ficam intactos
+	// (o UPDATE é por id+tenant). O agregado aqui carrega só o que a invariante
+	// de senha exige.
+	target := domainprospecta.User{ID: in.UserID, TenantID: in.TenantID}
+	next, err := target.ApplyPasswordHash(in.PasswordHash)
+	if err != nil {
+		return domainprospecta.User{}, nil, err
+	}
+	changed, err := s.repo.UpdateUserPassword(ctx, next, id.String())
+	if err != nil {
+		return domainprospecta.User{}, nil, err
+	}
+	if !changed {
+		return domainprospecta.User{}, nil, nil
+	}
+	return next, domainprospecta.UserPasswordChanged{
+		UserID:     next.ID,
+		TenantID:   next.TenantID,
+		OccurredAt: s.now(),
+	}, nil
+}
+
 // RecordAudit grava a linha de prospecta_audit_log de um comando, com o payload
 // já passado por PII scrubbing. Chamado pelo handler para todo comando,
 // sucesso ou falha — é a auditoria própria do Prospecta (data-model §8).

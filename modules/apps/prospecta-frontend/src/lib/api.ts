@@ -4,9 +4,11 @@ import type {
   AuthSession,
   Campaign,
   CampaignInput,
+  ChangePasswordInput,
   Company,
   Conversation,
   ConversationDetail,
+  GoogleLoginResult,
   Icp,
   Lead,
   LeadDetail,
@@ -69,6 +71,15 @@ export const api = {
   },
   login(input: LoginInput): Promise<AuthSession> {
     return post("/auth/login", input);
+  },
+  // POST /auth/google {credential} → sessão (usuário existe) OU
+  // {needs_onboarding,email,name} (usuário novo, sem cookie).
+  googleLogin(credential: string): Promise<GoogleLoginResult> {
+    return post("/auth/google", { credential });
+  },
+  // Troca de senha do usuário autenticado (204/401/422).
+  changePassword(input: ChangePasswordInput): Promise<void> {
+    return request<void>("POST", "/auth/password", input);
   },
   me(): Promise<AuthSession> {
     return get("/auth/me");

@@ -163,12 +163,13 @@ jobs:
           case "${{ matrix.app }}" in
             clubs-frontend)   id="${{ secrets.CLUBS_GOOGLE_OAUTH_CLIENT_ID }}" ;;
             finance-frontend) id="${{ secrets.FINANCE_GOOGLE_OAUTH_CLIENT_ID }}" ;;
+            prospecta-frontend) id="${{ secrets.PROSPECTA_GOOGLE_OAUTH_CLIENT_ID }}" ;;
             *)                id="" ;;
           esac
           # Fall back to the shared public client so a product whose own
           # secret isn't set still gets a working sign-in button.
           case "${{ matrix.app }}" in
-            clubs-frontend|finance-frontend) [ -n "$id" ] || id="$shared" ;;
+            clubs-frontend|finance-frontend|prospecta-frontend) [ -n "$id" ] || id="$shared" ;;
           esac
           echo "VITE_GOOGLE_CLIENT_ID=$id" >> "$GITHUB_ENV"
 

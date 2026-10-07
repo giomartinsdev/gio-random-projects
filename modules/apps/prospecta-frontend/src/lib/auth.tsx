@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError } from "./api";
-import type { AuthSession, AuthUser, Company, LoginInput, SignupInput } from "./types";
+import { markGoogleSession, markPasswordSession } from "./google";
+import type { AuthSession, AuthUser, Company, GoogleLoginResult, LoginInput, SignupInput } from "./types";
 
 // Sessão do modo cliente: cookie HttpOnly mantido pela prospecta-api. No boot
 // chamamos GET /auth/me; 401 simplesmente significa "deslogado". O modo
@@ -12,6 +13,7 @@ export interface AuthState {
   loading: boolean;
   login: (input: LoginInput) => Promise<void>;
   signup: (input: SignupInput) => Promise<void>;
+  googleLogin: (credential: string) => Promise<GoogleLoginResult>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -46,11 +48,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (input: LoginInput) => {
-    setSession(await api.login(input));
+    const session = await api.login(input);
+    markPasswordSession();
+    setSession(session);
   }, []);
 
   const signup = useCallback(async (input: SignupInput) => {
-    setSession(await api.signup(input));
+    const session = await api.signup(input);
+    (input.google_credential ? markGoogleSession : markPasswordSession)();
+    setSession(session);
+  }, []);
+
+  // /auth/google pode devolver a sessão (usuário existente) ou um pedido de
+  // onboarding (usuário novo). O caller decide: aqui só atualizamos a sessão
+  // quando ela veio de fato.
+  const googleLogin = useCallback(async (credential: string): Promise<GoogleLoginResult> => {
+    const result = await api.googleLogin(credential);
+    if ("user" in result) {
+      markGoogleSession();
+      setSession(result);
+    }
+    return result;
   }, []);
 
   const logout = useCallback(async () => {
@@ -69,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         login,
         signup,
+        googleLogin,
         logout,
         refresh,
       }}

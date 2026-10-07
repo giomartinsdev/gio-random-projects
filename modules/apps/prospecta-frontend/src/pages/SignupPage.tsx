@@ -2,12 +2,14 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Building2, Check, Lock, Mail, MessageCircle, Send, Target } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError } from "@/lib/api";
-import { navigate } from "@/lib/useHashRoute";
+import { clearGoogleDraft, getGoogleDraft, googleConfigurado, setGoogleDraft } from "@/lib/google";
+import type { GoogleSignupDraft } from "@/lib/types";
+import { navigate, navigatePublic } from "@/lib/useHashRoute";
 import { cn } from "@/lib/utils";
 import { Orb } from "@/components/ui/Orb";
 import { Textarea } from "@/components/ui/Input";
 import { DotGrid, OrbGlow } from "@/components/landing/LandingUI";
-import { AuthAlert, AuthField, AuthInput } from "@/components/auth/AuthUI";
+import { AuthAlert, AuthDivider, AuthField, AuthInput, GoogleButton } from "@/components/auth/AuthUI";
 
 const STEPS: { title: string; desc: string; icon: ReactNode }[] = [
   { title: "Conta e acesso", desc: "E-mail e senha do responsável", icon: <Lock size={16} /> },
@@ -27,9 +29,19 @@ interface AccountForm {
 }
 
 export function SignupPage() {
-  const { signup, company } = useAuth();
-  const [step, setStep] = useState(0);
-  const [account, setAccount] = useState<AccountForm>({ name: "", cargo: "", email: "", password: "", phone: "" });
+  const { signup, company, googleLogin } = useAuth();
+  // Fluxo Google: /auth/google já verificou e-mail+nome de um usuário novo.
+  // Pulamos o passo de conta/senha e caímos direto na empresa.
+  const [googleDraft, setDraft] = useState<GoogleSignupDraft | null>(() => getGoogleDraft());
+  const isGoogle = googleDraft !== null;
+  const [step, setStep] = useState(isGoogle ? 1 : 0);
+  const [account, setAccount] = useState<AccountForm>(() => ({
+    name: googleDraft?.name ?? "",
+    cargo: "",
+    email: googleDraft?.email ?? "",
+    password: "",
+    phone: "",
+  }));
   const [terms, setTerms] = useState(false);
   const [companyForm, setCompanyForm] = useState({ name: "", site: "", description: "" });
   const [channels, setChannels] = useState<string[]>(["email", "whatsapp"]);
@@ -39,6 +51,28 @@ export function SignupPage() {
   const [busy, setBusy] = useState(false);
 
   const set = <K extends keyof AccountForm>(key: K, value: AccountForm[K]) => setAccount((prev) => ({ ...prev, [key]: value }));
+
+  // Cadastro direto com Google: verifica a conta e já cai no passo da empresa.
+  async function startGoogle(credential: string) {
+    setApiError(null);
+    setBusy(true);
+    try {
+      const result = await googleLogin(credential);
+      if ("needs_onboarding" in result) {
+        const draft: GoogleSignupDraft = { email: result.email, name: result.name, google_credential: credential };
+        setGoogleDraft(draft);
+        setDraft(draft);
+        setAccount((prev) => ({ ...prev, name: result.name, email: result.email }));
+        setStep(1);
+      } else {
+        navigate("cockpit");
+      }
+    } catch (err) {
+      setApiError(err instanceof ApiError ? err.message : "não foi possível usar essa conta Google agora");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function validateAccount(): boolean {
     const next: Record<string, string> = {};
@@ -74,11 +108,12 @@ export function SignupPage() {
         await signup({
           name: account.name.trim(),
           email: account.email.trim(),
-          password: account.password,
+          ...(isGoogle && googleDraft ? { google_credential: googleDraft.google_credential } : { password: account.password }),
           cargo: account.cargo.trim() || undefined,
           phone: account.phone.trim() || undefined,
           company: { name: companyForm.name.trim(), site: companyForm.site.trim(), description: companyForm.description.trim() },
         });
+        clearGoogleDraft();
         setStep(2);
       } catch (err) {
         setApiError(err instanceof ApiError ? err.message : "não foi possível criar a conta agora");
@@ -106,6 +141,17 @@ export function SignupPage() {
       }
     }
     navigate("campanha");
+  }
+
+  // No fluxo Google o passo 0 não existe: "voltar" da empresa retorna ao login.
+  function goBack() {
+    setApiError(null);
+    if (isGoogle && step === 1) {
+      clearGoogleDraft();
+      navigatePublic("login");
+      return;
+    }
+    setStep((s) => s - 1);
   }
 
   const toggleChannel = (c: string) => setChannels((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
@@ -145,6 +191,12 @@ export function SignupPage() {
 
           {step === 0 && (
             <>
+              {googleConfigurado() && (
+                <>
+                  <GoogleButton onCredential={startGoogle} busy={busy} />
+                  <AuthDivider />
+                </>
+              )}
               <div className="flex flex-col gap-4 sm:flex-row">
                 <AuthField label="Seu nome" error={errors.name}>
                   <AuthInput value={account.name} invalid={Boolean(errors.name)} onChange={(e) => set("name", e.target.value)} placeholder="Giovanni Martins" />
@@ -244,7 +296,7 @@ export function SignupPage() {
                   </button>
                 );
               })}
-              <AuthAlert kind="info">A configuração de canais é salva localmente; a API ainda não expõe esse endpoint.</AuthAlert>
+              <AuthAlert kind="info">Você ajusta os canais a qualquer momento em Configurações.</AuthAlert>
             </div>
           )}
 
@@ -263,10 +315,7 @@ export function SignupPage() {
             {step > 0 && (
               <button
                 type="button"
-                onClick={() => {
-                  setApiError(null);
-                  setStep((s) => s - 1);
-                }}
+                onClick={goBack}
                 className="inline-flex items-center gap-2 rounded-sm border border-line bg-bg px-5 py-[14px] text-[15px] font-semibold text-fg transition-colors hover:bg-elevated"
               >
                 <ArrowLeft size={16} />

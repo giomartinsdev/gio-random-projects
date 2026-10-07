@@ -93,11 +93,18 @@ func (st *state) newAPI() {
 	st.handler = buildAPIHandler(callerKey, buildServices(infrastructure.New(st.pairURL, domainKey, operatorTenant)))
 }
 
-// newAuthAPI sobe a API com sessão habilitada, para os cenários de /auth.
+// newAuthAPI sobe a API com sessão habilitada, para os cenários de /auth. O
+// verificador do Google é o FAKE (nunca fala com o Google).
 func (st *state) newAuthAPI() {
+	st.newAuthAPIWithGoogle(&fakeGoogleVerifier{})
+}
+
+// newAuthAPIWithGoogle monta a API de auth injetando o verificador do Google.
+// nil desabilita o SSO (a rota responde 503), que é o cenário "sem client ID".
+func (st *state) newAuthAPIWithGoogle(verifier auth.GoogleVerifier) {
 	sessions := auth.NewManager(sessionSecret, 0)
 	pair := infrastructure.New(st.pairURL, domainKey, operatorTenant)
-	authService := auth.NewService(pair, pair, pair, sessions, testLogger())
+	authService := auth.NewService(pair, pair, pair, sessions, verifier, testLogger())
 	st.handler = httpapi.NewRouter(httpapi.Config{
 		APIKey:   callerKey,
 		TenantID: operatorTenant,
@@ -109,12 +116,38 @@ func (st *state) newAuthAPI() {
 // segredo): /auth tem de responder 503 sem derrubar as rotas de negócio.
 func (st *state) newAPIWithoutSession() {
 	pair := infrastructure.New(st.pairURL, domainKey, operatorTenant)
-	authService := auth.NewService(pair, pair, pair, auth.NewManager("", 0), testLogger())
+	authService := auth.NewService(pair, pair, pair, auth.NewManager("", 0), &fakeGoogleVerifier{}, testLogger())
 	st.handler = httpapi.NewRouter(httpapi.Config{
 		APIKey:   callerKey,
 		TenantID: operatorTenant,
 		Auth:     authService,
 	}, buildServices(pair), testLogger())
+}
+
+// fakeGoogleVerifier é o GoogleVerifier dos testes: NUNCA fala com o Google.
+// Ele decodifica credenciais sintéticas:
+//
+//	"fake:ok:<email>:<nome>"    -> identidade verificada
+//	"fake:ok:<email>"           -> identidade verificada, sem nome
+//	"fake:unverified:<email>"   -> ErrGoogleUnverified
+//	qualquer outra              -> ErrGoogleInvalid
+type fakeGoogleVerifier struct{}
+
+func (fakeGoogleVerifier) Verify(credential string) (auth.GoogleIdentity, error) {
+	const ok, unverified = "fake:ok:", "fake:unverified:"
+	switch {
+	case strings.HasPrefix(credential, ok):
+		rest := strings.TrimPrefix(credential, ok)
+		email, name, _ := strings.Cut(rest, ":")
+		if email == "" {
+			return auth.GoogleIdentity{}, auth.ErrGoogleNoEmail
+		}
+		return auth.GoogleIdentity{Email: strings.ToLower(email), Name: name}, nil
+	case strings.HasPrefix(credential, unverified):
+		return auth.GoogleIdentity{}, auth.ErrGoogleUnverified
+	default:
+		return auth.GoogleIdentity{}, auth.ErrGoogleInvalid
+	}
 }
 
 // --- passos comuns a todas as áreas ----------------------------------------

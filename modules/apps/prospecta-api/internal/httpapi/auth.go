@@ -18,6 +18,8 @@ import (
 func authRoutes(mux *http.ServeMux, h *Handlers) {
 	mux.HandleFunc("POST /auth/signup", h.Signup)
 	mux.HandleFunc("POST /auth/login", h.Login)
+	mux.HandleFunc("POST /auth/google", h.GoogleLogin)
+	mux.HandleFunc("POST /auth/password", h.ChangePassword)
 	mux.HandleFunc("GET /auth/me", h.Me)
 	mux.HandleFunc("POST /auth/logout", h.Logout)
 }
@@ -76,6 +78,60 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, body)
 }
 
+// GoogleLogin handles POST /auth/google. The contract is frozen:
+//   - 200 {user, company} + Set-Cookie when the verified e-mail exists (login);
+//   - 200 {needs_onboarding:true, email, name} with NO cookie when it doesn't
+//     (the SPA finishes the company signup);
+//   - 401 when the token is invalid/expired or the e-mail is not verified;
+//   - 503 when no client ID is configured (or sessions are disabled).
+func (h *Handlers) GoogleLogin(w http.ResponseWriter, r *http.Request) {
+	if h.auth == nil || !h.auth.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "autenticação indisponível")
+		return
+	}
+	var in struct {
+		Credential string `json:"credential"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "corpo inválido")
+		return
+	}
+	session, body, authenticated, err := h.auth.GoogleLogin(r.Context(), in.Credential)
+	if err != nil {
+		h.writeAuthError(w, r, "google", err)
+		return
+	}
+	if !authenticated {
+		writeJSON(w, http.StatusOK, body)
+		return
+	}
+	if err := h.auth.Sessions().SetCookie(w, session); err != nil {
+		h.writeAuthError(w, r, "google", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
+// ChangePassword handles POST /auth/password (session required): 204 on
+// success, 401 for a wrong/absent current password, 422 for a weak new one.
+func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	session, ok := h.sessionFrom(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "não autenticado")
+		return
+	}
+	var in auth.PasswordInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "corpo inválido")
+		return
+	}
+	if err := h.auth.ChangePassword(r.Context(), session, in); err != nil {
+		h.writeAuthError(w, r, "password", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // Me handles GET /auth/me: 200 {user, company} for a valid session, 401 else.
 func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.sessionFrom(r)
@@ -98,7 +154,9 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 // writeAuthError maps an auth failure to the contract's status codes.
 func (h *Handlers) writeAuthError(w http.ResponseWriter, r *http.Request, what string, err error) {
 	switch {
-	case errors.Is(err, auth.ErrDisabled), errors.Is(err, infrastructure.ErrNotConfigured):
+	case errors.Is(err, auth.ErrDisabled),
+		errors.Is(err, auth.ErrGoogleDisabled),
+		errors.Is(err, infrastructure.ErrNotConfigured):
 		writeError(w, http.StatusServiceUnavailable, "autenticação indisponível")
 	case errors.Is(err, domain.ErrUserExists):
 		writeError(w, http.StatusConflict, err.Error())
@@ -109,6 +167,12 @@ func (h *Handlers) writeAuthError(w http.ResponseWriter, r *http.Request, what s
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		writeError(w, http.StatusUnauthorized, "e-mail ou senha inválidos")
+	case errors.Is(err, auth.ErrGoogleInvalid):
+		writeError(w, http.StatusUnauthorized, "token do Google inválido ou expirado")
+	case errors.Is(err, auth.ErrGoogleUnverified):
+		writeError(w, http.StatusUnauthorized, "e-mail do Google não verificado")
+	case errors.Is(err, auth.ErrGoogleNoEmail):
+		writeError(w, http.StatusUnauthorized, "token do Google sem e-mail")
 	default:
 		h.log.ErrorContext(r.Context(), "auth", "op", what, "error", err)
 		writeError(w, http.StatusBadGateway, "falha ao processar autenticação")

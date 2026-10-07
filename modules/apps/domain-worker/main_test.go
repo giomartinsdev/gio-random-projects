@@ -185,4 +185,14 @@ func TestProspectaCommandPayloadsMatchProducers(t *testing.T) {
 			t.Fatalf("payload de create user não decodificou: %+v", in)
 		}
 	})
+	t.Run("update user password", func(t *testing.T) {
+		if got := string(application.ActionUpdateUserPassword); got != "UpdateUserPassword" {
+			t.Fatalf("ActionUpdateUserPassword = %q; want %q (contrato)", got, "UpdateUserPassword")
+		}
+		var in appprospecta.UpdateUserPasswordInput
+		mustUnmarshal(t, `{"tenant_id":"t","user_id":"u","password_hash":"hash-bcrypt-2"}`, &in)
+		if in.TenantID != "t" || in.UserID != "u" || in.PasswordHash != "hash-bcrypt-2" {
+			t.Fatalf("payload de update user password não decodificou: %+v", in)
+		}
+	})
 }

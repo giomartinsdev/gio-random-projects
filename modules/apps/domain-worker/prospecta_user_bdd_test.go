@@ -35,6 +35,7 @@ type userState struct {
 	email     string
 	password  string
 	role      string
+	userID    string
 
 	noEmail      bool
 	invalidEmail bool
@@ -82,6 +83,20 @@ func TestProspectaUserBdd(t *testing.T) {
 				return nil
 			})
 
+			// Conta só-Google: password_hash vazio, como o CreateUser sem senha
+			// cria. É o alvo do UpdateUserPassword que DEFINE a primeira senha.
+			sc.Step(`^um usuário só-Google do tenant "([^"]*)" com e-mail "([^"]*)"$`, func(tenant, email string) error {
+				id := uuid.NewString()
+				if _, err := pool.Exec(context.Background(), `
+					INSERT INTO prospecta_user (id, tenant_id, company_id, name, email, password_hash, role)
+					VALUES ($1,$2,$3,'Googler',$4,'','owner')`,
+					id, tenant, uuid.NewString(), email); err != nil {
+					return err
+				}
+				st.userID = id
+				return nil
+			})
+
 			sc.Step(`^o worker processa "CreateUser" para o tenant "([^"]*)" com e-mail "([^"]*)" e senha "([^"]*)"$`,
 				func(tenant, email, senha string) error {
 					st.tenant, st.email, st.password = tenant, email, senha
@@ -115,6 +130,33 @@ func TestProspectaUserBdd(t *testing.T) {
 				return nil
 			})
 
+			sc.Step(`^o worker processa "UpdateUserPassword" para o usuário "([^"]*)" do tenant "([^"]*)" com senha "([^"]*)"$`,
+				func(email, tenant, senha string) error {
+					var id string
+					if err := pool.QueryRow(context.Background(),
+						`SELECT id::text FROM prospecta_user WHERE lower(email)=lower($1) LIMIT 1`, email).Scan(&id); err != nil {
+						return err
+					}
+					st.tenant, st.userID, st.password = tenant, id, senha
+					return processUpdateUserPassword(st, h)
+				})
+			sc.Step(`^o worker processa "UpdateUserPassword" para um usuário inexistente do tenant "([^"]*)" com senha "([^"]*)"$`,
+				func(tenant, senha string) error {
+					st.tenant, st.userID, st.password = tenant, uuid.NewString(), senha
+					return processUpdateUserPassword(st, h)
+				})
+			sc.Step(`^o worker processa o MESMO comando UpdateUserPassword de novo$`, func() error {
+				cmd := application.Command{
+					ID:     st.lastCmdID,
+					Action: application.ActionUpdateUserPassword,
+					Payload: mustJSON(appprospecta.UpdateUserPasswordInput{
+						TenantID: st.tenant, UserID: st.userID, PasswordHash: st.password,
+					}),
+				}
+				st.cmdErr = h(cmd)
+				return nil
+			})
+
 			sc.Step(`^o comando termina sem erro$`, func() error {
 				if st.cmdErr != nil {
 					return fmt.Errorf("esperava sucesso; veio %v", st.cmdErr)
@@ -129,6 +171,28 @@ func TestProspectaUserBdd(t *testing.T) {
 			})
 			sc.Step(`^existem (\d+) usuários do tenant "([^"]*)"$`, func(n int, tenant string) error {
 				return esperaInt(pool, `SELECT count(*) FROM prospecta_user WHERE tenant_id=$1`, tenant, n, "usuários")
+			})
+			sc.Step(`^o usuário "([^"]*)" tem password_hash vazio$`, func(email string) error {
+				var got string
+				if err := pool.QueryRow(context.Background(),
+					`SELECT password_hash FROM prospecta_user WHERE lower(email)=lower($1) LIMIT 1`, email).Scan(&got); err != nil {
+					return err
+				}
+				if got != "" {
+					return fmt.Errorf("password_hash = %q; want vazio (conta só-Google)", got)
+				}
+				return nil
+			})
+			sc.Step(`^o usuário "([^"]*)" tem password_hash "([^"]*)"$`, func(email, want string) error {
+				var got string
+				if err := pool.QueryRow(context.Background(),
+					`SELECT password_hash FROM prospecta_user WHERE lower(email)=lower($1) LIMIT 1`, email).Scan(&got); err != nil {
+					return err
+				}
+				if got != want {
+					return fmt.Errorf("password_hash = %q; want %q", got, want)
+				}
+				return nil
 			})
 			sc.Step(`^o usuário "([^"]*)" tem role "([^"]*)"$`, func(email, role string) error {
 				var got string
@@ -189,12 +253,13 @@ func userHandler(pool *pgxpool.Pool, bus *busStub) func(application.Command) err
 	return func(cmd application.Command) error {
 		process(context.Background(), log, hs, audits, relay, cmd)
 		var success bool
+		var detail string
 		if err := pool.QueryRow(context.Background(),
-			`SELECT success FROM audit_log WHERE command_id=$1 ORDER BY created_at DESC LIMIT 1`, cmd.ID).Scan(&success); err != nil {
+			`SELECT success, COALESCE(error,'') FROM audit_log WHERE command_id=$1 ORDER BY created_at DESC LIMIT 1`, cmd.ID).Scan(&success, &detail); err != nil {
 			return err
 		}
 		if !success {
-			return fmt.Errorf("comando %s falhou", cmd.Action)
+			return fmt.Errorf("comando %s falhou: %s", cmd.Action, detail)
 		}
 		return nil
 	}
@@ -207,6 +272,19 @@ func processCreateUser(st *userState, h func(application.Command) error) error {
 		Payload: mustJSON(appprospecta.CreateUserInput{
 			TenantID: st.tenant, CompanyID: st.companyID, Name: st.name,
 			Email: st.email, PasswordHash: st.password, Role: st.role,
+		}),
+	}
+	st.lastCmdID = cmd.ID
+	st.cmdErr = h(cmd)
+	return nil
+}
+
+func processUpdateUserPassword(st *userState, h func(application.Command) error) error {
+	cmd := application.Command{
+		ID:     newCmdID(),
+		Action: application.ActionUpdateUserPassword,
+		Payload: mustJSON(appprospecta.UpdateUserPasswordInput{
+			TenantID: st.tenant, UserID: st.userID, PasswordHash: st.password,
 		}),
 	}
 	st.lastCmdID = cmd.ID

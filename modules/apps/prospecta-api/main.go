@@ -82,6 +82,13 @@ func main() {
 		log.Warn("PROSPECTA_SESSION_SECRET ausente: /auth responde 503 (dev)")
 	}
 
+	// Google SSO: o mesmo client ID público dos outros apps. Sem ele,
+	// /auth/google responde 503 e o cadastro por e-mail+senha segue normal.
+	googleVerifier := auth.NewGoogleVerifier(os.Getenv("PROSPECTA_GOOGLE_CLIENT_ID"))
+	if googleVerifier == nil {
+		log.Warn("PROSPECTA_GOOGLE_CLIENT_ID ausente: /auth/google responde 503 (dev)")
+	}
+
 	// Cada slice tem seu serviço; o par de domínio é publisher e reader deles
 	// todos (e a fonte do feed SSE). Nenhum serviço segura banco ou broker.
 	services := httpapi.Services{
@@ -91,7 +98,7 @@ func main() {
 		Messaging: application.NewMessagingService(domainPair, domainPair, domainPair),
 		Activity:  application.NewActivityService(domainPair),
 	}
-	authService := auth.NewService(domainPair, domainPair, domainPair, sessions, log)
+	authService := auth.NewService(domainPair, domainPair, domainPair, sessions, googleVerifier, log)
 
 	cfg := httpapi.Config{
 		APIKey:         apiKey,

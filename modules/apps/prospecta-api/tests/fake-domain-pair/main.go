@@ -169,6 +169,8 @@ func (f *fake) publish(w http.ResponseWriter, r *http.Request) {
 		f.registerCompany(env.Payload, id)
 	case "CreateUser":
 		f.registerUser(env.Payload, id)
+	case "UpdateUserPassword":
+		f.updateUserPassword(env.Payload)
 	}
 	f.mu.Unlock()
 	writeJSON(w, http.StatusAccepted, map[string]string{"command_id": id, "status": "accepted"})
@@ -211,6 +213,34 @@ func (f *fake) registerUser(payload json.RawMessage, id string) {
 		"company_id": u.CompanyID, "tenant_id": u.TenantID, "role": u.Role,
 	})
 	f.users[strings.ToLower(strings.TrimSpace(u.Email))] = raw
+}
+
+// updateUserPassword folds an UpdateUserPassword payload into the by-email
+// store: it finds the user by id, rewrites password_hash and keeps the rest of
+// the projection. Mirrors what the real worker does (idempotent by command_id)
+// so a password change is immediately visible to a following login. Caller
+// holds f.mu.
+func (f *fake) updateUserPassword(payload json.RawMessage) {
+	var u struct {
+		UserID       string `json:"user_id"`
+		PasswordHash string `json:"password_hash"`
+	}
+	if err := json.Unmarshal(payload, &u); err != nil || u.UserID == "" {
+		return
+	}
+	for email, raw := range f.users {
+		var existing map[string]any
+		if err := json.Unmarshal(raw, &existing); err != nil {
+			continue
+		}
+		if id, _ := existing["id"].(string); id == u.UserID {
+			existing["password_hash"] = u.PasswordHash
+			if updated, err := json.Marshal(existing); err == nil {
+				f.users[email] = updated
+			}
+			return
+		}
+	}
 }
 
 // userByEmail serves GET /users/by-email/{email}; unknown e-mail is 404, which

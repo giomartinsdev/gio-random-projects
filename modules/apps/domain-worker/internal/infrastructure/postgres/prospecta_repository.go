@@ -522,6 +522,45 @@ func (r *ProspectaRepository) InsertUser(ctx context.Context, u domainprospecta.
 	return inserted, err
 }
 
+// UpdateUserPassword reescreve o password_hash de uma conta existente. O comando
+// carrega o seu UUID em command_id: se ele JÁ foi aplicado, o UPDATE ... FROM
+// não acha nada para atualizar (command_id difere) e changed=false, sem tocar a
+// linha — a mesma disciplina idempotente dos demais comandos. O WHERE filtra o
+// tenant além do RLS (defesa em profundidade).
+func (r *ProspectaRepository) UpdateUserPassword(ctx context.Context, u domainprospecta.User, commandID string) (bool, error) {
+	changed := false
+	err := r.withTenant(ctx, u.TenantID, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE prospecta_user
+			   SET password_hash = $1,
+			       command_id = $2::uuid
+			 WHERE id = $3::uuid AND tenant_id = $4::uuid
+			   AND command_id IS DISTINCT FROM $2::uuid`,
+			u.PasswordHash, commandID, u.ID, u.TenantID)
+		if err != nil {
+			return fmt.Errorf("update prospecta user password: %w", err)
+		}
+		changed = tag.RowsAffected() > 0
+		if changed {
+			return nil
+		}
+		// 0 linhas tem duas causas: reentrega do MESMO comando (no-op, ok) ou
+		// usuário inexistente (falha). O EXISTS distingue — só o segundo vira
+		// erro, para não engolir um comando que aponta para conta nenhuma.
+		var exists bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM prospecta_user WHERE id = $1::uuid AND tenant_id = $2::uuid)`,
+			u.ID, u.TenantID).Scan(&exists); err != nil {
+			return fmt.Errorf("check prospecta user exists: %w", err)
+		}
+		if !exists {
+			return domainprospecta.ErrNotFound
+		}
+		return nil
+	})
+	return changed, err
+}
+
 func marshalJSONB(v any) ([]byte, error) {
 	if v == nil {
 		return []byte("null"), nil

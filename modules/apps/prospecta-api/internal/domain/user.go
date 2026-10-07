@@ -33,16 +33,18 @@ type User struct {
 }
 
 // ValidateSignup checks the invariant set the contract fixes for POST
-// /auth/signup: name, email, password and company.name must all be present and
-// valid before anything is published.
-func ValidateSignup(name, email, password, companyName string) error {
+// /auth/signup: name, email and company.name must all be present and valid
+// before anything is published. hasPassword=false is the Google path (the
+// account is created without a password); in that case the password floor does
+// not apply. With a password, it must clear MinPasswordLength.
+func ValidateSignup(name, email, password, companyName string, hasPassword bool) error {
 	if strings.TrimSpace(name) == "" {
 		return ErrUserNameRequired
 	}
 	if !ValidEmail(email) {
 		return ErrUserEmailInvalid
 	}
-	if len([]rune(password)) < MinPasswordLength {
+	if hasPassword && len([]rune(password)) < MinPasswordLength {
 		return ErrUserPasswordWeak
 	}
 	if strings.TrimSpace(companyName) == "" {

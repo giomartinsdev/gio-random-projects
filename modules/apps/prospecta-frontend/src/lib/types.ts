@@ -112,6 +112,9 @@ export interface AuthUser {
   email: string;
   cargo?: string;
   phone?: string;
+  // false quando a conta foi criada só com Google (sem senha local). Omitido
+  // pelo backend antigo → tratamos como conta com senha.
+  has_password?: boolean;
 }
 
 export interface AuthSession {
@@ -119,10 +122,13 @@ export interface AuthSession {
   company: Company;
 }
 
+// Cadastro aceita senha OU um google_credential (ID token do Google
+// Identity Services) — nunca os dois. `company` é sempre obrigatório.
 export interface SignupInput {
   name: string;
   email: string;
-  password: string;
+  password?: string;
+  google_credential?: string;
   cargo?: string;
   phone?: string;
   company: { name: string; site: string; description: string };
@@ -131,4 +137,27 @@ export interface SignupInput {
 export interface LoginInput {
   email: string;
   password: string;
+}
+
+// POST /auth/google devolve a sessão (usuário existente, com cookie) OU um
+// pedido de onboarding (usuário novo, SEM cookie) para completar o cadastro
+// com o google_credential já verificado.
+export interface GoogleOnboarding {
+  needs_onboarding: true;
+  email: string;
+  name: string;
+}
+
+export type GoogleLoginResult = AuthSession | GoogleOnboarding;
+
+// Rascunho mantido em memória enquanto o usuário novo conclui a empresa.
+export interface GoogleSignupDraft {
+  email: string;
+  name: string;
+  google_credential: string;
+}
+
+export interface ChangePasswordInput {
+  current_password: string;
+  new_password: string;
 }

@@ -140,6 +140,14 @@ func (h *CommandHandler) dispatch(ctx context.Context, cmd application.Command) 
 		_, evt, err := h.service.CreateUser(ctx, cmd.ID, in)
 		return evt, in.TenantID, err
 
+	case application.ActionUpdateUserPassword:
+		var in UpdateUserPasswordInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, "", fmt.Errorf("decode update user password payload: %w", err)
+		}
+		_, evt, err := h.service.UpdateUserPassword(ctx, cmd.ID, in)
+		return evt, in.TenantID, err
+
 	default:
 		return nil, "", fmt.Errorf("unknown action: %q", cmd.Action)
 	}

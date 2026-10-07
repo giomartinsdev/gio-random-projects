@@ -61,6 +61,21 @@ func registerAuthSteps(sc *godog.ScenarioContext, st *state, ctx context.Context
 		return nil
 	})
 
+	sc.Step(`^que eu tenho uma API com autenticação e Google configurados$`, func() error {
+		st.newAuthAPIWithGoogle(&fakeGoogleVerifier{})
+		return nil
+	})
+
+	sc.Step(`^que eu tenho uma API com autenticação sem Google$`, func() error {
+		st.newAuthAPIWithGoogle(nil)
+		return nil
+	})
+
+	sc.Step(`^eu faço o login com o Google usando a credencial "([^"]*)"$`, func(credential string) error {
+		body, _ := json.Marshal(map[string]string{"credential": credential})
+		return st.postCookie(ctx, "/auth/google", string(body), nil)
+	})
+
 	sc.Step(`^eu faço o cadastro com:$`, func(doc *godog.DocString) error {
 		return st.postCookie(ctx, "/auth/signup", doc.Content, nil)
 	})
@@ -85,6 +100,10 @@ func registerAuthSteps(sc *godog.ScenarioContext, st *state, ctx context.Context
 		return st.postCookie(ctx, path, doc.Content, st.cookie)
 	})
 
+	sc.Step(`^eu faço POST "([^"]*)" sem o cookie de sessão e corpo:$`, func(path string, doc *godog.DocString) error {
+		return st.postCookie(ctx, path, doc.Content, nil)
+	})
+
 	sc.Step(`^eu limpo os comandos registrados no par de domínio$`, func() error {
 		return clearCommands(ctx, st)
 	})
@@ -99,6 +118,13 @@ func registerAuthSteps(sc *godog.ScenarioContext, st *state, ctx context.Context
 	sc.Step(`^a resposta NÃO traz cookie de sessão$`, func() error {
 		if st.cookie != nil && strings.TrimSpace(st.cookie.Value) != "" {
 			return fmt.Errorf("resposta trouxe cookie de sessão inesperado: %q", st.cookie.Value)
+		}
+		return nil
+	})
+
+	sc.Step(`^a resposta pede onboarding$`, func() error {
+		if got, _ := st.body["needs_onboarding"].(bool); !got {
+			return fmt.Errorf("needs_onboarding = %v; want true (corpo: %v)", st.body["needs_onboarding"], st.body)
 		}
 		return nil
 	})
@@ -205,6 +231,12 @@ func registerAuthSteps(sc *godog.ScenarioContext, st *state, ctx context.Context
 	sc.Step(`^o usuário "([^"]*)" já existe no par de domínio$`, func(email string) error {
 		return seedUser(ctx, st, email, "segredo-forte", "11111111-1111-1111-1111-111111111111", operatorTenant)
 	})
+
+	// "existe sem senha": a conta só-Google, com password_hash vazio. É o caso
+	// em que POST /auth/password DEFINE a primeira senha.
+	sc.Step(`^o usuário "([^"]*)" existe sem senha no par de domínio$`, func(email string) error {
+		return seedUser(ctx, st, email, "", "11111111-1111-1111-1111-111111111111", operatorTenant)
+	})
 }
 
 // --- helpers de auth -------------------------------------------------------
@@ -253,17 +285,22 @@ func (st *state) captureSessionTenant() {
 	}
 }
 
-// seedUser registra um usuário no fake com hash bcrypt, para o login.
+// seedUser registra um usuário no fake com hash bcrypt, para o login. Uma senha
+// vazia grava password_hash vazio: é a conta só-Google, sem senha definida.
 func seedUser(ctx context.Context, st *state, email, password, companyID, tenantID string) error {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return err
+	hash := ""
+	if password != "" {
+		raw, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+		hash = string(raw)
 	}
 	raw, err := json.Marshal(map[string]any{
 		"id":            "user-" + email,
 		"email":         email,
 		"name":          "Ana Souza",
-		"password_hash": string(hash),
+		"password_hash": hash,
 		"company_id":    companyID,
 		"tenant_id":     tenantID,
 		"role":          "owner",

@@ -51,6 +51,11 @@ services:
       # Tenant do modo operador (X-API-Key). O modo cliente usa o tenant da
       # sessão; este é o fallback de quem opera por chave.
       PROSPECTA_TENANT_ID: ${PROSPECTA_TENANT_ID:-00000000-0000-0000-0000-000000000001}
+      # Client ID do Google (PÚBLICO — vai no bundle da SPA de qualquer forma).
+      # O MESMO client do clubs/finance; prospecta.giomartins.dev precisa estar
+      # nas "authorized JavaScript origins" desse client no Google Cloud
+      # Console (senão origin_mismatch). Vazio desabilita o login com Google.
+      PROSPECTA_GOOGLE_CLIENT_ID: ${PROSPECTA_GOOGLE_CLIENT_ID:-45441571832-4vldrm5h9ef87c82m1spuu6g8foa0k8c.apps.googleusercontent.com}
       # Origem(ns) do SPA autorizada a chamar esta API pelo browser. Sem isto o
       # browser bloqueia a resposta (o SPA vive em prospecta.giomartins.dev, a
       # API em prospecta-api.giomartins.dev: CORS é obrigatório).

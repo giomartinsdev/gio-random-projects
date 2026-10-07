@@ -593,6 +593,8 @@ func prospectaEntityID(evt domainprospecta.Event) string {
 		return e.LeadID
 	case domainprospecta.UserRegistered:
 		return e.UserID
+	case domainprospecta.UserPasswordChanged:
+		return e.UserID
 	default:
 		return ""
 	}
@@ -603,19 +605,20 @@ func prospectaEntityID(evt domainprospecta.Event) string {
 // outras famílias, que usam prefixo dotted — então o process() casa por
 // pertinência a este conjunto, não por prefixo.
 var prospectaActions = map[application.Action]bool{
-	application.ActionCreateCompany:  true,
-	application.ActionDefineICP:      true,
-	application.ActionCreateCampaign: true,
-	application.ActionStartCampaign:  true,
-	application.ActionRequestProspect: true,
-	application.ActionUpsertLead:     true,
-	application.ActionQualifyLead:    true,
-	application.ActionDraftMessage:   true,
-	application.ActionApproveMessage: true,
-	application.ActionSendMessage:    true,
-	application.ActionReceiveReply:   true,
-	application.ActionBookMeeting:    true,
-	application.ActionCreateUser:     true,
+	application.ActionCreateCompany:      true,
+	application.ActionDefineICP:          true,
+	application.ActionCreateCampaign:     true,
+	application.ActionStartCampaign:      true,
+	application.ActionRequestProspect:    true,
+	application.ActionUpsertLead:         true,
+	application.ActionQualifyLead:        true,
+	application.ActionDraftMessage:       true,
+	application.ActionApproveMessage:     true,
+	application.ActionSendMessage:        true,
+	application.ActionReceiveReply:       true,
+	application.ActionBookMeeting:        true,
+	application.ActionCreateUser:         true,
+	application.ActionUpdateUserPassword: true,
 }
 
 func isProspectaAction(a application.Action) bool { return prospectaActions[a] }

@@ -20,21 +20,29 @@ import (
 var ErrInvalidCredentials = errors.New("e-mail ou senha inválidos")
 
 // ActionCreateUser is the command that creates the owner account. The pair
-// hashes nothing: password_hash arrives already bcrypt-ed from here.
+// hashes nothing: password_hash arrives already bcrypt-ed from here (or empty
+// for a Google-only account).
 const ActionCreateUser = "CreateUser"
 
+// ActionUpdateUserPassword is the command that rewrites prospecta_user's
+// password_hash. It is idempotent by command_id in the worker; here the hash is
+// bcrypt-ed (or set for the first time by a Google-only user).
+const ActionUpdateUserPassword = "UpdateUserPassword"
+
 // Service holds the signup/login use cases. It depends only on the application
-// ports (the domain pair doors), never on a database.
+// ports (the domain pair doors), never on a database. google is the SSO door:
+// nil when no client ID is configured, which makes /auth/google answer 503.
 type Service struct {
 	publisher application.CommandPublisher
 	users     application.UserReader
 	companies application.CompanyReader
 	sessions  *Manager
+	google    GoogleVerifier
 	log       *slog.Logger
 }
 
-func NewService(publisher application.CommandPublisher, users application.UserReader, companies application.CompanyReader, sessions *Manager, log *slog.Logger) *Service {
-	return &Service{publisher: publisher, users: users, companies: companies, sessions: sessions, log: log}
+func NewService(publisher application.CommandPublisher, users application.UserReader, companies application.CompanyReader, sessions *Manager, google GoogleVerifier, log *slog.Logger) *Service {
+	return &Service{publisher: publisher, users: users, companies: companies, sessions: sessions, google: google, log: log}
 }
 
 // Sessions exposes the cookie manager to the transport (middleware, logout).
@@ -66,14 +74,21 @@ type SessionResponse struct {
 	Company CompanyView `json:"company"`
 }
 
-// SignupInput is the POST /auth/signup body.
+// SignupInput is the POST /auth/signup body. The account is created either with
+// e-mail+password or with a Google ID token (GoogleCredential): when the token
+// is present the e-mail/name come from Google and no password is required.
 type SignupInput struct {
 	Name     string `json:"name"`
 	Email    string `json:"email"`
 	Password string `json:"password"`
-	Cargo    string `json:"cargo"`
-	Phone    string `json:"phone"`
-	Company  struct {
+	// GoogleCredential é o ID token do Google Identity Services. Presente, o
+	// cadastro ignora Name/Email/Password e usa a identidade verificada do
+	// Google — sem senha (password_hash vai vazio; o usuário define depois via
+	// POST /auth/password).
+	GoogleCredential string `json:"google_credential"`
+	Cargo            string `json:"cargo"`
+	Phone            string `json:"phone"`
+	Company          struct {
 		Name        string `json:"name"`
 		Site        string `json:"site"`
 		Description string `json:"description"`
@@ -90,12 +105,40 @@ func (s *Service) Signup(ctx context.Context, in SignupInput) (Session, SessionR
 	if !s.Enabled() {
 		return Session{}, SessionResponse{}, ErrDisabled
 	}
+	// Cadastro por Google: a identidade (email/name) vem do token verificado e
+	// não há senha. O token é checado ANTES de qualquer escrita — um token
+	// inválido não publica comando nenhum.
+	var passwordHash string
+	hasPassword := true
+	if strings.TrimSpace(in.GoogleCredential) != "" {
+		hasPassword = false
+		if s.google == nil {
+			return Session{}, SessionResponse{}, ErrGoogleDisabled
+		}
+		identity, err := s.google.Verify(in.GoogleCredential)
+		if err != nil {
+			return Session{}, SessionResponse{}, err
+		}
+		in.Email, in.Name = identity.Email, identity.Name
+		if in.Name == "" {
+			in.Name = localPart(in.Email)
+		}
+	}
+
 	in.Name = strings.TrimSpace(in.Name)
 	in.Email = domain.NormalizeEmail(in.Email)
 	in.Company.Name = strings.TrimSpace(in.Company.Name)
 
-	if err := domain.ValidateSignup(in.Name, in.Email, in.Password, in.Company.Name); err != nil {
+	if err := domain.ValidateSignup(in.Name, in.Email, in.Password, in.Company.Name, hasPassword); err != nil {
 		return Session{}, SessionResponse{}, err
+	}
+
+	if hasPassword {
+		hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return Session{}, SessionResponse{}, err
+		}
+		passwordHash = string(hash)
 	}
 
 	// Duplicate guard: a 200 from the pair means the e-mail already exists.
@@ -119,17 +162,12 @@ func (s *Service) Signup(ctx context.Context, in SignupInput) (Session, SessionR
 		return Session{}, SessionResponse{}, err
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return Session{}, SessionResponse{}, err
-	}
-
 	userID, err := s.publisher.Publish(scoped, ActionCreateUser, map[string]any{
 		"tenant_id":     tenantID,
 		"company_id":    companyID,
 		"name":          in.Name,
 		"email":         in.Email,
-		"password_hash": string(hash),
+		"password_hash": passwordHash,
 		"role":          "owner",
 	})
 	if err != nil {
@@ -172,30 +210,139 @@ func (s *Service) Login(ctx context.Context, email, password string) (Session, S
 		return Session{}, SessionResponse{}, ErrInvalidCredentials
 	}
 
-	tenantID := user.TenantID
-	session := Session{
+	return s.sessionFor(ctx, user), s.bodyFor(ctx, user), nil
+}
+
+// GoogleResponse is the POST /auth/google body. It is either a full session
+// (Login=true, with an issued cookie) or the onboarding directive the SPA needs
+// to finish the company signup (NeedsOnboarding=true, no cookie).
+type GoogleResponse struct {
+	User            UserView    `json:"user,omitempty"`
+	Company         CompanyView `json:"company,omitempty"`
+	NeedsOnboarding bool        `json:"needs_onboarding,omitempty"`
+	Email           string      `json:"email,omitempty"`
+	Name            string      `json:"name,omitempty"`
+}
+
+// GoogleLogin implements POST /auth/google. It verifies the ID token, looks the
+// user up by e-mail and either mints a session (existing account) or answers the
+// onboarding directive (unknown e-mail, no cookie). A missing client ID is
+// ErrGoogleDisabled (503), never a token failure.
+func (s *Service) GoogleLogin(ctx context.Context, credential string) (Session, GoogleResponse, bool, error) {
+	if !s.Enabled() {
+		return Session{}, GoogleResponse{}, false, ErrDisabled
+	}
+	if s.google == nil {
+		return Session{}, GoogleResponse{}, false, ErrGoogleDisabled
+	}
+	identity, err := s.google.Verify(credential)
+	if err != nil {
+		return Session{}, GoogleResponse{}, false, err
+	}
+	user, err := s.users.UserByEmail(ctx, identity.Email)
+	if errors.Is(err, domain.ErrNotFound) {
+		// Sem conta ainda: o SPA completa o cadastro da empresa. Nada é emitido.
+		name := identity.Name
+		if name == "" {
+			name = localPart(identity.Email)
+		}
+		return Session{}, GoogleResponse{NeedsOnboarding: true, Email: identity.Email, Name: name}, false, nil
+	}
+	if err != nil {
+		return Session{}, GoogleResponse{}, false, err
+	}
+	sess := s.sessionFor(ctx, user)
+	return sess, GoogleResponse{User: UserView{ID: user.ID, Email: user.Email, Name: user.Name}, Company: s.bodyFor(ctx, user).Company}, true, nil
+}
+
+// PasswordInput is the POST /auth/password body.
+type PasswordInput struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// ChangePassword implements POST /auth/password. It loads the caller's account
+// (by the session's e-mail), verifies the current password, and publishes
+// UpdateUserPassword with a fresh bcrypt hash. A user who only ever signed in
+// with Google has no password: current_password must be empty and the first
+// password is simply set. A wrong current password is ErrInvalidCredentials;
+// a too-short new one is domain.ErrUserPasswordWeak (422).
+func (s *Service) ChangePassword(ctx context.Context, session Session, in PasswordInput) error {
+	if !s.Enabled() {
+		return ErrDisabled
+	}
+	if len([]rune(in.NewPassword)) < domain.MinPasswordLength {
+		return domain.ErrUserPasswordWeak
+	}
+	user, err := s.users.UserByEmail(ctx, session.Email)
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		return ErrInvalidCredentials
+	case err != nil:
+		return err
+	}
+	// A conta só-Google tem password_hash vazio: não há senha atual a conferir,
+	// e current_password precisa vir vazio para a DEFINIÇÃO ser aceita.
+	if user.PasswordHash != "" {
+		if in.CurrentPassword == "" ||
+			bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(in.CurrentPassword)) != nil {
+			return ErrInvalidCredentials
+		}
+	} else if in.CurrentPassword != "" {
+		return ErrInvalidCredentials
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	// Escrita no tenant do usuário: o worker é o único dono da linha, e o
+	// comando carrega o tenant_id da sessão.
+	scoped := identity.WithTenant(ctx, user.TenantID)
+	_, err = s.publisher.Publish(scoped, ActionUpdateUserPassword, map[string]any{
+		"tenant_id":     user.TenantID,
+		"user_id":       user.ID,
+		"password_hash": string(hash),
+	})
+	return err
+}
+
+// sessionFor projects a stored user into the cookie claim set.
+func (s *Service) sessionFor(_ context.Context, user domain.User) Session {
+	return Session{
 		UserID:    user.ID,
 		Email:     user.Email,
 		Name:      user.Name,
 		CompanyID: user.CompanyID,
-		TenantID:  tenantID,
+		TenantID:  user.TenantID,
 	}
-	// Best effort: the company name is decoration; a failed read must not turn
-	// a valid login into an error. The read is scoped to the user's tenant.
+}
+
+// bodyFor builds the {user, company} response. The company name is best-effort:
+// the read is scoped to the user's tenant and a failure leaves the name empty
+// instead of turning a valid login into an error.
+func (s *Service) bodyFor(ctx context.Context, user domain.User) SessionResponse {
 	companyName := ""
 	if user.CompanyID != "" {
-		scoped := identity.WithTenant(ctx, tenantID)
+		scoped := identity.WithTenant(ctx, user.TenantID)
 		if company, err := s.companies.Company(scoped, user.CompanyID); err == nil {
 			companyName = company.Name
 		} else {
-			s.log.WarnContext(ctx, "company read on login failed; returning session without name", "error", err)
+			s.log.WarnContext(ctx, "company read failed; returning without name", "error", err)
 		}
 	}
-	body := SessionResponse{
+	return SessionResponse{
 		User:    UserView{ID: user.ID, Email: user.Email, Name: user.Name},
 		Company: CompanyView{ID: user.CompanyID, Name: companyName},
 	}
-	return session, body, nil
+}
+
+// localPart is the display-name fallback when the identity has no name.
+func localPart(email string) string {
+	if local, _, ok := strings.Cut(email, "@"); ok {
+		return local
+	}
+	return email
 }
 
 // Me projects an existing session into the {user, company} body. The company

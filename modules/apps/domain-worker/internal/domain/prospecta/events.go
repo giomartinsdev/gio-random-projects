@@ -190,3 +190,14 @@ type UserRegistered struct {
 }
 
 func (UserRegistered) EventName() string { return "UserRegistered" }
+
+// UserPasswordChanged diz que a senha de uma conta foi trocada (ou definida
+// pela primeira vez, no caso de uma conta só-Google). NÃO leva o hash: o
+// segredo não trafega no broker.
+type UserPasswordChanged struct {
+	UserID     string    `json:"user_id"`
+	TenantID   string    `json:"tenant_id"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
+func (UserPasswordChanged) EventName() string { return "UserPasswordChanged" }
