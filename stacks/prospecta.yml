@@ -11,6 +11,9 @@
 # e não cadastrada é deploy vermelho (ou verde com o default errado).
 #   PROSPECTA_API_KEY         (chave que a SPA e o worker apresentam à prospecta-api;
 #                              a MESMA nos dois — se vazia, a API deixa passar, §D8)
+#   PROSPECTA_SESSION_SECRET  (segredo HS256 do cookie de sessão do login;
+#                              sem ele /auth responde 503)
+#   PROSPECTA_TENANT_ID       (opcional, default UUID fixo — tenant do modo operador)
 #   PROSPECTA_DOMAIN_API_KEY  (chave da prospecta-api p/ o domain-api; a MESMA tem
 #                              de estar em DOMAIN_API_KEYS do stack `domain`, senão
 #                              todo comando leva 401 com o deploy verde — §10.3)
@@ -42,6 +45,12 @@ services:
       # Chave própria do BFF (§D8). Sem ela o middleware deixa passar; em prod
       # tem de estar definida, senão o host fica público sem auth.
       PROSPECTA_API_KEY: ${PROSPECTA_API_KEY:?defina PROSPECTA_API_KEY}
+      # Segredo HS256 do cookie de sessão do login (e-mail+senha). SEM ele as
+      # rotas /auth respondem 503 (o serviço de pé, mas login desabilitado).
+      PROSPECTA_SESSION_SECRET: ${PROSPECTA_SESSION_SECRET:?defina PROSPECTA_SESSION_SECRET}
+      # Tenant do modo operador (X-API-Key). O modo cliente usa o tenant da
+      # sessão; este é o fallback de quem opera por chave.
+      PROSPECTA_TENANT_ID: ${PROSPECTA_TENANT_ID:-00000000-0000-0000-0000-000000000001}
       # Origem(ns) do SPA autorizada a chamar esta API pelo browser. Sem isto o
       # browser bloqueia a resposta (o SPA vive em prospecta.giomartins.dev, a
       # API em prospecta-api.giomartins.dev: CORS é obrigatório).
