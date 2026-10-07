@@ -5,15 +5,24 @@ O run é ``plan → search → enrich → qualify``, dirigido pelo evento
 transição é explícita, publica evento e persiste o estado do run na
 prospecta-api -- o estado vive no banco, nunca na memória do processo (R1).
 
+O run JÁ é criado pelo domínio: o ``ProspectRequested`` carrega o ``run_id`` e
+o worker só o **atualiza** (``POST /agent/runs/{id}``), nunca abre um segundo.
+
 Três propriedades que os testes fixam:
 
 1. **Idempotência** por ``event_id``/``command_id``: a reentrega at-least-once do
-   mesmo ``ProspectRequested`` não abre um segundo run.
+   mesmo ``ProspectRequested`` não conduz o run duas vezes.
 2. **Dedup** de leads pela chave natural ``domain+company_name`` (R4): o mesmo
    negócio não vira dois leads nem dentro do run nem entre runs.
-3. **Nunca loop infinito**: um erro persistente de dependência (9router, busca,
-   enriquecimento) marca o run ``failed`` e retorna; o retry é do cliente
+3. **Nunca loop infinito**: um erro persistente de dependência de IA/
+   enriquecimento marca o run ``failed`` e retorna; o retry é do cliente
    (backoff limitado) + circuit-breaker por dependência -- a fila não trava.
+   A busca, porém, degrada **honesto**: não configurada ou sem resultados
+   termina o run em ``done`` com ``found=0``, nunca em loop de ``failed``.
+
+Além de publicar ``LeadDiscovered``/``LeadEnriched``/``LeadQualified`` no bus, o
+lead é **PERSISTIDO** na prospecta-api (``POST /leads`` + ``POST /leads/{id}/
+qualify``): a publicação é observabilidade, a persistência é a que conta.
 """
 
 from __future__ import annotations
@@ -21,7 +30,6 @@ from __future__ import annotations
 import logging
 import time
 from urllib.parse import urlparse
-from uuid import NAMESPACE_URL, uuid5
 
 from prospecta_agent_worker.agents.qualifier import Qualifier
 from prospecta_agent_worker.agents.tools import EnrichCompany, ToolError, WebScrape, WebSearch
@@ -74,11 +82,6 @@ def natural_key(domain: str, company_name: str) -> str:
     return f"{(domain or '').strip().lower()}|{(company_name or '').strip().lower()}"
 
 
-def stable_lead_id(*, tenant_id: str, campaign_id: str, key: str) -> str:
-    """Um ``lead_id`` determinístico pela chave natural -- a reentrega reusa o id."""
-    return str(uuid5(NAMESPACE_URL, f"prospecta:{tenant_id}:{campaign_id}:{key}"))
-
-
 def domain_from_url(url: str) -> str:
     try:
         return urlparse(url).netloc.lower()
@@ -126,8 +129,9 @@ class Orchestrator:
             return
         self._seen.add(dedup_key)
 
-        agent = payload.get("agent", "prospector")
-        run_id = await self._api.start_run(campaign_id=campaign_id, tenant_id=tenant_id, agent=agent)
+        # O run JÁ existe: o domínio criou no `ProspectRequested`. Nunca abrimos
+        # um segundo (POST /agent/runs é do domínio, não do worker).
+        run_id = str(payload.get("run_id") or "")
         metrics: dict = {"found": 0, "enriched": 0, "qualified": 0}
 
         try:
@@ -146,23 +150,40 @@ class Orchestrator:
                     continue  # dedup: o mesmo negócio não vira dois leads
                 self._seen_keys.add(key)
                 metrics["found"] += 1
-                lead_id = stable_lead_id(tenant_id=campaign_tenant, campaign_id=campaign_id, key=key)
                 lead = {
-                    "lead_id": lead_id,
                     "campaign_id": campaign_id,
                     "company_name": result.get("title", ""),
                     "domain": domain_from_url(result.get("url", "")),
                     "source_url": result.get("url", ""),
                     "channel": channels[0] if channels else "whatsapp",
                 }
-                await self._qualifier.publish_discovered(lead=lead, tenant_id=campaign_tenant)
+                # Persistência primeiro: o id que vale é o do domínio (upsert
+                # idempotente pela chave natural). A publicação no bus é o
+                # mesmo evento, mas a persistência é a que conta.
+                lead_id = await self._api.upsert_lead(
+                    campaign_id=campaign_id,
+                    company_name=lead["company_name"],
+                    domain=lead["domain"],
+                    channel=lead["channel"],
+                    source_url=lead["source_url"],
+                )
+                if not lead_id:
+                    # Sem id do domínio não há como qualificar/ligar mensagens;
+                    # a chave determinística antiga era um paliativo, não um id.
+                    continue
+                payload_lead = {**lead, "lead_id": lead_id}
+                await self._qualifier.publish_discovered(lead=payload_lead, tenant_id=campaign_tenant)
 
                 enriched = await self._enrich_guarded(lead["domain"])
                 metrics["enriched"] += 1
-                await self._qualifier.publish_enriched(lead_id=lead_id, tenant_id=campaign_tenant, enriched=enriched)
+                await self._qualifier.publish_enriched(
+                    lead_id=lead_id, tenant_id=campaign_tenant, enriched=enriched
+                )
 
-                fit = await self._ai_guarded(icp=icp, lead=lead, enriched=enriched)
+                fit = await self._ai_guarded(icp=icp, lead=payload_lead, enriched=enriched)
                 metrics["qualified"] += 1
+                # O fit também é persistência, não só evento (R4: upsert).
+                await self._api.qualify_lead(lead_id, fit)
                 await self._qualifier.publish_qualified(lead_id=lead_id, tenant_id=campaign_tenant, fit=fit)
 
             await self._api.update_run(run_id, state="done", metrics=metrics)

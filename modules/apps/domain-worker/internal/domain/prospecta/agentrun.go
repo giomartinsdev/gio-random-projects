@@ -7,7 +7,9 @@ import (
 
 // Erros do agregado AgentRun.
 var (
-	ErrAgentRequired = errors.New("agent is required")
+	ErrAgentRequired   = errors.New("agent is required")
+	ErrRunIDRequired   = errors.New("run_id is required")
+	ErrInvalidRunState = errors.New("run state must be running, done or failed")
 )
 
 // AgentRunAgent identifica qual agente do núcleo agêntico executou.
@@ -62,4 +64,20 @@ func NewAgentRun(id, tenantID, campaignID string, agent AgentRunAgent) (AgentRun
 		Agent:      agent,
 		State:      AgentRunRunning,
 	}, nil
+}
+
+// ValidAgentRunState diz se s é um dos estados do contrato (data-model §7).
+func ValidAgentRunState(s AgentRunState) bool {
+	switch s {
+	case AgentRunRunning, AgentRunDone, AgentRunFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Terminal diz se o run já acabou — done ou failed. Um run terminal não regride
+// (a reentrega de um UpdateAgentRun antigo é no-op).
+func (r AgentRun) Terminal() bool {
+	return r.State == AgentRunDone || r.State == AgentRunFailed
 }

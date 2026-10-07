@@ -103,10 +103,21 @@ func (c *DomainClient) Enabled() bool { return c != nil }
 // getJSON issues an authenticated GET and decodes the projection into out. A
 // 404 becomes domain.ErrNotFound so the transport can answer 404 (not 500).
 func (c *DomainClient) getJSON(ctx context.Context, path string, out any) error {
+	return c.getJSONURL(ctx, c.base+withTenant(path, c.tenantFor(ctx)), path, out)
+}
+
+// getJSONNoTenant is getJSON without the ?tenant_id= scope. It exists for the
+// few reads that are cross-tenant by design (the by-phone lead lookup): the
+// pair resolves them globally and a tenant would be meaningless.
+func (c *DomainClient) getJSONNoTenant(ctx context.Context, path string, out any) error {
+	return c.getJSONURL(ctx, c.base+path, path, out)
+}
+
+func (c *DomainClient) getJSONURL(ctx context.Context, fullURL, path string, out any) error {
 	if c == nil {
 		return ErrNotConfigured
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+withTenant(path, c.tenantFor(ctx)), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		return err
 	}
@@ -240,6 +251,26 @@ func (c *DomainClient) Message(ctx context.Context, id string) (domain.Message, 
 		return domain.Message{}, err
 	}
 	return message, nil
+}
+
+// OptOut decodes GET /opt-outs/{lead_id}: the LGPD guardrail. The pair always
+// answers 200, so a missing opt-out is a false value, not a 404.
+func (c *DomainClient) OptOut(ctx context.Context, leadID string) (domain.OptOut, error) {
+	var out domain.OptOut
+	if err := c.getJSON(ctx, "/opt-outs/"+url.PathEscape(leadID), &out); err != nil {
+		return domain.OptOut{}, err
+	}
+	return out, nil
+}
+
+// LeadByPhone decodes GET /leads/by-phone/{number}. The lookup is cross-tenant
+// on purpose, so no tenant is sent; a number that matches nothing is 404.
+func (c *DomainClient) LeadByPhone(ctx context.Context, number string) (domain.LeadPhone, error) {
+	var lead domain.LeadPhone
+	if err := c.getJSONNoTenant(ctx, "/leads/by-phone/"+url.PathEscape(number), &lead); err != nil {
+		return domain.LeadPhone{}, err
+	}
+	return lead, nil
 }
 
 // StreamActivity opens the pair's GET /agent/activity SSE stream and republishes

@@ -94,9 +94,10 @@ func main() {
 	services := httpapi.Services{
 		Companies: application.NewCompanyService(domainPair, domainPair),
 		Campaigns: application.NewCampaignService(domainPair, domainPair),
-		Leads:     application.NewLeadService(domainPair, domainPair),
+		Leads:     application.NewLeadService(domainPair, domainPair).WithOptOuts(domainPair),
 		Messaging: application.NewMessagingService(domainPair, domainPair, domainPair),
 		Activity:  application.NewActivityService(domainPair),
+		Agent:     application.NewAgentService(domainPair),
 	}
 	authService := auth.NewService(domainPair, domainPair, domainPair, sessions, googleVerifier, log)
 

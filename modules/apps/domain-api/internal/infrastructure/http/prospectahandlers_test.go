@@ -67,6 +67,18 @@ func (s *stubProspectaReads) ListActivity(context.Context, string, int) ([]domai
 	return nil, s.err
 }
 
+func (s *stubProspectaReads) GetAgentRun(context.Context, string, string) (domainprospecta.AgentRunView, error) {
+	return domainprospecta.AgentRunView{}, s.err
+}
+
+func (s *stubProspectaReads) IsOptedOut(context.Context, string, string) (bool, error) {
+	return false, s.err
+}
+
+func (s *stubProspectaReads) LeadByPhone(context.Context, string) (domainprospecta.LeadPhoneView, error) {
+	return domainprospecta.LeadPhoneView{}, s.err
+}
+
 func prospectaServer(reads domainprospecta.ReadRepository, pub *spyPublisher) http.Handler {
 	h := NewProspectaHandlers(reads, pub, discardLogger())
 	r := chi.NewRouter()

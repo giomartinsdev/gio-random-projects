@@ -32,10 +32,6 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _search(stubs) -> WebSearch:
-    return WebSearch(base_url=stubs["base"], provider="brave", api_key="test-search-key", timeout=3)
-
-
 def _scrape(stubs) -> WebScrape:
     return WebScrape(timeout=3)
 
@@ -56,13 +52,38 @@ def busca_500(contexto: dict, stubs) -> None:
     contexto["stubs"] = stubs
 
 
+@given("que a busca não está configurada")
+def busca_nao_configurada(contexto: dict, stubs) -> None:
+    stubs["set"](search={"status": 200, "results": [], "calls": []})
+    contexto["stubs"] = stubs
+    contexto["search_api_key"] = ""
+
+
 @when(parsers.parse('a tool web.search busca por "{query}"'))
 def quando_busca(contexto: dict, query: str) -> None:
     contexto["error"] = None
     try:
-        contexto["results"] = _run(_search(contexto["stubs"]).search(query))
+        search = WebSearch(
+            base_url=contexto["stubs"]["base"],
+            provider="brave",
+            api_key=contexto.get("search_api_key", "test-search-key"),
+            timeout=3,
+        )
+        contexto["results"] = _run(search.search(query))
     except Exception as exc:  # noqa: BLE001 -- o cenário negativo espera o erro
         contexto["error"] = exc
+
+
+@then("a busca devolve uma lista vazia")
+def busca_vazia(contexto: dict) -> None:
+    assert contexto["error"] is None, contexto["error"]
+    assert contexto["results"] == [], contexto["results"]
+
+
+@then("a busca recebeu 0 chamadas")
+def busca_zero_chamadas(contexto: dict) -> None:
+    calls = contexto["stubs"]["get"]()["search"]["calls"]
+    assert calls == [], f"sem chave a busca não deve tocar a rede, veio {calls}"
 
 
 @then(parsers.parse('a busca devolve o título "{title}" e a url "{url}"'))

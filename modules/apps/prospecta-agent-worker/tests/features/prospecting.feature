@@ -4,9 +4,14 @@
 # enrich → qualify` --, não um framework. Cada transição persiste o estado do
 # run na prospecta-api; nunca fica na memória do processo.
 #
+#   - o run JÁ é criado pelo domínio: o `ProspectRequested` carrega `run_id` e o
+#     worker só o ATUALIZA (`POST /agent/runs/{id}`), nunca abre um segundo;
+#   - o lead descoberto é PERSISTIDO na prospecta-api (`POST /leads` + qualify),
+#     além de publicado no bus -- upsert idempotente por `domain`/`company_name`;
 #   - retry/backoff + circuit-breaker por dependência; um 9router 5xx persistente
-#     termina o run em `failed` e NÃO loopa a fila;
-#   - idempotência por `event_id`/`command_id`: a reentrega não abre um segundo run;
+#     termina o run em `failed` e NÃO loopa a fila; busca não configurada/vazia
+#     degrada para `done` com found 0 (não `failed` em loop);
+#   - idempotência por `event_id`/`command_id`: a reentrega não conduz o run duas vezes;
 #   - dedup por chave natural (`domain`/`company_name`): o mesmo negócio não vira
 #     dois leads.
 #
@@ -30,22 +35,40 @@ Funcionalidade: O agente prospecta, qualifica e redige
     Então o worker publicou o evento "LeadDiscovered"
     E o worker publicou o evento "LeadEnriched"
     E o worker publicou o evento "LeadQualified" com fit 87
+    E o lead "Northwind Log" foi persistido na prospecta-api
+    E o lead "Northwind Log" foi qualificado com fit 87
     E o run da campanha "camp-1" terminou no estado "done"
 
-  Cenário: A reentrega do mesmo ProspectRequested não abre um segundo run
+  Cenário: O run usa o run_id que veio no evento (o domínio cria o run)
+    Dado uma campanha "camp-1" com o ICP "Logística B2B, expandindo frota"
+    E que a busca devolve o prospect "Northwind Log" em "https://northwindlog.com.br"
+    E que o enriquecimento devolve a empresa "Northwind Log" com o decisor "Carlos Menezes"
+    E que o 9router devolve o fit 87 para o lead
+    Quando o domínio publica o evento "ProspectRequested" para a campanha "camp-1"
+    Então o worker NÃO abriu um novo run
+    E o run do evento "run-from-event" recebeu o estado "done"
+
+  Cenário: A reentrega do mesmo ProspectRequested não conduz o run duas vezes
     Dado uma campanha "camp-1" com o ICP "Logística B2B, expandindo frota"
     E que a busca devolve o prospect "Northwind Log" em "https://northwindlog.com.br"
     E que o enriquecimento devolve a empresa "Northwind Log" com o decisor "Carlos Menezes"
     E que o 9router devolve o fit 87 para o lead
     Quando o domínio publica o evento "ProspectRequested" duas vezes para a campanha "camp-1"
-    Então a prospecta-api registrou 1 run para a campanha "camp-1"
+    Então o run do evento "run-from-event" recebeu o estado "done" uma vez
 
   Cenário: Uma busca sem resultados termina o run sem lead e sem loop
     Dado uma campanha "camp-1" com o ICP "Logística B2B, expandindo frota"
     E que a busca não devolve resultados
     Quando o domínio publica o evento "ProspectRequested" para a campanha "camp-1"
     Então o worker não publicou nenhum evento
-    E o run da campanha "camp-1" terminou no estado "done"
+    E o run do evento "run-from-event" recebeu o estado "done" uma vez
+
+  Cenário: Uma busca não configurada (sem chave) degrada para done sem lead
+    Dado uma campanha "camp-1" com o ICP "Logística B2B, expandindo frota"
+    E que a busca não está configurada
+    Quando o domínio publica o evento "ProspectRequested" para a campanha "camp-1"
+    Então o worker não publicou nenhum evento
+    E o run do evento "run-from-event" terminou no estado "done" com found 0
 
   Cenário: O mesmo negócio duas vezes não vira dois leads
     Dado uma campanha "camp-1" com o ICP "Logística B2B, expandindo frota"
@@ -69,4 +92,5 @@ Funcionalidade: O agente prospecta, qualifica e redige
     Quando o domínio publica o evento "LeadQualified" para o lead "lead-1"
     Então o worker publicou o evento "MessageDrafted"
     E a mensagem redigida tem rodapé de opt-out
+    E a mensagem redigida foi persistida na prospecta-api
     E a chamada ao 9router não contém o telefone "5521981962914"

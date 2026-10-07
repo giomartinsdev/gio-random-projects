@@ -418,7 +418,7 @@ func (r *ProspectaReadRepository) GetConversation(ctx context.Context, tenantID,
 }
 
 // ---------------------------------------------------------------------------
-// Agent run (feed SSE)
+// Agent run (feed SSE + projeção por id)
 // ---------------------------------------------------------------------------
 
 func (r *ProspectaReadRepository) ListActivity(ctx context.Context, tenantID string, limit int) ([]domainprospecta.AgentRunEvent, error) {
@@ -447,6 +447,74 @@ func (r *ProspectaReadRepository) ListActivity(ctx context.Context, tenantID str
 		return nil, err
 	}
 	return out, nil
+}
+
+// GetAgentRun projeta um run pelo id, dentro do tenant. O WHERE filtra o tenant
+// além do RLS (defesa em profundidade). ErrNotFound quando não existe.
+func (r *ProspectaReadRepository) GetAgentRun(ctx context.Context, tenantID, id string) (domainprospecta.AgentRunView, error) {
+	var v domainprospecta.AgentRunView
+	var raw []byte
+	var started time.Time
+	var ended *time.Time
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT id::text, campaign_id::text, agent, state, metrics, started_at, ended_at
+			  FROM prospecta_agent_run WHERE id = $1 AND tenant_id = $2`, id, tenantID).
+			Scan(&v.ID, &v.CampaignID, &v.Agent, &v.State, &raw, &started, &ended)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domainprospecta.AgentRunView{}, domainprospecta.ErrNotFound
+	}
+	if err != nil {
+		return domainprospecta.AgentRunView{}, err
+	}
+	v.Metrics = unmarshalMap(raw)
+	v.StartedAt = started.UTC().Format(time.RFC3339)
+	if ended != nil {
+		v.EndedAt = ended.UTC().Format(time.RFC3339)
+	}
+	return v, nil
+}
+
+// ---------------------------------------------------------------------------
+// Opt-out (guardrail LGPD) e resolução por telefone
+// ---------------------------------------------------------------------------
+
+// IsOptedOut diz se o lead pediu opt-out. A ausência de linha é false — NUNCA um
+// 404: o guardrail consulta isto antes de todo envio e precisa de uma resposta
+// inequívoca.
+func (r *ProspectaReadRepository) IsOptedOut(ctx context.Context, tenantID, leadID string) (bool, error) {
+	opted := false
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT EXISTS(SELECT 1 FROM prospecta_opt_out WHERE tenant_id = $1 AND lead_id = $2)`,
+			tenantID, leadID).Scan(&opted)
+	})
+	return opted, err
+}
+
+// LeadByPhone resolve o telefone (já normalizado: só dígitos, E.164 sem +) de
+// volta ao lead. É CROSS-TENANT de propósito: o payload do WhatsApp não traz
+// tenant, então a busca roda sem fixar app.current_tenant e casa em
+// enriched->>'phone'. Devolve tenant_id + lead_id + thread_key (default
+// "wa:<number>").
+func (r *ProspectaReadRepository) LeadByPhone(ctx context.Context, phone string) (domainprospecta.LeadPhoneView, error) {
+	var v domainprospecta.LeadPhoneView
+	err := r.pool.QueryRow(ctx, `
+		SELECT tenant_id::text, id::text, COALESCE(enriched->>'thread_key', 'wa:' || $1)
+		  FROM prospecta_lead WHERE enriched->>'phone' = $1
+		  ORDER BY updated_at DESC LIMIT 1`, phone).
+		Scan(&v.TenantID, &v.LeadID, &v.ThreadKey)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domainprospecta.LeadPhoneView{}, domainprospecta.ErrNotFound
+	}
+	if err != nil {
+		return domainprospecta.LeadPhoneView{}, err
+	}
+	if v.ThreadKey == "" {
+		v.ThreadKey = "wa:" + phone
+	}
+	return v, nil
 }
 
 // ---------------------------------------------------------------------------

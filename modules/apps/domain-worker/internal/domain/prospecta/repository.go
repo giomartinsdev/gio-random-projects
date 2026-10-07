@@ -54,6 +54,17 @@ type Repository interface {
 
 	// InsertAgentRun abre o run, idempotente por command_id.
 	InsertAgentRun(ctx context.Context, run AgentRun, commandID string) (inserted bool, err error)
+	// FindAgentRun busca o run no tenant.
+	FindAgentRun(ctx context.Context, tenantID, id string) (AgentRun, error)
+	// UpdateAgentRunState grava state, metrics e ended_at do run, idempotente por
+	// command_id: uma reentrega do MESMO comando é no-op (changed=false), e um
+	// run já terminal não regride. changed=false quando o comando já foi aplicado
+	// ou o run não existe (o service distingue os dois).
+	UpdateAgentRunState(ctx context.Context, run AgentRun, commandID string) (changed bool, err error)
+
+	// InsertOptOut grava o pedido de opt-out, idempotente por (tenant_id,
+	// lead_id): o mesmo pedido duas vezes é UMA linha (inserted=false).
+	InsertOptOut(ctx context.Context, o OptOut) (inserted bool, err error)
 
 	// Audit grava a linha de auditoria do Prospecta (sucesso ou falha) com o
 	// payload já passado por PII scrubbing.

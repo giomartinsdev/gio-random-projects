@@ -18,6 +18,7 @@ from steps.support import (
     consume_domain_one,
     delete_domain_queue,
     domain_envelope,
+    prospect_requested_envelope,
     publish_domain_event,
     unique_domain_queue,
 )
@@ -94,6 +95,12 @@ def busca_vazia(contexto: dict) -> None:
     contexto["stubs"]["set"](search={"status": 200, "results": [], "calls": []})
 
 
+@given("que a busca não está configurada")
+def busca_nao_configurada(contexto: dict) -> None:
+    # Sem chave (`SEARCH_API_KEY=""`) a WebSearch devolve [] sem tocar a rede.
+    contexto["search_api_key"] = ""
+
+
 @given(parsers.parse('que o enriquecimento devolve a empresa "{name}" com o decisor "{decisor}"'))
 def enrich_resultado(contexto: dict, name: str, decisor: str) -> None:
     contexto["stubs"]["set"](
@@ -131,14 +138,15 @@ def ninerouter_500(contexto: dict) -> None:
 @when(parsers.parse('o domínio publica o evento "ProspectRequested" para a campanha "{campaign_id}"'))
 def publica_prospect_requested(contexto: dict, rabbit_url, collector, domain_queue, campaign_id: str) -> None:
     contexto["collector"] = collector
-    worker = build_worker(contexto["stubs"]["base"], rabbit_url)
+    worker = build_worker(
+        contexto["stubs"]["base"],
+        rabbit_url,
+        search_api_key=contexto.get("search_api_key", "test-search-key"),
+    )
     contexto["worker"] = worker
     publish_domain_event(
         rabbit_url,
-        domain_envelope(
-            "ProspectRequested",
-            {"campaign_id": campaign_id, "tenant_id": "tenant-1", "agent": "prospector"},
-        ),
+        prospect_requested_envelope(campaign_id),
         queue=domain_queue,
     )
     consume_domain_one(rabbit_url, worker, queue=domain_queue)
@@ -147,14 +155,13 @@ def publica_prospect_requested(contexto: dict, rabbit_url, collector, domain_que
 @when(parsers.parse('o domínio publica o evento "ProspectRequested" duas vezes para a campanha "{campaign_id}"'))
 def publica_prospect_requested_duas(contexto: dict, rabbit_url, collector, domain_queue, campaign_id: str) -> None:
     contexto["collector"] = collector
-    worker = build_worker(contexto["stubs"]["base"], rabbit_url)
-    contexto["worker"] = worker
-    envelope = domain_envelope(
-        "ProspectRequested",
-        {"campaign_id": campaign_id, "tenant_id": "tenant-1", "agent": "prospector"},
-        event_id="evt-req-1",
-        command_id="cmd-req-1",
+    worker = build_worker(
+        contexto["stubs"]["base"],
+        rabbit_url,
+        search_api_key=contexto.get("search_api_key", "test-search-key"),
     )
+    contexto["worker"] = worker
+    envelope = prospect_requested_envelope(campaign_id)
     publish_domain_event(rabbit_url, envelope, queue=domain_queue)
     publish_domain_event(rabbit_url, envelope, queue=domain_queue)
     consume_domain_one(rabbit_url, worker, queue=domain_queue)
@@ -209,6 +216,55 @@ def runs_registrados(contexto: dict, count: int, campaign_id: str) -> None:
     runs = contexto["stubs"]["get"]()["runs"]
     matched = [r for r in runs if r.get("campaign_id") == campaign_id]
     assert len(matched) == count, f"esperava {count} run(s), veio {len(matched)}: {matched}"
+
+
+@then("o worker NÃO abriu um novo run")
+def nao_abriu_run(contexto: dict) -> None:
+    runs = contexto["stubs"]["get"]()["runs"]
+    assert runs == [], f"o worker não deve abrir run (o domínio cria); veio {runs}"
+
+
+@then(parsers.parse('o run do evento "{run_id}" recebeu o estado "{state}"'))
+def run_do_evento_recebeu(contexto: dict, run_id: str, state: str) -> None:
+    updates = contexto["stubs"]["get"]()["run_updates"]
+    states = [u.get("state") for u in updates if u.get("run_id") == run_id]
+    assert state in states, f"esperava run {run_id} em {state}, veio {states}"
+
+
+@then(parsers.parse('o run do evento "{run_id}" recebeu o estado "{state}" uma vez'))
+def run_do_evento_recebeu_uma_vez(contexto: dict, run_id: str, state: str) -> None:
+    updates = contexto["stubs"]["get"]()["run_updates"]
+    matched = [u for u in updates if u.get("run_id") == run_id and u.get("state") == state]
+    assert len(matched) == 1, f"esperava run {run_id} em {state} uma vez, veio {len(matched)}: {updates}"
+
+
+@then(parsers.parse('o run do evento "{run_id}" terminou no estado "{state}" com found {found:d}'))
+def run_do_evento_com_found(contexto: dict, run_id: str, state: str, found: int) -> None:
+    updates = contexto["stubs"]["get"]()["run_updates"]
+    matched = [
+        u
+        for u in updates
+        if u.get("run_id") == run_id and u.get("state") == state and (u.get("metrics") or {}).get("found") == found
+    ]
+    assert matched, f"esperava run {run_id} em {state} com found={found}, veio {updates}"
+
+
+@then(parsers.parse('o lead "{company}" foi persistido na prospecta-api'))
+def lead_persistido(contexto: dict, company: str) -> None:
+    upserts = contexto["stubs"]["get"]()["lead_upserts"]
+    matched = [u for u in upserts if u.get("company_name") == company]
+    assert matched, f"esperava upsert do lead {company}, veio {upserts}"
+
+
+@then(parsers.parse('o lead "{company}" foi qualificado com fit {fit:d}'))
+def lead_qualificado(contexto: dict, company: str, fit: int) -> None:
+    stubs = contexto["stubs"]["get"]()
+    matched = [u for u in stubs["lead_upserts"] if u.get("company_name") == company]
+    assert matched, f"esperava upsert do lead {company}, veio {stubs['lead_upserts']}"
+    lead_id = matched[-1].get("id")
+    qualifies = [q for q in stubs["qualify_calls"] if q.get("lead_id") == lead_id]
+    assert qualifies, f"esperava qualify do lead {lead_id}, veio {stubs['qualify_calls']}"
+    assert qualifies[-1].get("fit") == fit, qualifies[-1]
 
 
 @then("o 9router recebeu menos de 10 chamadas")
@@ -271,6 +327,13 @@ def mensagem_tem_rodape(contexto: dict) -> None:
     assert drafted, f"esperava MessageDrafted entre {[e.get('event_type') for e in events]}"
     content = drafted[-1].get("payload", {}).get("content", "")
     assert "SAIR" in content or "opt-out" in content.lower(), content
+
+
+@then("a mensagem redigida foi persistida na prospecta-api")
+def mensagem_persistida(contexto: dict) -> None:
+    upserts = contexto["stubs"]["get"]()["message_upserts"]
+    assert upserts, "esperava POST /messages (mensagem persistida), veio []"
+    assert upserts[-1].get("content"), upserts[-1]
 
 
 @then(parsers.parse('a chamada ao 9router não contém o telefone "{phone}"'))

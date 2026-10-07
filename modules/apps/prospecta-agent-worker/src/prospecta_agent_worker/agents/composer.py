@@ -63,7 +63,11 @@ class Composer:
 
         channel = lead.get("channel") or "whatsapp"
         content = await self._draft(lead)
-        message_id = f"msg-{uuid4()}"
+        # Persistência primeiro: a mensagem redigida vira `prospecta_message` em
+        # `drafted` (o domínio decide sob approve=human). O `MessageDrafted` no
+        # bus é o mesmo fato para observabilidade -- a persistência é a que conta.
+        stored_id = await self._api.create_message(lead_id=lead_id, channel=channel, content=content)
+        message_id = stored_id or f"msg-{uuid4()}"
         await self._events.publish(
             "MessageDrafted",
             {

@@ -201,3 +201,28 @@ type UserPasswordChanged struct {
 }
 
 func (UserPasswordChanged) EventName() string { return "UserPasswordChanged" }
+
+// AgentRunUpdated diz que um run mudou de estado (running → done/failed), com as
+// métricas do run. Opcional no contrato: quem lê o feed do Cockpit o consome.
+type AgentRunUpdated struct {
+	RunID      string         `json:"run_id"`
+	CampaignID string         `json:"campaign_id"`
+	TenantID   string         `json:"tenant_id"`
+	Agent      AgentRunAgent  `json:"agent"`
+	State      AgentRunState  `json:"state"`
+	Metrics    map[string]any `json:"metrics,omitempty"`
+	OccurredAt time.Time      `json:"occurred_at"`
+}
+
+func (AgentRunUpdated) EventName() string { return "AgentRunUpdated" }
+
+// OptOutSet diz que um lead pediu para não ser contatado. Opcional no contrato:
+// propaga o guardrail LGPD para quem assina os eventos do domínio.
+type OptOutSet struct {
+	LeadID     string    `json:"lead_id"`
+	TenantID   string    `json:"tenant_id"`
+	Reason     string    `json:"reason"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
+func (OptOutSet) EventName() string { return "OptOutSet" }

@@ -148,6 +148,22 @@ func (h *CommandHandler) dispatch(ctx context.Context, cmd application.Command) 
 		_, evt, err := h.service.UpdateUserPassword(ctx, cmd.ID, in)
 		return evt, in.TenantID, err
 
+	case application.ActionUpdateAgentRun:
+		var in UpdateAgentRunInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, "", fmt.Errorf("decode update agent run payload: %w", err)
+		}
+		evt, err := h.service.UpdateAgentRun(ctx, cmd.ID, in)
+		return evt, in.TenantID, err
+
+	case application.ActionSetOptOut:
+		var in SetOptOutInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, "", fmt.Errorf("decode set opt out payload: %w", err)
+		}
+		evt, err := h.service.SetOptOut(ctx, cmd.ID, in)
+		return evt, in.TenantID, err
+
 	default:
 		return nil, "", fmt.Errorf("unknown action: %q", cmd.Action)
 	}

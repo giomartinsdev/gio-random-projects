@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -473,10 +474,81 @@ func (r *ProspectaRepository) InsertAgentRun(ctx context.Context, run domainpros
 	return inserted, err
 }
 
+// FindAgentRun busca o run dentro do tenant (filtro explícito além do RLS).
+func (r *ProspectaRepository) FindAgentRun(ctx context.Context, tenantID, id string) (domainprospecta.AgentRun, error) {
+	var run domainprospecta.AgentRun
+	var raw []byte
+	var ended *time.Time
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT id::text, tenant_id::text, campaign_id::text, agent, state, metrics, started_at, ended_at
+			  FROM prospecta_agent_run WHERE id = $1 AND tenant_id = $2`, id, tenantID).
+			Scan(&run.ID, &run.TenantID, &run.CampaignID, &run.Agent, &run.State, &raw, &run.StartedAt, &ended)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domainprospecta.AgentRun{}, domainprospecta.ErrNotFound
+	}
+	if err != nil {
+		return domainprospecta.AgentRun{}, err
+	}
+	run.Metrics = unmarshalJSONBMap(raw)
+	run.EndedAt = ended
+	return run, nil
+}
+
+// UpdateAgentRunState grava state/metrics e, quando terminal, ended_at. O
+// command_id é gravado junto: uma reentrega do MESMO comando não acha a linha
+// para atualizar (command_id difere) e changed=false. O WHERE exige que o run
+// ainda NÃO esteja terminal — um comando antigo não regride um run fechado.
+func (r *ProspectaRepository) UpdateAgentRunState(ctx context.Context, run domainprospecta.AgentRun, commandID string) (bool, error) {
+	changed := false
+	metrics, err := marshalJSONB(run.Metrics)
+	if err != nil {
+		return false, err
+	}
+	err = r.withTenant(ctx, run.TenantID, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE prospecta_agent_run
+			   SET state = $3,
+			       metrics = $4::jsonb,
+			       ended_at = CASE WHEN $3 IN ('done','failed') THEN now() ELSE ended_at END,
+			       command_id = $5::uuid
+			 WHERE id = $1 AND tenant_id = $2
+			   AND state = 'running'
+			   AND command_id IS DISTINCT FROM $5::uuid`,
+			run.ID, run.TenantID, string(run.State), string(metrics), commandID)
+		if err != nil {
+			return fmt.Errorf("update prospecta agent run: %w", err)
+		}
+		changed = tag.RowsAffected() > 0
+		return nil
+	})
+	return changed, err
+}
+
+// InsertOptOut grava o pedido de opt-out. Idempotente por (tenant_id, lead_id):
+// o ON CONFLICT DO NOTHING reporta inserted=false na reentrega, sem segundo
+// evento.
+func (r *ProspectaRepository) InsertOptOut(ctx context.Context, o domainprospecta.OptOut) (bool, error) {
+	inserted := false
+	err := r.withTenant(ctx, o.TenantID, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			INSERT INTO prospecta_opt_out (id, tenant_id, lead_id, reason, created_at)
+			VALUES ($1,$2,$3,$4, now())
+			ON CONFLICT (tenant_id, lead_id) DO NOTHING`,
+			o.ID, o.TenantID, o.LeadID, o.Reason)
+		if err != nil {
+			return fmt.Errorf("insert prospecta opt out: %w", err)
+		}
+		inserted = tag.RowsAffected() > 0
+		return nil
+	})
+	return inserted, err
+}
+
 // ---------------------------------------------------------------------------
 // Audit (prospecta_audit_log)
 // ---------------------------------------------------------------------------
-
 func (r *ProspectaRepository) Audit(ctx context.Context, e domainprospecta.AuditEntry) error {
 	if e.TenantID == "" {
 		return nil

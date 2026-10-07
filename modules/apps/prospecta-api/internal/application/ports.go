@@ -39,6 +39,15 @@ type CampaignReader interface {
 type LeadReader interface {
 	Lead(ctx context.Context, id string) (domain.Lead, error)
 	ListLeads(ctx context.Context, f LeadFilter) (domain.Page[domain.Lead], error)
+	// LeadByPhone resolves a WhatsApp number (E.164 without +) back to its
+	// lead. Cross-tenant by design.
+	LeadByPhone(ctx context.Context, number string) (domain.LeadPhone, error)
+}
+
+// OptOutReader is the read port over the pair's LGPD guardrail. It always
+// answers with a value (absent = false) — never a not-found.
+type OptOutReader interface {
+	OptOut(ctx context.Context, leadID string) (domain.OptOut, error)
 }
 
 // LeadFilter is the GET /leads querystring. Zero values mean "no filter".

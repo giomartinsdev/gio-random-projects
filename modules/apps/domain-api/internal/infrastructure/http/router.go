@@ -166,6 +166,11 @@ func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWri
 		r.Get("/conversations", pr.ListConversations)
 		r.Get("/conversations/{id}", pr.GetConversation)
 		r.Get("/messages/{id}", pr.GetMessage)
+		// Run do agente (o núcleo agêntico fecha/le o run), guardrail LGPD e
+		// resolução do telefone do WhatsApp de volta ao lead (cross-tenant).
+		r.Get("/agent/runs/{id}", pr.GetAgentRun)
+		r.Get("/opt-outs/{lead_id}", pr.GetOptOut)
+		r.Get("/leads/by-phone/{number}", pr.GetLeadByPhone)
 		// Feed SSE dos runs de agente do tenant (text/event-stream).
 		r.Get("/agent/activity", pr.AgentActivity)
 	})

@@ -705,6 +705,11 @@ CREATE INDEX IF NOT EXISTS idx_prospecta_lead_campaign_status ON prospecta_lead 
 CREATE INDEX IF NOT EXISTS idx_prospecta_lead_tenant_fit ON prospecta_lead (tenant_id, fit DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_lead_command
     ON prospecta_lead (command_id) WHERE command_id IS NOT NULL;
+-- O telefone do lead vive em enriched->>'phone' (E.164 sem +). A resposta do
+-- WhatsApp não traz tenant, então a leitura by-phone é CROSS-TENANT de propósito
+-- e casa por este valor normalizado.
+CREATE INDEX IF NOT EXISTS idx_prospecta_lead_phone
+    ON prospecta_lead ((enriched->>'phone')) WHERE enriched->>'phone' IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS prospecta_message (
     id          UUID PRIMARY KEY,
@@ -792,6 +797,20 @@ CREATE INDEX IF NOT EXISTS idx_prospecta_user_tenant ON prospecta_user (tenant_i
 CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_user_command
     ON prospecta_user (command_id) WHERE command_id IS NOT NULL;
 
+-- Guardrail LGPD: um lead que pediu para não ser contatado. O núcleo agêntico
+-- consulta esta tabela ANTES de todo envio. A chave natural (tenant_id, lead_id)
+-- é única: o mesmo pedido duas vezes é UMA linha (idempotente).
+CREATE TABLE IF NOT EXISTS prospecta_opt_out (
+    id         UUID PRIMARY KEY,
+    tenant_id  UUID NOT NULL,
+    lead_id    UUID NOT NULL,
+    reason     TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_prospecta_opt_out_tenant ON prospecta_opt_out (tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_opt_out_tenant_lead
+    ON prospecta_opt_out (tenant_id, lead_id);
+
 -- RLS por tenant_id. current_setting('app.current_tenant', true) é NULL quando
 -- a sessão não o fixou: o cast ''::uuid falha alto (erro) em vez de comparar
 -- NULL e vazar a linha. ENABLE + FORCE para a policy valer também para o owner.
@@ -858,5 +877,12 @@ ALTER TABLE prospecta_user ENABLE ROW LEVEL SECURITY;
 ALTER TABLE prospecta_user FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS prospecta_user_tenant ON prospecta_user;
 CREATE POLICY prospecta_user_tenant ON prospecta_user
+    USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
+
+ALTER TABLE prospecta_opt_out ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prospecta_opt_out FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospecta_opt_out_tenant ON prospecta_opt_out;
+CREATE POLICY prospecta_opt_out_tenant ON prospecta_opt_out
     USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
     WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);

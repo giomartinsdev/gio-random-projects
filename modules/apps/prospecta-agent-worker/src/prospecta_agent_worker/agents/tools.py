@@ -22,12 +22,15 @@ travessia de rede, a normalização e a regra de robots.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
 import httpx
+
+log = logging.getLogger("prospecta-agent-worker")
 
 # User-agent identificável: a web pode nos bloquear nominalmente, não por IP
 # anônimo (research R3).
@@ -106,6 +109,12 @@ class WebSearch:
         self._backoff = backoff
 
     async def search(self, query: str, *, limit: int = 10) -> list[dict]:
+        # Sem chave o provedor não tem como autenticar: degrada honesto para
+        # zero resultados, com WARN, em vez de bater numa API que negará (T036).
+        # Não inventa resultado nenhum.
+        if not self._key:
+            log.warning("busca não configurada (SEARCH_API_KEY vazia); devolvendo 0 resultados")
+            return []
         url, params, headers = self._request(query, limit)
         last_error = "sem tentativa"
         for attempt in range(self._max_attempts):

@@ -29,6 +29,12 @@ Funcionalidade: Os adapters de tool do agente
     Então a tool levanta um erro de tool
     E a busca recebeu menos de 10 chamadas
 
+  Cenário: web.search sem chave devolve zero resultados sem tocar a rede
+    Dado que a busca não está configurada
+    Quando a tool web.search busca por "qualquer coisa"
+    Então a busca devolve uma lista vazia
+    E a busca recebeu 0 chamadas
+
   Cenário: web.scrape lê uma página pública e extrai o texto
     Dado que o robots.txt permite a leitura
     E que a página pública tem o título "Northwind Log" e o texto "Frota e roteirização"

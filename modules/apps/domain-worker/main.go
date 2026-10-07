@@ -595,6 +595,10 @@ func prospectaEntityID(evt domainprospecta.Event) string {
 		return e.UserID
 	case domainprospecta.UserPasswordChanged:
 		return e.UserID
+	case domainprospecta.AgentRunUpdated:
+		return e.RunID
+	case domainprospecta.OptOutSet:
+		return e.LeadID
 	default:
 		return ""
 	}
@@ -619,6 +623,9 @@ var prospectaActions = map[application.Action]bool{
 	application.ActionBookMeeting:        true,
 	application.ActionCreateUser:         true,
 	application.ActionUpdateUserPassword: true,
+	// O núcleo agêntico fecha o run e registra opt-out (guardrail LGPD).
+	application.ActionUpdateAgentRun: true,
+	application.ActionSetOptOut:      true,
 }
 
 func isProspectaAction(a application.Action) bool { return prospectaActions[a] }

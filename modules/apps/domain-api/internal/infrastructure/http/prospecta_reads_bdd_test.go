@@ -85,6 +85,8 @@ type readsState struct {
 	conversationID string
 	convLeadID     string
 	messageID      string
+	runID          string
+	leadPhoneID    string
 
 	feed             *http.Response
 	feedCancel       context.CancelFunc
@@ -126,6 +128,7 @@ func TestProspectaReadsBdd(t *testing.T) {
 					DELETE FROM prospecta_lead;
 					DELETE FROM prospecta_campaign;
 					DELETE FROM prospecta_agent_run;
+					DELETE FROM prospecta_opt_out;
 					DELETE FROM prospecta_user;`); err != nil {
 					return ctx, err
 				}
@@ -151,6 +154,7 @@ func TestProspectaReadsBdd(t *testing.T) {
 func (s *readsState) lastReset() {
 	s.status, s.body = 0, nil
 	s.campaignID, s.leadID, s.conversationID, s.convLeadID, s.messageID = "", "", "", "", ""
+	s.runID, s.leadPhoneID = "", ""
 	s.feed, s.feedCancel, s.feedContentType, s.feedEvents = nil, nil, "", nil
 	s.goroutinesBefore = 0
 }
@@ -226,6 +230,41 @@ func registerReadsSteps(sc *godog.ScenarioContext, st *readsState) {
 		return err
 	})
 
+	// Um run com id capturado, para os passos que o leem de volta. Fechado
+	// (done/failed) tem ended_at; running não.
+	sc.Step(`^um run fechado do tenant "([^"]*)" do agente "([^"]*)" em "([^"]*)"$`, func(tenant, agent, state string) error {
+		st.runID = uuid.NewString()
+		_, err := st.pool.Exec(context.Background(), `
+			INSERT INTO prospecta_agent_run (id, tenant_id, campaign_id, agent, state, metrics, ended_at)
+			VALUES ($1,$2,$3,$4,$5,'{"found":12}', now())`,
+			st.runID, tenant, uuid.NewString(), agent, state)
+		return err
+	})
+	sc.Step(`^eu leio o run pelo id cadastrado$`, func() error {
+		return st.get("/agent/runs/" + st.runID + "?tenant_id=" + tenantA)
+	})
+
+	sc.Step(`^um opt-out do lead "([^"]*)" para o tenant "([^"]*)"$`, func(leadID, tenant string) error {
+		_, err := st.pool.Exec(context.Background(), `
+			INSERT INTO prospecta_opt_out (id, tenant_id, lead_id, reason)
+			VALUES ($1,$2,$3,'pedido do titular')`,
+			uuid.NewString(), tenant, leadID)
+		return err
+	})
+
+	// O telefone vive em enriched->>'phone' (E.164 sem +) — a leitura by-phone é
+	// cross-tenant e casa por este valor normalizado.
+	sc.Step(`^um lead do tenant "([^"]*)" com telefone "([^"]*)"$`, func(tenant, phone string) error {
+		st.leadPhoneID = uuid.NewString()
+		_, err := st.pool.Exec(context.Background(), `
+			INSERT INTO prospecta_lead (id, tenant_id, campaign_id, company_name, domain, segment, channel, fit, status, source_url, enriched)
+			VALUES ($1,$2,$3,'Northwind Log',$4,'logística','whatsapp',0,'discovered','https://exemplo.com',$5)`,
+			st.leadPhoneID, tenant, uuid.NewString(),
+			"northwind-"+strings.ReplaceAll(st.leadPhoneID, "-", "")[:8]+".com",
+			`{"phone":"`+phone+`"}`)
+		return err
+	})
+
 	sc.Step(`^eu faço GET "([^"]*)"$`, func(path string) error { return st.get(path) })
 	sc.Step(`^eu leio o lead cadastrado$`, func() error {
 		return st.get("/leads/" + st.leadID + "?tenant_id=" + tenantA)
@@ -278,6 +317,19 @@ func registerReadsSteps(sc *godog.ScenarioContext, st *readsState) {
 		got, _ := st.field(field).(float64)
 		if int(got) != want {
 			return fmt.Errorf("%s = %v; want %d", field, st.field(field), want)
+		}
+		return nil
+	})
+	sc.Step(`^o corpo traz "([^"]*)" igual a (true|false)$`, func(field, want string) error {
+		got, _ := st.field(field).(bool)
+		if got != (want == "true") {
+			return fmt.Errorf("%s = %v; want %s", field, st.field(field), want)
+		}
+		return nil
+	})
+	sc.Step(`^o corpo traz "([^"]*)" não vazio$`, func(field string) error {
+		if got, _ := st.field(field).(string); got == "" {
+			return fmt.Errorf("%s vazio; want não vazio (%s)", field, st.body)
 		}
 		return nil
 	})

@@ -591,8 +591,83 @@ func (s *Service) UpdateUserPassword(ctx context.Context, commandID string, in U
 	}, nil
 }
 
-// RecordAudit grava a linha de prospecta_audit_log de um comando, com o payload
-// já passado por PII scrubbing. Chamado pelo handler para todo comando,
+// UpdateAgentRun fecha (ou move) o run que o RequestProspect abriu. O run_id
+// vem no payload — o núcleo agêntico nunca cria o próprio run. state precisa
+// estar em running|done|failed. Idempotente por command_id: a reentrega do MESMO
+// comando é no-op, e um run já terminal não regride (changed=false sem evento).
+// ended_at é gravado quando o estado é terminal.
+func (s *Service) UpdateAgentRun(ctx context.Context, commandID string, in UpdateAgentRunInput) (domainprospecta.Event, error) {
+	if in.TenantID == "" {
+		return nil, domainprospecta.ErrTenantIDRequired
+	}
+	if in.RunID == "" {
+		return nil, domainprospecta.ErrRunIDRequired
+	}
+	state := domainprospecta.AgentRunState(in.State)
+	if !domainprospecta.ValidAgentRunState(state) {
+		return nil, domainprospecta.ErrInvalidRunState
+	}
+	id, err := uuid.Parse(commandID)
+	if err != nil {
+		return nil, err
+	}
+	// O run tem de existir no tenant ANTES de o comando tocar a linha: um update
+	// órfão seria um no-op silencioso e um evento mentiroso.
+	current, err := s.repo.FindAgentRun(ctx, in.TenantID, in.RunID)
+	if err != nil {
+		return nil, err
+	}
+	if current.Terminal() {
+		return nil, nil
+	}
+	next := current
+	next.State = state
+	next.Metrics = in.Metrics
+	changed, err := s.repo.UpdateAgentRunState(ctx, next, id.String())
+	if err != nil {
+		return nil, err
+	}
+	if !changed {
+		return nil, nil
+	}
+	return domainprospecta.AgentRunUpdated{
+		RunID:      next.ID,
+		CampaignID: next.CampaignID,
+		TenantID:   next.TenantID,
+		Agent:      next.Agent,
+		State:      next.State,
+		Metrics:    next.Metrics,
+		OccurredAt: s.now(),
+	}, nil
+}
+
+// SetOptOut registra o pedido de opt-out de um lead. Idempotente por
+// (tenant_id, lead_id): o mesmo pedido duas vezes é UMA linha e um evento só.
+func (s *Service) SetOptOut(ctx context.Context, commandID string, in SetOptOutInput) (domainprospecta.Event, error) {
+	id, err := uuid.Parse(commandID)
+	if err != nil {
+		return nil, err
+	}
+	o, err := domainprospecta.NewOptOut(id.String(), in.TenantID, in.LeadID, in.Reason)
+	if err != nil {
+		return nil, err
+	}
+	inserted, err := s.repo.InsertOptOut(ctx, o)
+	if err != nil {
+		return nil, err
+	}
+	if !inserted {
+		return nil, nil
+	}
+	return domainprospecta.OptOutSet{
+		LeadID:     o.LeadID,
+		TenantID:   o.TenantID,
+		Reason:     o.Reason,
+		OccurredAt: s.now(),
+	}, nil
+}
+
+// RecordAudit grava a linha de prospecta_audit_log de um comando, com o payload// já passado por PII scrubbing. Chamado pelo handler para todo comando,
 // sucesso ou falha — é a auditoria própria do Prospecta (data-model §8).
 func (s *Service) RecordAudit(ctx context.Context, tenantID, command string, payload []byte, cmdErr error) {
 	entry := domainprospecta.AuditEntry{

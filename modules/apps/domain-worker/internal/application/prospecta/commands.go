@@ -129,3 +129,23 @@ type UpdateUserPasswordInput struct {
 	UserID       string `json:"user_id"`
 	PasswordHash string `json:"password_hash"`
 }
+
+// UpdateAgentRunInput é o payload do comando "UpdateAgentRun": o núcleo
+// agêntico fecha (ou move) o run que o RequestProspect abriu. state ∈
+// running|done|failed; metrics é o contador/ latência/ custo do run. O run_id
+// vem do evento ProspectRequested — o agente nunca cria o próprio run.
+type UpdateAgentRunInput struct {
+	TenantID string         `json:"tenant_id"`
+	RunID    string         `json:"run_id"`
+	State    string         `json:"state"`
+	Metrics  map[string]any `json:"metrics,omitempty"`
+}
+
+// SetOptOutInput é o payload do comando "SetOptOut": registra que um lead pediu
+// opt-out (guardrail LGPD antes de todo envio). Idempotente por
+// (tenant_id, lead_id).
+type SetOptOutInput struct {
+	TenantID string `json:"tenant_id"`
+	LeadID   string `json:"lead_id"`
+	Reason   string `json:"reason"`
+}

@@ -169,6 +169,19 @@ def nenhum_envio(contexto: dict) -> None:
     assert contexto["stubs"]["get"]()["sends"] == []
 
 
+@then(parsers.parse('a mensagem "{message_id}" foi persistida na prospecta-api'))
+def mensagem_persistida(contexto: dict, message_id: str) -> None:
+    upserts = contexto["stubs"]["get"]()["message_upserts"]
+    matched = [u for u in upserts if u.get("lead_id") == "lead-1"]
+    assert matched, f"esperava POST /messages para {message_id}, veio {upserts}"
+    assert matched[-1].get("content"), matched[-1]
+
+
+@then("nenhuma mensagem foi persistida na prospecta-api")
+def nenhuma_mensagem_persistida(contexto: dict) -> None:
+    assert contexto["stubs"]["get"]()["message_upserts"] == []
+
+
 @then(parsers.parse('o worker publicou o evento "MessageBlocked" para o lead "{lead_id}"'))
 def publicou_blocked(contexto: dict, lead_id: str) -> None:
     events = collected_events(contexto)

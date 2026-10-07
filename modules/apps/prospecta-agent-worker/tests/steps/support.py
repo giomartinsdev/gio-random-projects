@@ -45,6 +45,7 @@ def build_worker(
     *,
     approval_policy: str = "human",
     smtp: str | None = None,
+    search_api_key: str = "test-search-key",
 ) -> ProspectaWorker:
     from prospecta_agent_worker.agents.tools import EnrichCompany, WebScrape, WebSearch
     from prospecta_agent_worker.gateway.email import SmtpEmailClient
@@ -59,7 +60,7 @@ def build_worker(
         api=ProspectaApiClient(base, "test-prospecta-key", timeout=5),
         events=EventPublisher(rabbit_url),
         approval_policy=approval_policy,
-        search=WebSearch(base_url=base, provider="brave", api_key="test-search-key", timeout=3),
+        search=WebSearch(base_url=base, provider="brave", api_key=search_api_key, timeout=3),
         scrape=WebScrape(timeout=3),
         enrich=EnrichCompany(base_url=base, api_key="test-enrich-key", timeout=3),
         email=email,
@@ -181,6 +182,33 @@ def domain_envelope(
         "schema_version": "1",
         "payload": payload,
     }
+
+
+def prospect_requested_envelope(
+    campaign_id: str,
+    *,
+    run_id: str = "run-from-event",
+    tenant_id: str = "tenant-1",
+    agent: str = "prospector",
+    event_id: str = "evt-req-1",
+    command_id: str = "cmd-req-1",
+) -> dict:
+    """O `ProspectRequested` como o DOMÍNIO publica: já carrega o `run_id` criado.
+
+    O worker NÃO abre run (`POST /agent/runs`) -- ele só atualiza o run que veio
+    no evento (`POST /agent/runs/{id}`). O `run_id` é o ponto de amarração.
+    """
+    return domain_envelope(
+        "ProspectRequested",
+        {
+            "campaign_id": campaign_id,
+            "tenant_id": tenant_id,
+            "agent": agent,
+            "run_id": run_id,
+        },
+        event_id=event_id,
+        command_id=command_id,
+    )
 
 
 def unique_domain_queue() -> str:

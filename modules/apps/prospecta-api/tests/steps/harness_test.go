@@ -68,9 +68,10 @@ func buildServices(reader *infrastructure.DomainClient) httpapi.Services {
 	return httpapi.Services{
 		Companies: application.NewCompanyService(reader, reader),
 		Campaigns: application.NewCampaignService(reader, reader),
-		Leads:     application.NewLeadService(reader, reader),
+		Leads:     application.NewLeadService(reader, reader).WithOptOuts(reader),
 		Messaging: application.NewMessagingService(reader, reader, reader),
 		Activity:  application.NewActivityService(reader),
+		Agent:     application.NewAgentService(reader),
 	}
 }
 
@@ -218,6 +219,14 @@ func registerCommonSteps(sc *godog.ScenarioContext, st *state, ctx context.Conte
 		got, _ := st.body[field].(string)
 		if got != want {
 			return fmt.Errorf("campo %q = %q; want %q", field, got, want)
+		}
+		return nil
+	})
+
+	sc.Step(`^o corpo traz "([^"]*)" igual a (true|false)$`, func(field, want string) error {
+		got, _ := st.body[field].(bool)
+		if got != (want == "true") {
+			return fmt.Errorf("campo %q = %v; want %s", field, st.body[field], want)
 		}
 		return nil
 	})

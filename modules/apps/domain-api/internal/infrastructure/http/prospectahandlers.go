@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -236,8 +238,85 @@ func (h *ProspectaHandlers) GetMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, message)
 }
 
-// AgentActivity é o GET /agent/activity?tenant_id=: um stream SSE dos runs mais
-// recentes do tenant. O feed é um poll do banco a cada 2s (o domain-api não tem
+// GetAgentRun é o GET /agent/runs/{id}?tenant_id=: a projeção do run que o
+// RequestProspect abriu, que o núcleo agêntico lê para acompanhá-lo. 404 quando
+// o id não existe no tenant.
+func (h *ProspectaHandlers) GetAgentRun(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.tenant(w, r)
+	if !ok {
+		return
+	}
+	run, err := h.reads.GetAgentRun(r.Context(), tenantID, chi.URLParam(r, "id"))
+	if errors.Is(err, domainprospecta.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, errorBody{Error: "agent run not found"})
+		return
+	}
+	if err != nil {
+		h.readError(w, r, "get agent run", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
+// GetOptOut é o GET /opt-outs/{lead_id}?tenant_id=: o guardrail LGPD. Devolve
+// sempre 200 {opted_out: bool} — ausência de linha é false, NUNCA 404 (o agente
+// consulta isto antes de todo envio e precisa de uma resposta inequívoca).
+func (h *ProspectaHandlers) GetOptOut(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.tenant(w, r)
+	if !ok {
+		return
+	}
+	opted, err := h.reads.IsOptedOut(r.Context(), tenantID, chi.URLParam(r, "lead_id"))
+	if err != nil {
+		h.readError(w, r, "get opt-out", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, domainprospecta.OptOutView{OptedOut: opted})
+}
+
+// GetLeadByPhone é o GET /leads/by-phone/{number}: resolve a resposta do
+// WhatsApp de volta ao lead. É CROSS-TENANT de propósito (o payload do Evolution
+// não traz tenant) e por isso NÃO exige ?tenant_id= — o número vem normalizado
+// (só dígitos) do caminho. 404 quando ninguém casa.
+func (h *ProspectaHandlers) GetLeadByPhone(w http.ResponseWriter, r *http.Request) {
+	raw := chi.URLParam(r, "number")
+	// O chi NÃO decodifica o param do caminho: um número formatado chega com
+	// "+", "%20" e afins. Decodifica primeiro, senão os dígitos do escape vazam
+	// para a normalização ("%20" viraria "20").
+	if decoded, err := url.QueryUnescape(raw); err == nil {
+		raw = decoded
+	}
+	phone := normalizePhone(raw)
+	if phone == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "number is required"})
+		return
+	}
+	lead, err := h.reads.LeadByPhone(r.Context(), phone)
+	if errors.Is(err, domainprospecta.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, errorBody{Error: "lead not found"})
+		return
+	}
+	if err != nil {
+		h.readError(w, r, "get lead by phone", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, lead)
+}
+
+// normalizePhone deixa só os dígitos do número (E.164 sem +): a resposta do
+// WhatsApp chega como "5521981962914" e o enriched guarda o mesmo formato.
+// Qualquer separador de formatação (+, espaço, parêntese, hífen) cai fora.
+func normalizePhone(raw string) string {
+	var b strings.Builder
+	for _, ch := range raw {
+		if ch >= '0' && ch <= '9' {
+			b.WriteRune(ch)
+		}
+	}
+	return b.String()
+}
+
+// AgentActivity é o GET /agent/activity?tenant_id=: um stream SSE dos runs mais// recentes do tenant. O feed é um poll do banco a cada 2s (o domain-api não tem
 // broker de eventos do worker para assinar); cada run novo — por (run_id, state,
 // metric) — é emitido uma vez, do mais antigo para o mais novo, no formato do
 // contrato:

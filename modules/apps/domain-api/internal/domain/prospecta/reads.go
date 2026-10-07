@@ -126,6 +126,34 @@ type LeadFilter struct {
 	FitMin     int
 }
 
+// AgentRunView é a projeção de um run: o núcleo agêntico a lê para saber em que
+// pé está o run que o RequestProspect abriu. O shape espelha
+// {id,campaign_id,agent,state,metrics,started_at,ended_at}.
+type AgentRunView struct {
+	ID         string         `json:"id"`
+	CampaignID string         `json:"campaign_id"`
+	Agent      string         `json:"agent"`
+	State      string         `json:"state"`
+	Metrics    map[string]any `json:"metrics,omitempty"`
+	StartedAt  string         `json:"started_at"`
+	EndedAt    string         `json:"ended_at,omitempty"`
+}
+
+// OptOutView é o guardrail LGPD: true quando o lead pediu para não ser
+// contatado. NUNCA é 404 — ausência de linha é opted_out=false.
+type OptOutView struct {
+	OptedOut bool `json:"opted_out"`
+}
+
+// LeadPhoneView resolve a resposta do WhatsApp de volta ao lead. É CROSS-TENANT
+// de propósito (o payload do Evolution não traz tenant): o telefone vive em
+// enriched->>'phone'. thread_key default "wa:<number>".
+type LeadPhoneView struct {
+	TenantID  string `json:"tenant_id"`
+	LeadID    string `json:"lead_id"`
+	ThreadKey string `json:"thread_key"`
+}
+
 // AgentRunEvent é uma amostra de agent_run transmitida ao vivo no feed SSE. O
 // shape espelha domain.AgentRunEvent da prospecta-api e o payload do contrato:
 //
@@ -162,6 +190,16 @@ type ReadRepository interface {
 	// ListActivity devolve os runs mais recentes do tenant (mais novo primeiro),
 	// que o handler SSE emite e deduplica enquanto o cliente fica conectado.
 	ListActivity(ctx context.Context, tenantID string, limit int) ([]AgentRunEvent, error)
+
+	// GetAgentRun é a projeção de um run pelo id. ErrNotFound quando não existe.
+	GetAgentRun(ctx context.Context, tenantID, id string) (AgentRunView, error)
+	// IsOptedOut diz se o lead pediu opt-out no tenant. Ausência = false (a
+	// leitura nunca é 404): o guardrail precisa de uma resposta em todo envio.
+	IsOptedOut(ctx context.Context, tenantID, leadID string) (bool, error)
+	// LeadByPhone resolve o telefone (E.164 sem +, já normalizado pelo chamador)
+	// de volta ao lead. Cross-tenant de propósito. ErrNotFound quando ninguém
+	// casa.
+	LeadByPhone(ctx context.Context, phone string) (LeadPhoneView, error)
 }
 
 // CursorFrom devolve o *string de "next" (nil quando vazio), para o JSON bater

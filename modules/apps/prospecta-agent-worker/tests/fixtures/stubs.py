@@ -134,6 +134,12 @@ STATE: dict = {
     "campaigns": {},
     "lead_details": {},
     "messages": {},
+    # Escritas (o caminho real): o que o worker persistiu.
+    # `lead_upserts` guarda cada POST /leads; `qualify_calls` cada POST
+    # /leads/{id}/qualify; `message_upserts` cada POST /messages.
+    "lead_upserts": [],
+    "qualify_calls": [],
+    "message_upserts": [],
 }
 LOCK = threading.Lock()
 
@@ -314,6 +320,30 @@ class Handler(BaseHTTPRequestHandler):
                 run_id = self.path.rsplit("/", 1)[-1]
                 STATE["run_updates"].append({"run_id": run_id, **body})
                 self._json(200, {"run_id": run_id, **body})
+            elif self.path == "/leads":
+                # POST /leads (upsert idempotente por domain+company_name) -> 202 {id}
+                company = body.get("company_name", "")
+                key = f"{(body.get('domain') or '').strip().lower()}|{company.strip().lower()}"
+                existing = next(
+                    (u for u in STATE["lead_upserts"] if u["_key"] == key),
+                    None,
+                )
+                if existing is not None:
+                    existing.update(body)
+                    lead_id = existing["id"]
+                else:
+                    lead_id = f"lead-{len(STATE['lead_upserts']) + 1}"
+                    STATE["lead_upserts"].append({**body, "id": lead_id, "_key": key})
+                self._json(202, {"id": lead_id})
+            elif self.path.startswith("/leads/") and self.path.endswith("/qualify"):
+                lead_id = self.path.split("/")[2]
+                STATE["qualify_calls"].append({"lead_id": lead_id, **body})
+                self._json(202, {"id": lead_id, "status": "accepted"})
+            elif self.path == "/messages":
+                # POST /messages -> 202 {id}
+                message_id = f"msg-{len(STATE['message_upserts']) + 1}"
+                STATE["message_upserts"].append({**body, "id": message_id})
+                self._json(202, {"id": message_id})
             else:
                 self._json(404, {"error": f"no route {self.path}"})
 

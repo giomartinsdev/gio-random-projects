@@ -104,6 +104,12 @@ const (
 	// Troca/definição de senha: reescreve prospecta_user.password_hash. O hash
 	// já chega pronto (bcrypt); idempotente por command_id.
 	ActionUpdateUserPassword Action = "UpdateUserPassword"
+	// O núcleo agêntico fecha o run que o RequestProspect abriu. Idempotente por
+	// command_id: uma reentrega não regride um run terminal.
+	ActionUpdateAgentRun Action = "UpdateAgentRun"
+	// Guardrail LGPD: registra que um lead pediu opt-out. Idempotente por
+	// (tenant_id, lead_id).
+	ActionSetOptOut Action = "SetOptOut"
 )
 
 type Command struct {

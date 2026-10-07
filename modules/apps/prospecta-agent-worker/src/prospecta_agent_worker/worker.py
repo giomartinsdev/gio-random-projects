@@ -273,6 +273,11 @@ class ProspectaWorker:
             result = await self._evolution.send_text(phone_to_jid(to), content)
             external_id = str((result.get("key") or {}).get("id") or "")
 
+        # Persistência do envio: alinha o comando de domínio ao estado real da
+        # mensagem (o `MessageSent` no bus é o mesmo fato para observabilidade).
+        if lead_id:
+            await self._api.create_message(lead_id=lead_id, channel=channel, content=content)
+
         await self._events.publish(
             "MessageSent",
             {

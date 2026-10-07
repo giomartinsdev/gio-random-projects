@@ -13,6 +13,8 @@
 //	GET  /messages/{id}        -> 200 projection, or 404
 //	GET  /users/by-email/{e}   -> 200 user projection, or 404
 //	GET  /agent/activity       -> text/event-stream of agent_run events
+//	GET  /opt-outs/{lead_id}   -> 200 {opted_out: bool}, NEVER 404
+//	GET  /leads/by-phone/{n}   -> 200 {tenant_id,lead_id,thread_key}, or 404
 //	POST /commands             -> decode {action,payload}, record it, answer 202
 //
 // and it records every command it receives, so a test can prove what the BFF
@@ -78,6 +80,7 @@ type fake struct {
 	commands []recordedCommand
 	stores   map[string]*store
 	users    map[string]json.RawMessage
+	optOuts  map[string]bool
 	seq      int
 	key      string
 
@@ -98,6 +101,7 @@ func main() {
 			"message":      newStore(),
 		},
 		users:        map[string]json.RawMessage{},
+		optOuts:      map[string]bool{},
 		activitySubs: map[int]chan json.RawMessage{},
 	}
 
@@ -122,6 +126,13 @@ func main() {
 
 	mux.HandleFunc("GET /users/by-email/{email}", f.guarded(f.userByEmail))
 
+	// O guardrail LGPD: 200 com opted_out SEMPRE (ausência = false), nunca 404.
+	mux.HandleFunc("GET /opt-outs/{lead_id}", f.guarded(f.optOut))
+
+	// Resolução cross-tenant do telefone do WhatsApp de volta ao lead. O par
+	// real busca em prospecta_lead.enriched->>'phone'.
+	mux.HandleFunc("GET /leads/by-phone/{number}", f.guarded(f.leadByPhone))
+
 	mux.HandleFunc("GET /agent/activity", f.guarded(f.activity))
 
 	// Control routes (no key): used by the test to set up and inspect state.
@@ -131,6 +142,7 @@ func main() {
 	mux.HandleFunc("POST /__seed/conversation", f.seed("conversation"))
 	mux.HandleFunc("POST /__seed/message", f.seed("message"))
 	mux.HandleFunc("POST /__seed/user", f.seedUser)
+	mux.HandleFunc("POST /__seed/opt-out", f.seedOptOut)
 	mux.HandleFunc("POST /__seed/activity", f.seedActivity)
 	mux.HandleFunc("GET /__activity/connections", f.activityConnections)
 	mux.HandleFunc("GET /__commands", f.listCommands)
@@ -265,6 +277,77 @@ func (f *fake) seedUser(w http.ResponseWriter, r *http.Request) {
 	f.registerUser(raw, idFromRaw(raw))
 	f.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// optOut serves GET /opt-outs/{lead_id}: 200 {opted_out} ALWAYS — absence is
+// false, never 404 (the agent consults this before every send).
+func (f *fake) optOut(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	opted := f.optOuts[r.PathValue("lead_id")]
+	f.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]bool{"opted_out": opted})
+}
+
+// seedOptOut registers a lead's opt-out for the by-id guardrail.
+func (f *fake) seedOptOut(w http.ResponseWriter, r *http.Request) {
+	raw, _ := io.ReadAll(r.Body)
+	var meta struct {
+		LeadID string `json:"lead_id"`
+		ID     string `json:"id"`
+	}
+	_ = json.Unmarshal(raw, &meta)
+	id := meta.LeadID
+	if id == "" {
+		id = meta.ID
+	}
+	f.mu.Lock()
+	f.optOuts[id] = true
+	f.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// leadByPhone resolves the WhatsApp number back to a lead, cross-tenant: it
+// scans the lead store for one whose enriched.phone matches the normalized
+// number, mirroring prospecta_lead.enriched->>'phone'.
+func (f *fake) leadByPhone(w http.ResponseWriter, r *http.Request) {
+	want := normalizePhone(r.PathValue("number"))
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// The lead store keeps insertion order; scan it for the newest match.
+	s := f.stores["lead"]
+	for i := len(s.order) - 1; i >= 0; i-- {
+		raw := s.byID[s.order[i]]
+		var lead struct {
+			ID       string `json:"id"`
+			TenantID string `json:"tenant_id"`
+			Enriched struct {
+				Phone string `json:"phone"`
+			} `json:"enriched"`
+		}
+		if err := json.Unmarshal(raw, &lead); err != nil {
+			continue
+		}
+		if normalizePhone(lead.Enriched.Phone) != want || want == "" {
+			continue
+		}
+		thread := "wa:" + want
+		writeJSON(w, http.StatusOK, map[string]string{
+			"tenant_id": lead.TenantID, "lead_id": lead.ID, "thread_key": thread,
+		})
+		return
+	}
+	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+}
+
+// normalizePhone leaves only the digits (E.164 without +).
+func normalizePhone(raw string) string {
+	var b strings.Builder
+	for _, ch := range raw {
+		if ch >= '0' && ch <= '9' {
+			b.WriteRune(ch)
+		}
+	}
+	return b.String()
 }
 
 func idFromRaw(raw json.RawMessage) string {
@@ -455,6 +538,7 @@ func (f *fake) clearState(w http.ResponseWriter, _ *http.Request) {
 	f.mu.Lock()
 	f.commands = nil
 	f.users = map[string]json.RawMessage{}
+	f.optOuts = map[string]bool{}
 	for _, s := range f.stores {
 		s.byID = map[string]json.RawMessage{}
 		s.order = nil

@@ -160,3 +160,75 @@ Funcionalidade: Leituras do Prospecta no domain-api
     Quando eu faço GET "/users/by-email/bia@outra.com"
     Então a resposta tem status HTTP 200
     E o corpo traz "tenant_id" igual a "22222222-2222-2222-2222-222222222222"
+
+  # --- Run do agente, opt-out e by-phone (o agente fecha a reta final) ------
+  # O núcleo agêntico (prospecta-agent-worker) lê estas três projeções do par:
+  # o estado do run, o guardrail LGPD e a resolução do telefone do WhatsApp.
+
+  Cenário: Ler run existente devolve a projeção com metrics
+    Dado um banco de domínio limpo
+    E um run fechado do tenant "11111111-1111-1111-1111-111111111111" do agente "prospector" em "done"
+    Quando eu leio o run pelo id cadastrado
+    Então a resposta tem status HTTP 200
+    E o corpo traz "state" igual a "done"
+
+  Cenário: Ler run inexistente devolve 404
+    Dado um banco de domínio limpo
+    Quando eu faço GET "/agent/runs/00000000-0000-0000-0000-000000000000?tenant_id=11111111-1111-1111-1111-111111111111"
+    Então a resposta tem status HTTP 404
+
+  Cenário: Ler run sem tenant_id é recusado com 400
+    Dado um banco de domínio limpo
+    Quando eu faço GET "/agent/runs/00000000-0000-0000-0000-000000000000"
+    Então a resposta tem status HTTP 400
+
+  Cenário: O run fechado do tenant tem state e ended_at na projeção
+    Dado um banco de domínio limpo
+    E um run fechado do tenant "11111111-1111-1111-1111-111111111111" do agente "prospector" em "done"
+    Quando eu leio o run pelo id cadastrado
+    Então a resposta tem status HTTP 200
+    E o corpo traz "state" igual a "done"
+    E o corpo traz "agent" igual a "prospector"
+    E o corpo traz "campaign_id" não vazio
+
+  Cenário: Lead com opt-out devolve opted_out verdadeiro
+    Dado um banco de domínio limpo
+    E um opt-out do lead "aaaaaaaa-0000-0000-0000-000000000001" para o tenant "11111111-1111-1111-1111-111111111111"
+    Quando eu faço GET "/opt-outs/aaaaaaaa-0000-0000-0000-000000000001?tenant_id=11111111-1111-1111-1111-111111111111"
+    Então a resposta tem status HTTP 200
+    E o corpo traz "opted_out" igual a true
+
+  Cenário: Lead sem opt-out devolve opted_out falso (nunca 404)
+    Dado um banco de domínio limpo
+    Quando eu faço GET "/opt-outs/aaaaaaaa-0000-0000-0000-000000000099?tenant_id=11111111-1111-1111-1111-111111111111"
+    Então a resposta tem status HTTP 200
+    E o corpo traz "opted_out" igual a false
+
+  Cenário: Opt-out é por tenant
+    Dado um banco de domínio limpo
+    E um opt-out do lead "aaaaaaaa-0000-0000-0000-000000000001" para o tenant "11111111-1111-1111-1111-111111111111"
+    Quando eu faço GET "/opt-outs/aaaaaaaa-0000-0000-0000-000000000001?tenant_id=22222222-2222-2222-2222-222222222222"
+    Então a resposta tem status HTTP 200
+    E o corpo traz "opted_out" igual a false
+
+  Cenário: Resolver lead pelo telefone do WhatsApp (cross-tenant)
+    Dado um banco de domínio limpo
+    E um lead do tenant "11111111-1111-1111-1111-111111111111" com telefone "5521981962914"
+    Quando eu faço GET "/leads/by-phone/5521981962914"
+    Então a resposta tem status HTTP 200
+    E o corpo traz "tenant_id" igual a "11111111-1111-1111-1111-111111111111"
+    E o corpo traz "thread_key" igual a "wa:5521981962914"
+    E a resposta traz um "lead_id" não vazio
+
+  Cenário: Telefone com formatação é normalizado antes de casar
+    Dado um banco de domínio limpo
+    E um lead do tenant "11111111-1111-1111-1111-111111111111" com telefone "5521981962914"
+    Quando eu faço GET "/leads/by-phone/+55%20(21)%2098196-2914"
+    Então a resposta tem status HTTP 200
+    E o corpo traz "thread_key" igual a "wa:5521981962914"
+
+  Cenário: Telefone desconhecido devolve 404
+    Dado um banco de domínio limpo
+    Quando eu faço GET "/leads/by-phone/5511999999999"
+    Então a resposta tem status HTTP 404
+

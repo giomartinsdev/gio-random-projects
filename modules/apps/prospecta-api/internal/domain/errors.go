@@ -15,6 +15,10 @@ var (
 	ErrMessageContentRequired  = errors.New("message content is required")
 	ErrMessageLeadRequired     = errors.New("message lead_id is required")
 	ErrMessageChannelRequired  = errors.New("message channel is required")
+	ErrCampaignRequired        = errors.New("campaign_id is required")
+	ErrDomainRequired          = errors.New("domain is required")
+	ErrRunIDRequired           = errors.New("run id is required")
+	ErrInvalidRunState         = errors.New("run state must be running, done or failed")
 )
 
 // ErrMessageNotDrafted is what ApproveMessage returns when the message is not

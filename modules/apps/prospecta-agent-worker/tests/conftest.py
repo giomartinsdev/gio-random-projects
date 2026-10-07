@@ -125,6 +125,9 @@ def stubs(stub_base):
         campaigns={},
         lead_details={},
         messages={},
+        lead_upserts=[],
+        qualify_calls=[],
+        message_upserts=[],
     )
     return {"set": _set, "get": _get, "base": stub_base}
 

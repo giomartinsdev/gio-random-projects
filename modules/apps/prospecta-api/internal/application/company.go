@@ -24,7 +24,13 @@ const (
 	ActionCreateCampaign  = "CreateCampaign"
 	ActionStartCampaign   = "StartCampaign"
 	ActionRequestProspect = "RequestProspect"
+	ActionUpsertLead      = "UpsertLead"
 	ActionQualifyLead     = "QualifyLead"
+
+	// Agent-run command: the agent closes the run RequestProspect opened. There
+	// is NO create-run command — the run_id arrives in the ProspectRequested
+	// event.
+	ActionUpdateAgentRun = "UpdateAgentRun"
 
 	// Messaging commands.
 	ActionDraftMessage   = "DraftMessage"

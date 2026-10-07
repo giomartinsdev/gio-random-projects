@@ -29,6 +29,7 @@ type Services struct {
 	Leads     *application.LeadService
 	Messaging *application.MessagingService
 	Activity  *application.ActivityService
+	Agent     *application.AgentService
 }
 
 // Config is everything the transport needs about identity and CORS, passed as a
@@ -95,12 +96,22 @@ func NewRouter(cfg Config, services Services, log *slog.Logger) http.Handler {
 
 	business.HandleFunc("GET /leads", h.ListLeads)
 	business.HandleFunc("GET /leads/{id}", h.GetLead)
+	business.HandleFunc("POST /leads", h.CreateLead)
 	business.HandleFunc("POST /leads/{id}/qualify", h.QualifyLead)
 
 	business.HandleFunc("GET /conversations", h.ListConversations)
 	business.HandleFunc("GET /conversations/{id}", h.GetConversation)
 	business.HandleFunc("POST /messages", h.CreateMessage)
 	business.HandleFunc("POST /messages/{id}/approve", h.ApproveMessage)
+
+	// Agent routes. The run is created by RequestProspect (it arrives in the
+	// ProspectRequested event with its run_id): there is deliberately NO
+	// POST /agent/runs — only the update.
+	business.HandleFunc("POST /agent/runs/{id}", h.UpdateAgentRun)
+
+	// LGPD guardrail (never 404) and cross-tenant WhatsApp-number resolution.
+	business.HandleFunc("GET /opt-outs/{lead_id}", h.GetOptOut)
+	business.HandleFunc("GET /leads/by-phone/{number}", h.GetLeadByPhone)
 
 	business.HandleFunc("GET /agent/activity", h.AgentActivity)
 
@@ -168,7 +179,11 @@ func (h *Handlers) writeCommandError(w http.ResponseWriter, r *http.Request, act
 		errors.Is(err, domain.ErrFitOutOfRange),
 		errors.Is(err, domain.ErrMessageLeadRequired),
 		errors.Is(err, domain.ErrMessageChannelRequired),
-		errors.Is(err, domain.ErrMessageContentRequired):
+		errors.Is(err, domain.ErrMessageContentRequired),
+		errors.Is(err, domain.ErrCampaignRequired),
+		errors.Is(err, domain.ErrDomainRequired),
+		errors.Is(err, domain.ErrRunIDRequired),
+		errors.Is(err, domain.ErrInvalidRunState):
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 	case errors.Is(err, domain.ErrMessageNotDrafted):
 		writeError(w, http.StatusConflict, err.Error())
@@ -188,7 +203,8 @@ func (h *Handlers) writeReadError(w http.ResponseWriter, r *http.Request, notFou
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		writeError(w, http.StatusNotFound, notFoundMsg)
-	case errors.Is(err, infrastructure.ErrNotConfigured):
+	case errors.Is(err, application.ErrOptOutUnavailable),
+		errors.Is(err, infrastructure.ErrNotConfigured):
 		writeError(w, http.StatusServiceUnavailable, "par de domínio não configurado")
 	default:
 		h.log.ErrorContext(r.Context(), "read", "what", what, "error", err)
