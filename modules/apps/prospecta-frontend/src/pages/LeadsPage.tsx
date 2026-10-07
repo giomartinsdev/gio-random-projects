@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ChevronDown, Download, Mail, MessageCircle, MoreVertical, Plus, Search } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAsync } from "@/lib/useAsync";
-import { LEAD_DETAIL, LEADS } from "@/lib/fixtures";
+import { useConfigured } from "@/lib/useConfig";
 import { cn } from "@/lib/utils";
 import type { Lead, LeadDetail, Paged } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/Input";
 import { Drawer } from "@/components/ui/Drawer";
 import { Avatar, Table, TableBody, TableHead, TableRow, Td, Th } from "@/components/ui/Table";
 import { Orb } from "@/components/ui/Orb";
+import { ConfigureApiState, EmptyState, ErrorState, LoadingState } from "@/components/ApiState";
 import { Topbar } from "@/components/Topbar";
 
 const STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
@@ -35,37 +36,39 @@ function fitTone(fit: number): string {
 }
 
 export function LeadsPage() {
+  const cfg = useConfigured();
   const [selected, setSelected] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const leads = useAsync<Paged<Lead>>(
     () => api.leads(statusFilter ? { status: statusFilter } : {}),
-    { items: LEADS, next: null },
     [statusFilter],
+    cfg !== null,
   );
+  const detail = useAsync<LeadDetail>(() => api.lead(selected!), [selected], cfg !== null && selected !== null);
 
-  const detail = useAsync<LeadDetail>(
-    () => (selected ? api.lead(selected) : Promise.resolve(LEAD_DETAIL)),
-    LEAD_DETAIL,
-    [selected],
-  );
+  if (!cfg) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <Topbar title="Leads" />
+        <ConfigureApiState />
+      </div>
+    );
+  }
 
-  // Abre o primeiro lead por padrão, como no design (drawer sempre visível).
-  useEffect(() => {
-    if (selected === null && leads.data.items.length > 0) setSelected(leads.data.items[0].id);
-  }, [leads.data, selected]);
+  const items = leads.data?.items ?? [];
 
   return (
     <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           title="Leads"
-          left={<span className="rounded-full bg-elevated px-2.5 py-1 font-mono text-[12px] text-fg-2">{leads.data.items.length * 214}</span>}
+          left={<span className="rounded-full bg-elevated px-2.5 py-1 font-mono text-[12px] text-fg-2">{items.length}</span>}
           right={
             <>
-              <Button variant="secondary" icon={<Download size={16} />} className="py-2.5">
+              <Button variant="secondary" icon={<Download size={16} />} className="py-2.5" disabled title="Exportação ainda não disponível na API">
                 Exportar
               </Button>
-              <Button icon={<Plus size={16} />} className="py-2.5">
+              <Button icon={<Plus size={16} />} className="py-2.5" disabled title="A API ainda não expõe criação de lead">
                 Novo lead
               </Button>
             </>
@@ -74,8 +77,7 @@ export function LeadsPage() {
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 px-7 pb-6 pt-5">
           <div className="flex items-center gap-2.5">
-            <Input icon={<Search size={16} />} placeholder="Buscar leads…" className="max-w-[320px]" />
-            <FilterPill label="Todos os canais" />
+            <Input icon={<Search size={16} />} placeholder="Buscar leads…" className="max-w-[320px]" disabled />
             <div className="relative">
               <button
                 onClick={() => setStatusFilter(statusFilter === "qualified" ? "" : "qualified")}
@@ -85,7 +87,6 @@ export function LeadsPage() {
                 <ChevronDown size={14} className="text-fg-3" />
               </button>
             </div>
-            <FilterPill label="Fit > 80" />
           </div>
 
           <Table>
@@ -97,68 +98,60 @@ export function LeadsPage() {
               <Th className="flex-1" />
             </TableHead>
             <TableBody>
-              {leads.data.items.map((lead) => {
-                const meta = STATUS_META[lead.status] ?? STATUS_META.contacted;
-                return (
-                  <TableRow
-                    key={lead.id}
-                    onClick={() => setSelected(lead.id)}
-                    className={cn("border-b border-line gap-0", selected === lead.id && "bg-elevated")}
-                  >
-                    <Td className="flex w-[260px] shrink-0 items-center gap-3">
-                      <Avatar initials={initials(lead.company_name)} size={32} />
-                      <div className="flex min-w-0 flex-col">
-                        <span className="truncate text-[14px] font-medium text-fg">{lead.company_name}</span>
-                        <span className="truncate text-[12px] text-fg-3">{lead.segment}</span>
-                      </div>
-                    </Td>
-                    <Td className="flex w-[140px] shrink-0 items-center gap-2 text-[13px] text-fg-2">
-                      {lead.channel === "whatsapp" ? <MessageCircle size={14} /> : <Mail size={14} />}
-                      {lead.channel === "whatsapp" ? "WhatsApp" : "E-mail"}
-                    </Td>
-                    <Td className="w-[160px] shrink-0">
-                      <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge>
-                    </Td>
-                    <Td className={cn("w-[90px] shrink-0 font-mono text-[13px]", fitTone(lead.fit))}>{lead.fit}</Td>
-                    <Td className="flex w-[60px] shrink-0 justify-end">
-                      <MoreVertical size={16} className="text-fg-3" />
-                    </Td>
-                  </TableRow>
-                );
-              })}
+              {leads.loading ? (
+                <LoadingState label="Carregando leads…" />
+              ) : leads.error ? (
+                <ErrorState error={leads.error} onRetry={leads.reload} compact />
+              ) : items.length === 0 ? (
+                <EmptyState title="Nenhum lead ainda" hint="Comece uma campanha para o agente prospectar." />
+              ) : (
+                items.map((lead) => {
+                  const meta = STATUS_META[lead.status] ?? STATUS_META.contacted;
+                  return (
+                    <TableRow
+                      key={lead.id}
+                      onClick={() => setSelected(lead.id)}
+                      className={cn("border-b border-line gap-0", selected === lead.id && "bg-elevated")}
+                    >
+                      <Td className="flex w-[260px] shrink-0 items-center gap-3">
+                        <Avatar initials={initials(lead.company_name)} size={32} />
+                        <div className="flex min-w-0 flex-col">
+                          <span className="truncate text-[14px] font-medium text-fg">{lead.company_name}</span>
+                          <span className="truncate text-[12px] text-fg-3">{lead.segment}</span>
+                        </div>
+                      </Td>
+                      <Td className="flex w-[140px] shrink-0 items-center gap-2 text-[13px] text-fg-2">
+                        {lead.channel === "whatsapp" ? <MessageCircle size={14} /> : <Mail size={14} />}
+                        {lead.channel === "whatsapp" ? "WhatsApp" : "E-mail"}
+                      </Td>
+                      <Td className="w-[160px] shrink-0">
+                        <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge>
+                      </Td>
+                      <Td className={cn("w-[90px] shrink-0 font-mono text-[13px]", fitTone(lead.fit))}>{lead.fit}</Td>
+                      <Td className="flex w-[60px] shrink-0 justify-end">
+                        <MoreVertical size={16} className="text-fg-3" />
+                      </Td>
+                    </TableRow>
+                  );
+                })
+              )}
             </TableBody>
           </Table>
         </div>
       </div>
 
-      <Drawer
-        open={selected !== null}
-        title="Detalhe do lead"
-        onClose={() => setSelected(null)}
-        footer={
-          <>
-            <Button variant="secondary" className="flex-1 py-2.5 text-[14px]">
-              Responder
-            </Button>
-            <Button className="flex-1 py-2.5 text-[14px]">Agendar</Button>
-            <Button variant="ghost" className="py-2.5 text-[14px]">
-              Ignorar
-            </Button>
-          </>
-        }
-      >
-        <LeadDetailBody lead={detail.data} />
+      <Drawer open={selected !== null} title="Detalhe do lead" onClose={() => setSelected(null)}>
+        {detail.loading ? (
+          <LoadingState label="Carregando detalhe…" />
+        ) : detail.error ? (
+          <ErrorState error={detail.error} onRetry={detail.reload} compact />
+        ) : detail.data ? (
+          <LeadDetailBody lead={detail.data} />
+        ) : (
+          <EmptyState title="Selecione um lead" hint="Os detalhes reais aparecem aqui." />
+        )}
       </Drawer>
     </div>
-  );
-}
-
-function FilterPill({ label }: { label: string }) {
-  return (
-    <button className="flex items-center gap-2 rounded-sm bg-surface px-3.5 py-2.5 text-[13px] text-fg-2 transition-colors hover:text-fg">
-      {label}
-      <ChevronDown size={14} className="text-fg-3" />
-    </button>
   );
 }
 
@@ -170,7 +163,8 @@ function LeadDetailBody({ lead }: { lead: LeadDetail }) {
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[19px] font-semibold text-fg">{lead.company_name}</span>
           <span className="truncate text-[13px] text-fg-2">
-            {lead.segment} · {lead.source_url ?? "fonte pública"}
+            {lead.segment}
+            {lead.source_url ? ` · ${lead.source_url}` : ""}
           </span>
         </div>
         <div className="flex flex-col items-center rounded-sm bg-accent-soft px-3.5 py-2">
@@ -179,7 +173,7 @@ function LeadDetailBody({ lead }: { lead: LeadDetail }) {
         </div>
       </div>
 
-      {lead.enriched && (
+      {lead.enriched && Object.keys(lead.enriched).length > 0 ? (
         <div className="flex flex-col divide-y divide-line rounded-md bg-bg px-4">
           {Object.entries(lead.enriched).map(([k, v]) => (
             <div key={k} className="flex items-start justify-between gap-4 py-3">
@@ -188,6 +182,8 @@ function LeadDetailBody({ lead }: { lead: LeadDetail }) {
             </div>
           ))}
         </div>
+      ) : (
+        <p className="text-[13px] text-fg-3">Sem dados de enriquecimento.</p>
       )}
 
       {lead.agent_summary && (
@@ -208,7 +204,7 @@ function LeadDetailBody({ lead }: { lead: LeadDetail }) {
               <span
                 className={cn(
                   "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
-                  ev.tone === "current" ? "bg-accent" : "bg-success",
+                  ev.tone === "current" ? "bg-accent" : ev.tone === "pending" ? "bg-line-strong" : "bg-success",
                 )}
               />
               <div className="flex min-w-0 flex-col">

@@ -52,6 +52,13 @@ export const MICROFRONTENDS: Microfrontend[] = [
     description: "gestão financeira: registre e acompanhe pelas mensagens do WhatsApp",
     url: "https://finance.giomartins.dev",
   },
+  {
+    id: "prospecta",
+    name: "Prospecta",
+    emoji: "🎯",
+    description: "prospecção agêntica: encontre e aborde clientes por e-mail e WhatsApp",
+    url: "https://prospecta.giomartins.dev",
+  },
 ];
 
 export const SHORTCUTS: Shortcut[] = [
