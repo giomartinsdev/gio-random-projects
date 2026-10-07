@@ -140,10 +140,10 @@ class Orchestrator:
             campaign_tenant = campaign.get("tenant_id") or tenant_id
             channels = campaign.get("channels") or []
 
-            await self._api.update_run(run_id, state="searching", metrics=metrics)
+            await self._api.update_run(run_id, state="running", metrics=metrics)
             results = await self._search_guarded(str(icp.get("definition") or ""))
 
-            await self._api.update_run(run_id, state="qualifying", metrics=metrics)
+            await self._api.update_run(run_id, state="running", metrics=metrics)
             for result in results:
                 key = natural_key(domain_from_url(result.get("url", "")), result.get("title", ""))
                 if key in self._seen_keys:
