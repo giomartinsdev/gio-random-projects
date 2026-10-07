@@ -149,6 +149,15 @@ STATE: dict = {
     "lead_upserts": [],
     "qualify_calls": [],
     "message_upserts": [],
+    # O tenant que o worker mandou em cada requisição (`X-Tenant-Id`). O worker
+    # é principal de SISTEMA e processa VÁRIOS tenants: sem o header ele cai no
+    # workspace do operador -- estes registros provam que o tenant do evento foi
+    # repassado (e `None` quando não havia tenant).
+    "campaign_reads": [],
+    "lead_reads": [],
+    "message_reads": [],
+    "optout_reads": [],
+    "lead_lookups": [],
 }
 LOCK = threading.Lock()
 
@@ -189,6 +198,10 @@ class Handler(BaseHTTPRequestHandler):
             return json.loads(self.rfile.read(n) or b"{}")
         except ValueError:
             return {}
+
+    def _tenant(self) -> str | None:
+        """O `X-Tenant-Id` da requisição; `None` = workspace do operador."""
+        return self.headers.get("X-Tenant-Id")
 
     def do_GET(self):
         with LOCK:
@@ -243,9 +256,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._html(200, STATE["scrape"]["html"])
             elif self.path.startswith("/opt-outs/"):
                 lead_id = self.path.rsplit("/", 1)[-1].split("?", 1)[0]
+                STATE["optout_reads"].append({"lead_id": lead_id, "tenant_id": self._tenant()})
                 self._json(200, {"opted_out": lead_id in STATE["optouts"]})
             elif self.path.startswith("/leads/by-phone/"):
                 number = self.path.rsplit("/", 1)[-1].split("?", 1)[0]
+                STATE["lead_lookups"].append({"number": number, "tenant_id": self._tenant()})
                 ref = STATE["leads"].get(number)
                 if ref is None:
                     self._json(404, {"error": "lead not found"})
@@ -253,6 +268,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(200, dict(ref))
             elif self.path.startswith("/campaigns/"):
                 cid = self.path.rsplit("/", 1)[-1].split("?", 1)[0]
+                STATE["campaign_reads"].append({"campaign_id": cid, "tenant_id": self._tenant()})
                 ref = STATE["campaigns"].get(cid)
                 if ref is None:
                     self._json(404, {"error": "campaign not found"})
@@ -260,6 +276,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(200, dict(ref))
             elif self.path.startswith("/messages/"):
                 mid = self.path.rsplit("/", 1)[-1].split("?", 1)[0]
+                STATE["message_reads"].append({"message_id": mid, "tenant_id": self._tenant()})
                 ref = STATE["messages"].get(mid)
                 if ref is None:
                     self._json(404, {"error": "message not found"})
@@ -267,6 +284,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(200, dict(ref))
             elif self.path.startswith("/leads/"):
                 lid = self.path.rsplit("/", 1)[-1].split("?", 1)[0]
+                STATE["lead_reads"].append({"lead_id": lid, "tenant_id": self._tenant()})
                 ref = STATE["lead_details"].get(lid)
                 if ref is None:
                     self._json(404, {"error": "lead not found"})
@@ -343,7 +361,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(201, {"run_id": run_id, "state": "running"})
             elif self.path.startswith("/agent/runs/"):
                 run_id = self.path.rsplit("/", 1)[-1]
-                STATE["run_updates"].append({"run_id": run_id, **body})
+                STATE["run_updates"].append({"run_id": run_id, "tenant_id": self._tenant(), **body})
                 self._json(200, {"run_id": run_id, **body})
             elif self.path == "/leads":
                 # POST /leads (upsert idempotente por domain+company_name) -> 202 {id}
@@ -355,19 +373,20 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 if existing is not None:
                     existing.update(body)
+                    existing["tenant_id"] = self._tenant()
                     lead_id = existing["id"]
                 else:
                     lead_id = f"lead-{len(STATE['lead_upserts']) + 1}"
-                    STATE["lead_upserts"].append({**body, "id": lead_id, "_key": key})
+                    STATE["lead_upserts"].append({**body, "id": lead_id, "tenant_id": self._tenant(), "_key": key})
                 self._json(202, {"id": lead_id})
             elif self.path.startswith("/leads/") and self.path.endswith("/qualify"):
                 lead_id = self.path.split("/")[2]
-                STATE["qualify_calls"].append({"lead_id": lead_id, **body})
+                STATE["qualify_calls"].append({"lead_id": lead_id, "tenant_id": self._tenant(), **body})
                 self._json(202, {"id": lead_id, "status": "accepted"})
             elif self.path == "/messages":
                 # POST /messages -> 202 {id}
                 message_id = f"msg-{len(STATE['message_upserts']) + 1}"
-                STATE["message_upserts"].append({**body, "id": message_id})
+                STATE["message_upserts"].append({**body, "id": message_id, "tenant_id": self._tenant()})
                 self._json(202, {"id": message_id})
             else:
                 self._json(404, {"error": f"no route {self.path}"})

@@ -39,18 +39,27 @@ class ProspectaApiClient:
         self._timeout = timeout
         self._headers = {"X-API-Key": self._key, "Content-Type": "application/json"}
 
-    async def is_opted_out(self, lead_id: str) -> bool:
+    def _h(self, tenant_id: str | None = None) -> dict:
+        """Headers da chamada. O worker é principal de SISTEMA (X-API-Key) e
+        processa eventos de VÁRIOS tenants: o X-Tenant-Id explícito diz a qual
+        tenant a campanha/lead pertence (a sessão de usuário nunca o honra — por
+        isso só o worker o manda). Sem tenant, vale o workspace do operador."""
+        if not tenant_id:
+            return self._headers
+        return {**self._headers, "X-Tenant-Id": tenant_id}
+
+    async def is_opted_out(self, lead_id: str, *, tenant_id: str | None = None) -> bool:
         async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.get(f"{self._base}/opt-outs/{lead_id}", headers=self._headers)
+            resp = await client.get(f"{self._base}/opt-outs/{lead_id}", headers=self._h(tenant_id))
         if resp.status_code == 404:
             return False
         if resp.status_code >= 300:
             raise RuntimeError(f"prospecta-api opt-out {resp.status_code}: {resp.text[:200]}")
         return bool(_safe_json(resp).get("opted_out", False))
 
-    async def lead_for_phone(self, number: str) -> LeadRef | None:
+    async def lead_for_phone(self, number: str, *, tenant_id: str | None = None) -> LeadRef | None:
         async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.get(f"{self._base}/leads/by-phone/{number}", headers=self._headers)
+            resp = await client.get(f"{self._base}/leads/by-phone/{number}", headers=self._h(tenant_id))
         if resp.status_code == 404:
             return None
         if resp.status_code >= 300:
@@ -63,14 +72,14 @@ class ProspectaApiClient:
         return LeadRef(tenant_id=tenant_id, lead_id=lead_id, thread_key=body.get("thread_key", f"wa:{number}"))
 
     # ------------------------------------------------------------ run / leitura
-    async def get_campaign(self, campaign_id: str) -> dict | None:
-        return await self._get(f"/campaigns/{campaign_id}")
+    async def get_campaign(self, campaign_id: str, *, tenant_id: str | None = None) -> dict | None:
+        return await self._get(f"/campaigns/{campaign_id}", tenant_id)
 
-    async def get_lead(self, lead_id: str) -> dict | None:
-        return await self._get(f"/leads/{lead_id}")
+    async def get_lead(self, lead_id: str, *, tenant_id: str | None = None) -> dict | None:
+        return await self._get(f"/leads/{lead_id}", tenant_id)
 
-    async def get_message(self, message_id: str) -> dict | None:
-        return await self._get(f"/messages/{message_id}")
+    async def get_message(self, message_id: str, *, tenant_id: str | None = None) -> dict | None:
+        return await self._get(f"/messages/{message_id}", tenant_id)
 
     # -------------------------------------------------------------- escritas
     async def upsert_lead(
@@ -83,6 +92,7 @@ class ProspectaApiClient:
         channel: str | None = None,
         source_url: str | None = None,
         enriched: dict | None = None,
+        tenant_id: str | None = None,
     ) -> str:
         """Persiste o lead descoberto (`POST /leads`, upsert idempotente) → ``id``.
 
@@ -100,41 +110,47 @@ class ProspectaApiClient:
                 body[key] = value
         if enriched is not None:
             body["enriched"] = enriched
-        parsed = await self._post("/leads", body)
+        parsed = await self._post("/leads", body, tenant_id)
         return str(parsed.get("id", ""))
 
-    async def qualify_lead(self, lead_id: str, fit: int) -> None:
+    async def qualify_lead(self, lead_id: str, fit: int, *, tenant_id: str | None = None) -> None:
         """Persiste o fit do lead (`POST /leads/{id}/qualify`) → 202."""
         if not lead_id:
             return
-        await self._post(f"/leads/{lead_id}/qualify", {"fit": max(0, min(100, int(fit)))})
+        await self._post(f"/leads/{lead_id}/qualify", {"fit": max(0, min(100, int(fit)))}, tenant_id)
 
-    async def create_message(self, *, lead_id: str, channel: str, content: str) -> str:
+    async def create_message(
+        self, *, lead_id: str, channel: str, content: str, tenant_id: str | None = None
+    ) -> str:
         """Persiste a mensagem (`POST /messages`) → ``id``.
 
         Alinha o comando de domínio ao estado real da conversa; o domínio a
         guarda como ``drafted`` sob ``policy.approval=human``.
         """
-        parsed = await self._post("/messages", {"lead_id": lead_id, "channel": channel, "content": content})
+        parsed = await self._post(
+            "/messages", {"lead_id": lead_id, "channel": channel, "content": content}, tenant_id
+        )
         return str(parsed.get("id", ""))
 
-    async def _post(self, path: str, body: dict) -> dict:
+    async def _post(self, path: str, body: dict, tenant_id: str | None = None) -> dict:
         async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(f"{self._base}{path}", headers=self._headers, json=body)
+            resp = await client.post(f"{self._base}{path}", headers=self._h(tenant_id), json=body)
         if resp.status_code >= 300:
             raise RuntimeError(f"prospecta-api {path} {resp.status_code}: {resp.text[:200]}")
         return _safe_json(resp)
 
-    async def _get(self, path: str) -> dict | None:
+    async def _get(self, path: str, tenant_id: str | None = None) -> dict | None:
         async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.get(f"{self._base}{path}", headers=self._headers)
+            resp = await client.get(f"{self._base}{path}", headers=self._h(tenant_id))
         if resp.status_code == 404:
             return None
         if resp.status_code >= 300:
             raise RuntimeError(f"prospecta-api {path} {resp.status_code}: {resp.text[:200]}")
         return _safe_json(resp)
 
-    async def update_run(self, run_id: str, *, state: str, metrics: dict | None = None) -> None:
+    async def update_run(
+        self, run_id: str, *, state: str, metrics: dict | None = None, tenant_id: str | None = None
+    ) -> None:
         """Persiste a transição de estado do run (`POST /agent/runs/{id}`).
 
         O run JÁ é criado pelo domínio (o ``ProspectRequested`` carrega
@@ -145,7 +161,7 @@ class ProspectaApiClient:
         body = {"state": state}
         if metrics is not None:
             body["metrics"] = metrics
-        await self._post(f"/agent/runs/{run_id}", body)
+        await self._post(f"/agent/runs/{run_id}", body, tenant_id)
 
 
 def _safe_json(resp: httpx.Response) -> dict:

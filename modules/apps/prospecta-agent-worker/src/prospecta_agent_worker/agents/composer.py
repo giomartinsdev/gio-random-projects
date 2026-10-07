@@ -57,7 +57,7 @@ class Composer:
             return
         self._seen.add(dedup_key)
 
-        lead = await self._api.get_lead(lead_id)
+        lead = await self._api.get_lead(lead_id, tenant_id=tenant_id)
         if lead is None:
             log.info("LeadQualified de lead sem projeção conhecida; ignorado")
             return
@@ -67,7 +67,9 @@ class Composer:
         # Persistência primeiro: a mensagem redigida vira `prospecta_message` em
         # `drafted` (o domínio decide sob approve=human). O `MessageDrafted` no
         # bus é o mesmo fato para observabilidade -- a persistência é a que conta.
-        stored_id = await self._api.create_message(lead_id=lead_id, channel=channel, content=content)
+        stored_id = await self._api.create_message(
+            lead_id=lead_id, channel=channel, content=content, tenant_id=tenant_id
+        )
         message_id = stored_id or f"msg-{uuid4()}"
         await self._events.publish(
             "MessageDrafted",

@@ -95,3 +95,40 @@ Funcionalidade: O agente prospecta, qualifica e redige
     E a mensagem redigida tem rodapé de opt-out
     E a mensagem redigida foi persistida na prospecta-api
     E a chamada ao 9router não contém o telefone "5521981962914"
+
+  # O worker é principal de SISTEMA e processa eventos de VÁRIOS tenants. Sem o
+  # header `X-Tenant-Id` ele lê/escreve no tenant fixo do operador -- a campanha
+  # de um usuário dá 404 e os leads vão para o tenant errado. Estes cenários
+  # provam que o tenant do EVENTO é REPASSADO em cada rota da prospecta-api.
+
+  Cenário: O worker repassa o tenant do evento para a prospecta-api
+    Dado uma campanha "camp-1" com o ICP "Logística B2B, expandindo frota"
+    E que a campanha "camp-1" pertence ao tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    E que a busca devolve o prospect "Northwind Log" em "https://northwindlog.com.br"
+    E que o enriquecimento devolve a empresa "Northwind Log" com o decisor "Carlos Menezes"
+    E que o 9router devolve o fit 87 para o lead
+    E que o evento carrega o tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    Quando o domínio publica o evento "ProspectRequested" para a campanha "camp-1"
+    Então o run do evento "run-from-event" recebeu o estado "done"
+    E a prospecta-api leu a campanha "camp-1" no tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    E a prospecta-api persistiu o lead no tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    E a prospecta-api qualificou o lead no tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    E a prospecta-api atualizou o run "run-from-event" no tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+  Cenário: get_campaign usa o tenant do EVENTO (não o do operador) para resolver a campanha
+    Dado uma campanha "camp-1" com o ICP "Logística B2B, expandindo frota"
+    E que a campanha "camp-1" pertence ao tenant "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+    E que a busca não devolve resultados
+    E que o evento carrega o tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    Quando o domínio publica o evento "ProspectRequested" para a campanha "camp-1"
+    Então a prospecta-api leu a campanha "camp-1" no tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+  Cenário: O composer repassa o tenant do evento nas leituras e na persistência
+    Dado um lead "lead-1" no canal "whatsapp" com tom "próximo e direto"
+    E que o 9router responde com sucesso
+    E que o evento carrega o tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    Quando o domínio publica o evento "LeadQualified" para o lead "lead-1"
+    Então o worker publicou o evento "MessageDrafted"
+    E a prospecta-api leu o lead "lead-1" no tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    E a prospecta-api persistiu a mensagem no tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+

@@ -185,7 +185,7 @@ class ProspectaWorker:
         content: str,
         approved: bool,
     ) -> dict | None:
-        opted_out = await self._api.is_opted_out(lead_id)
+        opted_out = await self._api.is_opted_out(lead_id, tenant_id=tenant_id)
         try:
             guardrails.check_send(
                 approved=approved,
@@ -246,7 +246,7 @@ class ProspectaWorker:
             return
         self._seen_events.add(dedup_key)
 
-        message = await self._api.get_message(message_id)
+        message = await self._api.get_message(message_id, tenant_id=tenant_id)
         if message is None:
             log.info("MessageApproved de mensagem sem projeção conhecida; ignorado")
             return
@@ -255,7 +255,7 @@ class ProspectaWorker:
         content = message.get("content") or ""
         to = message.get("to") or ""
 
-        opted_out = await self._api.is_opted_out(lead_id) if lead_id else False
+        opted_out = await self._api.is_opted_out(lead_id, tenant_id=tenant_id) if lead_id else False
         try:
             # Já aprovado pelo domínio; a policy humana está satisfeita.
             guardrails.check_send(approved=True, opted_out=opted_out, approval_policy=self._approval_policy)
@@ -276,7 +276,7 @@ class ProspectaWorker:
         # Persistência do envio: alinha o comando de domínio ao estado real da
         # mensagem (o `MessageSent` no bus é o mesmo fato para observabilidade).
         if lead_id:
-            await self._api.create_message(lead_id=lead_id, channel=channel, content=content)
+            await self._api.create_message(lead_id=lead_id, channel=channel, content=content, tenant_id=tenant_id)
 
         await self._events.publish(
             "MessageSent",

@@ -59,6 +59,21 @@ func (c *DomainClient) tenantFor(ctx context.Context) string {
 	}
 	return c.fallbackTenant
 }
+
+// publishTenant resolves the tenant_id to stamp into a command payload.
+//   - session (non-operator identity): the session tenant, always.
+//   - operator (X-API-Key, a system principal): the payload's own tenant_id
+//     when it carries one (the agent worker knows the event's tenant), else the
+//     operator fallback.
+func (c *DomainClient) publishTenant(ctx context.Context, payload map[string]any) string {
+	if id, ok := identity.From(ctx); ok && !id.Operator && id.TenantID != "" {
+		return id.TenantID
+	}
+	if t, _ := payload["tenant_id"].(string); t != "" {
+		return t
+	}
+	return c.tenantFor(ctx)
+}
 // New builds the client. tenant is optional (variadic so existing 2-arg call
 // sites keep working); when present it is the operator fallback tenant.
 func New(base, key string, tenant ...string) *DomainClient {
@@ -367,11 +382,16 @@ func (c *DomainClient) Publish(ctx context.Context, action string, payload any) 
 	}
 	envelope := map[string]any{"action": action, "payload": payload}
 	// The pair requires tenant_id on every command (UUID NOT NULL + RLS). It
-	// is a server-side concern, not part of the public request body, so it is
-	// folded into the payload here. The tenant is the caller's (session) when
-	// one was resolved, else the operator fallback.
-	if tenant := c.tenantFor(ctx); tenant != "" {
-		if m, ok := payload.(map[string]any); ok {
+	// is a server-side concern, folded into the payload here.
+	//
+	// Precedence: a real end-user SESSION always wins (the caller's own tenant
+	// is not negotiable — security). The OPERATOR path (X-API-Key) is a SYSTEM
+	// principal (the agent worker uses it): when the payload already carries a
+	// tenant_id, that one is honored, so the worker writes to the tenant the
+	// domain event belongs to (not the operator's fixed workspace). No tenant
+	// in the payload -> fall back to the resolved/operator tenant.
+	if m, ok := payload.(map[string]any); ok {
+		if tenant := c.publishTenant(ctx, m); tenant != "" {
 			m["tenant_id"] = tenant
 			envelope["payload"] = m
 		}

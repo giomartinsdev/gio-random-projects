@@ -92,6 +92,11 @@ def lead_optout(contexto: dict, lead_id: str) -> None:
     contexto["stubs"]["set"](optouts=[lead_id])
 
 
+@given(parsers.parse('que o evento carrega o tenant "{tenant_id}"'))
+def evento_carrega_tenant(contexto: dict, tenant_id: str) -> None:
+    contexto["event_tenant"] = tenant_id
+
+
 def _publish_approved(contexto: dict, rabbit_url, collector, domain_queue, message_id: str) -> None:
     contexto["collector"] = collector
     worker = build_worker(
@@ -102,7 +107,7 @@ def _publish_approved(contexto: dict, rabbit_url, collector, domain_queue, messa
         rabbit_url,
         domain_envelope(
             "MessageApproved",
-            {"message_id": message_id, "tenant_id": "tenant-1", "previous_status": "drafted", "status": "approved"},
+            {"message_id": message_id, "tenant_id": contexto.get("event_tenant", "tenant-1"), "previous_status": "drafted", "status": "approved"},
             event_id=f"evt-m-{message_id}",
             command_id=f"cmd-m-{message_id}",
         ),
@@ -188,3 +193,29 @@ def publicou_blocked(contexto: dict, lead_id: str) -> None:
     matched = [e for e in events if e.get("event_type") == "MessageBlocked"]
     assert matched, f"esperava MessageBlocked entre {[e.get('event_type') for e in events]}"
     assert matched[-1].get("payload", {}).get("lead_id") == lead_id, matched[-1]
+
+
+# ------------------------------------------------- tenant do evento (X-Tenant-Id)
+
+
+@then(parsers.parse('a prospecta-api leu a mensagem "{message_id}" no tenant "{tenant_id}"'))
+def mensagem_lida_no_tenant(contexto: dict, message_id: str, tenant_id: str) -> None:
+    reads = contexto["stubs"]["get"]()["message_reads"]
+    matched = [r for r in reads if r.get("message_id") == message_id]
+    assert matched, f"esperava GET /messages/{message_id}, veio {reads}"
+    assert matched[-1].get("tenant_id") == tenant_id, f"GET /messages sem X-Tenant-Id do evento: {matched[-1]}"
+
+
+@then(parsers.parse('a prospecta-api consultou o opt-out do lead "{lead_id}" no tenant "{tenant_id}"'))
+def optout_no_tenant(contexto: dict, lead_id: str, tenant_id: str) -> None:
+    reads = contexto["stubs"]["get"]()["optout_reads"]
+    matched = [r for r in reads if r.get("lead_id") == lead_id]
+    assert matched, f"esperava GET /opt-outs/{lead_id}, veio {reads}"
+    assert matched[-1].get("tenant_id") == tenant_id, f"GET /opt-outs sem X-Tenant-Id do evento: {matched[-1]}"
+
+
+@then(parsers.parse('a prospecta-api persistiu a mensagem no tenant "{tenant_id}"'))
+def mensagem_persistida_no_tenant(contexto: dict, tenant_id: str) -> None:
+    upserts = contexto["stubs"]["get"]()["message_upserts"]
+    assert upserts, "esperava POST /messages, veio []"
+    assert upserts[-1].get("tenant_id") == tenant_id, f"POST /messages sem X-Tenant-Id do evento: {upserts[-1]}"

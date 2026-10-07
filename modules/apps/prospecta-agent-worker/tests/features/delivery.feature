@@ -49,3 +49,13 @@ Funcionalidade: O worker entrega a mensagem aprovada pelo canal certo
     E um lead conhecido para o telefone "5521981962914"
     Quando o domínio publica o evento "MessageApproved" duas vezes para a mensagem "msg-1"
     Então a Evolution recebeu o texto "Olá, Carlos!" uma vez
+
+  Cenário: O worker repassa o tenant do evento para a prospecta-api no envio aprovado
+    Dado uma mensagem "msg-1" aprovada no canal "whatsapp" para "5521981962914"
+    E que o evento carrega o tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    Quando o domínio publica o evento "MessageApproved" para a mensagem "msg-1"
+    Então a Evolution recebeu o texto "Olá, Carlos!" para o número "5521981962914"
+    E a prospecta-api leu a mensagem "msg-1" no tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    E a prospecta-api consultou o opt-out do lead "lead-1" no tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    E a prospecta-api persistiu a mensagem no tenant "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+

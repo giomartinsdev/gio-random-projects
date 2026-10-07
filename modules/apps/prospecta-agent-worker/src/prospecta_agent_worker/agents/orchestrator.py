@@ -135,15 +135,15 @@ class Orchestrator:
         metrics: dict = {"found": 0, "enriched": 0, "qualified": 0}
 
         try:
-            campaign = await self._api.get_campaign(campaign_id) or {}
+            campaign = await self._api.get_campaign(campaign_id, tenant_id=tenant_id) or {}
             icp = campaign.get("icp") or {}
             campaign_tenant = campaign.get("tenant_id") or tenant_id
             channels = campaign.get("channels") or []
 
-            await self._api.update_run(run_id, state="running", metrics=metrics)
+            await self._api.update_run(run_id, state="running", metrics=metrics, tenant_id=campaign_tenant)
             results = await self._search_guarded(str(icp.get("definition") or ""))
 
-            await self._api.update_run(run_id, state="running", metrics=metrics)
+            await self._api.update_run(run_id, state="running", metrics=metrics, tenant_id=campaign_tenant)
             for result in results:
                 key = natural_key(domain_from_url(result.get("url", "")), result.get("title", ""))
                 if key in self._seen_keys:
@@ -166,6 +166,7 @@ class Orchestrator:
                     domain=lead["domain"],
                     channel=lead["channel"],
                     source_url=lead["source_url"],
+                    tenant_id=campaign_tenant,
                 )
                 if not lead_id:
                     # Sem id do domínio não há como qualificar/ligar mensagens;
@@ -192,15 +193,15 @@ class Orchestrator:
                     log.warning("qualificação indisponível (9router): %s; lead %s fica com fit=0", exc, lead_id)
                 metrics["qualified"] += 1
                 # O fit também é persistência, não só evento (R4: upsert).
-                await self._api.qualify_lead(lead_id, fit)
+                await self._api.qualify_lead(lead_id, fit, tenant_id=campaign_tenant)
                 await self._qualifier.publish_qualified(lead_id=lead_id, tenant_id=campaign_tenant, fit=fit)
 
-            await self._api.update_run(run_id, state="done", metrics=metrics)
+            await self._api.update_run(run_id, state="done", metrics=metrics, tenant_id=campaign_tenant)
         except (ToolError, NineRouterError) as exc:
             # Falha persistente de uma dependência: o run termina em failed e
             # NÃO loopa. A fila segue; o humano vê o run vermelho no cockpit.
             metrics["error"] = str(exc)[:200]
-            await self._api.update_run(run_id, state="failed", metrics=metrics)
+            await self._api.update_run(run_id, state="failed", metrics=metrics, tenant_id=campaign_tenant)
             log.warning("run da campanha %s falhou: %s", campaign_id, exc)
 
     # ------------------------------------------------------- passos guardados

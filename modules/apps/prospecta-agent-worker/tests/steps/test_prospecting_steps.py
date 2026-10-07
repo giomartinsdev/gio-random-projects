@@ -95,10 +95,23 @@ def busca_vazia(contexto: dict) -> None:
     contexto["stubs"]["set"](search={"status": 200, "results": [], "calls": []})
 
 
-@given("que a busca não está configurada")
+@given(parsers.parse('que a busca não está configurada'))
 def busca_nao_configurada(contexto: dict) -> None:
     # Sem chave (`SEARCH_API_KEY=""`) a WebSearch devolve [] sem tocar a rede.
     contexto["search_api_key"] = ""
+
+
+@given(parsers.parse('que a campanha "{campaign_id}" pertence ao tenant "{tenant_id}"'))
+def campanha_do_tenant(contexto: dict, campaign_id: str, tenant_id: str) -> None:
+    campaigns = contexto["stubs"]["get"]()["campaigns"]
+    campaign = dict(campaigns[campaign_id])
+    campaign["tenant_id"] = tenant_id
+    contexto["stubs"]["set"](campaigns={**campaigns, campaign_id: campaign})
+
+
+@given(parsers.parse('que o evento carrega o tenant "{tenant_id}"'))
+def evento_carrega_tenant(contexto: dict, tenant_id: str) -> None:
+    contexto["event_tenant"] = tenant_id
 
 
 @given(parsers.parse('que o enriquecimento devolve a empresa "{name}" com o decisor "{decisor}"'))
@@ -146,7 +159,7 @@ def publica_prospect_requested(contexto: dict, rabbit_url, collector, domain_que
     contexto["worker"] = worker
     publish_domain_event(
         rabbit_url,
-        prospect_requested_envelope(campaign_id),
+        prospect_requested_envelope(campaign_id, tenant_id=contexto.get("event_tenant", "tenant-1")),
         queue=domain_queue,
     )
     consume_domain_one(rabbit_url, worker, queue=domain_queue)
@@ -161,7 +174,7 @@ def publica_prospect_requested_duas(contexto: dict, rabbit_url, collector, domai
         search_api_key=contexto.get("search_api_key", "test-search-key"),
     )
     contexto["worker"] = worker
-    envelope = prospect_requested_envelope(campaign_id)
+    envelope = prospect_requested_envelope(campaign_id, tenant_id=contexto.get("event_tenant", "tenant-1"))
     publish_domain_event(rabbit_url, envelope, queue=domain_queue)
     publish_domain_event(rabbit_url, envelope, queue=domain_queue)
     consume_domain_one(rabbit_url, worker, queue=domain_queue)
@@ -311,7 +324,7 @@ def publica_lead_qualified(contexto: dict, rabbit_url, collector, domain_queue, 
         rabbit_url,
         domain_envelope(
             "LeadQualified",
-            {"lead_id": lead_id, "tenant_id": "tenant-1", "fit": 87, "status": "qualified"},
+            {"lead_id": lead_id, "tenant_id": contexto.get("event_tenant", "tenant-1"), "fit": 87, "status": "qualified"},
             event_id=f"evt-q-{lead_id}",
             command_id=f"cmd-q-{lead_id}",
         ),
@@ -344,3 +357,51 @@ def chamada_sem_telefone(contexto: dict, phone: str) -> None:
     assert calls, "nenhuma chamada chegou ao 9router"
     raw = _json.dumps(calls[-1]["messages"])
     assert phone not in raw, raw
+
+
+# ------------------------------------------------- tenant do evento (X-Tenant-Id)
+
+
+@then(parsers.parse('a prospecta-api leu a campanha "{campaign_id}" no tenant "{tenant_id}"'))
+def campanha_lida_no_tenant(contexto: dict, campaign_id: str, tenant_id: str) -> None:
+    reads = contexto["stubs"]["get"]()["campaign_reads"]
+    matched = [r for r in reads if r.get("campaign_id") == campaign_id]
+    assert matched, f"esperava leitura da campanha {campaign_id}, veio {reads}"
+    assert matched[-1].get("tenant_id") == tenant_id, f"GET /campaigns sem X-Tenant-Id do evento: {matched[-1]}"
+
+
+@then(parsers.parse('a prospecta-api persistiu o lead no tenant "{tenant_id}"'))
+def lead_persistido_no_tenant(contexto: dict, tenant_id: str) -> None:
+    upserts = contexto["stubs"]["get"]()["lead_upserts"]
+    assert upserts, "esperava POST /leads, veio []"
+    assert upserts[-1].get("tenant_id") == tenant_id, f"POST /leads sem X-Tenant-Id do evento: {upserts[-1]}"
+
+
+@then(parsers.parse('a prospecta-api qualificou o lead no tenant "{tenant_id}"'))
+def lead_qualificado_no_tenant(contexto: dict, tenant_id: str) -> None:
+    calls = contexto["stubs"]["get"]()["qualify_calls"]
+    assert calls, "esperava POST /leads/{id}/qualify, veio []"
+    assert calls[-1].get("tenant_id") == tenant_id, f"POST /leads/{{id}}/qualify sem X-Tenant-Id: {calls[-1]}"
+
+
+@then(parsers.parse('a prospecta-api atualizou o run "{run_id}" no tenant "{tenant_id}"'))
+def run_atualizado_no_tenant(contexto: dict, run_id: str, tenant_id: str) -> None:
+    updates = contexto["stubs"]["get"]()["run_updates"]
+    matched = [u for u in updates if u.get("run_id") == run_id]
+    assert matched, f"esperava updates do run {run_id}, veio {updates}"
+    assert all(u.get("tenant_id") == tenant_id for u in matched), f"POST /agent/runs sem X-Tenant-Id: {matched}"
+
+
+@then(parsers.parse('a prospecta-api leu o lead "{lead_id}" no tenant "{tenant_id}"'))
+def lead_lido_no_tenant(contexto: dict, lead_id: str, tenant_id: str) -> None:
+    reads = contexto["stubs"]["get"]()["lead_reads"]
+    matched = [r for r in reads if r.get("lead_id") == lead_id]
+    assert matched, f"esperava GET /leads/{lead_id}, veio {reads}"
+    assert matched[-1].get("tenant_id") == tenant_id, f"GET /leads/{{id}} sem X-Tenant-Id do evento: {matched[-1]}"
+
+
+@then(parsers.parse('a prospecta-api persistiu a mensagem no tenant "{tenant_id}"'))
+def mensagem_persistida_no_tenant(contexto: dict, tenant_id: str) -> None:
+    upserts = contexto["stubs"]["get"]()["message_upserts"]
+    assert upserts, "esperava POST /messages, veio []"
+    assert upserts[-1].get("tenant_id") == tenant_id, f"POST /messages sem X-Tenant-Id do evento: {upserts[-1]}"
