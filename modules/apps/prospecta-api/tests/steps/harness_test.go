@@ -25,6 +25,7 @@ import (
 	"github.com/cucumber/godog"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/application"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/auth"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/infrastructure"
 )
@@ -33,6 +34,11 @@ import (
 const (
 	callerKey = "test-caller-key"
 	domainKey = "test-domain-key"
+	// operatorTenant é o workspace fixo do modo operador (X-API-Key). Os
+	// cenários de negócio usam este caminho; os de auth usam a sessão.
+	operatorTenant = "00000000-0000-0000-0000-000000000001"
+	// sessionSecret assina os cookies dos cenários de auth.
+	sessionSecret = "test-session-secret"
 )
 
 type recordedCommand struct {
@@ -48,6 +54,12 @@ type state struct {
 	resp     *httptest.ResponseRecorder
 	body     map[string]any
 	feed     *feedState
+	// cookie guarda o último Set-Cookie emitido (o valor bruto), para os
+	// cenários de auth reenviarem a sessão sem depender de um jar.
+	cookie *http.Cookie
+	// sessionTenant é o tenant_id da última sessão emitida, decodificado do
+	// cookie, para os cenários provarem que a rota de negócio foi scoped nele.
+	sessionTenant string
 }
 
 // buildServices monta todos os serviços de slice sobre o mesmo par de domínio,
@@ -62,14 +74,47 @@ func buildServices(reader *infrastructure.DomainClient) httpapi.Services {
 	}
 }
 
-func buildAPIHandler(apiKey string, services httpapi.Services) http.Handler {
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return httpapi.NewRouter(apiKey, nil, services, log)
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// newState sobe a API (router de produção) apontando para o fake.
+// buildAPIHandler monta o router de produção no modo operador (X-API-Key), com
+// o tenant fixo. É o cenário histórico das features de negócio.
+func buildAPIHandler(apiKey string, services httpapi.Services) http.Handler {
+	return httpapi.NewRouter(httpapi.Config{
+		APIKey:   apiKey,
+		TenantID: operatorTenant,
+	}, services, testLogger())
+}
+
+// newState sobe a API (router de produção) apontando para o fake, no modo
+// operador.
 func (st *state) newAPI() {
-	st.handler = buildAPIHandler(callerKey, buildServices(infrastructure.New(st.pairURL, domainKey)))
+	st.handler = buildAPIHandler(callerKey, buildServices(infrastructure.New(st.pairURL, domainKey, operatorTenant)))
+}
+
+// newAuthAPI sobe a API com sessão habilitada, para os cenários de /auth.
+func (st *state) newAuthAPI() {
+	sessions := auth.NewManager(sessionSecret, 0)
+	pair := infrastructure.New(st.pairURL, domainKey, operatorTenant)
+	authService := auth.NewService(pair, pair, pair, sessions, testLogger())
+	st.handler = httpapi.NewRouter(httpapi.Config{
+		APIKey:   callerKey,
+		TenantID: operatorTenant,
+		Auth:     authService,
+	}, buildServices(pair), testLogger())
+}
+
+// newAPIWithoutSession sobe a API com o serviço de auth desabilitado (sem
+// segredo): /auth tem de responder 503 sem derrubar as rotas de negócio.
+func (st *state) newAPIWithoutSession() {
+	pair := infrastructure.New(st.pairURL, domainKey, operatorTenant)
+	authService := auth.NewService(pair, pair, pair, auth.NewManager("", 0), testLogger())
+	st.handler = httpapi.NewRouter(httpapi.Config{
+		APIKey:   callerKey,
+		TenantID: operatorTenant,
+		Auth:     authService,
+	}, buildServices(pair), testLogger())
 }
 
 // --- passos comuns a todas as áreas ----------------------------------------
@@ -78,11 +123,13 @@ func (st *state) newAPI() {
 // API, disparar POST/GET, conferir status e comandos publicados.
 func registerCommonSteps(sc *godog.ScenarioContext, st *state, ctx context.Context) {
 	sc.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
-		if err := clearCommands(ctx, st); err != nil {
+		if err := clearState(ctx, st); err != nil {
 			return ctx, err
 		}
 		st.resp = nil
 		st.body = nil
+		st.cookie = nil
+		st.sessionTenant = ""
 		return ctx, nil
 	})
 
@@ -238,6 +285,14 @@ func (st *state) serve(req *http.Request) {
 	st.handler.ServeHTTP(st.resp, req)
 	st.body = map[string]any{}
 	_ = json.Unmarshal(st.resp.Body.Bytes(), &st.body)
+	// Guarda o cookie de sessão emitido (se houver) para os cenários de auth
+	// reenviarem; um 401/409 sem Set-Cookie deve zerá-lo, não herdar o antigo.
+	st.cookie = nil
+	for _, c := range st.resp.Result().Cookies() {
+		if c.Name == auth.SessionCookieName {
+			st.cookie = c
+		}
+	}
 }
 
 // item devolve o n-ésimo item (1-based) da lista `field` do corpo.
@@ -268,6 +323,17 @@ func (st *state) control(ctx context.Context, method, path string, body io.Reade
 
 func clearCommands(ctx context.Context, st *state) error {
 	resp, err := st.control(ctx, http.MethodDelete, "/__commands", nil)
+	if err != nil {
+		return err
+	}
+	return resp.Body.Close()
+}
+
+// clearState zera comandos, projeções e usuários no fake. É o reset entre
+// cenários: um usuário criado num cenário não pode vazar para o próximo (nem
+// um CreateCompany, que aqui é persistido para as leituras).
+func clearState(ctx context.Context, st *state) error {
+	resp, err := st.control(ctx, http.MethodDelete, "/__state", nil)
 	if err != nil {
 		return err
 	}

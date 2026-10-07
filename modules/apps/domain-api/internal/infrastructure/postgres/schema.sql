@@ -768,6 +768,30 @@ CREATE TABLE IF NOT EXISTS prospecta_audit_log (
 CREATE INDEX IF NOT EXISTS idx_prospecta_audit_tenant_created ON prospecta_audit_log (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_prospecta_audit_command_status ON prospecta_audit_log (command, status);
 
+-- Autenticação (e-mail+senha). Diferente das demais tabelas prospecta_*, o
+-- e-mail é ÚNICO GLOBALMENTE (índice em lower(email)): é a identidade do login.
+-- Por isso a leitura GET /users/by-email/{email} roda com BYPASS de tenant — o
+-- login acha o usuário antes de saber o tenant, e o domain-api NÃO exige
+-- tenant_id nela. O RLS por tenant_id continua valendo para todo o resto.
+--
+-- password_hash guarda o bcrypt JÁ pronto: o worker nunca vê a senha em claro
+-- nem faz hashing.
+CREATE TABLE IF NOT EXISTS prospecta_user (
+    id            UUID PRIMARY KEY,
+    tenant_id     UUID NOT NULL,
+    company_id    UUID,
+    name          TEXT NOT NULL DEFAULT '',
+    email         TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT '',
+    command_id    UUID,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_user_email ON prospecta_user (lower(email));
+CREATE INDEX IF NOT EXISTS idx_prospecta_user_tenant ON prospecta_user (tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospecta_user_command
+    ON prospecta_user (command_id) WHERE command_id IS NOT NULL;
+
 -- RLS por tenant_id. current_setting('app.current_tenant', true) é NULL quando
 -- a sessão não o fixou: o cast ''::uuid falha alto (erro) em vez de comparar
 -- NULL e vazar a linha. ENABLE + FORCE para a policy valer também para o owner.
@@ -824,5 +848,15 @@ ALTER TABLE prospecta_audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE prospecta_audit_log FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS prospecta_audit_log_tenant ON prospecta_audit_log;
 CREATE POLICY prospecta_audit_log_tenant ON prospecta_audit_log
+    USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
+
+-- prospecta_user tem RLS por tenant_id como as demais. A exceção documentada é
+-- a leitura by-email (login), que lê com bypass de tenant de propósito: o e-mail
+-- é único global e o login não conhece o tenant ainda.
+ALTER TABLE prospecta_user ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prospecta_user FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prospecta_user_tenant ON prospecta_user;
+CREATE POLICY prospecta_user_tenant ON prospecta_user
     USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
     WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);

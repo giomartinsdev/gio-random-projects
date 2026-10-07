@@ -125,7 +125,8 @@ func TestProspectaReadsBdd(t *testing.T) {
 					DELETE FROM prospecta_conversation;
 					DELETE FROM prospecta_lead;
 					DELETE FROM prospecta_campaign;
-					DELETE FROM prospecta_agent_run;`); err != nil {
+					DELETE FROM prospecta_agent_run;
+					DELETE FROM prospecta_user;`); err != nil {
 					return ctx, err
 				}
 				return ctx, nil
@@ -206,6 +207,14 @@ func registerReadsSteps(sc *godog.ScenarioContext, st *readsState) {
 			INSERT INTO prospecta_message (id, tenant_id, lead_id, channel, direction, content, status)
 			VALUES ($1,$2,$3,'email','out','Olá, tudo bem?',$4)`,
 			st.messageID, tenantA, st.leadID, status)
+		return err
+	})
+
+	sc.Step(`^um usuário do tenant "([^"]*)" com e-mail "([^"]*)" e hash "([^"]*)"$`, func(tenant, email, hash string) error {
+		_, err := st.pool.Exec(context.Background(), `
+			INSERT INTO prospecta_user (id, tenant_id, company_id, name, email, password_hash, role)
+			VALUES ($1,$2,$3,'Ana',$4,$5,'admin')`,
+			uuid.NewString(), tenant, uuid.NewString(), email, hash)
 		return err
 	})
 

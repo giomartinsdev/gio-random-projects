@@ -92,6 +92,29 @@ func (h *ProspectaHandlers) GetCompany(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, company)
 }
 
+// GetUserByEmail é o GET /users/by-email/{email}: a leitura do login. É
+// cross-tenant DE PROPÓSITO — o e-mail é único global e o login acha o usuário
+// antes de saber o tenant —, então NÃO exige tenant_id (diferente de todas as
+// outras leituras do Prospecta). Devolve o password_hash em rede interna, para o
+// login verificar o bcrypt; 404 quando não existe.
+func (h *ProspectaHandlers) GetUserByEmail(w http.ResponseWriter, r *http.Request) {
+	email := chi.URLParam(r, "email")
+	if email == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "email is required"})
+		return
+	}
+	user, err := h.reads.GetUserByEmail(r.Context(), email)
+	if errors.Is(err, domainprospecta.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, errorBody{Error: "user not found"})
+		return
+	}
+	if err != nil {
+		h.readError(w, r, "get user by email", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
 // ListCampaigns é o GET /campaigns?tenant_id=&limit=&cursor=.
 func (h *ProspectaHandlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenant(w, r)

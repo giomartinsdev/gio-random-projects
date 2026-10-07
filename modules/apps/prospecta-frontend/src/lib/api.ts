@@ -1,6 +1,7 @@
 import { loadConfig, type ProspectaConfig } from "./config";
 import type {
   AgentRunEvent,
+  AuthSession,
   Campaign,
   CampaignInput,
   Company,
@@ -9,13 +10,17 @@ import type {
   Icp,
   Lead,
   LeadDetail,
+  LoginInput,
   MessageInput,
   Paged,
+  SignupInput,
 } from "./types";
 
-// Cliente HTTP da prospecta-api (BFF/ACL). Toda chamada leva o header
-// X-API-Key (sem Access na frente); a chave vive no localStorage e é lida na
-// hora da request — assim trocar a chave em Configurações vale sem reload.
+// Cliente HTTP da prospecta-api (BFF/ACL). O backend aceita DUAS identidades:
+//   · sessão por cookie HttpOnly (modo cliente) — vai com credentials:"include";
+//   · X-API-Key (modo operador) — a chave vive no localStorage e é lida na hora
+//     da request, então trocá-la em Configurações vale sem reload.
+// Toda chamada manda os dois: quem tem sessão não precisa de chave e vice-versa.
 export class ApiError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -42,6 +47,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   try {
     res = await fetch(apiUrl(cfg, path), {
       method,
+      credentials: "include",
       headers: headers(cfg, body !== undefined),
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
@@ -57,6 +63,20 @@ const get = <T>(path: string) => request<T>("GET", path);
 const post = <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {});
 
 export const api = {
+  // ---- Auth (sessão por cookie; credentials:"include" em toda request) ----
+  signup(input: SignupInput): Promise<AuthSession> {
+    return post("/auth/signup", input);
+  },
+  login(input: LoginInput): Promise<AuthSession> {
+    return post("/auth/login", input);
+  },
+  me(): Promise<AuthSession> {
+    return get("/auth/me");
+  },
+  logout(): Promise<void> {
+    return request<void>("POST", "/auth/logout");
+  },
+
   // ---- Company & ICP ----
   createCompany(input: { name: string; site: string; description: string }): Promise<{ id: string; status: string }> {
     return post("/companies", input);
@@ -135,6 +155,7 @@ export function openActivityStream(
   (async () => {
     try {
       const res = await fetch(apiUrl(cfg, "/agent/activity"), {
+        credentials: "include",
         headers: { ...headers(cfg), Accept: "text/event-stream" },
         signal: controller.signal,
       });

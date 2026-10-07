@@ -20,6 +20,13 @@ type CompanyReader interface {
 	Company(ctx context.Context, id string) (domain.Company, error)
 }
 
+// UserReader is the read port over the domain pair's user projections. The
+// auth slice uses it to detect a duplicate signup (200 means the e-mail is
+// taken) and to load the hash to compare on login.
+type UserReader interface {
+	UserByEmail(ctx context.Context, email string) (domain.User, error)
+}
+
 // CampaignReader is the read port over the domain pair's campaign projections.
 type CampaignReader interface {
 	Campaign(ctx context.Context, id string) (domain.Campaign, error)

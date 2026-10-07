@@ -32,6 +32,21 @@ type ICPView struct {
 	CreatedAt  string   `json:"created_at"`
 }
 
+// UserView é a conta de autenticação como o login a lê. O password_hash VAI no
+// JSON (rede interna): o login precisa dele para verificar o bcrypt. Esta é a
+// única projeção cross-tenant do Prospecta — o e-mail é único global, então a
+// leitura não exige tenant_id (o login ainda não sabe o tenant).
+type UserView struct {
+	ID           string `json:"id"`
+	TenantID     string `json:"tenant_id"`
+	CompanyID    string `json:"company_id"`
+	Name         string `json:"name"`
+	Email        string `json:"email"`
+	PasswordHash string `json:"password_hash"`
+	Role         string `json:"role"`
+	CreatedAt    string `json:"created_at"`
+}
+
 // Page é uma projeção paginada por cursor: os itens de uma página mais o cursor
 // da próxima (nil quando não há). O par de domínio é dono da ordenação; o shape
 // espelha domain.Page da prospecta-api, que apenas reemite.
@@ -128,6 +143,11 @@ type AgentRunEvent struct {
 type ReadRepository interface {
 	GetCompany(ctx context.Context, tenantID, id string) (CompanyView, error)
 	ICPByCompany(ctx context.Context, tenantID, companyID string) (ICPView, error)
+
+	// GetUserByEmail é a ÚNICA leitura cross-tenant: o e-mail é único global e o
+	// login acha o usuário antes de conhecer o tenant. Por isso não recebe
+	// tenant_id e devolve o password_hash (rede interna) para o bcrypt.
+	GetUserByEmail(ctx context.Context, email string) (UserView, error)
 
 	ListCampaigns(ctx context.Context, tenantID string, limit int, cursor string) (Page[CampaignView], error)
 	GetCampaign(ctx context.Context, tenantID, id string) (CampaignView, error)

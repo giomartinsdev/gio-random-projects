@@ -17,11 +17,18 @@ import (
 type stubProspectaReads struct {
 	company domainprospecta.CompanyView
 	icp     domainprospecta.ICPView
+	user    domainprospecta.UserView
 	err     error
 }
 
 func (s *stubProspectaReads) GetCompany(context.Context, string, string) (domainprospecta.CompanyView, error) {
 	return s.company, s.err
+}
+
+// GetUserByEmail devolve o usuário semeado (ou o erro), sem tenant — é a
+// leitura cross-tenant do login.
+func (s *stubProspectaReads) GetUserByEmail(context.Context, string) (domainprospecta.UserView, error) {
+	return s.user, s.err
 }
 
 func (s *stubProspectaReads) ICPByCompany(context.Context, string, string) (domainprospecta.ICPView, error) {
@@ -66,6 +73,7 @@ func prospectaServer(reads domainprospecta.ReadRepository, pub *spyPublisher) ht
 	r.Post("/companies", h.CreateCompany)
 	r.Get("/companies/{id}", h.GetCompany)
 	r.Post("/companies/{companyId}/icp", h.DefineICP)
+	r.Get("/users/by-email/{email}", h.GetUserByEmail)
 	return r
 }
 
@@ -161,6 +169,40 @@ func TestProspectaGetCompanyProjectionAnd404(t *testing.T) {
 	// inexistente -> 404.
 	nf := prospectaServer(&stubProspectaReads{err: domainprospecta.ErrNotFound}, &spyPublisher{})
 	req = httptest.NewRequest(http.MethodGet, "/companies/abc?tenant_id=t", nil)
+	rec = httptest.NewRecorder()
+	nf.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("inexistente = %d; want 404", rec.Code)
+	}
+}
+
+// GET /users/by-email/{email} é a leitura cross-tenant do login: sem
+// tenant_id, e devolvendo o password_hash (rede interna) para verificar bcrypt.
+func TestProspectaGetUserByEmailIsCrossTenantAndCarriesHash(t *testing.T) {
+	reads := &stubProspectaReads{user: domainprospecta.UserView{
+		ID: "u1", TenantID: "t1", Name: "Ana", Email: "ana@acme.com",
+		PasswordHash: "hash-bcrypt-1", Role: "admin", CreatedAt: "2026-10-07T00:00:00Z",
+	}}
+	h := prospectaServer(reads, &spyPublisher{})
+
+	// Sem ?tenant_id= de propósito: a leitura é global por e-mail.
+	req := httptest.NewRequest(http.MethodGet, "/users/by-email/ana@acme.com", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	var got domainprospecta.UserView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("body: %v", err)
+	}
+	if got.PasswordHash != "hash-bcrypt-1" || got.TenantID != "t1" || got.Email != "ana@acme.com" {
+		t.Fatalf("projeção = %+v; want hash/tenant/email", got)
+	}
+
+	// inexistente -> 404.
+	nf := prospectaServer(&stubProspectaReads{err: domainprospecta.ErrNotFound}, &spyPublisher{})
+	req = httptest.NewRequest(http.MethodGet, "/users/by-email/ninguem@acme.com", nil)
 	rec = httptest.NewRecorder()
 	nf.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {

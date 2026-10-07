@@ -36,6 +36,21 @@
   }
 }
 
+/* Landing pública: o frame C465f7 é branco/azul, então a LP troca a base do
+   documento para claro enquanto está montada. O `body` global continua dark
+   (poc.pen §V1); só a raiz da LP veste os tokens light. */
+.lp-root {
+  color-scheme: light;
+  background: #ffffff;
+  color: #111111;
+}
+
+/* Dot grid do poc.pen (padrão de pontos de 22px, 1px). */
+.dot-grid {
+  background-image: radial-gradient(currentColor 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
 @layer components {
   /* Painel/card de superfície: raio 14, borda 1px. */
   .card {

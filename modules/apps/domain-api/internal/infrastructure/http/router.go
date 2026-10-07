@@ -153,6 +153,10 @@ func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWri
 		r.Post("/companies", pr.CreateCompany)
 		r.Get("/companies/{id}", pr.GetCompany)
 		r.Post("/companies/{companyId}/icp", pr.DefineICP)
+		// Leitura do login por e-mail: cross-tenant de propósito (o e-mail é
+		// único global), por isso NÃO leva ?tenant_id=. Devolve o password_hash
+		// (rede interna) para o login verificar o bcrypt.
+		r.Get("/users/by-email/{email}", pr.GetUserByEmail)
 		// Leituras que a prospecta-api (ACL sem banco) consome. tenant_id vem
 		// por query, como em GetCompany.
 		r.Get("/campaigns", pr.ListCampaigns)

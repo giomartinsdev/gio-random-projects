@@ -4053,7 +4053,8 @@
                       "content": "Cadastre sua empresa e descreva o cliente ideal.",
                       "lineHeight": 1.15,
                       "fontFamily": "$font-body",
-                      "fontSize": 15
+                      "fontSize": 15,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -4113,7 +4114,8 @@
                       "content": "Atualizado há 2 minutos",
                       "lineHeight": 1.15,
                       "fontFamily": "$font-body",
-                      "fontSize": 13
+                      "fontSize": 13,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -14870,8 +14872,8 @@
     {
       "type": "frame",
       "id": "v7lrQ",
-      "x": 9546,
-      "y": -100,
+      "x": 4126,
+      "y": 2013,
       "name": "Prospecta — Arquitetura",
       "clip": true,
       "width": 1440,
@@ -19723,6 +19725,1613 @@
                   "fontFamily": "$font-mono",
                   "fontSize": 12,
                   "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Ub3iA",
+      "x": -2630,
+      "y": 4418,
+      "name": "Login",
+      "clip": true,
+      "width": 1440,
+      "height": 900,
+      "fill": "$app-bg",
+      "children": [
+        {
+          "type": "frame",
+          "id": "vlLgk",
+          "name": "Brand Panel",
+          "clip": true,
+          "width": 640,
+          "height": "fill_container",
+          "fill": "$app-elevated",
+          "layout": "vertical",
+          "padding": 64,
+          "justifyContent": "space_between",
+          "children": [
+            {
+              "type": "path",
+              "id": "LM7zz",
+              "layoutPosition": "absolute",
+              "x": 0,
+              "y": 0,
+              "name": "Dot Grid",
+              "geometry": "M20.5 22a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-616 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0",
+              "viewBox": [
+                0,
+                0,
+                640,
+                900
+              ],
+              "fill": "#1A1A20",
+              "width": 640,
+              "height": 900
+            },
+            {
+              "type": "ellipse",
+              "id": "P8RgmI",
+              "layoutPosition": "absolute",
+              "x": -120,
+              "y": -160,
+              "name": "Orb",
+              "opacity": 0.5,
+              "fill": {
+                "type": "gradient",
+                "gradientType": "radial",
+                "enabled": true,
+                "rotation": 0,
+                "size": {
+                  "width": 1,
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#2563EB",
+                    "position": 0
+                  },
+                  {
+                    "color": "#2563EB00",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 480,
+              "height": 480,
+              "effect": {
+                "type": "blur",
+                "radius": 70
+              }
+            },
+            {
+              "type": "ellipse",
+              "id": "SyZYd",
+              "layoutPosition": "absolute",
+              "x": 420,
+              "y": 620,
+              "name": "Orb",
+              "opacity": 0.35,
+              "fill": {
+                "type": "gradient",
+                "gradientType": "radial",
+                "enabled": true,
+                "rotation": 0,
+                "size": {
+                  "width": 1,
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#7DA6FF",
+                    "position": 0
+                  },
+                  {
+                    "color": "#7DA6FF00",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 360,
+              "height": 360,
+              "effect": {
+                "type": "blur",
+                "radius": 60
+              }
+            },
+            {
+              "type": "frame",
+              "id": "Af7zh",
+              "name": "Logo",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "id": "hDMjQ",
+                  "type": "ref",
+                  "ref": "Usixu",
+                  "name": "Orb"
+                },
+                {
+                  "type": "text",
+                  "id": "ku11e",
+                  "name": "Wordmark",
+                  "fill": "$app-text",
+                  "content": "Prospecta",
+                  "fontFamily": "$font-body",
+                  "fontSize": 20,
+                  "fontWeight": "700",
+                  "letterSpacing": -0.5
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "lL2eR",
+              "name": "Pitch",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "Y64vm",
+                  "name": "Eyebrow",
+                  "fill": "#12261E",
+                  "cornerRadius": "$r-pill",
+                  "stroke": "#1F3D31",
+                  "strokeWidth": 1,
+                  "gap": 8,
+                  "padding": [
+                    6,
+                    14
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "lys5S",
+                      "name": "Spark",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "sparkles",
+                      "library": "lucide",
+                      "fill": "$success"
+                    },
+                    {
+                      "type": "text",
+                      "id": "j3xCk",
+                      "name": "Eyebrow Text",
+                      "fill": "$success",
+                      "content": "PROSPECCAO AGENTICA COM IA",
+                      "fontFamily": "$font-mono",
+                      "fontSize": 12,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "Olqc4",
+                  "name": "Headline",
+                  "fill": "$app-text",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Seu time de prospecção que nunca dorme",
+                  "lineHeight": 1.1,
+                  "fontFamily": "$font-body",
+                  "fontSize": 42,
+                  "fontWeight": "700",
+                  "letterSpacing": -1.5
+                },
+                {
+                  "type": "text",
+                  "id": "b8yD5X",
+                  "name": "Sub",
+                  "fill": "$app-text2",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Cadastre sua empresa e deixe agentes de IA encontrarem e abordarem clientes por e-mail e WhatsApp.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-body",
+                  "fontSize": 16,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "u2H5Fk",
+              "name": "Features",
+              "layout": "vertical",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "nLyUH",
+                  "name": "Feat Encontra quem você não acharia",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "dUef1",
+                      "name": "Icon",
+                      "width": 30,
+                      "height": 30,
+                      "fill": "$accent-soft",
+                      "cornerRadius": 8,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "d31S4U",
+                          "name": "I",
+                          "width": 15,
+                          "height": 15,
+                          "icon": "search",
+                          "library": "lucide",
+                          "fill": "$accent-light"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "Afobk",
+                      "name": "T",
+                      "fill": "$app-text2",
+                      "content": "Encontra quem você não acharia",
+                      "fontFamily": "$font-body",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "xVHvI",
+                  "name": "Feat Personalização em escala",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "l3RRu",
+                      "name": "Icon",
+                      "width": 30,
+                      "height": 30,
+                      "fill": "$accent-soft",
+                      "cornerRadius": 8,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "yqqGU",
+                          "name": "I",
+                          "width": 15,
+                          "height": 15,
+                          "icon": "sparkles",
+                          "library": "lucide",
+                          "fill": "$accent-light"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "Bn3h7",
+                      "name": "T",
+                      "fill": "$app-text2",
+                      "content": "Personalização em escala",
+                      "fontFamily": "$font-body",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f0QQcj",
+                  "name": "Feat Pipeline, não listas",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "a6Z4y",
+                      "name": "Icon",
+                      "width": 30,
+                      "height": 30,
+                      "fill": "$accent-soft",
+                      "cornerRadius": 8,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "mHnP0",
+                          "name": "I",
+                          "width": 15,
+                          "height": 15,
+                          "icon": "calendar-check",
+                          "library": "lucide",
+                          "fill": "$accent-light"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "B0vPDD",
+                      "name": "T",
+                      "fill": "$app-text2",
+                      "content": "Pipeline, não listas",
+                      "fontFamily": "$font-body",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "qs7uk",
+          "name": "Form Panel",
+          "width": "fill_container",
+          "height": "fill_container",
+          "layout": "vertical",
+          "padding": 64,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "ZNSKp",
+              "name": "Form",
+              "width": 400,
+              "layout": "vertical",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "pV2nb",
+                  "name": "Form Head",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "obTBK",
+                      "name": "Title",
+                      "fill": "$app-text",
+                      "content": "Entrar na sua conta",
+                      "fontFamily": "$font-body",
+                      "fontSize": 26,
+                      "fontWeight": "700",
+                      "letterSpacing": -0.8
+                    },
+                    {
+                      "type": "text",
+                      "id": "w0RR1",
+                      "name": "Sub",
+                      "fill": "$app-text2",
+                      "content": "Acesse o cockpit de prospecção da sua empresa.",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "wvEHq",
+                  "name": "Field E-mail",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "hk4m6",
+                      "name": "Label Row",
+                      "width": "fill_container",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "t4iqa",
+                          "name": "Label",
+                          "fill": "$app-text2",
+                          "content": "E-mail",
+                          "fontFamily": "$font-body",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "P1Nye",
+                      "name": "Input",
+                      "width": "fill_container",
+                      "fill": "$app-bg",
+                      "cornerRadius": "$r-sm",
+                      "stroke": "$app-line",
+                      "strokeWidth": 1,
+                      "gap": 10,
+                      "padding": [
+                        11,
+                        14
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "rHlWq",
+                          "name": "Value",
+                          "fill": "$app-text2",
+                          "content": "voce@empresa.com.br",
+                          "fontFamily": "$font-body",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "yf2tK",
+                  "name": "Field Senha",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "KKU1i",
+                      "name": "Label Row",
+                      "width": "fill_container",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "ap4u5",
+                          "name": "Label",
+                          "fill": "$app-text2",
+                          "content": "Senha",
+                          "fontFamily": "$font-body",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "n5wTN",
+                          "name": "Extra",
+                          "fill": "$accent-light",
+                          "content": "Esqueci minha senha",
+                          "fontFamily": "$font-body",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "zH0pu",
+                      "name": "Input",
+                      "width": "fill_container",
+                      "fill": "$app-bg",
+                      "cornerRadius": "$r-sm",
+                      "stroke": "$app-line",
+                      "strokeWidth": 1,
+                      "gap": 10,
+                      "padding": [
+                        11,
+                        14
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "YEjNx",
+                          "name": "Value",
+                          "fill": "$app-text2",
+                          "content": "••••••••",
+                          "fontFamily": "$font-body",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "S1f1Bh",
+                  "name": "Remember",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "a0eLcY",
+                      "name": "Check",
+                      "width": 18,
+                      "height": 18,
+                      "fill": "$accent",
+                      "cornerRadius": 5,
+                      "stroke": "$accent",
+                      "strokeWidth": 1,
+                      "layout": "none"
+                    },
+                    {
+                      "type": "text",
+                      "id": "m0G9B",
+                      "name": "T",
+                      "fill": "$app-text2",
+                      "content": "Manter conectado por 30 dias",
+                      "fontFamily": "$font-body",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "buryv",
+                  "name": "Submit",
+                  "width": "fill_container",
+                  "fill": "$accent",
+                  "cornerRadius": "$r-sm",
+                  "gap": 8,
+                  "padding": [
+                    14,
+                    20
+                  ],
+                  "justifyContent": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "H05p1",
+                      "name": "T",
+                      "fill": "#FFFFFF",
+                      "content": "Entrar",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "icon",
+                      "id": "iGV6C",
+                      "name": "Arrow",
+                      "width": 16,
+                      "height": 16,
+                      "icon": "arrow-right",
+                      "library": "lucide",
+                      "fill": "#FFFFFF"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "r6oeC",
+                  "name": "Divider",
+                  "width": "fill_container",
+                  "gap": 12,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "z6ajEg",
+                      "name": "L",
+                      "width": "fill_container",
+                      "height": 1,
+                      "fill": "$app-line",
+                      "layout": "none"
+                    },
+                    {
+                      "type": "text",
+                      "id": "KGFHc",
+                      "name": "T",
+                      "fill": "$app-text3",
+                      "content": "ou",
+                      "fontFamily": "$font-body",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "iU45i",
+                      "name": "R",
+                      "width": "fill_container",
+                      "height": 1,
+                      "fill": "$app-line",
+                      "layout": "none"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "DQxun",
+                  "name": "Google",
+                  "width": "fill_container",
+                  "fill": "$app-bg",
+                  "cornerRadius": "$r-sm",
+                  "stroke": "$app-line",
+                  "strokeWidth": 1,
+                  "gap": 10,
+                  "padding": [
+                    12,
+                    20
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "K89lj",
+                      "name": "I",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "globe",
+                      "library": "lucide",
+                      "fill": "$app-text2"
+                    },
+                    {
+                      "type": "text",
+                      "id": "E1fxi",
+                      "name": "T",
+                      "fill": "$app-text",
+                      "content": "Continuar com Google",
+                      "fontFamily": "$font-body",
+                      "fontSize": 14,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "w6LmfX",
+                  "name": "Signup",
+                  "width": "fill_container",
+                  "gap": 6,
+                  "padding": [
+                    6,
+                    0,
+                    0,
+                    0
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "slUg9",
+                      "name": "T1",
+                      "fill": "$app-text2",
+                      "content": "Ainda não tem conta?",
+                      "fontFamily": "$font-body",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "EEO0p",
+                      "name": "T2",
+                      "fill": "$accent-light",
+                      "content": "Cadastre sua empresa",
+                      "fontFamily": "$font-body",
+                      "fontSize": 14,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "CfIAJ",
+      "x": -2630,
+      "y": 5438,
+      "name": "Cadastro",
+      "clip": true,
+      "width": 1440,
+      "height": 900,
+      "fill": "$app-bg",
+      "children": [
+        {
+          "type": "frame",
+          "id": "I36hNC",
+          "name": "Rail",
+          "clip": true,
+          "width": 420,
+          "height": "fill_container",
+          "fill": "$app-elevated",
+          "layout": "vertical",
+          "padding": 48,
+          "justifyContent": "space_between",
+          "children": [
+            {
+              "type": "path",
+              "id": "w5xsH",
+              "layoutPosition": "absolute",
+              "x": 0,
+              "y": 0,
+              "name": "Dot Grid",
+              "geometry": "M20.5 22a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m-396 44a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0m44 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0",
+              "viewBox": [
+                0,
+                0,
+                420,
+                900
+              ],
+              "fill": "#1A1A20",
+              "width": 420,
+              "height": 900
+            },
+            {
+              "type": "ellipse",
+              "id": "sowOm",
+              "layoutPosition": "absolute",
+              "x": -120,
+              "y": -140,
+              "name": "Orb",
+              "opacity": 0.45,
+              "fill": {
+                "type": "gradient",
+                "gradientType": "radial",
+                "enabled": true,
+                "rotation": 0,
+                "size": {
+                  "width": 1,
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#2563EB",
+                    "position": 0
+                  },
+                  {
+                    "color": "#2563EB00",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 420,
+              "height": 420,
+              "effect": {
+                "type": "blur",
+                "radius": 64
+              }
+            },
+            {
+              "type": "frame",
+              "id": "Z6FRj",
+              "name": "Logo",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "id": "TMhzZ",
+                  "type": "ref",
+                  "ref": "Usixu",
+                  "name": "Orb"
+                },
+                {
+                  "type": "text",
+                  "id": "zYBdR",
+                  "name": "Wordmark",
+                  "fill": "$app-text",
+                  "content": "Prospecta",
+                  "fontFamily": "$font-body",
+                  "fontSize": 19,
+                  "fontWeight": "700",
+                  "letterSpacing": -0.5
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "pToKk",
+              "name": "Steps",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 28,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "BPWKJ",
+                  "name": "Step 1",
+                  "width": "fill_container",
+                  "gap": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "H0Bl5s",
+                      "name": "Num",
+                      "width": 30,
+                      "height": 30,
+                      "fill": "$accent",
+                      "cornerRadius": 999,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "V3MxVJ",
+                          "name": "N",
+                          "fill": "#FFFFFF",
+                          "content": "1",
+                          "fontFamily": "$font-mono",
+                          "fontSize": 13,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "IKaU4",
+                      "name": "Text",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "JbdTb",
+                          "name": "T",
+                          "fill": "$app-text",
+                          "content": "Conta e acesso",
+                          "fontFamily": "$font-body",
+                          "fontSize": 14,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "x920tf",
+                          "name": "D",
+                          "fill": "$app-text3",
+                          "content": "E-mail e senha do responsável",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-body",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "WWaKg",
+                  "name": "Step 2",
+                  "width": "fill_container",
+                  "gap": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "b3JuyR",
+                      "name": "Num",
+                      "width": 30,
+                      "height": 30,
+                      "fill": "#1C1C20",
+                      "cornerRadius": 999,
+                      "stroke": "$app-line",
+                      "strokeWidth": 1,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "b3LDa",
+                          "name": "N",
+                          "fill": "$app-text3",
+                          "content": "2",
+                          "fontFamily": "$font-mono",
+                          "fontSize": 13,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "e967W",
+                      "name": "Text",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "cErbV",
+                          "name": "T",
+                          "fill": "$app-text2",
+                          "content": "Sua empresa",
+                          "fontFamily": "$font-body",
+                          "fontSize": 14,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Ru2iw",
+                          "name": "D",
+                          "fill": "$app-text3",
+                          "content": "O que ela vende e para quem",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-body",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "SAJCW",
+                  "name": "Step 3",
+                  "width": "fill_container",
+                  "gap": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "QiGnl",
+                      "name": "Num",
+                      "width": 30,
+                      "height": 30,
+                      "fill": "#1C1C20",
+                      "cornerRadius": 999,
+                      "stroke": "$app-line",
+                      "strokeWidth": 1,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "IgS3P",
+                          "name": "N",
+                          "fill": "$app-text3",
+                          "content": "3",
+                          "fontFamily": "$font-mono",
+                          "fontSize": 13,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "HzinU",
+                      "name": "Text",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "mgfeo",
+                          "name": "T",
+                          "fill": "$app-text2",
+                          "content": "Conecte os canais",
+                          "fontFamily": "$font-body",
+                          "fontSize": 14,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "cdVIh",
+                          "name": "D",
+                          "fill": "$app-text3",
+                          "content": "E-mail e WhatsApp para abordar",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-body",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ncEDh",
+                  "name": "Step 4",
+                  "width": "fill_container",
+                  "gap": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "yMVB6",
+                      "name": "Num",
+                      "width": 30,
+                      "height": 30,
+                      "fill": "#1C1C20",
+                      "cornerRadius": 999,
+                      "stroke": "$app-line",
+                      "strokeWidth": 1,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "n2MCa",
+                          "name": "N",
+                          "fill": "$app-text3",
+                          "content": "4",
+                          "fontFamily": "$font-mono",
+                          "fontSize": 13,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "zXUy4",
+                      "name": "Text",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "xJvgQ",
+                          "name": "T",
+                          "fill": "$app-text2",
+                          "content": "Primeira campanha",
+                          "fontFamily": "$font-body",
+                          "fontSize": 14,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "f1ctkD",
+                          "name": "D",
+                          "fill": "$app-text3",
+                          "content": "Descreva o cliente ideal (ICP)",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-body",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "F2OeFy",
+              "name": "Footer",
+              "fill": "$app-text3",
+              "content": "Leva ~3 minutos · sem cartão de crédito",
+              "fontFamily": "$font-mono",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "p8o2c",
+          "name": "Form Panel",
+          "width": "fill_container",
+          "height": "fill_container",
+          "layout": "vertical",
+          "padding": 64,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "Qbq4l",
+              "name": "Form",
+              "width": 440,
+              "layout": "vertical",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "V7R0Mw",
+                  "name": "Progress",
+                  "width": "fill_container",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ncDlF",
+                      "name": "Bar 0",
+                      "width": "fill_container",
+                      "height": 4,
+                      "fill": "$accent",
+                      "cornerRadius": 999,
+                      "layout": "none"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "dmzl7",
+                      "name": "Bar 1",
+                      "width": "fill_container",
+                      "height": 4,
+                      "fill": "$app-elevated",
+                      "cornerRadius": 999,
+                      "layout": "none"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "j5Hxh",
+                      "name": "Bar 2",
+                      "width": "fill_container",
+                      "height": 4,
+                      "fill": "$app-elevated",
+                      "cornerRadius": 999,
+                      "layout": "none"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "DhHRP",
+                      "name": "Bar 3",
+                      "width": "fill_container",
+                      "height": 4,
+                      "fill": "$app-elevated",
+                      "cornerRadius": 999,
+                      "layout": "none"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "k8MzAm",
+                  "name": "Head",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "e44Tv",
+                      "name": "Kicker",
+                      "fill": "$accent-light",
+                      "content": "PASSO 1 DE 4",
+                      "fontFamily": "$font-mono",
+                      "fontSize": 12,
+                      "fontWeight": "500",
+                      "letterSpacing": 1.5
+                    },
+                    {
+                      "type": "text",
+                      "id": "Ck37H",
+                      "name": "Title",
+                      "fill": "$app-text",
+                      "content": "Crie sua conta",
+                      "fontFamily": "$font-body",
+                      "fontSize": 26,
+                      "fontWeight": "700",
+                      "letterSpacing": -0.8
+                    },
+                    {
+                      "type": "text",
+                      "id": "D74Y2b",
+                      "name": "Sub",
+                      "fill": "$app-text2",
+                      "content": "Você será o responsável pela conta da empresa.",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "zKUbc",
+                  "name": "Name Row",
+                  "width": "fill_container",
+                  "gap": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "kbbSg",
+                      "name": "Field Seu nome",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "o6dAle",
+                          "name": "Label Row",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "GSLtd",
+                              "name": "Label",
+                              "fill": "$app-text2",
+                              "content": "Seu nome",
+                              "fontFamily": "$font-body",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "gLjmA",
+                          "name": "Input",
+                          "width": "fill_container",
+                          "fill": "$app-bg",
+                          "cornerRadius": "$r-sm",
+                          "stroke": "$app-line",
+                          "strokeWidth": 1,
+                          "gap": 10,
+                          "padding": [
+                            11,
+                            14
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "EgDCk",
+                              "name": "Value",
+                              "fill": "$app-text2",
+                              "content": "Giovanni Martins",
+                              "fontFamily": "$font-body",
+                              "fontSize": 14,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "P4H40",
+                      "name": "Field Cargo",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "Ojlyq",
+                          "name": "Label Row",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "ri0pZ",
+                              "name": "Label",
+                              "fill": "$app-text2",
+                              "content": "Cargo",
+                              "fontFamily": "$font-body",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "U0tI1",
+                          "name": "Input",
+                          "width": "fill_container",
+                          "fill": "$app-bg",
+                          "cornerRadius": "$r-sm",
+                          "stroke": "$app-line",
+                          "strokeWidth": 1,
+                          "gap": 10,
+                          "padding": [
+                            11,
+                            14
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "TDaQW",
+                              "name": "Value",
+                              "fill": "$app-text2",
+                              "content": "Head de Growth",
+                              "fontFamily": "$font-body",
+                              "fontSize": 14,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "FmqdN",
+                  "name": "Field E-mail corporativo",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "hjC4M",
+                      "name": "Label Row",
+                      "width": "fill_container",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "lRa6V",
+                          "name": "Label",
+                          "fill": "$app-text2",
+                          "content": "E-mail corporativo",
+                          "fontFamily": "$font-body",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "EnJ0N",
+                      "name": "Input",
+                      "width": "fill_container",
+                      "fill": "$app-bg",
+                      "cornerRadius": "$r-sm",
+                      "stroke": "$app-line",
+                      "strokeWidth": 1,
+                      "gap": 10,
+                      "padding": [
+                        11,
+                        14
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "dJfih",
+                          "name": "Value",
+                          "fill": "$app-text2",
+                          "content": "voce@empresa.com.br",
+                          "fontFamily": "$font-body",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "EoZXE",
+                  "name": "Field Senha",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "DgpIj",
+                      "name": "Label Row",
+                      "width": "fill_container",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "CsLEd",
+                          "name": "Label",
+                          "fill": "$app-text2",
+                          "content": "Senha",
+                          "fontFamily": "$font-body",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "U6y0u0",
+                      "name": "Input",
+                      "width": "fill_container",
+                      "fill": "$app-bg",
+                      "cornerRadius": "$r-sm",
+                      "stroke": "$app-line",
+                      "strokeWidth": 1,
+                      "gap": 10,
+                      "padding": [
+                        11,
+                        14
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "qcjap",
+                          "name": "Value",
+                          "fill": "$app-text2",
+                          "content": "Mínimo 8 caracteres",
+                          "fontFamily": "$font-body",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Rk1Rp",
+                  "name": "Field Telefone (WhatsApp)",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "X7Bhcu",
+                      "name": "Label Row",
+                      "width": "fill_container",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Pgigc",
+                          "name": "Label",
+                          "fill": "$app-text2",
+                          "content": "Telefone (WhatsApp)",
+                          "fontFamily": "$font-body",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "V99Ie3",
+                      "name": "Input",
+                      "width": "fill_container",
+                      "fill": "$app-bg",
+                      "cornerRadius": "$r-sm",
+                      "stroke": "$app-line",
+                      "strokeWidth": 1,
+                      "gap": 10,
+                      "padding": [
+                        11,
+                        14
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "U5Je8X",
+                          "name": "Value",
+                          "fill": "$app-text2",
+                          "content": "+55 11 9 0000-0000",
+                          "fontFamily": "$font-body",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Hnru4",
+                  "name": "Terms",
+                  "width": "fill_container",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "AlqoF",
+                      "name": "Check",
+                      "width": 18,
+                      "height": 18,
+                      "fill": "$accent",
+                      "cornerRadius": 5,
+                      "layout": "none"
+                    },
+                    {
+                      "type": "text",
+                      "id": "F36vK",
+                      "name": "T",
+                      "fill": "$app-text2",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Aceito os Termos de Uso e a Política de Privacidade, e o tratamento de dados conforme a LGPD.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "$font-body",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "zRn3i",
+                  "name": "Next",
+                  "width": "fill_container",
+                  "fill": "$accent",
+                  "cornerRadius": "$r-sm",
+                  "gap": 8,
+                  "padding": [
+                    14,
+                    20
+                  ],
+                  "justifyContent": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "niMcO",
+                      "name": "T",
+                      "fill": "#FFFFFF",
+                      "content": "Continuar",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "icon",
+                      "id": "q2Yuqc",
+                      "name": "Arrow",
+                      "width": 16,
+                      "height": 16,
+                      "icon": "arrow-right",
+                      "library": "lucide",
+                      "fill": "#FFFFFF"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "o2QgHt",
+                  "name": "Login Link",
+                  "width": "fill_container",
+                  "gap": 6,
+                  "justifyContent": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "S7Ijm",
+                      "name": "T1",
+                      "fill": "$app-text2",
+                      "content": "Já tem conta?",
+                      "fontFamily": "$font-body",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "sGyUW",
+                      "name": "T2",
+                      "fill": "$accent-light",
+                      "content": "Entrar",
+                      "fontFamily": "$font-body",
+                      "fontSize": 14,
+                      "fontWeight": "600"
+                    }
+                  ]
                 }
               ]
             }

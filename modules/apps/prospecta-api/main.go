@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/application"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/auth"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/infrastructure"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/telemetry"
@@ -66,6 +67,21 @@ func main() {
 		log.Warn("PROSPECTA_DOMAIN_API_URL/KEY ausentes: rotas de negócio respondem 503 (dev)")
 	}
 
+	// Tenant do operador (modo X-API-Key): o workspace fixo de antes. A sessão
+	// de um usuário sobrepõe este valor por request (o DomainClient lê o
+	// tenant do contexto).
+	tenantID := os.Getenv("PROSPECTA_TENANT_ID")
+	if tenantID == "" {
+		tenantID = infrastructure.DefaultTenantID
+	}
+
+	// Sessão por e-mail+senha. Sem segredo, Enabled() é false e /auth responde
+	// 503 -- o serviço continua de pé para as rotas de negócio.
+	sessions := auth.NewManager(os.Getenv("PROSPECTA_SESSION_SECRET"), 0)
+	if !sessions.Enabled() {
+		log.Warn("PROSPECTA_SESSION_SECRET ausente: /auth responde 503 (dev)")
+	}
+
 	// Cada slice tem seu serviço; o par de domínio é publisher e reader deles
 	// todos (e a fonte do feed SSE). Nenhum serviço segura banco ou broker.
 	services := httpapi.Services{
@@ -75,10 +91,18 @@ func main() {
 		Messaging: application.NewMessagingService(domainPair, domainPair, domainPair),
 		Activity:  application.NewActivityService(domainPair),
 	}
+	authService := auth.NewService(domainPair, domainPair, domainPair, sessions, log)
+
+	cfg := httpapi.Config{
+		APIKey:         apiKey,
+		TenantID:       tenantID,
+		Auth:           authService,
+		AllowedOrigins: corsOrigins(),
+	}
 
 	// O handler de otelhttp abre o span de cada request; a formatação do nome
 	// usa o método + path (o ServeMux não expõe o pattern ao otelhttp).
-	handler := otelhttp.NewHandler(httpapi.NewRouter(apiKey, corsOrigins(), services, log), "prospecta-api",
+	handler := otelhttp.NewHandler(httpapi.NewRouter(cfg, services, log), "prospecta-api",
 		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 			return r.Method + " " + r.URL.Path
 		}),

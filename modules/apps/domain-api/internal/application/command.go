@@ -69,6 +69,9 @@ const (
 	ActionSendMessage     Action = "SendMessage"
 	ActionReceiveReply    Action = "ReceiveReply"
 	ActionBookMeeting     Action = "BookMeeting"
+	// Autenticação: a conta e-mail+senha. O domain-api só publica; quem aplica
+	// é o domain-worker. O password_hash já vai pronto (bcrypt).
+	ActionCreateUser Action = "CreateUser"
 )
 
 type Command struct {

@@ -11,6 +11,7 @@
 //	GET  /conversations        -> 200 paginated projection
 //	GET  /conversations/{id}   -> 200 thread, or 404
 //	GET  /messages/{id}        -> 200 projection, or 404
+//	GET  /users/by-email/{e}   -> 200 user projection, or 404
 //	GET  /agent/activity       -> text/event-stream of agent_run events
 //	POST /commands             -> decode {action,payload}, record it, answer 202
 //
@@ -76,6 +77,7 @@ type fake struct {
 	mu       sync.Mutex
 	commands []recordedCommand
 	stores   map[string]*store
+	users    map[string]json.RawMessage
 	seq      int
 	key      string
 
@@ -95,6 +97,7 @@ func main() {
 			"conversation": newStore(),
 			"message":      newStore(),
 		},
+		users:        map[string]json.RawMessage{},
 		activitySubs: map[int]chan json.RawMessage{},
 	}
 
@@ -117,6 +120,8 @@ func main() {
 
 	mux.HandleFunc("GET /messages/{id}", f.guarded(f.one("message")))
 
+	mux.HandleFunc("GET /users/by-email/{email}", f.guarded(f.userByEmail))
+
 	mux.HandleFunc("GET /agent/activity", f.guarded(f.activity))
 
 	// Control routes (no key): used by the test to set up and inspect state.
@@ -125,6 +130,7 @@ func main() {
 	mux.HandleFunc("POST /__seed/lead", f.seed("lead"))
 	mux.HandleFunc("POST /__seed/conversation", f.seed("conversation"))
 	mux.HandleFunc("POST /__seed/message", f.seed("message"))
+	mux.HandleFunc("POST /__seed/user", f.seedUser)
 	mux.HandleFunc("POST /__seed/activity", f.seedActivity)
 	mux.HandleFunc("GET /__activity/connections", f.activityConnections)
 	mux.HandleFunc("GET /__commands", f.listCommands)
@@ -154,8 +160,92 @@ func (f *fake) publish(w http.ResponseWriter, r *http.Request) {
 	f.seq++
 	id := "cmd-" + strconv.Itoa(f.seq)
 	f.commands = append(f.commands, recordedCommand{Action: env.Action, Payload: env.Payload, ID: id})
+	// CreateCompany/CreateUser are folded into the read projections so a
+	// signup is immediately visible to GET /companies/{id} and
+	// GET /users/by-email/{email}. The stored id is the command id, mirroring
+	// what the real pair would stamp.
+	switch env.Action {
+	case "CreateCompany":
+		f.registerCompany(env.Payload, id)
+	case "CreateUser":
+		f.registerUser(env.Payload, id)
+	}
 	f.mu.Unlock()
 	writeJSON(w, http.StatusAccepted, map[string]string{"command_id": id, "status": "accepted"})
+}
+
+// registerCompany folds a CreateCompany payload into the company store. Caller
+// holds f.mu.
+func (f *fake) registerCompany(payload json.RawMessage, id string) {
+	var c struct {
+		Name        string `json:"name"`
+		Site        string `json:"site"`
+		Description string `json:"description"`
+		TenantID    string `json:"tenant_id"`
+	}
+	if err := json.Unmarshal(payload, &c); err != nil || c.Name == "" {
+		return
+	}
+	raw, _ := json.Marshal(map[string]any{
+		"id": id, "name": c.Name, "site": c.Site, "description": c.Description, "tenant_id": c.TenantID,
+	})
+	_ = f.stores["company"].put(raw)
+}
+
+// registerUser folds a CreateUser payload into the by-email store. Caller holds
+// f.mu.
+func (f *fake) registerUser(payload json.RawMessage, id string) {
+	var u struct {
+		Email        string `json:"email"`
+		Name         string `json:"name"`
+		PasswordHash string `json:"password_hash"`
+		CompanyID    string `json:"company_id"`
+		TenantID     string `json:"tenant_id"`
+		Role         string `json:"role"`
+	}
+	if err := json.Unmarshal(payload, &u); err != nil || u.Email == "" {
+		return
+	}
+	raw, _ := json.Marshal(map[string]any{
+		"id": id, "email": u.Email, "name": u.Name, "password_hash": u.PasswordHash,
+		"company_id": u.CompanyID, "tenant_id": u.TenantID, "role": u.Role,
+	})
+	f.users[strings.ToLower(strings.TrimSpace(u.Email))] = raw
+}
+
+// userByEmail serves GET /users/by-email/{email}; unknown e-mail is 404, which
+// the BFF's auth slice reads as "no such account".
+func (f *fake) userByEmail(w http.ResponseWriter, r *http.Request) {
+	email := strings.ToLower(strings.TrimSpace(r.PathValue("email")))
+	f.mu.Lock()
+	raw, ok := f.users[email]
+	f.mu.Unlock()
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(raw)
+}
+
+func (f *fake) seedUser(w http.ResponseWriter, r *http.Request) {
+	raw, _ := io.ReadAll(r.Body)
+	f.mu.Lock()
+	f.registerUser(raw, idFromRaw(raw))
+	f.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func idFromRaw(raw json.RawMessage) string {
+	var meta struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(raw, &meta)
+	if meta.ID == "" {
+		return "user-seed"
+	}
+	return meta.ID
 }
 
 func (f *fake) one(collection string) http.HandlerFunc {
@@ -334,6 +424,7 @@ func (f *fake) clearCommands(w http.ResponseWriter, _ *http.Request) {
 func (f *fake) clearState(w http.ResponseWriter, _ *http.Request) {
 	f.mu.Lock()
 	f.commands = nil
+	f.users = map[string]json.RawMessage{}
 	for _, s := range f.stores {
 		s.byID = map[string]json.RawMessage{}
 		s.order = nil

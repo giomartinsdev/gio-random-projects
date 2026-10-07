@@ -102,3 +102,33 @@ export interface Paged<T> {
   items: T[];
   next: string | null;
 }
+
+// ---- Auth (contrato congelado da prospecta-api) ----
+// POST /auth/signup, POST /auth/login, GET /auth/me, POST /auth/logout.
+// Sessão por cookie HttpOnly cross-origin: toda chamada manda credentials.
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  cargo?: string;
+  phone?: string;
+}
+
+export interface AuthSession {
+  user: AuthUser;
+  company: Company;
+}
+
+export interface SignupInput {
+  name: string;
+  email: string;
+  password: string;
+  cargo?: string;
+  phone?: string;
+  company: { name: string; site: string; description: string };
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}

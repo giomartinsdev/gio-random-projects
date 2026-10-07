@@ -591,6 +591,8 @@ func prospectaEntityID(evt domainprospecta.Event) string {
 		return e.ConversationID
 	case domainprospecta.MeetingBooked:
 		return e.LeadID
+	case domainprospecta.UserRegistered:
+		return e.UserID
 	default:
 		return ""
 	}
@@ -613,6 +615,7 @@ var prospectaActions = map[application.Action]bool{
 	application.ActionSendMessage:    true,
 	application.ActionReceiveReply:   true,
 	application.ActionBookMeeting:    true,
+	application.ActionCreateUser:     true,
 }
 
 func isProspectaAction(a application.Action) bool { return prospectaActions[a] }

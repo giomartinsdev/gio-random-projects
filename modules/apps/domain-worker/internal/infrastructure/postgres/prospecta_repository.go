@@ -497,6 +497,31 @@ func (r *ProspectaRepository) Audit(ctx context.Context, e domainprospecta.Audit
 	})
 }
 
+// ---------------------------------------------------------------------------
+// User
+// ---------------------------------------------------------------------------
+
+// InsertUser grava a conta e-mail+senha. Idempotente por command_id; o e-mail é
+// único GLOBALMENTE (índice lower(email)), então a reentrega do MESMO comando é
+// no-op (ON CONFLICT command_id) e um e-mail já existente falha de forma limpa
+// (o erro sobe, a linha não duplica).
+func (r *ProspectaRepository) InsertUser(ctx context.Context, u domainprospecta.User, commandID string) (bool, error) {
+	inserted := false
+	err := r.withTenant(ctx, u.TenantID, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			INSERT INTO prospecta_user (id, tenant_id, company_id, name, email, password_hash, role, command_id, created_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now())
+			ON CONFLICT (command_id) WHERE command_id IS NOT NULL DO NOTHING`,
+			u.ID, u.TenantID, nullableUUID(u.CompanyID), u.Name, u.Email, u.PasswordHash, u.Role, nullableCommandID(commandID))
+		if err != nil {
+			return fmt.Errorf("insert prospecta user: %w", err)
+		}
+		inserted = tag.RowsAffected() > 0
+		return nil
+	})
+	return inserted, err
+}
+
 func marshalJSONB(v any) ([]byte, error) {
 	if v == nil {
 		return []byte("null"), nil

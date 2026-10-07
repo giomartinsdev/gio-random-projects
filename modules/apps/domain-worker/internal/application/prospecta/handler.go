@@ -132,6 +132,14 @@ func (h *CommandHandler) dispatch(ctx context.Context, cmd application.Command) 
 		evt, err := h.service.BookMeeting(ctx, in)
 		return evt, in.TenantID, err
 
+	case application.ActionCreateUser:
+		var in CreateUserInput
+		if err := json.Unmarshal(cmd.Payload, &in); err != nil {
+			return nil, "", fmt.Errorf("decode create user payload: %w", err)
+		}
+		_, evt, err := h.service.CreateUser(ctx, cmd.ID, in)
+		return evt, in.TenantID, err
+
 	default:
 		return nil, "", fmt.Errorf("unknown action: %q", cmd.Action)
 	}

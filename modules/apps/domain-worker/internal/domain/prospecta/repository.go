@@ -58,6 +58,12 @@ type Repository interface {
 	// Audit grava a linha de auditoria do Prospecta (sucesso ou falha) com o
 	// payload já passado por PII scrubbing.
 	Audit(ctx context.Context, e AuditEntry) error
+
+	// InsertUser grava a conta (e-mail+senha), idempotente por command_id. O
+	// e-mail é único GLOBALMENTE (índice lower(email)): um e-mail já existente
+	// falha de forma limpa, sem virar uma segunda conta. A leitura por e-mail
+	// (cross-tenant, do login) vive no domain-api, não aqui.
+	InsertUser(ctx context.Context, u User, commandID string) (inserted bool, err error)
 }
 
 // AuditEntry é a linha de auditoria do Prospecta (data-model §8). Distinta do

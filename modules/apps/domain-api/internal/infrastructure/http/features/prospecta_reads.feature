@@ -125,3 +125,38 @@ Funcionalidade: Leituras do Prospecta no domain-api
     E um run do agente "prospector" em "running" no tenant "11111111-1111-1111-1111-111111111111"
     Quando eu abro o feed "/agent/activity?tenant_id=11111111-1111-1111-1111-111111111111" e depois desconecto
     Então nenhuma goroutine do feed fica pendurada
+
+  # --- User (autenticação e-mail+senha) -------------------------------------
+  # A leitura por e-mail é a ÚNICA cross-tenant do Prospecta, de propósito: o
+  # e-mail é único global (índice lower(email)) e o login precisa achar o
+  # usuário sem saber o tenant ainda. Por isso NÃO exige tenant_id — e devolve
+  # o password_hash (rede interna) para o login verificar o bcrypt.
+
+  Cenário: Ler usuário por e-mail devolve o hash e o tenant
+    Dado um banco de domínio limpo
+    E um usuário do tenant "11111111-1111-1111-1111-111111111111" com e-mail "ana@acme.com" e hash "hash-bcrypt-1"
+    Quando eu faço GET "/users/by-email/ana@acme.com"
+    Então a resposta tem status HTTP 200
+    E o corpo traz "email" igual a "ana@acme.com"
+    E o corpo traz "password_hash" igual a "hash-bcrypt-1"
+    E o corpo traz "tenant_id" igual a "11111111-1111-1111-1111-111111111111"
+    E o corpo traz "role" igual a "admin"
+
+  Cenário: A leitura por e-mail acha o usuário mesmo em outra caixa
+    Dado um banco de domínio limpo
+    E um usuário do tenant "11111111-1111-1111-1111-111111111111" com e-mail "ana@acme.com" e hash "hash-bcrypt-1"
+    Quando eu faço GET "/users/by-email/ANA@ACME.COM"
+    Então a resposta tem status HTTP 200
+    E o corpo traz "email" igual a "ana@acme.com"
+
+  Cenário: Ler usuário por e-mail inexistente devolve 404
+    Dado um banco de domínio limpo
+    Quando eu faço GET "/users/by-email/ninguem@acme.com"
+    Então a resposta tem status HTTP 404
+
+  Cenário: A leitura por e-mail é cross-tenant e não exige tenant_id
+    Dado um banco de domínio limpo
+    E um usuário do tenant "22222222-2222-2222-2222-222222222222" com e-mail "bia@outra.com" e hash "hash-bcrypt-2"
+    Quando eu faço GET "/users/by-email/bia@outra.com"
+    Então a resposta tem status HTTP 200
+    E o corpo traz "tenant_id" igual a "22222222-2222-2222-2222-222222222222"

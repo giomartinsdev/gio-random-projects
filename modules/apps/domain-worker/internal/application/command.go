@@ -97,6 +97,10 @@ const (
 	ActionSendMessage     Action = "SendMessage"
 	ActionReceiveReply    Action = "ReceiveReply"
 	ActionBookMeeting     Action = "BookMeeting"
+	// Autenticação: a conta e-mail+senha do Prospecta. O password_hash já
+	// chega pronto (bcrypt) no payload — o worker só grava, nunca vê a senha
+	// em claro.
+	ActionCreateUser Action = "CreateUser"
 )
 
 type Command struct {

@@ -14,6 +14,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      "/auth": "http://localhost:8022",
       "/companies": "http://localhost:8022",
       "/campaigns": "http://localhost:8022",
       "/leads": "http://localhost:8022",

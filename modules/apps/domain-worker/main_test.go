@@ -175,4 +175,14 @@ func TestProspectaCommandPayloadsMatchProducers(t *testing.T) {
 			t.Fatalf("signals = %v; want 2", in.Signals)
 		}
 	})
+	t.Run("create user", func(t *testing.T) {
+		if got := string(application.ActionCreateUser); got != "CreateUser" {
+			t.Fatalf("ActionCreateUser = %q; want %q (contrato)", got, "CreateUser")
+		}
+		var in appprospecta.CreateUserInput
+		mustUnmarshal(t, `{"tenant_id":"t","company_id":"c","name":"Ana","email":"ana@acme.com","password_hash":"hash-bcrypt-1","role":"admin"}`, &in)
+		if in.TenantID != "t" || in.CompanyID != "c" || in.Name != "Ana" || in.Email != "ana@acme.com" || in.PasswordHash != "hash-bcrypt-1" || in.Role != "admin" {
+			t.Fatalf("payload de create user não decodificou: %+v", in)
+		}
+	})
 }

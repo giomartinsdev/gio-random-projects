@@ -107,3 +107,15 @@ type BookMeetingInput struct {
 	LeadID   string `json:"lead_id"`
 	When     string `json:"when"`
 }
+
+// CreateUserInput é o payload do comando "CreateUser": a conta de autenticação
+// e-mail+senha. password_hash já chega pronto (bcrypt) — o worker grava o hash,
+// nunca a senha em claro.
+type CreateUserInput struct {
+	TenantID     string `json:"tenant_id"`
+	CompanyID    string `json:"company_id"`
+	Name         string `json:"name"`
+	Email        string `json:"email"`
+	PasswordHash string `json:"password_hash"`
+	Role         string `json:"role"`
+}

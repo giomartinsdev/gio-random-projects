@@ -22,6 +22,7 @@ import (
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/application"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/domain"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/identity"
 )
 
 // ErrNotConfigured is returned when the domain pair URL/key are absent (local
@@ -36,30 +37,41 @@ type DomainClient struct {
 	base string
 	key  string
 
-	// tenant is the MVP workspace id (multi-tenant RLS is enforced one level
-	// down, in the pair's Postgres). It is injected into every read as
-	// ?tenant_id= and into every command payload as tenant_id, because the
-	// pair requires it on both doors. Empty means "no tenant header" (dev).
-	tenant string
+	// fallbackTenant is the operator workspace id (the multi-tenant RLS is
+	// enforced one level down, in the pair's Postgres). It is used only when
+	// the request carries no resolved identity -- i.e. the X-API-Key operator
+	// path. A logged-in session overrides it with the session's tenant_id, so
+	// every read and command is scoped to the caller's own tenant. Empty means
+	// "no tenant header" (dev without a configured operator tenant).
+	fallbackTenant string
 
 	readHTTP   *http.Client
 	writeHTTP  *http.Client
 	streamHTTP *http.Client
 }
 
+// tenantFor resolves the tenant for a call: the identity injected by the
+// middleware when present, otherwise the operator fallback from the env. The
+// identity package is a leaf, so importing it here creates no cycle.
+func (c *DomainClient) tenantFor(ctx context.Context) string {
+	if t := identity.TenantID(ctx); t != "" {
+		return t
+	}
+	return c.fallbackTenant
+}
 // New builds the client. tenant is optional (variadic so existing 2-arg call
-// sites keep working); when present it is attached to every request.
+// sites keep working); when present it is the operator fallback tenant.
 func New(base, key string, tenant ...string) *DomainClient {
 	t := ""
 	if len(tenant) > 0 {
 		t = tenant[0]
 	}
 	return &DomainClient{
-		base:      strings.TrimRight(base, "/"),
-		key:       key,
-		tenant:    t,
-		readHTTP:  &http.Client{Timeout: 15 * time.Second},
-		writeHTTP: &http.Client{Timeout: 5 * time.Second},
+		base:           strings.TrimRight(base, "/"),
+		key:            key,
+		fallbackTenant: t,
+		readHTTP:       &http.Client{Timeout: 15 * time.Second},
+		writeHTTP:      &http.Client{Timeout: 5 * time.Second},
 		// No timeout on the streaming client: the pair keeps the SSE body open
 		// for as long as the client is connected. Cancellation comes from the
 		// request context, not a client deadline.
@@ -94,7 +106,7 @@ func (c *DomainClient) getJSON(ctx context.Context, path string, out any) error 
 	if c == nil {
 		return ErrNotConfigured
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+withTenant(path, c.tenant), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+withTenant(path, c.tenantFor(ctx)), nil)
 	if err != nil {
 		return err
 	}
@@ -124,6 +136,17 @@ func (c *DomainClient) Company(ctx context.Context, id string) (domain.Company, 
 		return domain.Company{}, err
 	}
 	return company, nil
+}
+
+// UserByEmail decodes the GET /users/by-email/{email} projection. A missing
+// user surfaces as domain.ErrNotFound, which the auth slice treats as "unknown
+// account" (401 on login, no conflict on signup).
+func (c *DomainClient) UserByEmail(ctx context.Context, email string) (domain.User, error) {
+	var user domain.User
+	if err := c.getJSON(ctx, "/users/by-email/"+url.PathEscape(email), &user); err != nil {
+		return domain.User{}, err
+	}
+	return user, nil
 }
 
 // Campaign decodes the GET /campaigns/{id} projection.
@@ -227,7 +250,7 @@ func (c *DomainClient) StreamActivity(ctx context.Context) (<-chan domain.AgentR
 	if c == nil {
 		return nil, ErrNotConfigured
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+withTenant("/agent/activity", c.tenant), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+withTenant("/agent/activity", c.tenantFor(ctx)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -314,10 +337,11 @@ func (c *DomainClient) Publish(ctx context.Context, action string, payload any) 
 	envelope := map[string]any{"action": action, "payload": payload}
 	// The pair requires tenant_id on every command (UUID NOT NULL + RLS). It
 	// is a server-side concern, not part of the public request body, so it is
-	// folded into the payload here.
-	if c.tenant != "" {
+	// folded into the payload here. The tenant is the caller's (session) when
+	// one was resolved, else the operator fallback.
+	if tenant := c.tenantFor(ctx); tenant != "" {
 		if m, ok := payload.(map[string]any); ok {
-			m["tenant_id"] = c.tenant
+			m["tenant_id"] = tenant
 			envelope["payload"] = m
 		}
 	}

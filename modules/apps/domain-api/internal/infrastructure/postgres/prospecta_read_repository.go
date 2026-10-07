@@ -101,6 +101,33 @@ func (r *ProspectaReadRepository) ICPByCompany(ctx context.Context, tenantID, co
 }
 
 // ---------------------------------------------------------------------------
+// User (leitura cross-tenant do login)
+// ---------------------------------------------------------------------------
+
+// GetUserByEmail busca a conta pelo e-mail SEM fixar tenant: é a única leitura
+// cross-tenant do Prospecta, de propósito (o e-mail é único global e é a
+// identidade do login). Como prospecta_user tem RLS por tenant_id, e a sessão
+// não fixa um tenant aqui, a query roda com bypass — a role do par de domínio é
+// a dona das tabelas. Documentado no schema.sql. Devolve o password_hash para o
+// login verificar o bcrypt (rede interna).
+func (r *ProspectaReadRepository) GetUserByEmail(ctx context.Context, email string) (domainprospecta.UserView, error) {
+	var v domainprospecta.UserView
+	var created time.Time
+	err := r.pool.QueryRow(ctx, `
+		SELECT id::text, tenant_id::text, COALESCE(company_id::text,''), name, email, password_hash, role, created_at
+		  FROM prospecta_user WHERE lower(email) = lower($1) LIMIT 1`, email).
+		Scan(&v.ID, &v.TenantID, &v.CompanyID, &v.Name, &v.Email, &v.PasswordHash, &v.Role, &created)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domainprospecta.UserView{}, domainprospecta.ErrNotFound
+	}
+	if err != nil {
+		return domainprospecta.UserView{}, err
+	}
+	v.CreatedAt = created.UTC().Format(time.RFC3339)
+	return v, nil
+}
+
+// ---------------------------------------------------------------------------
 // Campaign
 // ---------------------------------------------------------------------------
 

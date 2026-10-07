@@ -16,6 +16,19 @@ export default {
         fg: "#FFFFFF",
         "fg-2": "#A8A8B0",
         "fg-3": "#6E6E76",
+        // Landing pública (poc.pen §V1, tokens light do frame C465f7). O app
+        // segue dark-only; a LP vive em branco/azul e usa esta paleta própria.
+        lp: {
+          bg: "#FFFFFF",
+          surface: "#F6F6F4",
+          ink: "#111111",
+          "ink-2": "#57575C",
+          "ink-3": "#9B9BA1",
+          line: "#E8E8EC",
+          dark: "#111111",
+          "dark-2": "#1C1C1A",
+          "dark-line": "#2E2E2B",
+        },
         accent: {
           DEFAULT: "#2563EB",
           light: "#7DA6FF",

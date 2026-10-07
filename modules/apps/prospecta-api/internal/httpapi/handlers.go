@@ -8,7 +8,6 @@
 package httpapi
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -17,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/application"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/auth"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/domain"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/prospecta-api/internal/infrastructure"
 )
@@ -31,27 +31,57 @@ type Services struct {
 	Activity  *application.ActivityService
 }
 
+// Config is everything the transport needs about identity and CORS, passed as a
+// struct so adding a field never changes the constructor's arity.
+//
+//   - APIKey empty lets business requests through with no identity (dev);
+//   - TenantID is the operator's fixed tenant, used when the caller presents
+//     X-API-Key instead of a session;
+//   - Auth is the password-session service; nil disables /auth (503);
+//   - AllowedOrigins is the exact-origin CORS allowlist the SPA needs.
+type Config struct {
+	APIKey         string
+	TenantID       string
+	Auth           *auth.Service
+	AllowedOrigins []string
+}
+
 // Handlers is the transport surface for the Prospecta context.
 type Handlers struct {
 	services Services
+	auth     *auth.Service
+	apiKey   string
+	tenantID string
 	log      *slog.Logger
 }
 
-func New(services Services, log *slog.Logger) *Handlers {
-	return &Handlers{services: services, log: log}
+func New(services Services, cfg Config, log *slog.Logger) *Handlers {
+	return &Handlers{
+		services: services,
+		auth:     cfg.Auth,
+		apiKey:   cfg.APIKey,
+		tenantID: cfg.TenantID,
+		log:      log,
+	}
 }
 
 // NewRouter assembles the full HTTP surface:
 //
-//   - GET /healthz is public and unauthenticated (the deploy check reaches it
-//     by curl, contract §Health);
-//   - every business route sits behind the X-API-Key guard;
-//   - all of it is wrapped in the SPA's CORS policy.
+//   - GET /healthz and the /auth/* routes are public;
+//   - every business route sits behind the identity guard (session OR
+//     X-API-Key);
+//   - all of it is wrapped in the SPA's credentialed CORS policy.
 //
 // Kept in one place so main.go and the integration tests build the exact same
 // mux -- a test that re-implemented the routing would not be testing it.
-func NewRouter(apiKey string, origins []string, services Services, log *slog.Logger) http.Handler {
-	h := New(services, log)
+func NewRouter(cfg Config, services Services, log *slog.Logger) http.Handler {
+	h := New(services, cfg, log)
+
+	root := http.NewServeMux()
+	root.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	authRoutes(root, h)
 
 	business := http.NewServeMux()
 	business.HandleFunc("POST /companies", h.CreateCompany)
@@ -74,30 +104,9 @@ func NewRouter(apiKey string, origins []string, services Services, log *slog.Log
 
 	business.HandleFunc("GET /agent/activity", h.AgentActivity)
 
-	root := http.NewServeMux()
-	root.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	})
-	root.Handle("/", requireAPIKey(apiKey, business))
+	root.Handle("/", h.requireIdentity(business))
 
-	return cors(origins, root)
-}
-
-// requireAPIKey is the X-API-Key guard. A missing configured key lets
-// everything through (dev); otherwise every request must carry the exact
-// header value, compared in constant time.
-func requireAPIKey(key string, next http.Handler) http.Handler {
-	if key == "" {
-		return next
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got := r.Header.Get("X-API-Key")
-		if subtle.ConstantTimeCompare([]byte(got), []byte(key)) != 1 {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+	return cors(cfg.AllowedOrigins, root)
 }
 
 // CreateCompany handles POST /companies. Validates, publishes CreateCompany,
@@ -189,12 +198,16 @@ func (h *Handlers) writeReadError(w http.ResponseWriter, r *http.Request, notFou
 
 // cors allows the SPA's origin(s) to call this host. An empty allowlist sends
 // no CORS headers (curl and server-to-server still work).
+//
+// For the session cookie to ride a cross-origin fetch, the response must echo
+// the EXACT origin (never "*") and set Access-Control-Allow-Credentials: true.
 func cors(origins []string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		if origin != "" && originAllowed(origins, origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Headers",
 				"Content-Type, X-API-Key, traceparent, tracestate, baggage")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")

@@ -3,6 +3,7 @@ import {
   Building2,
   ChevronsUpDown,
   LayoutDashboard,
+  LogOut,
   Megaphone,
   MessageSquare,
   Settings,
@@ -10,15 +11,16 @@ import {
   type LucideProps,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { useAsync } from "@/lib/useAsync";
 import { useConfig } from "@/lib/useConfig";
 import { isConfigured } from "@/lib/config";
-import { navigate, type RouteName } from "@/lib/useHashRoute";
+import { navigate, navigatePublic, type AppRoute } from "@/lib/useHashRoute";
 import { Orb } from "./ui/Orb";
 
 // Sidebar de 248px (poc.pen §V1): brand com orb, workspace, MENU, nav e user.
-const NAV: { route: RouteName; label: string; icon: ComponentType<LucideProps> }[] = [
+const NAV: { route: AppRoute; label: string; icon: ComponentType<LucideProps> }[] = [
   { route: "cockpit", label: "Cockpit", icon: LayoutDashboard },
   { route: "campanha", label: "Campanhas", icon: Megaphone },
   { route: "leads", label: "Leads", icon: Users },
@@ -26,13 +28,23 @@ const NAV: { route: RouteName; label: string; icon: ComponentType<LucideProps> }
   { route: "configuracoes", label: "Configurações", icon: Settings },
 ];
 
-export function Sidebar({ route }: { route: RouteName }) {
+export function Sidebar({ route }: { route: AppRoute }) {
   const cfg = useConfig();
   const configured = isConfigured(cfg);
   const company = useAsync(() => api.company(cfg.companyId), [], configured);
+  const { user, company: sessionCompany, logout } = useAuth();
 
-  const workspace = configured ? company.data?.name ?? "Empresa" : "Sem empresa";
-  const subtitle = configured ? (company.loading ? "carregando…" : company.error ? "não carregada" : cfg.companyId) : "Configure a API";
+  // Sessão tem prioridade; o modo operador (X-API-Key) continua como fallback.
+  const workspace = user ? sessionCompany?.name ?? "Sua empresa" : configured ? company.data?.name ?? "Empresa" : "Sem empresa";
+  const subtitle = user
+    ? user.email
+    : configured
+      ? company.loading
+        ? "carregando…"
+        : company.error
+          ? "não carregada"
+          : cfg.companyId
+      : "Configure a API";
 
   return (
     <aside className="flex w-[248px] shrink-0 flex-col gap-[22px] border-r border-line bg-surface px-4 py-5">
@@ -80,12 +92,25 @@ export function Sidebar({ route }: { route: RouteName }) {
 
       <div className="flex items-center gap-2.5 rounded-sm px-2 py-2.5">
         <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full bg-accent text-[12px] font-semibold text-white">
-          <Orb state="idle" size={16} glow={false} />
+          {user ? user.name.slice(0, 1).toUpperCase() : <Orb state="idle" size={16} glow={false} />}
         </span>
-        <div className="flex min-w-0 flex-col leading-tight">
-          <span className="truncate text-[14px] font-medium text-fg">Operador</span>
-          <span className="truncate text-[12px] text-fg-3">sessão local</span>
+        <div className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="truncate text-[14px] font-medium text-fg">{user ? user.name : "Operador"}</span>
+          <span className="truncate text-[12px] text-fg-3">{user ? "sessão ativa" : "sessão local"}</span>
         </div>
+        {user && (
+          <button
+            onClick={async () => {
+              await logout();
+              navigatePublic("login");
+            }}
+            title="Sair"
+            aria-label="Sair"
+            className="shrink-0 text-fg-3 transition-colors hover:text-fg"
+          >
+            <LogOut size={16} />
+          </button>
+        )}
       </div>
     </aside>
   );

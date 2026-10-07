@@ -506,6 +506,37 @@ func (s *Service) BookMeeting(ctx context.Context, in BookMeetingInput) (domainp
 	}, nil
 }
 
+// CreateUser valida e grava a conta de autenticação e-mail+senha. O id é o
+// command_id (como nos demais agregados). Idempotente por command_id; um e-mail
+// já existente (único global, lower(email)) falha de forma limpa — não vira uma
+// segunda conta nem um evento duplicado. O password_hash chega pronto; o service
+// nunca vê a senha em claro.
+func (s *Service) CreateUser(ctx context.Context, commandID string, in CreateUserInput) (domainprospecta.User, domainprospecta.Event, error) {
+	id, err := uuid.Parse(commandID)
+	if err != nil {
+		return domainprospecta.User{}, nil, err
+	}
+	u, err := domainprospecta.NewUser(id.String(), in.TenantID, in.CompanyID, in.Name, in.Email, in.PasswordHash, in.Role)
+	if err != nil {
+		return domainprospecta.User{}, nil, err
+	}
+	inserted, err := s.repo.InsertUser(ctx, u, commandID)
+	if err != nil {
+		return domainprospecta.User{}, nil, err
+	}
+	if !inserted {
+		return u, nil, nil
+	}
+	u.CreatedAt = s.now()
+	return u, domainprospecta.UserRegistered{
+		UserID:     u.ID,
+		TenantID:   u.TenantID,
+		CompanyID:  u.CompanyID,
+		Email:      u.Email,
+		OccurredAt: u.CreatedAt,
+	}, nil
+}
+
 // RecordAudit grava a linha de prospecta_audit_log de um comando, com o payload
 // já passado por PII scrubbing. Chamado pelo handler para todo comando,
 // sucesso ou falha — é a auditoria própria do Prospecta (data-model §8).

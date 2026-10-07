@@ -176,3 +176,17 @@ type MeetingBooked struct {
 }
 
 func (MeetingBooked) EventName() string { return "MeetingBooked" }
+
+// UserRegistered diz que uma conta (e-mail+senha) entrou no Prospecta. Só os
+// ids e o e-mail vão no evento — nunca o password_hash: o evento trafega no
+// broker, e o hash não tem por que sair do banco. O e-mail é o identificador do
+// login (único global).
+type UserRegistered struct {
+	UserID     string    `json:"user_id"`
+	TenantID   string    `json:"tenant_id"`
+	CompanyID  string    `json:"company_id"`
+	Email      string    `json:"email"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
+func (UserRegistered) EventName() string { return "UserRegistered" }
