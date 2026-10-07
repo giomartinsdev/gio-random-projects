@@ -14,6 +14,7 @@ depende da obediência do LLM não é um guardrail.
 from __future__ import annotations
 
 import logging
+import os
 from uuid import uuid4
 
 from prospecta_agent_worker.agents import guardrails
@@ -34,7 +35,7 @@ class Composer:
         api: ProspectaApiClient,
         ninerouter: NineRouterClient,
         events: EventPublisher,
-        model: str = "gpt-4o-mini",
+        model: str = os.environ.get("NINEROUTER_MODEL", "gpt-4o-mini"),
     ) -> None:
         self._api = api
         self._ninerouter = ninerouter

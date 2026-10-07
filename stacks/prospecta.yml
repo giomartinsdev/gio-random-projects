@@ -90,7 +90,14 @@ services:
       EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-web-businesses}
       # 9router (IA), stack compute, mesma rede `apps` — OpenAI-compatible.
       NINEROUTER_BASE_URL: http://9router:20128/v1
-      NINEROUTER_API_KEY: ${NINEROUTER_API_KEY:-}
+      # O 9router exige chave para acesso remoto (container != loopback).
+      # Default = a "Default Key" do 9router (a MESMA do compute); troque se
+      # rotacionar. Vazio -> a IA fica indisponível e o fit degrada para 0.
+      NINEROUTER_API_KEY: ${NINEROUTER_API_KEY:-sk-f87eec50b297b9a8-ij1uq3-774162d9}
+      # Modelo do 9router. Precisa ser um que tenha provider ATIVO (ex.: `ollama`
+      # — combo local — ou `ag/gemini-3.7-flash-low`). `gpt-4o-mini` não tem
+      # provider conectado e devolve model_not_found.
+      NINEROUTER_MODEL: ${NINEROUTER_MODEL:-ollama}
       # Busca de prospects: SearXNG LOCAL (container deste stack, sem chave).
       # Agrega Google/Bing/Brave/DuckDuckGo e serve JSON. Trocar para um
       # provedor pago: SEARCH_PROVIDER=brave|serpapi + SEARCH_API_URL + chave.

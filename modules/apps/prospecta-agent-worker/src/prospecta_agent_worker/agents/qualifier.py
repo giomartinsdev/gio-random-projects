@@ -15,6 +15,7 @@ assume um lead por chamada.
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 
@@ -43,7 +44,7 @@ class Qualifier:
         *,
         ninerouter: NineRouterClient,
         events: EventPublisher,
-        model: str = "gpt-4o-mini",
+        model: str = os.environ.get("NINEROUTER_MODEL", "gpt-4o-mini"),
     ) -> None:
         self._ninerouter = ninerouter
         self._events = events
