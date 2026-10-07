@@ -12,9 +12,7 @@ name: Go deploy
 # stacks/README.md) — o antigo deploy job que rodava `terraform apply`
 # foi removido na migração. O job `deploy` chama o webhook do git stack
 # no Dockhand (mapa app->id em `declare -A STACK` abaixo).
-# `prospecta-api` usa o id da stack `prospecta` (stacks/prospecta.yml) —
-# troque "PROSPECTA_STACK_ID" pelo id numérico depois de criar a stack no
-# Dockhand (só é legível na UI depois do login; nunca inventar).
+# `prospecta-api` usa o id da stack `prospecta` (stacks/prospecta.yml), id 17.
 
 on:
   push:
