@@ -65,6 +65,9 @@ type CampaignView struct {
 	Status     string   `json:"status"`
 	Channels   []string `json:"channels"`
 	LeadsCount int      `json:"leads_count"`
+	// ICP é o perfil do cliente ideal da campanha. O agente lê
+	// campaign.icp.definition para montar a busca — sem ele a query vai vazia.
+	ICP *ICPView `json:"icp,omitempty"`
 }
 
 // LeadView é o lead. A lista lê os campos achatados; o detalhe carrega o

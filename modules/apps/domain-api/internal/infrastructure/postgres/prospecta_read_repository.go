@@ -185,6 +185,27 @@ func (r *ProspectaReadRepository) GetCampaign(ctx context.Context, tenantID, id 
 	if v.Channels == nil {
 		v.Channels = []string{}
 	}
+	// O agente monta a busca a partir do ICP da campanha (campaign.icp.definition).
+	// Sem o ICP, o run dispara com query vazia — então ele vai no detalhe.
+	if v.ICPID != "" {
+		var icp domainprospecta.ICPView
+		var created time.Time
+		ierr := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `
+				SELECT id::text, company_id::text, definition, signals, created_at
+				  FROM prospecta_icp WHERE id = $1 AND tenant_id = $2`, v.ICPID, tenantID).
+				Scan(&icp.ID, &icp.CompanyID, &icp.Definition, &icp.Signals, &created)
+		})
+		if ierr == nil {
+			icp.CreatedAt = created.UTC().Format(time.RFC3339)
+			if icp.Signals == nil {
+				icp.Signals = []string{}
+			}
+			v.ICP = &icp
+		} else if !errors.Is(ierr, pgx.ErrNoRows) {
+			return domainprospecta.CampaignView{}, ierr
+		}
+	}
 	return v, nil
 }
 
