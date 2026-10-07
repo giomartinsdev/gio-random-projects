@@ -78,12 +78,13 @@ Funcionalidade: O agente prospecta, qualifica e redige
     Quando o domínio publica o evento "ProspectRequested" para a campanha "camp-1"
     Então o worker publicou o evento "LeadDiscovered" uma vez
 
-  Cenário: Um 9router 5xx persistente termina o run em failed sem loop infinito
+  Cenário: Um 9router 5xx persistente não mata o run; o lead fica com fit 0
     Dado uma campanha "camp-1" com o ICP "Logística B2B, expandindo frota"
     E que a busca devolve o prospect "Northwind Log" em "https://northwindlog.com.br"
     E que o 9router responde 500 permanentemente
     Quando o domínio publica o evento "ProspectRequested" para a campanha "camp-1"
-    Então o run da campanha "camp-1" terminou no estado "failed"
+    Então o run da campanha "camp-1" terminou no estado "done"
+    E o lead "Northwind Log" foi persistido na prospecta-api
     E o 9router recebeu menos de 10 chamadas
 
   Cenário: Um LeadQualified faz o composer redigir e publicar MessageDrafted

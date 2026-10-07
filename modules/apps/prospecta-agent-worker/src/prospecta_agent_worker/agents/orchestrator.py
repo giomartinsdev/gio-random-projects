@@ -180,7 +180,16 @@ class Orchestrator:
                     lead_id=lead_id, tenant_id=campaign_tenant, enriched=enriched
                 )
 
-                fit = await self._ai_guarded(icp=icp, lead=payload_lead, enriched=enriched)
+                try:
+                    fit = await self._ai_guarded(icp=icp, lead=payload_lead, enriched=enriched)
+                except NineRouterError as exc:
+                    # A IA só pontua: se o 9router está fora/sem chave, o lead JÁ
+                    # está persistido (upsert acima). Degrada para fit=0 (revisão
+                    # humana) e segue, em vez de matar o run inteiro por causa do
+                    # scoring. A busca e a persistência continuam valendo.
+                    fit = 0
+                    metrics["ai_unavailable"] = 1
+                    log.warning("qualificação indisponível (9router): %s; lead %s fica com fit=0", exc, lead_id)
                 metrics["qualified"] += 1
                 # O fit também é persistência, não só evento (R4: upsert).
                 await self._api.qualify_lead(lead_id, fit)
