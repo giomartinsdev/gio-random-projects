@@ -14,4 +14,7 @@ type Campaign struct {
 	Status     string   `json:"status"`
 	Channels   []string `json:"channels"`
 	LeadsCount int      `json:"leads_count"`
+	// ICP vem no detalhe da campanha (o par de domínio o inclui em
+	// GET /campaigns/{id}); o agente lê icp.definition para montar a busca.
+	ICP *ICP `json:"icp,omitempty"`
 }
