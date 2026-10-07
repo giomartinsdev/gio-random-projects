@@ -122,8 +122,14 @@ services:
     environment:
       SEARXNG_BASE_URL: http://searxng:8080/
       SEARXNG_SECRET: ${SEARXNG_SECRET:-prospecta-searxng-local-secret-change-me}
+      # Aponta explicitamente o arquivo versionado; com o mount :ro abaixo o
+      # container NÃO consegue sobrescrevê-lo (sem isso ele gera o default e a
+      # API JSON fica desligada — foi o que aconteceu no 1º deploy).
+      SEARXNG_SETTINGS_PATH: /etc/searxng/settings.yml
     volumes:
-      - ./searxng:/etc/searxng:rw
+      # :ro de propósito — o settings.yml é versionado e o SearXNG não deve
+      # regerá-lo. O cache vai para o volume.
+      - ./searxng:/etc/searxng:ro
       - searxng_data:/var/cache/searxng
     networks: [apps]
 
