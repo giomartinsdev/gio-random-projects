@@ -2,6 +2,7 @@ package prospecta
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -119,7 +120,20 @@ func (s *Service) CreateCampaign(ctx context.Context, commandID string, in Creat
 	if err != nil {
 		return nil, err
 	}
-	c, err := domainprospecta.NewCampaign(id.String(), in.TenantID, in.CompanyID, in.ICPID, in.Name, in.Channels, in.ApprovalPolicy)
+	// O ICP é por empresa e não vem no corpo público (a API não o conhece); o
+	// dono do banco o deriva da empresa, na mesma sessão do comando -- a fila
+	// preserva a ordem, então o DefineICP da empresa já foi aplicado antes.
+	// Sem ICP definido, a campanha nasce sem ele e o Start a recusa (o usuário
+	// precisa descrever o cliente ideal primeiro).
+	icpID := in.ICPID
+	if icpID == "" {
+		if icp, err := s.repo.FindICPByCompany(ctx, in.TenantID, in.CompanyID); err == nil {
+			icpID = icp.ID
+		} else if !errors.Is(err, domainprospecta.ErrNotFound) {
+			return nil, err
+		}
+	}
+	c, err := domainprospecta.NewCampaign(id.String(), in.TenantID, in.CompanyID, icpID, in.Name, in.Channels, in.ApprovalPolicy)
 	if err != nil {
 		return nil, err
 	}
