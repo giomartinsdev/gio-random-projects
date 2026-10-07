@@ -1,0 +1,29 @@
+# settings.yml — SearXNG do Prospecta (busca local, sem chave).
+#
+# Um meta-buscador self-hosted: agrega Google/Bing/Brave/DuckDuckGo e expõe uma
+# API JSON que o `prospecta-agent-worker` consome (provider `searxng`). Roda só
+# na rede interna `apps` (sem hostname público, sem ingress): é infraestrutura
+# do agente, não uma superfície de usuário.
+#
+# `use_default_settings: true` herda o catálogo de engines do upstream; o que a
+# gente muda é só o necessário:
+#   - search.formats: habilitar `json` (o default só serve HTML)
+#   - server.secret_key: exigido pelo SearXNG (troque em produção)
+#   - server.limiter: false — o limiter anti-bot bloquearia as chamadas internas
+use_default_settings: true
+
+server:
+  # Chave de sessão do SearXNG. É infra local (não sai da rede `apps`); troque
+  # por um valor aleatório se expuser o serviço algum dia.
+  secret_key: "prospecta-searxng-local-secret-change-me"
+  limiter: false
+  image_proxy: false
+  bind_address: "0.0.0.0"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  # A API JSON é o que o worker usa: GET /search?q=...&format=json
+  formats:
+    - html
+    - json

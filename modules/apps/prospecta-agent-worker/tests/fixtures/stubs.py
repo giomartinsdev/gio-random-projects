@@ -125,9 +125,18 @@ STATE: dict = {
     # web.search (Brave por default): roteiro + o que chegou.
     "search": {"status": 200, "results": [], "calls": []},
     # web.scrape: a página pública servida e o robots.txt do domínio.
-    "scrape": {"html": "<html><head><title>Página</title></head><body>texto</body></html>", "robots": "", "calls": []},
+    "scrape": {
+        "html": "<html><head><title>Página</title></head><body>texto</body></html>",
+        "robots": "",
+        # O site da empresa para o enrich por DOMÍNIO (provider `cnpj`).
+        "company_html": "<html><head><title>Empresa</title></head><body>sem dados</body></html>",
+        "company_status": 200,
+        "calls": [],
+    },
     # enrich.company: o que o provedor devolve + o que chegou.
     "enrich": {"status": 200, "company": {}, "calls": []},
+    # enrich.company provedor cnpj: a resposta do publica.cnpj.ws por CNPJ.
+    "cnpj": {"status": 200, "company": {}, "calls": []},
     # --- prospecta-api: estado do run e leituras (run/campaign/lead/message) ---
     "runs": [],
     "run_updates": [],
@@ -195,6 +204,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self._json(200, {"web": {"results": list(rt["results"])}})
             elif self.path.startswith("/search"):
+                # SearXNG (LOCAL, sem chave): GET /search?q=...&format=json -> {"results":[...]}.
                 rt = STATE["search"]
                 rt["calls"].append({"path": self.path, "headers": dict(self.headers)})
                 if rt["status"] >= 400:
@@ -202,8 +212,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self._json(
                         200,
-                        {"organic_results": [
-                            {"title": r.get("title"), "link": r.get("url"), "snippet": r.get("snippet")}
+                        {"results": [
+                            {"title": r.get("title"), "url": r.get("url"), "content": r.get("snippet")}
                             for r in rt["results"]
                         ]},
                     )
@@ -214,6 +224,21 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(rt["status"], {"error": "enrich down"})
                 else:
                     self._json(200, dict(rt["company"]))
+            elif self.path.startswith("/cnpj/"):
+                # publica.cnpj.ws: GET /cnpj/{14 digitos} -> dados da Receita.
+                rt = STATE["cnpj"]
+                rt["calls"].append({"path": self.path, "headers": dict(self.headers)})
+                if rt["status"] >= 400:
+                    self._json(rt["status"], {"error": "cnpj down"})
+                else:
+                    self._json(200, dict(rt["company"]))
+            elif self.path.startswith("/company/"):
+                # O SITE da empresa (HTML cru), para o enriquecimento por domínio.
+                status = STATE["scrape"].get("company_status", 200)
+                if status >= 400:
+                    self._text(status, "indisponível")
+                else:
+                    self._html(200, STATE["scrape"]["company_html"])
             elif self.path.startswith("/pages/"):
                 self._html(200, STATE["scrape"]["html"])
             elif self.path.startswith("/opt-outs/"):

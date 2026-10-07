@@ -82,6 +82,8 @@ def build_worker() -> ProspectaWorker:
         enrich=EnrichCompany(
             base_url=os.environ.get("ENRICH_API_URL", os.environ["NINEROUTER_BASE_URL"]),
             api_key=os.environ.get("ENRICH_API_KEY", ""),
+            provider=os.environ.get("ENRICH_PROVIDER", "cnpj"),
+            cnpj_url=os.environ.get("ENRICH_CNPJ_URL", "https://publica.cnpj.ws/cnpj"),
         ),
         scrape=WebScrape(timeout=float(os.environ.get("SCRAPE_TIMEOUT_S", "15"))),
         email=build_email_client(

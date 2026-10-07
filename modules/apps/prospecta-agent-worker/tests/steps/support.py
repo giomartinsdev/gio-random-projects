@@ -46,6 +46,8 @@ def build_worker(
     approval_policy: str = "human",
     smtp: str | None = None,
     search_api_key: str = "test-search-key",
+    search_provider: str = "brave",
+    enrich_provider: str = "http",
 ) -> ProspectaWorker:
     from prospecta_agent_worker.agents.tools import EnrichCompany, WebScrape, WebSearch
     from prospecta_agent_worker.gateway.email import SmtpEmailClient
@@ -60,9 +62,17 @@ def build_worker(
         api=ProspectaApiClient(base, "test-prospecta-key", timeout=5),
         events=EventPublisher(rabbit_url),
         approval_policy=approval_policy,
-        search=WebSearch(base_url=base, provider="brave", api_key=search_api_key, timeout=3),
+        search=WebSearch(
+            base_url=base, provider=search_provider, api_key=search_api_key, timeout=3
+        ),
         scrape=WebScrape(timeout=3),
-        enrich=EnrichCompany(base_url=base, api_key="test-enrich-key", timeout=3),
+        enrich=EnrichCompany(
+            base_url=base,
+            api_key="test-enrich-key",
+            provider=enrich_provider,
+            cnpj_url=base + "/cnpj",
+            timeout=3,
+        ),
         email=email,
     )
 
