@@ -21,7 +21,7 @@
 #   RABBITMQ_PASSWORD         (a MESMA de persistence.yml)
 #   EVOLUTION_API_KEY         (a MESMA do compute.yml — apikey global da Evolution)
 #   EVOLUTION_INSTANCE        (opcional, default web-businesses)
-#   NINEROUTER_API_KEY        (opcional — hoje o 9router não exige chave; ver compute.yml)
+#   NINEROUTER_API_KEY        (opcional — hoje o 9router não exige chave; ver ai.yml)
 #   SEARCH_PROVIDER           (opcional, default `searxng`) — busca LOCAL, sem chave
 #   SEARCH_API_URL            (opcional, default `http://searxng:8080`)
 #   SEARCH_API_KEY            (só para brave/serpapi; com searxng fica vazia)
@@ -88,10 +88,10 @@ services:
       EVOLUTION_API_URL: http://evolution-api:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?defina EVOLUTION_API_KEY}
       EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-web-businesses}
-      # 9router (IA), stack compute, mesma rede `apps` — OpenAI-compatible.
+      # 9router (IA), stack `ai`, mesma rede `apps` — OpenAI-compatible.
       NINEROUTER_BASE_URL: http://9router:20128/v1
       # O 9router exige chave para acesso remoto (container != loopback).
-      # Default = a "Default Key" do 9router (a MESMA do compute); troque se
+      # Default = a "Default Key" do 9router (a MESMA do stack `ai`); troque se
       # rotacionar. Vazio -> a IA fica indisponível e o fit degrada para 0.
       NINEROUTER_API_KEY: ${NINEROUTER_API_KEY:-sk-f87eec50b297b9a8-ij1uq3-774162d9}
       # Modelo do 9router. Precisa ser um que tenha provider ATIVO (ex.: `ollama`

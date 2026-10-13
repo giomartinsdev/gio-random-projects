@@ -1,0 +1,101 @@
+# ai.yml — o lar de tudo que é IA da plataforma.
+#
+# Por que uma stack própria (e não dentro do compute): o 9router era só "mais
+# um serviço de plataforma" lá, mas agora ele é a porta de IA do host inteiro —
+# apps novas apontam pra ele, e ele vai crescer (providers, a rota local de
+# decisão, etc.). Isolar num stack de IA deixa o ciclo de vida independente do
+# resto da plataforma e evita que um deploy de infra derrube/videre o proxy.
+#
+# O que mora aqui:
+#   - 9router: o proxy OpenAI-compatible (movido do compute.yml). Mesmo
+#     container_name (9router) e MESMO volume externo (ninerouter_data), então
+#     providers/credenciais/uso configurados hoje continuam valendo.
+#   - decision: servidor System One local (jev-style, CPU). Rota de decisão
+#     self-hosted — {state, questions} -> probabilidades calibradas. O 9router
+#     o expõe em POST /v1/systemone (ver stacks/ai/9router/decision.js).
+#
+# Migração: ao subir esta stack, PARE/remova o 9router do stack `compute` (a
+# imagem agora é a nossa, com o provider `decision` embutido — ver
+# .github/workflows/ai-image.yml). O mesmo volume é reusado, então nada se
+# perde. O ingress continua apontando ai.giomartins.dev -> 127.0.0.1:20128.
+#
+# Segredos (variáveis de stack no Dockhand):
+#   NINEROUTER_JWT_SECRET        (era random_password.ninerouter_jwt_secret)
+#   NINEROUTER_INITIAL_PASSWORD  (era random_password.ninerouter_initial_password)
+#   JEV_STYLE_API_KEY (opcional)  se definida, o `decision` exige
+#                                 Authorization: Bearer <key>
+name: ai
+
+services:
+  # --- 9router (proxy de IA + rota de decisão System One) ------------------
+  # Imagem PRÓPRIA (registry interno) = upstream 9router + o provider local
+  # `decision` no registry (stacks/ai/9router/decision.js), gerada pelo
+  # workflow ai-image.yml. Sem isso o endpoint /v1/systemone não teria pra onde
+  # rotear (o dashboard não cria node systemone).
+  9router:
+    image: registry.giomartins.dev:5000/9router:latest
+    container_name: 9router
+    restart: unless-stopped
+    environment:
+      JWT_SECRET: ${NINEROUTER_JWT_SECRET:?defina NINEROUTER_JWT_SECRET}
+      INITIAL_PASSWORD: ${NINEROUTER_INITIAL_PASSWORD:?defina NINEROUTER_INITIAL_PASSWORD}
+      PORT: "20128"
+      NODE_ENV: production
+      BASE_URL: https://ai.giomartins.dev
+      NEXT_PUBLIC_BASE_URL: https://ai.giomartins.dev
+      AUTH_COOKIE_SECURE: "true"
+      REQUIRE_API_KEY: "false"
+      ENABLE_REQUEST_LOGS: "true"
+      OBSERVABILITY_ENABLED: "true"
+      DATA_DIR: /app/data
+    ports:
+      - "127.0.0.1:20128:20128"
+    volumes:
+      # MESMO volume do compute.yml (external): preserva providers/credenciais.
+      - ninerouter_data:/app/data
+    networks: [apps]
+
+  # --- decision (System One local, CPU) ------------------------------------
+  # Modelos de decisão self-hosted (Jev-Style 0.8B/2B). O 9router chama
+  # http://decision:8765/v1/systemone pela rede `apps`. Os pesos ficam no
+  # volume `decision_models` (baixados no primeiro boot). Sem porta publicada:
+  # só a rede interna alcança — os dados não saem daqui.
+  decision:
+    image: registry.giomartins.dev:5000/decision:latest
+    container_name: decision
+    restart: unless-stopped
+    init: true
+    environment:
+      # Release servido: `2b` (mais preciso) ou `0.8b` (mais rápido). Trocar
+      # aqui baixa o outro build no volume e reinicia.
+      JEV_STYLE_RELEASE: ${DECISION_RELEASE:-2b}
+      JEV_STYLE_BACKEND: auto
+      # Os pesos vão pro cache do HF dentro do volume (ver o Dockerfile).
+      HF_HOME: /models/hf
+      # Opcional: exige bearer entre o 9router e o decision.
+      JEV_STYLE_API_KEY: ${JEV_STYLE_API_KEY:-}
+    volumes:
+      - decision_models:/models
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8765/healthz', timeout=4).status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      retries: 5
+    networks: [apps]
+
+networks:
+  apps:
+    external: true
+    name: apps
+
+volumes:
+  ninerouter_data:
+    external: true
+    name: ninerouter_data
+  decision_models:
+    name: decision_models

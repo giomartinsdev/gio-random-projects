@@ -14,13 +14,15 @@ Cada arquivo é um stack **independente** (sem agregado na raiz). Não há
 | `bootstrap.yml` | infra compartilhada | `network-init` (cria a rede `apps`; suba ESTE primeiro numa VPS nova) |
 | `core.yml` | base da VPS | registry, htpasswd-init, registry-docker-config, dockhand, **ingress** (boot-only; **protegida**) |
 | `persistence.yml` | `modules/storage/*` | postgres, rabbitmq, minio, minio-buckets (+ volumes) |
-| `compute.yml` | `modules/compute/services/*` (menos observability e core) | vaultwarden, vaultwarden-api, adminer, 9router, evolution-api, evolution-redis, evolution-db-init |
+| `compute.yml` | `modules/compute/services/*` (menos observability e core) | vaultwarden, vaultwarden-api, adminer, evolution-api, evolution-redis, evolution-db-init |
+| `ai.yml` | tudo que é IA da plataforma | 9router (proxy de IA + rota de decisão System One), decision (modelos de decisão self-hosted, CPU) |
 | `observability.yml` | `modules/compute/services/observability` | loki, prometheus, tempo, alloy, grafana (+ configs em `observability/`) |
 | `domain.yml` | `modules/compute/apps/domain_api` | domain-api, domain-worker |
 | `tela.yml` | `modules/compute/apps/tela_api` | tela-mediamtx, tela-coturn, tela-api (os 3 em host network) |
 | `clubs.yml` | `modules/compute/apps/clubs_api` + `clubs_ingest` | clubs-api, clubs-ingest |
 | `finance.yml` | bounded context financeiro (`finance-api` + `finance-customersupport-worker`) | finance-api, finance-customersupport-worker |
 | `maus.yml` | OpenMausBot (milind-soni/OpenMausBot): chat com um roster de bots, cada um com modelo, computador e apps conectados | omb (harness + UI, `ghcr.io/milind-soni/openmausbot`), maus-caddy (edge HTTP na netns do omb) |
+| `excalidraw.yml` | Excalidraw (excalidraw/excalidraw) como lousa de diagramas | excalidraw (SPA estático em nginx) |
 
 **`core.yml` é de boot, isolada de propósito.** O Dockhand deploya as
 stacks; se ele estiver dentro de uma stack que ele mesmo recria, o deploy
@@ -80,10 +82,15 @@ um app migrar e mudar a porta loopback, edite aqui e recrie o `ingress`.
 `compute.yml`: `VAULTWARDEN_ADMIN_TOKEN`, `VAULTWARDEN_ACCOUNT_EMAIL`,
 `VAULTWARDEN_ACCOUNT_MASTER_PASSWORD`, `VAULTWARDEN_API_CLIENT_ID`,
 `VAULTWARDEN_API_CLIENT_SECRET`, `VAULTWARDEN_BRIDGE_API_KEY`,
-`NINEROUTER_JWT_SECRET`, `NINEROUTER_INITIAL_PASSWORD`, `POSTGRES_PASSWORD`
-(a MESMA do persistence — Evolution API), `RABBITMQ_PASSWORD` (a MESMA do
-persistence — Evolution API), `EVOLUTION_API_KEY` (apikey global da
-Evolution API).
+`POSTGRES_PASSWORD` (a MESMA do persistence — Evolution API),
+`RABBITMQ_PASSWORD` (a MESMA do persistence — Evolution API),
+`EVOLUTION_API_KEY` (apikey global da Evolution API).
+
+`ai.yml`: `NINEROUTER_JWT_SECRET` e `NINEROUTER_INITIAL_PASSWORD` (a MESMA
+dupla do `compute` antigo; o 9router reusa o volume `ninerouter_data`, então
+nada se perde na migração). Opcionais: `JEV_STYLE_API_KEY` (se definida, o
+`decision` exige bearer entre o 9router e ele), `DECISION_RELEASE` (`2b`
+default, ou `0.8b`).
 
 `observability.yml`: `GRAFANA_ADMIN_PASSWORD`.
 
@@ -112,11 +119,14 @@ também: `FINANCE_GOOGLE_CLIENT_ID` (default = o client público do clubs) e
 
 `tela.yml`: `TELA_TURN_SECRET`.
 
+`excalidraw.yml`: **nenhum segredo**. É um SPA estático (imagem própria, sem
+config) atrás do Cloudflare Access, como as outras UIs.
+
 `maus.yml`: **nenhum segredo obrigatório**. O OpenMausBot não tem
 `OWNER_TOKEN`; o gate é o *pairing* do próprio app (um código de uso único por
 dispositivo). O provider de modelo é configuração **in-app** (App Settings →
 Model providers → OpenAI-compatible), não variável de ambiente: aponte para
-`http://9router:20128/v1` (o 9router roda no stack `compute`, na rede `apps`).
+`http://9router:20128/v1` (o 9router roda no stack `ai`, na rede `apps`).
 Sem CLI baked (`ENGINES=""`), então nenhum `claude`/`codex`/`grok` loga no
 container. Não-segredo opcional: `OMB_SIGNIN_EMAILS`/`OMB_SIGNIN_MEMBER_EMAILS`
 (login por código no e-mail em vez de só pairing) e `OMB_UPSTREAM_SCHEME`
@@ -138,7 +148,7 @@ Cloudflare + host_baseline (a rede `apps` virou o `bootstrap.yml`) — ver
 `modules/infra/terraform/README.md`.
 
 Ordem de subida numa VPS limpa: **bootstrap → persistence → core →
-compute → observability → domain → clubs → tela → maus**.
+compute → observability → ai → domain → clubs → tela → maus**.
 
 Para adicionar um stack novo depois: escreva `stacks/<nome>.yml`, crie a
 stack no Dockhand (git-backed, context `stacks`, compose `<nome>.yml`) e

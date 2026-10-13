@@ -1,0 +1,141 @@
+name: Excalidraw image
+
+# Builda e publica a imagem do stack `excalidraw` (stacks/excalidraw.yml) e
+# dispara o redeploy.
+#
+# Por que este workflow existe: o upstream excalidraw/excalidraw não publica
+# imagem, e a VPS é arm64 (Oracle Ampere). O runner é amd64 → QEMU monta a
+# imagem arm64 (mesmo desenho do maus-image.yml/ai-image.yml). A stack só puxa
+# `registry.giomartins.dev:5000/excalidraw:latest`.
+#
+# Trigger manual de propósito (como maus/ai): até a primeira imagem existir no
+# registry interno, um push automático só dispararia um build QEMU longo. Para
+# bumps automáticos depois, adicione um arquivo stacks/excalidraw/VERSION e um
+# push trigger nesse path.
+#
+# Depois do primeiro build: no Dockhand, deixe a stack `excalidraw` com
+# repull_images + force_redeploy ligados (default), pra o webhook puxar a
+# :latest nova.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream Excalidraw tag to build (e.g. v0.18.1)"
+        required: true
+        default: "v0.18.1"
+
+env:
+  EXCALIDRAW_VERSION: ${{ inputs.version || 'v0.18.1' }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      # registry.giomartins.dev:5000 is plain HTTP (Phase 1), which dockerd
+      # rejects unless allow-listed as insecure; `docker login` goes through
+      # the runner's dockerd.
+      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
+        run: |
+          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
+          sudo systemctl restart docker
+
+      - uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-config-inline: |
+            [registry."registry.giomartins.dev:5000"]
+              http = true
+              insecure = true
+
+      - name: Set up SSH access to the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          echo "DOCKER_HOST=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
+
+      - name: Fetch registry credentials from Vaultwarden
+        env:
+          NETWORK_NAME: apps
+          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
+          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
+          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
+          ITEM_MAP: "REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
+        run: |
+          set -o pipefail
+          modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
+            echo "::add-mask::$v"
+            echo "${k}=${v}" >> "$GITHUB_ENV"
+          done
+
+      - name: Log in to registry.giomartins.dev:5000
+        uses: docker/login-action@v3
+        with:
+          registry: registry.giomartins.dev:5000
+          username: ${{ env.REGISTRY_USERNAME }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+
+      # O Dockerfile do upstream builda o SPA (yarn) e copia o build pro nginx;
+      # ele é arm64-safe (só node + nginx multi-arch), então dá pra usar direto,
+      # sem overlay. Clone no tag pinado e builda de lá.
+      - name: Fetch upstream at the pinned tag
+        run: |
+          git clone --depth 1 --branch "$EXCALIDRAW_VERSION" \
+            https://github.com/excalidraw/excalidraw.git _excalidraw-upstream
+
+      - name: Build and push excalidraw (arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: _excalidraw-upstream
+          file: _excalidraw-upstream/Dockerfile
+          push: true
+          platforms: linux/arm64
+          cache-from: type=gha,scope=excalidraw
+          cache-to: type=gha,mode=max,scope=excalidraw
+          tags: |
+            registry.giomartins.dev:5000/excalidraw:latest
+            registry.giomartins.dev:5000/excalidraw:${{ env.EXCALIDRAW_VERSION }}
+
+  # Redeploy da stack `excalidraw` no Dockhand, mesmo desenho dos outros
+  # workflows (webhook do git stack pelo loopback do VPS via SSH).
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    concurrency:
+      group: dockhand-deploy-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Set up SSH access to the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Trigger Dockhand redeploy
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          DOCKHAND_WEBHOOK_SECRET: ${{ secrets.DOCKHAND_WEBHOOK_SECRET }}
+          # TODO: trocar pelo id real da stack `excalidraw` no Dockhand (UI).
+          STACK_ID: "19"
+        run: |
+          if [ -z "$DOCKHAND_WEBHOOK_SECRET" ]; then
+            echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a imagem já foi publicada)."
+            exit 0
+          fi
+          echo "== redeploy stack id=$STACK_ID (excalidraw)"
+          out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 'http://127.0.0.1:8093/api/git/stacks/$STACK_ID/webhook?secret=$DOCKHAND_WEBHOOK_SECRET'")
+          echo "$out"
+          echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack $STACK_ID (excalidraw)"; exit 1; }
