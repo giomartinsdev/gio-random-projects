@@ -186,6 +186,16 @@ locals {
       hostname = "db-mcp.giomartins.dev"
       port     = 8021
     },
+    {
+      # Excalidraw (stacks/excalidraw.yml) -- lousa de diagramas como SPA
+      # estatico servido pelo nginx da propria imagem. UI browser-facing, entao
+      # ganha o mesmo Access Google-SSO de vault/grafana/adminer acima (nao esta
+      # em excluded_hostnames). A porta e a loopback publicada pelo stack
+      # (127.0.0.1:8023) e tem de bater com o server{} de
+      # stacks/ingress/default.conf.
+      hostname = "excalidraw.giomartins.dev"
+      port     = 8023
+    },
   ]
 
   # Static SPAs served straight out of a MinIO bucket -- no container
