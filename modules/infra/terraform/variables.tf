@@ -53,6 +53,7 @@ variable "excluded_hostnames" {
     "prospecta-api.giomartins.dev", # no Cloudflare Access — own X-API-Key auth; the prospecta SPA calls it cross-origin from the browser, and a Google SSO redirect would break every fetch (same reason as finance-api/clubs-api)
     "prospecta.giomartins.dev",     # the prospecta SPA is public and must be iframe-embeddable in the hub (like tela/clubs/finance); the operator pastes the X-API-Key in the page itself, not an Access redirect
     "db-mcp.giomartins.dev",        # MCP do banco: cliente não-browser (agente) não completa redirect de SSO; o gateway nginx valida um token bearer próprio (stack db-mcp, MCP_DB_TOKEN)
+    "draw.giomartins.dev",          # Excalidraw (stacks/excalidraw.yml): lousa pública -- qualquer pessoa entra sem conta (mesmo modelo do tela/clubs, compartilhar o link é o produto), então sem Access
   ]
 }
 

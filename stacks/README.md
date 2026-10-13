@@ -120,7 +120,8 @@ também: `FINANCE_GOOGLE_CLIENT_ID` (default = o client público do clubs) e
 `tela.yml`: `TELA_TURN_SECRET`.
 
 `excalidraw.yml`: **nenhum segredo**. É um SPA estático (imagem própria, sem
-config) atrás do Cloudflare Access, como as outras UIs.
+config), público em `draw.giomartins.dev` — sem Cloudflare Access (qualquer
+pessoa entra, como tela/clubs).
 
 `maus.yml`: **nenhum segredo obrigatório**. O OpenMausBot não tem
 `OWNER_TOKEN`; o gate é o *pairing* do próprio app (um código de uso único por

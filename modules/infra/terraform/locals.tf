@@ -187,13 +187,13 @@ locals {
       port     = 8021
     },
     {
-      # Excalidraw (stacks/excalidraw.yml) -- lousa de diagramas como SPA
-      # estatico servido pelo nginx da propria imagem. UI browser-facing, entao
-      # ganha o mesmo Access Google-SSO de vault/grafana/adminer acima (nao esta
-      # em excluded_hostnames). A porta e a loopback publicada pelo stack
-      # (127.0.0.1:8023) e tem de bater com o server{} de
-      # stacks/ingress/default.conf.
-      hostname = "excalidraw.giomartins.dev"
+      # draw -- Excalidraw (stacks/excalidraw.yml): lousa de diagramas como SPA
+      # estatico servido pelo nginx da propria imagem. PUBLICO de proposito
+      # (esta em excluded_hostnames): qualquer pessoa entra sem conta -- e o
+      # mesmo modelo do tela/clubs (compartilhar o link e o produto). A porta e
+      # a loopback publicada pelo stack (127.0.0.1:8023) e tem de bater com o
+      # server{} de stacks/ingress/default.conf.
+      hostname = "draw.giomartins.dev"
       port     = 8023
     },
   ]

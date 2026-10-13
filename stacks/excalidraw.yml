@@ -13,9 +13,9 @@
 # Sem volumes: é um SPA estático (o dev-compose do upstream montava o fonte pra
 # hot-reload; aqui não faz sentido). Sem segredos.
 #
-# Exposto em https://excalidraw.giomartins.dev (protegido por Cloudflare
-# Access, como as outras UIs). O ingress (core.yml) mapeia hostname ->
-# 127.0.0.1:8023, que esta stack publica.
+# Exposto em https://draw.giomartins.dev — PÚBLICO, sem Cloudflare Access
+# (qualquer pessoa entra sem conta; mesmo modelo do tela/clubs). O ingress
+# (core.yml) mapeia hostname -> 127.0.0.1:8023, que esta stack publica.
 name: excalidraw
 
 services:
