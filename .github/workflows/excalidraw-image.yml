@@ -84,13 +84,15 @@ jobs:
           username: ${{ env.REGISTRY_USERNAME }}
           password: ${{ env.REGISTRY_PASSWORD }}
 
-      # O Dockerfile do upstream builda o SPA (yarn) e copia o build pro nginx;
-      # ele é arm64-safe (só node + nginx multi-arch), então dá pra usar direto,
-      # sem overlay. Clone no tag pinado e builda de lá.
+      # O Dockerfile do tag pinado builda o SPA (yarn) e copia o build pro
+      # nginx, mas fixa node:18 — que não instala mais (uma dep transitiva
+      # exige node >= 20). Sobrescrevemos com stacks/excalidraw/Dockerfile
+      # (node:22), como o maus faz com o dele. Clone no tag pinado e builda de lá.
       - name: Fetch upstream at the pinned tag
         run: |
           git clone --depth 1 --branch "$EXCALIDRAW_VERSION" \
             https://github.com/excalidraw/excalidraw.git _excalidraw-upstream
+          cp stacks/excalidraw/Dockerfile _excalidraw-upstream/Dockerfile
 
       - name: Build and push excalidraw (arm64)
         uses: docker/build-push-action@v6
