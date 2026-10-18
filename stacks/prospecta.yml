@@ -136,7 +136,9 @@ services:
     volumes:
       # :ro de propósito — o settings.yml é versionado e o SearXNG não deve
       # regerá-lo. O cache vai para o volume.
-      - ./searxng:/etc/searxng:ro
+      # Caminho relativo à RAIZ do repo (estilo ./maus do maus.yml): no deploy
+      # agregado (project-apps.yml) o project dir é /opt/stacks/project-apps.
+      - ./prospecta/searxng:/etc/searxng:ro
       - searxng_data:/var/cache/searxng
     networks: [apps]
 
