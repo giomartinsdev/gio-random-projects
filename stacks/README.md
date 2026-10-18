@@ -23,6 +23,7 @@ Cada arquivo é um stack **independente** (sem agregado na raiz). Não há
 | `finance.yml` | bounded context financeiro (`finance-api` + `finance-customersupport-worker`) | finance-api, finance-customersupport-worker |
 | `maus.yml` | OpenMausBot (milind-soni/OpenMausBot): chat com um roster de bots, cada um com modelo, computador e apps conectados | omb (harness + UI, `ghcr.io/milind-soni/openmausbot`), maus-caddy (edge HTTP na netns do omb) |
 | `excalidraw.yml` | Excalidraw (excalidraw/excalidraw) como lousa de diagramas | excalidraw (SPA estático em nginx) |
+| `minecraft.yml` | Servidor de Minecraft Java (Paper 26.3) para jogar com os amigos | minecraft (jogo), mc-backup (backup diário do mundo) |
 
 **`core.yml` é de boot, isolada de propósito.** O Dockhand deploya as
 stacks; se ele estiver dentro de uma stack que ele mesmo recria, o deploy
@@ -122,6 +123,12 @@ também: `FINANCE_GOOGLE_CLIENT_ID` (default = o client público do clubs) e
 `excalidraw.yml`: **nenhum segredo**. É um SPA estático (imagem própria, sem
 config), público em `draw.giomartins.dev` — sem Cloudflare Access (qualquer
 pessoa entra, como tela/clubs).
+
+`minecraft.yml`: `MINECRAFT_RCON_PASSWORD` (o mesmo no server e no backup; o
+RCON só existe no loopback do container, não é publicado). A whitelist não é
+segredo: é gerenciada in-game por um OP e vive em
+`/data/minecraft/plugins/NobleWhitelist/whitelist.sql` no host. Ver
+`docs/servidor-minecraft.md`.
 
 `maus.yml`: **nenhum segredo obrigatório**. O OpenMausBot não tem
 `OWNER_TOKEN`; o gate é o *pairing* do próprio app (um código de uso único por

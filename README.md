@@ -47,6 +47,10 @@ in each.
 - [`docs/servidor-zomboid.md`](docs/servidor-zomboid.md) — the Project
   Zomboid dedicated server: why it runs natively (arm64/x86), systemd +
   box64 architecture, ports/firewall, data layout, ops runbook.
+- [`docs/servidor-minecraft.md`](docs/servidor-minecraft.md) — the
+  Minecraft Java (Paper 26.3) server: why it's a stack instead of
+  native (Java is arch-agnostic), the name-based whitelist plugin and
+  its fail-closed boot, the two firewall layers, backups, runbook.
 - [`docs/cloudflare-edge-fase-2.md`](docs/cloudflare-edge-fase-2.md) —
   the proxy flip (registry carve-out, SSL flexible pin) and the
   incidents it settled.

@@ -198,6 +198,22 @@ locals {
     },
   ]
 
+  # Hosts that need a DNS record pointing straight at the VPS but are NOT
+  # HTTP services: they never touch ingress (no port column) and can't ride
+  # the Cloudflare proxy (non-HTTP protocol). Kept separate from `services`
+  # for exactly that reason -- a `services` entry means "ingress routes this
+  # hostname to a loopback port", and adding one of these there would create
+  # a server{} pointing at a port nothing listens on, plus a broken
+  # orange-cloud record.
+  dns_only_hostnames = [
+    # The Minecraft server (stacks/minecraft.yml) -- TCP 25565 straight to
+    # the host, no ingress, no Cloudflare proxy (the proxy only speaks
+    # HTTP/HTTPS, and game traffic has no TLS to terminate). Players
+    # connect to mc.giomartins.dev:25565; the whitelist, not DNS, is the
+    # gate. See docs/servidor-minecraft.md.
+    "mc.giomartins.dev",
+  ]
+
   # Static SPAs served straight out of a MinIO bucket -- no container
   # running at all, unlike everything in services above. ingress
   # (compute/services/ingress) proxies these to MinIO's S3 API by path

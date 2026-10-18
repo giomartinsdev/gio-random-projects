@@ -9,8 +9,15 @@ locals {
   # dormant for as long as this record is grey (it only ever fires on
   # traffic that actually transits the proxy). Everything else rides
   # ingress on :80 behind Cloudflare.
+  #
+  # The Minecraft hostname is grey for the same reason, one layer down:
+  # the proxy forwards HTTP/HTTPS only. An orange record would point
+  # players at Cloudflare's edge, which doesn't speak the Minecraft
+  # protocol on 25565, and every join would time out. It needs the real
+  # origin IP.
   direct_hostnames = toset([
     "registry.giomartins.dev",
+    "mc.giomartins.dev",
   ])
 
   # Everything Access-protected: full hostnames minus the excluded

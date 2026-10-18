@@ -27,9 +27,15 @@ module "cloud_cloudflare" {
   # static_sites' hostnames still need their own A record + Access
   # handling same as everything in services -- they're a different
   # ingress route (MinIO, not a container port), not a different DNS
-  # or Access story.
-  hostnames                = concat([for s in local.services : s.hostname], [for s in local.static_sites : s.hostname])
-  excluded_hostnames       = var.excluded_hostnames
+  # or Access story. dns_only_hostnames get ONLY the A record (never
+  # Access -- there's no browser login to put in front of a game
+  # protocol).
+  hostnames = concat(
+    [for s in local.services : s.hostname],
+    [for s in local.static_sites : s.hostname],
+    local.dns_only_hostnames,
+  )
+  excluded_hostnames       = concat(var.excluded_hostnames, local.dns_only_hostnames)
   path_protected_hostnames = local.path_protected_hostnames
   allowed_emails           = var.allowed_emails
   # clubs-api has no Cloudflare Access application at all (own Google
@@ -70,11 +76,14 @@ module "compute_services_host_baseline" {
   #   8217  tela's MediaMTX media (udp+tcp)
   #   3478  coturn's TURN listener (udp+tcp)
   #   49160-49200  coturn's relay allocation range (udp)
+  #   25565  the Minecraft server (stacks/minecraft.yml) -- TCP only, the
+  #          game protocol; the query protocol stays off there
   firewall_rules = [
     "udp 8217",
     "tcp 8217",
     "udp 3478",
     "tcp 3478",
     "udp 49160:49200",
+    "tcp 25565",
   ]
 }
