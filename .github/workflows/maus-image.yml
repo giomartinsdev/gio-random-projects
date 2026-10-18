@@ -127,10 +127,11 @@ jobs:
             registry.giomartins.dev:5000/maus:latest
             registry.giomartins.dev:5000/maus:${{ env.MAUS_VERSION }}
 
-  # Redeploy da stack `maus` (id 11) no Dockhand, mesmo desenho dos outros
+  # Redeploy do Dockhand (maus/omb vive no stack agregado `project-apps`,
+  # id 22 desde a migração de 2026-10-18), mesmo desenho dos outros
   # workflows (webhook do git stack pelo loopback do VPS via SSH, secret
-  # DOCKHAND_WEBHOOK_SECRET). Só roda se o stack já existir e estiver com
-  # repull_images + force_redeploy ligados.
+  # DOCKHAND_WEBHOOK_SECRET como header x-gitlab-token). O stack está com
+  # repull_images ligado, então a :latest nova é puxada no webhook.
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -157,7 +158,7 @@ jobs:
             echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a imagem já foi publicada)."
             exit 0
           fi
-          echo "== redeploy stack id=11 (maus)"
-          out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 'http://127.0.0.1:8093/api/git/stacks/11/webhook?secret=$DOCKHAND_WEBHOOK_SECRET'")
+          echo "== redeploy stack id=22 (maus/project-apps)"
+          out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 -H 'x-gitlab-token: $DOCKHAND_WEBHOOK_SECRET' 'http://127.0.0.1:8093/api/git/stacks/22/webhook'")
           echo "$out"
-          echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack 11 (maus)"; exit 1; }
+          echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack 22 (maus/project-apps)"; exit 1; }

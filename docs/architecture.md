@@ -5,7 +5,10 @@ deploy. Cada diagrama abaixo foi conferido contra o código e os arquivos
 `stacks/*.yml` — quando divergir, o código manda.
 
 - **Stacks** (o que roda no host): `stacks/*.yml`, gerenciadas pelo Docker
-  Compose via **Dockhand** (git-backed).
+  Compose via **Dockhand** (git-backed). Desde 2026-10-18 os stacks por
+  domínio são agregados em `project-infra.yml` (infra/persistência/
+  observabilidade) e `project-apps.yml` (apps), via `include:` do Compose —
+  ver `stacks/README.md`.
 - **Apps** (o que é construído): `modules/apps/*`.
 - **Contrato compartilhado**: `packages/finance-contracts` (envelope + eventos
   do contexto financeiro; importado por `finance-api` e pelo worker, nunca
@@ -17,7 +20,9 @@ deploy. Cada diagrama abaixo foi conferido contra o código e os arquivos
 
 Uma VPS (arm64) roda tudo em Docker Compose, na rede externa **`apps`**. O
 **ingress** (nginx, no stack `core`) é a única porta 80/443; ele roteia por
-hostname para cada serviço. Cloudflare fica na frente (DNS + Access).
+hostname para cada serviço. Cloudflare fica na frente (DNS + Access). Os
+apps e a infra vivem em dois stacks agregados (`project-infra`,
+`project-apps`) que incluem os arquivos por domínio.
 
 ```mermaid
 flowchart TB
@@ -35,40 +40,30 @@ flowchart TB
       ingress
     end
 
-    subgraph persistence["stack persistence"]
+    subgraph infra["stack project-infra (Dockhand id 21)"]
       pg[("postgres:17<br/>db domain")]
       rmq[("rabbitmq:4")]
       minio[("minio<br/>buckets de frontend")]
-    end
-
-    subgraph compute["stack compute"]
       vault["vaultwarden"]
       evolution["evolution-api<br/>(gateway WhatsApp)"]
-    end
-
-    subgraph observability["stack observability"]
+      ninerouter["9router<br/>(proxy de IA)"]
       graf["grafana"]
       loki["loki / tempo / prometheus"]
       alloy["alloy (OTLP)"]
+      dbmcp["db-mcp<br/>(leitura p/ agente)"]
     end
 
-    subgraph domain["stack domain"]
+    subgraph apps["stack project-apps (Dockhand id 22)"]
       dapi["domain-api"]
       dworker["domain-worker"]
-    end
-
-    subgraph finance["stack finance"]
       fapi["finance-api"]
       fwk["finance-customersupport-worker"]
-    end
-
-    subgraph clubs["stack clubs"]
       clubsapi["clubs-api"]
       clubsing["clubs-ingest"]
-    end
-
-    subgraph tela["stack tela"]
       telaapi["tela-api"]
+      prospecta["prospecta-api<br/>+ agent-worker"]
+      omb["maus (omb)"]
+      draw["excalidraw"]
     end
 
     ingress -.proxy por hostname.-> dapi
@@ -80,8 +75,8 @@ flowchart TB
   end
 
   cf --> ingress
-  registry -->|pull :latest| finance
-  dockhand -.webhook de deploy.-> finance
+  registry -->|pull :latest| apps
+  dockhand -.webhook de deploy.-> apps
 ```
 
 > **Frontends não são containers.** `tela-frontend`, `clubs-frontend`,
@@ -102,13 +97,13 @@ escritor** do banco. `packages/finance-contracts` é o contrato único.
 sequenceDiagram
   autonumber
   actor U as Usuário (WhatsApp)
-  participant EV as Evolution API<br/>(stack compute)
-  participant W as finance-customersupport-worker<br/>(stack finance)
-  participant F as finance-api (ACL)<br/>(stack finance)
-  participant DA as domain-api<br/>(stack domain)
-  participant RMQ as RabbitMQ<br/>(persistence)
-  participant DW as domain-worker<br/>(stack domain)
-  participant PG as Postgres<br/>(persistence)
+  participant EV as Evolution API<br/>(project-infra)
+  participant W as finance-customersupport-worker<br/>(project-apps)
+  participant F as finance-api (ACL)<br/>(project-apps)
+  participant DA as domain-api<br/>(project-apps)
+  participant RMQ as RabbitMQ<br/>(project-infra)
+  participant DW as domain-worker<br/>(project-apps)
+  participant PG as Postgres<br/>(project-infra)
 
   U->>EV: mensagem de texto
   EV->>RMQ: exchange evolution<br/>routing evolution.messages.upsert
@@ -141,9 +136,9 @@ sequenceDiagram
 ```
 
 **Regra de isolamento (§1.1):** nem a `finance-api` nem o worker têm
-`DATABASE_URL`, driver de banco ou publicador de comando. Só o stack
-`domain` toca o banco. O worker **consome** broker (Evolution + eventos de
-domínio) e **fala HTTP** com a ACL.
+`DATABASE_URL`, driver de banco ou publicador de comando. Só o `domain`
+(`domain.yml`, stack `project-apps`) toca o banco. O worker **consome**
+broker (Evolution + eventos de domínio) e **fala HTTP** com a ACL.
 
 ### Superfícies da ACL
 
@@ -162,7 +157,7 @@ flowchart LR
 
 ---
 
-## 3. CQRS — broker e persistência (stack domain)
+## 3. CQRS — broker e persistência (`domain.yml`, stack project-apps)
 
 O `domain-api` publica comando; o `domain-worker` é o único escritor e
 publica eventos via **outbox durável** (o evento é gravado como pendente
@@ -172,7 +167,7 @@ antes do publish; um relay reenvia o que ficou, at-least-once).
 flowchart TB
   dapi["domain-api<br/>GETs + POST /commands + POST /sync"]
 
-  subgraph rabbit["RabbitMQ (persistence)"]
+  subgraph rabbit["RabbitMQ (project-infra)"]
     ex_cmd{{"exchange domain.commands<br/>(direct)"}}
     q_cmd["domain.commands.queue"]
     ex_ev{{"exchange domain.events<br/>(fanout)"}}
@@ -207,16 +202,21 @@ flowchart LR
   push --> discover["discover<br/>(só os apps afetados)"]
   discover --> build["build + test<br/>arm64 via QEMU"]
   build --> reg[("registry:5000<br/>:latest + :sha")]
-  reg --> webhook["webhook do stack<br/>no Dockhand (id 4/5/14...)"]
+  reg --> webhook["webhook do stack<br/>no Dockhand (id 22)"]
   webhook --> up["docker compose up -d<br/>--remove-orphans"]
   up --> verify["prova: container rodando<br/>+ guard de órfão de rename"]
 ```
 
-- **Go** (`go-ci-cd.yml`): `domain-api`, `domain-worker`, `clubs-api`, `tela-api`.
+- **Go** (`go-ci-cd.yml`): `domain-api`, `domain-worker`, `clubs-api`,
+  `tela-api`, `prospecta-api`.
 - **Python** (`python-ci-cd.yml`): `clubs-ingest`, `finance-api`,
-  `finance-customersupport-worker`.
+  `finance-customersupport-worker`, `finance-openfinance-worker`,
+  `prospecta-agent-worker`.
 - **TypeScript** (`ts-frontend-ci-cd.yml`): builds estáticos → buckets do MinIO.
 - **Terraform** (`tf-ci-cd.yml`): Cloudflare DNS/Access + `host_baseline`.
+
+Todos os apps caem no **stack 22** (`project-apps`); o `ai-image.yml`
+(id 21, `project-infra`) é o único que aponta outro id.
 
 ---
 

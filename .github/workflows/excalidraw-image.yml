@@ -107,8 +107,10 @@ jobs:
             registry.giomartins.dev:5000/excalidraw:latest
             registry.giomartins.dev:5000/excalidraw:${{ env.EXCALIDRAW_VERSION }}
 
-  # Redeploy da stack `excalidraw` no Dockhand, mesmo desenho dos outros
-  # workflows (webhook do git stack pelo loopback do VPS via SSH).
+  # Redeploy do Dockhand, mesmo desenho dos outros workflows (webhook do
+  # git stack pelo loopback do VPS via SSH, secret como header
+  # x-gitlab-token). Desde a migração o excalidraw vive no stack agregado
+  # `project-apps` (stacks/project-apps.yml).
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -130,14 +132,15 @@ jobs:
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           DOCKHAND_WEBHOOK_SECRET: ${{ secrets.DOCKHAND_WEBHOOK_SECRET }}
-          # TODO: trocar pelo id real da stack `excalidraw` no Dockhand (UI).
-          STACK_ID: "19"
+          # Id do stack `project-apps` (excalidraw morava no stack 19 antes
+          # da migração de 2026-10-18; ver stacks/README.md).
+          STACK_ID: "22"
         run: |
           if [ -z "$DOCKHAND_WEBHOOK_SECRET" ]; then
             echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a imagem já foi publicada)."
             exit 0
           fi
           echo "== redeploy stack id=$STACK_ID (excalidraw)"
-          out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 'http://127.0.0.1:8093/api/git/stacks/$STACK_ID/webhook?secret=$DOCKHAND_WEBHOOK_SECRET'")
+          out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 -H 'x-gitlab-token: $DOCKHAND_WEBHOOK_SECRET' 'http://127.0.0.1:8093/api/git/stacks/$STACK_ID/webhook'")
           echo "$out"
           echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack $STACK_ID (excalidraw)"; exit 1; }

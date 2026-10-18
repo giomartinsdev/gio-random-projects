@@ -250,7 +250,9 @@ jobs:
 
   # Redeploy da stack no Dockhand depois de buildar/pushar a imagem -- mesmo
   # desenho do go-ci-cd.yml (webhook do git stack via loopback SSH, secret
-  # DOCKHAND_WEBHOOK_SECRET). Mapa app->stack: clubs=5.
+  # DOCKHAND_WEBHOOK_SECRET como header x-gitlab-token). Desde a migração
+  # para os stacks agregados, todos os apps Python caem no stack
+  # `project-apps` (stacks/project-apps.yml), id 22.
   deploy:
     needs: [discover, build-and-push]
     if: needs.discover.outputs.apps != '[]'
@@ -283,13 +285,14 @@ jobs:
           # entry here -- an app missing from this map is the §14 risk
           # "build verde, nada sobe", so a discovered app with no id fails
           # loudly below instead of reporting success.
-          #   [finance-api]=14 -- the numeric id of the `finance` stack
-          #   (stacks/finance.yml, env 1/prd, repo 1), created 2026-10-04.
+          #   [finance-api]=22 -- the numeric id of the `project-apps` stack
+          #   (stacks/project-apps.yml, env 1/prd, repo 1), criado 2026-10-18
+          #   na migração que agregou os stacks por dominio.
           #   Only readable from the Dockhand UI after login: never invent one.
-          #   [finance-customersupport-worker]=14 -- SAME stack (one compose, one
-          #   webhook), so it reuses the finance id: deploying the worker is
+          #   [finance-customersupport-worker]=22 -- SAME stack (one compose, one
+          #   webhook), so it reuses the project-apps id: deploying the worker is
           #   deploying the stack. An app with no id here fails loudly below.
-          declare -A STACK=( [clubs-ingest]=5 [finance-api]=14 [finance-customersupport-worker]=14 [finance-openfinance-worker]=14 [prospecta-agent-worker]=17 )
+          declare -A STACK=( [clubs-ingest]=22 [finance-api]=22 [finance-customersupport-worker]=22 [finance-openfinance-worker]=22 [prospecta-agent-worker]=22 )
           if [ -z "$APPS" ] || [ "$APPS" = "[]" ]; then
             echo "nada a deployar (nenhum app descoberto)"
             exit 0
@@ -313,7 +316,7 @@ jobs:
           # container_name difira do nome do app precisa da sua propria linha.
           for id in $ids; do
             echo "== redeploy stack id=$id"
-            out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 'http://127.0.0.1:8093/api/git/stacks/$id/webhook?secret=$DOCKHAND_WEBHOOK_SECRET'")
+            out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 -H 'x-gitlab-token: $DOCKHAND_WEBHOOK_SECRET' 'http://127.0.0.1:8093/api/git/stacks/$id/webhook'")
             echo "$out" | head -c 600; echo
             echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack $id"; exit 1; }
             # §10.4-4/§10.4-5, segunda metade. `success:true` sozinho nao prova
