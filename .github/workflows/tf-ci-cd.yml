@@ -187,6 +187,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The `plan` job installs this deploy key, but `apply` is a SEPARATE
+      # runner -- without repeating it here, the docker provider inside the
+      # saved plan's host_baseline local-exec (and its own SSH connhelper)
+      # dies with "Host key verification failed", i.e. the plan applies
+      # partially (Cloudflare resources) and then fails on the host rules.
+      - name: Set up SSH access to the VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          echo "TF_VAR_docker_host=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
+
+      - name: Discover the VPS's public IP
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          SERVER_IP=$(ssh "ubuntu@$VPS_HOST" 'curl -4 -fsS --max-time 5 https://ifconfig.me || curl -4 -fsS --max-time 5 https://api.ipify.org')
+          if [ -z "$SERVER_IP" ]; then
+            echo "::error::could not determine the VPS's public IP"
+            exit 1
+          fi
+          echo "TF_VAR_server_ip=$SERVER_IP" >> "$GITHUB_ENV"
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~> 1.10"
