@@ -1,0 +1,48 @@
+# project-apps.yml — TUDO que é aplicação do projeto numa stack só.
+#
+# Por que existe: antes havia uma stack por bounded context (domain, clubs,
+# finance, prospecta, tela, maus, excalidraw). São serviços que sobem e descem
+# juntos quando o produto muda, e separá-los só multiplicava deploys e listas
+# de segredo. Infra (banco, broker, MinIO, observabilidade) mora em
+# `project-infra.yml`; a base da VPS em `core.yml`.
+#
+# COMO FUNCIONA: herda os arquivos por domínio via `include:` do Compose. Eles
+# continuam sendo a fonte da verdade, um por contexto:
+#
+#   domain.yml      domain-api (leitura) + domain-worker (único escritor, CQRS)
+#   clubs.yml       clubs-api (BFF) + clubs-ingest (poller da fonte EA)
+#   finance.yml     finance-api + workers (customersupport, openfinance)
+#   prospecta.yml   prospecta-api + prospecta-agent-worker + searxng
+#   tela.yml        tela-mediamtx + tela-coturn + tela-api (os 3 em host network)
+#   maus.yml        omb + maus-caddy + maus-slack-bridge (OpenMausBot)
+#   excalidraw.yml  excalidraw (SPA estático em nginx)
+#
+# Os `name:` dos arquivos incluídos são ignorados: o projeto é `project-apps`.
+# Os caminhos relativos (`./searxng`, `./maus/Caddyfile`) resolvem em relação
+# ao arquivo que os declara — o Dockhand sincroniza `stacks/` inteiro, então
+# eles continuam válidos.
+#
+# Nenhum serviço daqui fala com o banco diretamente (§1.1): só HTTP tipado
+# (X-API-Key) com a domain-api e AMQP com o broker. Quem precisa de banco é o
+# `domain`, que também está aqui, mas expõe contrato — não empresta DATABASE_URL.
+#
+# Segredos (variáveis de stack no Dockhand, uma lista só):
+#   DOMAIN_API_KEYS                       (chaves aceitas pela domain-api)
+#   CLUBS_SESSION_SECRET, CLUBS_*_DOMAIN_KEY
+#   FINANCE_API_KEYS, FINANCE_WORKER_API_KEY, FINANCE_DOMAIN_API_KEY,
+#   FINANCE_OF_API_KEY, OF_TICK_SECRET, POLP_OF_*, FINANCE_SESSION_SECRET
+#   PROSPECTA_API_KEY, PROSPECTA_DOMAIN_API_KEY, PROSPECTA_SESSION_SECRET
+#   TELA_TURN_SECRET
+#   SLACK_BOT_TOKEN, SLACK_APP_TOKEN
+#   RABBITMQ_PASSWORD / EVOLUTION_API_KEY / VAULTWARDEN_BRIDGE_API_KEY
+#   (os MESMOS valores do project-infra — é o mesmo broker e a mesma Evolution)
+name: project-apps
+
+include:
+  - domain.yml
+  - clubs.yml
+  - finance.yml
+  - prospecta.yml
+  - tela.yml
+  - maus.yml
+  - excalidraw.yml

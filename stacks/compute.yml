@@ -2,10 +2,19 @@
 # do TF, exceto observability em observability.yml e o registry/Dockhand em
 # core.yml).
 #
-# O 9router saiu daqui: agora mora no stack `ai` (stacks/ai.yml), junto do
-# servidor de decisão local. Ele reusa o MESMO volume externo `ninerouter_data`
-# e continua publicado em 127.0.0.1:20128 (o ingress não muda). NÃO rode as
-# duas stacks com o 9router: a porta 20128 é a mesma.
+# O 9router MORA AQUI de novo (provisoriamente). Ele foi movido para o
+# `ai.yml` (junto do `decision`), mas as imagens próprias que aquele arquivo
+# referencia (`registry.giomartins.dev:5000/9router` e `.../decision`) nunca
+# foram buildadas — o workflow `ai-image.yml` é manual e nunca rodou. Enquanto
+# isso, o 9router que está em produção é ESTE, com a imagem `ghcr.io`. Manter
+# o serviço aqui evita que um redeploy de `compute` o derrube.
+#
+# Quando as imagens existirem (rode `ai-image.yml`):
+#   1. habilite `ai.yml` no `project-infra.yml`;
+#   2. remova o serviço `9router` daqui;
+#   3. faça o deploy. O volume externo `ninerouter_data` é o mesmo, então
+#      providers/credenciais continuam valendo.
+# NUNCA rode os dois juntos: a porta 20128 é a mesma.
 #
 # Reusa os named volumes do TF (external). Segredos via variáveis de stack
 # no Dockhand:
@@ -52,6 +61,32 @@ services:
       VAULTWARDEN_CLIENT_ID: ${VAULTWARDEN_API_CLIENT_ID:-}
       VAULTWARDEN_CLIENT_SECRET: ${VAULTWARDEN_API_CLIENT_SECRET:-}
       API_KEY: ${VAULTWARDEN_BRIDGE_API_KEY:?defina VAULTWARDEN_BRIDGE_API_KEY}
+    networks: [apps]
+
+  # --- 9router (proxy de IA) ----------------------------------------------
+  # Ver a nota do topo: provisório até as imagens do `ai.yml` existirem.
+  # A imagem é a do upstream (ghcr), NÃO a do registry privado, e o volume
+  # `ninerouter_data` (external) preserva providers/credenciais/uso.
+  9router:
+    image: ghcr.io/decolua/9router:latest
+    container_name: 9router
+    restart: unless-stopped
+    environment:
+      JWT_SECRET: ${NINEROUTER_JWT_SECRET:?defina NINEROUTER_JWT_SECRET}
+      INITIAL_PASSWORD: ${NINEROUTER_INITIAL_PASSWORD:?defina NINEROUTER_INITIAL_PASSWORD}
+      PORT: "20128"
+      NODE_ENV: production
+      BASE_URL: https://ai.giomartins.dev
+      NEXT_PUBLIC_BASE_URL: https://ai.giomartins.dev
+      AUTH_COOKIE_SECURE: "true"
+      REQUIRE_API_KEY: "false"
+      ENABLE_REQUEST_LOGS: "true"
+      OBSERVABILITY_ENABLED: "true"
+      DATA_DIR: /app/data
+    ports:
+      - "127.0.0.1:20128:20128"
+    volumes:
+      - ninerouter_data:/app/data
     networks: [apps]
 
   # --- adminer (acesso ad-hoc ao Postgres) --------------------------------
@@ -193,6 +228,10 @@ volumes:
   vaultwarden_data:
     external: true
     name: vaultwarden_data
+  # external: reusa o volume que o 9router já usa hoje (não recriar vazio).
+  ninerouter_data:
+    external: true
+    name: ninerouter_data
   evolution_instances:
     name: evolution_instances
   evolution_redis_data:
