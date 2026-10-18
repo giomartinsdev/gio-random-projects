@@ -1,41 +1,47 @@
-# minecraft.yml — servidor de Minecraft Java (Paper) para jogar com os amigos.
+# minecraft.yml — All the Mods 11 (ATM11) num servidor NeoForge.
 #
-# Dois containers: `itzg/minecraft-server` (o jogo) e `itzg/mc-backup` (backup
-# diário do mundo). Nenhum `build:` nem imagem própria no registry — diferente
-# de tela/maus/excalidraw, aqui não há nada pra compilar: o upstream já publica
-# multi-arch (amd64/arm64, conferido: a VPS é Ampere arm64 e o manifest do
-# `java25` tem arm64) e o jar do Paper é Java puro, então roda nativo, sem
-# box64/QEMU (o problema do Zomboid não existe aqui — ver
-# docs/servidor-zomboid.md).
+# Antes daqui era Paper puro. O pack ATM11 muda a natureza do servidor:
+# mods de verdade (293), não plugins — então não existe mais compatibilidade
+# com plugin de Paper e a whitelist passa a ser um MOD.
 #
-# Versão: Minecraft passou pra versionamento por ano — a release atual é a
-# **26.3** (Paper build 205). `VERSION` é fixada de propósito (não `LATEST`):
-# num servidor com mundo compartilhado, subir de versão sobe o mundo e não tem
-# volta. Pra atualizar, troque aqui e suba — o backup diário roda antes.
+# ── Versão ────────────────────────────────────────────────────────────────
+# O ATM11 é declarado em **26.1.2**, com NeoForge **26.1.2.109** (lido do
+# manifest.json do próprio zip — não é chute). Isso é MENOR que o 26.3 que
+# rodava antes: mundo de 26.3 NÃO abre em 26.1.2 (o mundo só anda pra frente).
+# O mundo antigo fica preservado em:
+#   /data/minecraft-paper-26.3.tar.gz    (dados completos do Paper 26.3)
+#   /data/minecraft-old/                 (mundo 26.3 solto, se existir)
+# Pra voltar atrás, é só reverter este arquivo e restaurar o .tar.gz.
 #
-# Por que `java25`: o 26.3 exige Java 25 (java-runtime-epsilon), e a tag
-# `javaxx` é o que separa a JVM "certa" neste image. `latest` hoje também é 25,
-# mas a tag explícita não muda debaixo dos pés.
+# ── Fixação de versão ────────────────────────────────────────────────────
+# CF_FILE_ID fixa a versão do pack: sem ele o AUTO_CURSEFORGE pega a última
+# a cada boot e ATUALIZA o pack sozinho (e o loader junto), o que num mundo
+# compartilhado é exatamente o que não se quer. 9187064 = 0.12.0-beta.
+# O pack é beta: updates frequentes. Subir de versão é ato deliberado:
+# troque o CF_FILE_ID, faça backup, e aceite que mods podem quebrar.
 #
-# ONLINE_MODE=false: o grupo tem contas não-premium (misturado). Nesse modo o
-# servidor NÃO autentica ninguém — qualquer um pode entrar com qualquer nome.
-# Por isso a whitelist é a única porta, e ela é **name-based e gerenciada
-# in-game** (pedido do dono do repo): o plugin NobleWhitelist
-# (modrinth `noble-whitelist`, 1.2.26, suporta 26.3 — conferido carregando no
-# Paper 26.3 e testando login de nome dentro/fora da lista) substitui a
-# whitelist vanilla, que em offline-mode grava UUID offline e não serve pra
-# adicionar amigo pelo nome.
+# ── Whitelist ────────────────────────────────────────────────────────────
+# Em NeoForge offline (ONLINE_MODE=false, por causa das contas não-premium)
+# a whitelist vanilla não serve: ela grava UUID e não aceita "adicionar pelo
+# nome". O mod **CWhitelist** (modrinth `cwhitelist`) resolve isso e é
+# name-based. Verificado localmente: carrega, adiciona por nome, persiste em
+# `config/cwhitelist_entries.json`.
 #
-# Segredo: `MINECRAFT_RCON_PASSWORD` (variável de stack no Dockhand, NUNCA no
-# git) — o mesmo nos dois serviços. O RCON só existe no loopback do container
-# do jogo, que o backup alcança por compartilhar a netns; não é publicado.
+# IMPORTANTE — fail-closed: o CWhitelist NÃO tem on/off e chuta todo mundo
+# que não está na lista. Um servidor recém-criado, com a lista vazia, não
+# deixa NINGUÉM entrar (bom). Mas isso significa que entrar depende de a
+# lista ter pelo menos um nome — o `WHITELIST` abaixo semeia o primeiro.
 #
-# Porta: 25565/tcp publicada direto (não é HTTP, então não passa pelo ingress).
-# A liberação de firewall é DUPLA e as duas precisam existir:
-#   1. iptables do host — codificado em modules/infra/terraform/main.tf
-#      (firewall_rules "tcp 25565"), aplicado pelo host_baseline;
-#   2. Oracle Security List (camada cloud, fora da VM) — regra manual no
-#      console OCI. Ver docs/servidor-minecraft.md.
+# ── Memória ──────────────────────────────────────────────────────────────
+# ATM11 é pesado: medido localmente em ~4.9 GB de RSS com 0 jogadores e 4 GB
+# de heap. Na VPS (23 GB, ~9.8 GB já usados por Zomboid + stacks), 8 GB de
+# heap deixa ~13 GB livres pro host respirar. USE_AIKAR_FLAGS só entra em
+# >=12G; abaixo disso o image usa as flags padrão, que é o certo aqui.
+#
+# ── Boot lento (não é bug) ───────────────────────────────────────────────
+# 293 mods: ~85-115 s pra carregar depois do cache quente, mais na primeira
+# vez. Por isso start_period de 15m no healthcheck — sem isso o Docker marca
+# unhealthy e o `depends_on` do backup nunca solta.
 name: minecraft
 
 services:
@@ -43,84 +49,88 @@ services:
     image: itzg/minecraft-server:java25
     container_name: minecraft
     restart: unless-stopped
-    # stdin_open/tty pro `docker attach` valer como console (o mc-server-runner
-    # lê stdin); sem isso o attach não entrega comando nenhum.
     stdin_open: true
     tty: true
     environment:
       EULA: "TRUE"
-      TYPE: "PAPER"
-      VERSION: "26.3"
-      # 4 OCPU / 23 GB na VPS, mas ~5-6 GB já são do resto das stacks + Zomboid.
-      # 6G é folgado pro número de amigos de um servidor privado e deixa o host
-      # respirar. Aikar's flags (GC tuning do Paper) entram automáticas com
-      # MEMORY >= 12G; abaixo disso o image usa as flags padrão, que é o certo.
-      MEMORY: "6G"
-      # Contas não-premium (ver topo). O gate passa a ser a whitelist.
+      # AUTO_CURSEFORGE instala o pack E o loader que o manifest declara
+      # (NeoForge 26.1.2.109). Não setamos VERSION nem NEOFORGE_VERSION:
+      # deixar o manifest mandar evita divergir do que os amigos instalam no
+      # launcher.
+      TYPE: "AUTO_CURSEFORGE"
+      CF_SLUG: "all-the-mods-11"
+      CF_FILE_ID: "9187064"
+      # 293 mods em série; 6 em paralelo encurta o primeiro boot sem
+      # estourar o rate limit do CurseForge.
+      CF_PARALLEL_DOWNLOADS: "6"
+      MEMORY: "8G"
+      INIT_MEMORY: "4G"
       ONLINE_MODE: "false"
-      # Sem Mojang auth não há chave de assinatura de chat; manter true faz o
-      # cliente reclamar de "chat não seguro" e derruba mensagens.
       ENFORCE_SECURE_PROFILE: "false"
-      # A whitelist vanilla fica desligada de propósito: quem manda é o plugin
-      # (as duas juntas conflitam — a vanilla barra antes do plugin rodar).
+      # Whitelist vanilla desligada: quem manda é o mod (as duas juntas
+      # conflitam e a vanilla barra antes, sem mensagem útil).
       ENABLE_WHITELIST: "false"
-      # `noble-whitelist:1.2.26` = slug:versão do Modrinth. Pinado porque o
-      # plugin guarda o schema do sqlite da whitelist; update silencioso num
-      # restart é risco desnecessário.
-      MODRINTH_PROJECTS: "noble-whitelist:1.2.26"
+      # NÃO usar a env `OPS` aqui: ela resolve o nome pela API da Mojang e
+      # grava o UUID **premium**. Em online-mode=false o jogador entra com o
+      # UUID offline (md5 de "OfflinePlayer:<nome>"), então o op simplesmente
+      # não pega. Conferido: OPS gravou 58ea66b5… (Mojang) mas o runtime usa
+      # 2b38b6a0… (offline) — e o `op <nome>` via RCON repete o mesmo erro
+      # enquanto o nome não estiver no usercache.
+      # O op vai em /data/minecraft/ops.json com o UUID offline (ver runbook).
+      # Mod de whitelist name-based (ver topo). Pinado na versão que
+      # carrega em 26.1.2 — o slug sozinho pegaria a build de 26.3.
+      MODRINTH_PROJECTS: "cwhitelist:3.1-26.1+-NeoForge"
       MODRINTH_DOWNLOAD_DEPENDENCIES: "none"
+      # Semente da whitelist do MOD. O `WHITELIST` do itzg escreve na lista
+      # vanilla (desligada, não serve aqui), então a semente vai por RCON —
+      # o único jeito de falar com o mod. Roda todo boot e é idempotente
+      # ("Entry already exists"), o que garante que um deploy novo com
+      # /data vazio não nasça trancado sem ninguém pra se auto-adicionar.
+      # Depois disso, gerencie in-game: /cwhitelist add name <Nick>
+      RCON_CMDS_STARTUP: |
+        cwhitelist add name TaldoJovis
       DIFFICULTY: "normal"
       MODE: "survival"
       MAX_PLAYERS: "10"
-      VIEW_DISTANCE: "10"
-      SIMULATION_DISTANCE: "8"
-      MOTD: "§aMinecraft §7§l26.3§r §7- servidor dos amigos"
+      # Modpack é pesado: view/simulation altos derrubam o TPS com 3-4
+      # jogadores. 8/6 é o ponto onde o pack fica jogável na VPS.
+      VIEW_DISTANCE: "8"
+      SIMULATION_DISTANCE: "6"
+      MOTD: "§aAll the Mods 11 §7- servidor dos amigos"
       TZ: "America/Sao_Paulo"
-      # Sem proxy na frente, e o query protocol é mais uma porta exposta sem
-      # necessidade — o status do server-list (que o cliente usa) já basta.
       ENABLE_QUERY: "false"
-      # Fail-closed: o NobleWhitelist sobe com `enabled: false` no config
-      # default, ou seja, um deploy novo ficaria ABERTO até alguém rodar o
-      # comando. Isto liga a whitelist logo no boot, todo boot (idempotente),
-      # então a janela entre "servidor no ar" e "só quem foi adicionado entra"
-      # é zero. Conferido: no boot o log mostra "[Rcon loop] running - noblewl
-      # on" e um nome fora da lista leva "You are not whitelisted".
-      RCON_CMDS_STARTUP: "noblewl on"
-      # Backup coordenado (save-all + pause via RCON) antes de copiar.
+      # Pausa nativa do servidor (1.21.2+): com 0 jogadores o processo
+      # congela e economiza CPU/RAM — ótimo aqui, porque o ATM11 come ~5 GB
+      # parado. Mas pausado ele não responde ping do server-list, então o
+      # cliente mostra "offline" até o primeiro connect acordar o socket.
+      # 0 desativa; 60 é o padrão. Mantido em 0 de propósito: o server-list
+      # mostrando "online" é como o dono confere se o serviço está de pé, e
+      # o custo de ficar acordado é o mesmo de antes desta mudança.
+      PAUSE_WHEN_EMPTY_SECONDS: "0"
+      # Sem proxy na frente; backup fala RCON no loopback da netns.
       RCON_PASSWORD: "${MINECRAFT_RCON_PASSWORD:?defina MINECRAFT_RCON_PASSWORD (variavel de stack no Dockhand)}"
     volumes:
-      # Bind, não named volume: o mundo é o único dado irreponível deste host e
-      # num bind ele aparece em `ls /data/minecraft` — dá pra copiar pra fora
-      # (rclone/scp) sem `docker run --volumes-from`. /data já é o padrão do
-      # host pro estado persistente das stacks (ver maus.yml) e está no disco
-      # de boot, junto do backup.
+      # Bind: o mundo do pack é o dado mais caro deste host (293 mods +
+      # saves). Fica visível em /data/minecraft pra copiar pra fora sem
+      # `--volumes-from`.
       - /data/minecraft:/data
     ports:
-      # Direto no host (não 127.0.0.1): é tráfego de jogo, não HTTP — não tem
-      # ingress nem Cloudflare na frente. O firewall do host + Security List
-      # da OCI são o gate (ver docs/servidor-minecraft.md).
       - "25565:25565"
     healthcheck:
-      # `mc-health` é o wrapper do próprio image: pergunta o status do server
-      # (não só "processo vivo"), então um boot travado aparece como unhealthy.
       test: mc-health
-      start_period: 5m
+      # 293 mods: ~2 min de boot com cache quente, muito mais no primeiro
+      # (baixa ~1.5 GB de mods). 15m evita unhealthy falso.
+      start_period: 15m
       interval: 30s
       retries: 5
     logging:
       options: { max-size: "10m", max-file: "3" }
     networks: [apps]
 
-  # Backups diários do mundo. O `itzg/mc-backup` fala RCON com o server pra
-  # `save-all` + pausar escrita durante a cópia (não é `cp` de arquivo aberto),
-  # então o .tgz é consistente. Vive na mesma netns do minecraft (network_mode
-  # service:) pra alcançar o RCON no loopback do container — RCON não fica
-  # exposto no host nem na rede `apps`.
-  #
-  # Destino é /data/minecraft-backups no HOST, fora do /data do jogo: se o
-  # container do server corromper o volume, o backup não corrompe junto. Ainda
-  # é o mesmo disco — pra sobreviver à perda da VM, copiar pra fora (ver
-  # docs/servidor-minecraft.md, seção "Backup"). 7 dias de retenção.
+  # Backup diário. Mesma mecânica de antes (RCON save-all + pausa), mas o
+  # alvo agora é /data inteiro, que inclui mods/config/world do pack.
+  # EXCLUDES tira o que é baixável de novo (jars, libraries, caches) pra
+  # não guardar 1.5 GB de mods todo dia.
   mc-backup:
     image: itzg/mc-backup:latest
     container_name: minecraft-backup
@@ -128,23 +138,24 @@ services:
     network_mode: service:minecraft
     depends_on:
       minecraft:
+        # healthcheck com start_period de 15m: o backup espera o boot
+        # terminar de verdade antes de tentar RCON.
         condition: service_healthy
     environment:
       BACKUP_INTERVAL: "24h"
       INITIAL_DELAY: "10m"
-      # Sem jogador online, não gasta CPU/disco à toa: adia até alguém entrar.
       PAUSE_IF_NO_PLAYERS: "true"
       PRUNE_BACKUPS_DAYS: "7"
       BACKUP_NAME: "world"
       SRC_DIR: "/data"
       DEST_DIR: "/backups"
-      # RCON roda na netns compartilhada -> loopback do container do server.
       RCON_HOST: "127.0.0.1"
       RCON_PORT: "25575"
       RCON_PASSWORD: "${MINECRAFT_RCON_PASSWORD:?defina MINECRAFT_RCON_PASSWORD (variavel de stack no Dockhand)}"
       TZ: "America/Sao_Paulo"
-      # Mods/plugins/cache não entram no backup: só o que é mundo/config.
-      EXCLUDES: "*.jar,cache,logs,*.tmp,libraries,versions"
+      # Mods e libraries são re-baixáveis pelo pack; o que dói perder é
+      # world/, config/ e os dados de mods (quests, FTB teams, etc).
+      EXCLUDES: "*.jar,cache,logs,*.tmp,libraries,versions,mods"
     volumes:
       - /data/minecraft:/data:ro
       - /data/minecraft-backups:/backups
