@@ -38,6 +38,8 @@ services:
   prospecta-api:
     image: registry.giomartins.dev:5000/prospecta-api:latest
     container_name: prospecta-api
+    labels:
+      giomartins.dev/project: prospecta
     restart: unless-stopped
     environment:
       # SEM DATABASE_URL / RABBITMQ_URL — a persistência e o broker são do
@@ -80,6 +82,8 @@ services:
   prospecta-agent-worker:
     image: registry.giomartins.dev:5000/prospecta-agent-worker:latest
     container_name: prospecta-agent-worker
+    labels:
+      giomartins.dev/project: prospecta
     restart: unless-stopped
     environment:
       # SEM DATABASE_URL — regra de isolamento (§1.1)
@@ -125,6 +129,8 @@ services:
   searxng:
     image: searxng/searxng:latest
     container_name: prospecta-searxng
+    labels:
+      giomartins.dev/project: prospecta
     restart: unless-stopped
     environment:
       SEARXNG_BASE_URL: http://searxng:8080/

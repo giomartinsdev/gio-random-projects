@@ -13,6 +13,8 @@ services:
   network-init:
     image: docker:cli
     container_name: apps-network-init
+    labels:
+      giomartins.dev/project: bootstrap
     restart: "no"
     entrypoint: ["sh", "-c"]
     command:

@@ -19,6 +19,8 @@ services:
   postgres:
     image: postgres:17-alpine
     container_name: postgres
+    labels:
+      giomartins.dev/project: storage
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-domain}
@@ -36,6 +38,8 @@ services:
   rabbitmq:
     image: rabbitmq:4-management-alpine
     container_name: rabbitmq
+    labels:
+      giomartins.dev/project: storage
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-domain}
@@ -54,6 +58,8 @@ services:
   minio:
     image: minio/minio:latest
     container_name: minio
+    labels:
+      giomartins.dev/project: storage
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -82,6 +88,8 @@ services:
     # sobrescrito abaixo, então o comportamento é idêntico.
     image: itzg/mc-backup:latest
     container_name: minio-buckets-init
+    labels:
+      giomartins.dev/project: storage
     restart: "no"
     depends_on:
       minio:

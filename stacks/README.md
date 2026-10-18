@@ -90,6 +90,11 @@ um app migrar e mudar a porta loopback, edite aqui e recrie o `ingress`.
   por nome, os legados já aposentados e falha se sobrar. Ao renomear um serviço,
   acrescente o nome ANTIGO à lista `legacy` no `deploy` do workflow da
   linguagem (`python-ci-cd.yml`, `go-ci-cd.yml`, …).
+- **Label `giomartins.dev/project`** em todo serviço: identifica o projeto
+  (módulo/domínio do repo) dono do container — `storage`, `observability`,
+  `db-mcp`, `compute`, `ai`, `domain`, `clubs`, `finance`, `prospecta`,
+  `tela`, `maus`, `excalidraw`, `minecraft`, `core`. Filtre por aí:
+  `docker ps --filter label=giomartins.dev/project=finance`.
 - **Segredo nunca no git**: no compose só `${VAR}`. O valor vira variável
   de stack no Dockhand (criptografada no DB dele).
 

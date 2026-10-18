@@ -37,6 +37,8 @@ services:
     # A tag do upstream fica no default/input daquele workflow.
     image: registry.giomartins.dev:5000/maus:latest
     container_name: omb
+    labels:
+      giomartins.dev/project: maus
     restart: unless-stopped
     init: true
     environment:
@@ -82,6 +84,8 @@ services:
   caddy:
     image: caddy:2
     container_name: maus-caddy
+    labels:
+      giomartins.dev/project: maus
     restart: unless-stopped
     # Mesma netns do omb: alcança o loopback e publica a porta declarada nele.
     network_mode: service:omb
@@ -101,6 +105,8 @@ services:
   slack-bridge:
     image: registry.giomartins.dev:5000/maus-slack-bridge:latest
     container_name: maus-slack-bridge
+    labels:
+      giomartins.dev/project: maus
     restart: unless-stopped
     network_mode: service:omb
     depends_on:

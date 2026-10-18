@@ -48,6 +48,8 @@ services:
   minecraft:
     image: itzg/minecraft-server:java25
     container_name: minecraft
+    labels:
+      giomartins.dev/project: minecraft
     restart: unless-stopped
     stdin_open: true
     tty: true
@@ -134,6 +136,8 @@ services:
   mc-backup:
     image: itzg/mc-backup:latest
     container_name: minecraft-backup
+    labels:
+      giomartins.dev/project: minecraft
     restart: unless-stopped
     network_mode: service:minecraft
     depends_on:

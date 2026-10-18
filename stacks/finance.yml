@@ -30,6 +30,8 @@ services:
   finance-api:
     image: registry.giomartins.dev:5000/finance-api:latest
     container_name: finance-api
+    labels:
+      giomartins.dev/project: finance
     restart: unless-stopped
     environment:
       # SEM DATABASE_URL / RABBITMQ_URL — a persistência é do stack `domain` (§1.1)
@@ -101,6 +103,8 @@ services:
   finance-customersupport-worker:
     image: registry.giomartins.dev:5000/finance-customersupport-worker:latest
     container_name: finance-customersupport-worker
+    labels:
+      giomartins.dev/project: finance
     restart: unless-stopped
     environment:
       # SEM DATABASE_URL — regra de isolamento (§1.1)
@@ -124,6 +128,8 @@ services:
   finance-openfinance-worker:
     image: registry.giomartins.dev:5000/finance-openfinance-worker:latest
     container_name: finance-openfinance-worker
+    labels:
+      giomartins.dev/project: finance
     restart: unless-stopped
     environment:
       FINANCE_API_BASE_URL: http://finance-api:8000

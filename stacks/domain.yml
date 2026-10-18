@@ -13,6 +13,8 @@ services:
   domain-api:
     image: registry.giomartins.dev:5000/domain-api:latest
     container_name: domain-api
+    labels:
+      giomartins.dev/project: domain
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://domain:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}@postgres:5432/domain
@@ -30,6 +32,8 @@ services:
   domain-worker:
     image: registry.giomartins.dev:5000/domain-worker:latest
     container_name: domain-worker
+    labels:
+      giomartins.dev/project: domain
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://domain:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}@postgres:5432/domain

@@ -14,6 +14,8 @@ services:
   clubs-api:
     image: registry.giomartins.dev:5000/clubs-api:latest
     container_name: clubs-api
+    labels:
+      giomartins.dev/project: clubs
     restart: unless-stopped
     environment:
       PORT: "8017"
@@ -34,6 +36,8 @@ services:
   clubs-ingest:
     image: registry.giomartins.dev:5000/clubs-ingest:latest
     container_name: clubs-ingest
+    labels:
+      giomartins.dev/project: clubs
     restart: unless-stopped
     environment:
       CLUBS_INGEST_DOMAIN_API_URL: http://domain-api:8000

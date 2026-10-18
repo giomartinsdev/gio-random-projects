@@ -33,6 +33,8 @@ services:
   registry-htpasswd:
     image: httpd:2.4-alpine
     container_name: htpasswd-init
+    labels:
+      giomartins.dev/project: core
     restart: "no"
     entrypoint: ["sh", "-c"]
     command:
@@ -50,6 +52,8 @@ services:
   registry-docker-config:
     image: alpine:3
     container_name: registry-docker-config-install
+    labels:
+      giomartins.dev/project: core
     restart: "no"
     depends_on:
       registry-htpasswd:
@@ -70,6 +74,8 @@ services:
   registry:
     image: registry:2
     container_name: registry
+    labels:
+      giomartins.dev/project: core
     restart: unless-stopped
     depends_on:
       registry-htpasswd:
@@ -97,6 +103,8 @@ services:
   ingress:
     image: nginx:1.27-alpine
     container_name: ingress
+    labels:
+      giomartins.dev/project: core
     restart: unless-stopped
     network_mode: host
     volumes:
@@ -106,6 +114,8 @@ services:
   dockhand:
     image: fnsys/dockhand:latest
     container_name: dockhand
+    labels:
+      giomartins.dev/project: core
     restart: unless-stopped
     user: "0"
     environment:

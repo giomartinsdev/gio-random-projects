@@ -35,6 +35,8 @@ services:
   9router:
     image: registry.giomartins.dev:5000/9router:latest
     container_name: 9router
+    labels:
+      giomartins.dev/project: ai
     restart: unless-stopped
     environment:
       JWT_SECRET: ${NINEROUTER_JWT_SECRET:?defina NINEROUTER_JWT_SECRET}
@@ -63,6 +65,8 @@ services:
   decision:
     image: registry.giomartins.dev:5000/decision:latest
     container_name: decision
+    labels:
+      giomartins.dev/project: ai
     restart: unless-stopped
     init: true
     environment:
