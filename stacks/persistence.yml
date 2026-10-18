@@ -77,7 +77,10 @@ services:
   # buckets + leitura anônima. Um app estático novo só precisa da linha aqui
   # e da entrada em stacks/ingress/default.conf.
   minio-buckets:
-    image: minio/mc:latest
+    # minio/mc foi removido do Docker Hub (404). itzg/mc-backup é construído a
+    # partir do minio/mc e traz o mesmo binário `mc`; o entrypoint é
+    # sobrescrito abaixo, então o comportamento é idêntico.
+    image: itzg/mc-backup:latest
     container_name: minio-buckets-init
     restart: "no"
     depends_on:
