@@ -1,79 +1,125 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { api, ApiError, type Account } from "./api";
+import { clearToken, readToken, writeToken } from "./token";
 
-// Sessão mock: não há API. O "login" só grava uma flag no localStorage — a POC
-// é sobre o produto, não sobre autenticação. A forma é a mesma de um
-// AuthProvider real, então trocar por cookie/API depois não mexe nas telas.
-export interface MockUser {
+// Sessão de verdade: quem manda é o uhumarketing-api.
+//
+// O token é opaco e vive no localStorage — não há cookie httpOnly porque a SPA
+// é servida de outra origem em desenvolvimento. O que importa é que o servidor
+// resolve o token em usuário + workspace; nada daqui é usado para decidir
+// permissão, só para pintar a tela.
+export interface SessionUser {
   name: string;
   email: string;
+  workspaceId: string;
 }
 
 interface SessionState {
-  user: MockUser | null;
+  user: SessionUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string, company: string) => Promise<void>;
   logout: () => void;
 }
 
-const SESSION_KEY = "uhumarketing:session:v1";
+const USER_KEY = "uhumarketing:session:v2";
 
 const SessionContext = createContext<SessionState | null>(null);
 
-function load(): MockUser | null {
+function loadCached(): SessionUser | null {
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
+    const raw = localStorage.getItem(USER_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as MockUser;
+    return JSON.parse(raw) as SessionUser;
   } catch {
     return null;
   }
 }
 
+function cache(user: SessionUser | null) {
+  try {
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+    else localStorage.removeItem(USER_KEY);
+  } catch {
+    // storage indisponível: sessão só nesta aba.
+  }
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<MockUser | null>(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // No boot, o token é a única verdade: se ele não vale mais, o cache do
+  // usuário é descartado. Confiar no localStorage faria a SPA abrir "logada"
+  // com um token expirado e só descobrir no primeiro request.
   useEffect(() => {
-    setUser(load());
-    setLoading(false);
-  }, []);
+    let alive = true;
 
-  const persist = useCallback((u: MockUser | null) => {
-    try {
-      if (u) localStorage.setItem(SESSION_KEY, JSON.stringify(u));
-      else localStorage.removeItem(SESSION_KEY);
-    } catch {
-      // storage indisponível: sessão só nesta aba.
+    async function restore() {
+      if (!readToken()) {
+        cache(null);
+        if (alive) {
+          setUser(null);
+          setLoading(false);
+        }
+        return;
+      }
+      try {
+        const me = await api.me();
+        if (!alive) return;
+        const next: SessionUser = { name: me.name, email: me.email, workspaceId: me.workspaceId };
+        cache(next);
+        setUser(next);
+      } catch (err) {
+        if (!alive) return;
+        if (err instanceof ApiError && err.status === 401) {
+          clearToken();
+          cache(null);
+        } else {
+          // Backend fora do ar: mantém o cache para a tela não piscar para o
+          // login por causa de uma queda de rede.
+          setUser(loadCached());
+        }
+      } finally {
+        if (alive) setLoading(false);
+      }
     }
-    setUser(u);
+
+    void restore();
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  // A "validação" é proposital mas trivial: qualquer e-mail com @ e senha de
-  // 4+ entra. A tela mostra as credenciais de demonstração.
+  const adopt = useCallback((acc: Account) => {
+    writeToken(acc.token);
+    const next: SessionUser = { name: acc.name, email: acc.email, workspaceId: acc.workspaceId };
+    cache(next);
+    setUser(next);
+  }, []);
+
   const login = useCallback(
     async (email: string, password: string) => {
-      await delay(420);
-      if (!email.includes("@") || password.length < 4) {
-        throw new Error("Informe um e-mail válido e uma senha de pelo menos 4 caracteres.");
-      }
-      persist({ name: nameFromEmail(email), email });
+      adopt(await api.login(email, password));
     },
-    [persist],
+    [adopt],
   );
 
   const signup = useCallback(
-    async (name: string, email: string, password: string, _company: string) => {
-      await delay(560);
-      if (!email.includes("@") || password.length < 4) {
-        throw new Error("Informe um e-mail válido e uma senha de pelo menos 4 caracteres.");
-      }
-      persist({ name: name.trim() || nameFromEmail(email), email });
+    async (name: string, email: string, password: string, company: string) => {
+      adopt(await api.signup(name, email, password, company));
     },
-    [persist],
+    [adopt],
   );
 
-  const logout = useCallback(() => persist(null), [persist]);
+  const logout = useCallback(() => {
+    // Revogar no servidor importa: um token que continua válido depois do
+    // "sair" é uma sessão que ninguém consegue encerrar.
+    void api.logout().catch(() => undefined);
+    clearToken();
+    cache(null);
+    setUser(null);
+  }, []);
 
   return (
     <SessionContext.Provider value={{ user, loading, login, signup, logout }}>
@@ -86,17 +132,4 @@ export function useSession(): SessionState {
   const ctx = useContext(SessionContext);
   if (!ctx) throw new Error("useSession precisa estar dentro de <SessionProvider>");
   return ctx;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export function nameFromEmail(email: string): string {
-  const local = email.split("@")[0].replace(/[._-]+/g, " ").trim();
-  return local
-    .split(" ")
-    .filter(Boolean)
-    .map((p) => p[0].toUpperCase() + p.slice(1))
-    .join(" ");
 }

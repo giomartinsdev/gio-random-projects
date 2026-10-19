@@ -10,10 +10,11 @@ import (
 
 // NewRouter monta as rotas. Duas zonas, como no resto do repo:
 //
-//   - público: /healthz e /webhooks/whatsapp (que se autentica por assinatura
-//     HMAC, não por chave) — é o que a Meta precisa alcançar sem chave;
-//   - autenticado: tudo em /api/v1, com X-API-Key.
-func NewRouter(h *Handlers, keys APIKeys, origins []string, log *slog.Logger) http.Handler {
+//   - público: /healthz, o handshake do webhook e o próprio webhook (que se
+//     autentica por assinatura HMAC), além de /api/v1/auth/{signup,login} — é
+//     por aqui que uma conta nova começa;
+//   - autenticado: todo o resto em /api/v1, com Bearer <token de sessão>.
+func NewRouter(h *Handlers, origins []string, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 	r.Use(recoverPanic(log))
 	r.Use(requestLog(log))
@@ -23,47 +24,56 @@ func NewRouter(h *Handlers, keys APIKeys, origins []string, log *slog.Logger) ht
 	r.Post("/webhooks/whatsapp", h.Webhook)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(func(next http.Handler) http.Handler { return secure(next, keys, log) })
+		// Públicas: é por aqui que se obtém uma sessão.
+		r.Post("/auth/signup", h.Signup)
+		r.Post("/auth/login", h.Login)
 
-		r.Get("/bootstrap", h.Bootstrap)
-		r.Put("/state", h.PutState)
+		r.Group(func(r chi.Router) {
+			r.Use(sessionAuth(h.Service.Store, log))
 
-		r.Put("/workspace", h.UpdateWorkspace)
+			r.Post("/auth/logout", h.Logout)
+			r.Get("/auth/me", h.Me)
 
-		r.Get("/templates", h.Templates)
-		r.Post("/templates", h.CreateTemplate)
-		r.Patch("/templates/{id}", h.UpdateTemplate)
-		r.Post("/templates/{id}/submit", h.SubmitTemplate)
-		r.Delete("/templates/{id}", h.DeleteTemplate)
+			r.Get("/bootstrap", h.Bootstrap)
+			r.Put("/state", h.PutState)
 
-		r.Get("/segments", h.Segments)
-		r.Post("/segments", h.CreateSegment)
-		r.Patch("/segments/{id}", h.UpdateSegment)
-		r.Delete("/segments/{id}", h.DeleteSegment)
+			r.Put("/workspace", h.UpdateWorkspace)
 
-		r.Get("/contacts", h.Contacts)
-		r.Post("/contacts", h.CreateContact)
-		r.Post("/contacts/{id}/opt-out", h.OptOut)
+			r.Get("/templates", h.Templates)
+			r.Post("/templates", h.CreateTemplate)
+			r.Patch("/templates/{id}", h.UpdateTemplate)
+			r.Post("/templates/{id}/submit", h.SubmitTemplate)
+			r.Delete("/templates/{id}", h.DeleteTemplate)
 
-		r.Get("/campaigns", h.Campaigns)
-		r.Post("/campaigns", h.CreateCampaign)
-		r.Patch("/campaigns/{id}", h.UpdateCampaign)
-		r.Post("/campaigns/{id}/launch", h.LaunchCampaign)
-		r.Post("/campaigns/{id}/test", h.TestSend)
-		r.Post("/campaigns/{id}/pause", h.PauseCampaign)
-		r.Post("/campaigns/{id}/resume", h.ResumeCampaign)
+			r.Get("/segments", h.Segments)
+			r.Post("/segments", h.CreateSegment)
+			r.Patch("/segments/{id}", h.UpdateSegment)
+			r.Delete("/segments/{id}", h.DeleteSegment)
 
-		r.Get("/flows", h.Flows)
-		r.Post("/flows", h.CreateFlow)
-		r.Put("/flows/{id}", h.UpdateFlow)
-		r.Delete("/flows/{id}", h.DeleteFlow)
+			r.Get("/contacts", h.Contacts)
+			r.Post("/contacts", h.CreateContact)
+			r.Post("/contacts/{id}/opt-out", h.OptOut)
 
-		r.Get("/sends", h.Sends)
-		r.Get("/activity", h.Activity)
+			r.Get("/campaigns", h.Campaigns)
+			r.Post("/campaigns", h.CreateCampaign)
+			r.Patch("/campaigns/{id}", h.UpdateCampaign)
+			r.Post("/campaigns/{id}/launch", h.LaunchCampaign)
+			r.Post("/campaigns/{id}/test", h.TestSend)
+			r.Post("/campaigns/{id}/pause", h.PauseCampaign)
+			r.Post("/campaigns/{id}/resume", h.ResumeCampaign)
 
-		r.Post("/dev/reset", h.ResetDemo)
-		r.Post("/dev/simulate-status", h.SimulateWebhookStatus)
-		r.Post("/dev/worker-tick", h.WorkerTick)
+			r.Get("/flows", h.Flows)
+			r.Post("/flows", h.CreateFlow)
+			r.Put("/flows/{id}", h.UpdateFlow)
+			r.Delete("/flows/{id}", h.DeleteFlow)
+
+			r.Get("/sends", h.Sends)
+			r.Get("/activity", h.Activity)
+
+			r.Post("/dev/reset", h.ResetAccount)
+			r.Post("/dev/simulate-status", h.SimulateWebhookStatus)
+			r.Post("/dev/worker-tick", h.WorkerTick)
+		})
 	})
 
 	return cors(origins, r)
@@ -96,7 +106,7 @@ func requestLog(log *slog.Logger) func(http.Handler) http.Handler {
 			if r.URL.Path == "/healthz" {
 				return
 			}
-			log.Info("http", "method", r.Method, "path", r.URL.Path, "caller", labelFrom(r))
+			log.Info("http", "method", r.Method, "path", r.URL.Path, "caller", callerFrom(r))
 		})
 	}
 }

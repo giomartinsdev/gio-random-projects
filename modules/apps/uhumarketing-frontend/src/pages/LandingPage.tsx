@@ -36,7 +36,7 @@ export function LandingPage() {
         <div className="relative mx-auto flex max-w-[1160px] flex-col items-center gap-6 px-6 pb-16 pt-20 text-center md:pt-24">
           <Eyebrow>
             <span className="h-1.5 w-1.5 rounded-full bg-success" />
-            POC de produto · integração Meta WhatsApp
+            Marketing no WhatsApp · conta própria
           </Eyebrow>
 
           <h1 className="max-w-[860px] text-[44px] font-semibold leading-[1.06] tracking-[-0.03em] text-lp-ink md:text-[64px]">
@@ -59,7 +59,7 @@ export function LandingPage() {
                 navigatePublic("login");
               }}
             >
-              Entrar na demonstração <ArrowRight size={16} />
+              Entrar <ArrowRight size={16} />
             </LandingButton>
             <LandingButton
               href="#/cadastro"
@@ -75,13 +75,13 @@ export function LandingPage() {
 
           <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 pt-2 font-mono text-[10px] uppercase tracking-[0.08em] text-lp-ink-3">
             <span className="flex items-center gap-1.5">
-              <Check size={12} /> dados fictícios
+              <Check size={12} /> uma conta por workspace
             </span>
             <span className="flex items-center gap-1.5">
-              <Check size={12} /> nada é enviado de verdade
+              <Check size={12} /> templates aprovados pela Meta
             </span>
             <span className="flex items-center gap-1.5">
-              <Check size={12} /> rode local, sem backend
+              <Check size={12} /> histórico só seu
             </span>
           </div>
 
@@ -193,7 +193,7 @@ export function LandingPage() {
         <div className="flex flex-col gap-3">
           <Eyebrow>Na prática</Eyebrow>
           <h2 className="max-w-[720px] text-[34px] font-semibold leading-[1.12] tracking-[-0.02em] text-lp-ink md:text-[42px]">
-            A campanha de reativação que originou a POC.
+            A campanha de reativação, do começo ao fim.
           </h2>
         </div>
 
@@ -230,11 +230,11 @@ export function LandingPage() {
         <OrbGlow className="left-1/2 top-1/2 h-[560px] w-[560px] -translate-x-1/2 -translate-y-1/2" opacity={0.14} />
         <div className="relative mx-auto flex max-w-[820px] flex-col items-center gap-5 px-6 py-20 text-center">
           <h2 className="text-[34px] font-semibold leading-[1.12] tracking-[-0.02em] text-lp-ink md:text-[44px]">
-            Veja o produto com dados de verdade.
+            Comece com a sua conta, vazia.
           </h2>
           <p className="max-w-[520px] text-[15px] leading-relaxed text-lp-ink-2">
-            A conta de demonstração já vem com templates, audiências, campanhas e um fluxo de reativação rodando. Sem
-            cadastro, sem cartão, sem enviar mensagem para ninguém.
+            O cadastro cria um workspace só seu, sem dado de exemplo. Você conecta o número, cria o primeiro template e
+            monta a campanha — nada é enviado sem opt-in e template aprovado.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <LandingButton
@@ -245,7 +245,7 @@ export function LandingPage() {
                 navigatePublic("login");
               }}
             >
-              Entrar na demonstração <ArrowRight size={16} />
+              Entrar <ArrowRight size={16} />
             </LandingButton>
             <LandingButton
               href="#/cadastro"
@@ -268,7 +268,7 @@ export function LandingPage() {
             <span className="text-[13px] font-semibold text-lp-ink">uhumarketing</span>
           </div>
           <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-lp-ink-3">
-            POC · dados fictícios · sem backend
+            uhumarketing · marketing no WhatsApp
           </p>
         </div>
       </footer>
@@ -386,6 +386,9 @@ function ProductFrame() {
         <span className="h-2.5 w-2.5 rounded-full bg-[#33333A]" />
         <span className="ml-3 rounded-xs bg-[#0B0B0D] px-2.5 py-1 font-mono text-[10px] text-[#6E6E76]">
           app.uhumarketing.com/visao-geral
+        </span>
+        <span className="ml-auto rounded-xs border border-[#33333A] px-2 py-0.5 font-mono text-[9px] text-[#6E6E76]">
+          ilustração
         </span>
       </div>
 

@@ -265,14 +265,14 @@ function CampaignDetail({ campaign }: { campaign: Campaign }) {
           disabled={busy}
           icon={isRunning ? <Pause size={14} /> : <Play size={14} />}
           onClick={async () => {
-            // No modo Backend, "Ativar" é um disparo de verdade: valida
-            // template aprovado, telefone e opt-in no servidor e enfileira.
-            // No modo Demo continua sendo só o status da campanha.
-            if (!isRunning && store.launchCampaign) {
+            // "Disparar" é um disparo de verdade: o servidor valida template
+            // aprovado, telefone e opt-in e enfileira. A tela espera a
+            // resposta — erro aqui é informação, não um detalhe para depois.
+            if (!isRunning) {
               setBusy(true);
               setLaunch(null);
               try {
-                const res = await store.launchCampaign(campaign.id);
+                const res = await store.launchCampaign!(campaign.id);
                 setLaunch({
                   tone: "ok",
                   text: `${res.queued} na fila · ${res.skipped} sem opt-in · ${res.duplicate} já enviados`,
@@ -287,37 +287,37 @@ function CampaignDetail({ campaign }: { campaign: Campaign }) {
               }
               return;
             }
-            store.updateCampaign(campaign.id, {
-              status: isRunning ? "paused" : "running",
-              lastRunAt: isRunning ? campaign.lastRunAt : new Date().toISOString(),
-            });
+            store.updateCampaign(campaign.id, { status: "paused" });
           }}
         >
-          {isRunning ? "Pausar" : store.launchCampaign ? "Disparar" : "Ativar"}
+          {isRunning ? "Pausar" : "Disparar"}
         </Button>
         <Button
           size="sm"
           variant="secondary"
           className="flex-1"
           icon={<SendIcon size={14} />}
-          onClick={() => {
-            // Disparo de demonstração: um envio por clique, para ver a fila
-            // andar e os números do dashboard reagirem.
-            const segment = segments[0];
-            store.enqueueSend({
-              campaignId: campaign.id,
-              contactName: segment?.sample[0]?.name ?? "Contato demo",
-              destination: segment?.sample[0]?.phone ?? "+55 11 90000-0000",
-              templateName: template?.name ?? "template",
-              status: "sent",
-              couponCode: campaign.offer.enabled ? campaign.offer.codePattern.replace("{nome}", "DEMO") : undefined,
-            });
-            store.logActivity({
-              kind: "send",
-              title: "Disparo manual",
-              detail: `${campaign.name} · 1 mensagem de teste`,
-              refId: campaign.id,
-            });
+          onClick={async () => {
+            // Um envio real para o primeiro contato elegível. Passa pelas
+            // mesmas regras do disparo — um teste que as ignora não testa nada.
+            setBusy(true);
+            setLaunch(null);
+            try {
+              const res = await store.testSend!(campaign.id);
+              setLaunch({
+                tone: "ok",
+                text: res.queued
+                  ? "1 envio de teste na fila — acompanhe em Envios"
+                  : "Nenhum contato elegível (opt-in) para o teste",
+              });
+            } catch (err) {
+              setLaunch({
+                tone: "err",
+                text: err instanceof Error ? err.message : "Falha no envio de teste",
+              });
+            } finally {
+              setBusy(false);
+            }
           }}
         >
           Enviar teste
@@ -380,28 +380,7 @@ function CampaignDetail({ campaign }: { campaign: Campaign }) {
         ))}
       </div>
 
-      <div className="flex flex-col gap-2">
-        <span className="caps">Janela de envio</span>
-        <div className="flex items-start gap-2.5 rounded-sm bg-bg px-3 py-2.5">
-          <CalendarClock size={14} className="mt-0.5 shrink-0 text-fg-3" />
-          <div className="flex flex-col gap-0.5 text-[12px] text-fg-2">
-            <span>
-              {String(campaign.schedule.windowStart).padStart(2, "0")}h–{String(campaign.schedule.windowEnd).padStart(2, "0")}h ·{" "}
-              {campaign.schedule.days.length === 7 ? "todos os dias" : "dias úteis"}
-            </span>
-            <span className="text-[11px] text-fg-3">
-              vazão {campaign.schedule.throttlePerMinute} msg/min · {campaign.schedule.timezone}
-            </span>
-            <span className="text-[11px] text-fg-3">
-              {campaign.status === "scheduled"
-                ? `começa ${fmtDateTime(campaign.schedule.startAt)}`
-                : campaign.lastRunAt
-                  ? `última execução ${fmtDateTime(campaign.lastRunAt)}`
-                  : `criada ${fmtDateTime(campaign.createdAt)}`}
-            </span>
-          </div>
-        </div>
-      </div>
+      <SendWindow campaign={campaign} />
 
       {campaign.offer.enabled && (
         <div className="flex flex-col gap-1.5 rounded-sm border border-line bg-bg p-3.5">
@@ -427,8 +406,143 @@ function CampaignDetail({ campaign }: { campaign: Campaign }) {
   );
 }
 
-function Mini({ label, value }: { label: string; value: string }) {
+/* ------------------------------------------------------ janela de envio */
+
+const DAY_LABELS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+/**
+ * Janela de envio editável.
+ *
+ * Existe porque a janela é a razão mais comum de uma fila parada — e sem poder
+ * mudá-la o operador só descobre isso esperando até as 9h do dia seguinte. Os
+ * controles salvam no mesmo `updateCampaign` que o resto do drawer usa; no modo
+ * Backend isso vira `PUT /state` e o worker passa a respeitar a janela nova no
+ * próximo tick.
+ */
+function SendWindow({ campaign }: { campaign: Campaign }) {
+  const store = useStore();
+  const [editing, setEditing] = useState(false);
+  const { schedule } = campaign;
+
+  function patch(next: Partial<Campaign["schedule"]>) {
+    store.updateCampaign(campaign.id, { schedule: { ...schedule, ...next } });
+  }
+
+  function toggleDay(day: number) {
+    const has = schedule.days.includes(day);
+    const days = has ? schedule.days.filter((d) => d !== day) : [...schedule.days, day].sort();
+    // Nunca deixar a campanha sem nenhum dia: seria uma janela que nunca abre,
+    // e o operador não teria pista de por que a fila não anda.
+    if (days.length === 0) return;
+    patch({ days });
+  }
+
   return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="caps">Janela de envio</span>
+        <button
+          onClick={() => setEditing((v) => !v)}
+          className="font-mono text-[11px] text-fg-3 transition-colors hover:text-fg"
+        >
+          {editing ? "fechar" : "ajustar"}
+        </button>
+      </div>
+      <div className="flex flex-col gap-2.5 rounded-sm bg-bg px-3 py-2.5">
+        <div className="flex items-start gap-2.5">
+          <CalendarClock size={14} className="mt-0.5 shrink-0 text-fg-3" />
+          <div className="flex flex-col gap-0.5 text-[12px] text-fg-2">
+            <span>
+              {String(schedule.windowStart).padStart(2, "0")}h–{String(schedule.windowEnd).padStart(2, "0")}h ·{" "}
+              {schedule.days.length === 7 ? "todos os dias" : "dias úteis"}
+            </span>
+            <span className="text-[11px] text-fg-3">
+              vazão {schedule.throttlePerMinute} msg/min · {schedule.timezone}
+            </span>
+            <span className="text-[11px] text-fg-3">
+              {campaign.status === "scheduled"
+                ? `começa ${fmtDateTime(schedule.startAt)}`
+                : campaign.lastRunAt
+                  ? `última execução ${fmtDateTime(campaign.lastRunAt)}`
+                  : `criada ${fmtDateTime(campaign.createdAt)}`}
+            </span>
+          </div>
+        </div>
+
+        {editing && (
+          <div className="flex flex-col gap-3 border-t border-line pt-3">
+            <div className="grid grid-cols-2 gap-2.5">
+              <Field label="Abre" hint="hora local">
+                <Select
+                  value={schedule.windowStart}
+                  onChange={(e) => patch({ windowStart: Number(e.target.value) })}
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>
+                      {String(h).padStart(2, "0")}:00
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Fecha" hint="hora local, exclusiva">
+                <Select
+                  value={schedule.windowEnd}
+                  onChange={(e) => patch({ windowEnd: Number(e.target.value) })}
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>
+                      {String(h).padStart(2, "0")}:00
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[13px] text-fg-2">Dias</span>
+              <div className="flex flex-wrap gap-1.5">
+                {DAY_LABELS.map((label, day) => {
+                  const on = schedule.days.includes(day);
+                  return (
+                    <button
+                      key={label}
+                      onClick={() => toggleDay(day)}
+                      className={cn(
+                        "rounded-xs border px-2 py-1 font-mono text-[11px] transition-colors",
+                        on
+                          ? "border-accent/40 bg-accent/10 text-accent"
+                          : "border-line bg-bg text-fg-3 hover:text-fg",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <Field label="Vazão" hint="mensagens por minuto, para não tomar bloqueio da Meta">
+              <Input
+                type="number"
+                min={1}
+                max={1000}
+                value={schedule.throttlePerMinute}
+                onChange={(e) => patch({ throttlePerMinute: Math.max(1, Number(e.target.value) || 1) })}
+              />
+            </Field>
+
+            <p className="text-[11px] leading-snug text-fg-3">
+              Janela invertida (ex.: 21h–8h) atravessa a meia-noite. Mudar aqui não reenvia nada: só
+              decide quando o worker pode drenar a fila.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Mini({ label, value }: { label: string; value: string }) {  return (
     <div className="flex flex-col gap-0.5 rounded-sm bg-bg px-3 py-2">
       <span className="text-[10px] uppercase tracking-wide text-fg-3">{label}</span>
       <span className="font-mono text-[13px] text-fg">{value}</span>
@@ -481,7 +595,7 @@ function NewCampaignModal({ open, onClose }: { open: boolean; onClose: () => voi
         validUntil: new Date(Date.now() + 14 * 86_400_000).toISOString(),
       },
       requiresApproval: true,
-      notes: "Criada na POC — o fluxo abre no editor para montar descoberta e saída.",
+      notes: "O fluxo abre no editor para montar descoberta e saída.",
     });
 
     const flow = store.createFlow({

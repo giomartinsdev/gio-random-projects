@@ -1,22 +1,18 @@
 package httpapi
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
 )
 
-func contextWithLabel(r *http.Request, label string) context.Context {
-	return context.WithValue(r.Context(), ctxKey{}, label)
-}
-
-// labelFrom devolve o rótulo da chave que fez a chamada (para log/auditoria).
-func labelFrom(r *http.Request) string {
-	if v, ok := r.Context().Value(ctxKey{}).(string); ok {
-		return v
+// callerFrom identifica quem fez a chamada para o log. Depois das contas, isso
+// é o usuário da sessão — não mais o rótulo de uma chave de API.
+func callerFrom(r *http.Request) string {
+	if sess := sessionFrom(r); sess.UserID != "" {
+		return sess.UserID
 	}
-	return ""
+	return "anon"
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }

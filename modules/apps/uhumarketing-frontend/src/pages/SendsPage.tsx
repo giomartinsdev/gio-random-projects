@@ -8,7 +8,6 @@ import {
   Timer,
 } from "lucide-react";
 import { useStore, useLookup } from "@/lib/store";
-import { useDataSource } from "@/lib/dataSource";
 import { fmtDateTime, money, num, pct, ago } from "@/lib/format";
 import type { SendStatus } from "@/lib/types";
 import { SEND_STATUS_LABEL } from "@/lib/types";
@@ -26,8 +25,6 @@ const STATUSES: (SendStatus | "all")[] = ["all", "queued", "sent", "delivered", 
 
 export function SendsPage() {
   const store = useStore();
-  const [source] = useDataSource();
-  const real = source === "backend";
   const lookup = useLookup();
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -107,7 +104,7 @@ export function SendsPage() {
           />
 
           <div className="flex flex-wrap gap-4">
-            <StatCard label="Envios no log" value={num(stats.total)} hint={real ? "no banco" : "amostra da POC"} icon={<SendIcon size={16} />} />
+            <StatCard label="Envios no log" value={num(stats.total)} hint="no banco" icon={<SendIcon size={16} />} />
             <StatCard label="Na fila" value={num(stats.queued)} hint="aguardando janela" icon={<Timer size={16} />} />
             <StatCard label="Respondidas" value={num(stats.replied)} hint={`${pct(stats.total ? (stats.replied / stats.total) * 100 : 0)} do total`} icon={<MessageCircle size={16} />} />
             <StatCard label="Falhas" value={num(stats.failed)} hint={`custo ${money(stats.cost)}`} icon={<CircleAlert size={16} />} />
@@ -138,9 +135,7 @@ export function SendsPage() {
             </Select>
             <div className="flex-1" />
             <Note className="hidden lg:block">
-              {real
-                ? "Cada linha vem de sends no Postgres; o status é o último webhook da Meta."
-                : "Log mock: cada linha é um registro do store, não um webhook da Meta."}
+              Cada linha vem de sends no Postgres; o status é o último evento do provedor.
             </Note>
           </div>
 
@@ -155,7 +150,15 @@ export function SendsPage() {
             </TableHead>
             <TableBody>
               {sends.length === 0 ? (
-                <EmptyState title="Nenhum envio com esse filtro" hint="Mude o filtro ou dispare um teste numa campanha." icon={<SendIcon size={18} />} />
+                <EmptyState
+                  title={store.sends.length === 0 ? "Nenhum envio ainda" : "Nenhum envio com esse filtro"}
+                  hint={
+                    store.sends.length === 0
+                      ? "Cada mensagem que sai de uma campanha aparece aqui, com o status que a Meta devolveu."
+                      : "Mude o filtro ou dispare um teste numa campanha."
+                  }
+                  icon={<SendIcon size={18} />}
+                />
               ) : (
                 sends.map((s) => {
                   const campaign = lookup.campaign(s.campaignId);
@@ -284,8 +287,9 @@ function SendDetail({ sendId }: { sendId: string }) {
       )}
 
       <Note>
-        A POC não recebe eventos da Meta. Numa integração real, cada mudança de status viria do webhook
-        <span className="font-mono text-fg-2"> messages.statuses</span>.
+        O status é o último evento recebido no webhook
+        <span className="font-mono text-fg-2"> messages.statuses</span>. Em dry-run, o evento é
+        simulado pelo endpoint de desenvolvimento.
       </Note>
     </div>
   );

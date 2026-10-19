@@ -11,15 +11,15 @@ import {
   Users,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { ago, compact, num, pct } from "@/lib/format";
+import { ago, compact, num } from "@/lib/format";
 import type { ContactField, Segment, SegmentKind, SegmentRule } from "@/lib/types";
 import { CONTACT_FIELD_LABEL } from "@/lib/types";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Input";
 import { Avatar } from "@/components/ui/Table";
-import { StatCard } from "@/components/ui/Card";
+import { Card, CardHead, StatCard } from "@/components/ui/Card";
 import { Drawer, Modal } from "@/components/ui/Drawer";
-import { Tag } from "@/components/ui/Badge";
+import { StatusBadge, Tag } from "@/components/ui/Badge";
 import { Topbar, PageBody, PageHeader, Note } from "@/components/Topbar";
 import { num as fmtNum, uid } from "@/lib/format";
 import { navigate } from "@/lib/useHashRoute";
@@ -45,6 +45,7 @@ export function AudiencesPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const segments = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -53,7 +54,10 @@ export function AudiencesPage() {
     );
   }, [store.segments, query]);
 
-  const totalContacts = store.segments.reduce((a, s) => a + s.contactsCount, 0);
+  // Contatos únicos da CONTA, não o somatório das audiências: a mesma pessoa
+  // pode estar em duas listas e não deve contar duas vezes.
+  const totalContacts = store.contacts.length;
+  const optedIn = store.contacts.filter((c) => c.optIn).length;
   const segment = store.segments.find((s) => s.id === selected) ?? null;
 
   /** Cria um fluxo já ancorado nesta audiência — o passo seguinte é montar a saída. */
@@ -94,9 +98,14 @@ export function AudiencesPage() {
           title="Audiências"
           left={<span className="rounded-full bg-elevated px-2.5 py-1 font-mono text-[12px] text-fg-2">{segments.length}</span>}
           right={
-            <Button size="sm" icon={<Plus size={15} />} onClick={() => setCreating(true)}>
-              Nova audiência
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="secondary" icon={<Upload size={15} />} onClick={() => setImporting(true)}>
+                Importar contatos
+              </Button>
+              <Button size="sm" icon={<Plus size={15} />} onClick={() => setCreating(true)}>
+                Nova audiência
+              </Button>
+            </div>
           }
         />
 
@@ -107,10 +116,10 @@ export function AudiencesPage() {
           />
 
           <div className="flex flex-wrap gap-4">
-            <StatCard label="Contatos únicos" value={compact(totalContacts)} hint="somatório das audiências" icon={<Users size={16} />} />
+            <StatCard label="Contatos únicos" value={compact(totalContacts)} hint="base da conta" icon={<Users size={16} />} />
             <StatCard label="Audiências dinâmicas" value={store.segments.filter((s) => s.kind === "dynamic").length} hint="recalculadas a cada execução" icon={<RefreshCw size={16} />} />
             <StatCard label="Listas importadas" value={store.segments.filter((s) => s.kind === "import").length} hint="CSV com opt-in" icon={<Upload size={16} />} />
-            <StatCard label="Opt-in médio" value={pct(96.4)} hint="da base total" icon={<BookUser size={16} />} />
+            <StatCard label="Com opt-in" value={compact(optedIn)} hint="podem receber marketing" icon={<BookUser size={16} />} />
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
@@ -126,6 +135,34 @@ export function AudiencesPage() {
               LGPD: quem não tem opt-in não entra em campanha de marketing — o filtro é aplicado no envio, não na lista.
             </Note>
           </div>
+
+          {store.contacts.length > 0 && (
+            <Card className="flex flex-col gap-3 p-5">
+              <CardHead
+                title="Base de contatos"
+                subtitle="Quem entrou por importação ou cadastro manual, com o consentimento registrado."
+                right={<span className="font-mono text-[12px] text-fg-3">{store.contacts.length}</span>}
+              />
+              <div className="flex flex-col divide-y divide-line">
+                {store.contacts.slice(0, 8).map((c) => (
+                  <div key={c.id} className="flex items-center gap-2.5 py-2">
+                    <Avatar initials={c.name.slice(0, 2).toUpperCase()} size={26} />
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-[12px] text-fg">{c.name}</span>
+                      <span className="truncate font-mono text-[10px] text-fg-3">{c.phone}</span>
+                    </div>
+                    <span className="shrink-0 text-[11px] text-fg-3">{c.city || "—"}</span>
+                    <StatusBadge tone={c.optIn ? "success" : "muted"} dot={false}>
+                      {c.optIn ? "opt-in" : "sem opt-in"}
+                    </StatusBadge>
+                  </div>
+                ))}
+              </div>
+              {store.contacts.length > 8 && (
+                <Note>Mostrando 8 de {store.contacts.length}. A campanha usa a base inteira, não a amostra.</Note>
+              )}
+            </Card>
+          )}
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {segments.map((s) => (
@@ -189,6 +226,7 @@ export function AudiencesPage() {
       </Drawer>
 
       <NewSegmentModal open={creating} onClose={() => setCreating(false)} />
+      {importing && <ImportContactsModal onClose={() => setImporting(false)} />}
     </div>
   );
 }
@@ -261,8 +299,10 @@ function NewSegmentModal({ open, onClose }: { open: boolean; onClose: () => void
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [kind, setKind] = useState<SegmentKind>("dynamic");
+  // Default mínimo e verdadeiro: quem deu opt-in. Uma regra de "comprou há 90
+  // dias" numa conta nova excluiria todo contato importado — um filtro que
+  // parece inteligente e só devolve zero.
   const [rules, setRules] = useState<SegmentRule[]>([
-    { id: uid("r"), field: "ultima_compra", operator: "gt", value: "90" },
     { id: uid("r"), field: "opt_in", operator: "eq", value: "sim" },
   ]);
   const [error, setError] = useState("");
@@ -274,7 +314,7 @@ function NewSegmentModal({ open, onClose }: { open: boolean; onClose: () => void
     }
     const segment = store.createSegment({
       name: name.trim(),
-      description: description.trim() || "Criada na POC — as regras definem quem entra.",
+      description: description.trim() || "As regras definem quem entra.",
       kind,
       rules: kind === "dynamic" ? rules : [],
       source: kind === "import" ? "Importação CSV" : "Regras do produto",
@@ -395,14 +435,143 @@ function NewSegmentModal({ open, onClose }: { open: boolean; onClose: () => void
         )}
 
         {kind === "import" && (
-          <button className="flex flex-col items-center gap-2 rounded-sm border border-dashed border-line-strong bg-bg px-4 py-8 transition-colors hover:border-accent/50">
-            <Upload size={20} className="text-fg-3" />
-            <span className="text-[13px] font-medium text-fg-2">Enviar CSV com opt-in</span>
-            <span className="text-[11px] text-fg-3">nome, telefone, e-mail, cidade, data do consentimento</span>
-          </button>
+          <Note>
+            A lista importada é criada vazia. Depois de criar, use “Importar contatos” para enviar o CSV com a data de
+            consentimento de cada pessoa.
+          </Note>
         )}
 
         {error && <span className="text-[12px] text-danger">{error}</span>}
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------- importar contatos */
+
+const CSV_TEMPLATE = "nome,telefone,email,cidade,consentimento\nAna Souza,5511999998888,ana@exemplo.com,São Paulo,2026-01-15";
+
+/** Parser mínimo e honesto: uma linha por contato, cabeçalho obrigatório. */
+function parseCsv(raw: string) {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length < 2) {
+    return { rows: [], error: "O arquivo precisa do cabeçalho e de pelo menos um contato." };
+  }
+  const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  const at = (name: string) => header.indexOf(name);
+  const iName = at("nome");
+  const iPhone = at("telefone");
+  const iEmail = at("email");
+  const iCity = at("cidade");
+  const iConsent = at("consentimento");
+  if (iName < 0 || iPhone < 0 || iConsent < 0) {
+    return { rows: [], error: "O cabeçalho precisa de nome, telefone e consentimento." };
+  }
+  const rows = lines.slice(1).map((line) => {
+    const cells = line.split(",").map((c) => c.trim());
+    return {
+      name: cells[iName] ?? "",
+      phone: cells[iPhone] ?? "",
+      email: iEmail >= 0 ? (cells[iEmail] ?? "") : "",
+      city: iCity >= 0 ? (cells[iCity] ?? "") : "",
+      consentAt: cells[iConsent] ?? "",
+    };
+  });
+  return { rows, error: "" };
+}
+
+function ImportContactsModal({ onClose }: { onClose: () => void }) {
+  const store = useStore();
+  const [raw, setRaw] = useState("");
+  const [tag, setTag] = useState("importados");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<{ created: number; failed: { line: number; reason: string }[] } | null>(null);
+
+  const parsed = raw.trim() ? parseCsv(raw) : null;
+
+  async function run() {
+    if (!parsed) return;
+    if (parsed.error) {
+      setError(parsed.error);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const out = await store.importContacts(parsed.rows, tag.trim() || "importados");
+      setResult(out);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não consegui importar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      title="Importar contatos"
+      subtitle="Só entra quem tem data de consentimento. Sem opt-in registrado, a linha é recusada."
+      onClose={onClose}
+      width={720}
+      footer={
+        <>
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            {result ? "Fechar" : "Cancelar"}
+          </Button>
+          {!result && (
+            <Button size="sm" onClick={() => void run()} disabled={busy || !parsed || Boolean(parsed.error)}>
+              {busy ? "Importando…" : "Importar"}
+            </Button>
+          )}
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Field label="Tag aplicada aos contatos" hint="Serve de regra nas audiências dinâmicas.">
+          <Input value={tag} onChange={(e) => setTag(e.target.value)} className="font-mono" />
+        </Field>
+
+        {result ? (
+          <div className="flex flex-col gap-3">
+            <div className="rounded-sm border border-success/30 bg-success/5 px-3.5 py-3 text-[13px] text-fg">
+              {result.created} contato{result.created === 1 ? "" : "s"} importado{result.created === 1 ? "" : "s"}.
+            </div>
+            {result.failed.length > 0 && (
+              <div className="flex flex-col divide-y divide-line rounded-sm border border-line bg-bg">
+                {result.failed.map((f) => (
+                  <div key={f.line} className="flex items-center gap-2 px-3.5 py-2 text-[12px]">
+                    <span className="font-mono text-fg-3">linha {f.line}</span>
+                    <span className="min-w-0 flex-1 truncate text-danger">{f.reason}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <Field label="CSV" hint={`Cabeçalho: ${CSV_TEMPLATE.split("\n")[0]}`}>
+              <textarea
+                value={raw}
+                onChange={(e) => setRaw(e.target.value)}
+                rows={8}
+                placeholder={CSV_TEMPLATE}
+                className="w-full rounded-sm border border-line bg-bg px-3 py-2 font-mono text-[12px] text-fg outline-none placeholder:text-fg-3 focus:border-accent/60"
+              />
+            </Field>
+            {parsed && !parsed.error && (
+              <Note>
+                {parsed.rows.length} linha{parsed.rows.length === 1 ? "" : "s"} reconhecida
+                {parsed.rows.length === 1 ? "" : "s"}. Linhas sem consentimento aparecem no resultado com o motivo.
+              </Note>
+            )}
+            {error && <span className="text-[12px] text-danger">{error}</span>}
+          </>
+        )}
       </div>
     </Modal>
   );

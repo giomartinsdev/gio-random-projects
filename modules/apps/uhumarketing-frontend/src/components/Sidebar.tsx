@@ -18,7 +18,7 @@ import { navigate, navigatePublic, type AppRoute } from "@/lib/useHashRoute";
 import { Orb } from "./ui/Orb";
 
 // Sidebar de 248px (mesma anatomia do prospecta): brand, workspace, MENU, nav
-// e usuário. "Mensagens" é o único item sem rota: na POC ele aponta para
+// e usuário. "Mensagens" é o único item sem rota: ele aponta para
 // Envios com filtro, e o submenu de fluxos vive dentro de Automação.
 const NAV: { route: AppRoute; label: string; icon: ComponentType<LucideProps>; badge?: string }[] = [
   { route: "dashboard", label: "Visão geral", icon: BarChart3 },
@@ -30,7 +30,7 @@ const NAV: { route: AppRoute; label: string; icon: ComponentType<LucideProps>; b
   { route: "configuracoes", label: "Configurações", icon: Settings },
 ];
 
-/** "America/Sao_Paulo" → "São Paulo" (só o que a POC usa). */
+/** "America/Sao_Paulo" → "São Paulo". */
 const TZ_LABEL: Record<string, string> = {
   "America/Sao_Paulo": "São Paulo",
   "America/Bahia": "Bahia",
@@ -41,6 +41,7 @@ export function Sidebar({ route }: { route: AppRoute }) {
   const { user, logout } = useSession();
 
   const workspaceTimezoneLabel = TZ_LABEL[workspace.timezone] ?? workspace.timezone;
+  const quality = workspace.quality;
   const running = campaigns.filter((c) => c.status === "running").length;
   const activeFlows = flows.filter((f) => f.status === "active").length;
 
@@ -55,7 +56,9 @@ export function Sidebar({ route }: { route: AppRoute }) {
         onClick={() => navigate("configuracoes")}
         className="flex w-full items-center gap-2.5 rounded-sm bg-elevated px-3 py-2.5 text-left transition-colors hover:bg-elevated/80"
       >
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xs bg-[#3B2A18] text-[13px]">☕</span>
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xs bg-accent-soft text-[12px] font-semibold uppercase text-accent-light">
+          {workspace.name.slice(0, 1) || "•"}
+        </span>
         <div className="flex min-w-0 flex-1 flex-col leading-tight">
           <span className="truncate text-[14px] font-medium text-fg">{workspace.name}</span>
           <span className="truncate text-[12px] text-fg-3">
@@ -100,11 +103,22 @@ export function Sidebar({ route }: { route: AppRoute }) {
 
       <div className="rounded-sm border border-line bg-bg p-3">
         <div className="flex items-center justify-between gap-2">
-          <span className="caps">Qualidade do número</span>
-          <span className={cn("h-2 w-2 rounded-full", workspace.quality === "green" ? "bg-success" : workspace.quality === "yellow" ? "bg-warn" : "bg-danger")} />
+          <span className="caps">{quality ? "Qualidade do número" : "WhatsApp"}</span>
+          <span
+            className={cn(
+              "h-2 w-2 rounded-full",
+              quality === "green" ? "bg-success" : quality === "yellow" ? "bg-warn" : quality === "red" ? "bg-danger" : "bg-line",
+            )}
+          />
         </div>
-        <p className="mt-1.5 font-mono text-[11px] text-fg-2">{workspace.whatsappNumber}</p>
-        <p className="mt-1 text-[11px] leading-snug text-fg-3">Limite: {workspace.messagingLimit}</p>
+        <p className="mt-1.5 font-mono text-[11px] text-fg-2">
+          {workspace.whatsappNumber || "sem número conectado"}
+        </p>
+        <p className="mt-1 text-[11px] leading-snug text-fg-3">
+          {workspace.whatsappNumber
+            ? workspace.messagingLimit || "qualidade informada pela Meta"
+            : "conecte em Configurações para disparar"}
+        </p>
       </div>
 
       <div className="flex items-center gap-2.5 rounded-sm px-2 py-2.5">

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useSession } from "@/lib/session";
+import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Toggle } from "@/components/ui/Input";
@@ -21,29 +22,69 @@ import { StatusBadge, Tag } from "@/components/ui/Badge";
 import { Topbar, PageBody, PageHeader, Note } from "@/components/Topbar";
 import { Modal } from "@/components/ui/Drawer";
 import { DataSourceCard } from "@/components/DataSourceCard";
-import { useDataSource } from "@/lib/dataSource";
 
 export function SettingsPage() {
   const store = useStore();
   const { user } = useSession();
-  const [source] = useDataSource();
   const [confirmReset, setConfirmReset] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const [resetting, setResetting] = useState(false);
   const [tested, setTested] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteError, setInviteError] = useState("");
-  const [invites, setInvites] = useState<string[]>([]);
   const [quietStart, setQuietStart] = useState(String(store.workspace.quietHours.start));
   const [quietEnd, setQuietEnd] = useState(String(store.workspace.quietHours.end));
+  const [business, setBusiness] = useState({
+    name: store.workspace.name,
+    segment: store.workspace.segment,
+    site: store.workspace.site,
+    whatsappNumber: store.workspace.whatsappNumber,
+    emailSender: store.workspace.emailSender,
+  });
+  const [saving, setSaving] = useState(false);
+  const [saveNote, setSaveNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  const dirtyBusiness =
+    business.name !== store.workspace.name ||
+    business.segment !== store.workspace.segment ||
+    business.site !== store.workspace.site ||
+    business.whatsappNumber !== store.workspace.whatsappNumber ||
+    business.emailSender !== store.workspace.emailSender ||
+    Number(quietStart) !== store.workspace.quietHours.start ||
+    Number(quietEnd) !== store.workspace.quietHours.end;
+
+  async function saveWorkspace() {
+    setSaving(true);
+    setSaveNote(null);
+    try {
+      await store.updateWorkspace({
+        name: business.name.trim(),
+        segment: business.segment.trim(),
+        site: business.site.trim(),
+        emailSender: business.emailSender.trim(),
+        whatsappNumber: business.whatsappNumber.trim(),
+        quietHours: { start: Number(quietStart), end: Number(quietEnd) },
+      });
+      setSaveNote({ tone: "ok", text: "Dados da conta salvos." });
+    } catch (err) {
+      setSaveNote({
+        tone: "err",
+        text: err instanceof Error ? err.message : "Não consegui salvar.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Topbar title="Configurações" right={<StatusBadge tone="success">conta demo</StatusBadge>} />
+      <Topbar
+        title="Configurações"
+        right={<StatusBadge tone="accent">{store.workspace.plan || "conta"}</StatusBadge>}
+      />
 
       <PageBody className="max-w-[1000px]">
         <PageHeader
           title="O negócio por trás dos envios"
-          description="Identidade, número, políticas de opt-in e conexão com a Meta. Na integração real, é esta tela que guarda o token da WABA."
+          description="Identidade, número, políticas de opt-in e conexão com a Meta. O token da WABA fica no servidor."
         />
 
         <DataSourceCard />
@@ -56,13 +97,34 @@ export function SettingsPage() {
           />
           <div className="grid gap-3.5 md:grid-cols-2">
             <Field label="Nome do negócio">
-              <Input value={store.workspace.name} readOnly />
+              <Input
+                value={business.name}
+                onChange={(e) => setBusiness((b) => ({ ...b, name: e.target.value }))}
+                placeholder="Café Aurora"
+              />
             </Field>
             <Field label="Segmento">
-              <Input value={store.workspace.segment} readOnly />
+              <Input
+                value={business.segment}
+                onChange={(e) => setBusiness((b) => ({ ...b, segment: e.target.value }))}
+                placeholder="Torrefação de café especial"
+              />
             </Field>
             <Field label="Site">
-              <Input icon={<Globe size={15} />} value={store.workspace.site} readOnly />
+              <Input
+                icon={<Globe size={15} />}
+                value={business.site}
+                onChange={(e) => setBusiness((b) => ({ ...b, site: e.target.value }))}
+                placeholder="sualoja.com.br"
+              />
+            </Field>
+            <Field label="E-mail que assina os envios">
+              <Input
+                type="email"
+                value={business.emailSender}
+                onChange={(e) => setBusiness((b) => ({ ...b, emailSender: e.target.value }))}
+                placeholder="time@sualoja.com.br"
+              />
             </Field>
             <Field label="Fuso horário">
               <Select value={store.workspace.timezone} disabled>
@@ -71,8 +133,8 @@ export function SettingsPage() {
             </Field>
           </div>
           <Note>
-            Dados de demonstração (Café Aurora). Quando a conta real entrar, estes campos vêm do cadastro e ficam
-            editáveis aqui — na POC eles são fixos para o seed não perder coerência.
+            Uma conta nova começa sem número. Preencher o número de WhatsApp abaixo é o que libera o disparo —
+            antes disso, a campanha é recusada com o motivo na tela.
           </Note>
         </Card>
 
@@ -81,32 +143,72 @@ export function SettingsPage() {
             title="WhatsApp Business (Meta)"
             subtitle="Número, qualidade e limite de conversas"
             right={
-              <StatusBadge tone={store.workspace.quality === "green" ? "success" : store.workspace.quality === "yellow" ? "warn" : "danger"}>
-                qualidade {store.workspace.quality}
+              <StatusBadge
+                tone={
+                  store.workspace.quality === "green"
+                    ? "success"
+                    : store.workspace.quality === "yellow"
+                      ? "warn"
+                      : store.workspace.quality === "red"
+                        ? "danger"
+                        : "muted"
+                }
+              >
+                {store.workspace.quality
+                  ? `qualidade ${store.workspace.quality}`
+                  : store.workspace.whatsappNumber
+                    ? "qualidade não informada"
+                    : "sem número"}
               </StatusBadge>
             }
           />
           <div className="grid gap-3.5 md:grid-cols-2">
-            <Field label="Número conectado">
-              <Input className="font-mono" value={store.workspace.whatsappNumber} readOnly icon={<MessageCircle size={15} />} />
+            <Field label="Número conectado" hint="Só dígitos com DDI/DDD. É o número que assina os envios.">
+              <Input
+                className="font-mono"
+                value={business.whatsappNumber}
+                onChange={(e) => setBusiness((b) => ({ ...b, whatsappNumber: e.target.value }))}
+                placeholder="5511912345678"
+                icon={<MessageCircle size={15} />}
+              />
             </Field>
-            <Field label="Limite de mensagens">
-              <Input value={store.workspace.messagingLimit} readOnly />
+            <Field label="Limite de mensagens" hint="A Meta informa quando o número é verificado.">
+              <Input value={store.workspace.messagingLimit || "—"} readOnly />
             </Field>
-            <Field label="WABA ID" hint="Mock — o id real vem do Gerenciador de Negócios.">
-              <Input className="font-mono" value="waba_1092384756" readOnly />
+            <Field label="Provedor" hint="Definido por META_MODE no servidor.">
+              <Input className="font-mono" value={store.provider?.name ?? "—"} readOnly />
             </Field>
-            <Field label="Token de acesso" hint="Nunca é exibido inteiro, nem na POC.">
-              <Input className="font-mono" value="EAAG••••••••••••••••7f2c" readOnly icon={<KeyRound size={15} />} />
+            <Field label="Token de acesso" hint="O token da WABA fica no servidor, nunca no navegador.">
+              <Input className="font-mono" value="••••••••••••••••" readOnly icon={<KeyRound size={15} />} />
             </Field>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" variant="secondary" onClick={() => setTested(true)}>
               Testar conexão
             </Button>
+            <Button
+              size="sm"
+              onClick={() => void saveWorkspace()}
+              disabled={saving || !dirtyBusiness}
+            >
+              {saving ? "Salvando…" : "Salvar dados da conta"}
+            </Button>
+            {saveNote && (
+              <span
+                className={cn(
+                  "text-[12px]",
+                  saveNote.tone === "ok" ? "text-success" : "text-danger",
+                )}
+              >
+                {saveNote.text}
+              </span>
+            )}
             {tested && (
               <span className="flex items-center gap-1.5 text-[12px] text-success">
-                <Check size={13} /> conexão ok (simulada)
+                <Check size={13} />
+                {store.provider?.hasNumber
+                  ? "número configurado"
+                  : "sem número: o disparo fica bloqueado até configurar"}
               </span>
             )}
           </div>
@@ -166,7 +268,7 @@ export function SettingsPage() {
             <Integration
               name="Meta WhatsApp Cloud API"
               detail="Envio de templates, status e qualidade do número"
-              status="conectado"
+              status={store.provider?.hasNumber ? "conectado" : "pendente"}
             />
             <Integration name="CRM / e-commerce" detail="Pedidos, tags e eventos (carrinho, entrega)" status="pendente" />
             <Integration name="Webhook de saída" detail="Avisa o seu sistema a cada resposta ou conversão" status="pendente" />
@@ -181,154 +283,62 @@ export function SettingsPage() {
               {(user?.name ?? "M").slice(0, 1).toUpperCase()}
             </span>
             <div className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-[13px] font-medium text-fg">{user?.name ?? "Marina Reis"}</span>
-              <span className="truncate text-[11px] text-fg-3">{user?.email ?? "marina@cafeaurora.com.br"}</span>
+              <span className="truncate text-[13px] font-medium text-fg">{user?.name ?? "—"}</span>
+              <span className="truncate text-[11px] text-fg-3">{user?.email ?? "—"}</span>
             </div>
             <StatusBadge tone="accent">admin</StatusBadge>
           </div>
-          <div className="flex items-center gap-3 rounded-sm bg-bg px-3.5 py-3 opacity-60">
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-elevated text-[12px] font-semibold text-fg-2">TS</span>
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-[13px] font-medium text-fg">Time de suporte</span>
-              <span className="truncate text-[11px] text-fg-3">atendimento@cafeaurora.com.br</span>
-            </div>
-            <StatusBadge tone="muted">leitor</StatusBadge>
-          </div>
-          {invites.length > 0 && (
-            <div className="flex flex-col gap-1.5 rounded-sm border border-line bg-bg px-3.5 py-3">
-              <span className="caps">Convites pendentes</span>
-              {invites.map((email) => (
-                <span key={email} className="flex items-center gap-2 font-mono text-[11px] text-fg-2">
-                  <CircleAlert size={12} className="text-warn" /> {email} · aguardando aceite
-                </span>
-              ))}
-            </div>
-          )}
-          <Button size="sm" variant="secondary" className="w-fit" onClick={() => setInviteOpen(true)}>
-            Convidar pessoa
-          </Button>
+          <Note>
+            Uma conta por workspace. Convites por e-mail ainda não existem — quando existirem, serão um registro no
+            servidor, não um item que desaparece ao recarregar.
+          </Note>
         </Card>
 
         <Card className="flex flex-col gap-3 border-danger/25 p-5">
           <CardHead
             title="Zona de risco"
-            subtitle={
-              source === "backend"
-                ? "Restaurar reaplica o seed no banco: apaga o que foi criado, inclusive envios e histórico."
-                : "A POC guarda tudo no navegador. Restaurar apaga o que você criou aqui."
-            }
+            subtitle="Apagar remove templates, contatos, audiências, campanhas, fluxos e envios desta conta. A conta e o login continuam."
             right={<CircleAlert size={16} className="text-danger" />}
           />
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="danger" icon={<RotateCcw size={14} />} onClick={() => setConfirmReset(true)}>
-              Restaurar dados de exemplo
+              Apagar dados da conta
             </Button>
             <Button
               size="sm"
               variant="secondary"
               icon={<RotateCcw size={14} />}
               onClick={() => {
-                if (source === "backend") {
-                  // No modo real o estado vive no Postgres; exportar o
-                  // localStorage exportaria outro produto.
-                  window.open(`${import.meta.env.VITE_UHU_API_URL ?? "http://localhost:8195"}/api/v1/bootstrap`, "_blank");
-                  return;
-                }
-                const raw = localStorage.getItem("uhumarketing:state:v1");
-                if (!raw) {
-                  setConfirmReset(true);
-                  return;
-                }
-                // "Exportar" antes de resetar: o JSON do estado inteiro, para
-                // quem quiser inspecionar o mock fora do navegador.
-                const url = URL.createObjectURL(new Blob([raw], { type: "application/json" }));
+                // Exporta o que o servidor mandou — não há cópia local para
+                // exportar, e o token não vai junto.
+                const doc = {
+                  workspace: store.workspace,
+                  templates: store.templates,
+                  segments: store.segments,
+                  campaigns: store.campaigns,
+                  flows: store.flows,
+                  sends: store.sends,
+                };
+                const url = URL.createObjectURL(
+                  new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }),
+                );
                 const a = document.createElement("a");
                 a.href = url;
-                a.download = `uhumarketing-estado-${new Date().toISOString().slice(0, 10)}.json`;
+                a.download = `uhumarketing-conta-${new Date().toISOString().slice(0, 10)}.json`;
                 a.click();
                 URL.revokeObjectURL(url);
               }}
             >
-              {source === "backend" ? "Abrir estado da API" : "Exportar estado atual"}
+              Exportar dados da conta
             </Button>
           </div>
         </Card>
       </PageBody>
 
       <Modal
-        open={inviteOpen}
-        title="Convidar pessoa"
-        subtitle="Na POC o convite não sai — ele só entra na lista de pendentes desta sessão."
-        onClose={() => {
-          setInviteOpen(false);
-          setInviteEmail("");
-          setInviteError("");
-        }}
-        width={480}
-        footer={
-          <>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                setInviteOpen(false);
-                setInviteEmail("");
-                setInviteError("");
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => {
-                const email = inviteEmail.trim().toLowerCase();
-                if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-                  setInviteError("Informe um e-mail válido.");
-                  return;
-                }
-                if (invites.includes(email) || email === (user?.email ?? "").toLowerCase()) {
-                  setInviteError("Esse e-mail já está na conta.");
-                  return;
-                }
-                setInvites((prev) => [...prev, email]);
-                store.logActivity({ kind: "team", title: "Convite enviado", detail: email });
-                setInviteOpen(false);
-                setInviteEmail("");
-                setInviteError("");
-              }}
-            >
-              Enviar convite
-            </Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-4">
-          <Field label="E-mail" error={inviteError}>
-            <Input
-              value={inviteEmail}
-              onChange={(e) => {
-                setInviteEmail(e.target.value);
-                setInviteError("");
-              }}
-              placeholder="pessoa@cafeaurora.com.br"
-              type="email"
-            />
-          </Field>
-          <Field label="Papel">
-            <Select defaultValue="leitor">
-              <option value="admin">Admin — vê e edita tudo</option>
-              <option value="editor">Editor — monta campanhas e fluxos</option>
-              <option value="leitor">Leitor — só acompanha resultados</option>
-            </Select>
-          </Field>
-          <Note>O papel é ilustrativo: a POC não tem controle de permissão de verdade.</Note>
-        </div>
-      </Modal>
-
-      <Modal
         open={confirmReset}
-        title="Restaurar a POC?"
-        subtitle="Campanhas, templates, fluxos e audiências criados por você serão descartados."
+        title="Apagar os dados da conta?"
+        subtitle="Templates, contatos, audiências, campanhas, fluxos e envios serão descartados."
         onClose={() => setConfirmReset(false)}
         width={480}
         footer={
@@ -339,19 +349,36 @@ export function SettingsPage() {
             <Button
               size="sm"
               variant="danger"
-              onClick={() => {
-                store.reset();
-                setConfirmReset(false);
+              disabled={resetting}
+              onClick={async () => {
+                setResetting(true);
+                setResetError("");
+                try {
+                  await api.resetAccount();
+                  setConfirmReset(false);
+                  // Recarregar é o caminho honesto: o estado em memória tem
+                  // ids que não existem mais no banco.
+                  window.location.reload();
+                } catch (err) {
+                  setResetError(
+                    err instanceof ApiError ? err.message : "Não consegui apagar os dados.",
+                  );
+                  setResetting(false);
+                }
               }}
             >
-              Restaurar
+              {resetting ? "Apagando…" : "Apagar"}
             </Button>
           </>
         }
       >
-        <Note>
-          Os dados de exemplo voltam no estado original. A sessão (nome/e-mail) é mantida — só o conteúdo é recriado.
-        </Note>
+        {resetError ? (
+          <Note className="border-danger/30 text-danger">{resetError}</Note>
+        ) : (
+          <Note>
+            Isto não pode ser desfeito. A conta e o login continuam; só o conteúdo é apagado.
+          </Note>
+        )}
       </Modal>
     </div>
   );

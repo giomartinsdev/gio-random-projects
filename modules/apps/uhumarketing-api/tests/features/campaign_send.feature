@@ -69,6 +69,32 @@ Feature: Disparo de campanha em WhatsApp
     Then o envio fica "failed"
     And o erro do envio menciona "allowed list"
 
+  Scenario: a campanha termina quando a fila drena
+    Given um template aprovado com 1 variável
+    And uma audiência com 1 contato com opt-in
+    When eu disparo a campanha
+    And a fila processa lotes até esvaziar
+    Then a campanha fica "finished"
+    And existe atividade do tipo "campaign"
+
+  Scenario: fila parada por janela explica quando abre
+    Given um template aprovado com 1 variável
+    And uma audiência com 1 contato com opt-in
+    And a campanha só pode enviar numa janela fechada agora
+    When eu disparo a campanha
+    And eu leio o bootstrap
+    Then a fila diz que está bloqueada pela janela
+    And a fila informa quando a janela abre
+
+  Scenario: fila dentro da janela não inventa um horário de abertura
+    Given um template aprovado com 1 variável
+    And uma audiência com 1 contato com opt-in
+    And a campanha pode enviar agora
+    When eu disparo a campanha
+    And eu leio o bootstrap
+    Then a fila não está bloqueada
+    And a fila não informa horário de abertura
+
   Scenario: a resposta do cliente revoga o opt-in
     Given um template aprovado com 1 variável
     And uma audiência com 1 contato com opt-in

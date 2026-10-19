@@ -1,11 +1,15 @@
 # uhumarketing-api
 
-Backend da POC do uhumarketing: templates da Meta, audiências com opt-in,
+Backend do uhumarketing: contas, templates da Meta, audiências com opt-in,
 campanhas, fila de disparo e webhook de status. Go + Postgres, um processo só.
 
 Ele existe para tirar o produto do `localStorage`. A pergunta que responde:
 *o que precisa ser verdade no servidor para esta tela poder mandar mensagem de
 verdade?* — e a resposta está nas regras, não nas telas.
+
+**Cada conta é um workspace.** O cadastro cria usuário + workspace VAZIO numa
+transação. Não há seed, não há base de demonstração e nenhuma conta enxerga o
+dado de outra: o workspace vem do token de sessão em toda requisição.
 
 ## Rodar
 
@@ -15,10 +19,9 @@ docker compose up -d --build
 curl localhost:8195/healthz        # {"ok":true}
 ```
 
-O schema é aplicado na subida (embutido no binário, idempotente) e o seed do
-Café Aurora roda uma vez: 8 templates, 57 contatos, 6 audiências, 3 campanhas,
-3 fluxos e o histórico de envios. Sem banco, o serviço não sobe — não existe
-modo "memória" que esconderia erro de SQL.
+O schema é aplicado na subida (embutido no binário, idempotente). A conta nasce
+vazia — o primeiro passo real é o cadastro em `POST /api/v1/auth/signup`. Sem
+banco, o serviço não sobe: não existe modo "memória" que esconderia erro de SQL.
 
 Sem Docker (com um Postgres já na mão):
 
@@ -27,8 +30,8 @@ export DATABASE_URL='postgres://uhu:uhu@localhost:5433/uhumarketing?sslmode=disa
 go run .
 ```
 
-O frontend (`../uhumarketing-frontend`) roda no host, na 5180, e escolhe
-"Backend real" em Configurações → Origem dos dados.
+O frontend (`../uhumarketing-frontend`) roda no host, na 5180, e fala só com
+esta API. Não existe mais modo demonstração.
 
 ## Modos de provedor
 
@@ -64,17 +67,37 @@ Estas são as razões de existir um backend, e cada uma tem teste:
 5. **Janela e vazão.** O worker não manda fora da janela da campanha nem acima
    do throttle. Se a fila está parada por isso, o bootstrap diz por quê
    (`queue[].blockedBy = "window"` + `nextOpenAt`) — fila parada sem explicação
-   parece defeito.
+   parece defeito. A janela é editável no detalhe da campanha e o worker passa a
+   respeitá-la no tick seguinte.
+6. **Campanha em execução sempre tem fila.** Quando a fila drena, o worker
+   fecha a campanha (`finished`) e registra atividade. "Em execução" sem nada
+   pendente seria um status que só existe na tela.
+7. **Isolamento por conta.** Toda query é escopada por `workspace_id`, que vem
+   da sessão — nunca do corpo da requisição. O worker é global: ele percorre as
+   contas com campanha em execução e aplica a janela de cada uma.
 
 Métricas (`sent`, `delivered`, `read`, `failed`, `queued`) são **derivadas** de
 `sends` por agregação, a cada leitura. Não há contador para desincronizar.
 `converted` e `revenue` ficam em zero até existir sinal real de conversão: a POC
 não inventa receita.
 
+## Contas e sessão
+
+Cadastro e login devolvem um token opaco; o banco guarda só o SHA-256 dele
+(`sessions`), com validade de 30 dias. Logout revoga o token na hora.
+
+| Método | Rota | Para quê |
+| --- | --- | --- |
+| POST | `/auth/signup` | Cria usuário + workspace vazio; devolve `token` e `workspaceId` |
+| POST | `/auth/login` | Troca e-mail/senha por token |
+| POST | `/auth/logout` | Revoga o token da requisição |
+| GET | `/auth/me` | Quem é o dono do token e qual o workspace |
+
 ## Contrato HTTP
 
-Tudo em `/api/v1`, autenticado por `X-API-Key` (ou `Authorization: Bearer`).
-Públicos: `/healthz` e `/webhooks/whatsapp`.
+Tudo em `/api/v1`, autenticado por `Authorization: Bearer <token de sessão>`.
+Públicos: `/healthz`, `/api/v1/auth/{signup,login}` e `/webhooks/whatsapp`
+(este último se autentica por assinatura HMAC).
 
 | Método | Rota | Para quê |
 | --- | --- | --- |
@@ -109,9 +132,9 @@ O merge é assimétrico de propósito:
 - **fluxo** mantém contadores de execução;
 - **sends nunca são tocados** pelo cliente.
 
-Concorrência hoje é last-write-wins num workspace único. Isso é um limite
-conhecido da POC, não uma decisão de arquitetura: quando houver dois operadores
-de verdade, o caminho é versionar o documento (`If-Match`/`revision`) em vez de
+Concorrência hoje é last-write-wins dentro do workspace. Isso é um limite
+conhecido, não uma decisão de arquitetura: quando houver dois operadores na
+mesma conta, o caminho é versionar o documento (`If-Match`/`revision`) em vez de
 inventar CRDT para um canvas que ninguém edita em conjunto ainda.
 
 ## Webhook
@@ -129,7 +152,8 @@ payload novo da Meta não se perde no meio de um erro.
 
 Com `ALLOW_DEV_ACTIONS=true`:
 
-- `POST /dev/reset` — reaplica o seed (idempotente);
+- `POST /dev/reset` — apaga os dados DA CONTA da sessão (não a conta, não o
+  login). Não repõe exemplo: recomeçar significa ficar vazio;
 - `POST /dev/simulate-status` — injeta entrega/leitura sem credencial;
 - `POST /dev/worker-tick` — força um ciclo da fila.
 
@@ -157,15 +181,15 @@ sem telefone, opt-in, idempotência, entrega/leitura fora de ordem) e opt-in
 ## Estrutura
 
 ```
-main.go                     composição: config → pool → migrate → seed → worker → router
+main.go                     composição: config → pool → migrate → worker → router
 internal/
-  config/                   env → Config; recusa subir sem DATABASE_URL/chaves
+  config/                   env → Config; recusa subir sem DATABASE_URL
+  auth/                     cadastro, login, token de sessão (SHA-256)
   domain/                   modelo + regras (template, opt-in, audiência, status)
-  store/                    Postgres: schema.sql, fila, métricas derivadas, PUT /state
+  store/                    Postgres: schema.sql, contas/sessões, fila, métricas, PUT /state
   meta/                     Provider: DryRun e Cloud (Graph API) + custo por mensagem
   dispatch/                 worker, janela/throttle, explicação da fila
-  httpapi/                  borda: rotas, handlers, tradução de erro, webhook
-  seed/                     dataset Café Aurora
+  httpapi/                  borda: rotas, handlers, sessão, tradução de erro, webhook
 tests/                      features Gherkin + steps (Postgres real)
 ```
 

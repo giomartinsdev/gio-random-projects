@@ -1,9 +1,7 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { SessionProvider, useSession } from "@/lib/session";
-import { StoreProvider } from "@/lib/store";
 import { BackendStoreProvider } from "@/lib/storeRemote";
-import { useDataSource } from "@/lib/dataSource";
 import { navigate, navigatePublic, useHashRoute, type AppRoute } from "@/lib/useHashRoute";
 import { Sidebar } from "@/components/Sidebar";
 import { LandingPage } from "@/pages/LandingPage";
@@ -19,7 +17,7 @@ import { SettingsPage } from "@/pages/SettingsPage";
 
 // Raiz da SPA. Duas zonas, como no prospecta:
 //   · pública — landing/login/cadastro (tema claro);
-//   · app     — shell escuro (sidebar + tela), atrás de sessão mock.
+//   · app     — shell escuro (sidebar + tela), atrás de sessão real.
 // Sem sessão, qualquer rota #/app cai no login; o inverso também vale.
 function Shell() {
   const route = useHashRoute();
@@ -35,7 +33,7 @@ function Shell() {
     return (
       <div className="flex h-screen items-center justify-center gap-3 bg-bg text-fg-2">
         <Loader2 size={20} className="animate-spin text-accent-light" />
-        <span className="text-[14px]">Abrindo a demonstração…</span>
+        <span className="text-[14px]">Abrindo sua conta…</span>
       </div>
     );
   }
@@ -48,13 +46,18 @@ function Shell() {
 
   if (!user) return <LoginPage />;
 
+  // O provider só existe atrás da sessão: sem token, buscar o bootstrap daria
+  // 401 e pintaria "backend fora do ar" numa tela pública, onde ele nem é
+  // necessário.
   return (
-    <div className="flex h-screen overflow-hidden bg-bg">
-      <Sidebar route={route.name} />
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <Screen route={route.name} param={route.param} />
-      </main>
-    </div>
+    <BackendStoreProvider>
+      <div className="flex h-screen overflow-hidden bg-bg">
+        <Sidebar route={route.name} />
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <Screen route={route.name} param={route.param} />
+        </main>
+      </div>
+    </BackendStoreProvider>
   );
 }
 
@@ -79,24 +82,13 @@ function Screen({ route, param }: { route: AppRoute; param?: string }) {
   }
 }
 
-// A escolha Demo/Backend é de tempo de execução, não de build: a mesma build
-// roda com localStorage ou contra o uhumarketing-api. Por isso os dois providers
-// convivem aqui e só um é montado — trocar no seletor remonta a árvore de dados.
-function DataProvider({ children }: { children: ReactNode }) {
-  const [source] = useDataSource();
-  return source === "backend" ? (
-    <BackendStoreProvider>{children}</BackendStoreProvider>
-  ) : (
-    <StoreProvider>{children}</StoreProvider>
-  );
-}
-
+// Não existe mais "modo demonstração": a única origem é o uhumarketing-api, e
+// o workspace vem da sessão. Um provider só evita a classe de bug em que a tela
+// mostra dado de um lugar e grava em outro.
 export default function App() {
   return (
     <SessionProvider>
-      <DataProvider>
-        <Shell />
-      </DataProvider>
+      <Shell />
     </SessionProvider>
   );
 }

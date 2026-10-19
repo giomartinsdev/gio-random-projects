@@ -37,7 +37,6 @@ var (
 	pool     *pgxpool.Pool
 	baseURL  string
 	server   *httptest.Server
-	testKey  = "test-key"
 	testLog  = slog.New(slog.NewTextHandler(io.Discard, nil))
 	testDSN  string
 	dockerOK bool
@@ -83,7 +82,7 @@ func TestMain(m *testing.M) {
 
 /* ------------------------------------------------------------------ features */
 
-func TestTemplates(t *testing.T)     { runFeature(t, "templates.feature") }
+func TestTemplates(t *testing.T)      { runFeature(t, "templates.feature") }
 func TestCampaignSend(t *testing.T)   { runFeature(t, "campaign_send.feature") }
 func TestAudiencesOptin(t *testing.T) { runFeature(t, "audiences_optin.feature") }
 
@@ -122,13 +121,15 @@ type world struct {
 	handlers *httpapi.Handlers
 	provider meta.Provider
 
-	status     int
-	body       []byte
-	templateID string
-	campaignID string
-	segmentID  string
-	lastPhone  string
-	externalID string
+	status      int
+	body        []byte
+	token       string
+	workspaceID string
+	templateID  string
+	campaignID  string
+	segmentID   string
+	lastPhone   string
+	externalID  string
 }
 
 func (w *world) reset() {
@@ -140,38 +141,67 @@ func (w *world) reset() {
 	if err := store.Migrate(ctx, pool); err != nil {
 		w.t.Fatalf("migrate: %v", err)
 	}
+	// Contas entram no TRUNCATE porque agora cada cenário cria a sua: sem isso
+	// o e-mail do cenário anterior continuaria cadastrado.
 	if _, err := pool.Exec(ctx, `
-		TRUNCATE contact_consents, sends, campaigns, flows, segments, contacts, templates, activity, webhook_events
+		TRUNCATE sessions, users, contact_consents, sends, campaigns, flows, segments,
+		         contacts, templates, activity, webhook_events, workspaces
 		RESTART IDENTITY CASCADE`); err != nil {
 		w.t.Fatalf("limpar banco: %v", err)
-	}
-	if _, err := pool.Exec(ctx, `
-		INSERT INTO workspaces (id, name, segment, site, timezone, plan, whatsapp_number, email_sender,
-		                        quality, messaging_limit, opt_in_policy, quiet_start, quiet_end)
-		VALUES ('ws_cafe_aurora','Café Aurora','café','cafeaurora.com.br','America/Sao_Paulo','POC',
-		        '5511912345678','time@cafeaurora.com.br','green','100 mil','opt-in explícito',21,8)
-		ON CONFLICT (id) DO UPDATE SET whatsapp_number=EXCLUDED.whatsapp_number`); err != nil {
-		w.t.Fatalf("workspace: %v", err)
 	}
 
 	w.store = store.New(pool)
 	w.provider = &meta.DryRunProvider{}
-	w.svc = &httpapi.Service{
-		Store: w.store, Provider: w.provider, Log: testLog, Workspace: store.DemoWorkspaceID,
-	}
+	w.svc = &httpapi.Service{Store: w.store, Provider: w.provider, Log: testLog}
 	w.handlers = &httpapi.Handlers{
 		Service:            w.svc,
 		Log:                testLog,
 		WebhookVerifyToken: "verify-token",
 		AllowDevActions:    true,
 	}
-	router := httpapi.NewRouter(w.handlers, httpapi.APIKeys{testKey: "teste"}, []string{"*"}, testLog)
-	server = httptest.NewServer(router)
+	server = httptest.NewServer(httpapi.NewRouter(w.handlers, []string{"*"}, testLog))
 	baseURL = server.URL
 	w.t.Cleanup(server.Close)
 
+	// Todo cenário roda como uma conta de verdade: cadastro, sessão e workspace
+	// próprios. Assim o isolamento por workspace é exercitado em cada passo, e
+	// não só no teste de contas.
+	w.signup("marina@teste.dev", "cafe1234")
+
+	// O número de WhatsApp é o que a Meta daria ao conectar o número; sem ele
+	// nenhuma campanha pode disparar. Não é dado de demonstração, é
+	// configuração da conta — o cadastro deixa em branco para o operador
+	// preencher.
+	if _, err := pool.Exec(ctx, `
+		UPDATE workspaces SET segment='café', site='cafeaurora.com.br',
+		       whatsapp_number='5511912345678', email_sender='time@cafeaurora.com.br',
+		       quality='green', messaging_limit='100 mil', opt_in_policy='opt-in explícito',
+		       quiet_start=21, quiet_end=8
+		WHERE id=$1`, w.workspaceID); err != nil {
+		w.t.Fatalf("configurar workspace: %v", err)
+	}
+
 	w.status, w.body = 0, nil
 	w.templateID, w.campaignID, w.segmentID, w.lastPhone, w.externalID = "", "", "", "", ""
+}
+
+// signup cria a conta do cenário pelo mesmo endpoint que a SPA usa. Se o
+// cadastro quebrar, o teste quebra aqui — e não três passos depois com um 401
+// confuso.
+func (w *world) signup(email, password string) {
+	w.t.Helper()
+	w.do(http.MethodPost, "/api/v1/auth/signup", map[string]any{
+		"name": "Marina Reis", "email": email, "password": password, "company": "Café Aurora",
+	})
+	if w.status != http.StatusCreated {
+		w.t.Fatalf("cadastro: %d %s", w.status, w.body)
+	}
+	var acc struct {
+		Token       string `json:"token"`
+		WorkspaceID string `json:"workspaceId"`
+	}
+	w.decode(&acc)
+	w.token, w.workspaceID = acc.Token, acc.WorkspaceID
 }
 
 func (w *world) do(method, path string, body any) {
@@ -191,8 +221,10 @@ func (w *world) do(method, path string, body any) {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if !strings.HasPrefix(path, "/webhooks") {
-		req.Header.Set("X-API-Key", testKey)
+	// Webhook e login/cadastro são públicos; o resto viaja com a sessão do
+	// cenário.
+	if !strings.HasPrefix(path, "/webhooks") && !strings.HasPrefix(path, "/api/v1/auth/") {
+		req.Header.Set("Authorization", "Bearer "+w.token)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -427,7 +459,7 @@ func registerSteps(sc *godog.ScenarioContext, w *world) {
 		return nil
 	})
 	sc.Step(`^o total é (\d+)$`, func(want int) error {
-		segs, err := w.store.Segments(context.Background(), store.DemoWorkspaceID)
+		segs, err := w.store.Segments(context.Background(), w.workspaceID)
 		if err != nil {
 			return err
 		}
@@ -531,6 +563,31 @@ func registerSteps(sc *godog.ScenarioContext, w *world) {
 		}
 		if n != want {
 			return fmt.Errorf("esperava %d envios, achei %d", want, n)
+		}
+		return nil
+	})
+	sc.Step(`^a fila processa lotes até esvaziar$`, func() error {
+		worker := &dispatch.Worker{Store: w.store, Provider: w.provider, Log: testLog, Interval: time.Second}
+		// Ticks até não sair nada. O limite evita laço infinito se a fila travar
+		// — um teste que pendura é pior do que um que falha.
+		for i := 0; i < 20; i++ {
+			n, err := worker.Tick(context.Background())
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return nil
+			}
+		}
+		return fmt.Errorf("a fila não esvaziou em 20 ticks")
+	})
+	sc.Step(`^a campanha fica "([^"]*)"$`, func(want string) error {
+		camp, err := w.store.Campaign(context.Background(), w.workspaceID, w.campaignID)
+		if err != nil {
+			return err
+		}
+		if camp.Status != want {
+			return fmt.Errorf("status %q, esperava %q", camp.Status, want)
 		}
 		return nil
 	})
@@ -639,6 +696,74 @@ func registerSteps(sc *godog.ScenarioContext, w *world) {
 		w.handlers.AppSecret = "segredo-de-teste"
 		return nil
 	})
+	sc.Step(`^a campanha só pode enviar numa janela fechada agora$`, func() error {
+		// Janela invertida de propósito (começa daqui a 1h e fecha daqui a 2h):
+		// garante "fechada" mesmo quando o relógio da máquina está em qualquer
+		// hora do dia, sem depender de fuso nem de dia da semana.
+		now := time.Now().In(mustLocation("America/Sao_Paulo"))
+		start := (now.Hour() + 1) % 24
+		end := (now.Hour() + 2) % 24
+		return w.patchCampaignSchedule(start, end)
+	})
+	sc.Step(`^a campanha pode enviar agora$`, func() error {
+		start, end := openWindowNow()
+		return w.patchCampaignSchedule(start, end)
+	})
+	sc.Step(`^eu leio o bootstrap$`, func() error {
+		w.get("/api/v1/bootstrap")
+		return nil
+	})
+	sc.Step(`^a fila diz que está bloqueada pela janela$`, func() error {
+		info, err := w.queueInfo()
+		if err != nil {
+			return err
+		}
+		if info.BlockedBy != "window" {
+			return fmt.Errorf("blockedBy = %q, esperava %q (%+v)", info.BlockedBy, "window", info)
+		}
+		return nil
+	})
+	sc.Step(`^a fila não está bloqueada$`, func() error {
+		info, err := w.queueInfo()
+		if err != nil {
+			return err
+		}
+		if info.BlockedBy != "" {
+			return fmt.Errorf("blockedBy = %q, esperava vazio (%+v)", info.BlockedBy, info)
+		}
+		return nil
+	})
+	sc.Step(`^a fila informa quando a janela abre$`, func() error {
+		info, err := w.queueInfo()
+		if err != nil {
+			return err
+		}
+		if info.NextOpenAt.IsZero() {
+			return fmt.Errorf("nextOpenAt veio zerado apesar da janela fechada")
+		}
+		return nil
+	})
+	sc.Step(`^a fila não informa horário de abertura$`, func() error {
+		// Tem que ser no JSON cru: `time.Time` zero decodifica de
+		// "0001-01-01T00:00:00Z" sem erro, então olhar a struct passaria mesmo
+		// com a tela recebendo "abre 01/01/0001".
+		var boot struct {
+			Queue []map[string]any `json:"queue"`
+		}
+		if err := json.Unmarshal(w.body, &boot); err != nil {
+			return err
+		}
+		for _, q := range boot.Queue {
+			if q["campaignId"] != w.campaignID {
+				continue
+			}
+			if raw, ok := q["nextOpenAt"]; ok {
+				return fmt.Errorf("nextOpenAt = %v, esperava ausente", raw)
+			}
+			return nil
+		}
+		return fmt.Errorf("campanha %s não apareceu na fila: %s", w.campaignID, w.body)
+	})
 	sc.Step(`^chego no webhook sem assinatura$`, func() error {
 		w.post("/webhooks/whatsapp", map[string]any{
 			"object": "whatsapp_business_account",
@@ -687,7 +812,7 @@ func (w *world) createApprovedTemplate() error {
 
 func (w *world) loadTemplate() domain.Template {
 	w.t.Helper()
-	tpl, err := w.store.Template(context.Background(), store.DemoWorkspaceID, w.templateID)
+	tpl, err := w.store.Template(context.Background(), w.workspaceID, w.templateID)
 	if err != nil {
 		w.t.Fatalf("carregar template: %v", err)
 	}
@@ -759,11 +884,15 @@ func (w *world) setupAudience(withOptIn, without int) error {
 	// A audiência é definida por cidade, NÃO por opt-in: a regra de consentimento
 	// é aplicada no disparo, e é isso que o cenário quer provar (1 ignorado).
 	w.segmentID = w.createSegment("Audiência Teste", "São Paulo", "", false)
+	// A janela tem que conter "agora": o worker respeita a janela, e um teste
+	// que usa 9–18 passa de manhã e falha de madrugada. A janela em si é o que
+	// os cenários de fila testam, com valores explícitos.
+	start, end := openWindowNow()
 	w.post("/api/v1/campaigns", map[string]any{
 		"name": "Campanha de teste", "objective": "conversao", "status": "scheduled",
 		"channel": "whatsapp", "templateId": w.templateID, "segmentIds": []string{w.segmentID},
 		"schedule": map[string]any{
-			"startAt": time.Now().UTC().Format(time.RFC3339), "windowStart": 0, "windowEnd": 23,
+			"startAt": time.Now().UTC().Format(time.RFC3339), "windowStart": start, "windowEnd": end,
 			"days": []int{0, 1, 2, 3, 4, 5, 6}, "throttlePerMinute": 600, "timezone": "America/Sao_Paulo",
 		},
 		"offer":            map[string]any{"enabled": true, "kind": "cupom", "codePattern": "TESTE-{nome}", "discountLabel": "10%", "validUntil": "2027-01-01T00:00:00Z"},
@@ -777,6 +906,77 @@ func (w *world) setupAudience(withOptIn, without int) error {
 	w.campaignID = c.ID
 	w.status, w.body = 0, nil
 	return nil
+}
+
+// patchCampaignSchedule muda a janela da campanha do cenário por PATCH? Não
+// existe rota de update de campanha; o caminho real é PUT /state, o mesmo que o
+// frontend usa quando o operador ajusta a janela no drawer.
+func (w *world) patchCampaignSchedule(start, end int) error {
+	ctx := context.Background()
+	camp, err := w.store.Campaign(ctx, w.workspaceID, w.campaignID)
+	if err != nil {
+		return err
+	}
+	ws, err := w.store.Workspace(ctx, w.workspaceID)
+	if err != nil {
+		return err
+	}
+	templates, err := w.store.Templates(ctx, w.workspaceID)
+	if err != nil {
+		return err
+	}
+	segments, err := w.store.Segments(ctx, w.workspaceID)
+	if err != nil {
+		return err
+	}
+	flows, err := w.store.Flows(ctx, w.workspaceID)
+	if err != nil {
+		return err
+	}
+	camp.Schedule.WindowStart = start
+	camp.Schedule.WindowEnd = end
+	camp.Schedule.Days = []int{0, 1, 2, 3, 4, 5, 6}
+	camp.Schedule.ThrottlePerMinute = 600
+	camp.Schedule.Timezone = "America/Sao_Paulo"
+
+	w.do(http.MethodPut, "/api/v1/state", map[string]any{
+		"workspace": ws, "templates": templates, "segments": segments,
+		"campaigns": []domain.Campaign{camp}, "flows": flows,
+	})
+	if w.status != http.StatusOK {
+		return fmt.Errorf("ajustar janela: %d %s", w.status, w.body)
+	}
+	w.status, w.body = 0, nil
+	return nil
+}
+
+// openWindowNow devolve uma janela de uma hora que contém o instante atual, no
+// fuso da campanha. Existe para os cenários que precisam da fila ANDANDO não
+// dependerem da hora em que a suíte roda.
+func openWindowNow() (start, end int) {
+	now := time.Now().In(mustLocation("America/Sao_Paulo"))
+	start = now.Hour()
+	return start, (start + 1) % 24
+}
+
+// queueInfo lê a explicação da fila da campanha do cenário no último bootstrap.
+func (w *world) queueInfo() (httpapi.QueueInfo, error) {
+	var boot httpapi.Bootstrap
+	w.decode(&boot)
+	for _, q := range boot.Queue {
+		if q.CampaignID == w.campaignID {
+			return q, nil
+		}
+	}
+	return httpapi.QueueInfo{}, fmt.Errorf("campanha %s não apareceu na fila: %s", w.campaignID, w.body)
+}
+
+func mustLocation(name string) *time.Location {
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		panic(err)
+	}
+	return loc
 }
 
 func (w *world) assertSendStatus(want string) error {

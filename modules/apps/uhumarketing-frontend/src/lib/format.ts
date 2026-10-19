@@ -1,5 +1,5 @@
 // Formatação em pt-BR, sem dependência: números, moeda, percentual e datas
-// curtas. As métricas da POC são pequenas o bastante para não precisar de
+// curtas. As métricas são pequenas o bastante para não precisar de
 // compactação (mil/mi) — quando precisarem, é aqui.
 
 export function num(value: number): string {
@@ -49,7 +49,7 @@ export function fmtFullDate(iso: string): string {
   return FULL.format(new Date(iso));
 }
 
-/** "há 2h", "há 3d" — suficiente para um feed mock. */
+/** "há 2h", "há 3d" — suficiente para o feed de atividade. */
 export function ago(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.round(diff / 60_000);

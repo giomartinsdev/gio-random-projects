@@ -14,9 +14,7 @@ import (
 type Config struct {
 	HTTPAddr        string
 	DatabaseURL     string
-	APIKeys         map[string]string
 	CORSOrigins     []string
-	WorkspaceID     string
 	WebhookVerify   string
 	AppSecret       string
 	AllowDevActions bool
@@ -36,7 +34,6 @@ func Load() (Config, error) {
 	cfg := Config{
 		HTTPAddr:        env("HTTP_ADDR", ":8195"),
 		DatabaseURL:     os.Getenv("DATABASE_URL"),
-		WorkspaceID:     env("WORKSPACE_ID", "ws_cafe_aurora"),
 		WebhookVerify:   env("META_WEBHOOK_VERIFY_TOKEN", "uhu-dev-verify"),
 		AppSecret:       os.Getenv("META_APP_SECRET"),
 		MetaMode:        env("META_MODE", "dry-run"),
@@ -52,10 +49,6 @@ func Load() (Config, error) {
 
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL é obrigatório (ex.: postgres://uhu:uhu@localhost:5433/uhumarketing?sslmode=disable)")
-	}
-	cfg.APIKeys = parseKeys(env("UHU_API_KEYS", "dev-key:local"))
-	if len(cfg.APIKeys) == 0 {
-		return Config{}, fmt.Errorf("UHU_API_KEYS não pode ficar vazio")
 	}
 	for _, o := range strings.Split(env("CORS_ORIGINS", "http://localhost:5180,http://127.0.0.1:5180"), ",") {
 		if o = strings.TrimSpace(o); o != "" {
@@ -91,21 +84,4 @@ func boolEnv(key string, fallback bool) bool {
 	default:
 		return false
 	}
-}
-
-// parseKeys lê "chave:rótulo,chave2:rótulo2" — o rótulo é só para log.
-func parseKeys(raw string) map[string]string {
-	keys := map[string]string{}
-	for _, entry := range strings.Split(raw, ",") {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		key, label, found := strings.Cut(entry, ":")
-		if !found {
-			label = "unlabeled"
-		}
-		keys[strings.TrimSpace(key)] = label
-	}
-	return keys
 }

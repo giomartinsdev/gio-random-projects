@@ -42,8 +42,6 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-uhu}:${POSTGRES_PASSWORD:-uhu}@postgres:5432/${POSTGRES_DB:-uhumarketing}?sslmode=disable
       HTTP_ADDR: :8195
-      # Nunca use a chave de exemplo fora da sua máquina.
-      UHU_API_KEYS: ${UHU_API_KEYS:-dev-key:local}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5180,http://127.0.0.1:5180}
       # Nada sai para a Meta por padrão. Ver README para o modo live.
       META_MODE: ${META_MODE:-dry-run}

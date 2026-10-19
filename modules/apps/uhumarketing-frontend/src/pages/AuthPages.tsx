@@ -4,9 +4,9 @@ import { useSession } from "@/lib/session";
 import { navigate, navigatePublic } from "@/lib/useHashRoute";
 import { cn } from "@/lib/utils";
 
-// Telas de entrada (mock). O visual é o do prospecta: painel de marca com dot
-// grid + orbs e formulário compacto. A validação é de fachada — qualquer
-// e-mail/senha de 4+ entra; é uma POC de produto, não de autenticação.
+// Telas de entrada. O visual é o do prospecta: painel de marca com dot grid +
+// orbs e formulário compacto. A validação e a sessão são do servidor — o que
+// esta tela faz é mandar credencial e guardar o token que voltar.
 
 function BrandPanel({ title, text }: { title: string; text: string }) {
   return (
@@ -39,7 +39,7 @@ function BrandPanel({ title, text }: { title: string; text: string }) {
 
       <div className="relative flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.08em] text-[#6E6E76]">
         <span className="h-1.5 w-1.5 rounded-full bg-success" />
-        POC de produto · dados fictícios
+        Sua conta · seus dados
       </div>
     </div>
   );
@@ -47,8 +47,8 @@ function BrandPanel({ title, text }: { title: string; text: string }) {
 
 export function LoginPage() {
   const { login } = useSession();
-  const [email, setEmail] = useState("marina@cafeaurora.com.br");
-  const [password, setPassword] = useState("demo1234");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -78,9 +78,9 @@ export function LoginPage() {
         <form onSubmit={submit} className="flex w-full max-w-[380px] flex-col gap-5">
           <div className="flex flex-col gap-1.5">
             <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-lp-ink-3">Entrar</span>
-            <h1 className="text-[26px] font-semibold tracking-tight">Bem-vinda de volta</h1>
+            <h1 className="text-[26px] font-semibold tracking-tight">Bem-vindo de volta</h1>
             <p className="text-[13px] leading-relaxed text-lp-ink-2">
-              Entre com a conta de demonstração — os campos já estão preenchidos.
+              Entre com o e-mail e a senha da sua conta.
             </p>
           </div>
 
@@ -129,30 +129,7 @@ export function LoginPage() {
             className="inline-flex h-11 items-center justify-center gap-2 rounded-sm bg-accent text-[15px] font-semibold text-white transition-colors hover:bg-[#1D4ED8] disabled:opacity-60"
           >
             {loading ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
-            Entrar na demonstração
-          </button>
-
-          <div className="flex items-center gap-3">
-            <span className="h-px flex-1 bg-lp-line" />
-            <span className="font-mono text-[10px] uppercase tracking-wide text-lp-ink-3">ou</span>
-            <span className="h-px flex-1 bg-lp-line" />
-          </div>
-
-          <button
-            type="button"
-            onClick={async () => {
-              setLoading(true);
-              try {
-                await login("marina@cafeaurora.com.br", "demo1234");
-                navigate("dashboard");
-              } finally {
-                setLoading(false);
-              }
-            }}
-            className="inline-flex h-11 items-center justify-center gap-2.5 rounded-sm border border-lp-line bg-white text-[14px] font-medium text-lp-ink transition-colors hover:bg-lp-surface"
-          >
-            <span className="grid h-4 w-4 place-items-center rounded-full bg-[#4285F4] text-[9px] font-bold text-white">G</span>
-            Continuar com Google
+            Entrar
           </button>
 
           <p className="text-center text-[13px] text-lp-ink-2">
@@ -198,7 +175,7 @@ export function SignupPage() {
     <div className="flex min-h-screen bg-white text-lp-ink">
       <BrandPanel
         title="Comece com uma campanha e termine com um sistema."
-        text="O workspace já nasce com templates aprovados, audiências e um fluxo de reativação — para você ver o produto funcionando antes de conectar o seu."
+        text="Sua conta nasce vazia. Você conecta o WhatsApp, cria o primeiro template e monta a campanha — o histórico é só o seu."
       />
 
       <div className="flex flex-1 items-center justify-center px-6 py-12">
@@ -245,7 +222,7 @@ export function SignupPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="mínimo 4 caracteres"
+              placeholder="mínimo 8 caracteres"
               className="h-11 rounded-sm border border-lp-line bg-lp-surface px-3.5 text-[14px] outline-none focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent-ring"
             />
           </label>

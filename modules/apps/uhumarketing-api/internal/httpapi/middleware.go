@@ -5,50 +5,13 @@
 package httpapi
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/domain"
 )
-
-// APIKeys é o mapa chave→rótulo lido de UHU_API_KEYS. O rótulo é só para log.
-type APIKeys map[string]string
-
-func (k APIKeys) Label(key string) (string, bool) {
-	for candidate, label := range k {
-		if subtle.ConstantTimeCompare([]byte(candidate), []byte(key)) == 1 {
-			return label, true
-		}
-	}
-	return "", false
-}
-
-type ctxKey struct{}
-
-// secure exige X-API-Key (ou Bearer) em tudo que não é público. Público:
-// /healthz, o handshake do webhook e o próprio webhook (que se autentica por
-// assinatura HMAC, não por chave de API).
-func secure(next http.Handler, keys APIKeys, log *slog.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := r.Header.Get("X-API-Key")
-		if key == "" {
-			if bearer := r.Header.Get("Authorization"); strings.HasPrefix(bearer, "Bearer ") {
-				key = strings.TrimPrefix(bearer, "Bearer ")
-			}
-		}
-		label, ok := keys.Label(key)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "chave de API inválida ou ausente (X-API-Key)")
-			return
-		}
-		ctx := contextWithLabel(r, label)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
 
 // cors libera a SPA em desenvolvimento. Em produção o app é servido do mesmo
 // host e isto pode ficar restrito a uma origem.
@@ -105,6 +68,8 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody{
 			Error: verr.Message, Field: verr.Field, Status: http.StatusUnprocessableEntity,
 		})
+	case errors.Is(err, domain.ErrUnauthorized):
+		writeError(w, http.StatusUnauthorized, "sessão inválida: entre de novo")
 	case errors.Is(err, domain.ErrNotFound):
 		writeError(w, http.StatusNotFound, "não encontrado")
 	case errors.Is(err, domain.ErrConflict):

@@ -1,18 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  ACTIVITY,
-  CAMPAIGNS,
-  FLOWS,
-  SEGMENTS,
-  SENDS,
-  TEMPLATES,
-  USER,
-  WORKSPACE,
-  COST_PER_MESSAGE,
-} from "./mock";
 import type {
   ActivityEvent,
   Campaign,
+  Contact,
   Flow,
   FlowEdge,
   FlowNode,
@@ -23,21 +12,17 @@ import type {
   User,
   Workspace,
 } from "./types";
-import { uid } from "./format";
-import { StoreContext } from "./storeContext";
 
-// Estado da POC. Não há backend: este provider é a "API" inteira. Ele carrega
-// o mock e persiste o que o usuário cria/edita em localStorage, para o reload
-// não apagar o trabalho de demonstração. Um botão em Configurações devolve
-// tudo ao seed original.
-//
-// Quando a integração real existir, é este arquivo que vira cliente HTTP — as
-// telas só falam com `useStore()`.
+// Contrato das telas com os dados. O que sobrou depois que a demonstração
+// saiu: o tipo `Store` e as derivações puras (KPIs e série). Quem preenche é
+// `storeRemote.tsx`; nenhuma tela importa o cliente HTTP.
 
-const STORAGE_KEY = "uhumarketing:state:v1";
+/** Custo por mensagem de marketing entregue, em reais. Espelha o backend. */
+export const COST_PER_MESSAGE = 0.0625;
 
 export interface State {
   workspace: Workspace;
+  contacts: Contact[];
   user: User;
   templates: Template[];
   segments: Segment[];
@@ -46,43 +31,6 @@ export interface State {
   flows: Flow[];
   activity: ActivityEvent[];
 }
-
-function seed(): State {
-  return {
-    workspace: WORKSPACE,
-    user: USER,
-    templates: TEMPLATES,
-    segments: SEGMENTS,
-    campaigns: CAMPAIGNS,
-    sends: SENDS,
-    flows: FLOWS,
-    activity: ACTIVITY,
-  };
-}
-
-function load(): State {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return seed();
-    const parsed = JSON.parse(raw) as Partial<State>;
-    const base = seed();
-    // Merge defensivo: uma versão antiga do mock não pode quebrar a tela.
-    return {
-      workspace: parsed.workspace ?? base.workspace,
-      user: parsed.user ?? base.user,
-      templates: parsed.templates ?? base.templates,
-      segments: parsed.segments ?? base.segments,
-      campaigns: parsed.campaigns ?? base.campaigns,
-      sends: parsed.sends ?? base.sends,
-      flows: parsed.flows ?? base.flows,
-      activity: parsed.activity ?? base.activity,
-    };
-  } catch {
-    return seed();
-  }
-}
-
-/* --------------------------------------------------------------- derivados */
 
 export interface Kpis {
   sent: number;
@@ -102,10 +50,8 @@ export interface Kpis {
 }
 
 /**
- * KPIs do período. A fonte é o acumulado das campanhas (a base "real" do
- * negócio), não o log de envios — o log é uma amostra de 12 linhas e faria o
- * dashboard parecer uma conta recém-criada. O recorte é por campanha
- * atualizada dentro da janela.
+ * KPIs do período, a partir das campanhas. O servidor já manda as métricas por
+ * campanha derivadas de `sends`; aqui só se soma e se calcula taxa.
  */
 export function kpisFrom(campaigns: Campaign[], days: number): Kpis {
   const cutoff = Date.now() - days * 86_400_000;
@@ -139,32 +85,17 @@ export function kpisFrom(campaigns: Campaign[], days: number): Kpis {
 }
 
 /**
- * Série diária do período. Distribui o volume das campanhas pelos dias com o
- * mesmo formato da série decorativa (fim de semana mais fraco, onda suave),
- * para o gráfico e os KPIs contarem a mesma história.
+ * Série diária de reserva. O backend manda a série real (`series` no Store);
+ * esta função só existe para o gráfico não ficar vazio caso o servidor não
+ * mande nada — e devolve zeros, não uma curva decorativa. Inventar movimento
+ * num gráfico é a mentira mais fácil de contar sem perceber.
  */
-export function seriesFor(campaigns: Campaign[], days: number): MetricPoint[] {
-  const total = campaigns
-    .filter((c) => new Date(c.updatedAt).getTime() >= Date.now() - days * 86_400_000)
-    .reduce((acc, c) => acc + c.metrics.sent, 0);
-  const base = total / days;
+export function seriesFor(_campaigns: Campaign[], days: number): MetricPoint[] {
   const out: MetricPoint[] = [];
-
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const weekend = d.getDay() === 0 || d.getDay() === 6 ? 0.45 : 1;
-    const wave = 1 + 0.18 * Math.sin((days - i) / 2.4);
-    const sent = Math.round(base * weekend * wave);
-    const delivered = Math.round(sent * 0.972);
-    const read = Math.round(delivered * 0.79);
-    out.push({
-      date: d.toISOString().slice(0, 10),
-      sent,
-      delivered,
-      read,
-      replied: Math.round(read * 0.14),
-    });
+    out.push({ date: d.toISOString().slice(0, 10), sent: 0, delivered: 0, read: 0, replied: 0 });
   }
   return out;
 }
@@ -172,12 +103,35 @@ export function seriesFor(campaigns: Campaign[], days: number): MetricPoint[] {
 /* ------------------------------------------------------------------ store */
 
 export interface Store extends State {
+  // workspace
+  /**
+   * Grava a identidade da conta (nome, número de WhatsApp, janela silenciosa).
+   * Espera o servidor: o número é o que libera o disparo, então "salvo" aqui
+   * não pode ser otimista.
+   */
+  updateWorkspace: (patch: Partial<Workspace>) => Promise<void>;
+  /**
+   * Grava agora o documento editorial (cancela o debounce e espera o PUT).
+   * Necessário quando a próxima ação do servidor depende do que acabou de ser
+   * editado — publicar um fluxo e disparar a campanha, por exemplo.
+   */
+  saveNow: () => Promise<void>;
   // templates
   createTemplate: (t: Omit<Template, "id" | "createdAt" | "updatedAt" | "metrics" | "metaId" | "quality">) => Template;
   updateTemplate: (id: string, patch: Partial<Template>) => void;
   deleteTemplate: (id: string) => void;
   // segments
   createSegment: (s: Omit<Segment, "id" | "updatedAt" | "contactsCount" | "sample"> & { contactsCount?: number }) => Segment;
+  /**
+   * Importa contatos de verdade (POST /contacts) e recarrega o bootstrap. Cada
+   * linha com consentimento vira um contato com opt-in registrado; sem
+   * consentimento, a linha é recusada — a lista não pode "ganhar" opt-in por
+   * omissão.
+   */
+  importContacts: (
+    rows: { name: string; phone: string; email?: string; city?: string; consentAt: string }[],
+    tag: string,
+  ) => Promise<{ created: number; failed: { line: number; reason: string }[] }>;
   updateSegment: (id: string, patch: Partial<Segment>) => void;
   // campaigns
   createCampaign: (c: Omit<Campaign, "id" | "createdAt" | "updatedAt" | "metrics">) => Campaign;
@@ -190,268 +144,40 @@ export interface Store extends State {
   removeNode: (flowId: string, nodeId: string) => void;
   addEdge: (flowId: string, edge: Omit<FlowEdge, "id">) => void;
   removeEdge: (flowId: string, edgeId: string) => void;
-  // envios
-  enqueueSend: (s: Omit<Send, "id" | "at" | "cost">) => Send;
   // util
   logActivity: (e: Omit<ActivityEvent, "id" | "at">) => void;
-  reset: () => void;
-  // Opcional: só o provider do backend sabe enfileirar de verdade. A tela usa
-  // a presença desta função para trocar "Ativar" por "Disparar".
+  // Só o backend enfileira de verdade. A tela usa a presença desta função para
+  // trocar "Ativar" por "Disparar".
   launchCampaign?: (id: string) => Promise<LaunchResult>;
+  testSend?: (id: string) => Promise<LaunchResult>;
   submitTemplate?: (id: string) => Promise<Template>;
   /**
-   * Série diária REAL, quando existe. O mock devolve uma curva decorativa
-   * (seriesFor) porque não tem histórico; o backend agrega `sends` por dia.
-   * A presença desta função também sinaliza "os números são reais", e o
-   * dashboard para de mostrar variações inventadas.
+   * Série diária REAL, agregada de `sends` no servidor. A presença desta
+   * função também sinaliza "os números são reais", e o dashboard para de
+   * mostrar variação inventada.
    */
   series?: (days: number) => MetricPoint[];
+  /**
+   * Estado do provedor de WhatsApp (dry-run/live, número conectado). Vem do
+   * servidor: quem sabe se dá para enviar é ele, não a tela.
+   */
+  provider?: {
+    name: string;
+    mode: string;
+    live: boolean;
+    hasNumber: boolean;
+    note: string;
+  };
 }
 
-/** Resultado de um disparo real. Existe só no modo Backend. */
+/** Resultado de um disparo real. */
 export interface LaunchResult {
+  campaignId?: string;
   queued: number;
   skipped: number;
   duplicate: number;
 }
 
-// Reexportado do módulo de contexto: as telas continuam importando de
-// "@/lib/store", e o provider do backend publica no MESMO contexto sem
-// importar este arquivo.
+// As telas importam daqui; o provider publica no MESMO contexto sem importar
+// este arquivo (evita ciclo).
 export { useStore, useLookup } from "./storeContext";
-
-export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<State>(load);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      // storage cheio/indisponível: a sessão vale só nesta aba.
-    }
-  }, [state]);
-
-  const now = () => new Date().toISOString();
-
-  const pushActivity = useCallback((e: Omit<ActivityEvent, "id" | "at">) => {
-    setState((prev) => ({
-      ...prev,
-      activity: [{ ...e, id: uid("act"), at: now() }, ...prev.activity].slice(0, 60),
-    }));
-  }, []);
-
-  const createTemplate = useCallback<Store["createTemplate"]>((input) => {
-    const t: Template = {
-      ...input,
-      id: uid("tpl"),
-      metaId: "—",
-      quality: 0,
-      metrics: { sent: 0, delivered: 0, read: 0, replied: 0, clicked: 0, failed: 0 },
-      createdAt: now(),
-      updatedAt: now(),
-    };
-    setState((prev) => ({ ...prev, templates: [t, ...prev.templates] }));
-    return t;
-  }, []);
-
-  const updateTemplate = useCallback<Store["updateTemplate"]>((id, patch) => {
-    setState((prev) => ({
-      ...prev,
-      templates: prev.templates.map((t) => (t.id === id ? { ...t, ...patch, updatedAt: now() } : t)),
-    }));
-  }, []);
-
-  const deleteTemplate = useCallback<Store["deleteTemplate"]>((id) => {
-    setState((prev) => ({ ...prev, templates: prev.templates.filter((t) => t.id !== id) }));
-  }, []);
-
-  const createSegment = useCallback<Store["createSegment"]>((input) => {
-    const s: Segment = {
-      ...input,
-      id: uid("seg"),
-      contactsCount: input.contactsCount ?? 0,
-      sample: [],
-      updatedAt: now(),
-    };
-    setState((prev) => ({ ...prev, segments: [s, ...prev.segments] }));
-    return s;
-  }, []);
-
-  const updateSegment = useCallback<Store["updateSegment"]>((id, patch) => {
-    setState((prev) => ({
-      ...prev,
-      segments: prev.segments.map((s) => (s.id === id ? { ...s, ...patch, updatedAt: now() } : s)),
-    }));
-  }, []);
-
-  const createCampaign = useCallback<Store["createCampaign"]>((input) => {
-    const c: Campaign = {
-      ...input,
-      id: uid("cmp"),
-      metrics: {
-        audience: 0,
-        queued: 0,
-        sent: 0,
-        delivered: 0,
-        read: 0,
-        replied: 0,
-        converted: 0,
-        failed: 0,
-        optOut: 0,
-        revenue: 0,
-      },
-      createdAt: now(),
-      updatedAt: now(),
-    };
-    setState((prev) => ({ ...prev, campaigns: [c, ...prev.campaigns] }));
-    return c;
-  }, []);
-
-  const updateCampaign = useCallback<Store["updateCampaign"]>((id, patch) => {
-    setState((prev) => ({
-      ...prev,
-      campaigns: prev.campaigns.map((c) => (c.id === id ? { ...c, ...patch, updatedAt: now() } : c)),
-    }));
-  }, []);
-
-  const createFlow = useCallback<Store["createFlow"]>((input) => {
-    const f: Flow = {
-      ...input,
-      id: uid("flow"),
-      runs: { total: 0, success: 0, failed: 0 },
-      createdAt: now(),
-      updatedAt: now(),
-    };
-    setState((prev) => ({ ...prev, flows: [f, ...prev.flows] }));
-    return f;
-  }, []);
-
-  const updateFlow = useCallback<Store["updateFlow"]>((id, patch) => {
-    setState((prev) => ({
-      ...prev,
-      flows: prev.flows.map((f) => (f.id === id ? { ...f, ...patch, updatedAt: now() } : f)),
-    }));
-  }, []);
-
-  const addNode = useCallback<Store["addNode"]>((flowId, node) => {
-    setState((prev) => ({
-      ...prev,
-      flows: prev.flows.map((f) =>
-        f.id === flowId ? { ...f, nodes: [...f.nodes, node], updatedAt: now() } : f,
-      ),
-    }));
-  }, []);
-
-  const updateNode = useCallback<Store["updateNode"]>((flowId, nodeId, patch) => {
-    setState((prev) => ({
-      ...prev,
-      flows: prev.flows.map((f) =>
-        f.id === flowId
-          ? {
-              ...f,
-              nodes: f.nodes.map((n) => (n.id === nodeId ? { ...n, ...patch } : n)),
-              updatedAt: now(),
-            }
-          : f,
-      ),
-    }));
-  }, []);
-
-  const removeNode = useCallback<Store["removeNode"]>((flowId, nodeId) => {
-    setState((prev) => ({
-      ...prev,
-      flows: prev.flows.map((f) =>
-        f.id === flowId
-          ? {
-              ...f,
-              nodes: f.nodes.filter((n) => n.id !== nodeId),
-              edges: f.edges.filter((e) => e.from !== nodeId && e.to !== nodeId),
-              updatedAt: now(),
-            }
-          : f,
-      ),
-    }));
-  }, []);
-
-  const addEdge = useCallback<Store["addEdge"]>((flowId, edge) => {
-    setState((prev) => ({
-      ...prev,
-      flows: prev.flows.map((f) => {
-        if (f.id !== flowId) return f;
-        // Sem laço e sem aresta duplicada entre o mesmo par.
-        if (edge.from === edge.to) return f;
-        if (f.edges.some((e) => e.from === edge.from && e.to === edge.to)) return f;
-        return { ...f, edges: [...f.edges, { ...edge, id: uid("e") }], updatedAt: now() };
-      }),
-    }));
-  }, []);
-
-  const removeEdge = useCallback<Store["removeEdge"]>((flowId, edgeId) => {
-    setState((prev) => ({
-      ...prev,
-      flows: prev.flows.map((f) =>
-        f.id === flowId ? { ...f, edges: f.edges.filter((e) => e.id !== edgeId), updatedAt: now() } : f,
-      ),
-    }));
-  }, []);
-
-  const enqueueSend = useCallback<Store["enqueueSend"]>((input) => {
-    const s: Send = { ...input, id: uid("snd"), at: now(), cost: 0.0625 };
-    setState((prev) => ({ ...prev, sends: [s, ...prev.sends] }));
-    return s;
-  }, []);
-
-  const reset = useCallback(() => {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // ignore
-    }
-    setState(seed());
-  }, []);
-
-  const value = useMemo<Store>(
-    () => ({
-      ...state,
-      createTemplate,
-      updateTemplate,
-      deleteTemplate,
-      createSegment,
-      updateSegment,
-      createCampaign,
-      updateCampaign,
-      createFlow,
-      updateFlow,
-      addNode,
-      updateNode,
-      removeNode,
-      addEdge,
-      removeEdge,
-      enqueueSend,
-      logActivity: pushActivity,
-      reset,
-    }),
-    [
-      state,
-      createTemplate,
-      updateTemplate,
-      deleteTemplate,
-      createSegment,
-      updateSegment,
-      createCampaign,
-      updateCampaign,
-      createFlow,
-      updateFlow,
-      addNode,
-      updateNode,
-      removeNode,
-      addEdge,
-      removeEdge,
-      enqueueSend,
-      pushActivity,
-      reset,
-    ],
-  );
-
-  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
-}

@@ -1,8 +1,7 @@
-// Modelo da POC. Não é o contrato de uma API real ainda: é a forma que a
-// integração vai precisar ter para sustentar o produto (templates Meta,
-// audiências, campanhas, envios e o fluxo livre estilo n8n). Tudo em
-// lib/mock.ts é dado de exemplo; o que o usuário cria/crua vive no
-// StoreProvider e sobrevive ao reload em localStorage.
+// Modelo que as telas usam. Espelha o que o uhumarketing-api devolve no
+// bootstrap (templates Meta, audiências, campanhas, envios e o fluxo livre
+// estilo n8n). Nada aqui é dado de exemplo: o que a tela mostra veio do banco,
+// escopado pela conta da sessão.
 
 /* ------------------------------------------------------------------ canal */
 
@@ -64,7 +63,7 @@ export interface Template {
   footer?: string;
   buttons: TemplateButton[];
   variables: TemplateVariable[];
-  /** Id no WhatsApp Business Account (mock). */
+  /** Id do template no WhatsApp Business Account. */
   metaId: string;
   /** 0–100, qualidade reportada pela Meta. */
   quality: number;
@@ -113,7 +112,7 @@ export interface Segment {
   name: string;
   description: string;
   kind: SegmentKind;
-  /** Quantos contatos casam com a regra (mock — não recalculamos). */
+  /** Quantos contatos casam com a regra, calculado no servidor. */
   contactsCount: number;
   rules: SegmentRule[];
   /** Origem do dado, para o operador saber de onde veio a lista. */

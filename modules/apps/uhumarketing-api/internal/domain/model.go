@@ -27,6 +27,9 @@ import (
 var (
 	ErrNotFound = errors.New("não encontrado")
 	ErrConflict = errors.New("conflito")
+	// ErrUnauthorized é "não sei quem você é" — diferente de "não pode":
+	// aqui a resposta é 401 e o cliente deve tentar entrar de novo.
+	ErrUnauthorized = errors.New("não autenticado")
 )
 
 // ValidationError é o que o handler traduz em 422 com a mensagem exata que o

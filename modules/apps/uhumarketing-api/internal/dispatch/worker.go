@@ -40,38 +40,73 @@ func (w *Worker) Run(ctx context.Context) {
 
 // Tick processa um lote e devolve quantas mensagens tentou. Exportado para o
 // teste conseguir avançar a fila sem esperar o relógio.
+//
+// O worker é GLOBAL: ele não pertence a um workspace. Cada conta tem a própria
+// janela de envio e a própria fila, então o tick percorre as contas com
+// campanha em execução e aplica a janela de cada uma. Um worker preso a um
+// workspace fixo deixaria a conta nova sem entrega.
 func (w *Worker) Tick(ctx context.Context) (int, error) {
-	ws := store.DemoWorkspaceID
-
-	// A decisão de janela é por campanha. Para a POC há uma campanha em
-	// execução por vez em cada tick; pegar a mais antiga com fila é suficiente e
-	// evita mandar de uma campanha fora da janela enquanto outra está aberta.
-	campaignID, window, ok, err := w.nextCampaign(ctx, ws)
+	workspaces, err := w.activeWorkspaces(ctx)
 	if err != nil {
 		return 0, err
 	}
-	if !ok {
-		return 0, nil
-	}
-	if !window.Open(time.Now()) {
-		return 0, nil
-	}
 
-	batch := window.BatchSize(w.Interval)
-	jobs, err := w.Store.ClaimQueued(ctx, ws, batch)
+	total := 0
+	for _, ws := range workspaces {
+		_, window, ok, err := w.nextCampaign(ctx, ws)
+		if err != nil {
+			return total, err
+		}
+		if !ok {
+			// Sem campanha com fila: é exatamente aqui que uma campanha acaba
+			// de drenar. Sem esta chamada, ela ficava "em execução" para
+			// sempre — nada errado aparecia na tela, só um status que nunca
+			// fechava.
+			w.finishDrained(ctx, ws)
+			continue
+		}
+		if !window.Open(time.Now()) {
+			continue
+		}
+
+		batch := window.BatchSize(w.Interval)
+		jobs, err := w.Store.ClaimQueued(ctx, ws, batch)
+		if err != nil {
+			return total, err
+		}
+		if len(jobs) == 0 {
+			// Nada na fila desta campanha: pode ter drenado agora.
+			w.finishDrained(ctx, ws)
+			continue
+		}
+
+		for _, job := range jobs {
+			w.deliver(ctx, job)
+		}
+		total += len(jobs)
+	}
+	return total, nil
+}
+
+// activeWorkspaces lista as contas com campanha em execução — inclusive as que
+// já esvaziaram a fila e só faltam ser encerradas.
+func (w *Worker) activeWorkspaces(ctx context.Context) ([]string, error) {
+	rows, err := w.Store.Pool().Query(ctx,
+		`SELECT DISTINCT workspace_id FROM campaigns WHERE status='running'`)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	if len(jobs) == 0 {
-		// Nada na fila desta campanha: encerra quando não há mais pendentes.
-		w.finishIfDrained(ctx, ws, campaignID)
-		return 0, nil
-	}
+	defer rows.Close()
 
-	for _, job := range jobs {
-		w.deliver(ctx, job)
+	var out []string
+	for rows.Next() {
+		var ws string
+		if err := rows.Scan(&ws); err != nil {
+			return nil, err
+		}
+		out = append(out, ws)
 	}
-	return len(jobs), nil
+	return out, rows.Err()
 }
 
 func (w *Worker) nextCampaign(ctx context.Context, ws string) (string, Window, bool, error) {
@@ -130,7 +165,7 @@ func (w *Worker) deliver(ctx context.Context, job store.SendJob) {
 		if markErr := w.Store.MarkFailed(ctx, job.SendID, err.Error()); markErr != nil {
 			w.Log.Error("marcar falha", "send", job.SendID, "error", markErr)
 		}
-		_ = w.Store.LogActivity(ctx, store.DemoWorkspaceID, "send", "Envio falhou",
+		_ = w.Store.LogActivity(ctx, job.WorkspaceID, "send", "Envio falhou",
 			job.Destination+" · "+err.Error(), job.CampaignID)
 		return
 	}
@@ -141,32 +176,45 @@ func (w *Worker) deliver(ctx context.Context, job store.SendJob) {
 	}
 }
 
-// finishIfDrained encerra a campanha quando não sobra nada na fila. Só roda
-// quando a fila do workspace está vazia, para não fechar uma campanha que ainda
-// tem mensagens de outra.
-func (w *Worker) finishIfDrained(ctx context.Context, ws, campaignID string) {
-	var pending int
-	if err := w.Store.Pool().QueryRow(ctx, `
-		SELECT count(*) FROM sends WHERE workspace_id=$1 AND status='queued'`, ws).Scan(&pending); err != nil {
+// finishDrained encerra toda campanha em execução cuja fila acabou.
+//
+// Não recebe um id porque o caso que importava (a fila esvaziou) é justamente
+// quando `nextCampaign` não devolve nenhuma campanha. Fechar só a "última
+// escolhida" deixaria órfã qualquer campanha que drenou num tick anterior. Uma
+// campanha em execução sem nenhum envio na fila está concluída por definição.
+func (w *Worker) finishDrained(ctx context.Context, ws string) {
+	rows, err := w.Store.Pool().Query(ctx, `
+		SELECT c.id
+		FROM campaigns c
+		WHERE c.workspace_id=$1 AND c.status='running'
+		  AND NOT EXISTS (SELECT 1 FROM sends s WHERE s.campaign_id=c.id AND s.status='queued')`, ws)
+	if err != nil {
+		w.Log.Error("encerrar campanhas: consulta", "error", err)
 		return
 	}
-	if pending > 0 {
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			w.Log.Error("encerrar campanhas: leitura", "error", err)
+			return
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if rows.Err() != nil {
+		w.Log.Error("encerrar campanhas: linhas", "error", rows.Err())
 		return
 	}
-	var status string
-	if err := w.Store.Pool().QueryRow(ctx, `
-		SELECT status FROM campaigns WHERE id=$1 AND workspace_id=$2`, campaignID, ws).Scan(&status); err != nil {
-		return
-	}
-	if status != "running" {
-		return
-	}
-	if err := w.Store.SetCampaignStatus(ctx, ws, campaignID, "finished"); err != nil {
-		w.Log.Error("encerrar campanha", "campaign", campaignID, "error", err)
-		return
-	}
-	if err := w.Store.LogActivity(ctx, ws, "campaign", "Campanha concluída",
-		"Fila drenada; todos os envios foram processados.", campaignID); err != nil {
-		w.Log.Error("registrar atividade", "campaign", campaignID, "error", err)
+	for _, id := range ids {
+		if err := w.Store.SetCampaignStatus(ctx, ws, id, "finished"); err != nil {
+			w.Log.Error("encerrar campanha", "campaign", id, "error", err)
+			continue
+		}
+		if err := w.Store.LogActivity(ctx, ws, "campaign", "Campanha concluída",
+			"Fila drenada; todos os envios foram processados.", id); err != nil {
+			w.Log.Error("registrar atividade", "campaign", id, "error", err)
+		}
 	}
 }

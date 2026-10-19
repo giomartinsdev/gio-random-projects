@@ -10,7 +10,6 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { useDataSource } from "@/lib/dataSource";
 import { compact, fmtDateTime, pct, ago } from "@/lib/format";
 import type { Template, TemplateCategory, TemplateStatus } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
@@ -44,7 +43,6 @@ const CATEGORY_LABEL: Record<TemplateCategory, string> = {
 
 export function TemplatesPage() {
   const store = useStore();
-  const [source] = useDataSource();
   const { templates } = store;
   const [selected, setSelected] = useState<string | null>(null);
   const [status, setStatus] = useState<TemplateStatus | "all">("all");
@@ -86,8 +84,13 @@ export function TemplatesPage() {
           right={
             <>
               <span className="hidden items-center gap-1.5 text-[12px] text-fg-3 sm:flex">
-                <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                WABA conectada
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    store.provider?.hasNumber ? "bg-success" : "bg-line",
+                  )}
+                />
+                {store.provider?.hasNumber ? "WABA conectada" : "WABA não conectada"}
               </span>
               <Button size="sm" icon={<Plus size={15} />} onClick={() => setEditorOpen(true)}>
                 Novo template
@@ -126,9 +129,7 @@ export function TemplatesPage() {
             </Select>
             <div className="flex-1" />
             <Note className="hidden lg:block">
-              {source === "backend"
-                ? "O status vem do provedor: dry-run aprova na hora, live espera a revisão da Meta."
-                : "A aprovação é da Meta. A POC simula o ciclo — o status só muda aqui dentro."}
+              O status vem do provedor: dry-run aprova na hora, live espera a revisão da Meta.
             </Note>
           </div>
 
@@ -146,8 +147,12 @@ export function TemplatesPage() {
             <TableBody>
               {filtered.length === 0 ? (
                 <EmptyState
-                  title="Nenhum template com esse filtro"
-                  hint="Ajuste a busca ou crie um novo template para submeter à Meta."
+                  title={store.templates.length === 0 ? "Nenhum template ainda" : "Nenhum template com esse filtro"}
+                  hint={
+                    store.templates.length === 0
+                      ? "Crie o primeiro template e submeta à Meta. Sem template aprovado, nenhuma campanha sai."
+                      : "Ajuste a busca ou crie um novo template para submeter à Meta."
+                  }
                   icon={<MessageCircle size={18} />}
                 />
               ) : (

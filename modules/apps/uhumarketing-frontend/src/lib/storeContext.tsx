@@ -1,7 +1,6 @@
-// O contexto do Store vive num arquivo próprio para que existam DOIS providers
-// (mock e backend) sem que um importe o outro. Se o provider remoto importasse
-// `store.tsx`, o mock inteiro — e os dados de exemplo — iriam para o bundle de
-// quem escolheu o backend real.
+// O contexto do Store vive num arquivo próprio para o provider não precisar
+// importar o contrato `store.tsx` (que as telas importam). Sem isso haveria
+// ciclo de imports entre provider e telas.
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { Store } from "./store";
 

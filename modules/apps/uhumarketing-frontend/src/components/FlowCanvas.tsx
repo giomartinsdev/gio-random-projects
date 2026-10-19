@@ -23,7 +23,7 @@ interface Vec {
 }
 
 /**
- * Canvas do fluxo. Sem biblioteca de grafo (react-flow e afins): a POC precisa
+ * Canvas do fluxo. Sem biblioteca de grafo (react-flow e afins): o produto precisa
  * de arrastar, ligar blocos e um inspetor — nada além disso. As coordenadas
  * ficam no próprio nó, então persistir é trivial e o layout é do usuário.
  */

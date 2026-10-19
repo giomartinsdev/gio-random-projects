@@ -24,8 +24,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * Editor de fluxo: canvas + validação + simulação. O salvamento é implícito
- * (cada arrasto/edição grava no store, que persiste em localStorage) — como
- * num editor de verdade, não existe "perdeu o que fez".
+ * (cada arrasto/edição grava no store, que persiste no servidor) — como num
+ * editor de verdade, não existe "perdeu o que fez".
  */
 export function FlowEditorPage({ flowId }: { flowId?: string }) {
   const store = useStore();
@@ -71,7 +71,7 @@ export function FlowEditorPage({ flowId }: { flowId?: string }) {
   const errors = issues.filter((i) => i.level === "error");
   const warns = issues.filter((i) => i.level === "warn");
 
-  function publish() {
+  async function publish() {
     if (!flow) return;
     if (hasErrors(issues)) {
       setIssuesOpen(true);
@@ -80,9 +80,11 @@ export function FlowEditorPage({ flowId }: { flowId?: string }) {
     store.updateFlow(flow.id, { status: "active", lastRunAt: new Date().toISOString() });
     if (campaign) {
       store.updateCampaign(campaign.id, { status: "running", lastRunAt: new Date().toISOString() });
-      // No modo Backend, publicar também ENFILEIRA. Sem isso a campanha
-      // apareceria "em execução" com a fila vazia e nada sairia — o pior tipo
-      // de estado: parece que está rodando.
+      // O disparo depende do que acabou de ser editado (fluxo ativo + campanha
+      // aprovada). Sem esperar o PUT, o servidor ainda vê "rascunho" e recusa
+      // com "publique o fluxo antes de disparar" — depois de o operador ter
+      // clicado exatamente em publicar.
+      await store.saveNow();
       if (store.launchCampaign) {
         store
           .launchCampaign(campaign.id)
@@ -163,7 +165,7 @@ export function FlowEditorPage({ flowId }: { flowId?: string }) {
             <Button size="sm" variant="secondary" icon={<FlaskConical size={14} />} onClick={runTest}>
               Simular
             </Button>
-            <Button size="sm" icon={<Play size={14} />} onClick={publish}>
+            <Button size="sm" icon={<Play size={14} />} onClick={() => void publish()}>
               Publicar
             </Button>
           </>

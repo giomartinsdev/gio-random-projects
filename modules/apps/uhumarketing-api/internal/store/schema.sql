@@ -21,10 +21,12 @@ CREATE TABLE IF NOT EXISTS workspaces (
     segment         TEXT NOT NULL DEFAULT '',
     site            TEXT NOT NULL DEFAULT '',
     timezone        TEXT NOT NULL DEFAULT 'America/Sao_Paulo',
-    plan            TEXT NOT NULL DEFAULT 'POC',
+    plan            TEXT NOT NULL DEFAULT 'starter',
     whatsapp_number TEXT NOT NULL DEFAULT '',
     email_sender    TEXT NOT NULL DEFAULT '',
-    quality         TEXT NOT NULL DEFAULT 'green',
+    -- Vazio = número ainda não conectado. "green" numa conta sem número seria
+    -- uma qualidade que a Meta nunca atribuiu.
+    quality         TEXT NOT NULL DEFAULT '',
     messaging_limit TEXT NOT NULL DEFAULT '',
     opt_in_policy   TEXT NOT NULL DEFAULT '',
     quiet_start     INT  NOT NULL DEFAULT 21,
@@ -194,3 +196,43 @@ CREATE TABLE IF NOT EXISTS webhook_events (
     key         TEXT PRIMARY KEY,
     received_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------- contas
+--
+-- Um usuário pertence a UM workspace (a POC é uma conta por negócio). O
+-- workspace é criado junto com o cadastro e nasce vazio: nenhuma conta herda
+-- template, contato ou campanha de demonstração.
+--
+-- Sessão é linha, não JWT: guardar só o SHA-256 do token permite revogar no
+-- logout sem lista de bloqueio e faz um dump do banco não virar um punhado de
+-- sessões prontas para usar.
+
+CREATE TABLE IF NOT EXISTS workspaces_meta (
+    workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+    created_by   TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    workspace_id  TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    email         TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    company       TEXT NOT NULL DEFAULT '',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- E-mail é único sem diferenciar maiúsculas: "Marina@x.com" e "marina@x.com"
+-- são a mesma pessoa tentando entrar duas vezes.
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower ON users (lower(email));
+CREATE INDEX IF NOT EXISTS users_workspace ON users (workspace_id);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id);

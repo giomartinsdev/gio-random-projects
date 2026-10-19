@@ -1,9 +1,8 @@
-// Provider do modo Backend: a mesma interface `Store` do mock, com o estado
-// vindo do uhumarketing-api.
+// Provider dos dados: o estado vem do uhumarketing-api, escopado na conta da
+// sessão.
 //
-// Por que síncrono: as telas foram escritas contra um store síncrono (o mock).
-// Reescrever 6 telas para `async` só para trocar a origem dos dados seria
-// reescrever o produto para provar um ponto. Aqui a UI continua otimista — o
+// Por que síncrono: as telas foram escritas contra um store síncrono e mantê-lo
+// evita reescrever 6 telas para provar um ponto. Aqui a UI é otimista — o
 // clique aplica na hora — e a persistência acontece atrás, com o documento
 // editorial inteiro (PUT /state, debounced).
 //
@@ -22,11 +21,13 @@ import {
   type ReactNode,
 } from "react";
 import { api, ApiError, type Bootstrap, type EditorialState } from "./api";
+import { useSession } from "./session";
 import type { LaunchResult, Store } from "./store";
 import { StoreContextBridge } from "./storeContext";
 import type {
   ActivityEvent,
   Campaign,
+  Contact,
   Flow,
   FlowEdge,
   FlowNode,
@@ -55,7 +56,7 @@ export function useBackend(): BackendContextValue {
   return ctx;
 }
 
-/** Versão que não lança: telas compartilhadas pelos dois modos usam esta. */
+/** Versão que não lança: telas que funcionam sem o provider (ex.: landing). */
 export function useBackendOptional(): BackendContextValue | null {
   return useContext(BackendContext);
 }
@@ -77,12 +78,14 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<SyncStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const { logout } = useSession();
 
   // Estado editorial local. Sends/atividade são do servidor e não entram aqui:
   // quem manda na fila é o worker, e sobrescrever isso do navegador apagaria
   // entregas reais.
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [segments, setSegments] = useState<Store["segments"]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [flows, setFlows] = useState<Flow[]>([]);
@@ -108,6 +111,7 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
     setBoot(data);
     setWorkspace(data.workspace);
     setTemplates(data.templates);
+    setContacts(data.contacts ?? []);
     setSegments(data.segments);
     setCampaigns(data.campaigns);
     setFlows(data.flows);
@@ -127,12 +131,18 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
       })
       .catch((err) => {
         if (!alive) return;
+        // Token expirado/revogado não é "backend fora do ar": é sessão
+        // encerrada. Mandar para o login é o único desfecho honesto.
+        if (err instanceof ApiError && err.status === 401) {
+          logout();
+          return;
+        }
         setFatal(syncErrorMessage(err));
       });
     return () => {
       alive = false;
     };
-  }, [applyBootstrap, reloadKey]);
+  }, [applyBootstrap, reloadKey, logout]);
 
   // Sincronização: um PUT com o documento editorial inteiro, 450 ms depois da
   // última edição. Curto o bastante para o operador confiar, longo o bastante
@@ -163,11 +173,17 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
   // flushNow cancela o debounce e espera o PUT terminar. É o que a submissão
   // de template precisa: o rascunho tem que existir no servidor antes do POST
   // /submit, senão a Meta recebe um id que o banco ainda não conhece.
+  //
+  // O `setTimeout(0)` não é enfeite: `docRef` é atualizado num efeito, e quem
+  // chama `saveNow()` logo depois de um `setState` (publicar fluxo → disparar)
+  // veria o documento ANTERIOR. Um macrotask dá tempo do commit e dos efeitos
+  // rodarem, e aí o PUT leva o que o operador acabou de editar.
   const flushNow = useCallback(async () => {
     if (timer.current) {
       window.clearTimeout(timer.current);
       timer.current = null;
     }
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     await flush();
   }, [flush]);
 
@@ -208,6 +224,21 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /* ------------------------------------------------------------- mutações */
+
+  // O workspace faz parte do documento editorial, então salvar é o mesmo PUT —
+  // mas a tela de Configurações espera a resposta, porque o número de WhatsApp
+  // é pré-requisito para disparar e um "salvo" mentiroso esconderia o erro.
+  const updateWorkspace = useCallback<Store["updateWorkspace"]>(
+    async (patch) => {
+      const base = docRef.current;
+      if (!base || !base.workspace) return;
+      const next = { ...base.workspace, ...patch };
+      docRef.current = { ...base, workspace: next };
+      setWorkspace(next);
+      await flush();
+    },
+    [flush],
+  );
 
   const createTemplate = useCallback<Store["createTemplate"]>(
     (input) => {
@@ -282,6 +313,39 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
       schedule();
     },
     [schedule],
+  );
+
+  const importContacts = useCallback<Store["importContacts"]>(
+    async (rows, tag) => {
+      const failed: { line: number; reason: string }[] = [];
+      let created = 0;
+      for (const [i, row] of rows.entries()) {
+        if (!row.consentAt.trim()) {
+          failed.push({ line: i + 1, reason: "sem data de consentimento" });
+          continue;
+        }
+        try {
+          await api.createContact({
+            name: row.name,
+            phone: row.phone,
+            email: row.email,
+            city: row.city,
+            tags: [tag],
+            optIn: true,
+            optInSource: `importação CSV · ${row.consentAt}`,
+          });
+          created++;
+        } catch (err) {
+          failed.push({
+            line: i + 1,
+            reason: err instanceof ApiError ? err.message : "erro ao gravar",
+          });
+        }
+      }
+      setReloadKey((k) => k + 1);
+      return { created, failed };
+    },
+    [],
   );
 
   const createSegment = useCallback<Store["createSegment"]>(
@@ -417,7 +481,7 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
       setFlows((prev) =>
         prev.map((f) => {
           if (f.id !== flowId) return f;
-          // Mesmas guardas do mock: sem laço e sem aresta duplicada.
+          // Guardas do editor: sem laço e sem aresta duplicada.
           if (edge.from === edge.to) return f;
           if (f.edges.some((e) => e.from === edge.from && e.to === edge.to)) return f;
           return { ...f, edges: [...f.edges, { ...edge, id: uid("e") }], updatedAt: new Date().toISOString() };
@@ -442,25 +506,16 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
     [schedule],
   );
 
-  // Envio manual da tela de campanhas: no modo real, quem enfileira é o
-  // servidor. A tela otimista mostra a linha; o polling traz o status real
-  // (que pode ser "failed", e aí a linha muda de cor).
-  const enqueueSend = useCallback<Store["enqueueSend"]>(
-    (input) => {
-      const s: Send = { ...input, id: uid("snd"), at: new Date().toISOString(), cost: 0.0625 };
-      setSends((prev) => [s, ...prev]);
-      if (input.campaignId) {
-        api
-          .testSend(input.campaignId)
-          .then(() => flush())
-          .catch((err) => {
-            setStatus("error");
-            setError(syncErrorMessage(err));
-          });
-      }
-      return s;
+  // Envio de teste: quem enfileira é o servidor, com as mesmas regras de um
+  // disparo. Nada é inventado na lista local — o polling traz a linha real,
+  // inclusive quando ela falha.
+  const testSend = useCallback<NonNullable<Store["testSend"]>>(
+    async (id) => {
+      const result = await api.testSend(id);
+      setReloadKey((k) => k + 1);
+      return result;
     },
-    [flush],
+    [],
   );
 
   // Disparo real. Este é o único caminho em que a tela ESPERA o servidor: se o
@@ -506,22 +561,6 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
     [flushNow, pushActivity],
   );
 
-  const reset = useCallback(() => {
-    setStatus("saving");
-    api
-      .resetDemo()
-      .then(() => api.bootstrap())
-      .then((data) => {
-        applyBootstrap(data);
-        setStatus("saved");
-        setError(null);
-      })
-      .catch((err) => {
-        setStatus("error");
-        setError(syncErrorMessage(err));
-      });
-  }, [applyBootstrap]);
-
   // Série diária calculada no SQL (todos os envios, não a página de 120).
   // O corte de dias é feito aqui porque o bootstrap manda uma janela fixa.
   const series = useCallback(
@@ -533,8 +572,11 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
     if (!workspace) return null;
     return {
       workspace,
-      // O usuário é a sessão da POC; o backend não tem multi-tenant ainda.
-      user: boot?.user ?? { name: "Marina Reis", email: "marina@cafeaurora.com.br", role: "Head de Growth" },
+      updateWorkspace,
+      saveNow: flushNow,
+      // O usuário vem do bootstrap, que resolve a sessão no servidor.
+      user: boot?.user ?? { name: "", email: "", role: "owner" },
+      contacts,
       templates,
       segments,
       campaigns,
@@ -544,6 +586,7 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
       createTemplate,
       updateTemplate,
       deleteTemplate,
+      importContacts,
       createSegment,
       updateSegment,
       createCampaign,
@@ -555,18 +598,18 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
       removeNode,
       addEdge,
       removeEdge,
-      enqueueSend,
+      testSend,
       logActivity: pushActivity,
-      reset,
       launchCampaign,
       submitTemplate,
       series,
+      provider: boot?.provider,
     };
   }, [
     workspace, boot, templates, segments, campaigns, sends, flows, activity,
-    createTemplate, updateTemplate, deleteTemplate, createSegment, updateSegment,
+    updateWorkspace, flushNow, createTemplate, updateTemplate, deleteTemplate, importContacts, createSegment, updateSegment,
     createCampaign, updateCampaign, createFlow, updateFlow, addNode, updateNode,
-    removeNode, addEdge, removeEdge, enqueueSend, pushActivity, reset, launchCampaign, submitTemplate, series,
+    removeNode, addEdge, removeEdge, testSend, pushActivity, launchCampaign, submitTemplate, series,
   ]);
 
   return (
@@ -637,7 +680,10 @@ function mergeCampaignMetrics(local: Campaign[], server: Campaign[]): Campaign[]
   return local.map((c) => {
     const s = byId.get(c.id);
     if (!s) return c;
-    return { ...c, metrics: s.metrics, lastRunAt: s.lastRunAt ?? c.lastRunAt };
+    // `status` também é do servidor: é o worker que fecha a campanha quando a
+    // fila drena. Sem isto, a tela ficava "em execução" para sempre depois de
+    // concluída.
+    return { ...c, status: s.status, metrics: s.metrics, lastRunAt: s.lastRunAt ?? c.lastRunAt };
   });
 }
 
@@ -672,13 +718,10 @@ function BackendDown({ message, onRetry }: { message: string; onRetry: () => voi
             Tentar de novo
           </button>
           <button
-            onClick={() => {
-              localStorage.removeItem("uhumarketing:data-source");
-              location.reload();
-            }}
+            onClick={() => location.reload()}
             className="rounded-lg border border-border px-3 py-2 text-[13px] text-fg-2 transition hover:text-fg"
           >
-            Voltar para o modo Demo
+            Recarregar a página
           </button>
         </div>
       </div>
@@ -686,10 +729,7 @@ function BackendDown({ message, onRetry }: { message: string; onRetry: () => voi
   );
 }
 
-/**
- * StoreBridge publica o `Store` no mesmo contexto que o mock usa — as telas não
- * sabem qual dos dois está ativo.
- */
+/** StoreBridge publica o `Store` no contexto que as telas consomem. */
 function StoreBridge({ value, children }: { value: Store; children: ReactNode }) {
   return <StoreContextBridge value={value}>{children}</StoreContextBridge>;
 }

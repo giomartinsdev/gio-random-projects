@@ -15,7 +15,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/domain"
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/seed"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/store"
 )
 
@@ -36,7 +35,7 @@ type Handlers struct {
 
 func (h *Handlers) Healthz(w http.ResponseWriter, r *http.Request) {
 	dbOK := "ok"
-	if err := h.Service.Store.Pool().Ping(r.Context()); err != nil {
+	if err := h.svc(r).Store.Pool().Ping(r.Context()); err != nil {
 		dbOK = "down"
 	}
 	status := http.StatusOK
@@ -54,7 +53,7 @@ func (h *Handlers) Healthz(w http.ResponseWriter, r *http.Request) {
 /* -------------------------------------------------------------- bootstrap */
 
 func (h *Handlers) Bootstrap(w http.ResponseWriter, r *http.Request) {
-	payload, err := h.Service.Bootstrap(r.Context())
+	payload, err := h.svc(r).Bootstrap(r.Context())
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -84,11 +83,11 @@ func (h *Handlers) PutState(w http.ResponseWriter, r *http.Request) {
 		}
 		doc.Workspace.WhatsAppNumber = normalized
 	}
-	if err := h.Service.Store.ReplaceState(r.Context(), h.Service.Workspace, doc); err != nil {
+	if err := h.svc(r).Store.ReplaceState(r.Context(), workspaceID(r), doc); err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	payload, err := h.Service.Bootstrap(r.Context())
+	payload, err := h.svc(r).Bootstrap(r.Context())
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -112,7 +111,7 @@ func (h *Handlers) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 		in.WhatsAppNumber = normalized
 	}
-	if err := h.Service.Store.UpdateWorkspace(r.Context(), h.Service.Workspace, in); err != nil {
+	if err := h.svc(r).Store.UpdateWorkspace(r.Context(), workspaceID(r), in); err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
@@ -120,7 +119,7 @@ func (h *Handlers) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) respondWorkspace(w http.ResponseWriter, r *http.Request) {
-	ws, err := h.Service.Store.Workspace(r.Context(), h.Service.Workspace)
+	ws, err := h.svc(r).Store.Workspace(r.Context(), workspaceID(r))
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -131,7 +130,7 @@ func (h *Handlers) respondWorkspace(w http.ResponseWriter, r *http.Request) {
 /* --------------------------------------------------------------- templates */
 
 func (h *Handlers) Templates(w http.ResponseWriter, r *http.Request) {
-	items, err := h.Service.Store.Templates(r.Context(), h.Service.Workspace)
+	items, err := h.svc(r).Store.Templates(r.Context(), workspaceID(r))
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -151,9 +150,9 @@ func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 	var t domain.Template
 	var err error
 	if r.URL.Query().Get("submit") == "false" {
-		t, err = h.Service.SaveDraft(r.Context(), in)
+		t, err = h.svc(r).SaveDraft(r.Context(), in)
 	} else {
-		t, err = h.Service.SubmitTemplate(r.Context(), in)
+		t, err = h.svc(r).SubmitTemplate(r.Context(), in)
 	}
 	if err != nil {
 		writeDomainError(w, h.Log, err)
@@ -171,7 +170,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	t, err := h.Service.UpdateTemplate(r.Context(), pathID(r), in)
+	t, err := h.svc(r).UpdateTemplate(r.Context(), pathID(r), in)
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -180,7 +179,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) SubmitTemplate(w http.ResponseWriter, r *http.Request) {
-	tpl, err := h.Service.Store.Template(r.Context(), h.Service.Workspace, pathID(r))
+	tpl, err := h.svc(r).Store.Template(r.Context(), workspaceID(r), pathID(r))
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -190,28 +189,28 @@ func (h *Handlers) SubmitTemplate(w http.ResponseWriter, r *http.Request) {
 		Category: tpl.Category, Language: tpl.Language, Header: tpl.Header,
 		Body: tpl.Body, Footer: tpl.Footer, Buttons: tpl.Buttons, Variables: tpl.Variables,
 	}
-	extID, status, err := h.Service.Provider.CreateTemplate(r.Context(), tpl)
+	extID, status, err := h.svc(r).Provider.CreateTemplate(r.Context(), tpl)
 	if err != nil {
 		writeDomainError(w, h.Log, domain.Invalid("template", "a Meta recusou: "+err.Error()))
 		return
 	}
-	if err := h.Service.Store.MarkTemplateSubmitted(r.Context(), h.Service.Workspace, tpl.ID, extID, status); err != nil {
+	if err := h.svc(r).Store.MarkTemplateSubmitted(r.Context(), workspaceID(r), tpl.ID, extID, status); err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
 	_ = in
-	updated, err := h.Service.Store.Template(r.Context(), h.Service.Workspace, tpl.ID)
+	updated, err := h.svc(r).Store.Template(r.Context(), workspaceID(r), tpl.ID)
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	_ = h.Service.Store.LogActivity(r.Context(), h.Service.Workspace, "template",
+	_ = h.svc(r).Store.LogActivity(r.Context(), workspaceID(r), "template",
 		"Template submetido", updated.Name+" · "+status, updated.ID)
 	writeJSON(w, http.StatusOK, updated)
 }
 
 func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
-	if err := h.Service.Store.DeleteTemplate(r.Context(), h.Service.Workspace, pathID(r)); err != nil {
+	if err := h.svc(r).Store.DeleteTemplate(r.Context(), workspaceID(r), pathID(r)); err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
@@ -221,7 +220,7 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 /* --------------------------------------------------------------- audiências */
 
 func (h *Handlers) Segments(w http.ResponseWriter, r *http.Request) {
-	items, err := h.Service.Store.Segments(r.Context(), h.Service.Workspace)
+	items, err := h.svc(r).Store.Segments(r.Context(), workspaceID(r))
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -235,12 +234,12 @@ func (h *Handlers) CreateSegment(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	seg, err := h.Service.Store.CreateSegment(r.Context(), h.Service.Workspace, in)
+	seg, err := h.svc(r).Store.CreateSegment(r.Context(), workspaceID(r), in)
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	_ = h.Service.Store.LogActivity(r.Context(), h.Service.Workspace, "campaign",
+	_ = h.svc(r).Store.LogActivity(r.Context(), workspaceID(r), "campaign",
 		"Audiência criada", seg.Name, seg.ID)
 	writeJSON(w, http.StatusCreated, seg)
 }
@@ -251,7 +250,7 @@ func (h *Handlers) UpdateSegment(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	seg, err := h.Service.Store.UpdateSegment(r.Context(), h.Service.Workspace, pathID(r), in)
+	seg, err := h.svc(r).Store.UpdateSegment(r.Context(), workspaceID(r), pathID(r), in)
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -260,7 +259,7 @@ func (h *Handlers) UpdateSegment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) DeleteSegment(w http.ResponseWriter, r *http.Request) {
-	if err := h.Service.Store.DeleteSegment(r.Context(), h.Service.Workspace, pathID(r)); err != nil {
+	if err := h.svc(r).Store.DeleteSegment(r.Context(), workspaceID(r), pathID(r)); err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
@@ -270,7 +269,7 @@ func (h *Handlers) DeleteSegment(w http.ResponseWriter, r *http.Request) {
 /* ------------------------------------------------------------------ contatos */
 
 func (h *Handlers) Contacts(w http.ResponseWriter, r *http.Request) {
-	items, err := h.Service.Store.Contacts(r.Context(), h.Service.Workspace)
+	items, err := h.svc(r).Store.Contacts(r.Context(), workspaceID(r))
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -292,7 +291,7 @@ func (h *Handlers) CreateContact(w http.ResponseWriter, r *http.Request) {
 	if source == "" {
 		source = "manual"
 	}
-	c, err := h.Service.Store.CreateContact(r.Context(), h.Service.Workspace, in.Contact, source)
+	c, err := h.svc(r).Store.CreateContact(r.Context(), workspaceID(r), in.Contact, source)
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -301,7 +300,7 @@ func (h *Handlers) CreateContact(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) OptOut(w http.ResponseWriter, r *http.Request) {
-	if err := h.Service.Store.OptOut(r.Context(), h.Service.Workspace, pathID(r), "opt-out manual"); err != nil {
+	if err := h.svc(r).Store.OptOut(r.Context(), workspaceID(r), pathID(r), "opt-out manual"); err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
@@ -311,7 +310,7 @@ func (h *Handlers) OptOut(w http.ResponseWriter, r *http.Request) {
 /* ----------------------------------------------------------------- campanha */
 
 func (h *Handlers) Campaigns(w http.ResponseWriter, r *http.Request) {
-	items, err := h.Service.Store.Campaigns(r.Context(), h.Service.Workspace)
+	items, err := h.svc(r).Store.Campaigns(r.Context(), workspaceID(r))
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -325,12 +324,12 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	c, err := h.Service.Store.CreateCampaign(r.Context(), h.Service.Workspace, in)
+	c, err := h.svc(r).Store.CreateCampaign(r.Context(), workspaceID(r), in)
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	_ = h.Service.Store.LogActivity(r.Context(), h.Service.Workspace, "campaign",
+	_ = h.svc(r).Store.LogActivity(r.Context(), workspaceID(r), "campaign",
 		"Campanha criada", c.Name, c.ID)
 	writeJSON(w, http.StatusCreated, c)
 }
@@ -341,7 +340,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	c, err := h.Service.Store.UpdateCampaign(r.Context(), h.Service.Workspace, pathID(r), in)
+	c, err := h.svc(r).Store.UpdateCampaign(r.Context(), workspaceID(r), pathID(r), in)
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -352,7 +351,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 // Launch é o botão "disparar". Idempotente por (campanha, contato) — clicar
 // duas vezes não manda duas mensagens.
 func (h *Handlers) LaunchCampaign(w http.ResponseWriter, r *http.Request) {
-	res, err := h.Service.Launch(r.Context(), pathID(r))
+	res, err := h.svc(r).Launch(r.Context(), pathID(r))
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -361,7 +360,7 @@ func (h *Handlers) LaunchCampaign(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) TestSend(w http.ResponseWriter, r *http.Request) {
-	res, err := h.Service.TestSend(r.Context(), pathID(r))
+	res, err := h.svc(r).TestSend(r.Context(), pathID(r))
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -370,17 +369,17 @@ func (h *Handlers) TestSend(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
-	if err := h.Service.Store.SetCampaignStatus(r.Context(), h.Service.Workspace, pathID(r), "paused"); err != nil {
+	if err := h.svc(r).Store.SetCampaignStatus(r.Context(), workspaceID(r), pathID(r), "paused"); err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	_ = h.Service.Store.LogActivity(r.Context(), h.Service.Workspace, "campaign",
+	_ = h.svc(r).Store.LogActivity(r.Context(), workspaceID(r), "campaign",
 		"Campanha pausada", "A fila para de sair até ser retomada.", pathID(r))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handlers) ResumeCampaign(w http.ResponseWriter, r *http.Request) {
-	if err := h.Service.Store.SetCampaignStatus(r.Context(), h.Service.Workspace, pathID(r), "running"); err != nil {
+	if err := h.svc(r).Store.SetCampaignStatus(r.Context(), workspaceID(r), pathID(r), "running"); err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
@@ -390,7 +389,7 @@ func (h *Handlers) ResumeCampaign(w http.ResponseWriter, r *http.Request) {
 /* -------------------------------------------------------------------- fluxo */
 
 func (h *Handlers) Flows(w http.ResponseWriter, r *http.Request) {
-	items, err := h.Service.Store.Flows(r.Context(), h.Service.Workspace)
+	items, err := h.svc(r).Store.Flows(r.Context(), workspaceID(r))
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -404,7 +403,7 @@ func (h *Handlers) CreateFlow(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	f, err := h.Service.Store.CreateFlow(r.Context(), h.Service.Workspace, in)
+	f, err := h.svc(r).Store.CreateFlow(r.Context(), workspaceID(r), in)
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -418,7 +417,7 @@ func (h *Handlers) UpdateFlow(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	f, err := h.Service.Store.UpdateFlow(r.Context(), h.Service.Workspace, pathID(r), in)
+	f, err := h.svc(r).Store.UpdateFlow(r.Context(), workspaceID(r), pathID(r), in)
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -427,7 +426,7 @@ func (h *Handlers) UpdateFlow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) DeleteFlow(w http.ResponseWriter, r *http.Request) {
-	if err := h.Service.Store.DeleteFlow(r.Context(), h.Service.Workspace, pathID(r)); err != nil {
+	if err := h.svc(r).Store.DeleteFlow(r.Context(), workspaceID(r), pathID(r)); err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
@@ -444,7 +443,7 @@ func (h *Handlers) Sends(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
-	items, err := h.Service.Store.Sends(r.Context(), h.Service.Workspace, campaignID, limit)
+	items, err := h.svc(r).Store.Sends(r.Context(), workspaceID(r), campaignID, limit)
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -455,7 +454,7 @@ func (h *Handlers) Sends(w http.ResponseWriter, r *http.Request) {
 /* --------------------------------------------------------------- atividade */
 
 func (h *Handlers) Activity(w http.ResponseWriter, r *http.Request) {
-	items, err := h.Service.Store.Activity(r.Context(), h.Service.Workspace, 40)
+	items, err := h.svc(r).Store.Activity(r.Context(), workspaceID(r), 40)
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return
@@ -530,19 +529,21 @@ func validSignature(body []byte, header, secret string) bool {
 
 /* -------------------------------------------------------------------- dev */
 
-// ResetDemo apaga e recria o workspace de demonstração. Só existe com
-// ALLOW_DEV_ACTIONS ligado — em produção isto seria um botão de apagar tudo.
-func (h *Handlers) ResetDemo(w http.ResponseWriter, r *http.Request) {
+// ResetAccount apaga os dados DA CONTA (não a conta). O workspace vem da
+// sessão; não existe caminho para apagar o dado de outra pessoa.
+//
+// Não repõe demonstração: recomeçar significa ficar vazio. Um botão que
+// "restaura os dados de exemplo" é exatamente o mock que a conta real não tem.
+func (h *Handlers) ResetAccount(w http.ResponseWriter, r *http.Request) {
 	if !h.AllowDevActions {
 		writeError(w, http.StatusNotFound, "rota desabilitada")
 		return
 	}
-	contacts, err := seed.Reset(r.Context(), h.Service.Store.Pool())
-	if err != nil {
+	if err := h.svc(r).Store.WipeAccount(r.Context(), workspaceID(r)); err != nil {
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"seeded": contacts})
+	writeJSON(w, http.StatusOK, map[string]any{"cleared": true})
 }
 
 // SimulateWebhookStatus injeta um status como se a Meta tivesse chamado. É o
@@ -561,7 +562,7 @@ func (h *Handlers) SimulateWebhookStatus(w http.ResponseWriter, r *http.Request)
 		writeDomainError(w, h.Log, err)
 		return
 	}
-	campaignID, _, _, ok, err := h.Service.Store.ApplyMessageStatus(r.Context(), in.MessageID, in.Status, in.Reason)
+	_, campaignID, _, _, ok, err := h.svc(r).Store.ApplyMessageStatus(r.Context(), workspaceID(r), in.MessageID, in.Status, in.Reason)
 	if err != nil {
 		writeDomainError(w, h.Log, err)
 		return

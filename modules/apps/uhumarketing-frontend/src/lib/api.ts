@@ -1,9 +1,9 @@
 // Cliente HTTP do uhumarketing-api.
 //
-// Uma decisão que vale explicar: as telas falam com `useStore()`, não com este
-// arquivo. O cliente existe para o provider remoto (lib/storeRemote.tsx) poder
-// ser trocado pelo mock (lib/store.tsx) sem nenhuma tela saber. Se uma tela
-// importasse `fetchApi`, o modo Demo morreria na primeira divergência.
+// Toda requisição autenticada leva `Authorization: Bearer <token de sessão>`.
+// O token não identifica só a pessoa: é ele que resolve o workspace no
+// servidor. Não existe workspace no corpo de nenhuma chamada — se existisse, o
+// cliente poderia escolher de quem é o dado.
 //
 // Sobre o PUT /state: o editor de fluxo salva o grafo inteiro, e as telas fazem
 // várias mutações em sequência (criar campanha → criar fluxo → apontar a
@@ -13,6 +13,7 @@
 import type {
   ActivityEvent,
   Campaign,
+  Contact,
   Flow,
   Segment,
   Send,
@@ -20,9 +21,19 @@ import type {
   User,
   Workspace,
 } from "./types";
+import { clearToken, readToken } from "./token";
 
 const BASE = (import.meta.env.VITE_UHU_API_URL ?? "http://localhost:8195").replace(/\/$/, "");
-const KEY = import.meta.env.VITE_UHU_API_KEY ?? "dev-key";
+
+/** Conta devolvida por cadastro/login. O token é opaco; só o servidor o lê. */
+export interface Account {
+  userId: string;
+  workspaceId: string;
+  name: string;
+  email: string;
+  company: string;
+  token: string;
+}
 
 export interface Bootstrap {
   workspace: Workspace;
@@ -32,6 +43,7 @@ export interface Bootstrap {
   campaigns: Campaign[];
   sends: Send[];
   flows: Flow[];
+  contacts: Contact[];
   activity: ActivityEvent[];
   provider: {
     name: string;
@@ -71,14 +83,17 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit & { auth?: boolean }): Promise<T> {
+  const token = readToken();
+  const needsAuth = init?.auth !== false;
+
   let res: Response;
   try {
     res = await fetch(`${BASE}/api/v1${path}`, {
       ...init,
       headers: {
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
-        "X-API-Key": KEY,
+        ...(needsAuth && token ? { Authorization: `Bearer ${token}` } : {}),
         ...(init?.headers ?? {}),
       },
     });
@@ -90,6 +105,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
   if (!res.ok) {
+    // 401 significa que o token morreu: apagar aqui evita que cada tela tenha
+    // que lembrar de fazer isso, e o próximo request já sai sem credencial.
+    if (res.status === 401) clearToken();
     throw new ApiError(body?.error ?? `Erro ${res.status}`, res.status, body?.field);
   }
   return body as T;
@@ -97,6 +115,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   base: BASE,
+
+  signup: (name: string, email: string, password: string, company: string) =>
+    request<Account>("/auth/signup", {
+      method: "POST",
+      body: JSON.stringify({ name, email, password, company }),
+      auth: false,
+    }),
+
+  login: (email: string, password: string) =>
+    request<Account>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+      auth: false,
+    }),
+
+  logout: () => request<void>("/auth/logout", { method: "POST" }),
+
+  me: () =>
+    request<{ userId: string; workspaceId: string; name: string; email: string }>("/auth/me"),
 
   bootstrap: () => request<Bootstrap>("/bootstrap"),
 
@@ -113,14 +150,30 @@ export const api = {
   resumeCampaign: (id: string) => request<void>(`/campaigns/${id}/resume`, { method: "POST" }),
 
   testSend: (id: string) =>
-    request<{ queued: number }>(`/campaigns/${id}/test`, { method: "POST" }),
+    request<{ campaignId: string; queued: number; skipped: number; duplicate: number }>(
+      `/campaigns/${id}/test`,
+      { method: "POST" },
+    ),
 
   submitTemplate: (id: string) => request<Template>(`/templates/${id}/submit`, { method: "POST" }),
+
+  createContact: (contact: {
+    name: string;
+    phone: string;
+    email?: string;
+    city?: string;
+    uf?: string;
+    tags?: string[];
+    optIn: boolean;
+    optInSource?: string;
+  }) => request<Contact>(`/contacts`, { method: "POST", body: JSON.stringify(contact) }),
 
   optOut: (contactId: string) =>
     request<void>(`/contacts/${contactId}/opt-out`, { method: "POST" }),
 
-  resetDemo: () => request<{ seeded: number }>("/dev/reset", { method: "POST" }),
+  /** Apaga os dados DA CONTA (não a conta). O workspace vem da sessão. */
+  resetAccount: () => request<{ cleared: boolean }>("/dev/reset", { method: "POST" }),
+
   workerTick: () => request<{ processed: number }>("/dev/worker-tick", { method: "POST" }),
 
   simulateStatus: (messageId: string, status: string) =>

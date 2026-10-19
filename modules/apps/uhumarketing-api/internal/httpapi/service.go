@@ -17,10 +17,22 @@ import (
 // "tem telefone?" — decisões que precisam valer em qualquer entrada (HTTP hoje,
 // CLI amanhã).
 type Service struct {
-	Store    *store.Store
-	Provider meta.Provider
-	Log      *slog.Logger
+	Store     *store.Store
+	Provider  meta.Provider
+	Log       *slog.Logger
 	Workspace string
+	User      domain.User
+}
+
+// For devolve o serviço escopado numa conta. O workspace e o usuário vêm
+// SEMPRE da sessão, nunca do corpo da requisição — é isso que impede uma conta
+// de operar sobre a outra. Uma cópia rasa basta porque as dependências são as
+// mesmas.
+func (s *Service) For(sess store.Session) *Service {
+	cp := *s
+	cp.Workspace = sess.WorkspaceID
+	cp.User = domain.User{Name: sess.Name, Email: sess.Email, Role: "owner"}
+	return &cp
 }
 
 /* --------------------------------------------------------------- templates */
@@ -280,29 +292,35 @@ func plural(n int, one, many string) string {
 // A POC tem uma empresa; quando houver muitas, isto ganha paginação — mas o
 // formato (um objeto com as coleções) é o mesmo.
 type Bootstrap struct {
-	Workspace   domain.Workspace       `json:"workspace"`
-	User        domain.User            `json:"user"`
-	Templates   []domain.Template      `json:"templates"`
-	Segments    []domain.Segment       `json:"segments"`
-	Campaigns   []domain.Campaign      `json:"campaigns"`
-	Sends       []domain.Send          `json:"sends"`
-	Flows       []domain.Flow          `json:"flows"`
-	Activity    []domain.ActivityEvent `json:"activity"`
-	Series      []domain.MetricPoint   `json:"series"`
-	Provider    ProviderInfo           `json:"provider"`
-	Queue       []QueueInfo            `json:"queue"`
-	ServerTime  time.Time              `json:"serverTime"`
+	Workspace domain.Workspace  `json:"workspace"`
+	User      domain.User       `json:"user"`
+	Templates []domain.Template `json:"templates"`
+	Segments  []domain.Segment  `json:"segments"`
+	Campaigns []domain.Campaign `json:"campaigns"`
+	Sends     []domain.Send     `json:"sends"`
+	Flows     []domain.Flow     `json:"flows"`
+	// Contacts vai no bootstrap porque a tela de audiências mostra a base real
+	// ("contatos únicos") e a amostra de cada segmento sem uma segunda chamada.
+	Contacts   []domain.Contact       `json:"contacts"`
+	Activity   []domain.ActivityEvent `json:"activity"`
+	Series     []domain.MetricPoint   `json:"series"`
+	Provider   ProviderInfo           `json:"provider"`
+	Queue      []QueueInfo            `json:"queue"`
+	ServerTime time.Time              `json:"serverTime"`
 }
 
 // QueueInfo é o estado da fila de cada campanha em execução, com o motivo de
 // ela estar parada. É o que permite a tela dizer "esperando a janela das 9h" em
 // vez de mostrar 29 na fila e nenhuma enviada, sem explicação.
 type QueueInfo struct {
-	CampaignID string    `json:"campaignId"`
-	Queued     int       `json:"queued"`
-	BlockedBy  string    `json:"blockedBy"`
-	NextOpenAt time.Time `json:"nextOpenAt,omitempty"`
-	Timezone   string    `json:"timezone,omitempty"`
+	CampaignID string `json:"campaignId"`
+	Queued     int    `json:"queued"`
+	BlockedBy  string `json:"blockedBy"`
+	// Ponteiro porque `omitempty` não tem efeito em time.Time (struct): sem
+	// isso, uma fila livre mandava "nextOpenAt": "0001-01-01T00:00:00Z" e a
+	// tela oferecia abrir em 01/01/0001.
+	NextOpenAt *time.Time `json:"nextOpenAt,omitempty"`
+	Timezone   string     `json:"timezone,omitempty"`
 }
 
 // ProviderInfo é o que a tela mostra em Configurações: em que modo o serviço
@@ -340,6 +358,10 @@ func (s *Service) Bootstrap(ctx context.Context) (Bootstrap, error) {
 	if err != nil {
 		return Bootstrap{}, err
 	}
+	contacts, err := s.Store.Contacts(ctx, s.Workspace)
+	if err != nil {
+		return Bootstrap{}, err
+	}
 	activity, err := s.Store.Activity(ctx, s.Workspace, 40)
 	if err != nil {
 		return Bootstrap{}, err
@@ -362,15 +384,16 @@ func (s *Service) Bootstrap(ctx context.Context) (Bootstrap, error) {
 
 	return Bootstrap{
 		Workspace: ws,
-		User:      domain.User{Name: "Marina Reis", Email: "marina@cafeaurora.com.br", Role: "Head de Growth"},
+		User:      s.User,
 		Templates: templates,
 		Segments:  segments,
 		Campaigns: campaigns,
 		Sends:     sends,
 		Flows:     flows,
+		Contacts:  contacts,
 		Activity:  activity,
-		Series:   series,
-		Queue:    queue,
+		Series:    series,
+		Queue:     queue,
 		Provider: ProviderInfo{
 			Name:      s.Provider.Name(),
 			Mode:      providerMode(live),
@@ -397,13 +420,17 @@ func (s *Service) queueState(ctx context.Context, campaigns []domain.Campaign) (
 			Days: c.Schedule.Days, Timezone: c.Schedule.Timezone,
 		}
 		state := dispatch.ExplainQueue(now, c.ID, window, c.Metrics.Queued)
-		out = append(out, QueueInfo{
+		info := QueueInfo{
 			CampaignID: c.ID,
 			Queued:     c.Metrics.Queued,
 			BlockedBy:  state.BlockedBy,
-			NextOpenAt: state.NextOpenAt,
 			Timezone:   state.Timezone,
-		})
+		}
+		if state.BlockedBy == "window" {
+			next := state.NextOpenAt
+			info.NextOpenAt = &next
+		}
+		out = append(out, info)
 	}
 	return out, nil
 }
@@ -427,9 +454,9 @@ type WebhookEvent struct {
 			Field string `json:"field"`
 			Value struct {
 				// message_template_status_update
-				Event        string `json:"event"`
+				Event             string `json:"event"`
 				MessageTemplateID string `json:"message_template_id"`
-				Reason       string `json:"reason"`
+				Reason            string `json:"reason"`
 				// messages
 				MessagingProduct string `json:"messaging_product"`
 				Metadata         struct {
@@ -516,7 +543,7 @@ func (s *Service) applyTemplateStatus(ctx context.Context, externalID, event, re
 	default:
 		return
 	}
-	tpl, ok, err := s.Store.ApplyTemplateStatus(ctx, externalID, status, reason)
+	tpl, ws, ok, err := s.Store.ApplyTemplateStatus(ctx, externalID, status, reason)
 	if err != nil {
 		s.Log.Error("webhook: template", "external", externalID, "error", err)
 		return
@@ -525,7 +552,9 @@ func (s *Service) applyTemplateStatus(ctx context.Context, externalID, event, re
 		return // não é nosso: 200 e segue
 	}
 	title := "Template " + statusLabel(status)
-	_ = s.Store.LogActivity(ctx, s.Workspace, "template", title, tpl.Name+reasonSuffix(reason), tpl.ID)
+	// O webhook não tem sessão: o workspace é o dono do template que a Meta
+	// citou, resolvido no banco.
+	_ = s.Store.LogActivity(ctx, ws, "template", title, tpl.Name+reasonSuffix(reason), tpl.ID)
 }
 
 func reasonSuffix(reason string) string {
@@ -546,7 +575,7 @@ func (s *Service) applyMessageStatus(ctx context.Context, externalID, status str
 	if len(errs) > 0 {
 		reason = itoa(errs[0].Code) + " · " + errs[0].Title
 	}
-	campaignID, contactID, _, ok, err := s.Store.ApplyMessageStatus(ctx, externalID, status, reason)
+	owner, campaignID, contactID, _, ok, err := s.Store.ApplyMessageStatus(ctx, "", externalID, status, reason)
 	if err != nil {
 		s.Log.Error("webhook: status", "external", externalID, "error", err)
 		return
@@ -556,7 +585,7 @@ func (s *Service) applyMessageStatus(ctx context.Context, externalID, status str
 	}
 
 	if status == "failed" {
-		_ = s.Store.LogActivity(ctx, s.Workspace, "send", "Envio falhou",
+		_ = s.Store.LogActivity(ctx, owner, "send", "Envio falhou",
 			"Webhook da Meta: "+reason, campaignID)
 		return
 	}
@@ -580,7 +609,19 @@ func (s *Service) applyInbound(ctx context.Context, from, text string) {
 	if from == "" {
 		return
 	}
-	contact, err := s.Store.ContactByPhone(ctx, s.Workspace, from)
+	// Sem sessão, o workspace vem do telefone: um número pertence a uma conta
+	// só (UNIQUE workspace_id+phone), então a resposta identifica o dono sem
+	// ambiguidade.
+	ws := s.Workspace
+	if ws == "" {
+		owner, err := s.Store.WorkspaceByPhone(ctx, from)
+		if err != nil || owner == "" {
+			s.Log.Warn("webhook: telefone de workspace desconhecido", "from", from)
+			return
+		}
+		ws = owner
+	}
+	contact, err := s.Store.ContactByPhone(ctx, ws, from)
 	if err != nil {
 		if !errors.Is(err, domain.ErrNotFound) {
 			s.Log.Error("webhook: contato", "from", from, "error", err)
@@ -588,15 +629,15 @@ func (s *Service) applyInbound(ctx context.Context, from, text string) {
 		return
 	}
 	if isOptOut(text) {
-		if err := s.Store.OptOut(ctx, s.Workspace, contact.ID, "respondeu \""+text+"\""); err != nil {
+		if err := s.Store.OptOut(ctx, ws, contact.ID, "respondeu \""+text+"\""); err != nil {
 			s.Log.Error("webhook: opt-out", "contact", contact.ID, "error", err)
 			return
 		}
-		_ = s.Store.LogActivity(ctx, s.Workspace, "send", "Opt-out pelo WhatsApp",
+		_ = s.Store.LogActivity(ctx, ws, "send", "Opt-out pelo WhatsApp",
 			contact.Name+" pediu para não receber mais", contact.ID)
 		return
 	}
-	if err := s.Store.MarkRepliedByPhone(ctx, s.Workspace, from); err != nil {
+	if err := s.Store.MarkRepliedByPhone(ctx, ws, from); err != nil {
 		s.Log.Error("webhook: resposta", "from", from, "error", err)
 	}
 }

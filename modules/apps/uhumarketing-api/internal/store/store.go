@@ -28,8 +28,6 @@ import (
 //go:embed schema.sql
 var schema string
 
-const DemoWorkspaceID = "ws_cafe_aurora"
-
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, schema); err != nil {
 		return fmt.Errorf("aplicar schema: %w", err)
@@ -248,23 +246,23 @@ func (s *Store) MarkTemplateSubmitted(ctx context.Context, ws, id, externalID, s
 
 // ApplyTemplateStatus é o webhook: devolve o template e `false` quando o id
 // externo é desconhecido (webhook de outra WABA — 202 e segue).
-func (s *Store) ApplyTemplateStatus(ctx context.Context, externalID, status, reason string) (domain.Template, bool, error) {
+func (s *Store) ApplyTemplateStatus(ctx context.Context, externalID, status, reason string) (domain.Template, string, bool, error) {
 	var ws, id string
 	err := s.pool.QueryRow(ctx, `SELECT workspace_id, id FROM templates WHERE external_id=$1 LIMIT 1`, externalID).
 		Scan(&ws, &id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Template{}, false, nil
+		return domain.Template{}, "", false, nil
 	}
 	if err != nil {
-		return domain.Template{}, false, err
+		return domain.Template{}, "", false, err
 	}
 	_, err = s.pool.Exec(ctx, `
 		UPDATE templates SET status=$2, rejection_reason=$3, updated_at=now() WHERE id=$1`, id, status, reason)
 	if err != nil {
-		return domain.Template{}, false, err
+		return domain.Template{}, ws, false, err
 	}
 	t, err := s.Template(ctx, ws, id)
-	return t, true, err
+	return t, ws, true, err
 }
 
 func (s *Store) templateMetrics(ctx context.Context, ws string) (map[string]domain.TemplateMetrics, error) {
@@ -364,6 +362,21 @@ func (s *Store) ContactByPhone(ctx context.Context, ws, phone string) (domain.Co
 
 // MarkRepliedByPhone marca como "respondida" a mensagem mais recente daquele
 // telefone. É o que fecha o funil quando o cliente responde qualquer coisa.
+// WorkspaceByPhone resolve o dono de um número. É o que permite ao webhook,
+// que não tem sessão, saber de qual conta é a resposta recebida.
+func (s *Store) WorkspaceByPhone(ctx context.Context, phone string) (string, error) {
+	normalized, err := domain.NormalizePhone(phone)
+	if err != nil {
+		return "", err
+	}
+	var ws string
+	err = s.pool.QueryRow(ctx, `SELECT workspace_id FROM contacts WHERE phone=$1 LIMIT 1`, normalized).Scan(&ws)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", domain.ErrNotFound
+	}
+	return ws, err
+}
+
 func (s *Store) MarkRepliedByPhone(ctx context.Context, ws, phone string) error {
 	normalized, err := domain.NormalizePhone(phone)
 	if err != nil {
@@ -384,7 +397,8 @@ func (s *Store) MarkRepliedByPhone(ctx context.Context, ws, phone string) error 
 	return nil
 }
 
-func (s *Store) Contact(ctx context.Context, ws, id string) (domain.Contact, error) {	row := s.pool.QueryRow(ctx, `
+func (s *Store) Contact(ctx context.Context, ws, id string) (domain.Contact, error) {
+	row := s.pool.QueryRow(ctx, `
 		SELECT id, name, phone, email, city, uf, tags, source, plan, opt_in, opt_in_source,
 		       opt_in_at, opt_out_at, last_purchase_at, total_spent, orders
 		FROM contacts WHERE workspace_id=$1 AND id=$2`, ws, id)
@@ -882,7 +896,7 @@ func (s *Store) ClaimQueued(ctx context.Context, ws string, limit int) ([]SendJo
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	rows, err := tx.Query(ctx, `
-		SELECT s.id, s.campaign_id, s.contact_id, s.destination, s.coupon_code,
+		SELECT s.workspace_id, s.id, s.campaign_id, s.contact_id, s.destination, s.coupon_code,
 		       t.id, t.name, t.language, t.category, t.header_kind, t.header_media, t.variables,
 		       c.name, c.city, c.uf, c.tags, c.orders, c.total_spent
 		FROM sends s
@@ -901,7 +915,7 @@ func (s *Store) ClaimQueued(ctx context.Context, ws string, limit int) ([]SendJo
 	for rows.Next() {
 		var j SendJob
 		var vars, tags []byte
-		if err := rows.Scan(&j.SendID, &j.CampaignID, &j.ContactID, &j.Destination, &j.CouponCode,
+		if err := rows.Scan(&j.WorkspaceID, &j.SendID, &j.CampaignID, &j.ContactID, &j.Destination, &j.CouponCode,
 			&j.TemplateID, &j.TemplateName, &j.Language, &j.Category, &j.HeaderKind, &j.HeaderMedia, &vars,
 			&j.ContactName, &j.City, &j.UF, &tags, &j.Orders, &j.TotalSpent); err != nil {
 			rows.Close()
@@ -933,6 +947,7 @@ func (s *Store) ClaimQueued(ctx context.Context, ws string, limit int) ([]SendJo
 // SendJob é o que o worker precisa para entregar uma mensagem, já com template
 // e contato resolvidos (uma query, sem N+1).
 type SendJob struct {
+	WorkspaceID  string
 	SendID       string
 	CampaignID   string
 	ContactID    string
@@ -1021,26 +1036,34 @@ func (s *Store) MarkFailed(ctx context.Context, sendID, reason string) error {
 // ApplyMessageStatus é o webhook de mensagem. Devolve a campanha e o id do
 // contato para o handler registrar atividade; `false` quando o id externo é
 // desconhecido (reentrega ou webhook de outro serviço).
-func (s *Store) ApplyMessageStatus(ctx context.Context, externalID, status, reason string) (campaignID, contactID, sendID string, ok bool, err error) {
+//
+// `ws` vazio significa "webhook da Meta": o id externo é único e não há sessão
+// para escopar. Fora desse caso o handler passa o workspace da sessão, para um
+// cliente não conseguir mexer no envio de outra conta pelo id interno.
+func (s *Store) ApplyMessageStatus(ctx context.Context, ws, externalID, status, reason string) (owner, campaignID, contactID, sendID string, ok bool, err error) {
 	var current string
 	// Aceita o wamid da Meta ou o id interno do envio: a tela de Envios mostra
 	// o id interno, e o endpoint de desenvolvimento precisa conseguir simular
 	// status a partir dele sem expor o id externo.
+	//
+	// Sem workspace aqui de propósito: o webhook da Meta não carrega sessão, e
+	// o id externo é único no banco. Quem chama assume a responsabilidade de
+	// escopar quando a origem é o cliente (o handler de dev faz isso).
 	err = s.pool.QueryRow(ctx, `
-		SELECT id, campaign_id, contact_id, status FROM sends
-		WHERE external_id=$1 OR id=$1 LIMIT 1`, externalID).
-		Scan(&sendID, &campaignID, &contactID, &current)
+		SELECT id, campaign_id, contact_id, status, workspace_id FROM sends
+		WHERE (external_id=$1 OR id=$1) AND ($2='' OR workspace_id=$2) LIMIT 1`, externalID, ws).
+		Scan(&sendID, &campaignID, &contactID, &current, &owner)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", "", false, nil
+		return "", "", "", "", false, nil
 	}
 	if err != nil {
-		return "", "", "", false, err
+		return "", "", "", "", false, err
 	}
 
 	// Fora de ordem: "lido" depois de "entregue" não regride. A resposta diz
 	// applied=false para a tela poder explicar por que nada mudou.
 	if !domain.Advances(current, status) {
-		return campaignID, contactID, sendID, false, nil
+		return owner, campaignID, contactID, sendID, false, nil
 	}
 
 	_, err = s.pool.Exec(ctx, `
@@ -1049,9 +1072,9 @@ func (s *Store) ApplyMessageStatus(ctx context.Context, externalID, status, reas
 		       updated_at=now()
 		WHERE id=$1`, sendID, status, reason)
 	if err != nil {
-		return "", "", "", false, err
+		return owner, campaignID, contactID, sendID, false, err
 	}
-	return campaignID, contactID, sendID, true, nil
+	return owner, campaignID, contactID, sendID, true, nil
 }
 
 func (s *Store) Sends(ctx context.Context, ws, campaignID string, limit int) ([]domain.Send, error) {

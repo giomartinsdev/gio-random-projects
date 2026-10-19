@@ -31,7 +31,6 @@ import (
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/dispatch"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/meta"
-	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/seed"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/store"
 )
 
@@ -72,12 +71,11 @@ func main() {
 	}
 
 	st := store.New(pool)
-	if _, err := seed.Seed(ctx, pool); err != nil {
-		log.Error("seed", "error", err)
-		os.Exit(1)
-	}
 
-	svc := &httpapi.Service{Store: st, Provider: provider, Log: log, Workspace: cfg.WorkspaceID}
+	// Workspace vazio de propósito: cada requisição é escopada pelo middleware
+	// de sessão. Um workspace fixo aqui seria justamente o bug de vazamento
+	// entre contas.
+	svc := &httpapi.Service{Store: st, Provider: provider, Log: log}
 	worker := &dispatch.Worker{Store: st, Provider: provider, Log: log, Interval: cfg.WorkerInterval}
 
 	handlers := &httpapi.Handlers{
@@ -91,7 +89,7 @@ func main() {
 
 	go worker.Run(ctx)
 
-	router := httpapi.NewRouter(handlers, httpapi.APIKeys(cfg.APIKeys), cfg.CORSOrigins, log)
+	router := httpapi.NewRouter(handlers, cfg.CORSOrigins, log)
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           router,
@@ -101,7 +99,7 @@ func main() {
 	log.Info("uhumarketing-api no ar",
 		"addr", cfg.HTTPAddr,
 		"provider", provider.Name(),
-		"workspace", cfg.WorkspaceID,
+		"accounts", "multi-workspace",
 		"worker", cfg.WorkerInterval.String(),
 	)
 

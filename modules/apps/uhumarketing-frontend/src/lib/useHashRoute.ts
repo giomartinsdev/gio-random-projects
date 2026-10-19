@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 // Roteamento por hash, como no prospecta: duas zonas.
 //   · pública — "/" (landing), "#/login", "#/cadastro";
-//   · app     — "#/app/<tela>", protegida por sessão mock.
+//   · app     — "#/app/<tela>", protegida por sessão real.
 // Voltar/avançar do navegador funciona de graça e a SPA estática não precisa
 // de rewrite de servidor.
 export type AppRoute =
