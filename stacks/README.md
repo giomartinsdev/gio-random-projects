@@ -11,7 +11,7 @@ minecraft, todos orquestrados pelo Dockhand (ids 7/20/21/22):
 | --- | --- | --- | --- |
 | `core` | 7 | `core.yml` | registry, htpasswd-init, registry-docker-config, dockhand, **ingress** (boot-only; **protegida**: sem webhook, `force_redeploy=0`, `repull_images=0`) |
 | `project-infra` | 21 | `project-infra.yml` | inclui `persistence.yml`, `observability.yml`, `db-mcp.yml`, `compute.yml` (postgres, rabbitmq, minio, minio-buckets, loki/prometheus/tempo/alloy/grafana, db-mcp + gateway, vaultwarden, adminer, evolution, 9router) |
-| `project-apps` | 22 | `project-apps.yml` | inclui `domain.yml`, `clubs.yml`, `finance.yml`, `prospecta.yml`, `tela.yml`, `maus.yml`, `excalidraw.yml` |
+| `project-apps` | 22 | `project-apps.yml` | inclui `domain.yml`, `finance.yml`, `prospecta.yml`, `tela.yml`, `maus.yml`, `excalidraw.yml` — **`clubs.yml` está pausado** (fora do include; ver abaixo) |
 | `minecraft` | 20 | `minecraft.yml` | servidor **All the Mods 11** (NeoForge, 293 mods, MC 26.1.2) + backup diário. Deployado pelo Dockhand desde 2026-10-19; `repull_images=0` porque as tags (`java25`, `mc-backup:latest`) são móveis |
 
 **`bootstrap.yml`** (rede externa `apps`) não é stack do Dockhand: suba
@@ -42,6 +42,16 @@ registry local nunca foram buildadas e o usuário optou por preservar o
 9router atual (`ghcr.io/decolua/9router:latest`, que agora vive no
 `compute.yml` — ele já rodava no antigo stack `compute`). O `ai.yml` fica
 versionado como referência para quando o `decision` for implantado.
+
+`clubs.yml` **está pausado** (2026-10-19): saiu do `include` do
+`project-apps.yml`, os containers (`clubs-api`, `clubs-ingest`) foram parados
+e removidos, o hub parou de listar o app
+(`modules/apps/hub-frontend/src/lib/apps.ts`) e as duas rotas do ingress
+respondem **410**. Nada foi apagado: banco no postgres, bucket
+`clubs-frontend` no MinIO, imagens no registry, segredos `CLUBS_*` no
+Dockhand e o código em `modules/apps/clubs-*` seguem intactos. Pra religar:
+descomentar `- clubs.yml` no include, reverter os blocos do `default.conf` e
+a entrada do hub, e deployar a 22.
 
 **`core.yml` é de boot, isolada de propósito.** O Dockhand deploya as
 stacks; se ele estiver dentro de uma stack que ele mesmo recria, o deploy

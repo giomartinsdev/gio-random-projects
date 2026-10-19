@@ -1,3 +1,14 @@
+# ── PAUSADO (2026-10-19) ─────────────────────────────────────────────────
+# O projeto FC Clubs foi pausado a pedido. Estado do arquivo: completo e
+# pronto pra voltar. O que saiu enquanto isso:
+#   - a linha `- clubs.yml` do include em `project-apps.yml`
+#   - os containers clubs-api / clubs-ingest (parados e removidos)
+#   - a entrada `clubs` do hub (hub-frontend/src/lib/apps.ts)
+#   - as rotas do ingress: os dois hostnames respondem 410
+# Ficou intacto: banco no postgres, bucket `clubs-frontend` no MinIO, imagens
+# no registry, segredos (CLUBS_*) no Dockhand e o código em modules/apps/.
+# Pra religar: git revert dos pontos acima + deploy da `project-apps` (22).
+# ─────────────────────────────────────────────────────────────────────────
 # clubs.yml — apps do FC Clubs Hub (migra `modules/compute/apps/clubs_api` e
 # `modules/compute/apps/clubs_ingest`). clubs-api é o BFF (loopback 8017; o
 # ingress roteia clubs-api.giomartins.dev); clubs-ingest é o poller da fonte

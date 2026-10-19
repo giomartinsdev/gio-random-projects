@@ -10,7 +10,8 @@
 # continuam sendo a fonte da verdade, um por contexto:
 #
 #   domain.yml      domain-api (leitura) + domain-worker (único escritor, CQRS)
-#   clubs.yml       clubs-api (BFF) + clubs-ingest (poller da fonte EA)
+#   clubs.yml       PAUSADO (2026-10-19) — não está mais no include. Ver
+#                   stacks/clubs.yml pro estado e como religar
 #   finance.yml     finance-api + workers (customersupport, openfinance)
 #   prospecta.yml   prospecta-api + prospecta-agent-worker + searxng
 #   tela.yml        tela-mediamtx + tela-coturn + tela-api (os 3 em host network)
@@ -40,7 +41,11 @@ name: project-apps
 
 include:
   - domain.yml
-  - clubs.yml
+  # PAUSADO (2026-10-19): o FC Clubs saiu do hub e os containers foram
+  # removidos. O `clubs.yml` continua aqui — religar é descomentar esta linha
+  # e o conteudo dele já está inteiro (segredos no Dockhand, banco, bucket no
+  # MinIO). As rotas do ingress respondem 410 enquanto isso (ver default.conf).
+  # - clubs.yml
   - finance.yml
   - prospecta.yml
   - tela.yml

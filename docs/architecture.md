@@ -58,8 +58,8 @@ flowchart TB
       dworker["domain-worker"]
       fapi["finance-api"]
       fwk["finance-customersupport-worker"]
-      clubsapi["clubs-api"]
-      clubsing["clubs-ingest"]
+      clubsapi["clubs-api<br/>(pausado)"]
+      clubsing["clubs-ingest<br/>(pausado)"]
       telaapi["tela-api"]
       prospecta["prospecta-api<br/>+ agent-worker"]
       omb["maus (omb)"]
@@ -69,9 +69,11 @@ flowchart TB
     ingress -.proxy por hostname.-> dapi
     ingress -.-> fapi
     ingress -.-> evolution
-    ingress -.-> clubsapi
     ingress -.-> telaapi
     ingress -.-> graf
+
+    classDef pausado stroke-dasharray: 4 4,opacity: .55;
+    class clubsapi,clubsing pausado
   end
 
   cf --> ingress
@@ -82,6 +84,11 @@ flowchart TB
 > **Frontends não são containers.** `tela-frontend`, `clubs-frontend`,
 > `hub-frontend` e `finance-frontend` são builds estáticos espelhados em
 > buckets do MinIO; o ingress serve o bucket direto.
+>
+> **`clubs` está pausado** (2026-10-19): os dois containers saíram do
+> `project-apps`, as rotas do ingress respondem 410 e o app saiu do hub.
+> Código, banco, bucket e imagens no registry seguem intactos — o como
+> religar está em `stacks/README.md`.
 
 ---
 
