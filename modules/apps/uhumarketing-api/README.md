@@ -76,6 +76,29 @@ o envio fica em `sent`. O template, esse, você resolve com **Consultar status
 na Meta** no drawer do template — é uma consulta ativa à Graph, não depende de
 callback.
 
+### Se a WABA estiver restrita ou banida
+
+Sintoma: `Testar conexão` mostra "a conta do WhatsApp (WABA) está restrita ou
+banida pela Meta", o envio falha e os IDs somem do painel. Não é bug do
+produto — a Meta bloqueou a conta.
+
+O que **não** resolve: token novo, outro `META_MODE`, reinstalar, trocar o
+Phone Number ID. Todos falham com `131031` enquanto a restrição existir.
+
+O caminho é humano e fora do código:
+
+1. Abrir **Meta Business Suite → Account Quality**
+   (`business.facebook.com/latest/accountquality`) e pedir revisão.
+2. Acompanhar o recurso na mesma página — a Meta não avisa por outro canal.
+3. Quando liberar, os IDs voltam a aparecer em **API Setup** do app.
+
+Se o recurso não for aceito, a alternativa é criar uma WABA nova com outro
+número (CNPJ/telefone diferentes). O produto não guarda estado preso à WABA
+antiga: é só trocar as três variáveis e reiniciar.
+
+`./scripts/live-check.sh` reconhece esse caso e imprime essa orientação em vez
+do JSON da Meta.
+
 O que o dry-run **não** faz: simular latência, recusa de conteúdo ou
 qualidade do número. Ele aprova. É um provedor de desenvolvimento, não uma
 previsão da Meta.

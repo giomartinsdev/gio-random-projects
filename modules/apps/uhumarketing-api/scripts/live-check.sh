@@ -14,8 +14,16 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [[ -f .env ]]; then
-  # shellcheck disable=SC1091
-  set -a; source .env; set +a
+  # Carrega o .env SEM sobrescrever o que já veio do ambiente: rodar
+  # `META_MODE=live ./scripts/live-check.sh` tem que valer, mesmo com o .env
+  # ainda em dry-run.
+  while IFS='=' read -r key value || [[ -n "$key" ]]; do
+    [[ -z "$key" || "$key" == \#* ]] && continue
+    key="${key%% *}"
+    if [[ -z "${!key:-}" ]]; then
+      export "$key=$value"
+    fi
+  done < .env
 fi
 
 fail=0
@@ -71,7 +79,18 @@ code=$(printf '%s' "$body" | tail -1)
 payload=$(printf '%s' "$body" | sed '$d')
 
 if [[ "$code" != "200" ]]; then
-  bad "a Graph recusou ($code): $payload"
+  if printf '%s' "$payload" | grep -qiE '"code":(131031|131047|368)|restricted|banned|enforcement'; then
+    say "  ✗ a Meta diz que a conta do WhatsApp está RESTRITA/BANIDA"
+    say ""
+    say "  Nenhum envio é possível enquanto a restrição existir, mesmo com token"
+    say "  válido. O caminho é abrir recurso no Meta Business Suite:"
+    say "    https://business.facebook.com/latest/accountquality"
+    say ""
+    say "  Depois que a Meta liberar, os IDs aparecem de novo em:"
+    say "    https://developers.facebook.com/apps → seu app → WhatsApp → API Setup"
+  else
+    bad "a Graph recusou ($code): $payload"
+  fi
   exit 1
 fi
 

@@ -24,6 +24,7 @@ import (
 type fakeGraph struct {
 	server       *httptest.Server
 	denyToken    bool
+	banned       bool
 	templateStat string
 	seenToken    string
 	seenPath     string
@@ -42,6 +43,14 @@ func (g *fakeGraph) handle(w http.ResponseWriter, r *http.Request) {
 	if g.denyToken {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":{"message":"Invalid OAuth access token - Cannot parse access token","type":"OAuthException","code":190,"error_subcode":0}}`))
+		return
+	}
+
+	if g.banned {
+		// Forma real do bloqueio: a Graph responde 400 com 131031 e a mensagem
+		// de enforcement. O produto tem que traduzir isso, não vazar o código.
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"Your account is restricted from using WhatsApp Business API due to a policy enforcement action","type":"OAuthException","code":131031,"error_subcode":0}}`))
 		return
 	}
 
@@ -93,6 +102,14 @@ func registerChannelSteps(sc *godog.ScenarioContext, w *world) {
 
 	sc.Step(`^um canal live apontando para uma Graph de teste que recusa o token$`, func() error {
 		return liveProvider(true)
+	})
+
+	sc.Step(`^um canal live apontando para uma Graph de teste com a WABA banida$`, func() error {
+		if err := liveProvider(false); err != nil {
+			return err
+		}
+		graph.banned = true
+		return nil
 	})
 
 	sc.Step(`^um canal live apontando para uma Graph de teste com o template "([^"]*)"$`, func(status string) error {

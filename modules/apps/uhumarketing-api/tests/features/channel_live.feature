@@ -38,6 +38,15 @@ Feature: Canal de WhatsApp — verificação real e envio de teste
     And a verificação diz que o canal não está ok
     And a verificação menciona "Invalid OAuth access token"
 
+  Scenario: WABA banida vira orientação, não código de erro
+    Given um canal live apontando para uma Graph de teste com a WABA banida
+    And o workspace está com o telefone configurado
+    When eu verifico o canal
+    Then a resposta é 200
+    And a verificação diz que o canal não está ok
+    And a verificação menciona "banida"
+    And a verificação menciona "recurso"
+
   Scenario: o envio de teste sai mesmo com a janela da campanha fechada
     Given um template aprovado com 1 variável
     And uma audiência com 1 contato com opt-in

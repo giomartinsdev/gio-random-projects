@@ -145,6 +145,45 @@ func (e graphError) Error() string {
 	return fmt.Sprintf("meta: %s (code %d/%d)", e.Detail.Message, e.Detail.Code, e.Detail.Subcode)
 }
 
+// IsBanned reconhece o bloqueio da conta. A Meta devolve os mesmos códigos para
+// "conta restrita" e "número restrito"; o operador precisa da orientação (abrir
+// recurso no Account Quality), não do número do erro.
+func (e graphError) IsBanned() bool {
+	switch e.Detail.Code {
+	case 131031, // account locked / restricted
+		131042, // business eligibility payment issue
+		368,    // temporarily blocked for policy violation
+		131047: // messaging limit / account restriction
+		return true
+	}
+	return strings.Contains(strings.ToLower(e.Detail.Message), "restricted") ||
+		strings.Contains(strings.ToLower(e.Detail.Message), "banned") ||
+		strings.Contains(strings.ToLower(e.Detail.Message), "enforcement")
+}
+
+// Explain traduz o erro da Graph para o que o operador precisa FAZER. Um código
+// numérico na tela não resolve nada; a ação resolve. A mensagem original vai
+// entre parênteses para não perder o diagnóstico quando for preciso escalar.
+func (e graphError) Explain() string {
+	if e.IsBanned() {
+		return "a conta do WhatsApp (WABA) está restrita ou banida pela Meta. " +
+			"Abra um recurso na página Account Quality do Meta Business Suite; " +
+			"enquanto a restrição existir, nenhum envio é possível, mesmo com token válido"
+	}
+	raw := " (Meta: " + e.Detail.Message + ")"
+	switch e.Detail.Code {
+	case 190:
+		return "token inválido ou expirado: gere outro em API Setup (ou um permanente com System User)" + raw
+	case 100:
+		return "a Meta recusou os parâmetros: confira Phone Number ID e o nome/categoria do template" + raw
+	case 131026:
+		return "o destinatário não pode receber mensagem: número sem WhatsApp ou fora da lista de permitidos do número de teste" + raw
+	case 132000, 132001, 132005, 132007, 132012, 132015:
+		return "o template foi recusado pela Meta: confira conteúdo, variáveis e categoria" + raw
+	}
+	return "a Meta recusou: " + e.Detail.Message
+}
+
 func (p *CloudProvider) post(ctx context.Context, path string, body any) ([]byte, error) {
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -183,7 +222,9 @@ func (p *CloudProvider) do(ctx context.Context, method, path string, body io.Rea
 	if resp.StatusCode >= 300 {
 		var ge graphError
 		if json.Unmarshal(payload, &ge) == nil && ge.Detail.Message != "" {
-			return nil, ge
+			// Devolve o erro já explicado: quem chama (worker, handler, tela)
+			// não deve decidir o que "code 131031" significa.
+			return nil, fmt.Errorf("%s", ge.Explain())
 		}
 		return nil, fmt.Errorf("meta: http %d: %s", resp.StatusCode, truncate(string(payload), 200))
 	}
