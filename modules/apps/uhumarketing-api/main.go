@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -96,14 +97,23 @@ func main() {
 	// Workspace vazio de propósito: cada requisição é escopada pelo middleware
 	// de sessão. Um workspace fixo aqui seria justamente o bug de vazamento
 	// entre contas.
-	svc := &httpapi.Service{Store: st, Provider: provider, Channels: channels, Log: log}
+	svc := &httpapi.Service{
+		Store: st, Provider: provider, Channels: channels, Log: log,
+		PublicBaseURL: cfg.PublicBaseURL,
+	}
 	worker := &dispatch.Worker{Store: st, Channels: channels, Log: log, Interval: cfg.WorkerInterval}
+
+	live := strings.EqualFold(cfg.MetaMode, "live")
+	if live && cfg.AppSecret == "" {
+		log.Warn("webhook sem META_APP_SECRET: eventos serão recusados (503) até a chave ser configurada")
+	}
 
 	handlers := &httpapi.Handlers{
 		Service:            svc,
 		Log:                log,
 		WebhookVerifyToken: cfg.WebhookVerify,
 		AppSecret:          cfg.AppSecret,
+		RequireSignature:   live,
 		AllowDevActions:    cfg.AllowDevActions,
 		Tick:               worker.Tick,
 	}

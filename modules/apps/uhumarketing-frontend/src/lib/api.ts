@@ -23,7 +23,12 @@ import type {
 } from "./types";
 import { clearToken, readToken } from "./token";
 
-const BASE = (import.meta.env.VITE_UHU_API_URL ?? "http://localhost:8195").replace(/\/$/, "");
+// Base da API. Vazio = mesma origem: é o caso do deploy, em que o nginx serve
+// a SPA e faz proxy de /api para o backend. Em dev (Vite na 5180) o proxy do
+// vite.config.ts faz o mesmo caminho — por isso nenhum dos dois precisa de uma
+// URL absoluta. VITE_UHU_API_URL só existe para quem hospeda a SPA e a API em
+// origens diferentes.
+const BASE = (import.meta.env.VITE_UHU_API_URL ?? "").replace(/\/$/, "");
 
 /** Conta devolvida por cadastro/login. O token é opaco; só o servidor o lê. */
 export interface Account {
@@ -73,6 +78,8 @@ export interface ChannelState {
   verifiedName?: string;
   quality?: string;
   wabaId?: string;
+  /** Callback para colar no painel da Meta. Ausente sem base pública. */
+  webhookUrl?: string;
   note: string;
 }
 
@@ -109,7 +116,7 @@ async function request<T>(path: string, init?: RequestInit & { auth?: boolean })
       },
     });
   } catch {
-    throw new ApiError(`Não consegui falar com ${BASE}. O backend está no ar?`, 0);
+    throw new ApiError(`Não consegui falar com ${BASE || "o servidor"}. O backend está no ar?`, 0);
   }
 
   if (res.status === 204) return undefined as T;

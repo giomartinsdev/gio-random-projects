@@ -25,7 +25,11 @@ type Handlers struct {
 	// Públicos / de dev.
 	WebhookVerifyToken string
 	AppSecret          string
-	AllowDevActions    bool
+	// RequireSignature é verdadeiro em live: o webhook é público, e sem
+	// assinatura qualquer um marcaria envio como lido ou forjaria opt-out.
+	// Em live sem AppSecret o webhook falha fechado (503) em vez de aceitar.
+	RequireSignature bool
+	AllowDevActions  bool
 
 	// Tick força um ciclo da fila (usado só pela rota de dev).
 	Tick func(ctx context.Context) (int, error)
@@ -49,12 +53,24 @@ func (h *Handlers) Healthz(w http.ResponseWriter, r *http.Request) {
 	if h.Service.Channels != nil {
 		live = h.Service.Channels.Live()
 	}
+	// O estado do webhook é do PROCESSO e interessa ao deploy: callback
+	// configurado, mas sem segredo, aceita o handshake e recusa todo evento —
+	// melhor descobrir isso no /healthz do que num envio que nunca vira
+	// "entregue".
+	webhook := "unsigned"
+	switch {
+	case h.AppSecret != "":
+		webhook = "signed"
+	case h.RequireSignature:
+		webhook = "missing-secret"
+	}
 	writeJSON(w, status, map[string]any{
 		"status":   map[bool]string{true: "ok", false: "degraded"}[dbOK == "ok"],
 		"database": dbOK,
 		"provider": h.Service.Provider.Name(),
 		"live":     live,
 		"channels": "per-workspace",
+		"webhook":  webhook,
 	})
 }
 
@@ -536,8 +552,10 @@ func (h *Handlers) WebhookHandshake(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, q.Get("hub.challenge"))
 }
 
-// Webhook recebe status e mensagens. Com META_APP_SECRET configurado, exige
-// X-Hub-Signature-256 válido — sem isso qualquer um marcaria envios como lidos.
+// Webhook recebe status e mensagens. Em live a assinatura é OBRIGATÓRIA: o
+// endpoint é público e qualquer um marcaria envios como lidos ou forjaria
+// opt-out. Com a exigência ligada e sem META_APP_SECRET, falha fechado (503):
+// aceitar sem verificar "para funcionar" é pior do que não receber evento.
 func (h *Handlers) Webhook(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
@@ -549,6 +567,11 @@ func (h *Handlers) Webhook(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "assinatura inválida")
 			return
 		}
+	} else if h.RequireSignature {
+		h.Log.Error("webhook: META_APP_SECRET ausente em modo live — evento recusado")
+		writeError(w, http.StatusServiceUnavailable,
+			"META_APP_SECRET não configurado: o webhook não aceita evento sem assinatura")
+		return
 	}
 
 	var ev WebhookEvent

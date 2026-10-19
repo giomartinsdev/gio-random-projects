@@ -13,25 +13,79 @@ dado de outra: o workspace vem do token de sessão em toda requisição.
 
 ## Rodar
 
+Stack inteira (Postgres + API + SPA), um comando:
+
 ```bash
 cp .env.example .env
 docker compose up -d --build
-curl localhost:8195/healthz        # {"ok":true}
+open http://localhost:8080          # SPA
+curl localhost:8080/healthz         # {"status":"ok",...}
 ```
 
-O schema é aplicado na subida (embutido no binário, idempotente). A conta nasce
-vazia — o primeiro passo real é o cadastro em `POST /api/v1/auth/signup`. Sem
-banco, o serviço não sobe: não existe modo "memória" que esconderia erro de SQL.
+O `web` (nginx) serve a SPA e faz proxy de `/api`, `/webhooks` e `/healthz`
+para o `api`: mesma origem, sem CORS e com um único endereço público — o mesmo
+que você cola no painel da Meta. O schema é aplicado na subida (embutido no
+binário, idempotente). A conta nasce vazia — o primeiro passo real é o cadastro
+em `POST /api/v1/auth/signup`. Sem banco, o serviço não sobe: não existe modo
+"memória" que esconderia erro de SQL.
 
-Sem Docker (com um Postgres já na mão):
+Desenvolvimento de UI (Vite com HMR, API fora do Docker):
 
 ```bash
 export DATABASE_URL='postgres://uhu:uhu@localhost:5433/uhumarketing?sslmode=disable'
-go run .
+ALLOW_DEV_ACTIONS=true go run .          # :8195
+cd ../uhumarketing-frontend && npm run dev   # :5180, proxy para a 8195
 ```
 
-O frontend (`../uhumarketing-frontend`) roda no host, na 5180, e fala só com
-esta API. Não existe mais modo demonstração.
+O Vite faz proxy de `/api` e `/webhooks`, então o frontend usa caminho relativo
+nos dois ambientes. Não existe mais modo demonstração.
+
+## Deploy
+
+O que muda fora do localhost, e por quê:
+
+1. **Um endereço público com HTTPS.** `PUBLIC_BASE_URL=https://uhu.seudominio.com`.
+   É esse valor que a tela mostra como *callback do webhook*. Sem ele a tela
+   não mostra callback em vez de oferecer `http://localhost` — um endereço que
+   a Meta não alcança e que faria você achar que configurou.
+2. **`META_APP_SECRET` obrigatório em live.** O webhook é público: sem
+   assinatura, qualquer um marcaria envio como lido ou forjaria opt-out. Com
+   `RequireSignature` ligado (live) e a chave ausente, o webhook **recusa** o
+   evento com 503 em vez de aceitar sem verificar. O boot avisa no log.
+3. **`CHANNEL_SECRET` obrigatório em live** (mínimo 16 caracteres). É a chave
+   AES-GCM do token de cada conta. Não a perca: sem ela, os canais precisam ser
+   reativados.
+4. **`ALLOW_DEV_ACTIONS=false`** (default do serviço e do compose). `/dev/reset`
+   apaga dados de verdade. Ligue só em ambiente de teste.
+5. **`CORS_ORIGINS` vazio** quando a SPA vem do mesmo nginx. Só preencha se o
+   frontend for publicado em outro domínio (aí `VITE_UHU_API_URL` também entra
+   no build).
+6. **Proxy TLS na frente do `web`.** A Meta exige HTTPS. Exponha apenas o
+   `web`; o `api` fica em loopback (e o Postgres, sem porta pública).
+
+Checklist de e2e depois do deploy:
+
+```bash
+# 1. o processo está em live e cada conta tem o próprio canal?
+curl -s https://uhu.seudominio.com/healthz | jq
+#    → { "status": "ok", "live": true, "channels": "per-workspace" }
+
+# 2. o caminho completo funciona? (cadastro → canal → template → audiência →
+#    campanha → envio de teste)
+./scripts/smoke.sh https://uhu.seudominio.com
+```
+
+O smoke cria uma conta descartável na instância e percorre as mesmas rotas que
+a tela usa. Em `live` ele **não** ativa canal (isso exige as credenciais do
+dono) e o envio só sai se a conta já tiver canal — o que é justamente o teste
+manual: entre na conta, ative o WhatsApp em Configurações, crie o template,
+cadastre seu número com opt-in e use **Enviar teste**.
+
+Depois, no painel da Meta (WhatsApp → Configuration → Webhook): cole o callback
+mostrado na tela, o mesmo `META_WEBHOOK_VERIFY_TOKEN` do servidor e assine o
+campo `messages`. Sem esse passo a mensagem chega, mas `entregue`/`lido` não
+voltam (o envio fica em `sent`).
+
 
 ## Modos de provedor
 
@@ -215,10 +269,17 @@ Handshake: `GET /webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=…&hub.c
 
 Eventos: `entry[0].changes[0].value.statuses[]` com `sent`, `delivered`, `read`,
 `failed`. Status fora de ordem não regride ("lido" antes de "entregue" continua
-"lido"); a resposta diz `applied: false`. Com `META_APP_SECRET` definido, a
-assinatura `X-Hub-Signature-256` é obrigatória (HMAC SHA256 do corpo cru) — sem
-ela, 401. Eventos são gravados em `webhook_events` antes de aplicar, então um
-payload novo da Meta não se perde no meio de um erro.
+"lido"); a resposta diz `applied: false`.
+
+Assinatura: em `META_MODE=live`, `X-Hub-Signature-256` é **obrigatória** — sem
+assinatura, 401; sem `META_APP_SECRET`, o webhook falha fechado com 503 (aceitar
+payload não verificado num endpoint público deixaria qualquer um marcar envio
+como lido ou forjar opt-out). Em dry-run a verificação só vale se o segredo
+estiver definido, o que mantém os testes locais simples.
+
+Eventos são gravados em `webhook_events` antes de aplicar, então um payload novo
+da Meta não se perde no meio de um erro. O callback a colar no painel da Meta
+aparece em Configurações → WhatsApp quando `PUBLIC_BASE_URL` está definido.
 
 ## Dev-only
 
@@ -229,8 +290,9 @@ Com `ALLOW_DEV_ACTIONS=true`:
 - `POST /dev/simulate-status` — injeta entrega/leitura sem credencial;
 - `POST /dev/worker-tick` — força um ciclo da fila.
 
-Em qualquer ambiente com dado real, `ALLOW_DEV_ACTIONS=false`. As rotas
-devolvem 404, não 403: não vale anunciar que existem.
+Em qualquer ambiente com dado real, `ALLOW_DEV_ACTIONS=false` — que é o
+default do serviço e do compose. As rotas devolvem 404, não 403: não vale
+anunciar que existem.
 
 ## Testes
 

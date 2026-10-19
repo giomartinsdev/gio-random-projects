@@ -29,6 +29,11 @@ type Service struct {
 	// Workspace e User vêm da sessão, nunca do corpo.
 	Workspace string
 	User      domain.User
+	// PublicBaseURL é a URL pela qual a Meta alcança o serviço. Vazia em
+	// localhost: a tela então não mostra callback, porque um webhook que a Meta
+	// não consegue chamar é pior do que nenhum — o operador colaria um endereço
+	// inalcançável no painel e acharia que configurou.
+	PublicBaseURL string
 }
 
 // provider resolve o provedor da conta da sessão. Sem canal ativado em live, o
@@ -578,7 +583,20 @@ type ProviderInfo struct {
 	VerifiedName string `json:"verifiedName,omitempty"`
 	Quality      string `json:"quality,omitempty"`
 	WABAID       string `json:"wabaId,omitempty"`
-	Note         string `json:"note"`
+	// WebhookURL é o callback que o operador cola no painel da Meta. Vazio
+	// quando o serviço não tem base pública: mostrar "http://localhost" seria
+	// mandar a Meta chamar a máquina de quem está olhando a tela.
+	WebhookURL string `json:"webhookUrl,omitempty"`
+	Note       string `json:"note"`
+}
+
+// webhookURL só existe quando há uma base pública configurada.
+func (s *Service) webhookURL() string {
+	base := strings.TrimRight(strings.TrimSpace(s.PublicBaseURL), "/")
+	if base == "" {
+		return ""
+	}
+	return base + "/webhooks/whatsapp"
 }
 
 func (s *Service) Bootstrap(ctx context.Context) (Bootstrap, error) {
@@ -629,18 +647,18 @@ func (s *Service) Bootstrap(ctx context.Context) (Bootstrap, error) {
 	}
 
 	return Bootstrap{
-		Workspace: ws,
-		User:      s.User,
-		Templates: templates,
-		Segments:  segments,
-		Campaigns: campaigns,
-		Sends:     sends,
-		Flows:     flows,
-		Contacts:  contacts,
-		Activity:  activity,
-		Series:    series,
-		Queue:     queue,
-		Provider: channelInfo,
+		Workspace:  ws,
+		User:       s.User,
+		Templates:  templates,
+		Segments:   segments,
+		Campaigns:  campaigns,
+		Sends:      sends,
+		Flows:      flows,
+		Contacts:   contacts,
+		Activity:   activity,
+		Series:     series,
+		Queue:      queue,
+		Provider:   channelInfo,
 		ServerTime: time.Now().UTC(),
 	}, nil
 }
@@ -702,12 +720,13 @@ func (s *Service) channelInfo(ctx context.Context) (ProviderInfo, error) {
 			note = "Conectado à Cloud API da Meta. Cada envio é uma mensagem real e cobrada."
 		}
 		return ProviderInfo{
-			Name:      s.Provider.Name(),
-			Mode:      providerMode(live),
-			Live:      live,
-			Activated: live,
-			HasNumber: hasNumber,
-			Note:      note,
+			Name:       s.Provider.Name(),
+			Mode:       providerMode(live),
+			Live:       live,
+			Activated:  live,
+			HasNumber:  hasNumber,
+			WebhookURL: s.webhookURL(),
+			Note:       note,
 		}, nil
 	}
 
@@ -716,15 +735,17 @@ func (s *Service) channelInfo(ctx context.Context) (ProviderInfo, error) {
 		if !s.Channels.Live() {
 			return ProviderInfo{
 				Name: "dry-run", Mode: "dry-run", Live: false, Activated: false,
-				HasNumber: hasNumber,
+				HasNumber:  hasNumber,
+				WebhookURL: s.webhookURL(),
 				Note: "Provedor dry-run: as mensagens são simuladas e não chegam a nenhum WhatsApp. " +
 					"Ative o WhatsApp para conectar o número da empresa.",
 			}, nil
 		}
 		return ProviderInfo{
 			Name: "none", Mode: "inactive", Live: true, Activated: false,
-			HasNumber: hasNumber,
-			Note:      channelpkg.ErrNotActivated.Error(),
+			HasNumber:  hasNumber,
+			WebhookURL: s.webhookURL(),
+			Note:       channelpkg.ErrNotActivated.Error(),
 		}, nil
 	}
 	if err != nil {
@@ -742,6 +763,7 @@ func (s *Service) channelInfo(ctx context.Context) (ProviderInfo, error) {
 		VerifiedName: c.VerifiedName,
 		Quality:      c.Quality,
 		WABAID:       c.WABAID,
+		WebhookURL:   s.webhookURL(),
 	}
 	if live {
 		info.Note = "Conectado à Cloud API da Meta com o número desta conta. Cada envio é uma mensagem real e cobrada."

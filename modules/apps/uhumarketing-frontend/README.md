@@ -14,7 +14,7 @@ formulário fechado?* A resposta é um canvas livre, no estilo n8n.
 
 ```bash
 npm install
-npm run dev     # http://localhost:5180
+npm run dev     # http://localhost:5180 (proxy /api -> :8195)
 npm run build   # tsc -b + vite build
 ```
 
@@ -24,11 +24,26 @@ A API precisa estar no ar (ver `../uhumarketing-api/README.md`):
 cd ../uhumarketing-api && docker compose up -d --build
 ```
 
-Variável (opcional, com este default):
+Em dev o Vite faz proxy de `/api`, `/webhooks` e `/healthz` para a 8195, então o
+cliente HTTP usa caminho relativo. Em deploy a SPA é servida pelo nginx do stack
+(`../uhumarketing-api/compose.yaml`), que faz o mesmo proxy — nos dois casos,
+mesma origem e nenhum CORS.
+
+Variável (opcional):
 
 | Variável | Default | Para quê |
 | --- | --- | --- |
-| `VITE_UHU_API_URL` | `http://localhost:8195` | Base da API |
+| `VITE_UHU_API_URL` | vazio (mesma origem) | Base da API, só quando a SPA é publicada em outro domínio. É embutida no build. |
+
+Build da imagem:
+
+```bash
+docker build -t uhumarketing-web .
+```
+
+A imagem usa `nginx.conf` (envsubst) e aponta para `API_UPSTREAM` em runtime,
+default `http://api:8195`. Assets com hash viram cache imutável; `index.html`
+sai com `no-store`.
 
 `#/` é a landing pública; `#/cadastro` cria conta + workspace vazio; `#/login`
 entra; `#/app/*` é o produto, atrás da sessão.
@@ -123,6 +138,6 @@ importa: se importasse, a regra de contrato vazaria para a apresentação.
   real de pedido.
 - Concorrência dentro da conta é last-write-wins. Dois operadores no mesmo
   canvas ainda não é um cenário suportado.
-- Publicação (ingress/CI/bucket/hub) não existe: é `npm run dev` local. O
-  backend também não entra no `compose.yaml` compartilhado — sobe pelo compose
-  próprio dentro do app.
+- Publicação (ingress/CI/bucket/hub) não existe: o app sobe pelo compose próprio,
+  com o nginx servindo a SPA e a API atrás dele. Não entra no `compose.yaml`
+  compartilhado do `modules/apps`.

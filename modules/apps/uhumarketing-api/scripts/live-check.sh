@@ -51,14 +51,15 @@ fi
 if [[ -n "${META_APP_SECRET:-}" ]]; then
   good "META_APP_SECRET definido (webhook assinado)"
 else
-  say "  · META_APP_SECRET ausente: o webhook aceita payload sem assinatura (ok só local)"
+  bad "META_APP_SECRET ausente — em live o webhook recusa evento (503) até configurar"
+  say "    App Settings → Basic → App Secret. Sem ele, entregue/lido não voltam."
 fi
 
 if [[ -n "${PUBLIC_BASE_URL:-}" && "${PUBLIC_BASE_URL}" != http://localhost* ]]; then
   good "PUBLIC_BASE_URL público: ${PUBLIC_BASE_URL}"
 else
-  say "  · PUBLIC_BASE_URL não público: sem webhook, entregue/lido não voltam sozinhos"
-  say "    use o botão 'Consultar status na Meta' para o template"
+  bad "PUBLIC_BASE_URL ausente ou local — a Meta não alcança localhost"
+  say "    use o endereço HTTPS do deploy; a tela mostra o callback a colar na Meta"
 fi
 
 say ""

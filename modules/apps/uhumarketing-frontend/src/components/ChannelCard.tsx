@@ -166,6 +166,31 @@ export function ChannelCard() {
 
         <p className="text-[11px] leading-snug text-fg-3">{provider?.note}</p>
 
+        {provider?.webhookUrl && (
+          <div className="flex flex-col gap-1 rounded-sm border border-line bg-surface px-3 py-2">
+            <span className="caps text-[10px] text-fg-3">Callback do webhook</span>
+            <div className="flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg-2">
+                {provider.webhookUrl}
+              </code>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(provider.webhookUrl!);
+                  setNote({ tone: "ok", text: "URL copiada." });
+                }}
+              >
+                Copiar
+              </Button>
+            </div>
+            <span className="text-[11px] leading-snug text-fg-3">
+              Cole em Meta for Developers → WhatsApp → Configuration → Callback URL, usando o mesmo
+              verify token configurado no servidor.
+            </span>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           {activated && (
             <Button

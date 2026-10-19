@@ -29,7 +29,7 @@ export function DataSourceCard() {
       <div className="flex flex-col gap-2 rounded-sm border border-line bg-bg px-3.5 py-3">
         <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-fg-3">
           <Database size={12} />
-          <span className="truncate">{api.base}</span>
+          <span className="truncate">{api.base || window.location.origin}</span>
           <span className="text-line">·</span>
           <span
             className={cn(
@@ -88,7 +88,9 @@ export function DataSourceCard() {
         >
           Recarregar do banco
         </Button>
-        <span className="font-mono text-[11px] text-fg-3">VITE_UHU_API_URL</span>
+        <span className="font-mono text-[11px] text-fg-3">
+          {api.base ? "VITE_UHU_API_URL" : "mesma origem (proxy /api)"}
+        </span>
       </div>
     </Card>
   );

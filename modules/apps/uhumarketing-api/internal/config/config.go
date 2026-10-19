@@ -32,17 +32,21 @@ type Config struct {
 
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:        env("HTTP_ADDR", ":8195"),
-		DatabaseURL:     os.Getenv("DATABASE_URL"),
-		WebhookVerify:   env("META_WEBHOOK_VERIFY_TOKEN", "uhu-dev-verify"),
-		AppSecret:       os.Getenv("META_APP_SECRET"),
-		MetaMode:        env("META_MODE", "dry-run"),
-		MetaBaseURL:     env("META_GRAPH_URL", "https://graph.facebook.com"),
-		MetaVersion:     env("META_GRAPH_VERSION", "v21.0"),
-		ChannelSecret:   os.Getenv("CHANNEL_SECRET"),
-		PublicBaseURL:   env("PUBLIC_BASE_URL", "http://localhost:8195"),
-		WorkerInterval:  seconds("WORKER_INTERVAL_SECONDS", 2),
-		AllowDevActions: boolEnv("ALLOW_DEV_ACTIONS", true),
+		HTTPAddr:      env("HTTP_ADDR", ":8195"),
+		DatabaseURL:   os.Getenv("DATABASE_URL"),
+		WebhookVerify: env("META_WEBHOOK_VERIFY_TOKEN", "uhu-dev-verify"),
+		AppSecret:     os.Getenv("META_APP_SECRET"),
+		MetaMode:      env("META_MODE", "dry-run"),
+		MetaBaseURL:   env("META_GRAPH_URL", "https://graph.facebook.com"),
+		MetaVersion:   env("META_GRAPH_VERSION", "v21.0"),
+		ChannelSecret: os.Getenv("CHANNEL_SECRET"),
+		// Vazio por padrão: sem URL pública a tela não oferece callback (a Meta
+		// não alcança localhost). Em deploy, PUBLIC_BASE_URL é o endereço real.
+		PublicBaseURL:  os.Getenv("PUBLIC_BASE_URL"),
+		WorkerInterval: seconds("WORKER_INTERVAL_SECONDS", 2),
+		// Falso por padrão: /dev/reset apaga dados de verdade. Quem quer as
+		// rotas em localhost liga explicitamente no .env.
+		AllowDevActions: boolEnv("ALLOW_DEV_ACTIONS", false),
 	}
 
 	if strings.EqualFold(cfg.MetaMode, "live") && len(cfg.ChannelSecret) < 16 {

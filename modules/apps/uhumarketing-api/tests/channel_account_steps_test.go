@@ -242,9 +242,9 @@ type httpapiProviderInfo struct {
 	Activated    bool   `json:"activated"`
 	DisplayPhone string `json:"displayPhone"`
 	VerifiedName string `json:"verifiedName"`
+	WebhookURL   string `json:"webhookUrl"`
 	Note         string `json:"note"`
 }
-
 
 // storeChannel monta a linha do canal sem passar por HTTP, para o cenário de
 // isolamento.

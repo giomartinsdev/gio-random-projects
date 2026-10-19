@@ -743,7 +743,7 @@ function Booting() {
     <div className="flex h-screen flex-col items-center justify-center gap-3 bg-bg text-fg-2">
       <div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-accent-light" />
       <span className="text-[14px]">Conectando ao backend…</span>
-      <span className="font-mono text-[11px] text-fg-3">{api.base}</span>
+      <span className="font-mono text-[11px] text-fg-3">{api.base || window.location.origin}</span>
     </div>
   );
 }
