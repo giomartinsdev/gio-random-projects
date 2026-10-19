@@ -8,6 +8,7 @@ import {
   Timer,
 } from "lucide-react";
 import { useStore, useLookup } from "@/lib/store";
+import { useDataSource } from "@/lib/dataSource";
 import { fmtDateTime, money, num, pct, ago } from "@/lib/format";
 import type { SendStatus } from "@/lib/types";
 import { SEND_STATUS_LABEL } from "@/lib/types";
@@ -25,6 +26,8 @@ const STATUSES: (SendStatus | "all")[] = ["all", "queued", "sent", "delivered", 
 
 export function SendsPage() {
   const store = useStore();
+  const [source] = useDataSource();
+  const real = source === "backend";
   const lookup = useLookup();
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -104,7 +107,7 @@ export function SendsPage() {
           />
 
           <div className="flex flex-wrap gap-4">
-            <StatCard label="Envios no log" value={num(stats.total)} hint="amostra da POC" icon={<SendIcon size={16} />} />
+            <StatCard label="Envios no log" value={num(stats.total)} hint={real ? "no banco" : "amostra da POC"} icon={<SendIcon size={16} />} />
             <StatCard label="Na fila" value={num(stats.queued)} hint="aguardando janela" icon={<Timer size={16} />} />
             <StatCard label="Respondidas" value={num(stats.replied)} hint={`${pct(stats.total ? (stats.replied / stats.total) * 100 : 0)} do total`} icon={<MessageCircle size={16} />} />
             <StatCard label="Falhas" value={num(stats.failed)} hint={`custo ${money(stats.cost)}`} icon={<CircleAlert size={16} />} />
@@ -134,7 +137,11 @@ export function SendsPage() {
               ))}
             </Select>
             <div className="flex-1" />
-            <Note className="hidden lg:block">Log mock: cada linha é um registro do store, não um webhook da Meta.</Note>
+            <Note className="hidden lg:block">
+              {real
+                ? "Cada linha vem de sends no Postgres; o status é o último webhook da Meta."
+                : "Log mock: cada linha é um registro do store, não um webhook da Meta."}
+            </Note>
           </div>
 
           <Table>

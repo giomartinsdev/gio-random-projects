@@ -1,13 +1,18 @@
 # uhumarketing (frontend)
 
 POC de produto: uma plataforma de marketing para pequenos negócios, com foco em
-WhatsApp. **Só frontend** — não há API, banco, bucket ou envio real. Todo o estado
-vive no `localStorage` do navegador, e os dados iniciais são fictícios (Café
-Aurora, uma torrefação de café especial).
+WhatsApp. A tela roda em **dois modos**, escolhidos em Configurações → Origem dos
+dados:
 
-A pergunta que a POC responde: *como um operador de marketing monta uma campanha
-do zero, com regras de descoberta e outbound, sem depender de um formulário
-fechado?* A resposta é um canvas livre, no estilo n8n.
+- **Demonstração** — tudo em `localStorage`, dados fictícios (Café Aurora), nada
+  sai do navegador. É o modo que abre o link sem backend no ar.
+- **Backend real** — contra o [`uhumarketing-api`](../uhumarketing-api): Postgres,
+  fila de disparo, webhook da Meta e provedor dry-run (ou live). O estado
+  persiste, a fila anda e o opt-out é real.
+
+A pergunta que a POC responde continua a mesma: *como um operador de marketing
+monta uma campanha do zero, com regras de descoberta e outbound, sem depender de
+um formulário fechado?* A resposta é um canvas livre, no estilo n8n.
 
 ## Rodar
 
@@ -16,6 +21,24 @@ npm install
 npm run dev     # http://localhost:5180
 npm run build   # tsc -b + vite build
 ```
+
+Para o modo Backend, suba a API antes (ver `../uhumarketing-api/README.md`):
+
+```bash
+cd ../uhumarketing-api && docker compose up -d --build
+```
+
+Variáveis (opcionais, com estes defaults):
+
+| Variável | Default | Para quê |
+| --- | --- | --- |
+| `VITE_UHU_API_URL` | `http://localhost:8195` | Base da API |
+| `VITE_UHU_API_KEY` | `dev-key` | Chave enviada em `X-API-Key` |
+| `VITE_UHU_DATA_SOURCE` | `demo` | Modo inicial na primeira visita (`demo`/`backend`) |
+
+A escolha de modo fica no `localStorage`, não no build: a mesma build roda nos
+dois. Trocar recarrega a página de propósito — evita que estado em memória de um
+provider vaze para o outro.
 
 A conta de demonstração é preenchida na tela de login — qualquer e-mail e senha
 com 4+ caracteres entram. `#/` é a landing pública; `#/app/*` é o produto.
@@ -61,7 +84,11 @@ src/
   lib/
     types.ts           modelo de domínio (fonte da verdade)
     mock.ts            seed: Café Aurora, templates, audiências, campanhas, envios, fluxos
-    store.tsx          "API" mock: CRUD, KPIs, persistência em localStorage
+    store.tsx          provider mock: CRUD, KPIs, persistência em localStorage
+    storeRemote.tsx    provider do backend: bootstrap, PUT /state, polling
+    storeContext.tsx   o contexto compartilhado pelos dois providers
+    api.ts             cliente HTTP do uhumarketing-api
+    dataSource.ts      escolha Demo/Backend (localStorage + env)
     session.tsx        login/cadastro mock
     nodeCatalog.ts     19 tipos de nó (grupo, cor, resumo, config default)
     simulate.ts        simulação do grafo
@@ -79,12 +106,35 @@ O design system veio do `prospecta-frontend`: tema escuro (`#0B0B0D`/`#141416`/
 `#1C1C20`), azul `#2563EB` só para ação, Inter + JetBrains Mono, `.caps`, dot-grid,
 e a landing em tema claro (`lp-*`).
 
+## Os dois modos, na prática
+
+O ponto de troca é `src/lib/storeContext.tsx`: as telas falam com `useStore()`, e
+nunca com HTTP. Há dois providers para o mesmo contexto:
+
+- `src/lib/store.tsx` — mock, síncrono, `localStorage`.
+- `src/lib/storeRemote.tsx` — backend. Mantém a interface **síncrona** (a UI é
+  otimista: o clique aplica na hora) e persiste o documento editorial com um
+  `PUT /state` debounced de 450 ms. O que o servidor é dono — status de template,
+  fila, métricas de campanha — volta pelo polling de 5 s e nunca é sobrescrito
+  pelo navegador.
+
+Não são otimistas, de propósito: **disparar campanha**, **enviar teste** e
+**submeter template**. Custam dinheiro e/ou reputação do número; essas ações
+esperam a resposta e mostram o erro real (`422` com `field`).
+
+`src/lib/api.ts` é o cliente HTTP. Nenhuma tela o importa — se importasse, o modo
+Demonstração morreria na primeira divergência de contrato.
+
 ## Limites conhecidos (de propósito)
 
-- Nada é enviado. O log de envios é uma amostra de 12 linhas; o dashboard usa o
-  acumulado das campanhas para os volumes.
-- A Meta é simulada: status de template, qualidade do número e custo por conversa
-  são valores de referência, não integrações.
-- O estado é local ao navegador: trocar de máquina começa do zero, e "Restaurar
-  dados de exemplo" em Configurações volta ao seed.
-- Publicação (ingress/CI/bucket) não existe ainda: é `npm run dev` local.
+- No modo Demonstração, nada é enviado e a Meta é simulada: status, qualidade e
+  custo são valores de referência.
+- No modo Backend com `META_MODE=dry-run`, a fila processa e grava ids externos
+  falsos, mas nada sai para a Meta. Só `live` manda de verdade.
+- `converted` e `revenue` ficam em zero: a POC não inventa conversão sem sinal
+  real de pedido.
+- Concorrência é um workspace único, last-write-wins. Dois operadores no mesmo
+  canvas ainda não é um cenário suportado.
+- Publicação (ingress/CI/bucket/hub) não existe: é `npm run dev` local. O
+  backend também não entra no `compose.yaml` compartilhado — sobe pelo compose
+  próprio dentro do app.

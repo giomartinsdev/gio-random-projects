@@ -20,10 +20,13 @@ import { Card, CardHead } from "@/components/ui/Card";
 import { StatusBadge, Tag } from "@/components/ui/Badge";
 import { Topbar, PageBody, PageHeader, Note } from "@/components/Topbar";
 import { Modal } from "@/components/ui/Drawer";
+import { DataSourceCard } from "@/components/DataSourceCard";
+import { useDataSource } from "@/lib/dataSource";
 
 export function SettingsPage() {
   const store = useStore();
   const { user } = useSession();
+  const [source] = useDataSource();
   const [confirmReset, setConfirmReset] = useState(false);
   const [tested, setTested] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -42,6 +45,8 @@ export function SettingsPage() {
           title="O negócio por trás dos envios"
           description="Identidade, número, políticas de opt-in e conexão com a Meta. Na integração real, é esta tela que guarda o token da WABA."
         />
+
+        <DataSourceCard />
 
         <Card className="flex flex-col gap-4 p-5">
           <CardHead
@@ -207,7 +212,11 @@ export function SettingsPage() {
         <Card className="flex flex-col gap-3 border-danger/25 p-5">
           <CardHead
             title="Zona de risco"
-            subtitle="A POC guarda tudo no navegador. Restaurar apaga o que você criou aqui."
+            subtitle={
+              source === "backend"
+                ? "Restaurar reaplica o seed no banco: apaga o que foi criado, inclusive envios e histórico."
+                : "A POC guarda tudo no navegador. Restaurar apaga o que você criou aqui."
+            }
             right={<CircleAlert size={16} className="text-danger" />}
           />
           <div className="flex flex-wrap gap-2">
@@ -219,6 +228,12 @@ export function SettingsPage() {
               variant="secondary"
               icon={<RotateCcw size={14} />}
               onClick={() => {
+                if (source === "backend") {
+                  // No modo real o estado vive no Postgres; exportar o
+                  // localStorage exportaria outro produto.
+                  window.open(`${import.meta.env.VITE_UHU_API_URL ?? "http://localhost:8195"}/api/v1/bootstrap`, "_blank");
+                  return;
+                }
                 const raw = localStorage.getItem("uhumarketing:state:v1");
                 if (!raw) {
                   setConfirmReset(true);
@@ -234,7 +249,7 @@ export function SettingsPage() {
                 URL.revokeObjectURL(url);
               }}
             >
-              Exportar estado atual
+              {source === "backend" ? "Abrir estado da API" : "Exportar estado atual"}
             </Button>
           </div>
         </Card>

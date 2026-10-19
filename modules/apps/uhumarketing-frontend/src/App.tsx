@@ -1,7 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { SessionProvider, useSession } from "@/lib/session";
 import { StoreProvider } from "@/lib/store";
+import { BackendStoreProvider } from "@/lib/storeRemote";
+import { useDataSource } from "@/lib/dataSource";
 import { navigate, navigatePublic, useHashRoute, type AppRoute } from "@/lib/useHashRoute";
 import { Sidebar } from "@/components/Sidebar";
 import { LandingPage } from "@/pages/LandingPage";
@@ -77,12 +79,24 @@ function Screen({ route, param }: { route: AppRoute; param?: string }) {
   }
 }
 
+// A escolha Demo/Backend é de tempo de execução, não de build: a mesma build
+// roda com localStorage ou contra o uhumarketing-api. Por isso os dois providers
+// convivem aqui e só um é montado — trocar no seletor remonta a árvore de dados.
+function DataProvider({ children }: { children: ReactNode }) {
+  const [source] = useDataSource();
+  return source === "backend" ? (
+    <BackendStoreProvider>{children}</BackendStoreProvider>
+  ) : (
+    <StoreProvider>{children}</StoreProvider>
+  );
+}
+
 export default function App() {
   return (
     <SessionProvider>
-      <StoreProvider>
+      <DataProvider>
         <Shell />
-      </StoreProvider>
+      </DataProvider>
     </SessionProvider>
   );
 }

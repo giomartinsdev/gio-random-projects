@@ -1,0 +1,123 @@
+// uhumarketing-api é o backend do uhumarketing: templates da Meta, audiências
+// com opt-in, campanhas, a fila de disparo e o webhook de status.
+//
+// Modo de operação:
+//
+//   - META_MODE=dry-run (default) — nada sai para a Meta. A fila processa,
+//     grava ids externos falsos e o produto inteiro funciona. É o modo para
+//     desenvolver e testar sem conta de WhatsApp.
+//   - META_MODE=live — Cloud API de verdade. Exige META_WABA_ID,
+//     META_PHONE_NUMBER_ID e META_TOKEN; o boot falha se faltar algum.
+//
+// O serviço é dono das próprias tabelas (store/schema.sql) e roda um worker
+// in-process: um processo só, como o volume da POC pede. O claim da fila é
+// `FOR UPDATE SKIP LOCKED`, então subir uma segunda instância não duplica
+// mensagem.
+package main
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/config"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/dispatch"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/httpapi"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/meta"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/seed"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/store"
+)
+
+const shutdownTimeout = 10 * time.Second
+
+func main() {
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	cfg, err := config.Load()
+	if err != nil {
+		log.Error("config inválida", "error", err)
+		os.Exit(1)
+	}
+
+	provider, err := meta.Resolve(cfg.MetaMode, cfg.MetaBaseURL, cfg.MetaVersion,
+		cfg.MetaWABAID, cfg.MetaPhoneID, cfg.MetaToken)
+	if err != nil {
+		log.Error("provedor inválido", "error", err)
+		os.Exit(1)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Error("postgres: conexão", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		log.Error("postgres: ping", "error", err)
+		os.Exit(1)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		log.Error("postgres: schema", "error", err)
+		os.Exit(1)
+	}
+
+	st := store.New(pool)
+	if _, err := seed.Seed(ctx, pool); err != nil {
+		log.Error("seed", "error", err)
+		os.Exit(1)
+	}
+
+	svc := &httpapi.Service{Store: st, Provider: provider, Log: log, Workspace: cfg.WorkspaceID}
+	worker := &dispatch.Worker{Store: st, Provider: provider, Log: log, Interval: cfg.WorkerInterval}
+
+	handlers := &httpapi.Handlers{
+		Service:            svc,
+		Log:                log,
+		WebhookVerifyToken: cfg.WebhookVerify,
+		AppSecret:          cfg.AppSecret,
+		AllowDevActions:    cfg.AllowDevActions,
+		Tick:               worker.Tick,
+	}
+
+	go worker.Run(ctx)
+
+	router := httpapi.NewRouter(handlers, httpapi.APIKeys(cfg.APIKeys), cfg.CORSOrigins, log)
+	server := &http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	log.Info("uhumarketing-api no ar",
+		"addr", cfg.HTTPAddr,
+		"provider", provider.Name(),
+		"workspace", cfg.WorkspaceID,
+		"worker", cfg.WorkerInterval.String(),
+	)
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("http", "error", err)
+			stop()
+		}
+	}()
+
+	<-ctx.Done()
+	log.Info("encerrando")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Error("shutdown", "error", err)
+	}
+}

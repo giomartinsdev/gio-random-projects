@@ -6,9 +6,11 @@ import {
   MessageCircle,
   Plus,
   Search,
+  Send,
   Sparkles,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { useDataSource } from "@/lib/dataSource";
 import { compact, fmtDateTime, pct, ago } from "@/lib/format";
 import type { Template, TemplateCategory, TemplateStatus } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
@@ -42,6 +44,7 @@ const CATEGORY_LABEL: Record<TemplateCategory, string> = {
 
 export function TemplatesPage() {
   const store = useStore();
+  const [source] = useDataSource();
   const { templates } = store;
   const [selected, setSelected] = useState<string | null>(null);
   const [status, setStatus] = useState<TemplateStatus | "all">("all");
@@ -123,7 +126,9 @@ export function TemplatesPage() {
             </Select>
             <div className="flex-1" />
             <Note className="hidden lg:block">
-              A aprovação é da Meta. A POC simula o ciclo — o status só muda aqui dentro.
+              {source === "backend"
+                ? "O status vem do provedor: dry-run aprova na hora, live espera a revisão da Meta."
+                : "A aprovação é da Meta. A POC simula o ciclo — o status só muda aqui dentro."}
             </Note>
           </div>
 
@@ -242,6 +247,9 @@ function QualityChip({ quality }: { quality: number }) {
 }
 
 function TemplateDetail({ template }: { template: Template }) {
+  const store = useStore();
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const readRate = template.metrics.delivered ? (template.metrics.read / template.metrics.delivered) * 100 : 0;
   const replyRate = template.metrics.read ? (template.metrics.replied / template.metrics.read) * 100 : 0;
   const clickRate = template.metrics.delivered ? (template.metrics.clicked / template.metrics.delivered) * 100 : 0;
@@ -254,6 +262,44 @@ function TemplateDetail({ template }: { template: Template }) {
         <Tag>{template.language}</Tag>
         <Tag>{template.metaId}</Tag>
       </div>
+
+      {store.submitTemplate && (template.status === "draft" || template.status === "rejected") && (
+        <div className="flex flex-col gap-2 rounded-sm border border-line bg-bg p-3">
+          <p className="text-[11px] leading-snug text-fg-3">
+            {template.status === "draft"
+              ? "Este template ainda é rascunho: a Meta não o conhece. Submeter é o que o coloca na revisão."
+              : "A Meta rejeitou este template. Ajuste o conteúdo e submeta de novo."}
+          </p>
+          <Button
+            size="sm"
+            className="w-fit"
+            disabled={busy}
+            icon={<Send size={13} />}
+            onClick={async () => {
+              setBusy(true);
+              setFeedback(null);
+              try {
+                const t = await store.submitTemplate!(template.id);
+                setFeedback({
+                  tone: "ok",
+                  text: t.status === "approved" ? "Aprovado pelo provedor (dry-run)." : "Enviado: em análise na Meta.",
+                });
+              } catch (err) {
+                setFeedback({ tone: "err", text: err instanceof Error ? err.message : "Falha ao submeter" });
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Enviar para a Meta
+          </Button>
+          {feedback && (
+            <span className={cn("text-[11px]", feedback.tone === "ok" ? "text-success" : "text-danger")}>
+              {feedback.text}
+            </span>
+          )}
+        </div>
+      )}
 
       {template.rejectionReason && (
         <div className="flex gap-2.5 rounded-sm border border-danger/30 bg-danger-soft p-3">

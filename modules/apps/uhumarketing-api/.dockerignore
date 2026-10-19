@@ -1,0 +1,10 @@
+# Nada que o build da imagem não precise. Sem isto, `COPY . .` carregaria
+# segredos locais (.env), artefatos e o cache de teste para dentro do contexto.
+.env
+.env.*
+!.env.example
+*.md
+tests/
+.git
+.gitignore
+compose.yaml

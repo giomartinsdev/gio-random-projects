@@ -1,0 +1,60 @@
+# Stack local do uhumarketing: Postgres + API.
+#
+# Fica DENTRO do app de propósito. O uhumarketing ainda não entra no stack
+# compartilhado (modules/apps/compose.yaml) nem no ingress: é uma POC que sobe
+# com um comando na máquina de quem está desenvolvendo. Quando virar produto,
+# isto se muda para lá — não antes, para não acoplar um app em experimento ao
+# Postgres/RabbitMQ de todo mundo.
+#
+#   docker compose up -d --build
+#   curl localhost:8195/healthz
+#
+# O frontend roda no host (npm run dev), fora do Docker: o ciclo de edição de
+# UI não ganha nada com rebuild de container.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-uhu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-uhu}
+      POSTGRES_DB: ${POSTGRES_DB:-uhumarketing}
+    ports:
+      # 5433 no host para não brigar com um Postgres local na 5432.
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - uhumarketing-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-uhu} -d ${POSTGRES_DB:-uhumarketing}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8195}:8195"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-uhu}:${POSTGRES_PASSWORD:-uhu}@postgres:5432/${POSTGRES_DB:-uhumarketing}?sslmode=disable
+      HTTP_ADDR: :8195
+      # Nunca use a chave de exemplo fora da sua máquina.
+      UHU_API_KEYS: ${UHU_API_KEYS:-dev-key:local}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5180,http://127.0.0.1:5180}
+      # Nada sai para a Meta por padrão. Ver README para o modo live.
+      META_MODE: ${META_MODE:-dry-run}
+      META_WABA_ID: ${META_WABA_ID:-}
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-}
+      META_TOKEN: ${META_TOKEN:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-uhu-dev-verify}
+      WORKER_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-2}
+      # /dev/reset, /dev/simulate-status e /dev/worker-tick só existem com isto.
+      ALLOW_DEV_ACTIONS: ${ALLOW_DEV_ACTIONS:-true}
+
+volumes:
+  uhumarketing-postgres:

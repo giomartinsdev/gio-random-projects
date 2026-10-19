@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ACTIVITY,
   CAMPAIGNS,
@@ -24,6 +24,7 @@ import type {
   Workspace,
 } from "./types";
 import { uid } from "./format";
+import { StoreContext } from "./storeContext";
 
 // Estado da POC. Não há backend: este provider é a "API" inteira. Ele carrega
 // o mock e persiste o que o usuário cria/edita em localStorage, para o reload
@@ -194,9 +195,30 @@ export interface Store extends State {
   // util
   logActivity: (e: Omit<ActivityEvent, "id" | "at">) => void;
   reset: () => void;
+  // Opcional: só o provider do backend sabe enfileirar de verdade. A tela usa
+  // a presença desta função para trocar "Ativar" por "Disparar".
+  launchCampaign?: (id: string) => Promise<LaunchResult>;
+  submitTemplate?: (id: string) => Promise<Template>;
+  /**
+   * Série diária REAL, quando existe. O mock devolve uma curva decorativa
+   * (seriesFor) porque não tem histórico; o backend agrega `sends` por dia.
+   * A presença desta função também sinaliza "os números são reais", e o
+   * dashboard para de mostrar variações inventadas.
+   */
+  series?: (days: number) => MetricPoint[];
 }
 
-const StoreContext = createContext<Store | null>(null);
+/** Resultado de um disparo real. Existe só no modo Backend. */
+export interface LaunchResult {
+  queued: number;
+  skipped: number;
+  duplicate: number;
+}
+
+// Reexportado do módulo de contexto: as telas continuam importando de
+// "@/lib/store", e o provider do backend publica no MESMO contexto sem
+// importar este arquivo.
+export { useStore, useLookup } from "./storeContext";
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<State>(load);
@@ -432,24 +454,4 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
-}
-
-export function useStore(): Store {
-  const ctx = useContext(StoreContext);
-  if (!ctx) throw new Error("useStore precisa estar dentro de <StoreProvider>");
-  return ctx;
-}
-
-/** Atalhos de leitura: id → objeto. */
-export function useLookup() {
-  const { templates, segments, campaigns, flows } = useStore();
-  return useMemo(
-    () => ({
-      template: (id?: string) => templates.find((t) => t.id === id),
-      segment: (id?: string) => segments.find((s) => s.id === id),
-      campaign: (id?: string) => campaigns.find((c) => c.id === id),
-      flow: (id?: string) => flows.find((f) => f.id === id),
-    }),
-    [templates, segments, campaigns, flows],
-  );
 }

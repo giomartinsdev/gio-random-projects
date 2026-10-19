@@ -60,14 +60,20 @@ only ever fit one.
 - **`hub-frontend/`** — o hub: chrome em volta das SPAs acima (sidebar +
   um renderer que as iframeia) mais atalhos de nova aba para os painéis
   protegidos por Access. Também é uma SPA estática em bucket.
-- **`uhumarketing-frontend/`** — POC de produto (só frontend, sem
-  backend, sem bucket, sem CI): uma plataforma de marketing para
-  pequenos negócios, com templates Meta, audiências, envios e um editor
-  de campanha em canvas livre no estilo n8n (regras de descobrimento +
-  outbound). Todo o estado é mock, persistido em `localStorage`. Roda só
-  local com `npm run dev` na porta 5180 — de propósito, ainda não entra
-  no `ALLOWED_APPS`, no ingress nem no hub. Ver
+- **`uhumarketing-frontend/`** — POC de produto: uma plataforma de
+  marketing para pequenos negócios, com templates Meta, audiências,
+  envios e um editor de campanha em canvas livre no estilo n8n (regras
+  de descobrimento + outbound). Duas origens de dados, escolhidas em
+  Configurações: mock em `localStorage` (abre sem backend) ou o
+  `uhumarketing-api` (Postgres, fila, webhook). Roda só local com
+  `npm run dev` na porta 5180 — de propósito, ainda não entra no
+  `ALLOWED_APPS`, no ingress nem no hub. Ver
   `uhumarketing-frontend/README.md`.
+- **`uhumarketing-api/`** — o backend da POC acima: Go + Postgres, um
+  processo com worker in-process, fila com `SKIP LOCKED`, webhook da Meta
+  e provedor `dry-run`/`live`. Fora do `compose.yaml` compartilhado e do
+  CI: sobe pelo próprio `compose.yaml` dentro do app, porque ainda é
+  experimento e não produto. Ver `uhumarketing-api/README.md`.
 
 `domain-api` and `domain-worker` are deliberately independent Go
 modules (each with its own `go.mod`) even though they agree on the

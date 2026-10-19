@@ -51,7 +51,13 @@ export function DashboardPage() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
   const kpis = useMemo(() => kpisFrom(store.campaigns, days), [store.campaigns, days]);
-  const series = useMemo(() => seriesFor(store.campaigns, days), [store.campaigns, days]);
+  // Quando o backend fornece a série, ela é a verdade. O mock mantém a curva
+  // decorativa porque não tem histórico nenhum para agregar.
+  const series = useMemo(
+    () => (store.series ? store.series(days) : seriesFor(store.campaigns, days)),
+    [store.series, store.campaigns, days],
+  );
+  const real = Boolean(store.series);
 
   const running = store.campaigns.filter((c) => c.status === "running");
   const scheduled = store.campaigns.filter((c) => c.status === "scheduled");
@@ -97,37 +103,37 @@ export function DashboardPage() {
         <div className="flex flex-wrap gap-4">
           <StatCard
             label="Mensagens enviadas"
+            trend={real ? null : 12.4}
             value={num(kpis.sent)}
             hint={`${pct(kpis.deliveryRate)} entregues`}
-            trend={12.4}
             icon={<SendIcon size={16} />}
           />
           <StatCard
             label="Taxa de leitura"
+            trend={real ? null : 3.1}
             value={pct(kpis.readRate)}
             hint={`${num(kpis.read)} lidas`}
-            trend={3.1}
             icon={<Eye size={16} />}
           />
           <StatCard
             label="Respostas"
+            trend={real ? null : -2.2}
             value={num(kpis.replied)}
             hint={`${pct(kpis.replyRate)} de quem leu`}
-            trend={-2.2}
             icon={<MessageCircle size={16} />}
           />
           <StatCard
             label="Conversões"
+            trend={real ? null : 8.6}
             value={num(kpis.converted)}
             hint={`${money(kpis.revenue)} em receita`}
-            trend={8.6}
             icon={<MousePointerClick size={16} />}
           />
           <StatCard
             label="Custo por conversão"
+            trend={real ? null : -4.5}
             value={money(kpis.costPerConversion)}
             hint={`${money(kpis.cost)} no período`}
-            trend={-4.5}
             icon={<Target size={16} />}
           />
         </div>

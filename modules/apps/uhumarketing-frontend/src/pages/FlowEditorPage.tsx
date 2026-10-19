@@ -80,6 +80,29 @@ export function FlowEditorPage({ flowId }: { flowId?: string }) {
     store.updateFlow(flow.id, { status: "active", lastRunAt: new Date().toISOString() });
     if (campaign) {
       store.updateCampaign(campaign.id, { status: "running", lastRunAt: new Date().toISOString() });
+      // No modo Backend, publicar também ENFILEIRA. Sem isso a campanha
+      // apareceria "em execução" com a fila vazia e nada sairia — o pior tipo
+      // de estado: parece que está rodando.
+      if (store.launchCampaign) {
+        store
+          .launchCampaign(campaign.id)
+          .then((res) =>
+            store.logActivity({
+              kind: "campaign",
+              title: "Campanha disparada pelo fluxo",
+              detail: `${campaign.name} · ${res.queued} na fila · ${res.skipped} sem opt-in`,
+              refId: campaign.id,
+            }),
+          )
+          .catch((err) => {
+            store.logActivity({
+              kind: "campaign",
+              title: "Disparo recusado",
+              detail: err instanceof Error ? err.message : "falha ao enfileirar",
+              refId: campaign.id,
+            });
+          });
+      }
     }
     store.logActivity({
       kind: "flow",
@@ -91,14 +114,9 @@ export function FlowEditorPage({ flowId }: { flowId?: string }) {
 
   function runTest() {
     if (!flow) return;
-    store.updateFlow(flow.id, {
-      runs: {
-        total: flow.runs.total + 1,
-        success: flow.runs.success + 1,
-        failed: flow.runs.failed,
-      },
-      lastRunAt: new Date().toISOString(),
-    });
+    // Simulação é prévia, não execução: não incrementa contador de execuções.
+    // No modo Backend esses contadores vêm do servidor, e somar aqui faria o
+    // número subir e voltar sozinho no próximo polling.
     store.logActivity({
       kind: "flow",
       title: "Simulação executada",

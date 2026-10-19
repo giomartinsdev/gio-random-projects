@@ -14,6 +14,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { useStore, useLookup } from "@/lib/store";
+import { useBackendOptional } from "@/lib/storeRemote";
 import { compact, fmtDateTime, money, num, pct } from "@/lib/format";
 import type { Campaign, CampaignObjective, Channel } from "@/lib/types";
 import { CHANNEL_LABEL, OBJECTIVE_LABEL } from "@/lib/types";
@@ -235,6 +236,10 @@ export function CampaignsPage() {
 function CampaignDetail({ campaign }: { campaign: Campaign }) {
   const store = useStore();
   const lookup = useLookup();
+  const [launch, setLaunch] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const backend = useBackendOptional();
+  const queue = backend?.queue.find((q) => q.campaignId === campaign.id);
   const template = lookup.template(campaign.templateId);
   const segments = campaign.segmentIds.map((id) => lookup.segment(id)).filter(Boolean);
   const delivered = campaign.metrics.delivered;
@@ -257,15 +262,38 @@ function CampaignDetail({ campaign }: { campaign: Campaign }) {
           size="sm"
           variant="secondary"
           className="flex-1"
+          disabled={busy}
           icon={isRunning ? <Pause size={14} /> : <Play size={14} />}
-          onClick={() =>
+          onClick={async () => {
+            // No modo Backend, "Ativar" é um disparo de verdade: valida
+            // template aprovado, telefone e opt-in no servidor e enfileira.
+            // No modo Demo continua sendo só o status da campanha.
+            if (!isRunning && store.launchCampaign) {
+              setBusy(true);
+              setLaunch(null);
+              try {
+                const res = await store.launchCampaign(campaign.id);
+                setLaunch({
+                  tone: "ok",
+                  text: `${res.queued} na fila · ${res.skipped} sem opt-in · ${res.duplicate} já enviados`,
+                });
+              } catch (err) {
+                setLaunch({
+                  tone: "err",
+                  text: err instanceof Error ? err.message : "Falha ao disparar",
+                });
+              } finally {
+                setBusy(false);
+              }
+              return;
+            }
             store.updateCampaign(campaign.id, {
               status: isRunning ? "paused" : "running",
               lastRunAt: isRunning ? campaign.lastRunAt : new Date().toISOString(),
-            })
-          }
+            });
+          }}
         >
-          {isRunning ? "Pausar" : "Ativar"}
+          {isRunning ? "Pausar" : store.launchCampaign ? "Disparar" : "Ativar"}
         </Button>
         <Button
           size="sm"
@@ -295,6 +323,29 @@ function CampaignDetail({ campaign }: { campaign: Campaign }) {
           Enviar teste
         </Button>
       </div>
+
+      {launch && (
+        <p className={cn("text-[11px] leading-snug", launch.tone === "ok" ? "text-success" : "text-danger")}>
+          {launch.text}
+        </p>
+      )}
+
+      {/* A fila parada precisa de explicação. "29 na fila, 0 enviadas" sem
+          motivo parece defeito; com motivo é a janela de envio funcionando. */}
+      {queue?.blockedBy === "window" && (
+        <p className="text-[11px] leading-snug text-warn">
+          Fila esperando a janela de envio
+          {queue.nextOpenAt
+            ? ` — abre ${new Date(queue.nextOpenAt).toLocaleString("pt-BR", {
+                day: "2-digit",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}`
+            : ""}
+          .
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-2.5">
         <Mini label="Audiência" value={num(campaign.metrics.audience)} />
