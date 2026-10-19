@@ -115,9 +115,11 @@ export function Sidebar({ route }: { route: AppRoute }) {
           {workspace.whatsappNumber || "sem número conectado"}
         </p>
         <p className="mt-1 text-[11px] leading-snug text-fg-3">
-          {workspace.whatsappNumber
-            ? workspace.messagingLimit || "qualidade informada pela Meta"
-            : "conecte em Configurações para disparar"}
+          {!workspace.whatsappNumber
+            ? "conecte em Configurações para disparar"
+            : workspace.messagingLimit
+              ? workspace.messagingLimit
+              : "limite e qualidade não informados pela Meta"}
         </p>
       </div>
 

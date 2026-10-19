@@ -157,6 +157,17 @@ export const api = {
 
   submitTemplate: (id: string) => request<Template>(`/templates/${id}/submit`, { method: "POST" }),
 
+  syncTemplate: (id: string) => request<Template>(`/templates/${id}/sync`, { method: "POST" }),
+
+  checkChannel: () =>
+    request<{
+      live: boolean;
+      ok: boolean;
+      number?: string;
+      verifiedName?: string;
+      note: string;
+    }>("/channel"),
+
   createContact: (contact: {
     name: string;
     phone: string;

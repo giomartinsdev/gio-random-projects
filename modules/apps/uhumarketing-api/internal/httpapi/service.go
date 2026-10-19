@@ -242,27 +242,106 @@ func (s *Service) TestSend(ctx context.Context, campaignID string) (LaunchResult
 		return LaunchResults{}, domain.Invalid("segmentIds",
 			"a audiência desta campanha não tem nenhum contato com opt-in")
 	}
-	one := make([]domain.Contact, 0, 1)
+	// Escolha DETERMINÍSTICA, não a primeira de um map: em live isso mandaria
+	// uma mensagem real para um cliente aleatório da audiência. O teste é do
+	// operador, então vai para o opt-in mais recente — na prática, o contato
+	// que ele acabou de cadastrar com o próprio número.
+	var target domain.Contact
 	for _, c := range audience {
-		one = append(one, c)
-		break
+		if target.ID == "" || newerOptIn(c, target) {
+			target = c
+		}
 	}
 
-	queued, err := s.Store.EnqueueSends(ctx, s.Workspace, campaign.ID, tpl.Name, campaign.Offer.CodePattern, one)
+	queued, err := s.Store.EnqueueTestSend(ctx, s.Workspace, campaign.ID, tpl.Name, campaign.Offer.CodePattern, target)
 	if err != nil {
 		return LaunchResults{}, err
 	}
-	if queued > 0 {
-		if err := s.Store.SetCampaignStatus(ctx, s.Workspace, campaign.ID, "running"); err != nil {
-			return LaunchResults{}, err
-		}
-		if err := s.Store.TouchCampaignRun(ctx, s.Workspace, campaign.ID); err != nil {
-			return LaunchResults{}, err
-		}
+	if queued == 0 {
+		// Só acontece quando o contato já recebeu o disparo REAL desta campanha:
+		// o teste não sobrescreve entrega real.
+		return LaunchResults{}, domain.Invalid("campaignId",
+			"este contato já recebeu o disparo real desta campanha; use uma campanha separada para testar")
+	}
+	if err := s.Store.SetCampaignStatus(ctx, s.Workspace, campaign.ID, "running"); err != nil {
+		return LaunchResults{}, err
+	}
+	if err := s.Store.TouchCampaignRun(ctx, s.Workspace, campaign.ID); err != nil {
+		return LaunchResults{}, err
 	}
 	_ = s.Store.LogActivity(ctx, s.Workspace, "send", "Envio de teste",
 		campaign.Name+" · "+plural(queued, "mensagem enfileirada", "mensagens enfileiradas"), campaign.ID)
-	return LaunchResults{CampaignID: campaign.ID, Queued: queued, Duplicate: len(one) - queued}, nil
+	return LaunchResults{CampaignID: campaign.ID, Queued: queued}, nil
+}
+
+// CheckChannel pergunta ao provedor se o canal está de pé e devolve o que ele
+// respondeu. A tela mostra isso em vez de um "conectado" deduzido da
+// configuração: ter um número digitado em Configurações não prova que a Meta
+// conhece o token.
+func (s *Service) CheckChannel(ctx context.Context) (meta.ChannelInfo, error) {
+	ws, err := s.Store.Workspace(ctx, s.Workspace)
+	if err != nil {
+		return meta.ChannelInfo{}, err
+	}
+	if ws.WhatsAppNumber == "" {
+		return meta.ChannelInfo{}, domain.Invalid("whatsappNumber",
+			"configure o telefone do WhatsApp em Configurações antes de verificar o canal")
+	}
+	// Falha do provedor vira diagnóstico (ok=false), não erro HTTP: a tela
+	// precisa mostrar o texto da Meta — "token expirado" é o que resolve o
+	// problema, e um 500 genérico esconderia isso.
+	info, err := s.Provider.Check(ctx)
+	if err != nil {
+		return meta.ChannelInfo{
+			Live: s.Provider.Name() == "meta-cloud",
+			OK:   false,
+			Note: err.Error(),
+		}, nil
+	}
+	info.OK = true
+	return info, nil
+}
+
+// SyncTemplateStatus pergunta à Meta o status de um template que ainda não
+// recebeu webhook — o caminho normal quando não há URL pública. Sem isso, um
+// template aprovado no painel da Meta continuaria "em análise" aqui para
+// sempre, e o disparo ficaria bloqueado por um status local desatualizado.
+func (s *Service) SyncTemplateStatus(ctx context.Context, templateID string) (domain.Template, error) {
+	tpl, err := s.Store.Template(ctx, s.Workspace, templateID)
+	if err != nil {
+		return domain.Template{}, err
+	}
+	if tpl.MetaID == "" {
+		return domain.Template{}, domain.Invalid("templateId",
+			"este template ainda não foi submetido à Meta; envie para análise antes de consultar")
+	}
+	status, reason, err := s.Provider.TemplateStatus(ctx, tpl.MetaID)
+	if err != nil {
+		if errors.Is(err, meta.ErrNotLive) {
+			return domain.Template{}, domain.Invalid("templateId", err.Error())
+		}
+		return domain.Template{}, domain.Invalid("templateId", "a Meta recusou a consulta: "+err.Error())
+	}
+	if _, _, _, err := s.Store.ApplyTemplateStatus(ctx, tpl.MetaID, status, reason); err != nil {
+		return domain.Template{}, err
+	}
+	_ = s.Store.LogActivity(ctx, s.Workspace, "template", "Status consultado na Meta",
+		tpl.Name+" · "+statusLabel(status), tpl.ID)
+	return s.Store.Template(ctx, s.Workspace, tpl.ID)
+}
+
+// newerOptIn ordena por opt-in mais recente e, no empate, por id — sem critério
+// de desempate a escolha voltaria a ser aleatória, que é o que se quer evitar.
+func newerOptIn(a, b domain.Contact) bool {
+	switch {
+	case a.OptInAt != nil && b.OptInAt != nil && !a.OptInAt.Equal(*b.OptInAt):
+		return a.OptInAt.After(*b.OptInAt)
+	case a.OptInAt != nil && b.OptInAt == nil:
+		return true
+	case a.OptInAt == nil && b.OptInAt != nil:
+		return false
+	}
+	return a.ID > b.ID
 }
 
 func statusLabel(status string) string {

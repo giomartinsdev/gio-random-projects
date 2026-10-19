@@ -3,6 +3,7 @@ import {
   BellRing,
   Check,
   CircleAlert,
+  CircleX,
   Database,
   Globe,
   KeyRound,
@@ -29,7 +30,14 @@ export function SettingsPage() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetError, setResetError] = useState("");
   const [resetting, setResetting] = useState(false);
-  const [tested, setTested] = useState(false);
+  const [channel, setChannel] = useState<{
+    live: boolean;
+    ok: boolean;
+    number?: string;
+    verifiedName?: string;
+    note: string;
+  } | null>(null);
+  const [checking, setChecking] = useState(false);
   const [quietStart, setQuietStart] = useState(String(store.workspace.quietHours.start));
   const [quietEnd, setQuietEnd] = useState(String(store.workspace.quietHours.end));
   const [business, setBusiness] = useState({
@@ -183,8 +191,27 @@ export function SettingsPage() {
             </Field>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="secondary" onClick={() => setTested(true)}>
-              Testar conexão
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={checking}
+              onClick={async () => {
+                setChecking(true);
+                setChannel(null);
+                try {
+                  setChannel(await store.checkChannel!());
+                } catch (err) {
+                  setChannel({
+                    live: Boolean(store.provider?.live),
+                    ok: false,
+                    note: err instanceof Error ? err.message : "falha ao verificar o canal",
+                  });
+                } finally {
+                  setChecking(false);
+                }
+              }}
+            >
+              {checking ? "Verificando…" : "Testar conexão"}
             </Button>
             <Button
               size="sm"
@@ -203,12 +230,23 @@ export function SettingsPage() {
                 {saveNote.text}
               </span>
             )}
-            {tested && (
-              <span className="flex items-center gap-1.5 text-[12px] text-success">
-                <Check size={13} />
-                {store.provider?.hasNumber
-                  ? "número configurado"
-                  : "sem número: o disparo fica bloqueado até configurar"}
+            {channel && (
+              <span
+                className={cn(
+                  "flex items-center gap-1.5 text-[12px]",
+                  channel.ok && channel.live
+                    ? "text-success"
+                    : channel.ok
+                      ? "text-fg-2"
+                      : "text-danger",
+                )}
+              >
+                {channel.ok && channel.live ? <Check size={13} /> : <CircleX size={13} />}
+                {channel.ok
+                  ? channel.live
+                    ? `${channel.verifiedName ?? "número"} · ${channel.number ?? ""}`
+                    : "dry-run: nada sai para a Meta"
+                  : channel.note}
               </span>
             )}
           </div>

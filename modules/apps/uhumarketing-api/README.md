@@ -46,6 +46,36 @@ Toda a conversa com a Meta passa por `meta.Provider`. Há duas implementações:
 falha se faltar algum. Isso é intencional: subir em `live` pela metade e
 descobrir no primeiro disparo é pior do que não subir.
 
+Antes de subir, `./scripts/live-check.sh` diz o que falta e confirma o número
+na Graph sem imprimir o token.
+
+### Modo live, passo a passo
+
+O código está pronto; estas etapas são humanas e fora do repo:
+
+1. **App e produto.** developers.facebook.com → criar app → adicionar WhatsApp.
+2. **Número.** O número de teste grátis serve para o primeiro envio (até 5
+   destinatários, que você cadastra no painel). Um número próprio exige
+   verificação de negócio.
+3. **Credenciais.** System User com `whatsapp_business_messaging` e
+   `whatsapp_business_management`; anote `WABA ID` e `Phone Number ID`.
+4. **Destinatário.** No número de teste, o seu WhatsApp entra na lista de
+   destinatários permitidos — senão a Meta recusa com `recipient not in
+   allowed list`.
+5. **Subir.** `META_MODE=live` com as três variáveis. `GET /healthz` deve
+   responder `"live":true`. Em Configurações, **Testar conexão** mostra o
+   número e o nome verificado que a Graph devolveu.
+6. **Template.** Criar e enviar para a Meta. A revisão leva de minutos a horas;
+   enquanto não volta, o template fica "em análise" e o disparo é recusado.
+7. **Teste.** Cadastre o seu número como contato com opt-in, crie a campanha e
+   use **Enviar teste** — ele vai para o opt-in mais recente e sai na hora,
+   **sem esperar a janela** (a janela continua valendo para o disparo real).
+
+Sem webhook público a mensagem chega, mas o app não recebe `entregue`/`lido`:
+o envio fica em `sent`. O template, esse, você resolve com **Consultar status
+na Meta** no drawer do template — é uma consulta ativa à Graph, não depende de
+callback.
+
 O que o dry-run **não** faz: simular latência, recusa de conteúdo ou
 qualidade do número. Ele aprova. É um provedor de desenvolvimento, não uma
 previsão da Meta.
@@ -106,10 +136,12 @@ Públicos: `/healthz`, `/api/v1/auth/{signup,login}` e `/webhooks/whatsapp`
 | POST | `/templates` | Cria e submete à Meta (`?submit=false` só grava rascunho) |
 | PATCH | `/templates/{id}` | Edita conteúdo; volta para rascunho se o corpo mudou |
 | POST | `/templates/{id}/submit` | Envia o rascunho para a Meta |
+| POST | `/templates/{id}/sync` | Consulta o status do template na Graph (sem esperar webhook) |
+| GET | `/channel` | Verificação real do canal: `{live, ok, number, verifiedName, note}` |
 | POST | `/segments`, `/contacts` | Audiências e contatos com opt-in |
 | POST | `/campaigns` | Cria campanha |
 | POST | `/campaigns/{id}/launch` | Enfileira a audiência elegível; devolve `queued`, `skipped`, `duplicate` |
-| POST | `/campaigns/{id}/test` | Enfileira **uma** mensagem, passando pelas mesmas regras |
+| POST | `/campaigns/{id}/test` | Enfileira **uma** mensagem para o opt-in mais recente, fora da janela, com as demais regras |
 | POST | `/campaigns/{id}/pause`, `/resume` | Pausa/retoma |
 | POST | `/contacts/{id}/opt-out` | Revoga consentimento explicitamente |
 | GET/POST | `/webhooks/whatsapp` | Handshake (`hub.challenge`) e eventos da Meta |
@@ -195,18 +227,13 @@ tests/                      features Gherkin + steps (Postgres real)
 
 ## O que só quem tem a conta Meta pode fazer
 
-O código está pronto para `live`, mas estas etapas são humanas e fora do repo:
+Login, 2FA, criação do app e aceite de termos no painel da Meta são passos
+humanos — nenhum agente faz isso no seu lugar. O passo a passo está em
+**Modo live, passo a passo**, acima. Resumo dos limites:
 
-1. Criar o app no Meta for Developers e adicionar o produto WhatsApp.
-2. Ativar o número de teste (5 destinatários, aprovação de template imediata)
-   ou registrar um número próprio com verificação de negócio.
-3. Gerar um token permanente de System User com `whatsapp_business_messaging` e
-   `whatsapp_business_management`, e anotar WABA ID + Phone Number ID.
-4. Configurar o webhook apontando para `PUBLIC_BASE_URL/webhooks/whatsapp`,
-   com o verify token e o app secret (a Meta exige HTTPS público — localhost
-   não serve; use um túnel).
-5. Sem verificação de negócio: 250 clientes únicos/24h, 250 templates, 2
-   números. Com verificação, os limites sobem.
+- Número de teste: 5 destinatários, cada um precisa estar na lista permitida.
+- Sem verificação de negócio: 250 clientes únicos/24h, 250 templates, 2 números.
+- Com verificação, os limites sobem.
 
 Template é obrigatório para **iniciar** conversa; responder dentro da janela de
 24h é livre. Cada mensagem entregue é cobrada (marketing, utilidade e

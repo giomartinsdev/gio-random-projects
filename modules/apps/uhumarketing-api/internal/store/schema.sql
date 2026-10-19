@@ -168,11 +168,18 @@ CREATE TABLE IF NOT EXISTS sends (
     external_id   TEXT NOT NULL DEFAULT '',
     error         TEXT NOT NULL DEFAULT '',
     cost          NUMERIC(10,4) NOT NULL DEFAULT 0,
+    -- Envio de teste: sai na hora, sem esperar a janela da campanha. É a única
+    -- mensagem que o operador pede explicitamente "agora" — deixá-la na fila
+    -- até a próxima janela comercial transformaria o teste em espera.
+    is_test       BOOLEAN NOT NULL DEFAULT false,
     attempts      INT NOT NULL DEFAULT 0,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (campaign_id, contact_id)
 );
+
+-- Instalação existente: a coluna nasceu depois da tabela.
+ALTER TABLE sends ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS sends_queue ON sends (status, created_at) WHERE status = 'queued';
 CREATE INDEX IF NOT EXISTS sends_campaign ON sends (campaign_id, status);

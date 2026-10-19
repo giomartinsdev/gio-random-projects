@@ -306,6 +306,48 @@ function TemplateDetail({ template }: { template: Template }) {
         </div>
       )}
 
+      {/* Em análise sem URL pública, o webhook nunca chega: consultar a Meta é
+          o único caminho para o status sair de "pending". */}
+      {store.syncTemplate && template.status === "pending" && (
+        <div className="flex flex-col gap-2 rounded-sm border border-line bg-bg p-3">
+          <p className="text-[11px] leading-snug text-fg-3">
+            A Meta ainda não avisou o resultado. A revisão leva de minutos a algumas horas —
+            consultar agora traz o status real.
+          </p>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="w-fit"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setFeedback(null);
+              try {
+                const t = await store.syncTemplate!(template.id);
+                setFeedback({
+                  tone: t.status === "approved" ? "ok" : "err",
+                  text:
+                    t.status === "approved"
+                      ? "Aprovado pela Meta — já pode disparar."
+                      : `A Meta respondeu: ${t.status}.`,
+                });
+              } catch (err) {
+                setFeedback({ tone: "err", text: err instanceof Error ? err.message : "Falha ao consultar" });
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Consultar status na Meta
+          </Button>
+          {feedback && (
+            <span className={cn("text-[11px]", feedback.tone === "ok" ? "text-success" : "text-danger")}>
+              {feedback.text}
+            </span>
+          )}
+        </div>
+      )}
+
       {template.rejectionReason && (
         <div className="flex gap-2.5 rounded-sm border border-danger/30 bg-danger-soft p-3">
           <CircleAlert size={15} className="mt-0.5 shrink-0 text-danger" />

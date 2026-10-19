@@ -217,6 +217,29 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Channel responde "o canal está de pé?" com o que o provedor disse. Em
+// dry-run é 200 com live=false — não é erro, é o modo. O 422 é só para falta
+// de configuração local, que o operador resolve na tela.
+func (h *Handlers) Channel(w http.ResponseWriter, r *http.Request) {
+	info, err := h.svc(r).CheckChannel(r.Context())
+	if err != nil {
+		writeDomainError(w, h.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+// SyncTemplate consulta a Meta sem esperar webhook. É o caminho de quem roda
+// local: sem URL pública, a aprovação nunca chegaria sozinha.
+func (h *Handlers) SyncTemplate(w http.ResponseWriter, r *http.Request) {
+	tpl, err := h.svc(r).SyncTemplateStatus(r.Context(), pathID(r))
+	if err != nil {
+		writeDomainError(w, h.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tpl)
+}
+
 /* --------------------------------------------------------------- audiências */
 
 func (h *Handlers) Segments(w http.ResponseWriter, r *http.Request) {

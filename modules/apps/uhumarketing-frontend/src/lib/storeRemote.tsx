@@ -561,6 +561,28 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
     [flushNow, pushActivity],
   );
 
+  // Consulta a Meta sem webhook. Devolve o template atualizado; quem chama
+  // mostra o status real em vez de "em análise" indefinido.
+  const syncTemplate = useCallback<NonNullable<Store["syncTemplate"]>>(
+    async (id) => {
+      const tpl = await api.syncTemplate(id);
+      setTemplates((prev) => prev.map((t) => (t.id === id ? tpl : t)));
+      pushActivity({
+        kind: "template",
+        title: "Status consultado na Meta",
+        detail: `${tpl.name} · ${tpl.status}`,
+        refId: tpl.id,
+      });
+      return tpl;
+    },
+    [pushActivity],
+  );
+
+  const checkChannel = useCallback<NonNullable<Store["checkChannel"]>>(
+    () => api.checkChannel(),
+    [],
+  );
+
   // Série diária calculada no SQL (todos os envios, não a página de 120).
   // O corte de dias é feito aqui porque o bootstrap manda uma janela fixa.
   const series = useCallback(
@@ -602,6 +624,8 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
       logActivity: pushActivity,
       launchCampaign,
       submitTemplate,
+      syncTemplate,
+      checkChannel,
       series,
       provider: boot?.provider,
     };
@@ -609,7 +633,7 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
     workspace, boot, templates, segments, campaigns, sends, flows, activity,
     updateWorkspace, flushNow, createTemplate, updateTemplate, deleteTemplate, importContacts, createSegment, updateSegment,
     createCampaign, updateCampaign, createFlow, updateFlow, addNode, updateNode,
-    removeNode, addEdge, removeEdge, testSend, pushActivity, launchCampaign, submitTemplate, series,
+    removeNode, addEdge, removeEdge, testSend, pushActivity, launchCampaign, submitTemplate, syncTemplate, checkChannel, series,
   ]);
 
   return (

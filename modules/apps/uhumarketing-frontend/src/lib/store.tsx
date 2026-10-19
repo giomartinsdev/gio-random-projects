@@ -151,6 +151,19 @@ export interface Store extends State {
   launchCampaign?: (id: string) => Promise<LaunchResult>;
   testSend?: (id: string) => Promise<LaunchResult>;
   submitTemplate?: (id: string) => Promise<Template>;
+  /** Consulta a Meta quando o webhook não chega (rodando local). */
+  syncTemplate?: (id: string) => Promise<Template>;
+  /**
+   * Verificação real do canal: pergunta ao servidor, que pergunta à Meta.
+   * Ausente = não há o que verificar.
+   */
+  checkChannel?: () => Promise<{
+    live: boolean;
+    ok: boolean;
+    number?: string;
+    verifiedName?: string;
+    note: string;
+  }>;
   /**
    * Série diária REAL, agregada de `sends` no servidor. A presença desta
    * função também sinaliza "os números são reais", e o dashboard para de

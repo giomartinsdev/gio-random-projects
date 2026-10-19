@@ -53,6 +53,17 @@ func (w *Worker) Tick(ctx context.Context) (int, error) {
 
 	total := 0
 	for _, ws := range workspaces {
+		// Teste primeiro e SEM janela: é a mensagem que o operador pediu para
+		// sair agora. O disparo real, logo abaixo, continua preso à janela.
+		tests, err := w.Store.ClaimTestQueued(ctx, ws, 10)
+		if err != nil {
+			return total, err
+		}
+		for _, job := range tests {
+			w.deliver(ctx, job)
+		}
+		total += len(tests)
+
 		_, window, ok, err := w.nextCampaign(ctx, ws)
 		if err != nil {
 			return total, err

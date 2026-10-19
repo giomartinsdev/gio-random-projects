@@ -85,6 +85,7 @@ func TestMain(m *testing.M) {
 func TestTemplates(t *testing.T)      { runFeature(t, "templates.feature") }
 func TestCampaignSend(t *testing.T)   { runFeature(t, "campaign_send.feature") }
 func TestAudiencesOptin(t *testing.T) { runFeature(t, "audiences_optin.feature") }
+func TestChannelLive(t *testing.T)    { runFeature(t, "channel_live.feature") }
 
 func runFeature(t *testing.T, file string) {
 	if !dockerOK {
@@ -99,6 +100,7 @@ func runFeature(t *testing.T, file string) {
 				return ctx, nil
 			})
 			registerSteps(sc, w)
+			registerChannelSteps(sc, w)
 		},
 		Options: &godog.Options{
 			Format:   "pretty",

@@ -871,6 +871,32 @@ func (s *Store) EnqueueSends(ctx context.Context, ws, campaignID, templateName, 
 	return inserted, tx.Commit(ctx)
 }
 
+// EnqueueTestSend enfileira UM envio de teste para o contato. Diferente do
+// disparo, ele PODE repetir: testar e conferir no aparelho é justamente
+// iterar. A linha anterior é reaproveitada (volta para `queued`) em vez de
+// criar outra, então o UNIQUE continua valendo e um duplo clique não gera duas
+// mensagens — mas um segundo teste depois do primeiro sair, sim.
+//
+// Se o contato já recebeu o disparo REAL desta campanha, o teste não sobrescreve
+// nada: reenviar por cima de uma entrega real é duplicar mensagem e cobrança.
+// Nesse caso devolve 0 e o serviço explica.
+func (s *Store) EnqueueTestSend(ctx context.Context, ws, campaignID, templateName, couponPattern string, c domain.Contact) (int, error) {
+	coupon := renderCoupon(couponPattern, c.Name)
+	tag, err := s.pool.Exec(ctx, `
+		INSERT INTO sends (id, workspace_id, campaign_id, contact_id, destination, template_name, status, coupon_code, is_test)
+		VALUES ($1,$2,$3,$4,$5,$6,'queued',$7,true)
+		ON CONFLICT (campaign_id, contact_id) DO UPDATE
+		SET status='queued', external_id='', error='', cost=0, coupon_code=$7, is_test=true,
+		    destination=$5, template_name=$6, updated_at=now()
+		WHERE sends.is_test
+		  AND sends.status IN ('sent','delivered','read','replied','failed','skipped')`,
+		"snd_"+uuid.NewString()[:10], ws, campaignID, c.ID, c.Phone, templateName, coupon)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 // renderCoupon resolve "VOLTA-{nome}" para "VOLTA-ANA".
 func renderCoupon(pattern, name string) string {
 	if pattern == "" {
@@ -886,6 +912,17 @@ func renderCoupon(pattern, name string) string {
 // ClaimQueued reserva um lote da fila com SKIP LOCKED: dois workers (ou duas
 // instâncias) rodando ao mesmo tempo não mandam a mesma mensagem duas vezes.
 func (s *Store) ClaimQueued(ctx context.Context, ws string, limit int) ([]SendJob, error) {
+	return s.claim(ctx, ws, limit, false)
+}
+
+// ClaimTestQueued reserva apenas envios de teste. O worker usa isto ANTES da
+// checagem de janela: teste é a única mensagem que o operador pediu para sair
+// agora.
+func (s *Store) ClaimTestQueued(ctx context.Context, ws string, limit int) ([]SendJob, error) {
+	return s.claim(ctx, ws, limit, true)
+}
+
+func (s *Store) claim(ctx context.Context, ws string, limit int, onlyTests bool) ([]SendJob, error) {
 	if limit <= 0 {
 		limit = 25
 	}
@@ -903,10 +940,10 @@ func (s *Store) ClaimQueued(ctx context.Context, ws string, limit int) ([]SendJo
 		JOIN campaigns camp ON camp.id = s.campaign_id
 		JOIN templates t ON t.id = camp.template_id
 		JOIN contacts c ON c.id = s.contact_id
-		WHERE s.workspace_id=$1 AND s.status='queued'
+		WHERE s.workspace_id=$1 AND s.status='queued' AND s.is_test=$3
 		ORDER BY s.created_at
 		LIMIT $2
-		FOR UPDATE OF s SKIP LOCKED`, ws, limit)
+		FOR UPDATE OF s SKIP LOCKED`, ws, limit, onlyTests)
 	if err != nil {
 		return nil, err
 	}

@@ -26,7 +26,29 @@ type Provider interface {
 	CreateTemplate(ctx context.Context, t domain.Template) (externalID, status string, err error)
 	// SendTemplate entrega uma mensagem de template e devolve o id externo.
 	SendTemplate(ctx context.Context, req SendRequest) (messageID string, err error)
+	// Check responde "o canal está de pé?". No dry-run a resposta honesta é
+	// "não é live" — não um "conectado" que promete entrega.
+	Check(ctx context.Context) (ChannelInfo, error)
+	// TemplateStatus consulta o status real de um template já submetido.
+	TemplateStatus(ctx context.Context, externalID string) (status, reason string, err error)
 }
+
+// ChannelInfo é a resposta crua de uma verificação de canal.
+type ChannelInfo struct {
+	// Live é false no dry-run: nada sai para a Meta, e a tela não pode
+	// mostrar "conectado" como se saísse.
+	Live bool `json:"live"`
+	// OK é o resultado da verificação. Um token inválido devolve ok=false com
+	// o motivo em Note — é diagnóstico, não erro de formulário.
+	OK           bool   `json:"ok"`
+	Number       string `json:"number,omitempty"`
+	VerifiedName string `json:"verifiedName,omitempty"`
+	Note         string `json:"note"`
+}
+
+// ErrNotLive explica por que uma consulta ao provedor não vale no dry-run.
+// Vira 422 com texto, não 500: não é falha do servidor, é o modo escolhido.
+var ErrNotLive = fmt.Errorf("modo dry-run: o template é aprovado localmente e nada é consultado na Meta")
 
 // SendRequest é a mensagem já resolvida: o provedor não escolhe audiência nem
 // aplica opt-in, só entrega o que o worker mandou.
@@ -73,6 +95,19 @@ func (p *DryRunProvider) SendTemplate(_ context.Context, req SendRequest) (strin
 	return fmt.Sprintf("wamid.dry.%d.%s", n, req.To), nil
 }
 
+// Check responde a verdade do dry-run: nada sai da máquina. Um "tudo certo"
+// aqui faria a tela de configuração prometer entrega que não existe.
+func (*DryRunProvider) Check(context.Context) (ChannelInfo, error) {
+	return ChannelInfo{
+		Live: false,
+		Note: "dry-run: as mensagens são simuladas e não chegam a nenhum WhatsApp",
+	}, nil
+}
+
+func (*DryRunProvider) TemplateStatus(context.Context, string) (string, string, error) {
+	return "", "", ErrNotLive
+}
+
 /* ------------------------------------------------------------------- live */
 
 // CloudProvider é a Cloud API da Meta (graph.facebook.com). O token nunca é
@@ -115,13 +150,26 @@ func (p *CloudProvider) post(ctx context.Context, path string, body any) ([]byte
 	if err != nil {
 		return nil, err
 	}
+	return p.do(ctx, http.MethodPost, path, bytes.NewReader(raw))
+}
+
+func (p *CloudProvider) get(ctx context.Context, path string) ([]byte, error) {
+	return p.do(ctx, http.MethodGet, path, nil)
+}
+
+// do é o único ponto que monta URL e cabeçalho. GET e POST compartilham a
+// leitura de erro porque a Graph devolve o mesmo envelope nos dois — e é esse
+// envelope que a tela precisa mostrar em vez de "erro interno".
+func (p *CloudProvider) do(ctx context.Context, method, path string, body io.Reader) ([]byte, error) {
 	url := fmt.Sprintf("%s/%s/%s", strings.TrimRight(p.BaseURL, "/"), p.APIVersion, path)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+p.Token)
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
 	resp, err := p.client().Do(req)
 	if err != nil {
@@ -213,6 +261,68 @@ func (p *CloudProvider) CreateTemplate(ctx context.Context, t domain.Template) (
 		status = "paused"
 	}
 	return out.ID, status, nil
+}
+
+// Check consulta o número na Graph. Devolve o que a Meta responde — nome
+// verificado e número de exibição — porque a tela precisa mostrar o número
+// real, não o que foi digitado em Configurações.
+func (p *CloudProvider) Check(ctx context.Context) (ChannelInfo, error) {
+	raw, err := p.get(ctx, p.PhoneNumberID+"?fields=display_phone_number,verified_name,quality_rating")
+	if err != nil {
+		return ChannelInfo{}, err
+	}
+	var out struct {
+		DisplayPhoneNumber string `json:"display_phone_number"`
+		VerifiedName       string `json:"verified_name"`
+		QualityRating      string `json:"quality_rating"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return ChannelInfo{}, fmt.Errorf("meta: resposta inesperada: %w", err)
+	}
+	note := "conectado à Cloud API"
+	if out.QualityRating != "" {
+		note += " · qualidade " + strings.ToLower(out.QualityRating)
+	}
+	return ChannelInfo{
+		Live:         true,
+		Number:       out.DisplayPhoneNumber,
+		VerifiedName: out.VerifiedName,
+		Note:         note,
+	}, nil
+}
+
+// TemplateStatus pergunta à Meta o status de um template já submetido. Existe
+// porque sem webhook público o template ficaria "em análise" para sempre no
+// banco local — e a tela ficaria bloqueada esperando um callback que não vem.
+func (p *CloudProvider) TemplateStatus(ctx context.Context, externalID string) (string, string, error) {
+	if externalID == "" {
+		return "", "", fmt.Errorf("template sem id externo: submeta à Meta antes de consultar")
+	}
+	raw, err := p.get(ctx, externalID+"?fields=status,rejected_reason")
+	if err != nil {
+		return "", "", err
+	}
+	var out struct {
+		Status         string `json:"status"`
+		RejectedReason string `json:"rejected_reason"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return "", "", fmt.Errorf("meta: resposta inesperada: %w", err)
+	}
+	status := "pending"
+	switch strings.ToUpper(out.Status) {
+	case "APPROVED":
+		status = "approved"
+	case "REJECTED":
+		status = "rejected"
+	case "PAUSED":
+		status = "paused"
+	}
+	reason := out.RejectedReason
+	if strings.EqualFold(reason, "NONE") {
+		reason = ""
+	}
+	return status, reason, nil
 }
 
 func (p *CloudProvider) SendTemplate(ctx context.Context, req SendRequest) (string, error) {
