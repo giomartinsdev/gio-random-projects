@@ -83,10 +83,16 @@ services:
   # buckets + leitura anônima. Um app estático novo só precisa da linha aqui
   # e da entrada em stacks/ingress/default.conf.
   minio-buckets:
-    # minio/mc foi removido do Docker Hub (404). itzg/mc-backup é construído a
-    # partir do minio/mc e traz o mesmo binário `mc`; o entrypoint é
-    # sobrescrito abaixo, então o comportamento é idêntico.
-    image: itzg/mc-backup:latest
+    # A ferramenta oficial (`minio/mc`) saiu do Docker Hub, e o `itzg/mc-backup`
+    # que entrou no lugar NÃO traz o binário `mc` no PATH (verificado: o
+    # container saía 127 / "mc: not found" num deploy verde). O que existe e é
+    # puxável é a própria imagem do servidor (`minio/minio:latest`, que tem
+    # `/usr/bin/mc`) — mas ela está justamente presa ao cache do host, que é a
+    # fragilidade que este arquivo evita. Então aqui vai o `amazon/aws-cli`
+    # (público, multi-arch): um one-shot idempotente que cria os buckets e põe
+    # a policy de leitura anônima pela API S3, o mesmo efeito do antigo
+    # `mc mb --ignore-existing` + `mc anonymous set download`.
+    image: amazon/aws-cli:latest
     container_name: minio-buckets-init
     labels:
       giomartins.dev/project: storage
@@ -97,10 +103,14 @@ services:
     entrypoint: ["sh", "-c"]
     command:
       - |
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        export AWS_DEFAULT_REGION=us-east-1
+        export AWS_ACCESS_KEY_ID="$$MINIO_ROOT_USER"
+        export AWS_SECRET_ACCESS_KEY="$$MINIO_ROOT_PASSWORD"
+        ep=http://minio:9000
         for b in tela-frontend hub-frontend clubs-frontend finance-frontend prospecta-frontend; do
-          mc mb --ignore-existing "local/$$b"
-          mc anonymous set download "local/$$b"
+          aws --endpoint-url "$$ep" s3api create-bucket --bucket "$$b" >/dev/null 2>&1 || true
+          aws --endpoint-url "$$ep" s3api put-bucket-policy --bucket "$$b" --policy \
+            "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"AWS\":[\"*\"]},\"Action\":[\"s3:GetObject\"],\"Resource\":[\"arn:aws:s3:::$$b/*\"]}]}"
         done
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-bookclub-minio-admin}

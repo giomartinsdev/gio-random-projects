@@ -62,11 +62,17 @@ subir/derrubar plataforma não deve derrubar a porta 80.
 
 Os **frontends** (`tela-frontend`, `clubs-frontend`, `hub-frontend`,
 `finance-frontend`, `prospecta-frontend`) são builds estáticos espelhados em
-bucket do MinIO — não são container, não entram aqui. Os buckets são
-criados pelo one-shot idempotente `minio-buckets` (que usa o binário `mc` da
-imagem `itzg/mc-backup:latest` — os repos `minio/mc` e `minio/minio` foram
-**removidos do Docker Hub** em 2026; por isso o `project-infra` roda com
-`repull_images=0`, senão um deploy falharia no pull).
+bucket do MinIO — não são container, não entram aqui. Os buckets (e a policy
+de leitura anônima) vêm do one-shot idempotente `minio-buckets`, que hoje usa
+**`amazon/aws-cli`** pela API S3: o `minio/mc` saiu do Docker Hub e o
+`itzg/mc-backup` que tinha entrado no lugar **não traz o binário `mc`** (o
+one-shot saía 127 / "mc: not found" num deploy verde, com os buckets
+sobrevivendo só porque já existiam). Pelo mesmo motivo o passo de mirror do
+`ts-frontend-ci-cd.yml` trocou o `mc` pelo aws-cli: aquele `docker run` roda
+no daemon da VPS sem credencial de registry, então o pull só passa sendo
+anônimo. É também por isso que `minecraft` e `project-infra` rodam com
+`repull_images=0` — as tags móveis (`java25`, `mc-backup:latest`,
+`minio/minio:latest`) não são mais puxáveis.
 
 O `ingress/default.conf` é o nginx renderizado (o TF gerava do
 `local.services`; agora é arquivo versionado), montado pelo `core.yml`. Se

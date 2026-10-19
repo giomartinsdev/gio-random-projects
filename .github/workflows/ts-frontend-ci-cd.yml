@@ -230,21 +230,31 @@ jobs:
             echo "${k}=${v}" >> "$GITHUB_ENV"
           done
 
-      # --remove makes this a true mirror, not just an upload: an
+      # --delete makes this a true mirror, not just an upload: an
       # asset from a previous build that's no longer referenced (Vite
       # content-hashes filenames, so every build's chunks are new
       # names) gets deleted from the bucket instead of accumulating
-      # forever. --entrypoint sh works around minio/mc's own
-      # ENTRYPOINT (["mc"]), the same as static_sites.tf's bucket
-      # creation does.
+      # forever.
+      #
+      # aws-cli, not minio/mc: `minio/mc` saiu do Docker Hub (404) e o
+      # `quay.io/minio/*` responde 401, então não há mais imagem de `mc`
+      # puxável. O `amazon/aws-cli` é público -- e isso importa aqui, porque
+      # este `docker run` roda no daemon da VPS (DOCKER_HOST=ssh), sem
+      # credencial de registry: o pull só passa sendo anônimo. Fala a mesma
+      # API S3 e também adivinha o Content-Type pela extensão, que é do que o
+      # ingress depende ao servir os objetos direto do MinIO.
       - name: Mirror the build into MinIO
+        env:
+          AWS_ACCESS_KEY_ID: ${{ env.MINIO_ROOT_USER }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.MINIO_ROOT_PASSWORD }}
+          AWS_DEFAULT_REGION: us-east-1
         run: |
           docker run --rm --network apps \
-            -e MC_HOST_local="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000" \
+            -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
             -v "$REMOTE_DIR:/dist" \
-            --entrypoint sh minio/mc -c '
-              mc mirror --overwrite --remove /dist "local/${{ matrix.app }}"
-            '
+            amazon/aws-cli:latest \
+            s3 sync /dist "s3://${{ matrix.app }}" \
+              --endpoint-url http://minio:9000 --delete
 
       - name: Clean up the copy on the VPS
         if: always()
