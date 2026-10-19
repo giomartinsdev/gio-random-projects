@@ -12,7 +12,7 @@ minecraft, todos orquestrados pelo Dockhand (ids 7/20/21/22):
 | `core` | 7 | `core.yml` | registry, htpasswd-init, registry-docker-config, dockhand, **ingress** (boot-only; **protegida**: sem webhook, `force_redeploy=0`, `repull_images=0`) |
 | `project-infra` | 21 | `project-infra.yml` | inclui `persistence.yml`, `observability.yml`, `db-mcp.yml`, `compute.yml` (postgres, rabbitmq, minio, minio-buckets, loki/prometheus/tempo/alloy/grafana, db-mcp + gateway, vaultwarden, adminer, evolution, 9router) |
 | `project-apps` | 22 | `project-apps.yml` | inclui `domain.yml`, `clubs.yml`, `finance.yml`, `prospecta.yml`, `tela.yml`, `maus.yml`, `excalidraw.yml` |
-| `minecraft` | 20 | `minecraft.yml` | servidor **All the Mods 11** (NeoForge, 293 mods, MC 26.1.2) + backup diário |
+| `minecraft` | 20 | `minecraft.yml` | servidor **All the Mods 11** (NeoForge, 293 mods, MC 26.1.2) + backup diário. Deployado pelo Dockhand desde 2026-10-19; `repull_images=0` porque as tags (`java25`, `mc-backup:latest`) são móveis |
 
 **`bootstrap.yml`** (rede externa `apps`) não é stack do Dockhand: suba
 manualmente só numa VPS nova.
@@ -186,7 +186,7 @@ configurado por env: `ops.json` precisa do UUID *offline* do nick (ver
 
 ## Migração (concluída)
 
-Dois cortes já foram concluídos:
+Três cortes já foram concluídos:
 
 1. **Terraform → Dockhand**: os containers antigos foram
    renomeados/parados e recriados pelas stacks (mesmo `container_name`,
@@ -201,6 +201,17 @@ Dois cortes já foram concluídos:
    `project-infra`/`project-apps` (verificado contra os valores em execução)
    e os ids de webhook dos workflows de CI apontam para 22/21. Rollback:
    arquivos antigos no git + `dockhand.db.bak-*` em `/opt/dockhand/db/`.
+3. **minecraft → Dockhand** (2026-10-19): o stack 20 já existia no DB mas os
+   containers vinham de `/home/ubuntu/stacks/minecraft.yml`, à mão. Alinhado o
+   webhook (mesmo secret dos outros) e deployado: agora o comando é
+   `docker compose -p minecraft -f /opt/stacks/minecraft/minecraft.yml up -d
+   --remove-orphans --force-recreate`. O arquivo antigo segue em
+   `/home/ubuntu/stacks/` (com `.bak-pre-labels`) e não é mais usado.
+
+Nota de deploy: o **`core` (7) não tem webhook** e segue saindo de
+`/opt/giomartins/stacks`. Um deploy dele recria ingress + registry + dockhand
+ao mesmo tempo — é o que derruba o acesso, então mexa com a mão e só de
+propósito.
 
 Ordem de subida numa VPS limpa: **bootstrap → core → project-infra →
 project-apps** (→ minecraft, quando quiser).
