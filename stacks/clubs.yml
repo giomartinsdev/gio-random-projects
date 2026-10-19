@@ -5,8 +5,11 @@
 #   - os containers clubs-api / clubs-ingest (parados e removidos)
 #   - a entrada `clubs` do hub (hub-frontend/src/lib/apps.ts)
 #   - as rotas do ingress: os dois hostnames respondem 410
-# Ficou intacto: banco no postgres, bucket `clubs-frontend` no MinIO, imagens
-# no registry, segredos (CLUBS_*) no Dockhand e o código em modules/apps/.
+# Ficou intacto: os dados no postgres, o bucket `clubs-frontend` no MinIO, as
+# imagens no registry, os segredos (CLUBS_*) no Dockhand e o código em
+# modules/apps/. Os dados são as tabelas `clubs*` do database `domain` (o
+# clubs-api é cliente do domain-api — não existe database `clubs`), preservadas
+# junto com o resto do domain.
 # Pra religar: git revert dos pontos acima + deploy da `project-apps` (22).
 # ─────────────────────────────────────────────────────────────────────────
 # clubs.yml — apps do FC Clubs Hub (migra `modules/compute/apps/clubs_api` e

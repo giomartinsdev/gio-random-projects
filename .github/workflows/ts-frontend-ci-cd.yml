@@ -10,13 +10,12 @@ name: TypeScript frontend deploy
 # time.
 #
 # None of these runs as a container: all are plain static builds
-# mirrored into their own MinIO bucket (modules/infra/terraform's
-# static_sites.tf/locals.tf), served by compute/services/ingress
-# proxying straight to MinIO's S3 API. There's nothing here for
-# Terraform to apply on a routine content deploy -- the bucket, the
-# ingress route, and the public-read policy are all infra, created
-# once by tf-ci-cd.yml, not per push. This workflow just replaces a
-# bucket's contents with the latest build.
+# mirrored into their own MinIO bucket, served by the ingress
+# (stacks/ingress/default.conf) proxying straight to MinIO's S3 API.
+# The bucket and its public-read policy are infra, created once by the
+# minio-buckets one-shot in stacks/persistence.yml, not per push --
+# same for the ingress route. This workflow just replaces a bucket's
+# contents with the latest build.
 #
 # ALLOWED_APPS below is the actual pipeline boundary -- add a new
 # frontend app there (and nowhere else) to bring it under this
