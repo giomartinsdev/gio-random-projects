@@ -60,6 +60,14 @@ only ever fit one.
 - **`hub-frontend/`** — o hub: chrome em volta das SPAs acima (sidebar +
   um renderer que as iframeia) mais atalhos de nova aba para os painéis
   protegidos por Access. Também é uma SPA estática em bucket.
+- **`uhumarketing-frontend/`** — POC de produto (só frontend, sem
+  backend, sem bucket, sem CI): uma plataforma de marketing para
+  pequenos negócios, com templates Meta, audiências, envios e um editor
+  de campanha em canvas livre no estilo n8n (regras de descobrimento +
+  outbound). Todo o estado é mock, persistido em `localStorage`. Roda só
+  local com `npm run dev` na porta 5180 — de propósito, ainda não entra
+  no `ALLOWED_APPS`, no ingress nem no hub. Ver
+  `uhumarketing-frontend/README.md`.
 
 `domain-api` and `domain-worker` are deliberately independent Go
 modules (each with its own `go.mod`) even though they agree on the
