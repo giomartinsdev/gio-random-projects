@@ -94,3 +94,11 @@ Feature: Canal de WhatsApp por conta
     Given um serviço com canal por conta em dry-run
     When eu ativo o canal em dry-run com credenciais completas
     Then o token no banco não é o texto enviado
+
+  Scenario: a Meta ecoa o token na mensagem de erro e ele não vaza para a resposta
+    Given uma Graph de teste que repete o token no erro
+    When eu ativo o canal live com credenciais completas
+    Then a resposta é 422
+    And a mensagem menciona "token"
+    And a resposta não contém o token
+    And o canal não está ativo

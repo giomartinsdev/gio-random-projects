@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -223,14 +224,29 @@ func (p *CloudProvider) do(ctx context.Context, method, path string, body io.Rea
 	if resp.StatusCode >= 300 {
 		var ge graphError
 		if json.Unmarshal(payload, &ge) == nil && ge.Detail.Message != "" {
-			// Devolve o erro já explicado: quem chama (worker, handler, tela)
-			// não deve decidir o que "code 131031" significa.
+			// A Graph ecoa o token recebido em alguns erros ("Malformed access
+			// token EAA..."). A mensagem vai para a tela e para o log do
+			// servidor, então a credencial é removida ANTES de sair daqui —
+			// quem chama nunca vê o token.
+			ge.Detail.Message = p.redact(ge.Detail.Message)
 			return nil, fmt.Errorf("%s", ge.Explain())
 		}
-		return nil, fmt.Errorf("meta: http %d: %s", resp.StatusCode, truncate(string(payload), 200))
+		return nil, fmt.Errorf("meta: http %d: %s", resp.StatusCode, truncate(p.redact(string(payload)), 200))
 	}
 	return payload, nil
 }
+
+// redact remove credenciais de um texto que vai aparecer para alguém. Duas
+// camadas: o token exato desta chamada e o padrão de token da Meta ("EAA…"),
+// que aparece quando a Graph devolve um fragmento em vez do valor inteiro.
+func (p *CloudProvider) redact(s string) string {
+	if p.Token != "" {
+		s = strings.ReplaceAll(s, p.Token, "[token]")
+	}
+	return tokenPattern.ReplaceAllString(s, "[token]")
+}
+
+var tokenPattern = regexp.MustCompile(`EAA[A-Za-z0-9_\-]{8,}`)
 
 func (p *CloudProvider) CreateTemplate(ctx context.Context, t domain.Template) (string, string, error) {
 	components := []map[string]any{}

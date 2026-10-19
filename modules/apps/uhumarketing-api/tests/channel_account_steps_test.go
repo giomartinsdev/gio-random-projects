@@ -97,6 +97,16 @@ func registerAccountChannelSteps(sc *godog.ScenarioContext, w *world) {
 		return configure("live")
 	})
 
+	// A Graph ecoa o token recebido em alguns erros ("Malformed access token
+	// EAA..."). Se o produto repassar a mensagem crua, a credencial do cliente
+	// aparece na tela e no log do servidor.
+	sc.Step(`^uma Graph de teste que repete o token no erro$`, func() error {
+		graph = newFakeGraph()
+		graph.echoToken = true
+		w.t.Cleanup(graph.server.Close)
+		return configure("live")
+	})
+
 	sc.Step(`^eu ativo o canal com apenas o token$`, func() error {
 		w.put("/api/v1/channel", map[string]any{"token": testChannelToken})
 		return nil

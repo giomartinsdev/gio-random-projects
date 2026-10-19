@@ -25,6 +25,7 @@ type fakeGraph struct {
 	server       *httptest.Server
 	denyToken    bool
 	banned       bool
+	echoToken    bool
 	templateStat string
 	seenToken    string
 	seenPath     string
@@ -43,6 +44,16 @@ func (g *fakeGraph) handle(w http.ResponseWriter, r *http.Request) {
 	if g.denyToken {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":{"message":"Invalid OAuth access token - Cannot parse access token","type":"OAuthException","code":190,"error_subcode":0}}`))
+		return
+	}
+
+	if g.echoToken {
+		// Comportamento real da Graph em token malformado: ela devolve o valor
+		// recebido dentro da mensagem de erro.
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"Malformed access token ` +
+			strings.TrimPrefix(g.seenToken, "Bearer ") +
+			`","type":"OAuthException","code":190,"error_subcode":0}}`))
 		return
 	}
 
