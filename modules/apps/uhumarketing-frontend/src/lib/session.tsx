@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, type Account } from "./api";
-import { clearToken, readToken, writeToken } from "./token";
+import { clearToken, dropLegacyStorage, readToken, writeToken } from "./token";
 
 // Sessão de verdade: quem manda é o uhumarketing-api.
 //
@@ -53,6 +53,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // usuário é descartado. Confiar no localStorage faria a SPA abrir "logada"
   // com um token expirado e só descobrir no primeiro request.
   useEffect(() => {
+    dropLegacyStorage();
     let alive = true;
 
     async function restore() {
