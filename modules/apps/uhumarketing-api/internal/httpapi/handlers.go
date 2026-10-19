@@ -42,11 +42,19 @@ func (h *Handlers) Healthz(w http.ResponseWriter, r *http.Request) {
 	if dbOK != "ok" {
 		status = http.StatusServiceUnavailable
 	}
+	// O health é do PROCESSO, não de uma conta: em live cada workspace tem o
+	// próprio canal, então "live" aqui significa "o servidor aceita envio
+	// real", não "existe um token global válido".
+	live := h.Service.Provider.Name() == "meta-cloud"
+	if h.Service.Channels != nil {
+		live = h.Service.Channels.Live()
+	}
 	writeJSON(w, status, map[string]any{
 		"status":   map[bool]string{true: "ok", false: "degraded"}[dbOK == "ok"],
 		"database": dbOK,
 		"provider": h.Service.Provider.Name(),
-		"live":     h.Service.Provider.Name() == "meta-cloud",
+		"live":     live,
+		"channels": "per-workspace",
 	})
 }
 
@@ -227,6 +235,31 @@ func (h *Handlers) Channel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, info)
+}
+
+// ActivateChannel grava o canal da conta depois de a Meta confirmar que as
+// credenciais respondem. O token entra no corpo e não sai em nenhuma resposta.
+func (h *Handlers) ActivateChannel(w http.ResponseWriter, r *http.Request) {
+	var in ActivateChannelInput
+	if err := decode(r, &in); err != nil {
+		writeDomainError(w, h.Log, err)
+		return
+	}
+	info, err := h.svc(r).ActivateChannel(r.Context(), in)
+	if err != nil {
+		writeDomainError(w, h.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+// DeactivateChannel apaga as credenciais do canal da conta.
+func (h *Handlers) DeactivateChannel(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc(r).DeactivateChannel(r.Context()); err != nil {
+		writeDomainError(w, h.Log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // SyncTemplate consulta a Meta sem esperar webhook. É o caminho de quem roda

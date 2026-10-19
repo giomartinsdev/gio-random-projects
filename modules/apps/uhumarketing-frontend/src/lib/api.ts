@@ -45,24 +45,35 @@ export interface Bootstrap {
   flows: Flow[];
   contacts: Contact[];
   activity: ActivityEvent[];
-  provider: {
-    name: string;
-    mode: string;
-    live: boolean;
-    hasNumber: boolean;
-    note: string;
-  };
+  provider: ChannelState;
   /** Funil diário agregado no servidor (todos os envios, não a página). */
   series: { date: string; sent: number; delivered: number; read: number; replied: number }[];
   /** Por que a fila de cada campanha em execução está (ou não) parada. */
   queue: {
     campaignId: string;
     queued: number;
-    blockedBy: "" | "window" | "empty";
+    blockedBy: "" | "window" | "empty" | "channel";
     nextOpenAt?: string;
     timezone?: string;
   }[];
   serverTime: string;
+}
+
+/**
+ * Estado do canal de WhatsApp DESTA conta. `live` é o modo do canal (não do
+ * processo): uma conta conectada e outra não convivem no mesmo servidor.
+ */
+export interface ChannelState {
+  name: string;
+  mode: string;
+  live: boolean;
+  activated: boolean;
+  hasNumber: boolean;
+  displayPhone?: string;
+  verifiedName?: string;
+  quality?: string;
+  wabaId?: string;
+  note: string;
 }
 
 export interface EditorialState {
@@ -165,8 +176,16 @@ export const api = {
       ok: boolean;
       number?: string;
       verifiedName?: string;
+      quality?: string;
       note: string;
     }>("/channel"),
+
+  /** Ativa o WhatsApp da conta. O token entra aqui e nunca volta na resposta. */
+  activateChannel: (input: { mode?: string; wabaId: string; phoneId: string; token: string }) =>
+    request<ChannelState>("/channel", { method: "PUT", body: JSON.stringify(input) }),
+
+  /** Desativa o canal: apaga as credenciais e bloqueia novos disparos. */
+  deactivateChannel: () => request<void>("/channel", { method: "DELETE" }),
 
   createContact: (contact: {
     name: string;

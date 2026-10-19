@@ -16,10 +16,27 @@ import (
 // justifica pool), mas o claim no banco é SKIP LOCKED — subir duas instâncias
 // não duplica mensagem.
 type Worker struct {
-	Store    *store.Store
+	Store *store.Store
+	// Channels resolve o provedor de CADA conta. Não existe provedor do
+	// worker: o token é do workspace, e um provider global faria a conta A
+	// mandar pelo número da B.
+	Channels ChannelResolver
+	// Provider é o fallback para quem injeta um provedor direto (testes de
+	// fila). Em produção quem responde é Channels.
 	Provider meta.Provider
 	Log      *slog.Logger
 	Interval time.Duration
+}
+
+// ChannelResolver monta o provedor a partir do canal gravado da conta. É uma
+// interface (e não o Store direto) para o worker não precisar saber que existe
+// cifra, Graph ou banco — só "me dá o provedor desta conta".
+type ChannelResolver interface {
+	ProviderFor(ctx context.Context, workspaceID string) (meta.Provider, error)
+	// CanSend diz se a conta tem canal ativo. Conta sem canal não drena fila:
+	// tentar enviar por ela produziria falha em laço sobre mensagens que só
+	// esperam a ativação.
+	CanSend(ctx context.Context, workspaceID string) bool
 }
 
 // Run processa um lote a cada tick até o contexto ser cancelado.
@@ -55,12 +72,18 @@ func (w *Worker) Tick(ctx context.Context) (int, error) {
 	for _, ws := range workspaces {
 		// Teste primeiro e SEM janela: é a mensagem que o operador pediu para
 		// sair agora. O disparo real, logo abaixo, continua preso à janela.
+		provider, err := w.providerFor(ctx, ws)
+		if err != nil {
+			// Sem canal ativo não há o que enviar: a mensagem fica na fila e o
+			// operador vê o motivo na tela, em vez de virar falha definitiva.
+			continue
+		}
 		tests, err := w.Store.ClaimTestQueued(ctx, ws, 10)
 		if err != nil {
 			return total, err
 		}
 		for _, job := range tests {
-			w.deliver(ctx, job)
+			w.deliver(ctx, provider, job)
 		}
 		total += len(tests)
 
@@ -92,11 +115,23 @@ func (w *Worker) Tick(ctx context.Context) (int, error) {
 		}
 
 		for _, job := range jobs {
-			w.deliver(ctx, job)
+			w.deliver(ctx, provider, job)
 		}
 		total += len(jobs)
 	}
 	return total, nil
+}
+
+// providerFor entrega o provedor da conta: o canal quando há resolvedor, o
+// provedor injetado quando não há (teste unitário de fila).
+func (w *Worker) providerFor(ctx context.Context, ws string) (meta.Provider, error) {
+	if w.Channels != nil {
+		return w.Channels.ProviderFor(ctx, ws)
+	}
+	if w.Provider != nil {
+		return w.Provider, nil
+	}
+	return nil, errors.New("worker sem provedor: configure Channels ou Provider")
 }
 
 // activeWorkspaces lista as contas com campanha em execução — inclusive as que
@@ -154,7 +189,7 @@ func (w *Worker) nextCampaign(ctx context.Context, ws string) (string, Window, b
 // deliver entrega uma mensagem e grava o resultado. Uma falha do provedor vira
 // falha do ENVIO, nunca do worker: a próxima mensagem da fila não pode parar
 // porque um número não tem WhatsApp.
-func (w *Worker) deliver(ctx context.Context, job store.SendJob) {
+func (w *Worker) deliver(ctx context.Context, provider meta.Provider, job store.SendJob) {
 	tpl := domain.Template{
 		Name:      job.TemplateName,
 		Language:  job.Language,
@@ -170,7 +205,7 @@ func (w *Worker) deliver(ctx context.Context, job store.SendJob) {
 		Params:       tpl.ParamValues(values),
 	}
 
-	msgID, err := w.Provider.SendTemplate(ctx, req)
+	msgID, err := provider.SendTemplate(ctx, req)
 	if err != nil {
 		w.Log.Warn("envio falhou", "send", job.SendID, "to", job.Destination, "error", err)
 		if markErr := w.Store.MarkFailed(ctx, job.SendID, err.Error()); markErr != nil {

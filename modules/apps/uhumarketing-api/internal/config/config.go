@@ -22,10 +22,10 @@ type Config struct {
 	MetaMode      string
 	MetaBaseURL   string
 	MetaVersion   string
-	MetaWABAID    string
-	MetaPhoneID   string
-	MetaToken     string
 	PublicBaseURL string
+	// ChannelSecret cifra o token do WhatsApp de cada conta. Obrigatório em
+	// live: token de terceiro em claro no banco é acesso total à conta dele.
+	ChannelSecret string
 
 	WorkerInterval time.Duration
 }
@@ -39,14 +39,16 @@ func Load() (Config, error) {
 		MetaMode:        env("META_MODE", "dry-run"),
 		MetaBaseURL:     env("META_GRAPH_URL", "https://graph.facebook.com"),
 		MetaVersion:     env("META_GRAPH_VERSION", "v21.0"),
-		MetaWABAID:      os.Getenv("META_WABA_ID"),
-		MetaPhoneID:     os.Getenv("META_PHONE_NUMBER_ID"),
-		MetaToken:       os.Getenv("META_TOKEN"),
+		ChannelSecret:   os.Getenv("CHANNEL_SECRET"),
 		PublicBaseURL:   env("PUBLIC_BASE_URL", "http://localhost:8195"),
 		WorkerInterval:  seconds("WORKER_INTERVAL_SECONDS", 2),
 		AllowDevActions: boolEnv("ALLOW_DEV_ACTIONS", true),
 	}
 
+	if strings.EqualFold(cfg.MetaMode, "live") && len(cfg.ChannelSecret) < 16 {
+		return Config{}, fmt.Errorf("META_MODE=live exige CHANNEL_SECRET com pelo menos 16 caracteres " +
+			"(é a chave que cifra o token de cada conta; sem ela o token ficaria em claro no banco)")
+	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL é obrigatório (ex.: postgres://uhu:uhu@localhost:5433/uhumarketing?sslmode=disable)")
 	}

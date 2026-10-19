@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Confere se o ambiente está pronto para META_MODE=live antes de subir a API.
 #
-# Existe porque o boot em live falha (de propósito) quando falta credencial, e
-# descobrir isso no primeiro disparo é pior do que descobrir aqui. Não imprime
-# o token: só o tamanho e se ele foi aceito pela Graph.
+# O serviço não tem mais WABA global: cada conta ativa o próprio WhatsApp em
+# Configurações → WhatsApp, e o token dela é gravado cifrado. Este script
+# confere o que é do PROCESSO (modo + chave de cifra) e, se você passar as
+# credenciais de uma conta, testa essa conta contra a Graph sem gravar nada.
 #
 #   ./scripts/live-check.sh
+#   WABA_ID=... PHONE_ID=... WA_TOKEN=... ./scripts/live-check.sh
 #
-# Lê as variáveis do ambiente ou do arquivo .env ao lado do compose.
+# Não imprime o token: só o tamanho e se ele foi aceito pela Graph.
 
 set -euo pipefail
 
@@ -31,7 +33,7 @@ say() { printf '%s\n' "$*"; }
 bad() { printf '  ✗ %s\n' "$*"; fail=1; }
 good() { printf '  ✓ %s\n' "$*"; }
 
-say "Variáveis"
+say "Processo"
 
 if [[ "${META_MODE:-dry-run}" == "live" ]]; then
   good "META_MODE=live"
@@ -39,14 +41,12 @@ else
   bad "META_MODE=${META_MODE:-dry-run} — sem 'live' nada sai para a Meta"
 fi
 
-for v in META_WABA_ID META_PHONE_NUMBER_ID META_TOKEN; do
-  val="${!v:-}"
-  if [[ -n "$val" ]]; then
-    good "$v definido (${#val} caracteres)"
-  else
-    bad "$v ausente"
-  fi
-done
+# A chave é o que impede o token de cada conta de ficar em claro no banco.
+if [[ -n "${CHANNEL_SECRET:-}" && ${#CHANNEL_SECRET} -ge 16 ]]; then
+  good "CHANNEL_SECRET definido (${#CHANNEL_SECRET} caracteres)"
+else
+  bad "CHANNEL_SECRET ausente ou curto (mínimo 16) — o boot em live recusa"
+fi
 
 if [[ -n "${META_APP_SECRET:-}" ]]; then
   good "META_APP_SECRET definido (webhook assinado)"
@@ -61,40 +61,59 @@ else
   say "    use o botão 'Consultar status na Meta' para o template"
 fi
 
+say ""
+say "Conta (opcional: WABA_ID, PHONE_ID e WA_TOKEN)"
+
+waba="${WABA_ID:-}"
+phone="${PHONE_ID:-}"
+token="${WA_TOKEN:-}"
+
+if [[ -z "$waba" && -z "$phone" && -z "$token" ]]; then
+  say "  · credenciais de conta não informadas; a ativação é feita na tela"
+  say "    Configurações → WhatsApp (a API confere com a Graph antes de gravar)"
+elif [[ -z "$waba" || -z "$phone" || -z "$token" ]]; then
+  bad "informe as três: WABA_ID, PHONE_ID e WA_TOKEN"
+else
+  good "WABA_ID definido (${#waba} caracteres)"
+  good "PHONE_ID definido (${#phone} caracteres)"
+  good "WA_TOKEN definido (${#token} caracteres)"
+
+  say ""
+  say "Graph API"
+  base="${META_GRAPH_URL:-https://graph.facebook.com}"
+  ver="${META_GRAPH_VERSION:-v21.0}"
+  url="$base/$ver/$phone?fields=display_phone_number,verified_name,quality_rating"
+
+  body=$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer $token" "$url")
+  code=$(printf '%s' "$body" | tail -1)
+  payload=$(printf '%s' "$body" | sed '$d')
+
+  if [[ "$code" == "200" ]]; then
+    number=$(printf '%s' "$payload" | sed -n 's/.*"display_phone_number":"\([^"]*\)".*/\1/p')
+    name=$(printf '%s' "$payload" | sed -n 's/.*"verified_name":"\([^"]*\)".*/\1/p')
+    good "número ${number:-?} (${name:-sem nome verificado}) respondeu"
+  else
+    bad "a Graph recusou (HTTP $code)"
+
+    # Banimento é o bloqueio que não se resolve com token novo. A orientação
+    # vale mais do que o código.
+    if printf '%s' "$payload" | grep -qE '131031|131042|"code":368|131047|restricted|banned|enforcement'; then
+      say "    a WABA está restrita ou banida pela Meta."
+      say "    abra um recurso em https://business.facebook.com/latest/accountquality"
+      say "    enquanto a restrição existir, nenhum envio é possível, mesmo com token válido"
+    elif printf '%s' "$payload" | grep -q '"code":190'; then
+      say "    token inválido ou expirado: gere outro em API Setup (ou um permanente com System User)"
+    else
+      say "    meta: $(printf '%s' "$payload" | head -c 300)"
+    fi
+  fi
+fi
+
 if [[ $fail -ne 0 ]]; then
   say ""
-  say "Faltam credenciais. Passo a passo em README.md > Modo live."
+  say "Pendências acima. Passo a passo em README.md > Modo live."
   exit 1
 fi
 
 say ""
-say "Graph API"
-
-base="${META_GRAPH_URL:-https://graph.facebook.com}"
-ver="${META_GRAPH_VERSION:-v21.0}"
-url="$base/$ver/$META_PHONE_NUMBER_ID?fields=display_phone_number,verified_name,quality_rating"
-
-body=$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer $META_TOKEN" "$url")
-code=$(printf '%s' "$body" | tail -1)
-payload=$(printf '%s' "$body" | sed '$d')
-
-if [[ "$code" != "200" ]]; then
-  if printf '%s' "$payload" | grep -qiE '"code":(131031|131047|368)|restricted|banned|enforcement'; then
-    say "  ✗ a Meta diz que a conta do WhatsApp está RESTRITA/BANIDA"
-    say ""
-    say "  Nenhum envio é possível enquanto a restrição existir, mesmo com token"
-    say "  válido. O caminho é abrir recurso no Meta Business Suite:"
-    say "    https://business.facebook.com/latest/accountquality"
-    say ""
-    say "  Depois que a Meta liberar, os IDs aparecem de novo em:"
-    say "    https://developers.facebook.com/apps → seu app → WhatsApp → API Setup"
-  else
-    bad "a Graph recusou ($code): $payload"
-  fi
-  exit 1
-fi
-
-say "  ✓ número: $(printf '%s' "$payload" | sed -n 's/.*"display_phone_number":"\([^"]*\)".*/\1/p')"
-say "  ✓ nome:   $(printf '%s' "$payload" | sed -n 's/.*"verified_name":"\([^"]*\)".*/\1/p')"
-say ""
-say "Pronto. Suba a API com META_MODE=live e o 'Testar conexão' deve mostrar o número."
+say "Tudo pronto. Suba a API com META_MODE=live e ative o WhatsApp da conta na tela."

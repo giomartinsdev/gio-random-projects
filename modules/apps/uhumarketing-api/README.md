@@ -40,14 +40,24 @@ Toda a conversa com a Meta passa por `meta.Provider`. Há duas implementações:
 | `META_MODE` | O que faz | Quando usar |
 | --- | --- | --- |
 | `dry-run` (default) | Aprova templates na hora, gera `wamid.dry.*`, drena a fila e **não toca a rede** | Desenvolver, testar, demonstrar |
-| `live` | Cloud API real: `POST /{waba}/message_templates` e `POST /{phone_id}/messages` | Só com conta Meta pronta |
+| `live` | Cloud API real: `POST /{waba}/message_templates` e `POST /{phone_id}/messages` | Quando cada conta já ativou o próprio número |
 
-`live` exige `META_WABA_ID`, `META_PHONE_NUMBER_ID` e `META_TOKEN`; o boot
-falha se faltar algum. Isso é intencional: subir em `live` pela metade e
-descobrir no primeiro disparo é pior do que não subir.
+**Não existe WABA global.** O token de WhatsApp pertence à CONTA, não ao
+processo: em `live`, cada workspace ativa o próprio número em **Configurações →
+WhatsApp** (WABA ID, Phone Number ID e token). Um token global faria a conta de
+um cliente enviar pelo número de outro — cobrança, opt-out e banimento cairiam
+no dono errado.
 
-Antes de subir, `./scripts/live-check.sh` diz o que falta e confirma o número
-na Graph sem imprimir o token.
+O token é gravado **cifrado** (AES-GCM, chave em `CHANNEL_SECRET`) e nunca volta
+para o navegador. `CHANNEL_SECRET` é obrigatório em `live`; sem ele o boot
+recusa, porque gravar token de terceiro em claro é acesso total à conta dele.
+
+Conta sem canal ativado em `live`: monta audiência, template e campanha, mas o
+disparo é recusado com o caminho de ativação. Nada é simulado em silêncio.
+
+Antes de subir, `./scripts/live-check.sh` confere modo e chave. Se você passar
+`WABA_ID`, `PHONE_ID` e `WA_TOKEN`, ele também testa a conta contra a Graph sem
+gravar nada e sem imprimir o token.
 
 ### Modo live, passo a passo
 
@@ -59,15 +69,19 @@ O código está pronto; estas etapas são humanas e fora do repo:
    verificação de negócio.
 3. **Credenciais.** System User com `whatsapp_business_messaging` e
    `whatsapp_business_management`; anote `WABA ID` e `Phone Number ID`.
-4. **Destinatário.** No número de teste, o seu WhatsApp entra na lista de
+4. **Chave de cifra.** Gere `CHANNEL_SECRET` (`openssl rand -base64 32`) e
+   coloque no `.env`. Guarde-a: sem ela, os canais precisam ser reativados.
+5. **Subir em live.** `META_MODE=live` e `CHANNEL_SECRET`. `GET /healthz` deve
+   responder `"live":true` e `"channels":"per-workspace"`.
+6. **Ativar a conta.** Configurações → WhatsApp → **Ativar WhatsApp**: cole as
+   três credenciais. A API chama a Graph, confirma número e nome verificado e
+   só então grava. Se a Meta recusar, o canal não é ativado e o motivo aparece.
+7. **Destinatário.** No número de teste, o seu WhatsApp entra na lista de
    destinatários permitidos — senão a Meta recusa com `recipient not in
    allowed list`.
-5. **Subir.** `META_MODE=live` com as três variáveis. `GET /healthz` deve
-   responder `"live":true`. Em Configurações, **Testar conexão** mostra o
-   número e o nome verificado que a Graph devolveu.
-6. **Template.** Criar e enviar para a Meta. A revisão leva de minutos a horas;
+8. **Template.** Criar e enviar para a Meta. A revisão leva de minutos a horas;
    enquanto não volta, o template fica "em análise" e o disparo é recusado.
-7. **Teste.** Cadastre o seu número como contato com opt-in, crie a campanha e
+9. **Teste.** Cadastre o seu número como contato com opt-in, crie a campanha e
    use **Enviar teste** — ele vai para o opt-in mais recente e sai na hora,
    **sem esperar a janela** (a janela continua valendo para o disparo real).
 
@@ -94,7 +108,8 @@ O caminho é humano e fora do código:
 
 Se o recurso não for aceito, a alternativa é criar uma WABA nova com outro
 número (CNPJ/telefone diferentes). O produto não guarda estado preso à WABA
-antiga: é só trocar as três variáveis e reiniciar.
+antiga: ative o canal de novo em Configurações → WhatsApp com as credenciais
+novas. O canal é por conta, então uma WABA bloqueada não derruba as outras.
 
 `./scripts/live-check.sh` reconhece esse caso e imprime essa orientação em vez
 do JSON da Meta.
@@ -160,7 +175,9 @@ Públicos: `/healthz`, `/api/v1/auth/{signup,login}` e `/webhooks/whatsapp`
 | PATCH | `/templates/{id}` | Edita conteúdo; volta para rascunho se o corpo mudou |
 | POST | `/templates/{id}/submit` | Envia o rascunho para a Meta |
 | POST | `/templates/{id}/sync` | Consulta o status do template na Graph (sem esperar webhook) |
-| GET | `/channel` | Verificação real do canal: `{live, ok, number, verifiedName, note}` |
+| GET | `/channel` | Verificação real do canal da conta (pergunta à Graph) |
+| PUT | `/channel` | Ativa o WhatsApp da conta: `{wabaId, phoneId, token, mode?}`. Confere na Graph antes de gravar; o token nunca volta |
+| DELETE | `/channel` | Desativa o canal e apaga as credenciais |
 | POST | `/segments`, `/contacts` | Audiências e contatos com opt-in |
 | POST | `/campaigns` | Cria campanha |
 | POST | `/campaigns/{id}/launch` | Enfileira a audiência elegível; devolve `queued`, `skipped`, `duplicate` |

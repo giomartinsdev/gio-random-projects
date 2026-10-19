@@ -162,8 +162,21 @@ export interface Store extends State {
     ok: boolean;
     number?: string;
     verifiedName?: string;
+    quality?: string;
     note: string;
   }>;
+  /**
+   * Ativa o WhatsApp DESTA conta. O token é write-only: entra na chamada e não
+   * volta em nenhuma resposta. Ausente = servidor sem ativação disponível.
+   */
+  activateChannel?: (input: {
+    mode?: string;
+    wabaId: string;
+    phoneId: string;
+    token: string;
+  }) => Promise<import("./api").ChannelState>;
+  /** Desativa o canal e apaga as credenciais. */
+  deactivateChannel?: () => Promise<void>;
   /**
    * Série diária REAL, agregada de `sends` no servidor. A presença desta
    * função também sinaliza "os números são reais", e o dashboard para de
@@ -174,13 +187,7 @@ export interface Store extends State {
    * Estado do provedor de WhatsApp (dry-run/live, número conectado). Vem do
    * servidor: quem sabe se dá para enviar é ele, não a tela.
    */
-  provider?: {
-    name: string;
-    mode: string;
-    live: boolean;
-    hasNumber: boolean;
-    note: string;
-  };
+  provider?: import("./api").ChannelState;
 }
 
 /** Resultado de um disparo real. */

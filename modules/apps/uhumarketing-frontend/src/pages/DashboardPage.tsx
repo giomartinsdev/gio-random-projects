@@ -32,14 +32,15 @@ const RANGES: { value: Range; label: string; days: number }[] = [
   { value: "90d", label: "90 dias", days: 90 },
 ];
 
-const KIND_ICON = {
+const KIND_ICON: Record<string, typeof Megaphone> = {
   campaign: Megaphone,
   template: Sparkles,
   flow: Workflow,
   send: SendIcon,
   billing: Coins,
   team: Users,
-} as const;
+  channel: MessageCircle,
+};
 
 export function DashboardPage() {
   const store = useStore();
@@ -268,7 +269,10 @@ export function DashboardPage() {
             </div>
             <div className="flex min-h-0 flex-col overflow-y-auto scroll-thin">
               {store.activity.slice(0, 7).map((e) => {
-                const Icon = KIND_ICON[e.kind];
+                // Fallback de propósito: o backend pode registrar um tipo novo
+                // antes da tela conhecê-lo, e um ícone faltando não pode
+                // derrubar o dashboard inteiro.
+                const Icon = KIND_ICON[e.kind] ?? Sparkles;
                 return (
                   <div key={e.id} className="flex animate-feed-in gap-3 border-b border-line/60 py-3 last:border-0">
                     <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xs bg-elevated">

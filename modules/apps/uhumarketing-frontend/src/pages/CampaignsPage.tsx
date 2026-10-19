@@ -332,6 +332,11 @@ function CampaignDetail({ campaign }: { campaign: Campaign }) {
 
       {/* A fila parada precisa de explicação. "29 na fila, 0 enviadas" sem
           motivo parece defeito; com motivo é a janela de envio funcionando. */}
+      {queue?.blockedBy === "channel" && (
+        <p className="text-[11px] leading-snug text-danger">
+          Fila parada: esta conta ainda não ativou o WhatsApp. Abra Configurações → WhatsApp.
+        </p>
+      )}
       {queue?.blockedBy === "window" && (
         <p className="text-[11px] leading-snug text-warn">
           Fila esperando a janela de envio

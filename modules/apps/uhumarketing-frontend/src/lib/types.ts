@@ -380,7 +380,15 @@ export interface User {
 
 /* ------------------------------------------------------------------- feed */
 
-export type ActivityKind = "campaign" | "template" | "flow" | "send" | "billing" | "team";
+export type ActivityKind =
+  | "campaign"
+  | "template"
+  | "flow"
+  | "send"
+  | "billing"
+  | "team"
+  /** Ativação/desativação do canal de WhatsApp da conta. */
+  | "channel";
 
 export interface ActivityEvent {
   id: string;

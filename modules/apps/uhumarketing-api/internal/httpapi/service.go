@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
+	channelpkg "github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/channel"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/dispatch"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/domain"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/meta"
@@ -17,11 +19,25 @@ import (
 // "tem telefone?" — decisões que precisam valer em qualquer entrada (HTTP hoje,
 // CLI amanhã).
 type Service struct {
-	Store     *store.Store
-	Provider  meta.Provider
-	Log       *slog.Logger
+	Store *store.Store
+	// Provider é o provedor de FALLBACK: o dry-run do processo, usado quando o
+	// serviço roda em desenvolvimento. Em live, quem manda é o canal da conta
+	// (Channels); não existe provider global que fale pela conta dos outros.
+	Provider meta.Provider
+	Channels *channelpkg.Resolver
+	Log      *slog.Logger
+	// Workspace e User vêm da sessão, nunca do corpo.
 	Workspace string
 	User      domain.User
+}
+
+// provider resolve o provedor da conta da sessão. Sem canal ativado em live, o
+// erro é 422 com o caminho — nunca uma mensagem simulada em silêncio.
+func (s *Service) provider(ctx context.Context) (meta.Provider, error) {
+	if s.Channels == nil {
+		return s.Provider, nil
+	}
+	return s.Channels.ProviderFor(ctx, s.Workspace)
 }
 
 // For devolve o serviço escopado numa conta. O workspace e o usuário vêm
@@ -52,7 +68,12 @@ func (s *Service) SubmitTemplate(ctx context.Context, in domain.TemplateInput) (
 		return domain.Template{}, err
 	}
 
-	extID, status, err := s.Provider.CreateTemplate(ctx, draft)
+	provider, err := s.provider(ctx)
+	if err != nil {
+		_ = s.Store.DeleteTemplate(ctx, s.Workspace, draft.ID)
+		return domain.Template{}, domain.Invalid("channel", err.Error())
+	}
+	extID, status, err := provider.CreateTemplate(ctx, draft)
 	if err != nil {
 		// Desfaz o rascunho: deixar um template que nunca foi submetido faria a
 		// tela mostrar "pendente" para algo que a Meta jamais viu.
@@ -132,7 +153,15 @@ func (s *Service) Launch(ctx context.Context, campaignID string) (LaunchResults,
 	if err != nil {
 		return LaunchResults{}, err
 	}
-	if ws.WhatsAppNumber == "" {
+	// Canal antes do número: em live, conta sem canal tem como próximo passo
+	// ATIVAR o WhatsApp, não digitar um telefone à mão. A ordem da mensagem é a
+	// ordem da ação.
+	if s.Channels != nil {
+		if err := s.Channels.CanSendErr(ctx, s.Workspace); err != nil {
+			return LaunchResults{}, domain.Invalid("channel", err.Error())
+		}
+	}
+	if !s.hasNumber(ctx, ws.WhatsAppNumber) {
 		return LaunchResults{}, domain.Invalid("whatsappNumber",
 			"configure o telefone do WhatsApp em Configurações antes de disparar")
 	}
@@ -221,7 +250,12 @@ func (s *Service) TestSend(ctx context.Context, campaignID string) (LaunchResult
 	if err != nil {
 		return LaunchResults{}, err
 	}
-	if ws.WhatsAppNumber == "" {
+	if s.Channels != nil {
+		if err := s.Channels.CanSendErr(ctx, s.Workspace); err != nil {
+			return LaunchResults{}, domain.Invalid("channel", err.Error())
+		}
+	}
+	if !s.hasNumber(ctx, ws.WhatsAppNumber) {
 		return LaunchResults{}, domain.Invalid("whatsappNumber",
 			"configure o telefone do WhatsApp em Configurações antes de enviar")
 	}
@@ -274,6 +308,22 @@ func (s *Service) TestSend(ctx context.Context, campaignID string) (LaunchResult
 	return LaunchResults{CampaignID: campaign.ID, Queued: queued}, nil
 }
 
+// hasNumber diz se a conta tem um número para assinar o envio: o digitado em
+// Configurações ou o que a Meta confirmou na ativação do canal. Em live, exigir
+// o campo manual seria pedir que o operador redigitasse o que a Meta já disse.
+func (s *Service) hasNumber(ctx context.Context, manual string) bool {
+	if manual != "" {
+		return true
+	}
+	if s.Channels == nil {
+		return false
+	}
+	// Canal ativo já prova que existe um número: em live a Meta confirmou o
+	// Phone Number ID, em dry-run o operador informou qual está simulando.
+	c, err := s.Store.Channel(ctx, s.Workspace)
+	return err == nil && c.Active()
+}
+
 // CheckChannel pergunta ao provedor se o canal está de pé e devolve o que ele
 // respondeu. A tela mostra isso em vez de um "conectado" deduzido da
 // configuração: ter um número digitado em Configurações não prova que a Meta
@@ -283,23 +333,132 @@ func (s *Service) CheckChannel(ctx context.Context) (meta.ChannelInfo, error) {
 	if err != nil {
 		return meta.ChannelInfo{}, err
 	}
-	if ws.WhatsAppNumber == "" {
+	// Com canal próprio, o número vem da Meta (display_phone_number); o campo
+	// digitado à mão é só a referência da conta. Sem canal, ele é o mínimo para
+	// haver o que verificar.
+	hasChannel := false
+	if s.Channels != nil {
+		if c, err := s.Store.Channel(ctx, s.Workspace); err == nil && c.Active() {
+			hasChannel = true
+		}
+	}
+	if ws.WhatsAppNumber == "" && !hasChannel {
 		return meta.ChannelInfo{}, domain.Invalid("whatsappNumber",
 			"configure o telefone do WhatsApp em Configurações antes de verificar o canal")
 	}
 	// Falha do provedor vira diagnóstico (ok=false), não erro HTTP: a tela
 	// precisa mostrar o texto da Meta — "token expirado" é o que resolve o
 	// problema, e um 500 genérico esconderia isso.
-	info, err := s.Provider.Check(ctx)
+	provider, err := s.provider(ctx)
+	if err != nil {
+		return meta.ChannelInfo{}, domain.Invalid("channel", err.Error())
+	}
+	info, err := provider.Check(ctx)
 	if err != nil {
 		return meta.ChannelInfo{
-			Live: s.Provider.Name() == "meta-cloud",
+			Live: provider.Name() == "meta-cloud",
 			OK:   false,
 			Note: err.Error(),
 		}, nil
 	}
 	info.OK = true
 	return info, nil
+}
+
+/* ------------------------------------------------------------- canal da conta */
+
+// ActivateChannelInput é o que a tela manda ao conectar o WhatsApp. O token é
+// write-only: entra na ativação e nunca mais volta.
+type ActivateChannelInput struct {
+	Mode    string `json:"mode,omitempty"`
+	WABAID  string `json:"wabaId"`
+	PhoneID string `json:"phoneId"`
+	Token   string `json:"token"`
+}
+
+// ActivateChannel valida as credenciais na Meta e grava o canal da CONTA.
+//
+// Ativar não é colar um token e sair disparando: em live, a Graph responde
+// antes de gravar. Um canal gravado sem verificação pareceria conectado e
+// falharia no primeiro envio — pior do que recusar agora, com o motivo.
+func (s *Service) ActivateChannel(ctx context.Context, in ActivateChannelInput) (ProviderInfo, error) {
+	if s.Channels == nil {
+		return ProviderInfo{}, domain.Invalid("channel", "ativação de canal indisponível neste servidor")
+	}
+	in.WABAID = strings.TrimSpace(in.WABAID)
+	in.PhoneID = strings.TrimSpace(in.PhoneID)
+	in.Token = strings.TrimSpace(in.Token)
+
+	var missing []string
+	if in.WABAID == "" {
+		missing = append(missing, "WABA ID")
+	}
+	if in.PhoneID == "" {
+		missing = append(missing, "Phone Number ID")
+	}
+	if in.Token == "" {
+		missing = append(missing, "token")
+	}
+	if len(missing) > 0 {
+		return ProviderInfo{}, domain.Invalid("channel",
+			"faltam credenciais do WhatsApp: "+strings.Join(missing, ", ")+
+				". Copie os três valores em API Setup do app da Meta")
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(in.Mode))
+	if mode == "" {
+		mode = s.Channels.Mode
+	}
+	if mode != "live" && mode != "dry-run" {
+		return ProviderInfo{}, domain.Invalid("mode", "modo do canal inválido: use live ou dry-run")
+	}
+
+	channel := store.Channel{
+		WorkspaceID: s.Workspace,
+		Mode:        mode,
+		WABAID:      in.WABAID,
+		PhoneID:     in.PhoneID,
+	}
+	if mode == "live" {
+		info, err := s.Channels.Verify(ctx, channelpkg.Credentials{
+			WABAID: in.WABAID, PhoneID: in.PhoneID, Token: in.Token,
+		})
+		if err != nil {
+			// Erro da Graph vira 422 com a orientação (token, banimento,
+			// parâmetro), não 500: é o operador que resolve.
+			return ProviderInfo{}, domain.Invalid("channel", "a Meta recusou as credenciais: "+err.Error())
+		}
+		channel.DisplayPhone = info.Number
+		channel.VerifiedName = info.VerifiedName
+		channel.Quality = info.Quality
+	}
+
+	sealed, err := s.Channels.Seal(in.Token)
+	if err != nil {
+		return ProviderInfo{}, domain.Invalid("channel", err.Error())
+	}
+	channel.TokenCipher = sealed
+
+	if err := s.Store.SaveChannel(ctx, channel); err != nil {
+		if errors.Is(err, store.ErrPhoneInUse) {
+			return ProviderInfo{}, domain.Invalid("phoneId", err.Error())
+		}
+		return ProviderInfo{}, err
+	}
+	_ = s.Store.LogActivity(ctx, s.Workspace, "channel", "WhatsApp ativado",
+		map[bool]string{true: "Cloud API da Meta", false: "modo simulado"}[mode == "live"], "")
+	return s.channelInfo(ctx)
+}
+
+// DeactivateChannel apaga as credenciais. O workspace continua existindo —
+// desativar não é apagar a conta.
+func (s *Service) DeactivateChannel(ctx context.Context) error {
+	if err := s.Store.DeleteChannel(ctx, s.Workspace); err != nil {
+		return err
+	}
+	_ = s.Store.LogActivity(ctx, s.Workspace, "channel", "WhatsApp desativado",
+		"as credenciais do canal foram apagadas", "")
+	return nil
 }
 
 // SyncTemplateStatus pergunta à Meta o status de um template que ainda não
@@ -315,7 +474,11 @@ func (s *Service) SyncTemplateStatus(ctx context.Context, templateID string) (do
 		return domain.Template{}, domain.Invalid("templateId",
 			"este template ainda não foi submetido à Meta; envie para análise antes de consultar")
 	}
-	status, reason, err := s.Provider.TemplateStatus(ctx, tpl.MetaID)
+	provider, err := s.provider(ctx)
+	if err != nil {
+		return domain.Template{}, domain.Invalid("channel", err.Error())
+	}
+	status, reason, err := provider.TemplateStatus(ctx, tpl.MetaID)
 	if err != nil {
 		if errors.Is(err, meta.ErrNotLive) {
 			return domain.Template{}, domain.Invalid("templateId", err.Error())
@@ -402,14 +565,20 @@ type QueueInfo struct {
 	Timezone   string     `json:"timezone,omitempty"`
 }
 
-// ProviderInfo é o que a tela mostra em Configurações: em que modo o serviço
-// está e se ele realmente consegue mandar mensagem.
+// ProviderInfo é o que a tela mostra em Configurações. Ele descreve o canal DA
+// CONTA, não o processo: em live, uma conta conectada e outra não convivem no
+// mesmo servidor.
 type ProviderInfo struct {
-	Name      string `json:"name"`
-	Mode      string `json:"mode"`
-	Live      bool   `json:"live"`
-	HasNumber bool   `json:"hasNumber"`
-	Note      string `json:"note"`
+	Name         string `json:"name"`
+	Mode         string `json:"mode"`
+	Live         bool   `json:"live"`
+	Activated    bool   `json:"activated"`
+	HasNumber    bool   `json:"hasNumber"`
+	DisplayPhone string `json:"displayPhone,omitempty"`
+	VerifiedName string `json:"verifiedName,omitempty"`
+	Quality      string `json:"quality,omitempty"`
+	WABAID       string `json:"wabaId,omitempty"`
+	Note         string `json:"note"`
 }
 
 func (s *Service) Bootstrap(ctx context.Context) (Bootstrap, error) {
@@ -446,12 +615,10 @@ func (s *Service) Bootstrap(ctx context.Context) (Bootstrap, error) {
 		return Bootstrap{}, err
 	}
 
-	live := s.Provider.Name() == "meta-cloud"
-	note := "Provedor dry-run: as mensagens são registradas e marcadas como enviadas, sem sair para a Meta."
-	if live {
-		note = "Conectado à Cloud API da Meta. Cada envio é uma mensagem real e cobrada."
+	channelInfo, err := s.channelInfo(ctx)
+	if err != nil {
+		return Bootstrap{}, err
 	}
-
 	series, err := s.Store.DailySeries(ctx, s.Workspace, 90)
 	if err != nil {
 		return Bootstrap{}, err
@@ -473,13 +640,7 @@ func (s *Service) Bootstrap(ctx context.Context) (Bootstrap, error) {
 		Activity:  activity,
 		Series:    series,
 		Queue:     queue,
-		Provider: ProviderInfo{
-			Name:      s.Provider.Name(),
-			Mode:      providerMode(live),
-			Live:      live,
-			HasNumber: ws.WhatsAppNumber != "",
-			Note:      note,
-		},
+		Provider: channelInfo,
 		ServerTime: time.Now().UTC(),
 	}, nil
 }
@@ -493,6 +654,13 @@ func (s *Service) queueState(ctx context.Context, campaigns []domain.Campaign) (
 	for _, c := range campaigns {
 		if c.Status != "running" || c.Metrics.Queued == 0 {
 			continue
+		}
+		if s.Channels != nil {
+			if err := s.Channels.CanSendErr(ctx, s.Workspace); err != nil {
+				out = append(out, QueueInfo{CampaignID: c.ID, Queued: c.Metrics.Queued,
+					BlockedBy: "channel", Timezone: c.Schedule.Timezone})
+				continue
+			}
 		}
 		window := dispatch.Window{
 			Start: c.Schedule.WindowStart, End: c.Schedule.WindowEnd,
@@ -512,6 +680,75 @@ func (s *Service) queueState(ctx context.Context, campaigns []domain.Campaign) (
 		out = append(out, info)
 	}
 	return out, nil
+}
+
+// channelInfo descreve o canal da conta para a tela.
+//
+// Em live, conta sem canal aparece como "inactive" — e a tela mostra o caminho
+// de ativação, em vez de um "conectado" deduzido de configuração.
+func (s *Service) channelInfo(ctx context.Context) (ProviderInfo, error) {
+	ws, err := s.Store.Workspace(ctx, s.Workspace)
+	if err != nil {
+		return ProviderInfo{}, err
+	}
+	hasNumber := s.hasNumber(ctx, ws.WhatsAppNumber)
+
+	// Serviço sem resolvedor é o modo de teste unitário: vale o provider
+	// injetado, como antes.
+	if s.Channels == nil {
+		live := s.Provider.Name() == "meta-cloud"
+		note := "Provedor dry-run: as mensagens são registradas e marcadas como enviadas, sem sair para a Meta."
+		if live {
+			note = "Conectado à Cloud API da Meta. Cada envio é uma mensagem real e cobrada."
+		}
+		return ProviderInfo{
+			Name:      s.Provider.Name(),
+			Mode:      providerMode(live),
+			Live:      live,
+			Activated: live,
+			HasNumber: hasNumber,
+			Note:      note,
+		}, nil
+	}
+
+	c, err := s.Store.Channel(ctx, s.Workspace)
+	if errors.Is(err, domain.ErrNotFound) || (err == nil && !c.Active()) {
+		if !s.Channels.Live() {
+			return ProviderInfo{
+				Name: "dry-run", Mode: "dry-run", Live: false, Activated: false,
+				HasNumber: hasNumber,
+				Note: "Provedor dry-run: as mensagens são simuladas e não chegam a nenhum WhatsApp. " +
+					"Ative o WhatsApp para conectar o número da empresa.",
+			}, nil
+		}
+		return ProviderInfo{
+			Name: "none", Mode: "inactive", Live: true, Activated: false,
+			HasNumber: hasNumber,
+			Note:      channelpkg.ErrNotActivated.Error(),
+		}, nil
+	}
+	if err != nil {
+		return ProviderInfo{}, err
+	}
+
+	live := c.Live()
+	info := ProviderInfo{
+		Name:         map[bool]string{true: "meta-cloud", false: "dry-run"}[live],
+		Mode:         map[bool]string{true: "live", false: "dry-run"}[live],
+		Live:         live,
+		Activated:    true,
+		HasNumber:    hasNumber,
+		DisplayPhone: c.DisplayPhone,
+		VerifiedName: c.VerifiedName,
+		Quality:      c.Quality,
+		WABAID:       c.WABAID,
+	}
+	if live {
+		info.Note = "Conectado à Cloud API da Meta com o número desta conta. Cada envio é uma mensagem real e cobrada."
+	} else {
+		info.Note = "Canal ativado em dry-run: as mensagens continuam simuladas e não chegam a nenhum WhatsApp."
+	}
+	return info, nil
 }
 
 func providerMode(live bool) string {
@@ -583,7 +820,7 @@ func (s *Service) HandleWebhook(ctx context.Context, ev WebhookEvent) error {
 				s.applyMessageStatus(ctx, st.ID, st.Status, st.Errors)
 			}
 			for _, msg := range v.Messages {
-				s.applyInbound(ctx, msg.From, inboundText(msg.Text.Body, msg.Button))
+				s.applyInbound(ctx, v.Metadata.PhoneNumberID, msg.From, inboundText(msg.Text.Body, msg.Button))
 			}
 		}
 	}
@@ -684,18 +921,23 @@ func validSendStatus(s string) bool {
 
 // applyInbound trata resposta do destinatário. Palavra de opt-out revoga o
 // consentimento na hora; qualquer outra resposta marca o envio como respondido.
-func (s *Service) applyInbound(ctx context.Context, from, text string) {
+func (s *Service) applyInbound(ctx context.Context, phoneID, from, text string) {
 	if from == "" {
 		return
 	}
-	// Sem sessão, o workspace vem do telefone: um número pertence a uma conta
-	// só (UNIQUE workspace_id+phone), então a resposta identifica o dono sem
-	// ambiguidade.
+	// Sem sessão, o workspace vem do canal que RECEBEU a mensagem: com uma WABA
+	// por conta, o metadata.phone_number_id identifica o dono sem ambiguidade.
+	// O telefone do remetente é só o fallback (webhook antigo/sem metadata).
 	ws := s.Workspace
+	if ws == "" && phoneID != "" {
+		if c, err := s.Store.ChannelByPhoneID(ctx, phoneID); err == nil {
+			ws = c.WorkspaceID
+		}
+	}
 	if ws == "" {
 		owner, err := s.Store.WorkspaceByPhone(ctx, from)
 		if err != nil || owner == "" {
-			s.Log.Warn("webhook: telefone de workspace desconhecido", "from", from)
+			s.Log.Warn("webhook: telefone de workspace desconhecido", "from", from, "phoneId", phoneID)
 			return
 		}
 		ws = owner

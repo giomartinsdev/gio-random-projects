@@ -46,6 +46,8 @@ func NewRouter(h *Handlers, origins []string, log *slog.Logger) http.Handler {
 			r.Post("/templates/{id}/sync", h.SyncTemplate)
 
 			r.Get("/channel", h.Channel)
+			r.Put("/channel", h.ActivateChannel)
+			r.Delete("/channel", h.DeactivateChannel)
 			r.Delete("/templates/{id}", h.DeleteTemplate)
 
 			r.Get("/segments", h.Segments)

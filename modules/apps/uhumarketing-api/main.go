@@ -6,8 +6,9 @@
 //   - META_MODE=dry-run (default) — nada sai para a Meta. A fila processa,
 //     grava ids externos falsos e o produto inteiro funciona. É o modo para
 //     desenvolver e testar sem conta de WhatsApp.
-//   - META_MODE=live — Cloud API de verdade. Exige META_WABA_ID,
-//     META_PHONE_NUMBER_ID e META_TOKEN; o boot falha se faltar algum.
+//   - META_MODE=live — Cloud API de verdade. NÃO existe token global: cada
+//     conta ativa o próprio WhatsApp em Configurações → WhatsApp, e o token
+//     dela é gravado cifrado com CHANNEL_SECRET (obrigatório no boot).
 //
 // O serviço é dono das próprias tabelas (store/schema.sql) e roda um worker
 // in-process: um processo só, como o volume da POC pede. O claim da fila é
@@ -27,10 +28,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/channel"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/config"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/dispatch"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/httpapi"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/meta"
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/secret"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/store"
 )
 
@@ -45,13 +48,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	provider, err := meta.Resolve(cfg.MetaMode, cfg.MetaBaseURL, cfg.MetaVersion,
-		cfg.MetaWABAID, cfg.MetaPhoneID, cfg.MetaToken)
+	// Provedor de fallback. Em dry-run é o simulador; em live não existe canal
+	// global — cada conta traz o próprio token, então o fallback só serve para
+	// o health e nunca envia em nome de ninguém.
+	provider, err := meta.Resolve(cfg.MetaMode, cfg.MetaBaseURL, cfg.MetaVersion)
 	if err != nil {
 		log.Error("provedor inválido", "error", err)
 		os.Exit(1)
 	}
-
+	var box *secret.Box
+	if cfg.ChannelSecret != "" {
+		box, err = secret.New(cfg.ChannelSecret)
+		if err != nil {
+			log.Error("CHANNEL_SECRET inválido", "error", err)
+			os.Exit(1)
+		}
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -72,11 +84,20 @@ func main() {
 
 	st := store.New(pool)
 
+	channels := &channel.Resolver{
+		Store:    st,
+		Box:      box,
+		Mode:     cfg.MetaMode,
+		BaseURL:  cfg.MetaBaseURL,
+		Version:  cfg.MetaVersion,
+		Fallback: provider,
+	}
+
 	// Workspace vazio de propósito: cada requisição é escopada pelo middleware
 	// de sessão. Um workspace fixo aqui seria justamente o bug de vazamento
 	// entre contas.
-	svc := &httpapi.Service{Store: st, Provider: provider, Log: log}
-	worker := &dispatch.Worker{Store: st, Provider: provider, Log: log, Interval: cfg.WorkerInterval}
+	svc := &httpapi.Service{Store: st, Provider: provider, Channels: channels, Log: log}
+	worker := &dispatch.Worker{Store: st, Channels: channels, Log: log, Interval: cfg.WorkerInterval}
 
 	handlers := &httpapi.Handlers{
 		Service:            svc,

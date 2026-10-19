@@ -1,12 +1,9 @@
 import { useState } from "react";
 import {
   BellRing,
-  Check,
   CircleAlert,
-  CircleX,
   Database,
   Globe,
-  KeyRound,
   MessageCircle,
   RotateCcw,
   ShieldCheck,
@@ -23,6 +20,7 @@ import { StatusBadge, Tag } from "@/components/ui/Badge";
 import { Topbar, PageBody, PageHeader, Note } from "@/components/Topbar";
 import { Modal } from "@/components/ui/Drawer";
 import { DataSourceCard } from "@/components/DataSourceCard";
+import { ChannelCard } from "@/components/ChannelCard";
 
 export function SettingsPage() {
   const store = useStore();
@@ -30,14 +28,6 @@ export function SettingsPage() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetError, setResetError] = useState("");
   const [resetting, setResetting] = useState(false);
-  const [channel, setChannel] = useState<{
-    live: boolean;
-    ok: boolean;
-    number?: string;
-    verifiedName?: string;
-    note: string;
-  } | null>(null);
-  const [checking, setChecking] = useState(false);
   const [quietStart, setQuietStart] = useState(String(store.workspace.quietHours.start));
   const [quietEnd, setQuietEnd] = useState(String(store.workspace.quietHours.end));
   const [business, setBusiness] = useState({
@@ -92,7 +82,7 @@ export function SettingsPage() {
       <PageBody className="max-w-[1000px]">
         <PageHeader
           title="O negócio por trás dos envios"
-          description="Identidade, número, políticas de opt-in e conexão com a Meta. O token da WABA fica no servidor."
+          description="Identidade, número, políticas de opt-in e conexão com a Meta. O token do WhatsApp fica cifrado no servidor."
         />
 
         <DataSourceCard />
@@ -149,27 +139,26 @@ export function SettingsPage() {
         <Card className="flex flex-col gap-4 p-5">
           <CardHead
             title="WhatsApp Business (Meta)"
-            subtitle="Número, qualidade e limite de conversas"
+            subtitle="O canal desta conta: número, qualidade e credenciais"
             right={
               <StatusBadge
                 tone={
-                  store.workspace.quality === "green"
+                  store.provider?.activated && store.provider?.live
                     ? "success"
-                    : store.workspace.quality === "yellow"
-                      ? "warn"
-                      : store.workspace.quality === "red"
-                        ? "danger"
-                        : "muted"
+                    : store.provider?.activated
+                      ? "muted"
+                      : "warn"
                 }
               >
-                {store.workspace.quality
-                  ? `qualidade ${store.workspace.quality}`
-                  : store.workspace.whatsappNumber
-                    ? "qualidade não informada"
-                    : "sem número"}
+                {store.provider?.activated
+                  ? store.provider?.live
+                    ? "conectado"
+                    : "simulado"
+                  : "inativo"}
               </StatusBadge>
             }
           />
+          <ChannelCard />
           <div className="grid gap-3.5 md:grid-cols-2">
             <Field label="Número conectado" hint="Só dígitos com DDI/DDD. É o número que assina os envios.">
               <Input
@@ -183,36 +172,8 @@ export function SettingsPage() {
             <Field label="Limite de mensagens" hint="A Meta informa quando o número é verificado.">
               <Input value={store.workspace.messagingLimit || "—"} readOnly />
             </Field>
-            <Field label="Provedor" hint="Definido por META_MODE no servidor.">
-              <Input className="font-mono" value={store.provider?.name ?? "—"} readOnly />
-            </Field>
-            <Field label="Token de acesso" hint="O token da WABA fica no servidor, nunca no navegador.">
-              <Input className="font-mono" value="••••••••••••••••" readOnly icon={<KeyRound size={15} />} />
-            </Field>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={checking}
-              onClick={async () => {
-                setChecking(true);
-                setChannel(null);
-                try {
-                  setChannel(await store.checkChannel!());
-                } catch (err) {
-                  setChannel({
-                    live: Boolean(store.provider?.live),
-                    ok: false,
-                    note: err instanceof Error ? err.message : "falha ao verificar o canal",
-                  });
-                } finally {
-                  setChecking(false);
-                }
-              }}
-            >
-              {checking ? "Verificando…" : "Testar conexão"}
-            </Button>
             <Button
               size="sm"
               onClick={() => void saveWorkspace()}
@@ -228,25 +189,6 @@ export function SettingsPage() {
                 )}
               >
                 {saveNote.text}
-              </span>
-            )}
-            {channel && (
-              <span
-                className={cn(
-                  "flex items-center gap-1.5 text-[12px]",
-                  channel.ok && channel.live
-                    ? "text-success"
-                    : channel.ok
-                      ? "text-fg-2"
-                      : "text-danger",
-                )}
-              >
-                {channel.ok && channel.live ? <Check size={13} /> : <CircleX size={13} />}
-                {channel.ok
-                  ? channel.live
-                    ? `${channel.verifiedName ?? "número"} · ${channel.number ?? ""}`
-                    : "dry-run: nada sai para a Meta"
-                  : channel.note}
               </span>
             )}
           </div>
@@ -306,7 +248,13 @@ export function SettingsPage() {
             <Integration
               name="Meta WhatsApp Cloud API"
               detail="Envio de templates, status e qualidade do número"
-              status={store.provider?.hasNumber ? "conectado" : "pendente"}
+              status={
+                store.provider?.activated
+                  ? store.provider.live
+                    ? "conectado"
+                    : "simulado"
+                  : "desconectado"
+              }
             />
             <Integration name="CRM / e-commerce" detail="Pedidos, tags e eventos (carrinho, entrega)" status="pendente" />
             <Integration name="Webhook de saída" detail="Avisa o seu sistema a cada resposta ou conversão" status="pendente" />
@@ -422,7 +370,7 @@ export function SettingsPage() {
   );
 }
 
-function Integration({ name, detail, status }: { name: string; detail: string; status: "conectado" | "pendente" | "desconectado" }) {
+function Integration({ name, detail, status }: { name: string; detail: string; status: "conectado" | "simulado" | "pendente" | "desconectado" }) {
   return (
     <div className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xs bg-elevated">
@@ -433,7 +381,9 @@ function Integration({ name, detail, status }: { name: string; detail: string; s
         <span className="truncate text-[11px] text-fg-3">{detail}</span>
       </div>
       <StatusBadge
-        tone={status === "conectado" ? "success" : status === "pendente" ? "warn" : "muted"}
+        tone={
+          status === "conectado" ? "success" : status === "pendente" ? "warn" : "muted"
+        }
         className={cn(status === "desconectado" && "opacity-70")}
       >
         {status}

@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/channel"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/dispatch"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/domain"
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/uhumarketing-api/internal/httpapi"
@@ -86,6 +87,7 @@ func TestTemplates(t *testing.T)      { runFeature(t, "templates.feature") }
 func TestCampaignSend(t *testing.T)   { runFeature(t, "campaign_send.feature") }
 func TestAudiencesOptin(t *testing.T) { runFeature(t, "audiences_optin.feature") }
 func TestChannelLive(t *testing.T)    { runFeature(t, "channel_live.feature") }
+func TestChannelAccount(t *testing.T) { runFeature(t, "channel_account.feature") }
 
 func runFeature(t *testing.T, file string) {
 	if !dockerOK {
@@ -101,6 +103,7 @@ func runFeature(t *testing.T, file string) {
 			})
 			registerSteps(sc, w)
 			registerChannelSteps(sc, w)
+			registerAccountChannelSteps(sc, w)
 		},
 		Options: &godog.Options{
 			Format:   "pretty",
@@ -122,6 +125,8 @@ type world struct {
 	svc      *httpapi.Service
 	handlers *httpapi.Handlers
 	provider meta.Provider
+	channels *channel.Resolver
+	worker   *dispatch.Worker
 
 	status      int
 	body        []byte
@@ -155,6 +160,7 @@ func (w *world) reset() {
 	w.store = store.New(pool)
 	w.provider = &meta.DryRunProvider{}
 	w.svc = &httpapi.Service{Store: w.store, Provider: w.provider, Log: testLog}
+	w.worker = &dispatch.Worker{Store: w.store, Provider: w.provider, Log: testLog, Interval: time.Second}
 	w.handlers = &httpapi.Handlers{
 		Service:            w.svc,
 		Log:                testLog,
@@ -184,6 +190,7 @@ func (w *world) reset() {
 	}
 
 	w.status, w.body = 0, nil
+	w.channels = nil
 	w.templateID, w.campaignID, w.segmentID, w.lastPhone, w.externalID = "", "", "", "", ""
 }
 
@@ -239,6 +246,7 @@ func (w *world) do(method, path string, body any) {
 
 func (w *world) get(path string)          { w.do(http.MethodGet, path, nil) }
 func (w *world) post(path string, b any)  { w.do(http.MethodPost, path, b) }
+func (w *world) put(path string, b any)   { w.do(http.MethodPut, path, b) }
 func (w *world) patch(path string, b any) { w.do(http.MethodPatch, path, b) }
 
 func (w *world) decode(v any) {
@@ -256,11 +264,13 @@ func registerSteps(sc *godog.ScenarioContext, w *world) {
 	sc.Step(`^um provedor dry-run$`, func() error {
 		w.provider = &meta.DryRunProvider{}
 		w.svc.Provider = w.provider
+		w.worker.Provider = w.provider
 		return nil
 	})
 	sc.Step(`^um provedor que falha com "([^"]*)"$`, func(msg string) error {
 		w.provider = &meta.DryRunProvider{FailWith: msg}
 		w.svc.Provider = w.provider
+		w.worker.Provider = w.provider
 		return nil
 	})
 
@@ -569,7 +579,7 @@ func registerSteps(sc *godog.ScenarioContext, w *world) {
 		return nil
 	})
 	sc.Step(`^a fila processa lotes até esvaziar$`, func() error {
-		worker := &dispatch.Worker{Store: w.store, Provider: w.provider, Log: testLog, Interval: time.Second}
+		worker := w.worker
 		// Ticks até não sair nada. O limite evita laço infinito se a fila travar
 		// — um teste que pendura é pior do que um que falha.
 		for i := 0; i < 20; i++ {
@@ -594,8 +604,7 @@ func registerSteps(sc *godog.ScenarioContext, w *world) {
 		return nil
 	})
 	sc.Step(`^a fila processa um lote$`, func() error {
-		worker := &dispatch.Worker{Store: w.store, Provider: w.provider, Log: testLog, Interval: time.Second}
-		_, err := worker.Tick(context.Background())
+		_, err := w.worker.Tick(context.Background())
 		return err
 	})
 	sc.Step(`^existe um envio com id externo$`, func() error {

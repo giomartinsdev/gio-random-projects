@@ -583,6 +583,28 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // Ativar/desativar muda o provider do bootstrap: recarrego do servidor em
+  // vez de deduzir o estado na tela. Quem sabe se o canal está de pé é o
+  // servidor, que acabou de falar com a Meta.
+  const activateChannel = useCallback<NonNullable<Store["activateChannel"]>>(
+    async (input) => {
+      const state = await api.activateChannel(input);
+      const data = await api.bootstrap();
+      applyBootstrap(data);
+      return state;
+    },
+    [applyBootstrap],
+  );
+
+  const deactivateChannel = useCallback<NonNullable<Store["deactivateChannel"]>>(
+    async () => {
+      await api.deactivateChannel();
+      const data = await api.bootstrap();
+      applyBootstrap(data);
+    },
+    [applyBootstrap],
+  );
+
   // Série diária calculada no SQL (todos os envios, não a página de 120).
   // O corte de dias é feito aqui porque o bootstrap manda uma janela fixa.
   const series = useCallback(
@@ -626,6 +648,8 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
       submitTemplate,
       syncTemplate,
       checkChannel,
+      activateChannel,
+      deactivateChannel,
       series,
       provider: boot?.provider,
     };
@@ -633,7 +657,8 @@ export function BackendStoreProvider({ children }: { children: ReactNode }) {
     workspace, boot, templates, segments, campaigns, sends, flows, activity,
     updateWorkspace, flushNow, createTemplate, updateTemplate, deleteTemplate, importContacts, createSegment, updateSegment,
     createCampaign, updateCampaign, createFlow, updateFlow, addNode, updateNode,
-    removeNode, addEdge, removeEdge, testSend, pushActivity, launchCampaign, submitTemplate, syncTemplate, checkChannel, series,
+    removeNode, addEdge, removeEdge, testSend, pushActivity, launchCampaign, submitTemplate, syncTemplate,
+    checkChannel, activateChannel, deactivateChannel, series,
   ]);
 
   return (

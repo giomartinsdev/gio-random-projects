@@ -219,6 +219,31 @@ CREATE TABLE IF NOT EXISTS workspaces_meta (
     created_by   TEXT NOT NULL DEFAULT ''
 );
 
+-- Canal de WhatsApp da CONTA. Existe porque a WABA é do cliente, não do
+-- processo: um token global faria toda conta nova mandar mensagem pelo número
+-- de outra pessoa — e a cobrança e o banimento cairiam no dono errado.
+--
+-- O token é guardado CIFRADO (AES-GCM, chave em CHANNEL_SECRET). Um token em
+-- claro no banco vaza inteiro num dump; cifrado, sem a chave ele não serve.
+-- `mode` é o modo COM QUE o canal foi ativado: dry-run continua valendo mesmo
+-- se o processo subir em live, para um canal de teste nunca virar envio real
+-- por acidente de configuração.
+CREATE TABLE IF NOT EXISTS channels (
+    workspace_id  TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+    mode          TEXT NOT NULL DEFAULT 'dry-run',
+    waba_id       TEXT NOT NULL DEFAULT '',
+    phone_id      TEXT NOT NULL DEFAULT '',
+    token_cipher  TEXT NOT NULL DEFAULT '',
+    display_phone TEXT NOT NULL DEFAULT '',
+    verified_name TEXT NOT NULL DEFAULT '',
+    quality       TEXT NOT NULL DEFAULT '',
+    activated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- O webhook não tem sessão: chega pelo número que a Meta manda no metadata.
+CREATE UNIQUE INDEX IF NOT EXISTS channels_phone_id ON channels (phone_id) WHERE phone_id <> '';
+
 CREATE TABLE IF NOT EXISTS users (
     id            TEXT PRIMARY KEY,
     workspace_id  TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

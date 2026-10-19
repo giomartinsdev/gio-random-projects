@@ -43,6 +43,7 @@ type ChannelInfo struct {
 	OK           bool   `json:"ok"`
 	Number       string `json:"number,omitempty"`
 	VerifiedName string `json:"verifiedName,omitempty"`
+	Quality      string `json:"quality,omitempty"`
 	Note         string `json:"note"`
 }
 
@@ -328,6 +329,7 @@ func (p *CloudProvider) Check(ctx context.Context) (ChannelInfo, error) {
 		Live:         true,
 		Number:       out.DisplayPhoneNumber,
 		VerifiedName: out.VerifiedName,
+		Quality:      strings.ToUpper(out.QualityRating),
 		Note:         note,
 	}, nil
 }
@@ -450,27 +452,23 @@ func CostPerMessage(category string) float64 {
 // Resolve escolhe o provedor a partir da configuração. Modo `live` incompleto é
 // erro de boot, não degradação silenciosa para dry-run: um token faltando não
 // pode virar "mensagens que nunca saem" sem ninguém perceber.
-func Resolve(mode, baseURL, apiVersion, wabaID, phoneNumberID, token string) (Provider, error) {
+// Resolve devolve o provedor de FALLBACK do processo.
+//
+// Em live não há canal global: cada conta ativa o próprio WhatsApp, e o token
+// dela vem do banco (ver internal/channel). O fallback em live é apenas um
+// marcador para o health — quem envia é o canal da conta.
+func Resolve(mode, baseURL, apiVersion string) (Provider, error) {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "", "dry-run", "dryrun", "dry":
 		return &DryRunProvider{}, nil
 	case "live", "meta":
-		if wabaID == "" || phoneNumberID == "" || token == "" {
-			return nil, fmt.Errorf("META_MODE=live exige META_WABA_ID, META_PHONE_NUMBER_ID e META_TOKEN")
-		}
 		if apiVersion == "" {
 			apiVersion = "v21.0"
 		}
 		if baseURL == "" {
 			baseURL = "https://graph.facebook.com"
 		}
-		return &CloudProvider{
-			BaseURL:       baseURL,
-			APIVersion:    apiVersion,
-			WABAID:        wabaID,
-			PhoneNumberID: phoneNumberID,
-			Token:         token,
-		}, nil
+		return &CloudProvider{APIVersion: apiVersion, BaseURL: baseURL}, nil
 	default:
 		return nil, fmt.Errorf("META_MODE inválido: %q (use dry-run ou live)", mode)
 	}
