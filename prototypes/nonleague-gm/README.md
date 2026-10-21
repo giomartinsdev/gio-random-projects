@@ -18,11 +18,11 @@ screens (six desktop, four mobile, plus the league trio) plus the five strategy 
 rationale, the table grid rule, the 2D match model, the friend-league rules, the
 licensed-data model, roadmap and the decisions still open.
 
-The React app below implements that system, and on two layers it is ahead of the canvas:
-**identity** (faces, badges, player cards) and **broadcast** (the score bug, the goal
-graphic, the lower third). The `.pen` still carries the programme layouts for those
-screens. `DESIGN.md` says which artefact holds the current decision where they differ —
-the direction did not change, the canvas simply has not been redrawn.
+The React app below implements that system and both artefacts now carry the same
+identity and broadcast layers: **identity** (deterministic portraits, shield badges,
+player cards) and **broadcast** (the score bug, the goal lower-third, the meshed goals).
+The only layer the `.pen` does not carry is motion — the beat-script ball, the animated
+digits and the confetti only exist in the running app.
 
 Run the prototype to judge the loop; open the `.pen` to judge the system.
 
@@ -316,9 +316,10 @@ Tom's Netherby above Gio's Ashcombe) is the target model; the engine's
 `friendStandings` already ranks by tier, so the missing piece is the pyramid
 itself, not the league rules.
 
-The `.pen` design is a set of static screens; the React app implements the same
-system and is further along on identity and broadcast. Porting those two layers back
-into the canvas is the next design task, and it is mechanical: `PlayerFace`,
-`ClubCrest`, the player card, the score bug and the goal graphic already exist as
-components with a stable API. What is shared today is the model: the app's pitch and
-the mockup's pitch describe the same match.
+The `.pen` design is a set of static screens; the React app runs them. Both now carry
+the identity and broadcast layers — `PlayerFace`, `ClubCrest`, `PlayerCard`, the score
+bug and the goal lower-third are drawn on the canvas as well as implemented, with the
+same component boundaries (`AeTny`, `d3LrVm`, `St4gn`). What the canvas cannot carry is
+motion; the beat-script ball, the animated score digits and the confetti only exist in
+the app. What is shared is the model: the app's pitch and the mockup's pitch describe
+the same match.
