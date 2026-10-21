@@ -37,7 +37,7 @@ npm run dev          # http://localhost:5173
 Other commands:
 
 ```bash
-npm test             # 156 tests: engine + friend league + pitch model + identity + UI
+npm test             # 157 tests: engine + friend league + pitch model + identity + UI
 npm run typecheck
 npm run build
 ./node_modules/.bin/vite-node src/engine/calibrate.ts        # match model vs. real football stats
@@ -177,9 +177,12 @@ baseline (`abilityFor` in `dataset.ts`), which is documented in the code and in 
 It is a shape, not an official number — passing off a guess as a licensed rating would
 be the one dishonest thing in the whole model.
 
-**Degradation.** No key, no file, bad JSON, offline: every case falls back to the
-invented pyramid. A data source is an upgrade, never a precondition for playing. The
-tests cover all four failure modes.
+**Degradation.** No key, no file, bad JSON, offline, or a single-page host that
+rewrites the missing file to the app shell: every case falls back to the invented
+pyramid. That last one is the one that bites in production — the response is a
+`200` with HTML, so the adapter checks the content type, not just the status. A data
+source is an upgrade, never a precondition for playing. The tests cover all five
+failure modes.
 
 ## The look
 
@@ -254,7 +257,7 @@ only that week's derbies, the resolved window and the archive land in one state
 update (two setters raced and silently dropped the results), and the league
 survives a reload.
 
-The identity layer adds 21 tests (`src/engine/identity.test.ts`): the same player
+The identity layer adds 22 tests (`src/engine/identity.test.ts`): the same player
 always gets the same face and different players do not; a veteran's look ages; shirt
 numbers are unique across a squad; the six card attributes average back to the one
 real rating and are shaped by position; badges are stable and pattern-valid; a

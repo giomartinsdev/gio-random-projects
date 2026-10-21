@@ -260,13 +260,13 @@ The game can run two worlds, and it must be able to tell you which one you are i
 
 ### Data, tests and what "verified" means here
 
-The engine is a pure module and it is tested as one: 156 tests across 12 files, the interesting ones being the invariants rather than the examples.
+The engine is a pure module and it is tested as one: 157 tests across 12 files, the interesting ones being the invariants rather than the examples.
 
 - **Simulation is calibrated, not asserted.** 44.9% home / 22.8% draw / 32.4% away, 2.89 goals a game, measured over a large sample. A test that checked one scoreline would pass while the league fell apart.
 - **The ball model has its own tests.** Continuity between beats, dead-ball flags, pass distance versus duration, the goal crossing the line on the scorer's minute, and no token moving more than a few pixels in a frame — the last one is the regression test for the 180px hop.
 - **The friend league is a state machine with a feature file.** `friendLeague.feature` writes the window, readiness, caretaker and archive rules as Gherkin; `friendLeague.ts` implements them; the tests run the feature.
 - **Identity is deterministic by contract.** `appearanceOf(id)` must return the same face on every screen and every reload — tested by comparing the same player's face across three call sites.
-- **The licensed path is tested without a key.** A fixture snapshot is fed through `fromSnapshot` and asserted on positions, keeper guarding, derived wages and values; `loadDataset` is asserted to return `null` for 404, for malformed JSON, and for a valid file with a short squad.
+- **The licensed path is tested without a key.** A fixture snapshot is fed through `fromSnapshot` and asserted on positions, keeper guarding, derived wages and values; `loadDataset` is asserted to return `null` for 404, for malformed JSON, for an offline network, and for a single-page host that answers the missing file with `index.html` and a 200.
 
 `tsc --noEmit` and `vite build` are part of the check, and so is a browser audit of the rendered DOM: overflow at 390px, tap targets under 44px, and the contrast walk over live text. Layout claims in this document are arithmetic or DOM measurements, never a glance at a screenshot.
 

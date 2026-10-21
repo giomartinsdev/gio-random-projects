@@ -245,7 +245,10 @@ describe("loading a snapshot", () => {
   it("returns null instead of throwing when the file is malformed", async () => {
     const original = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response("{ this is not json", { status: 200 })) as typeof fetch;
+      new Response("{ this is not json", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch;
     try {
       expect(await loadDataset()).toBeNull();
     } finally {
@@ -265,10 +268,29 @@ describe("loading a snapshot", () => {
     }
   });
 
+  it("returns null when the host answers a missing file with the app shell", async () => {
+    const original = globalThis.fetch;
+    // The real production failure: a single-page host rewrites /dataset/football.json
+    // to index.html with a 200, so `response.ok` is true and there is no data.
+    globalThis.fetch = (async () =>
+      new Response("<!doctype html><html></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      })) as typeof fetch;
+    try {
+      expect(await loadDataset()).toBeNull();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it("loads a valid snapshot into the game's model", async () => {
     const original = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify(snapshotOf()), { status: 200 })) as typeof fetch;
+      new Response(JSON.stringify(snapshotOf()), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch;
     try {
       const dataset = await loadDataset();
       expect(dataset?.clubs.map((c) => c.name)).toEqual(["Dulwich Hamlet", "Torquay United"]);

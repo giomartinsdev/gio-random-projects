@@ -226,6 +226,10 @@ export async function loadDataset(url = "/dataset/football.json"): Promise<Datas
   try {
     const response = await fetch(url, { cache: "no-cache" });
     if (!response.ok) return null;
+    // A single-page host answers a missing file with index.html and HTTP 200, so
+    // the status says "found" when nothing is there. The type is the real check.
+    const type = response.headers.get("content-type") ?? "";
+    if (!type.includes("json")) return null;
     const snapshot = parseSnapshot(await response.json());
     return snapshot ? fromSnapshot(snapshot) : null;
   } catch {
