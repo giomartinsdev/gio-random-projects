@@ -6,8 +6,10 @@ club from the sixth tier to the Premier League.
 It exists to answer one question — **is the loop fun?** — before spending money on
 art, backend or a store listing. The engine, the match model and the design are all
 clean-room; the artwork is generated. Clubs, badges and faces come from **either**
-an invented world (the default, no licence required) **or** a real one loaded from a
-licensed data provider — see [Real clubs and real players](#real-clubs-and-real-players).
+a real division (the default — National League North 2026, real names and real
+portraits from open data) **or** the invented world, which needs no licence at all.
+If the snapshot is missing the game falls back to the invented pyramid without
+breaking. See [Real clubs and real players](#real-clubs-and-real-players).
 
 Read [`RESEARCH.md`](./RESEARCH.md) for the product teardown and UK market map
 that this prototype comes out of.
@@ -146,9 +148,13 @@ src/
 
 ## Real clubs and real players
 
-The game ships with an invented world, and that is the default. It also runs on a real
-league, because the difference between "a management sim" and "a football game" is
-whether the badge and the face are real.
+The game ships with a real division and can also run a fully invented one. It is the
+same engine either way, because the difference between "a management sim" and "a
+football game" is whether the badge and the face are real.
+
+**The default snapshot is real, and it ships.** `public/dataset/football.json` holds
+the National League North 2026 — 22 clubs, 519 players — fetched from open sources.
+A clean install starts there, not in the invented world.
 
 There are two ways to get there, and they are not equivalent.
 
@@ -352,8 +358,8 @@ do next and in what order.
 and relegation move your club's tier label but do not load last season's league above
 you. Doing that properly means snapshotting a pyramid, not a league, and matching
 competition ids across seasons — a data problem, not an engine one. The invented world
-already has a pyramid (`divisions: 5`), which is why the default is still the invented
-one.
+already has a pyramid (`divisions: 5`), which is the one thing it still does better
+than the real snapshot.
 
 **What the open snapshot cannot give you is a crest.** Club badges are trademarks and
 the copies on Wikipedia are fair use, so a real division currently plays in generated
