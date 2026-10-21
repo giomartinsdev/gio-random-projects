@@ -4,7 +4,7 @@
 # able to tell why a result happened.
 
 Feature: Career screen
-  Scenario: The dashboard always offers the next action
+  Scenario: The hub always offers the next action
     Given a new career in the browser
     Then I see the club name and the current league
     And I see a button to play the next match
@@ -51,3 +51,55 @@ Feature: Career screen
   Scenario: A pitch frame always keeps the ball and the twenty-two players on the pitch
     Given any minute of any simulated match
     Then every player and the ball sit inside the pitch
+
+  # ── The game layer ─────────────────────────────────────────────────────────
+  # A management sim reads as a spreadsheet when its people have no faces. These
+  # scenarios pin the presentation contract: identity must be deterministic, and
+  # the match must be presented like a broadcast, not like a report.
+
+  Scenario: Every player has a face, and the same player always has the same face
+    Given a new career in the browser
+    When I open the squad screen
+    Then every player card shows a face
+    And a player's face is identical after a reload
+
+  Scenario: Every club has a badge
+    Given a new career in the browser
+    Then my club shows a crest
+    And the crest is the same after a reload
+
+  Scenario: A squad is presented as player cards, not a spreadsheet
+    Given a new career in the browser
+    When I open the squad screen
+    Then I see a card for every player in the squad
+    And each card shows a rating, a position and a face
+    And the table view is still available for comparison
+
+  Scenario: A goal is presented as a broadcast graphic
+    Given a new career in the browser
+    When I play the next match
+    And I skip to full time
+    Then every goal has a scorer who appears in the goals graphic
+
+  Scenario: The match is framed as a broadcast
+    Given a new career in the browser
+    When I play the next match
+    Then I see a score bug with both crests and the clock
+    And I see a live ticker describing what the ball is doing
+
+  Scenario: Real club data can be loaded without changing the game
+    Given a snapshot from a data provider
+    Then the clubs keep their real names, crests and player portraits
+    And a club without a crest still renders a badge
+
+  Scenario: The game plays without a data provider
+    Given no snapshot is available
+    Then the career starts in the invented pyramid
+    And every player still has a face
+
+  Scenario: A licensed world survives a season change
+    Given a career built from a licensed snapshot
+    When the season ends
+    Then the clubs are the same clubs, not regenerated ones
+    And my club keeps its badge and portrait identities
+

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { computeStrength, pickLineup } from "./squad";
+import { computeStrength, keyPlayers, pickLineup, starPlayer } from "./squad";
 import type { Club, Player } from "./types";
 
 function player(id: string, position: Player["position"], ability: number): Player {
@@ -49,6 +49,34 @@ function clubWith(players: Player[]): Club {
     players,
   };
 }
+
+describe("the face a screen leads with", () => {
+  it("picks the best outfielder, not the keeper", () => {
+    const club = clubWith([...squad(), player("gk2", "GK", 99)]);
+    const star = starPlayer(club);
+
+    expect(star?.id).toBe("mf2"); // 90, the best non-keeper in the XI
+    expect(star?.position).not.toBe("GK");
+  });
+
+  it("falls back to the keeper when that is all there is", () => {
+    const club = clubWith([player("gk", "GK", 70)]);
+    expect(starPlayer(club)?.id).toBe("gk");
+  });
+
+  it("returns undefined for an empty squad rather than throwing", () => {
+    expect(starPlayer(clubWith([]))).toBeUndefined();
+  });
+
+  it("ranks key men by ability, best first", () => {
+    const men = keyPlayers(clubWith(squad()), 3);
+    expect(men.map((p) => p.id)).toEqual(["mf2", "fw2", "df2"]);
+  });
+
+  it("never asks for more key men than the XI holds", () => {
+    expect(keyPlayers(clubWith(squad()), 99)).toHaveLength(11);
+  });
+});
 
 describe("squad selection", () => {
   it("picks a valid 4-4-2 shape of eleven players", () => {

@@ -109,9 +109,12 @@ export function createClubs(
       name,
       short,
       tier,
+      // Lightness and saturation are not taste: they are the values at which
+      // chalk on the shirt and ink on the number both clear 4.5:1 for every one
+      // of the 360 hues. Brightening the shirt broke the shirt numbers.
       colors: {
-        primary: `hsl(${rng.int(0, 359)} 55% 32%)`,
-        secondary: `hsl(${rng.int(0, 359)} 70% 62%)`,
+        primary: `hsl(${rng.int(0, 359)} 50% 27%)`,
+        secondary: `hsl(${rng.int(0, 359)} 68% 68%)`,
       },
       capacity,
       balance: rng.int(40_000, 320_000),

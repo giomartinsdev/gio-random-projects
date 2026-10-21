@@ -2,6 +2,8 @@
 
 Companion to `ui.pen`. Open the file in Pen.app to browse the canvas; this document is the written spec so the decisions survive outside the app.
 
+There is also a **playable React prototype** (`prototypes/nonleague-gm`) that implements this spec and, on the identity and broadcast layers, is ahead of the canvas. Where the two disagree, this document says which one is the decision and which one has not been redrawn yet.
+
 The canvas is laid out in five bands, top to bottom:
 
 | Band | Contains |
@@ -9,11 +11,13 @@ The canvas is laid out in five bands, top to bottom:
 | Cover | Title, positioning, contents |
 | 01 — The system | Foundations, component library |
 | 02 — The friend league | Hub, lobby, rivals — the multiplayer heart |
-| 03 — The product | Desktop: dashboard, live match, squad, table, transfers |
+| 03 — The product | Desktop: hub, live match, squad, table, transfers |
 | 04 — The phone | Mobile: matchday, full time, squad, league |
 | 05 — The argument | Positioning map, ideas, roadmap, core loop, decisions |
 
-Thirteen screens: six desktop, four mobile, plus the three league screens that are the product's actual hook. The three league frames come before the single-player screens in reading order for a reason — a reviewer who only looks at the dashboard sees a competent management game; a reviewer who sees the hub understands why it gets played on a Monday.
+Thirteen screens: six desktop, four mobile, plus the three league screens that are the product's actual hook. The three league frames come before the single-player screens in reading order for a reason — a reviewer who only looks at the hub sees a competent management game; a reviewer who sees the friend league understands why it gets played on a Monday.
+
+**The thesis in one sentence:** a management game that looks like a broadcast and reads like a programme, wrapped around the only feature that makes a £6.99 football game a habit — six friends, one table, one champion.
 
 ---
 
@@ -29,11 +33,20 @@ Every decision below is downstream of that tension.
 
 ## 2. Art direction
 
-**"Floodlit terrace, printed programme."** Dark first, because a management game is played at night, on a phone, in bed. Paper tones carry the editorial voice. One accent — a floodlight lime — is used as a measurement, not as decoration.
+**"Floodlit broadcast, printed programme."** Dark first, because a management game is played at night, on a phone, in bed. Paper tones carry the editorial voice. One accent — a floodlight lime — is used as a measurement, not as decoration.
 
-Why not the usual dark-blue SaaS dashboard: every sports game already looks like that, and none of them look like football. Programme typography is free identity that no competitor in this tier is using.
+The direction changed once, and the change is worth recording. The first pass was *programme only*: a fanzine that got funded, with the dashboard as its centre of gravity. It read as a well-made admin tool. A football game is not judged on its tables — it is judged on whether the eleven look like people and whether a goal lands like a goal. So the programme voice stayed (display type, mono data, paper restraint) and the **broadcast** layer was added on top:
 
-**Anti-references:** EA FC (broadcast gloss), Football Manager (spreadsheet grey), Top Eleven (cartoon 3D). We look like a fanzine that got funded.
+| Layer | What it is | Where it shows |
+| --- | --- | --- |
+| Identity | A face per player, a badge per club, a kit that is contrast-checked | Header, hub, squad grid, goal graphic, transfer market |
+| Broadcast | Score bug, live ticker, momentum strip, goal lower-third, camera lean | Match screen |
+| Programme | Condensed display type, mono figures, hairline rules, print restraint | Everywhere else |
+| Strategy | The same dark ground, one lime accent, no card soup | League, table, transfers |
+
+**Anti-references:** Football Manager (spreadsheet grey), Top Eleven (cartoon 3D), the dark-blue SaaS dashboard every sports app defaults to. The EA FC reference is deliberate and narrow: it is the *presentation grammar* — a score bug, a card, a goal graphic — not its gloss, its gradients-for-their-own-sake, or its monetisation.
+
+**The one-line test:** if a screen could be a page in an admin tool with the colours changed, it is wrong. A face, a badge or a scoreline has to be doing the work.
 
 ## 3. Foundations
 
@@ -51,13 +64,35 @@ Chalk (`#EDF3EC`) is the text colour, in three opacities: 100% headings and figu
 
 There is no 40% step. It was in the first draft and it failed: 40% chalk on `ink-900` measures 3.52:1, under the 4.5:1 WCAG AA floor for the 8–9px mono labels it was carrying. The three-step ramp is the fix, and `chalk-faint` was lightened from `#5C7266` to `#7C8F83` (3.52:1 → 5.31:1 on `ink-900`, 4.54:1 on `ink-800`).
 
-**Contrast is a build check, not a taste call.** Every text node in `ui.pen` is verified by walking its ancestor fill chain, compositing alpha over `ink-950`, and comparing against AA (4.5:1 normal, 3:1 for ≥24px or ≥18.66px bold). Current state: 1,217 text nodes checked, 0 failures.
+**Contrast is a build check, not a taste call.** Every text node in `ui.pen` is verified by walking its ancestor fill chain, compositing alpha over `ink-950`, and comparing against AA (4.5:1 normal, 3:1 for ≥24px or ≥18.66px bold). Current state: 1,406 text nodes across 14 frames, 0 failures. The React prototype is audited the same way in the browser, live, including during a match: 0 failures on Hub, League, Squad, Table, Transfers and the match frames.
 
 The checker has one deliberate exception. A shirt number in the 2D match sits on top of a sibling ellipse (the shirt), not on a container fill, so a pure ancestor walk sees the pitch underneath and reports a false failure. The audit therefore accepts a same-parent ellipse that geometrically contains the text and stops there. All 22 numbers are verified to sit inside their shirt ellipse, and the two real ratios are ink-900 on lime-400 = 14.07:1 and on paper-200 = 14.18:1.
 
 A second, subtler blind spot: text inside a component instance is invisible to a plain `Get` walk, so nav labels were audited once as if they did not exist. One screen had the "Match" tab painted in ink on a transparent background — an invisible tab — and every audit passed. Overrides now get their own check across all eight desktop navs: exactly one active tab, ink on lime for the active one, 60% chalk everywhere else. The same audit caught two mobile tab bars where the League tab had been duplicated from Home — right icon slot, wrong glyph, wrong label — and a third where two tabs were highlighted at once.
 
-**Rule:** lime never fills more than ~5% of a screen. On the dashboard it appears on the primary button, the current league position, and positive numbers. Nowhere else.
+**Rule:** lime never fills more than ~5% of a screen. On the hub it appears on the primary button, the current league position, positive numbers, the carrier's ring and the scoring side of a goal. Nowhere else.
+
+### Kits and shirt numbers
+
+A generated kit is a hue plus two tones, and the tones are not free choices. A club's hue is hashed from its id (so a club keeps its colours forever), the shirt is `hsl(h 50% 27%)` and the trim `hsl(h 68% 68%)`. That pair is the only lightness combination tried where **both** pairings clear 4.5:1 across all 360 hues: chalk on the shirt, and ink on the trim. At 50%/30% the pale hues failed ink-on-trim; at 45%/72% the saturated blues failed chalk-on-shirt. The pair is a contrast constraint that happens to look like a kit, which is the right order.
+
+The shirt number does not assume one ink. `readableOn(colour)` returns ink or chalk by measured relative luminance, because a fixed chalk number measured 1.95:1 on the pale trim of the away kit. Every number on the pitch, on a card and in the header now uses it.
+
+### Type and motion budget
+
+Motion is presentation, not decoration, and it has a budget:
+
+| Motion | Where | Why | Cost |
+| --- | --- | --- | --- |
+| Digit pop | Score changes | The eye must find the score before the ticker | 180ms, transform only |
+| Lower-third slam | Goal | Names the scorer while the net is still shaking | 380ms, once per goal |
+| Confetti | Goal, your side only | Reward with a ceiling; opponent goals get the graphic, not the celebration | 1.4s, ≤28 pieces |
+| Camera lean | Match, continuous | ±4px tied to ball x; sells depth without a 3D pitch | free, transform |
+| Card rise | Squad, market | Establishes reading order down a grid | 260ms, staggered 24ms |
+| Sweep | Primary button hover | Confirms the one action on screen is live | 600ms, hover only |
+| Glow pulse | Active nav, live dot | State, not emphasis | 2.4s loop |
+
+Every one of them is disabled under `prefers-reduced-motion: reduce`, and none of them are load-bearing: the score is in the DOM, the goal is in the text, the ball position is the model. A player with motion off gets the same information one frame sooner.
 
 ### Typography
 
@@ -67,7 +102,7 @@ A second, subtler blind spot: text inside a component instance is invisible to a
 | UI | Instrument Sans 400/500/600 | Body copy and labels. Optimised small, humanist, not corporate. |
 | Data | JetBrains Mono 400/600 | Every number. Tabular, so league tables and scorelines never shift. |
 
-Scale: 236/148/96 display, 68/62/54/46/40/34/30/24/22 section headings, 16/15/13/12.5/12/11.5/11/10.5 body, 13/11.5/10.5/9.5/8.5 data.
+Scale: 236/148/96 display, 68/62/54/46/40/34/30/24/22 section headings, 16/15/13/12.5/12/11.5/11/10.5 body, 13/11.5/10.5/9.5/9 data. Nine pixels is the floor, and it is only used for mono labels carrying no decision — never for a number you have to read to act.
 
 Data text is *always* mono, *always* right-aligned in tables, *always* tabular. This is the single rule that makes the product feel engineered rather than themed.
 
@@ -93,7 +128,7 @@ The league table's grid, as built: `Pos 44 · Club fill · S0–S3 44 each · S4
 
 ## 4. Components
 
-Ten reusable components, instanced across all thirteen screens. Defined in `ui.pen` (Components / Library) so a change propagates.
+Fifteen reusable components, instanced across all thirteen `.pen` frames and the six React screens. Defined in `ui.pen` (Components / Library) so a change propagates; the four identity components exist only in the prototype until the canvas pass.
 
 | Component | Notes |
 | --- | --- |
@@ -103,34 +138,41 @@ Ten reusable components, instanced across all thirteen screens. Defined in `ui.p
 | `Pill / Status` | Dot + mono caps. Used for "IN PLAY", "MATCHDAY 32". |
 | `Card / Base` | Card shell with a hairline header. All panels derive from it. |
 | `Crest` | 52px rounded square, stripe, three-letter code. Placeholder for real badges. |
+| `Player / Face` | Deterministic portrait from the player id; a licensed cut-out replaces it through the same component. Sizes 28 → 208px. |
+| `Player / Card` | Rating, real position, face, name, six attributes. Gold/silver/bronze by ability. The squad screen's unit. |
+| `Badge / Club` | Shield from the club's own colours + pattern + initials; a licensed crest replaces it. |
+| `Score Bug` | Two badges, two codes, score, clock, momentum strip. Anchors the match frame. |
+| `Goal Graphic` | Lower-third: GOAL, scorer's face, name, minute, crest, confetti. Driven by the ball being in the net. |
 | `Stat Tile` | Label + value. Top bar money, week, board confidence. |
 | `Form Pip` | 14px result chip, W/D/L with three states at 2px gap. |
 | `Tab` | Icon + label pill, filled when active. |
 | `Meter` | Two-value comparison bar with numeric ends. Match preview. |
 
-**Navigation:** six tabs on desktop — Dashboard, Squad, Table, Transfers, Match, History — one active per screen, lime fill with ink text. The phone keeps four in the bottom bar (Home, Squad, Table, Market) because six does not fit a 390px thumb arc; Match is reached from the matchday card instead.
+**Navigation:** six tabs in the React prototype — Hub, League, Match, Squad, Table, Transfers — with the active tab underlined in lime and a lime-tinted glow, not filled. The `.pen` desktop frames still show the filled-pill treatment and the Dashboard/Squad…History labels; the prototype vocabulary (Hub, and League second) is the newer decision and the `.pen` should follow it on the next pass.
 
-**Crests:** a rounded square with a horizontal stripe and a three-letter code is deliberately generic — it reads as a badge at 36px without pretending to be a real club. When the canon is written, each club gets a generated mark in the same frame.
+**Crests:** the `.pen` rounded square with a stripe and a three-letter code was a placeholder and has been superseded. A club now gets a **shield** built from its own two colours with one of five patterns (band, stripes, halves, chevron, hoops), a trim edge, a gloss pass and its initials — and a real crest image when the dataset provides one. The component takes both, so a screen never knows which world it is in.
+
+**Faces:** the single highest-leverage piece of the game-feel direction. `appearanceOf(playerId, age)` derives skin, shade, hair colour, one of seven hair styles, one of five beards, brow shape, head width, eye colour and a small quirk, all from a hash of the id — so the same man has the same face on the hub, in the card grid, on the pitch and in the goal graphic, across reloads and devices. Age changes the look (veterans lose the hairline and keep the beard), which is the cheapest way to make a squad feel like it has a history. A licensed photo wins whenever one exists, and the drawing is the fallback rather than the only source.
 
 ## 5. Screens
 
 ### Desktop (1440×1024)
 
-**02 — Dashboard.** The default state. Fixture hero with both crests, win probabilities as three odds cells, two comparison meters, primary "Watch match", then the last result with a minute-by-minute event list and the mentality selector. Right rail: mini table (your row highlighted), form pips, board confidence bar, season finances.
+**02 — Hub (was: Dashboard).** The default state, rebuilt as a fixture rather than a dashboard. A floodlit hero tinted by *both* clubs' colours: next fixture, both badges at 64px, both key players' faces, position and squad rating on each side, attack/defence chips between them, then one physical **Kick off** button, "Simulate season", and a single attack-v-defence meter. Under it, a meta strip: form pips, squad rating and size, gate price and capacity, balance. Then the four key men as player cards, the mentality selector (the three options are glyph-coded ◤ ◆ ◥ so the choice reads at a glance), and the last result with faces on the goalscorers.
 
-Why this order: the fixture is the only thing you can act on, so it is the largest object. The result sits directly beneath it because that is the consequence of the last action. Mentality comes after the result, because you change it *because* of what happened.
+Why this order: the fixture is the only thing you can act on, so it is the largest object. The result sits directly beneath it because that is the consequence of the last action. Mentality comes after the result, because you change it *because* of what happened. What changed from the dashboard version is hierarchy, not information — the same numbers now have a face and a fixture around them.
 
-**06 — Match, live.** The screen the game is sold on. A vector pitch at 1012×724 with the full set of markings — touchlines, halfway, centre circle and spot, both penalty and six-yard boxes, penalty spots, D-arcs drawn as arcs, goals, corner arcs — plus five mown stripes at 6% chalk. Twenty-two player tokens, lime for Ashcombe and paper for Uppermill, each 28×34: a soft shadow, a shoulders ellipse, a head ellipse and a mono shirt number. The ball has a radial glow, a carrier ring, and two trails, one for the pass and one for the run.
+**06 — Match, live.** The screen the game is sold on, framed as a broadcast. A **score bug** with both badges, three-letter codes, the score (digits animate on change), the clock, a 1H/2H/FT flag and a momentum strip that leans toward whoever is on top. A crowd-noise band behind the pitch, a camera that leans a few pixels with the ball, mown stripes, full markings — touchlines, halfway, centre circle and spot, both penalty and six-yard boxes, penalty spots, D-arcs, corner arcs — and a **meshed net** behind each goal line so a goal is a ball crossing a line into a net, not a ball stopping on grass.
 
-Over the pitch: a scorebug at 74:12 reading ASH 2 – 1 UPP with a live bar and the competition line, a lower third naming the scorer, chips for pressing height, formation and speed, and a momentum strip of 36 bars on a six-label minute axis. The right rail pairs a commentary feed, newest first, with match stats at 74'. Goals by Ashcombe are lime; Uppermill's goal is neutral, because the accent is a measurement of *your* side, not of the game.
+Twenty-two player tokens at 22×26: shadow, head, shoulders, mono shirt number. The number's ink is chosen from the shirt colour (ink on a pale trim, chalk on a dark shirt) because a fixed ink measured 1.95:1 on the away shirt. The carrier gets a lime ring and a chevron; the ball is an inline SVG football with a centre pentagon and five rim panels, a shadow that shrinks and fades as it lifts, and a trail.
 
-The 22 tokens are not a diagram. They are positioned to describe a moment: the home block pushed up, the away block compact, one carrier on the ball, a trail behind it. The static `.pen` proves the layout; the React prototype animates the same model.
+On a goal minute: the net flashes, a **GOAL** slam appears, and a full-width lower-third names the scorer with his face, his crest and the minute — driven by `frame.celebration`, i.e. by the ball being physically inside the net, so it cannot fire early or be missed. Below the pitch: a live ticker ("ASH passing", "UPP shooting"), possession and territory bars counted from the model rather than faked, and a commentary feed. Every Ashcombe goal is lime; the opponent's is neutral, because the accent measures *your* side.
 
-**03 — Squad.** Sortable list with position, age, OVR, form pips, value. Selecting a player opens a detail rail: attribute bars, season stats, contract tags, one action. The list is a list, not cards — a 20-player squad has to fit without scrolling; the mockup shows the top 15.
+**03 — Squad.** A grid of player cards, because a squad is a set of people. Each card: ability as the largest figure, real position (RB, CAM, ST — not just DF), face, name, six attributes, gold/silver/bronze frame by ability, and a club-colour wash keyed to the badge. Selecting a card opens an inspector at poster size: a large portrait, attribute bars, wage, value, morale. The sortable list view is one toggle away for wage comparison, and is the screen the earlier dossier specified — the two coexist because "who is he" and "what does he cost" are different questions.
 
-**04 — Table.** The editorial screen. 18 rows, zone markers on the left edge (lime for promotion, rust for relegation), full W/D/L/GF/GA/GD/PTS, five-match form. Your row is tinted and bolded. Right rail: the race (points gap) and the run-in with home/away venue chips.
+**04 — Table.** The editorial screen, and the one where "clean" was the whole brief. Badges in the club column, a fixed column rhythm, mono tabular figures right-aligned, one lime row, zone markers as a hairline on the left edge (lime promotion, faint lime play-offs, rust relegation) rather than tinted cells so it survives being read on a phone in a pub. A legend and a swipe hint close it.
 
-**05 — Transfers.** Market list with position filters and a count. Right rail is a live offer sheet: fee, wage, contract, a budget warning, and the resulting budget. The scout report is a quote, not a stat block — it is the only screen where a human voice appears, and that is deliberate.
+**05 — Transfers.** The market as cards rather than rows: face, rating, real position, six attributes, fee and wage, with a disabled/`Too dear` state that explains itself. A balance readout sits in the header because the decision is always "can I". The stadium upgrade is the same screen's second act.
 
 ### The friend league screens
 
@@ -144,11 +186,11 @@ Why your own row is highlighted in the friend table rather than the division tab
 
 ### Mobile (390×844)
 
-**07 — Matchday.** Thumb-reachable: crest, next fixture, odds, one full-width Play button, mentality segmented control, form, mini table around you, fitness, news. Everything above the fold is either context or the action.
+**07 — Matchday.** Thumb-reachable: the crest, the next fixture with both badges, one full-width **Kick off** button, mentality as a three-way glyph control, form, then the table around you. Everything above the fold is either context or the action. On the phone the fixture hero drops the two key-player faces first (they are the widest object) and keeps the badges and the button; the faces return on the full-time reward screen.
 
 **08 — Full Time.** Score at 96px — the largest type in the product, on purpose. Stats as split bars, goal events, player of the match, then Continue. This is the reward screen; it should feel like a result, not a report. It shows the same 2–1 over Uppermill as the live screen, with the numbers reconciled to 58/42, 11/7, 5/3, 1.6/0.9 so a player moving from desktop to phone never sees two different matches.
 
-**09 — Squad.** One line per player: name, position, form string, OVR. No cards, no avatars, no scrolling tax. Fitness and contract warnings sit below.
+**09 — Squad (phone).** The same card grid as the desktop, two columns wide, because a face at 56px is still legible and a list of twenty rows on a phone is a scroll tax. The list toggle survives for wage comparison. The card is the unit at both sizes: the earlier "one line per player, no cards, no avatars" rule was correct for a dossier and wrong for this product — a squad screen without faces is the exact dashboard feeling the direction moved away from.
 
 **13 — Mobile League.** The async window on a phone, which is the only place it matters: pick a mentality, see "4/6 ready", leave. The header states managers, matchday and readiness in one mono line; the fixture is the largest object after it. Reactions are pre-set chips, not a text field. A league that needs a keyboard to be fun has already lost.
 
@@ -198,6 +240,36 @@ Results stay hidden until the window locks. That is the whole fairness argument:
 
 **Open decision:** the first season of a league is free to create and join, with subsequent seasons gated behind the owner's purchase. It keeps acquisition frictionless, but it is the one place where multiplayer could be monetised without splitting the friend group.
 
+### Real clubs, real players — and the wall
+
+The game can run two worlds, and it must be able to tell you which one you are in.
+
+**The invented world is the default.** Twenty clubs, invented names, generated faces, generated badges, generated kits. No licence, no attribution, no takedown risk. Every screenshot in this dossier is this world. It is not a placeholder — it is the shipping content, and it has to be good enough to sell on its own.
+
+**The licensed world is a snapshot, not an API call.** With a key, `scripts/fetch-dataset.mjs` pulls a division from API-Football v3 (teams, squads, player photos, crests, venues) and writes it to `public/dataset/football.json`. The client then loads a static file. Three reasons, in order of severity:
+
+1. **The key never reaches the browser.** API-Football authenticates with `x-apisports-key` on every request; a client-side call publishes the key in the bundle. The fetch runs server-side or at build time only, and the key is never `VITE_`-prefixed, so Vite cannot inline it.
+2. **Rate limits are not a gameplay mechanic.** A free tier is a few hundred requests a day. One page load that fetched 20 squads for 18 clubs would burn it.
+3. **The world must not change under a save.** A career that starts with one squad must finish the season with the same one. A snapshot is versioned (`Season 2025 — division — fetched date`) and stamped into the save, so the game can say "this career uses the 2025 snapshot" and mean it.
+
+**Ratings are derived, and the derivation is visible.** API-Football returns squads, not a 1–99 ability. `abilityFor(rank, squadSize, age, baseline)` maps squad order, age and the division's baseline into a rating — first-choice keeper is better than fourth-choice, a 34-year-old is discounted against a 24-year-old, a tier-6 squad sits below a tier-5 one. It is a heuristic, it is documented in the code, and the README says so. Pretending a real player has an official rating would be the dishonest version of the same feature.
+
+**The fallback is total.** `loadDataset()` returns `null` on 404, on malformed JSON, or with no network. Every screen then renders the invented world, and a toast says which world is loaded. The game never half-loads: a licensed crest with a generated face, or twenty real names with invented ratings, is a licensing and a quality bug at once. The refusal is the feature — if any club in the snapshot has fewer than eleven players, the script refuses to write the file at all.
+
+**What a real-data mode would need before shipping:** a commercial API-Football plan, a legal read on player likeness and image rights per territory, and a decision about whether real names belong in a game that also generates players. None of that is a design problem, and none of it should block the invented world from launching.
+
+### Data, tests and what "verified" means here
+
+The engine is a pure module and it is tested as one: 156 tests across 12 files, the interesting ones being the invariants rather than the examples.
+
+- **Simulation is calibrated, not asserted.** 44.9% home / 22.8% draw / 32.4% away, 2.89 goals a game, measured over a large sample. A test that checked one scoreline would pass while the league fell apart.
+- **The ball model has its own tests.** Continuity between beats, dead-ball flags, pass distance versus duration, the goal crossing the line on the scorer's minute, and no token moving more than a few pixels in a frame — the last one is the regression test for the 180px hop.
+- **The friend league is a state machine with a feature file.** `friendLeague.feature` writes the window, readiness, caretaker and archive rules as Gherkin; `friendLeague.ts` implements them; the tests run the feature.
+- **Identity is deterministic by contract.** `appearanceOf(id)` must return the same face on every screen and every reload — tested by comparing the same player's face across three call sites.
+- **The licensed path is tested without a key.** A fixture snapshot is fed through `fromSnapshot` and asserted on positions, keeper guarding, derived wages and values; `loadDataset` is asserted to return `null` for 404, for malformed JSON, and for a valid file with a short squad.
+
+`tsc --noEmit` and `vite build` are part of the check, and so is a browser audit of the rendered DOM: overflow at 390px, tap targets under 44px, and the contrast walk over live text. Layout claims in this document are arithmetic or DOM measurements, never a glance at a screenshot.
+
 ## 6. The loop the UI serves
 
 `Read → Choose → Play → React → Advance`, five steps, one decision per turn.
@@ -206,7 +278,7 @@ The UI exists to make that loop faster, or to make the next turn mean more. Conc
 
 - **Read:** table, form and money are visible on one screen, no navigation.
 - **Choose:** mentality and lineup are one tap each.
-- **Play:** pressing Watch match drops you onto the pitch and the 90 minutes run in about twelve seconds at 1× — or four at 4×, or zero if you skip. The match is a thing you watch, not a spinner.
+- **Play:** pressing Kick off drops you onto the pitch and the 90 minutes run in about twelve seconds at 1× — or four at 4×, or zero if you skip. The match is a thing you watch, not a spinner.
 - **React:** the board, the dressing room and the press produce consequences in plain language.
 - **Advance:** a week passes, the table moves, the fixture card updates.
 
@@ -255,9 +327,9 @@ The numbers are internally consistent, not invented per screen:
 
 - 18 clubs, 34-round season, 31 played each. That is 279 matches. Wins 202 = losses 202, draws 154 (even), goals for 747 = goals against 747. Goal differences sum to zero.
 - Ashcombe: 11W 10D 10L, 43–42, +1, 43 pts. 7th (Netherby, 46) is the last play-off place, so the gap is 3 points with 3 games left — which is what the table screen's "race" card claims.
-- The dashboard's last result is the 1–2 win at Thornbury. The next fixture is Uppermill at home, and that is the match the live screen and the phone's full-time screen show: 2–1 at 74', 2–1 at full time. Goals 46' Pryce (UPP), 56' Sutcliffe (ASH), 69' Underwood (ASH); possession 58/42, shots 11/7, on target 5/3, xG 1.6/0.9. Every screen quotes the same four stat pairs and the same three scorers.
+- The hub's last result is the 1–2 win at Thornbury. The next fixture is Uppermill at home, and that is the match the live screen and the phone's full-time screen show: 2–1 at 74', 2–1 at full time. Goals 46' Pryce (UPP), 56' Sutcliffe (ASH), 69' Underwood (ASH); possession 58/42, shots 11/7, on target 5/3, xG 1.6/0.9. Every screen quotes the same four stat pairs and the same three scorers.
 - The win takes Ashcombe to 46 points from 32 games, one clear of Marchwood — which is what the full-time reward line says. The table still shows the pre-match state.
-- Finances on the dashboard balance: gate £182,400 + prize £46,000 − wages £198,600 − running £31,200 = −£1,400.
+- Finances on the hub balance: gate £182,400 + prize £46,000 − wages £198,600 − running £31,200 = −£1,400.
 - Player season stats never exceed the team's 31 games.
 
 One deliberate divergence: the mockup uses an **18-club division (34 rounds)** so the whole table fits one desktop screen with room for the side rail. The prototype engine seeds **20 clubs (38 rounds)**. Pick one at implementation — 20 is the better game, 18 is the better poster. Everything else in this dossier scales either way.
@@ -273,7 +345,8 @@ If any single figure changes, the rest has to be re-derived. That is the cost of
 - **The friend league is modelled, not networked.** `friendLeague.ts` encodes the window, readiness, caretaker, archive and friend-champion rules and is tested; the app runs five simulated rivals on one device. There is no server, no account, no real invite link. The `.pen` lobby states the invite model the product would use.
 - **Only one division is simulated.** Friend clubs are re-seated by identity each season, so a friend cannot actually be promoted out of your division in the prototype. `friendStandings` already ranks by tier, which is why the `.pen` canon can show Tom's Netherby above Gio's Ashcombe — the pyramid is the missing engine piece, not the league rule.
 - The `.pen` is a design artefact, not a shipped UI. The live-match screen is drawn as a vector still; the animation lives in the React prototype, not in the canvas. `.pen` has no timeline, so a moving pitch there would have to be a shader or a sequence of frames — neither is worth it before the loop is validated.
-- Crests are geometric placeholders; no real badge, kit or likeness is used anywhere.
+- **The `.pen` trails the prototype.** The canvas still carries the programme-layer layouts: geometric crest placeholders, no portraits, and a match frame drawn as a still with a scorebug and a lower-third but no faces on the goalscorer. The React prototype is ahead of it on identity and broadcast. The cause is mechanical (the Pencil document was unreachable for this pass, and `.pen` edits are only legal through that tool), not a change of direction; the next canvas pass ports `PlayerFace`, `ClubCrest`, the player card, the score bug and the goal graphic into the Match, Hub, Squad and League frames.
+- **The licensed world is unproven end to end.** There is no API-Football key in this environment, so the fetcher has never hit the live API. The mapping is proven against a fixture snapshot (18 clubs, correct squads, correct positions, derived ratings) and the fallback is proven by the game running without the file, but a first real fetch is an unknown: field names can drift, and a division may return fewer than eleven players for a club.
 - Screens show one state each. Error, empty and loading states are specified in copy but not drawn.
 - No dark/light paper mode yet. The programme palette exists in tokens but the screens are all floodlit.
 - The 2D match is deliberately legible, not realistic. Eleven tokens per side, no off-ball runs, no goalkeeper animation, no fouls. It communicates *shape and momentum*; it is not a simulation renderer. Anything more is a month of work that a playtest cannot yet justify.

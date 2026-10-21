@@ -1,9 +1,8 @@
 /**
- * Calibration harness — not a test.
- *
- * Run with `npx tsx src/engine/calibrate.ts`. It prints the statistics the match
- * model actually produces, so tuning is evidence-based instead of vibes. If the
- * real-world numbers move (they do, slowly), this is the file to compare against.
+ * Run with `./node_modules/.bin/vite-node src/engine/calibrate.ts`. It prints the
+ * statistics the match model actually produces, so tuning is evidence-based instead
+ * of vibes. If the real-world numbers move (they do, slowly), this is the file to
+ * compare against.
  */
 import { simulateMatch } from "./match";
 import { computeStrength } from "./squad";

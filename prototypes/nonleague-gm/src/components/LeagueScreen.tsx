@@ -20,6 +20,8 @@ import type { Career, Mentality } from "@/engine/types";
 import { ordinal } from "@/lib/format";
 import clsx from "clsx";
 
+import { ClubCrest } from "@/components/Identity";
+
 interface Props {
   career: Career;
   league: FriendLeague;
@@ -175,18 +177,18 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
               <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-flare">
                 Private league · {league.code}
               </p>
-              <h2 className="font-display text-2xl font-semibold text-chalk">
+              <h2 className="display text-3xl leading-none text-chalk">
                 {league.name}
               </h2>
               {myEntry && (
-                <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-chalk/40">
+                <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-chalk/55">
                   You · {ordinal(myEntry.position)} · {myEntry.points} pts
                 </p>
               )}
             </div>
             <span
               data-testid="league-window"
-              className="font-mono text-[11px] text-chalk/40"
+              className="font-mono text-[11px] text-chalk/55"
             >
               Matchday {league.matchday} · {league.members.length} managers ·{" "}
               {league.windowHours}h window
@@ -195,7 +197,7 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
 
           <div className="grid grid-cols-1 gap-5 px-5 py-5 sm:grid-cols-[minmax(0,1fr)_260px]">
             <div className="min-w-0">
-              <p className="label">Your pick</p>
+              <p className="label">Your pick · ready signal</p>
               <p className="mt-1 text-sm text-chalk/60">
                 A pick is your ready signal. Nobody sees anyone else&apos;s until
                 the window shuts.
@@ -229,7 +231,7 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
                   Close window (auto-sim)
                 </button>
               </div>
-              <p className="mt-3 text-xs text-chalk/35">
+              <p className="mt-3 text-xs text-chalk/50">
                 Prototype: your five friends are simulated on this device. The
                 rules in <span className="font-mono">friendLeague.ts</span> are
                 what a server would run.
@@ -248,12 +250,13 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
                   <ReadyRow
                     key={member.id}
                     member={member}
+                    career={career}
                     club={career.clubs[member.clubId]?.name ?? member.clubId}
                     ready={Boolean(league.picks[member.id])}
                   />
                 ))}
               </ul>
-              <p className="mt-2 font-mono text-[9px] uppercase tracking-wider text-chalk/25">
+              <p className="mt-2 font-mono text-[9px] uppercase tracking-wider text-chalk/50">
                 {locked ? "All in · resolving" : `${waiting.length} still to pick`}
               </p>
             </div>
@@ -262,8 +265,8 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
 
         <section className="card overflow-hidden">
           <div className="flex items-center justify-between border-b border-white/[0.07] px-5 py-3">
-            <h3 className="label">Head to head</h3>
-            <span className="font-mono text-[10px] text-chalk/35">
+            <h3 className="display text-lg leading-none">Head to head</h3>
+            <span className="font-mono text-[10px] text-chalk/50">
               {playedH2h.reduce((sum, h) => sum + h.played, 0)} your meetings
             </span>
           </div>
@@ -275,7 +278,7 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
                   <th
                     key={h}
                     className={clsx(
-                      "px-3 py-2 font-mono text-[10px] font-normal uppercase tracking-wider text-chalk/35",
+                      "px-3 py-2 font-mono text-[10px] font-normal uppercase tracking-wider text-chalk/50",
                       h === "Rival" ? "text-left" : "text-right",
                     )}
                   >
@@ -294,11 +297,21 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
                     className="border-b border-white/[0.04] last:border-0"
                   >
                     <td className="px-3 py-2.5">
-                      <span className="font-semibold text-chalk">
-                        {record.opponentName}
-                      </span>
-                      <span className="ml-2 text-xs text-chalk/35">
-                        {career.clubs[member?.clubId ?? ""]?.name}
+                      <span className="flex items-center gap-2">
+                        {career.clubs[member?.clubId ?? ""] && (
+                          <ClubCrest
+                            clubId={member?.clubId ?? ""}
+                            name={career.clubs[member?.clubId ?? ""].name}
+                            colors={career.clubs[member?.clubId ?? ""].colors}
+                            short={career.clubs[member?.clubId ?? ""].short}
+                            crestUrl={career.clubs[member?.clubId ?? ""].crestUrl}
+                            className="h-5 w-5 shrink-0"
+                          />
+                        )}
+                        <span className="font-semibold text-chalk">{record.opponentName}</span>
+                        <span className="truncate text-xs text-chalk/50">
+                          {career.clubs[member?.clubId ?? ""]?.name}
+                        </span>
                       </span>
                     </td>
                     {[
@@ -319,7 +332,7 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
                     <td className="px-3 py-2.5 text-right font-mono font-bold tabular-nums">
                       {record.points}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-mono text-[10px] text-chalk/35">
+                    <td className="px-3 py-2.5 text-right font-mono text-[10px] text-chalk/50">
                       {record.last ? `${record.last.score}` : "—"}
                     </td>
                   </tr>
@@ -328,7 +341,7 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
             </tbody>
             </table>
           </div>
-          <p className="border-t border-white/[0.07] px-5 py-2.5 text-xs text-chalk/35">
+          <p className="border-t border-white/[0.07] px-5 py-2.5 text-xs text-chalk/50">
             Only matches between two managers count. A 6–0 win over an AI club is
             worth nothing here.
           </p>
@@ -338,8 +351,8 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
       <aside className="space-y-4">
         <section className="card overflow-hidden">
           <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-2.5">
-            <h3 className="label">The friend table</h3>
-            <span className="font-mono text-[10px] text-chalk/35">
+            <h3 className="display text-lg leading-none">The friend table</h3>
+            <span className="font-mono text-[10px] text-chalk/50">
               MD {Math.max(0, career.week)}
             </span>
           </div>
@@ -353,7 +366,7 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
                   entry.managerId === league.commissionerId && "bg-flare/[0.08]",
                 )}
               >
-                <span className="w-4 font-mono text-[10px] text-chalk/30">
+                <span className="w-4 font-mono text-[10px] text-chalk/50">
                   {index + 1}
                 </span>
                 <span
@@ -366,10 +379,17 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
                 >
                   {entry.managerName}
                 </span>
-                <span className="truncate text-[10px] text-chalk/30">
-                  {career.clubs[entry.clubId]?.short}
-                </span>
-                <span className="w-8 text-right font-mono text-[10px] text-chalk/40">
+                {career.clubs[entry.clubId] && (
+                  <ClubCrest
+                    clubId={entry.clubId}
+                    name={career.clubs[entry.clubId].name}
+                    colors={career.clubs[entry.clubId].colors}
+                    short={career.clubs[entry.clubId].short}
+                    crestUrl={career.clubs[entry.clubId].crestUrl}
+                    className="h-4 w-4 shrink-0"
+                  />
+                )}
+                <span className="w-8 text-right font-mono text-[10px] text-chalk/55">
                   {entry.played ? ordinal(entry.position) : "—"}
                 </span>
                 <span className="w-7 text-right font-mono text-xs font-semibold tabular-nums">
@@ -378,7 +398,7 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
               </li>
             ))}
           </ul>
-          <p className="border-t border-white/[0.07] px-4 py-2.5 text-[11px] leading-relaxed text-chalk/35">
+          <p className="border-t border-white/[0.07] px-4 py-2.5 text-[11px] leading-relaxed text-chalk/50">
             Ranked by league position. A friend promoted above you beats you, even
             on fewer points.
           </p>
@@ -386,13 +406,13 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
 
         <section className="card overflow-hidden">
           <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-2.5">
-            <h3 className="label">Honours</h3>
-            <span className="font-mono text-[10px] text-chalk/35">
+            <h3 className="display text-lg leading-none">Honours</h3>
+            <span className="font-mono text-[10px] text-chalk/50">
               {league.honours.length} crowned
             </span>
           </div>
           {league.honours.length === 0 ? (
-            <p className="px-4 py-4 text-xs text-chalk/40">
+            <p className="px-4 py-4 text-xs text-chalk/55">
               No season has finished yet. The champion is whoever ends highest up
               the pyramid.
             </p>
@@ -403,13 +423,13 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
                   key={honour.season}
                   className="flex items-center gap-2 border-b border-white/[0.04] px-4 py-2 last:border-0"
                 >
-                  <span className="w-12 font-mono text-[10px] text-chalk/30">
+                  <span className="w-12 font-mono text-[10px] text-chalk/50">
                     {honour.season}
                   </span>
                   <span className="flex-1 truncate text-xs text-chalk/80">
                     {honour.managerName}
                   </span>
-                  <span className="font-mono text-[10px] text-chalk/35">
+                  <span className="font-mono text-[10px] text-chalk/50">
                     T{honour.tier} · {ordinal(honour.position)}
                   </span>
                 </li>
@@ -419,7 +439,7 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
         </section>
 
         <section className="card px-4 py-3">
-          <p className="label">Caretaker rule</p>
+          <p className="display text-lg leading-none">Caretaker rule</p>
           <p className="mt-1 text-xs leading-relaxed text-chalk/50">
             Miss {MISS_LIMIT} deadlines and the club goes to a caretaker. The
             table keeps its history; anyone can take the seat.
@@ -453,31 +473,38 @@ export function LeagueScreen({ career, league, onLeague, onResolve }: Props) {
 
 function ReadyRow({
   member,
+  career,
   club,
   ready,
 }: {
   member: Manager;
+  career: Career;
   club: string;
   ready: boolean;
 }) {
+  const memberClub = career.clubs[member.clubId];
   return (
-    <li className="flex items-center gap-2 text-xs">
+    <li className="flex items-center gap-2 text-xs" data-manager={member.id}>
       <span
         aria-hidden
         className={clsx(
-          "h-1.5 w-1.5 rounded-full",
-          member.status === "idle"
-            ? "bg-ember"
-            : ready
-              ? "bg-flare"
-              : "bg-white/20",
+          "h-1.5 w-1.5 shrink-0 rounded-full",
+          member.status === "idle" ? "bg-ember" : ready ? "bg-flare" : "bg-white/20",
         )}
       />
-      <span className="w-14 shrink-0 font-semibold text-chalk/80">
-        {member.name}
-      </span>
-      <span className="flex-1 truncate text-chalk/35">{club}</span>
-      <span className="font-mono text-[9px] uppercase tracking-wider text-chalk/30">
+      {memberClub && (
+        <ClubCrest
+          clubId={memberClub.id}
+          name={memberClub.name}
+          colors={memberClub.colors}
+          short={memberClub.short}
+          crestUrl={memberClub.crestUrl}
+          className="h-5 w-5 shrink-0"
+        />
+      )}
+      <span className="w-12 shrink-0 font-semibold text-chalk/80">{member.name}</span>
+      <span className="flex-1 truncate text-chalk/50">{club}</span>
+      <span className="font-mono text-[9px] uppercase tracking-wider text-chalk/50">
         {member.status === "idle" ? "caretaker" : ready ? "in" : "waiting"}
       </span>
     </li>

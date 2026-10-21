@@ -13,10 +13,12 @@ export default {
         chalk: "#e8f2ea",
         flare: "#c8f751",
         ember: "#ff7a45",
+        gold: "#efd27a",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        sans: ['"Instrument Sans"', "system-ui", "sans-serif"],
+        display: ['"Barlow Condensed"', '"Instrument Sans"', "sans-serif"],
+        mono: ['"JetBrains Mono"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       boxShadow: {
         floodlight: "0 0 0 1px rgba(200,247,81,.12), 0 18px 60px -20px rgba(200,247,81,.25)",

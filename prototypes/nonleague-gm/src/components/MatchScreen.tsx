@@ -1,8 +1,9 @@
 import clsx from "clsx";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { ClubCrest, PlayerFace } from "@/components/Identity";
 import { ballTrail, samplePitch, TOTAL_MINUTES } from "@/engine/pitch";
-import type { Career, Club, MatchResult } from "@/engine/types";
+import type { Career, Club, MatchResult, Player, Scorer } from "@/engine/types";
 
 interface Props {
   career: Career;
@@ -24,27 +25,25 @@ const TICK_MS = 70;
 const MINUTES_PER_TICK = 0.5;
 
 /**
- * The live match: twenty-two players on a pitch, a ball, and a clock.
+ * The live match, presented as a broadcast.
  *
- * The positions are not drawn here — they come from `samplePitch`, which is a
- * pure function of (result, minute, seed). That separation is the reason this
- * screen can be trusted: the picture cannot disagree with the scoreline,
- * because both are derived from the same MatchResult. It also means the whole
- * match can be replayed frame by frame in a test.
+ * The pitch is still a pure function of `samplePitch(result, minute, seed)` — the
+ * picture cannot disagree with the scoreline because both come from the same
+ * MatchResult. What changed is the frame around it: a score bug with real badges,
+ * a goal sequence with the scorer's face, and a touchline camera that reacts.
+ *
+ * Everything animated here is derived from the model, not sampled separately.
+ * A goal celebration appears because the ball is in the net, not because a timer
+ * said so.
  */
 export function MatchScreen({ career, result, onExit }: Props) {
   const [minute, setMinute] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [playing, setPlaying] = useState(true);
-  const minuteRef = useRef(0);
 
   const home = career.clubs[result.homeId];
   const away = career.clubs[result.awayId];
   const seed = useMemo(() => hashSeed(result), [result]);
-
-  useEffect(() => {
-    minuteRef.current = minute;
-  }, [minute]);
 
   useEffect(() => {
     if (!playing) return;
@@ -60,225 +59,259 @@ export function MatchScreen({ career, result, onExit }: Props) {
     return () => window.clearInterval(id);
   }, [playing, speed]);
 
-  const frame = useMemo(
-    () => samplePitch({ result, minute, seed }),
-    [result, minute, seed],
-  );
-  const trail = useMemo(
-    () => ballTrail({ result, minute, seed }),
-    [result, minute, seed],
-  );
+  const frame = useMemo(() => samplePitch({ result, minute, seed }), [result, minute, seed]);
+  const trail = useMemo(() => ballTrail({ result, minute, seed }), [result, minute, seed]);
 
   const score = scoreAt(result, minute);
   const finished = minute >= TOTAL_MINUTES;
-  // The clock reads in whole minutes even though the model ticks in halves.
   const clock = Math.min(TOTAL_MINUTES, Math.floor(minute));
   const events = result.events.filter((e) => e.minute <= minute);
 
   const possession = useMemo(() => possessionSoFar(result, minute, seed), [result, minute, seed]);
   const territory = useMemo(() => territorySoFar(result, minute, seed), [result, minute, seed]);
 
+  const goal = useMemo(
+    () => goalOnScreen(result, frame, minute, home, away),
+    [result, frame, minute, home, away],
+  );
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]" data-testid="match-screen">
-      <div className="space-y-4">
-        <section className="card overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-2.5">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                <span
-                  className={clsx(
-                    "absolute inline-flex h-full w-full rounded-full",
-                    finished ? "bg-chalk/30" : "animate-ping bg-flare/70",
-                  )}
-                />
-                <span
-                  className={clsx(
-                    "relative inline-flex h-2 w-2 rounded-full",
-                    finished ? "bg-chalk/40" : "bg-flare",
-                  )}
-                />
-              </span>
-              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-flare">
-                {finished ? "Full time" : "Live"}
-              </span>
-              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-chalk/35">
-                Matchday {career.week}
-              </span>
-            </div>
+    <div className="space-y-4" data-testid="match-screen">
+      <section className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-pitch-950">
+        {/* Stadium: a crowd band behind the pitch, then the floodlit surface. */}
+        <div className="crowd pointer-events-none absolute inset-x-0 top-0 h-28 opacity-[0.18]" aria-hidden />
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/60 to-transparent"
+          aria-hidden
+        />
 
-            <div className="flex items-center gap-1">
-              {[1, 2, 4].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setSpeed(s)}
-                  aria-pressed={speed === s}
-                  aria-label={`Speed ${s}x`}
-                  className={clsx(
-                    "rounded-md px-2 py-1 font-mono text-[11px] tabular-nums transition",
-                    speed === s ? "bg-flare/15 text-flare" : "text-chalk/40 hover:text-chalk",
-                  )}
-                >
-                  {s}×
-                </button>
-              ))}
-              <button
-                onClick={() => setPlaying((p) => !p)}
-                className="ml-1 rounded-md border border-white/10 px-2 py-1 font-mono text-[11px] text-chalk/60 hover:border-white/25 hover:text-chalk"
-                aria-label={playing ? "Pause" : "Resume"}
-              >
-                {playing ? "❙❙" : "▶"}
-              </button>
-              <button
-                onClick={() => {
-                  setPlaying(false);
-                  setMinute(TOTAL_MINUTES);
-                }}
-                className="ml-1 rounded-md border border-white/10 px-2.5 py-1 font-mono text-[11px] text-chalk/60 hover:border-white/25 hover:text-chalk"
-              >
-                Skip to full time
-              </button>
-            </div>
+        {/* Broadcast control strip. */}
+        <div className="relative flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span
+                className={clsx(
+                  "absolute inline-flex h-full w-full rounded-full",
+                  finished ? "bg-chalk/30" : "animate-ping bg-flare/70",
+                )}
+              />
+              <span
+                className={clsx(
+                  "relative inline-flex h-2 w-2 rounded-full",
+                  finished ? "bg-chalk/40" : "bg-flare",
+                )}
+              />
+            </span>
+            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-flare">
+              {finished ? "Full time" : "Live"}
+            </span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-chalk/50">
+              Matchday {career.week}
+            </span>
           </div>
 
-          <div className="px-4 pt-4">
-            <Scorebar
-              home={home}
-              away={away}
-              homeGoals={score.home}
-              awayGoals={score.away}
-              minute={clock}
-            />
+          <div className="flex items-center gap-1">
+            {[1, 2, 4].map((s) => (
+              <button
+                key={s}
+                onClick={() => setSpeed(s)}
+                aria-pressed={speed === s}
+                aria-label={`Speed ${s}x`}
+                className={clsx(
+                  "rounded-md px-2 py-1 font-mono text-[11px] tabular-nums transition",
+                  speed === s ? "bg-flare/15 text-flare" : "text-chalk/55 hover:text-chalk",
+                )}
+              >
+                {s}×
+              </button>
+            ))}
+            <button
+              onClick={() => setPlaying((p) => !p)}
+              className="ml-1 rounded-md border border-white/10 px-2 py-1 font-mono text-[11px] text-chalk/60 hover:border-white/25 hover:text-chalk"
+              aria-label={playing ? "Pause" : "Resume"}
+            >
+              {playing ? "❙❙" : "▶"}
+            </button>
+            <button
+              onClick={() => {
+                setPlaying(false);
+                setMinute(TOTAL_MINUTES);
+              }}
+              className="ml-1 rounded-md border border-white/10 px-2.5 py-1 font-mono text-[11px] text-chalk/60 hover:border-white/25 hover:text-chalk"
+            >
+              Skip to full time
+            </button>
           </div>
+        </div>
 
-          <Pitch
+        {/* Score bug. In a broadcast it is the anchor of the whole frame. */}
+        <div className="relative px-4 pb-3">
+          <ScoreBug
             home={home}
             away={away}
-            frame={frame}
-            trail={trail}
             homeGoals={score.home}
             awayGoals={score.away}
             minute={clock}
+            finished={finished}
+            momentum={frame.momentum}
           />
-        </section>
+        </div>
 
-        <PossessionBar frame={frame} home={home} away={away} />
+        <Pitch
+          home={home}
+          away={away}
+          frame={frame}
+          trail={trail}
+          homeGoals={score.home}
+          awayGoals={score.away}
+          minute={clock}
+        />
+
+        <GoalOverlay goal={goal} />
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
+        <div className="space-y-4">
+          <Ticker frame={frame} home={home} away={away} minute={clock} goal={goal} finished={finished} score={score} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <StatBlock label="Possession" a={`${possession.home}%`} b={`${possession.away}%`} split={possession.home} home={home} away={away} />
+            <StatBlock label="Territory" a={`${territory.home}%`} b={`${territory.away}%`} split={territory.home} home={home} away={away} />
+          </div>
+        </div>
+
+        <aside className="space-y-4">
+          <section className="card overflow-hidden">
+            <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-2.5">
+              <h2 className="label">Commentary</h2>
+              <span className="font-mono text-[10px] tabular-nums text-chalk/50">{clock}′</span>
+            </div>
+            <ol className="max-h-[280px] divide-y divide-white/[0.04] overflow-y-auto" data-testid="commentary">
+              {events
+                .slice()
+                .reverse()
+                .map((event, index) => (
+                  <li key={index} className="flex gap-3 px-4 py-2">
+                    <span className="w-7 shrink-0 font-mono text-[11px] tabular-nums text-chalk/50">
+                      {event.minute}′
+                    </span>
+                    <span
+                      className={clsx(
+                        "text-[12.5px] leading-snug",
+                        event.kind === "goal" ? "font-semibold text-flare" : "text-chalk/60",
+                      )}
+                    >
+                      {event.text}
+                    </span>
+                  </li>
+                ))}
+            </ol>
+          </section>
+
+          {finished && (
+            <button className="cta w-full" onClick={onExit}>
+              Back to the hub
+            </button>
+          )}
+        </aside>
       </div>
-
-      <aside className="space-y-4">
-        <section className="card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-2.5">
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-chalk/40">
-              Match stats
-            </h2>
-            <span className="font-mono text-[10px] tabular-nums text-chalk/35">
-              {clock}′
-            </span>
-          </div>
-          <dl className="divide-y divide-white/[0.05]">
-            <Stat label="Possession" a={`${possession.home}%`} b={`${possession.away}%`} />
-            <Stat label="Territory" a={`${territory.home}%`} b={`${territory.away}%`} />
-            <Stat label="Goals" a={String(score.home)} b={String(score.away)} />
-          </dl>
-          <p className="border-t border-white/[0.05] px-4 py-2.5 text-[11px] leading-relaxed text-chalk/35">
-            Every number here is counted from the same model that draws the pitch.
-          </p>
-        </section>
-
-        <section className="card overflow-hidden">
-          <div className="border-b border-white/[0.07] px-4 py-2.5">
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-chalk/40">
-              Commentary
-            </h2>
-          </div>
-          <ol className="max-h-[300px] divide-y divide-white/[0.04] overflow-y-auto" data-testid="commentary">
-            {events
-              .slice()
-              .reverse()
-              .map((event, index) => (
-                <li key={index} className="flex gap-3 px-4 py-2">
-                  <span className="w-7 shrink-0 font-mono text-[11px] tabular-nums text-chalk/30">
-                    {event.minute}′
-                  </span>
-                  <span
-                    className={clsx(
-                      "text-[12.5px] leading-snug",
-                      event.kind === "goal" ? "font-semibold text-flare" : "text-chalk/60",
-                    )}
-                  >
-                    {event.text}
-                  </span>
-                </li>
-              ))}
-          </ol>
-        </section>
-
-        {finished && (
-          <button className="btn-primary w-full" onClick={onExit}>
-            Back to the dashboard
-          </button>
-        )}
-      </aside>
     </div>
   );
 }
 
-function Scorebar({
+/**
+ * The score bug.
+ *
+ * Badges, codes, score and clock in one bar — the shape every viewer already
+ * knows how to read. The digit is keyed on its value so it animates when it
+ * changes, which is the cheapest possible "this is live" signal.
+ */
+function ScoreBug({
   home,
   away,
   homeGoals,
   awayGoals,
   minute,
+  finished,
+  momentum,
 }: {
   home: Club;
   away: Club;
   homeGoals: number;
   awayGoals: number;
   minute: number;
+  finished: boolean;
+  momentum: number;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <span
-          className="h-7 w-1 shrink-0 rounded-full"
-          style={{ background: "var(--team-home)" }}
-          aria-hidden
-        />
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{home.name}</p>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-flare/80">Home</p>
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-black/45 backdrop-blur-md">
+      <div className="flex items-stretch">
+        <TeamSide club={home} align="left" />
+
+        <div className="flex items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4">
+          <span className="display w-7 text-center text-3xl leading-none tabular-nums sm:text-4xl" data-testid="live-score" key={`h${homeGoals}`}>
+            <span className="animate-digit inline-block">{homeGoals}</span>
+          </span>
+          <span className="font-mono text-sm text-chalk/50">–</span>
+          <span className="display w-7 text-center text-3xl leading-none tabular-nums sm:text-4xl" key={`a${awayGoals}`}>
+            <span className="animate-digit inline-block">{awayGoals}</span>
+          </span>
+        </div>
+
+        <TeamSide club={away} align="right" />
+
+        <div className="flex shrink-0 flex-col items-center justify-center border-l border-white/10 px-3">
+          <span
+            className="font-mono text-[13px] font-bold tabular-nums text-chalk/85"
+            data-testid="match-clock"
+            aria-live="off"
+          >
+            {String(minute).padStart(2, "0")}′
+          </span>
+          <span className="mt-0.5 font-mono text-[8px] uppercase tracking-[0.14em] text-chalk/50">
+            {finished ? "FT" : minute >= 45 ? "2H" : "1H"}
+          </span>
         </div>
       </div>
 
-      <div className="flex items-baseline gap-2.5">
-        <span
-          className="font-mono text-3xl font-black tabular-nums"
-          data-testid="live-score"
-        >
-          {homeGoals}
-        </span>
-        <span className="font-mono text-lg text-chalk/25">–</span>
-        <span className="font-mono text-3xl font-black tabular-nums">{awayGoals}</span>
-      </div>
-
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-2.5 text-right">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{away.name}</p>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-chalk/40">Away</p>
-        </div>
-        <span
-          className="h-7 w-1 shrink-0 rounded-full"
-          style={{ background: "var(--team-away)" }}
-          aria-hidden
+      {/* Momentum: a thin strip under the bug, leaning toward whoever is on top. */}
+      <div className="relative h-[3px] bg-white/[0.06]">
+        <div
+          className="absolute inset-y-0 bg-flare/70 transition-[left,width] duration-200 ease-linear"
+          style={{
+            left: `${50 + Math.min(0, momentum) * 50}%`,
+            width: `${50 + Math.abs(momentum) * 50}%`,
+          }}
         />
+        <span className="absolute inset-y-0 left-1/2 w-px bg-white/30" aria-hidden />
       </div>
+    </div>
+  );
+}
 
-      <span
-        className="w-14 shrink-0 rounded-md bg-white/[0.05] px-1.5 py-1 text-center font-mono text-xs font-bold tabular-nums text-chalk/70"
-        data-testid="match-clock"
-        aria-live="off"
-      >
-        {String(minute).padStart(2, "0")}′
-      </span>
+function TeamSide({ club, align }: { club: Club; align: "left" | "right" }) {
+  return (
+    <div
+      className={clsx(
+        "flex min-w-0 flex-1 items-center gap-1.5 px-2 py-2 sm:gap-2 sm:px-3",
+        align === "right" && "flex-row-reverse text-right",
+      )}
+    >
+      <ClubCrest
+        clubId={club.id}
+        name={club.name}
+        colors={club.colors}
+        short={club.short}
+        crestUrl={club.crestUrl}
+        className="h-7 w-7 shrink-0 sm:h-8 sm:w-8"
+      />
+      <div className="min-w-0">
+        {/* A phone cannot hold two club names and a score. It holds the codes. */}
+        <p className="display truncate text-[13px] leading-none tracking-wide sm:hidden">{club.short}</p>
+        <p className="hidden truncate text-sm font-semibold leading-tight sm:block">{club.name}</p>
+        <p className="mt-0.5 font-mono text-[8px] uppercase tracking-[0.16em] text-chalk/55 sm:text-[9px]">
+          {align === "left" ? "Home" : "Away"}
+        </p>
+      </div>
     </div>
   );
 }
@@ -286,10 +319,14 @@ function Scorebar({
 /**
  * The pitch.
  *
- * Drawn with plain absolutely-positioned boxes so the geometry is exactly what
- * `samplePitch` returned — no canvas, no layout rounding between the model and
- * the picture. `data-x` / `data-y` are on every token so a test can prove no
- * player ever leaves the grass.
+ * Absolutely-positioned tokens, so the geometry is exactly what `samplePitch`
+ * returned — no canvas, no layout rounding between the model and the picture.
+ * `data-x` / `data-y` are on every token so a test can prove no player ever
+ * leaves the grass.
+ *
+ * New here: a camera that nudges toward the ball by a few pixels, crowd haze at
+ * the top, and a carrier marker drawn as a chevron rather than a ring so the man
+ * on the ball is identifiable at thumbnail size.
  */
 function Pitch({
   home,
@@ -308,70 +345,167 @@ function Pitch({
   awayGoals: number;
   minute: number;
 }) {
+  const camX = (frame.ball.x - 0.5) * -12;
+  const camY = (frame.ball.y - 0.5) * -8;
+
   return (
-    <div className="p-4">
+    <div className="px-3 pb-3 sm:px-4 sm:pb-4">
       <div
-        className="pitch relative w-full overflow-hidden rounded-xl"
+        className="pitch relative w-full overflow-hidden rounded-xl ring-1 ring-black/60"
         data-testid="pitch"
+        data-celebration={frame.celebration ? "true" : "false"}
         style={{ aspectRatio: "956 / 664" }}
       >
-        {/* Mown stripes, so the surface reads as grass rather than a green box. */}
-        <div className="absolute inset-0 flex" aria-hidden>
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div
+        <div
+          className="absolute inset-0 transition-transform duration-300 ease-out"
+          style={{ transform: `translate3d(${camX}px, ${camY}px, 0) scale(1.02)` }}
+        >
+          {/* Mown stripes, so the surface reads as grass rather than a green box. */}
+          <div className="absolute inset-0 flex" aria-hidden>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div
+                key={i}
+                className={clsx("h-full flex-1", i % 2 === 0 ? "bg-white/[0.022]" : "bg-transparent")}
+              />
+            ))}
+          </div>
+
+          <PitchMarkings />
+
+          {/* Ghost trail: where the ball just was, fading with age. */}
+          {trail.map((p, i) => (
+            <span
               key={i}
-              className={clsx("h-full flex-1", i % 2 === 0 ? "bg-white/[0.022]" : "bg-transparent")}
+              className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-white"
+              style={{
+                left: `${p.x * 100}%`,
+                top: `${p.y * 100}%`,
+                width: 6 - i * 1.4,
+                height: 6 - i * 1.4,
+                opacity: 0.22 - i * 0.06,
+                filter: "blur(0.4px)",
+              }}
+              aria-hidden
             />
           ))}
+
+          {frame.players.map((player) => (
+            <span
+              key={player.id}
+              className="absolute -translate-x-1/2 -translate-y-1/2 transition-[left,top] duration-[70ms] ease-linear"
+              style={{ left: `${player.x * 100}%`, top: `${player.y * 100}%` }}
+              data-testid="pitch-player"
+              data-side={player.side}
+              data-number={player.number}
+              data-ball={player.hasBall ? "true" : "false"}
+              data-x={player.x.toFixed(4)}
+              data-y={player.y.toFixed(4)}
+            >
+              <PlayerToken
+                number={player.number}
+                colour={player.side === "home" ? home.colors : away.colors}
+                home={player.side === "home"}
+                carrier={player.hasBall}
+              />
+            </span>
+          ))}
+
+          <Ball ball={frame.ball} lift={frame.lift} phase={frame.phase} dead={frame.dead} />
         </div>
-
-        <PitchMarkings />
-
-        {/* Ghost trail: where the ball just was, fading with age. */}
-        {trail.map((p, i) => (
-          <span
-            key={i}
-            className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-white"
-            style={{
-              left: `${p.x * 100}%`,
-              top: `${p.y * 100}%`,
-              width: 6 - i * 1.4,
-              height: 6 - i * 1.4,
-              opacity: 0.22 - i * 0.06,
-              filter: "blur(0.4px)",
-            }}
-            aria-hidden
-          />
-        ))}
-
-        {frame.players.map((player) => (
-          <span
-            key={player.id}
-            className="absolute -translate-x-1/2 -translate-y-1/2 transition-[left,top] duration-[70ms] ease-linear"
-            style={{ left: `${player.x * 100}%`, top: `${player.y * 100}%` }}
-            data-testid="pitch-player"
-            data-side={player.side}
-            data-number={player.number}
-            data-ball={player.hasBall ? "true" : "false"}
-            data-x={player.x.toFixed(4)}
-            data-y={player.y.toFixed(4)}
-          >
-            <PlayerToken
-              number={player.number}
-              colour={player.side === "home" ? home.colors : away.colors}
-              home={player.side === "home"}
-              carrier={player.hasBall}
-            />
-          </span>
-        ))}
-
-        <Ball ball={frame.ball} lift={frame.lift} phase={frame.phase} dead={frame.dead} />
 
         <GoalFlash frame={frame} home={home} away={away} />
 
-        {/* Lower third: the last goal, then a live caption. */}
-        <LastGoalCard frame={frame} home={home} away={away} homeGoals={homeGoals} awayGoals={awayGoals} minute={minute} />
+        {/* Lower third: what the ball is doing, and the shape. */}
+        <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-3">
+          <div className="rounded-lg border border-white/10 bg-pitch-950/85 px-2.5 py-1.5 backdrop-blur">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-chalk/50">
+              {minute}′ · {home.short} {homeGoals}–{awayGoals} {away.short}
+            </p>
+            <p className="mt-0.5 text-[11.5px] leading-tight text-chalk/75">
+              {captionFor(frame, home, away)}
+            </p>
+          </div>
+          <div className="hidden rounded-lg border border-flare/25 bg-pitch-950/85 px-2.5 py-1.5 backdrop-blur sm:block">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-flare/80">4–2–3–1</p>
+          </div>
+        </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The goal, as a broadcast graphic.
+ *
+ * Full-width lower third, the scorer's face, his name and the minute. It is
+ * driven by `frame.celebration` — the minutes the ball is physically in the net —
+ * so it cannot appear for a goal that has not happened yet, and it cannot be
+ * missed for one that has.
+ */
+function GoalOverlay({ goal }: { goal: { scorer: Scorer; club: Club; player?: Player } | null }) {
+  if (!goal) return null;
+  const { scorer, club, player } = goal;
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-30 motion-safe:animate-slide-left"
+      role="status"
+      data-testid="goal-overlay"
+      data-club={club.id}
+      data-scorer={scorer.playerId}
+    >
+      <div
+        className="flex items-center gap-3 border-t border-white/15 px-3 py-2.5 backdrop-blur-md sm:px-5"
+        style={{
+          background: `linear-gradient(90deg, ${club.colors.primary}f2 0%, ${club.colors.primary}b3 45%, rgba(6,18,13,.92) 100%)`,
+        }}
+      >
+        <span className="display shrink-0 text-2xl leading-none text-chalk/90 sm:text-3xl">Goal</span>
+        <span className="h-8 w-px bg-white/25" aria-hidden />
+        <span className="relative">
+          <PlayerFace
+            playerId={scorer.playerId}
+            age={player?.age}
+            name={scorer.playerName}
+            photoUrl={player?.photoUrl}
+            colors={club.colors}
+            number={player?.number}
+            className="h-11 w-11 shrink-0 rounded-lg ring-1 ring-white/30"
+          />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold leading-tight sm:text-base">{scorer.playerName}</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-chalk/60">
+            {club.short} · {scorer.minute}′
+          </p>
+        </div>
+        <ClubCrest
+          clubId={club.id}
+          name={club.name}
+          colors={club.colors}
+          short={club.short}
+          crestUrl={club.crestUrl}
+          className="h-9 w-9 shrink-0 opacity-80"
+        />
+        {/* Confetti: four paper strips, CSS only. */}
+        <span className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <span
+              key={i}
+              className="animate-confetti absolute top-0 h-2 w-1 rounded-sm"
+              style={{
+                left: `${8 + i * 15}%`,
+                background: i % 2 === 0 ? "#c8f751" : "#e8f2ea",
+                animationDelay: `${i * 70}ms`,
+                ["--drift" as string]: `${(i % 2 === 0 ? 1 : -1) * (10 + i * 6)}px`,
+              }}
+            />
+          ))}
+        </span>
+      </div>
+      <span className="sr-only">
+        Goal for {club.name}, scored by {scorer.playerName} in the {scorer.minute}th minute.
+      </span>
     </div>
   );
 }
@@ -384,9 +518,6 @@ function Pitch({
  * five rim panels, clipped to the sphere. `lift` moves it up the screen and grows
  * it slightly while the shadow stays on the grass and shrinks — the cheap, correct
  * way to read height in a top-down view.
- *
- * The trail lives outside the span, in the pitch, so a fade never drags the ball
- * itself backwards.
  */
 function Ball({
   ball,
@@ -401,13 +532,11 @@ function Ball({
 }) {
   // A placed ball is picked up and replaced, not rolled across the pitch. Rather
   // than hide it — it is still on the spot — the transition is cut for that one
-  // frame, so it snaps instead of gliding the length of the field. The engine
-  // says which frames those are; guessing from distance would also cut a long
-  // pass, which is exactly the motion worth seeing.
+  // frame, so it snaps instead of gliding the length of the field.
   const transition = dead ? "none" : undefined;
-
   const size = 15;
   const shadowScale = 1 - lift * 0.45;
+  const spin = Math.round((ball.x * 720 + ball.y * 160) % 360);
 
   return (
     <>
@@ -439,7 +568,12 @@ function Ball({
         data-lift={lift.toFixed(2)}
         data-phase={phase}
       >
-        <svg viewBox="0 0 32 32" className="h-full w-full" aria-hidden>
+        <svg
+          viewBox="0 0 32 32"
+          className="h-full w-full drop-shadow-[0_1px_2px_rgba(0,0,0,.55)]"
+          aria-hidden
+          style={{ transform: `rotate(${spin}deg)` }}
+        >
           <defs>
             <radialGradient id="ball-sheen" cx="34%" cy="28%" r="78%">
               <stop offset="0%" stopColor="#ffffff" />
@@ -476,13 +610,7 @@ function Ball({
   );
 }
 
-/**
- * What a goal looks like: the net flashes and a caption names the scorer.
- *
- * Shown only while `celebration` is true, which is the stretch of match minutes
- * the ball spends in the net. It is keyed on the score so React restarts the
- * animation for each goal rather than running it once per match.
- */
+/** The net flashes when the ball is in it. Keyed on the score so it restarts. */
 function GoalFlash({
   frame,
   home,
@@ -501,8 +629,11 @@ function GoalFlash({
   return (
     <>
       <span
-        className="pointer-events-none absolute top-1/2 z-[11] h-[16%] w-[9%] -translate-y-1/2 rounded-full bg-flare/35 blur-xl motion-safe:animate-pulse"
-        style={atRight ? { right: "1.5%" } : { left: "1.5%" }}
+        className="pointer-events-none absolute top-1/2 z-[11] h-[18%] w-[10%] -translate-y-1/2 rounded-full blur-2xl motion-safe:animate-glow"
+        style={{
+          ...(atRight ? { right: "1%" } : { left: "1%" }),
+          background: `${club.colors.secondary}66`,
+        }}
         aria-hidden
       />
       <div
@@ -510,12 +641,10 @@ function GoalFlash({
         role="status"
         data-testid="goal-flash"
       >
-        <span className="flex items-center gap-2 rounded-full border border-flare/40 bg-pitch-950/90 px-3 py-1 backdrop-blur">
-          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-flare">
+        <span className="motion-safe:animate-slam rounded-full border border-flare/45 bg-pitch-950/90 px-4 py-1.5 backdrop-blur">
+          <span className="font-mono text-[11px] font-bold uppercase tracking-[0.26em] text-flare">
             Goal
           </span>
-          <span className="h-2.5 w-px bg-white/20" aria-hidden />
-          <span className="text-[11.5px] font-semibold text-chalk/85">{club.short}</span>
         </span>
       </div>
     </>
@@ -535,36 +664,64 @@ function PlayerToken({
 }) {
   // A player seen from above: head, shoulders, number. Small enough to sit 22
   // on a pitch, structured enough to read as a person rather than a dot.
+  const shirt = home ? colour.secondary : colour.primary;
+
   return (
     <span className="relative block h-[26px] w-[22px]">
       {carrier && (
-        <span
-          className="absolute -inset-1.5 rounded-full border border-flare/60 bg-flare/10"
-          aria-hidden
-        />
+        <>
+          <span
+            className="absolute -inset-1.5 rounded-full border border-flare/60 bg-flare/10"
+            aria-hidden
+          />
+          <span
+            className="absolute -top-2 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rotate-45 bg-flare"
+            aria-hidden
+          />
+        </>
       )}
       <span
         className="absolute left-1/2 top-0 h-[9px] w-[9px] -translate-x-1/2 rounded-full border"
         style={{
-          background: home ? "#0a1b13" : "#0a1b13",
+          background: "#0a1b13",
           borderColor: home ? colour.secondary : colour.primary,
         }}
         aria-hidden
       />
       <span
-        className={clsx(
-          "absolute bottom-0 left-1/2 grid h-[16px] w-[20px] -translate-x-1/2 place-items-center rounded-[45%] font-mono text-[8px] font-bold leading-none",
-          home ? "text-pitch-950" : "text-pitch-950",
-        )}
+        className="absolute bottom-0 left-1/2 grid h-[16px] w-[20px] -translate-x-1/2 place-items-center rounded-[45%] font-mono text-[8px] font-bold leading-none"
         style={{
-          background: home ? colour.secondary : colour.primary,
+          background: shirt,
+          // The number has to survive both a pale trim and a dark shirt, so the
+          // ink is chosen from the shirt rather than assumed.
+          color: readableOn(shirt),
           boxShadow: "0 1px 2px rgba(0,0,0,0.45)",
         }}
+        data-testid="shirt-number"
       >
         {number}
       </span>
     </span>
   );
+}
+
+/**
+ * Black on a light shirt, paper on a dark one — the same decision the crest
+ * makes, applied to the 2D token.
+ */
+function readableOn(colour: string): string {
+  const hex = colour.trim();
+  const hsl = /^hsl\(\s*([\d.]+)\s+([\d.]+)%\s+([\d.]+)%\s*\)$/.exec(hex);
+  if (hsl) {
+    return Number(hsl[3]) >= 46 ? "#06120d" : "#e8f2ea";
+  }
+  const rgb = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!rgb) return "#06120d";
+  const n = parseInt(rgb[1], 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.55 ? "#06120d" : "#e8f2ea";
 }
 
 function PitchMarkings() {
@@ -574,7 +731,10 @@ function PitchMarkings() {
       <div className={clsx("absolute inset-[4.5%] border", line)} />
       <div className={clsx("absolute inset-y-[4.5%] left-1/2 w-px", "bg-white/25")} />
       <div
-        className={clsx("absolute left-1/2 top-1/2 h-[25%] w-[17%] -translate-x-1/2 -translate-y-1/2 rounded-full border", line)}
+        className={clsx(
+          "absolute left-1/2 top-1/2 h-[25%] w-[17%] -translate-x-1/2 -translate-y-1/2 rounded-full border",
+          line,
+        )}
       />
       <div className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/40" />
       {/* Penalty areas and six-yard boxes. */}
@@ -598,9 +758,7 @@ function PitchMarkings() {
  * One goal: a frame behind the line with a meshed net.
  *
  * The net is a pair of crossed repeating gradients rather than an image, so it
- * scales with the pitch and costs nothing to render. `depth` is the distance the
- * net reaches back, in percent of the pitch — deep enough that a ball at
- * `NET_X` is unambiguously inside it.
+ * scales with the pitch and costs nothing to render.
  */
 function GoalMouth({ side }: { side: "left" | "right" }) {
   const net =
@@ -619,27 +777,91 @@ function GoalMouth({ side }: { side: "left" | "right" }) {
   );
 }
 
-function LastGoalCard({
+/** The touchline ticker: what the ball is doing right now. */
+function Ticker({
   frame,
   home,
   away,
-  homeGoals,
-  awayGoals,
   minute,
+  goal,
+  finished,
+  score,
 }: {
   frame: ReturnType<typeof samplePitch>;
   home: Club;
   away: Club;
-  homeGoals: number;
-  awayGoals: number;
   minute: number;
+  goal: { scorer: Scorer } | null;
+  finished: boolean;
+  score: { home: number; away: number };
 }) {
   const onBall = frame.possession === "home" ? home : away;
-  const third = frame.ball.x > 0.66 ? "final third" : frame.ball.x < 0.34 ? "own half" : "middle third";
+  return (
+    <section className="card overflow-hidden" data-testid="ticker">
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        <span className="font-mono text-[10px] font-bold tabular-nums text-flare/80">
+          {String(minute).padStart(2, "0")}′
+        </span>
+        <span className="h-3 w-px bg-white/15" aria-hidden />
+        <p className="min-w-0 flex-1 truncate text-[12.5px] text-chalk/75">
+          {finished ? (
+            <span className="font-semibold">
+              Full time: {home.short} {score.home}–{score.away} {away.short}.
+            </span>
+          ) : goal ? (
+            <span className="font-semibold text-flare">
+              {goal.scorer.playerName} scores for {onBall.short}.
+            </span>
+          ) : (
+            captionFor(frame, home, away)
+          )}
+        </p>
+        <span className="hidden shrink-0 font-mono text-[9px] uppercase tracking-[0.16em] text-chalk/50 sm:block">
+          {finished ? `${home.short} ${score.home}–${score.away} ${away.short}` : `${onBall.short} on the ball`}
+        </span>
+      </div>
+    </section>
+  );
+}
 
-  // The caption names what the ball is actually doing. A caption that says
-  // "passing" while the ball is visibly travelling is the cheapest proof that
-  // the picture is the simulation and not a loop of dots.
+function StatBlock({
+  label,
+  a,
+  b,
+  split,
+  home,
+  away,
+}: {
+  label: string;
+  a: string;
+  b: string;
+  split: number;
+  home: Club;
+  away: Club;
+}) {
+  return (
+    <section className="card px-4 py-3">
+      <div className="flex items-baseline justify-between">
+        <span className="font-mono text-sm font-bold tabular-nums">{a}</span>
+        <span className="label">{label}</span>
+        <span className="font-mono text-sm tabular-nums text-chalk/55">{b}</span>
+      </div>
+      <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
+        <div
+          className="h-full rounded-l-full transition-[width] duration-150 ease-linear"
+          style={{ width: `${split}%`, background: home.colors.secondary }}
+        />
+        <div className="h-full flex-1 opacity-60" style={{ background: away.colors.primary }} />
+      </div>
+    </section>
+  );
+}
+
+/** The caption names what the ball is actually doing — proof the picture is the sim. */
+function captionFor(frame: ReturnType<typeof samplePitch>, home: Club, away: Club): string {
+  const onBall = frame.possession === "home" ? home : away;
+  const third =
+    frame.ball.x > 0.66 ? "final third" : frame.ball.x < 0.34 ? "own half" : "middle third";
   const doing =
     frame.phase === "goal"
       ? "in the net"
@@ -650,68 +872,34 @@ function LastGoalCard({
           : frame.phase === "restart" || frame.phase === "kick-off"
             ? "restarting"
             : `in the ${third}`;
-
-  return (
-    <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-3">
-      <div className="rounded-lg border border-white/10 bg-pitch-950/85 px-2.5 py-1.5 backdrop-blur">
-        <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-chalk/35">
-          {minute}′ · {home.short} {homeGoals}–{awayGoals} {away.short}
-        </p>
-        <p className="mt-0.5 text-[11.5px] leading-tight text-chalk/75">
-          {onBall.short} {doing}.
-        </p>
-      </div>
-      <div className="hidden rounded-lg border border-flare/25 bg-pitch-950/85 px-2.5 py-1.5 backdrop-blur sm:block">
-        <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-flare/80">
-          4–2–3–1
-        </p>
-      </div>
-    </div>
-  );
+  return `${onBall.short} ${doing}.`;
 }
 
-function PossessionBar({
-  frame,
-  home,
-  away,
-}: {
-  frame: ReturnType<typeof samplePitch>;
-  home: Club;
-  away: Club;
-}) {
-  const homeShare = Math.round(frame.momentum * 50 + 50);
-  return (
-    <section className="card px-4 py-3">
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-chalk/35">
-          Momentum
-        </span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-chalk/35">
-          {home.short} {homeShare}%
-        </span>
-      </div>
-      <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
-        <div
-          className="h-full rounded-l-full bg-flare/80 transition-[width] duration-100 ease-linear"
-          style={{ width: `${homeShare}%` }}
-        />
-      </div>
-      <div className="mt-1.5 flex justify-between font-mono text-[10px] text-chalk/30">
-        <span>{home.short}</span>
-        <span>{away.short}</span>
-      </div>
-    </section>
-  );
-}
+/**
+ * Which goal is on screen, if any.
+ *
+ * The celebration window is a stretch of minutes, and a goal's scorer is recorded
+ * at a single minute. We match the window back to the scorer whose minute falls in
+ * it, so the graphic names the right man even when two goals are close together.
+ */
+function goalOnScreen(
+  result: MatchResult,
+  frame: ReturnType<typeof samplePitch>,
+  minute: number,
+  home: Club,
+  away: Club,
+): { scorer: Scorer; club: Club; player?: Player } | null {
+  if (!frame.celebration) return null;
 
-function Stat({ label, a, b }: { label: string; a: string; b: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2">
-      <dd className="w-12 font-mono text-sm font-semibold tabular-nums">{a}</dd>
-      <dt className="flex-1 text-center text-[11px] text-chalk/40">{label}</dt>
-      <dd className="w-12 text-right font-mono text-sm tabular-nums text-chalk/55">{b}</dd>
-    </div>
-  );
+  const side = frame.possession;
+  const scorers = side === "home" ? result.scorers.home : result.scorers.away;
+  const match =
+    scorers.filter((s) => s.minute <= minute + 0.5).sort((a, b) => b.minute - a.minute)[0] ?? scorers[0];
+  if (!match) return null;
+
+  const club = side === "home" ? home : away;
+  const player = club.players.find((p) => p.id === match.playerId) ?? undefined;
+  return { scorer: match, club, player };
 }
 
 /** Goals scored by each side at or before `minute`. */

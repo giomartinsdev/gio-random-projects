@@ -67,6 +67,26 @@ export function computeStrength(club: Club): Strength {
   return { attack: round(attack), defence: round(defence) };
 }
 
+/**
+ * The one face a screen leads with.
+ *
+ * Highest ability in the XI, keeper excluded unless the squad has nobody else —
+ * a keeper is rarely the story of a fixture, and the hero card is a story slot.
+ */
+export function starPlayer(club: Club): Player | undefined {
+  const lineup = pickLineup(club);
+  const outfield = lineup.filter((p) => p.position !== "GK");
+  const pool = outfield.length > 0 ? outfield : lineup;
+  return [...pool].sort((a, b) => b.ability - a.ability)[0];
+}
+
+/** The `count` best players in the XI, best first. Used for "key men" rails. */
+export function keyPlayers(club: Club, count: number): Player[] {
+  return [...pickLineup(club)]
+    .sort((a, b) => b.ability - a.ability)
+    .slice(0, count);
+}
+
 export function averageMorale(club: Club): number {
   if (club.players.length === 0) return 60;
   return club.players.reduce((sum, p) => sum + p.morale, 0) / club.players.length;

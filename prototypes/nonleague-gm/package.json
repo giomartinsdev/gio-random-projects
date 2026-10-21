@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "data:fetch": "node scripts/fetch-dataset.mjs",
+    "data:check": "node scripts/fetch-dataset.mjs --dry-run"
   },
   "dependencies": {
     "clsx": "^2.1.1",

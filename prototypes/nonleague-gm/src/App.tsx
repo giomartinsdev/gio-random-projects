@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Dashboard } from "@/components/Dashboard";
 import { Header } from "@/components/Header";
@@ -18,6 +18,7 @@ import {
   signPlayer,
   upgradeStadium,
 } from "@/engine/career";
+import { loadDataset, type Dataset } from "@/engine/dataset";
 import {
   friendStandings,
   loadLeague,
@@ -36,7 +37,7 @@ const SAVE_KEY = "pyramid.save.v1";
 const LEAGUE_KEY = "pyramid.league.v1";
 
 const SCREENS: { id: Screen; label: string }[] = [
-  { id: "dashboard", label: "Dashboard" },
+  { id: "dashboard", label: "Hub" },
   { id: "league", label: "League" },
   { id: "match", label: "Match" },
   { id: "squad", label: "Squad" },
@@ -45,11 +46,16 @@ const SCREENS: { id: Screen; label: string }[] = [
 ];
 
 export default function App() {
-  const [career, setCareer] = useState<Career>(() => restore() ?? createCareer({ seed: 20260820 }));
+  const [saved] = useState<Career | null>(() => restore());
+  const [career, setCareer] = useState<Career>(() => saved ?? createCareer({ seed: 20260820 }));
   const [league, setLeague] = useState<FriendLeague>(() => restoreLeague(career) ?? buildLeague(career));
   const [screen, setScreen] = useState<Screen>("dashboard");
   const [lastResult, setLastResult] = useState<MatchResult | undefined>();
   const [toast, setToast] = useState<string | null>(null);
+  // A licensed snapshot, if this deployment ships one. `undefined` means "still
+  // asking"; `null` means "asked, nothing there" — so the UI never flashes a
+  // loading state it does not need.
+  const [dataset, setDataset] = useState<Dataset | null | undefined>(undefined);
 
   useEffect(() => {
     localStorage.setItem(SAVE_KEY, saveCareer(career));
@@ -59,7 +65,42 @@ export default function App() {
     localStorage.setItem(LEAGUE_KEY, saveLeague(league));
   }, [league]);
 
+  /**
+   * Real data, when available.
+   *
+   * The game is fully playable without it: a missing file, a bad key or an
+   * offline phone all resolve to the generated world. Loading a snapshot is an
+   * upgrade of the *world*, not a precondition for playing.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    loadDataset().then((loaded) => {
+      if (cancelled) return;
+      setDataset(loaded);
+      // A first visit with a snapshot available should start in the real league,
+      // not in the invented one and then ask to reload. An existing save is never
+      // replaced: losing a season to a data update would be unforgivable.
+      if (loaded && !saved) {
+        const careerFromData = createCareer({
+          seed: 20260820,
+          clubs: loaded.clubs,
+          source: "licensed",
+          dataProvider: loaded.meta.provider,
+        });
+        setCareer(careerFromData);
+        setLeague(buildLeague(careerFromData));
+        setToast(
+          `Loaded ${loaded.meta.leagueName} ${loaded.meta.season} — ${loaded.clubs.length} clubs, ${loaded.meta.provider}.`,
+        );
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [saved]);
+
   const club = career.clubs[career.playerClubId];
+  const licensed = dataset?.meta;
 
   /**
    * Plays the matchweek with the friend league's picks.
@@ -73,17 +114,12 @@ export default function App() {
    * separate setters would race: the resolved window would land after the
    * archive and silently drop the matchday's results.
    */
-  function playNext(
-    mentalities?: Record<string, Mentality>,
-    window?: FriendLeague,
-  ) {
+  function playNext(mentalities?: Record<string, Mentality>, window?: FriendLeague) {
     const picks = mentalities ?? picksForLeague();
     const next = advanceWeek(career, { mentalities: picks });
     const result = playerResultOf(next);
     setCareer(next);
-    setLeague((current) =>
-      archiveMatchday(window ?? current, next),
-    );
+    setLeague((current) => archiveMatchday(window ?? current, next));
     if (result) {
       setLastResult(result);
       setScreen("match");
@@ -167,27 +203,56 @@ export default function App() {
     setCareer({ ...career, mentality });
   }
 
+  /**
+   * Start over.
+   *
+   * With a licensed snapshot in place, a new career is a new division from that
+   * snapshot — the same real clubs, a fresh table. Without one, it regenerates
+   * the fictional world from the same seed.
+   */
+  function newCareer() {
+    const fresh = dataset
+      ? createCareer({
+          seed: 20260820,
+          clubs: dataset.clubs,
+          source: "licensed",
+          dataProvider: dataset.meta.provider,
+        })
+      : createCareer({ seed: 20260820 });
+    localStorage.removeItem(SAVE_KEY);
+    localStorage.removeItem(LEAGUE_KEY);
+    setCareer(fresh);
+    setLeague(buildLeague(fresh));
+    setLastResult(undefined);
+    setScreen("dashboard");
+    setToast(dataset ? `New career in the ${licensed?.leagueName ?? "loaded league"}.` : "New career started.");
+  }
+
+  const sourceLabel = useMemo(() => {
+    if (career.source !== "licensed") return "Invented clubs · no licence required";
+    return `${licensed?.leagueName ?? "Loaded league"} ${licensed?.season ?? ""} · ${licensed?.provider ?? "API-Football"}`;
+  }, [career.source, licensed]);
+
   return (
     <div className="min-h-screen">
       <Header career={career} />
 
-      <nav className="sticky top-0 z-10 border-b border-white/[0.07] bg-pitch-950/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-5 py-2">
-          {SCREENS.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setScreen(item.id)}
-              aria-current={screen === item.id ? "page" : undefined}
-              className={clsx(
-                "tab whitespace-nowrap",
-                screen === item.id && "tab-active",
-              )}
-            >
-              {item.label}
-            </button>
-          ))}
+      <nav className="sticky top-0 z-20 border-b border-white/[0.07] bg-pitch-950/92 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center gap-2 px-3 py-2 sm:px-5">
+          <div className="-mx-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1">
+            {SCREENS.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setScreen(item.id)}
+                aria-current={screen === item.id ? "page" : undefined}
+                className={clsx("tab whitespace-nowrap", screen === item.id && "tab-active")}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {career.seasonComplete && !career.dismissed && (
               <button className="btn-primary px-3 py-1.5 text-xs" onClick={endSeason}>
                 End season
@@ -195,32 +260,27 @@ export default function App() {
             )}
             <button
               className="btn-ghost px-3 py-1.5 text-xs"
-              onClick={() => {
-                const fresh = createCareer({ seed: 20260820 });
-                localStorage.removeItem(SAVE_KEY);
-                localStorage.removeItem(LEAGUE_KEY);
-                setCareer(fresh);
-                setLeague(buildLeague(fresh));
-                setLastResult(undefined);
-                setScreen("dashboard");
-                setToast("New career started.");
-              }}
+              onClick={newCareer}
+              aria-label="New career"
             >
-              New career
+              <span className="hidden sm:inline">New career</span>
+              <span className="sm:hidden" aria-hidden>
+                ↺
+              </span>
             </button>
           </div>
         </div>
       </nav>
 
-      <main className="mx-auto max-w-6xl px-5 py-6">
+      <main className="mx-auto max-w-6xl px-4 py-5 sm:px-5 sm:py-6">
         {toast && (
           <div
             role="status"
-            className="mb-5 flex items-start justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-chalk/80"
+            className="mb-5 flex items-start justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-chalk/80 motion-safe:animate-rise"
           >
             <span>{toast}</span>
             <button
-              className="text-chalk/40 hover:text-chalk"
+              className="text-chalk/55 hover:text-chalk"
               onClick={() => setToast(null)}
               aria-label="Dismiss"
             >
@@ -242,6 +302,7 @@ export default function App() {
             onPlay={() => playNext()}
             onMentality={handleMentality}
             onSimSeason={simSeason}
+            onOpenMatch={lastResult ? () => setScreen("match") : undefined}
           />
         )}
         {screen === "league" && (
@@ -253,38 +314,32 @@ export default function App() {
           />
         )}
         {screen === "match" && lastResult && (
-          <MatchScreen
-            career={career}
-            result={lastResult}
-            onExit={() => setScreen("dashboard")}
-          />
+          <MatchScreen career={career} result={lastResult} onExit={() => setScreen("dashboard")} />
         )}
         {screen === "match" && !lastResult && (
-          <div className="card px-5 py-10 text-center">
-            <p className="text-sm text-chalk/60">
-              No match to watch yet. Play one from the dashboard.
+          <div className="card px-5 py-12 text-center">
+            <p className="display text-2xl text-chalk/80">No match yet</p>
+            <p className="mt-2 text-sm text-chalk/55">
+              Kick off from the hub and the pitch opens here.
             </p>
-            <button className="btn-ghost mt-4" onClick={() => setScreen("dashboard")}>
-              Back to the dashboard
+            <button className="btn-primary mt-5" onClick={() => setScreen("dashboard")}>
+              Back to the hub
             </button>
           </div>
         )}
         {screen === "squad" && <Squad career={career} />}
         {screen === "table" && <Table career={career} />}
         {screen === "transfers" && (
-          <Transfers
-            career={career}
-            onSign={handleSign}
-            onUpgrade={handleUpgrade}
-          />
+          <Transfers career={career} onSign={handleSign} onUpgrade={handleUpgrade} />
         )}
       </main>
 
-      <footer className="mx-auto max-w-6xl px-5 pb-10 pt-2 text-xs text-chalk/30">
-        Prototype · fictional clubs and players · {league.name} · matchday{" "}
-        {league.matchday} · last result{" "}
-        {lastResult ? scoreline(lastResult.homeGoals, lastResult.awayGoals) : "—"} ·{" "}
-        {club.name}
+      <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 pb-10 pt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-chalk/50 sm:px-5">
+        <span>{sourceLabel}</span>
+        <span>
+          {league.name} · matchday {league.matchday} · last{" "}
+          {lastResult ? scoreline(lastResult.homeGoals, lastResult.awayGoals) : "—"} · {club?.short}
+        </span>
       </footer>
     </div>
   );
@@ -317,10 +372,7 @@ function restoreLeague(career: Career): FriendLeague | null {
 function playerResultOf(career: Career): MatchResult | undefined {
   for (let i = career.results.length - 1; i >= 0; i--) {
     const result = career.results[i];
-    if (
-      result.homeId === career.playerClubId ||
-      result.awayId === career.playerClubId
-    ) {
+    if (result.homeId === career.playerClubId || result.awayId === career.playerClubId) {
       return result;
     }
   }

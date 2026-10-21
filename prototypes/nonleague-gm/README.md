@@ -1,22 +1,30 @@
 # Pyramid — playable prototype
 
-A playable slice of an English football pyramid management game: take a fictional
-non-league club from the sixth tier to the Premier League.
+A playable slice of an English football pyramid management game: take a non-league
+club from the sixth tier to the Premier League.
 
 It exists to answer one question — **is the loop fun?** — before spending money on
-art, backend or a store listing. Everything here is clean-room: invented clubs,
-invented players, own engine. No licensed or third-party material.
+art, backend or a store listing. The engine, the match model and the design are all
+clean-room; the artwork is generated. Clubs, badges and faces come from **either**
+an invented world (the default, no licence required) **or** a real one loaded from a
+licensed data provider — see [Real clubs and real players](#real-clubs-and-real-players).
 
 Read [`RESEARCH.md`](./RESEARCH.md) for the product teardown and UK market map
 that this prototype comes out of.
 
-**The design deliverable is not this prototype.** Open [`ui.pen`](./ui.pen) in
-Pen.app for the design system and thirteen screens (six desktop, four mobile,
-plus the league trio) plus the five strategy boards. [`DESIGN.md`](./DESIGN.md) is
-the written companion: tokens, components, per-screen rationale, the table grid
-rule, the 2D match model, the friend-league rules, roadmap and the decisions still
-open. The React app below is the *engine* proof — the `.pen` is what the product
-should look like.
+**Two artefacts, one product.** [`ui.pen`](./ui.pen) is the design system and thirteen
+screens (six desktop, four mobile, plus the league trio) plus the five strategy boards;
+[`DESIGN.md`](./DESIGN.md) is the written companion: tokens, components, per-screen
+rationale, the table grid rule, the 2D match model, the friend-league rules, the
+licensed-data model, roadmap and the decisions still open.
+
+The React app below implements that system, and on two layers it is ahead of the canvas:
+**identity** (faces, badges, player cards) and **broadcast** (the score bug, the goal
+graphic, the lower third). The `.pen` still carries the programme layouts for those
+screens. `DESIGN.md` says which artefact holds the current decision where they differ —
+the direction did not change, the canvas simply has not been redrawn.
+
+Run the prototype to judge the loop; open the `.pen` to judge the system.
 
 ## Run it
 
@@ -29,31 +37,39 @@ npm run dev          # http://localhost:5173
 Other commands:
 
 ```bash
-npm test             # 127 tests: engine + friend league + pitch model + UI
+npm test             # 156 tests: engine + friend league + pitch model + identity + UI
 npm run typecheck
 npm run build
-npx tsx src/engine/calibrate.ts        # match model vs. real football stats
-npx tsx src/engine/economics-check.ts  # one season of income and costs
-npx tsx src/engine/outcome-check.ts    # champion vs. mid-table vs. bottom
+./node_modules/.bin/vite-node src/engine/calibrate.ts        # match model vs. real football stats
+./node_modules/.bin/vite-node src/engine/economics-check.ts  # one season of income and costs
+./node_modules/.bin/vite-node src/engine/outcome-check.ts    # champion vs. mid-table vs. bottom
 ```
+
+The calibration scripts are run with `vite-node` because it is already in the
+dependency tree; `tsx` is not installed, and adding a second TS runner to read the
+same numbers would be a dependency for no benefit.
 
 ## What you can do
 
-- **Dashboard** — your next fixture, both sides' attack/defence, pick a mentality,
-  then **Watch match** to drop into the live 2D pitch. A league strip at the top
-  shows how many friends have locked in.
+- **Hub** — the matchday, built like a broadcast fixture rather than a dashboard:
+  both badges, both key players' faces, form, gate, and one unmissable **Kick off**.
+  Pick a mentality, or rewatch the last match.
 - **League** — the friend league hub: your pick, who is still to play, the friend
   table, head-to-head, honours and the caretaker rule. Locking in resolves the
   matchday for all six managers and archives the friend derbies.
-- **Match** — a 2D pitch with 22 player tokens and a real football: five panels,
-  a shadow, a trail, and a net at each end to put it in. The ball is carried,
-  passed, shot and goes into the net on the goal's minute, then play restarts
-  from the centre. A running clock, 1×/2×/4× speed, pause and skip-to-full-time.
-  Goals, stats and commentary are driven by the same match result, so what you
-  watch is what the table records.
-- **Squad** — 20 players, best XI marked, sortable, with morale.
-- **Table** — live league table with promotion, play-off and relegation zones.
-- **Transfers** — a seeded free-agent market and a stadium upgrade.
+- **Match** — presented as a broadcast: a score bug with both badges, a running
+  clock, a momentum strip, a live ticker, and a goal sequence with the scorer's
+  face. On the pitch: 22 player tokens and a real football — five panels, a shadow,
+  a trail, a net at each end. The ball is carried, passed, shot and goes into the
+  net on the goal's minute, then play restarts from the centre. 1×/2×/4× speed,
+  pause or skip. Goals, stats and commentary come from the same match result, so
+  what you watch is what the table records.
+- **Squad** — a grid of player cards: face, rating, real position (RB/CAM/ST), six
+  attributes, gold/silver/bronze by ability. Tap a card for the full inspector; the
+  sortable list view is still one toggle away.
+- **Table** — live league table with badges, promotion, play-off and relegation zones.
+- **Transfers** — a seeded free-agent market, as cards rather than rows, and a
+  stadium upgrade.
 - **Season** — play 38 matchweeks, then end the season: promotion, relegation,
   prize money, and a new fixture list. The save persists in `localStorage`.
 
@@ -74,7 +90,18 @@ src/
     career.ts       the career aggregate: create, advance, sign, upgrade, season
     commands.ts     the single mutation entry point
     data.ts         fictional clubs and players
-  components/       presentation only
+    identity.ts     deterministic faces, badges, attributes, shirt numbers
+    dataset.ts      licensed data adapter (API-Football snapshot → the game model)
+  components/
+    Header.tsx      club bar: badge, captain's face, balance/week/board
+    Dashboard.tsx   the matchday hub
+    MatchScreen.tsx the broadcast: score bug, ticker, goal graphic, pitch
+    Squad.tsx       card grid + inspector, with a list toggle
+    Identity.tsx    PlayerFace and ClubCrest — drawn or licensed, same API
+    PlayerCard.tsx  the player card and the compact row
+    LeagueScreen.tsx the friend league hub
+  scripts/
+    fetch-dataset.mjs  snapshots a real league into public/dataset/football.json
   App.tsx           screens and wiring
 ```
 
@@ -84,7 +111,7 @@ src/
    same save always produces the same next match. Without this you can never tell
    whether your tactic worked or you got a different dice roll.
 2. *Legibility.* Two numbers per side (attack, defence) drive the match. The
-   dashboard shows them side by side, so a result is explainable.
+   hub shows them side by side, so a result is explainable.
 3. *Calibration.* The Poisson model is fitted to real football, and the numbers are
    checked by a script rather than assumed:
 
@@ -114,6 +141,74 @@ src/
    toward it. So the ball cannot drift off a carrier's boot, and a player cannot
    hop while the ball glides — which is what the browser check found (180px in a
    single frame, invisible to every test that only measured the ball).
+
+## Real clubs and real players
+
+The game ships with an invented world, and that is the default. It can also run on a
+real league, because the difference between "a management sim" and "a football game"
+is whether the badge and the face are real.
+
+**What is licensed, and what is not.** Club names and badges, league marks and player
+likenesses are licensed individually — FIFPro for players, the league and the clubs
+for marks. A build that ships them without a licence is a legal risk, not a grey
+area. So the game does not embed any of it. It loads a **snapshot** you are entitled
+to produce.
+
+```bash
+cp .env.example .env             # paste your key
+npm run data:fetch               # National League (43) 2025 by default
+npm run data:fetch -- --league 40 --season 2025   # or any league/season
+```
+
+That writes `public/dataset/football.json`: clubs, crest URLs, venue names, squads,
+ages, shirt numbers and player photo URLs. On the next load the game starts in that
+league — real badges, real faces, real names — and the save records
+`source: "licensed"` so it never regenerates the division at the end of a season.
+
+**Why a snapshot and not a live call.** An API key in a browser bundle is a published
+key: every visitor spends your quota and anyone can read it. The key is read only by
+`scripts/fetch-dataset.mjs` (server-side, from `API_FOOTBALL_KEY`), cached per
+endpoint under `.cache/`, and never prefixed with `VITE_`. The app fetches a static
+file, so it stays fast, works offline, and costs nothing to serve.
+
+**What the provider does not sell.** API-Football returns squads, not ratings. The
+1–99 ability on each card is derived from squad order and age against the division's
+baseline (`abilityFor` in `dataset.ts`), which is documented in the code and in the UI.
+It is a shape, not an official number — passing off a guess as a licensed rating would
+be the one dishonest thing in the whole model.
+
+**Degradation.** No key, no file, bad JSON, offline: every case falls back to the
+invented pyramid. A data source is an upgrade, never a precondition for playing. The
+tests cover all four failure modes.
+
+## The look
+
+Three things make it read as a game rather than a dashboard, and all three are
+structural rather than cosmetic:
+
+1. **A face per person.** `appearanceOf(playerId, age)` derives skin, hair, beard,
+   brows, build and eye colour from the player id, so the same man has the same face
+   on the hub, in the squad grid, on the pitch and in a goal graphic. Deterministic,
+   reload-stable, and legal: it is a drawing, not a likeness. A licensed portrait
+   replaces it whenever one exists, through the same component.
+2. **A badge per club.** `ClubCrest` draws a shield from the club's own colours with a
+   pattern (band, stripes, halves, chevron, hoops) and its initials. Real crests are
+   artwork and artwork is licensed; a generated shield is not.
+3. **A broadcast frame around the match.** Score bug, live ticker, momentum strip,
+   goal lower-third with the scorer's face, a camera that leans with the ball, and
+   net flash + confetti on the goal's minute — all driven by the same
+   `samplePitch()` frame the pitch is drawn from.
+
+Motion is decorative and guarded by `motion-safe` / `prefers-reduced-motion`: card
+entrances, the kick-off sweep, score digits popping, the goal slam. Nothing animated
+carries information, so a reduced-motion player loses no state.
+
+**Colour is contrast-checked, not tuned by eye.** The generated kit palette
+(`hsl(h 50% 27%)` / `hsl(h 68% 68%)`) is the pair of lightness values at which chalk on
+the shirt *and* ink on the shirt number clear 4.5:1 for all 360 hues. The first palette
+put an 8px white number on a lime shirt at 1.95:1 — measured in the browser, then
+fixed in the generator so no club can ever be given a kit its numbers disappear into.
+Shirt numbers pick ink or chalk from the shirt colour with the same rule the crest uses.
 
 ## Testing
 
@@ -159,6 +254,20 @@ only that week's derbies, the resolved window and the archive land in one state
 update (two setters raced and silently dropped the results), and the league
 survives a reload.
 
+The identity layer adds 21 tests (`src/engine/identity.test.ts`): the same player
+always gets the same face and different players do not; a veteran's look ages; shirt
+numbers are unique across a squad; the six card attributes average back to the one
+real rating and are shaped by position; badges are stable and pattern-valid; a
+licensed snapshot keeps names, crests, portraits and venues; a squad that arrives
+without positions still produces a playable XI; an odd number of clubs drops one
+instead of throwing at startup; and a missing file / malformed JSON / offline network
+all fall back to the invented world instead of breaking the game.
+
+The UI adds three more: every squad player has a face and the *identical* player
+draws the identical face on two screens; every club has a badge, on the hub and in
+the table; and a goal shows a graphic naming the scorer with his face and his crest —
+driven by the ball being in the net, not by a timer.
+
 The 2D pitch has its own 24 tests across two files. The first eight cover
 the shape: 22 tokens always, all inside the pitch, the same seed and minute always
 give the same frame, players actually move, no two tokens overlap, shirt numbers
@@ -183,11 +292,19 @@ as a football, and they are the ones that changed the design:
 
 ## Not built (on purpose)
 
-Server persistence, real-time sync, live ops, final art, club creation and badges.
+Server persistence, real-time sync, live ops, hand-drawn final art, club creation,
+and licensed likenesses bundled in the build (the adapter loads yours instead).
 The prototype is a fun-check, not a product. The friend league runs entirely on
 one device: your five rivals' picks are simulated deterministically, and the rules
 in `friendLeague.ts` are what a server would run. See `RESEARCH.md` §7 for what to
 do next and in what order.
+
+**Not built for licensed data:** a real league snapshot is a *single* division, so
+promotion and relegation move your club's tier label but do not load last season's
+league above you. Doing that properly means snapshotting a pyramid, not a league, and
+matching the provider's competition ids across seasons — a data problem, not an engine
+one. The invented world already has a pyramid (`divisions: 5`), which is why the
+default is still the invented one.
 
 **Known limitation of the prototype's league:** the engine simulates one division,
 and friend clubs are re-seated by identity across seasons, so promotion and
@@ -196,7 +313,9 @@ Tom's Netherby above Gio's Ashcombe) is the target model; the engine's
 `friendStandings` already ranks by tier, so the missing piece is the pyramid
 itself, not the league rules.
 
-The `.pen` design is a set of static screens; the React app is a separate,
-deliberately simpler visual implementation. Porting the `.pen` styling into the
-app proper is the next engineering task, not this one. What *is* shared is the
-model: the app's pitch and the mockup's pitch describe the same match.
+The `.pen` design is a set of static screens; the React app implements the same
+system and is further along on identity and broadcast. Porting those two layers back
+into the canvas is the next design task, and it is mechanical: `PlayerFace`,
+`ClubCrest`, the player card, the score bug and the goal graphic already exist as
+components with a stable API. What is shared today is the model: the app's pitch and
+the mockup's pitch describe the same match.

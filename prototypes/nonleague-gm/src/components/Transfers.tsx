@@ -1,7 +1,9 @@
 import clsx from "clsx";
 import { useMemo, useState } from "react";
 
+import { PlayerFace } from "@/components/Identity";
 import { STADIUM_UPGRADE_COST } from "@/engine/career";
+import { attributesOf, positionLabel, shirtNumber } from "@/engine/identity";
 import { Rng } from "@/engine/rng";
 import type { Career, FreeAgent, Position } from "@/engine/types";
 import { exactMoney, money } from "@/lib/format";
@@ -42,18 +44,25 @@ export function freeAgents(career: Career): FreeAgent[] {
   });
 }
 
+/**
+ * The market.
+ *
+ * A list of names with an asking price is a spreadsheet with a buy button. The
+ * same six players as cards — face, rating, six attributes — turn the decision
+ * into "do I want *him*", which is the decision a football game is made of.
+ */
 export function Transfers({ career, onSign, onUpgrade }: Props) {
   const club = career.clubs[career.playerClubId];
   const agents = useMemo(() => freeAgents(career), [career.seed]);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [signed, setSigned] = useState<string[]>([]);
 
   const handleSign = (target: FreeAgent) => {
     const result = onSign(target);
+    if (result.ok) setSigned((current) => [...current, target.id]);
     setMessage({
       ok: result.ok,
-      text: result.ok
-        ? `${target.name} signs for ${club.name}.`
-        : (result.reason ?? "The signing failed."),
+      text: result.ok ? `${target.name} signs for ${club.name}.` : (result.reason ?? "The signing failed."),
     });
   };
 
@@ -67,11 +76,33 @@ export function Transfers({ career, onSign, onUpgrade }: Props) {
 
   return (
     <div className="space-y-5">
+      <section className="relative overflow-hidden rounded-2xl border border-white/[0.08]">
+        <div
+          className="absolute inset-0 opacity-60"
+          aria-hidden
+          style={{
+            background: `radial-gradient(ellipse 70% 140% at 10% 0%, ${club.colors.primary} 0%, transparent 62%), linear-gradient(160deg,#0a1b13,#06120d)`,
+          }}
+        />
+        <div className="relative flex flex-wrap items-end justify-between gap-4 px-5 py-4">
+          <div>
+            <h2 className="display text-2xl leading-none">Transfer market</h2>
+            <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-chalk/50">
+              {agents.length} available · {signed.length} signed this window
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-chalk/55">Balance</p>
+            <p className="display text-2xl leading-none text-flare">{exactMoney(club.balance)}</p>
+          </div>
+        </div>
+      </section>
+
       {message && (
         <p
           role="status"
           className={clsx(
-            "rounded-xl border px-4 py-3 text-sm",
+            "rounded-xl border px-4 py-3 text-sm motion-safe:animate-rise",
             message.ok
               ? "border-flare/30 bg-flare/[0.08] text-flare"
               : "border-ember/30 bg-ember/[0.08] text-ember",
@@ -81,74 +112,111 @@ export function Transfers({ career, onSign, onUpgrade }: Props) {
         </p>
       )}
 
-      <section className="card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-white/[0.07] px-5 py-3">
-          <h2 className="label">Transfer market</h2>
-          <span className="font-mono text-xs text-chalk/40">
-            Balance {exactMoney(club.balance)}
-          </span>
-        </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="market">
+        {agents.map((target, index) => {
+          const affordable = target.fee <= club.balance;
+          const done = signed.includes(target.id);
+          const attributes = attributesOf(target);
 
-        <ul className="divide-y divide-white/[0.04]">
-          {agents.map((target) => {
-            const affordable = target.fee <= club.balance;
-            return (
-              <li
-                key={target.id}
-                className="flex flex-wrap items-center gap-3 px-5 py-3"
-              >
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/[0.05] font-mono text-[11px] font-bold text-chalk/70">
-                  {target.position}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium">{target.name}</span>
-                  <span className="block font-mono text-xs text-chalk/40">
-                    Age {target.age} · Rating {target.ability} · {money(target.wage)}/wk
-                  </span>
-                </span>
-                <span className="font-mono text-sm tabular-nums">
-                  {target.fee === 0 ? (
-                    <span className="text-flare">Free</span>
-                  ) : (
-                    money(target.fee)
-                  )}
-                </span>
+          return (
+            <article
+              key={target.id}
+              className="player-card p-3 motion-safe:animate-rise"
+              data-testid="market-card"
+              data-position={target.position}
+              data-rating={target.ability}
+              style={{ animationDelay: `${index * 55}ms` }}
+            >
+              <div className="flex gap-3">
+                <div className="shrink-0 text-center">
+                  <p className="display text-4xl leading-none">{target.ability}</p>
+                  <p className="mt-0.5 font-mono text-[9px] font-bold uppercase tracking-widest text-chalk/55">
+                    {positionLabel(target)}
+                  </p>
+                  <p className="mt-1 font-mono text-[9px] uppercase tracking-wider text-chalk/50">
+                    Age {target.age}
+                  </p>
+                </div>
+
+                <PlayerFace
+                  playerId={target.id}
+                  age={target.age}
+                  name={target.name}
+                  colors={club.colors}
+                  number={shirtNumber(6 + index)}
+                  className="h-[92px] flex-1 rounded-lg"
+                />
+              </div>
+
+              <p className="mt-2 truncate border-b border-white/10 pb-1.5 text-sm font-semibold">
+                {target.name}
+              </p>
+
+              <dl className="mt-2 grid grid-cols-3 gap-x-2 gap-y-1">
+                {(
+                  [
+                    ["PAC", attributes.pace],
+                    ["SHO", attributes.shooting],
+                    ["PAS", attributes.passing],
+                    ["DRI", attributes.dribbling],
+                    ["DEF", attributes.defending],
+                    ["PHY", attributes.physical],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label} className="flex items-baseline justify-between gap-1">
+                    <dt className="font-mono text-[9px] uppercase tracking-wider text-chalk/55">{label}</dt>
+                    <dd className="font-mono text-[11px] font-bold tabular-nums text-chalk/85">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <div>
+                  <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-chalk/50">Fee</p>
+                  <p className="font-mono text-sm font-bold tabular-nums">
+                    {target.fee === 0 ? <span className="text-flare">Free</span> : money(target.fee)}
+                  </p>
+                  <p className="font-mono text-[10px] text-chalk/50">{money(target.wage)}/wk</p>
+                </div>
                 <button
-                  className="btn-ghost px-3 py-1.5 text-xs"
+                  className={clsx("btn text-xs", done ? "btn-ghost" : "btn-primary")}
                   onClick={() => handleSign(target)}
-                  disabled={!affordable}
+                  disabled={!affordable || done}
                   title={affordable ? undefined : "The club cannot afford this fee"}
                 >
-                  Sign
+                  {done ? "Signed" : affordable ? "Sign" : "Too dear"}
                 </button>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+              </div>
+            </article>
+          );
+        })}
+      </div>
 
       <section className="card p-5">
-        <h2 className="label">Ground improvements</h2>
-        <p className="mt-1 text-sm text-chalk/50">
-          A new stand adds 1,200 seats and lifts the mood. Bigger crowds mean
-          bigger gate receipts — if you can fill it.
-        </p>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
-          <div>
-            <p className="text-sm font-medium">
-              Capacity {club.capacity.toLocaleString("en-GB")}
-            </p>
-            <p className="font-mono text-xs text-chalk/40">
-              Cost {exactMoney(STADIUM_UPGRADE_COST)}
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-md">
+            <h2 className="display text-xl leading-none">Ground improvements</h2>
+            <p className="mt-1.5 text-sm text-chalk/55">
+              A new stand adds 1,200 seats and lifts the mood. Bigger crowds mean bigger gate
+              receipts — if you can fill it.
             </p>
           </div>
-          <button
-            className="btn-primary"
-            onClick={handleUpgrade}
-            disabled={club.balance < STADIUM_UPGRADE_COST}
-          >
-            Build a stand
-          </button>
+          <div className="flex items-center gap-4 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
+            <div>
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-chalk/55">Capacity</p>
+              <p className="font-mono text-lg font-bold tabular-nums">
+                {club.capacity.toLocaleString("en-GB")}
+              </p>
+              <p className="font-mono text-[10px] text-chalk/50">Cost {exactMoney(STADIUM_UPGRADE_COST)}</p>
+            </div>
+            <button
+              className="btn-primary"
+              onClick={handleUpgrade}
+              disabled={club.balance < STADIUM_UPGRADE_COST}
+            >
+              Build a stand
+            </button>
+          </div>
         </div>
       </section>
     </div>

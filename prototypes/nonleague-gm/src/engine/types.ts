@@ -21,6 +21,15 @@ export interface Player {
   /** £ asking price / book value. */
   value: number;
   morale: number;
+  /**
+   * Portrait from a licensed data provider (API-Football). Absent on the
+   * fictional dataset, where `appearanceOf()` draws a generated face instead.
+   */
+  photoUrl?: string;
+  /** Shirt number from the provider; generated squads derive one from index. */
+  number?: number;
+  /** Nationality, when the provider has it. */
+  nationality?: string;
 }
 
 export interface Club {
@@ -39,6 +48,10 @@ export interface Club {
   players: Player[];
   /** Most recent home attendance, for the finances screen. */
   lastAttendance?: number;
+  /** Official crest from a licensed provider; generated badge otherwise. */
+  crestUrl?: string;
+  /** Stadium name, when the provider has it. */
+  venue?: string;
 }
 
 export interface Strength {
@@ -115,6 +128,14 @@ export interface FreeAgent {
 export interface Career {
   version: 1;
   seed: number;
+  /**
+   * Where the world came from. `fictional` is the generated pyramid; `licensed`
+   * means a snapshot from a data provider was loaded and owns the clubs, badges
+   * and portraits.
+   */
+  source?: "fictional" | "licensed";
+  /** Attribution string for the data provider, when `source` is licensed. */
+  dataProvider?: string;
   /** How many random draws have been consumed. Keeps the stream stable. */
   rngCursor: number;
   week: number;

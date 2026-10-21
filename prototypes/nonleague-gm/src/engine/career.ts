@@ -17,6 +17,14 @@ import type {
 
 export interface CreateArgs {
   seed: number;
+  /**
+   * A ready-made set of clubs (a real league snapshot). When supplied, the
+   * generated pyramid is skipped entirely — the world is whatever the provider
+   * returned.
+   */
+  clubs?: Club[];
+  source?: "fictional" | "licensed";
+  dataProvider?: string;
   /** Which club in the starting division the player takes over. */
   clubId?: string;
   /** How many divisions exist. 1 keeps a season short for tests. */
@@ -54,12 +62,15 @@ export function createCareer({
   divisions = 5,
   tier,
   mentality = "balanced",
+  clubs: supplied,
+  source = "fictional",
+  dataProvider,
 }: CreateArgs): Career {
   const totalTiers = Math.max(1, divisions);
   const startingTier = tier ?? totalTiers;
   const rng = new Rng(seed);
 
-  const clubs = createClubs(rng, startingTier, totalTiers);
+  const clubs = supplied && supplied.length >= 2 ? evenSquadOf(supplied) : createClubs(rng, startingTier, totalTiers);
   const playerClub = clubId
     ? (clubs.find((club) => club.id === clubId) ?? clubs[0])
     : clubs[0];
@@ -73,6 +84,8 @@ export function createCareer({
   return {
     version: 1,
     seed,
+    source,
+    dataProvider,
     rngCursor: 0,
     week: 0,
     season: 2026,
@@ -326,7 +339,13 @@ export function finishSeason(career: Career): Career {
   };
 
   const rng = new Rng(career.seed, career.rngCursor + 1);
-  const nextClubs = createClubs(rng, nextTier, career.totalTiers);
+  // A licensed world keeps its clubs. Regenerating them would replace a real
+  // division with invented names the moment a season ends, which is the one
+  // thing a dataset-backed save must never do.
+  const nextClubs =
+    career.source === "licensed"
+      ? Object.values(career.clubs)
+      : createClubs(rng, nextTier, career.totalTiers);
 
   // Keep the player's own club identity (name, colours, ground) across seasons.
   const currentClub = career.clubs[career.playerClubId];
@@ -344,6 +363,8 @@ export function finishSeason(career: Career): Career {
     players: currentClub.players,
     fanMood: currentClub.fanMood,
     tier: nextTier,
+    crestUrl: currentClub.crestUrl,
+    venue: currentClub.venue,
   };
   nextClubMap[nextPlayerClub.id] = nextPlayerClub;
 
@@ -372,7 +393,6 @@ export function finishSeason(career: Career): Career {
 export function saveCareer(career: Career): string {
   return JSON.stringify(career);
 }
-
 /** Maps a fixture result onto W/D/L for one club. */
 export function formOf(result: MatchResult, clubId: string): FormResult {
   const isHome = result.homeId === clubId;
@@ -402,6 +422,16 @@ export function currentOpponent(career: Career): { fixture: Fixture; club: Club 
   const opponentId = next.homeId === career.playerClubId ? next.awayId : next.homeId;
   const club = career.clubs[opponentId];
   return club ? { fixture: next, club } : null;
+}
+
+/**
+ * A division must have an even number of clubs — the fixture generator pairs
+ * them, and an odd count leaves one club idle every week. A provider can return
+ * 23 clubs for a league that should have 24, so the last one is dropped rather
+ * than throwing in the player's face at startup.
+ */
+function evenSquadOf(clubs: Club[]): Club[] {
+  return clubs.length % 2 === 0 ? clubs : clubs.slice(0, -1);
 }
 
 export type { CommandResult };

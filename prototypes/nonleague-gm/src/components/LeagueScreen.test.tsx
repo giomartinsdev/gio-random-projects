@@ -47,7 +47,7 @@ describe("the friend league", () => {
     expect(await screen.findByTestId("match-clock")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /skip to full time/i }));
-    await user.click(screen.getByRole("button", { name: /back to the dashboard/i }));
+    await user.click(screen.getByRole("button", { name: /back to the hub/i }));
     await user.click(screen.getByRole("button", { name: /^league$/i }));
 
     // ...and the window has rolled on rather than staying stuck on matchday one.
@@ -81,7 +81,7 @@ describe("the friend league", () => {
     await user.click(screen.getByRole("button", { name: /lock in & play matchday/i }));
     await screen.findByTestId("match-clock");
     await user.click(screen.getByRole("button", { name: /skip to full time/i }));
-    await user.click(screen.getByRole("button", { name: /back to the dashboard/i }));
+    await user.click(screen.getByRole("button", { name: /back to the hub/i }));
     await user.click(screen.getByRole("button", { name: /^league$/i }));
 
     // Matchday one draws two friend derbies, so the archive gains exactly those

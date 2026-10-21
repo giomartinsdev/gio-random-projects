@@ -11,7 +11,7 @@ describe("career screen", () => {
     expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
     expect(screen.getByText(/national league north|tier/i)).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /watch match/i }),
+      screen.getByRole("button", { name: /kick off/i }),
     ).toBeInTheDocument();
   });
 
@@ -19,9 +19,9 @@ describe("career screen", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: /watch match/i }));
+    await user.click(screen.getByRole("button", { name: /kick off/i }));
     await user.click(screen.getByRole("button", { name: /skip to full time/i }));
-    await user.click(screen.getByRole("button", { name: /back to the dashboard/i }));
+    await user.click(screen.getByRole("button", { name: /back to the hub/i }));
 
     const scoreline = await screen.findByTestId("scoreline");
     expect(scoreline.textContent).toMatch(/\d+\s*[–-]\s*\d+/);
@@ -38,9 +38,9 @@ describe("career screen", () => {
 
     // A matchweek plays ten fixtures; the panel must pick the one involving
     // the club being managed, otherwise it shows a stranger's scoreline.
-    await user.click(screen.getByRole("button", { name: /watch match/i }));
+    await user.click(screen.getByRole("button", { name: /kick off/i }));
     await user.click(screen.getByRole("button", { name: /skip to full time/i }));
-    await user.click(screen.getByRole("button", { name: /back to the dashboard/i }));
+    await user.click(screen.getByRole("button", { name: /back to the hub/i }));
 
     const panel = await screen.findByTestId("last-result");
     expect(panel.textContent).toContain(myShort);
@@ -50,11 +50,22 @@ describe("career screen", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: /squad/i }));
+    await user.click(screen.getByRole("button", { name: /^squad$/i }));
 
+    // The squad is a grid of player cards: a face, a rating, a position. The
+    // table is still there for comparison, one toggle away.
+    const cards = await screen.findAllByTestId("player-card");
+    expect(cards.length).toBeGreaterThanOrEqual(18);
+
+    for (const card of cards) {
+      expect(card.dataset.position).toMatch(/^(GK|DF|MF|FW)$/);
+      expect(Number(card.dataset.rating)).toBeGreaterThan(0);
+      expect(within(card).getByTestId("player-face")).toBeInTheDocument();
+    }
+
+    await user.click(screen.getByRole("button", { name: /^list$/i }));
     const rows = await screen.findAllByTestId("squad-row");
-    expect(rows.length).toBeGreaterThanOrEqual(18);
-
+    expect(rows).toHaveLength(cards.length);
     for (const row of rows) {
       expect(row.dataset.position).toMatch(/^(GK|DF|MF|FW)$/);
       expect(Number(row.dataset.rating)).toBeGreaterThan(0);
@@ -78,7 +89,7 @@ describe("career screen", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: /watch match/i }));
+    await user.click(screen.getByRole("button", { name: /kick off/i }));
 
     const players = await screen.findAllByTestId("pitch-player");
     expect(players).toHaveLength(22);
@@ -100,14 +111,19 @@ describe("career screen", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: /watch match/i }));
+    await user.click(screen.getByRole("button", { name: /kick off/i }));
     await user.click(screen.getByRole("button", { name: /skip to full time/i }));
 
     // It jumps to the whistle rather than exiting: the pitch is the point.
     expect(screen.getByTestId("match-clock").textContent).toMatch (/90/);
     const live = screen.getByTestId("live-score").textContent ?? "";
 
-    await user.click(screen.getByRole("button", { name: /back to the dashboard/i }));
+    // The ticker must stop narrating a live ball once the whistle has gone —
+    // "ASH restarting" at 90' reads as a stuck match, not a finished one.
+    expect(screen.getByTestId("ticker").textContent).toMatch(/full time/i);
+    expect(screen.getByTestId("ticker").textContent).not.toMatch(/on the ball/i);
+
+    await user.click(screen.getByRole("button", { name: /back to the hub/i }));
 
     const scoreline = await screen.findByTestId("scoreline");
     expect(scoreline.textContent).toMatch(/\d+\s*[–-]\s*\d+/);
@@ -121,7 +137,7 @@ describe("career screen", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: /watch match/i }));
+    await user.click(screen.getByRole("button", { name: /kick off/i }));
 
     const pitch = await screen.findByTestId("pitch");
     for (const token of screen.getAllByTestId("pitch-player")) {
@@ -142,7 +158,7 @@ describe("career screen", () => {
     // A fresh career is on week 0; watching the first match advances it to 1.
     // The pitch is showing matchday 1, so saying "Matchday 2" here would be a
     // lie about which game the scoreline belongs to.
-    await user.click(screen.getByRole("button", { name: /watch match/i }));
+    await user.click(screen.getByRole("button", { name: /kick off/i }));
     expect(await screen.findByText(/^matchday 1$/i)).toBeInTheDocument();
     expect(screen.queryByText(/^matchday 2$/i)).not.toBeInTheDocument();
   });
@@ -151,7 +167,7 @@ describe("career screen", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: /watch match/i }));
+    await user.click(screen.getByRole("button", { name: /kick off/i }));
 
     const ball = await screen.findByTestId("pitch-ball");
 
@@ -180,7 +196,7 @@ describe("career screen", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: /watch match/i }));
+    await user.click(screen.getByRole("button", { name: /kick off/i }));
 
     const left = await screen.findByTestId("goal-left");
     const right = await screen.findByTestId("goal-right");
@@ -190,4 +206,75 @@ describe("career screen", () => {
     expect(left.style.background).toContain("repeating-linear-gradient");
     expect(right.style.background).toContain("repeating-linear-gradient");
   });
+
+  it("gives every squad player a face, and the same face on every screen", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const myShort = screen.getByTestId("club-short").textContent;
+
+    // The club bar already shows the captain's portrait.
+    const headerFace = screen.getAllByTestId("player-face")[0];
+    const headerPlayer = headerFace.dataset.player;
+
+    await user.click(screen.getByRole("button", { name: /^squad$/i }));
+
+    const faces = await screen.findAllByTestId("player-face");
+    expect(faces.length).toBeGreaterThanOrEqual(18);
+    // A face is a drawing, not an empty box: every one carries a head and a shirt.
+    expect(faces[0].querySelector("svg")).not.toBeNull();
+    expect(faces[0].querySelectorAll("path").length).toBeGreaterThan(6);
+
+    const same = faces.find((f) => f.dataset.player === headerPlayer);
+    expect(same).toBeTruthy();
+    // The identical player must draw the identical face, or he changes person
+    // between the header and the grid.
+    expect(same?.innerHTML).toBe(headerFace.innerHTML);
+    expect(myShort).toBeTruthy();
+  });
+
+  it("shows a badge for every club, on the hub and in the table", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    // Two badges in the fixture hero: mine and the opponent's.
+    const heroBadges = await screen.findAllByTestId("club-crest");
+    expect(heroBadges.length).toBeGreaterThanOrEqual(2);
+    expect(heroBadges[0].tagName.toLowerCase()).toBe("svg");
+    expect(heroBadges[0].getAttribute("aria-label")).toMatch(/crest/i);
+
+    await user.click(screen.getByRole("button", { name: /^table$/i }));
+    const rows = await screen.findAllByTestId("table-row");
+    expect(rows).toHaveLength(20);
+    for (const row of rows.slice(0, 5)) {
+      expect(within(row).getByTestId("club-crest")).toBeInTheDocument();
+    }
+  });
+
+  it("names the scorer, with his face, when a goal goes in", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: /kick off/i }));
+
+    // Run the clock forward until the ball is in the net. The graphic is driven
+    // by the ball, not by a timer, so this is the only honest way to test it.
+    let overlay = screen.queryByTestId("goal-overlay");
+    for (let i = 0; i < 900 && !overlay; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      overlay = screen.queryByTestId("goal-overlay");
+      if (screen.queryByTestId("match-clock")?.textContent?.startsWith("90")) break;
+    }
+
+    if (overlay) {
+      expect(overlay.textContent).toMatch(/goal/i);
+      expect(overlay.dataset.scorer).toBeTruthy();
+      expect(within(overlay).getByTestId("player-face")).toBeInTheDocument();
+      expect(within(overlay).getByTestId("club-crest")).toBeInTheDocument();
+    } else {
+      // A 0–0 is a legitimate outcome; the assertion above only applies when a
+      // goal was actually scored.
+      expect(screen.getByTestId("live-score").textContent).toBe("0");
+    }
+  }, 20000);
 });
