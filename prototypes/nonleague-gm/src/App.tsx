@@ -233,6 +233,22 @@ export default function App() {
     return `${licensed?.leagueName ?? "Loaded league"} ${licensed?.season ?? ""} · ${licensed?.provider ?? "API-Football"}`;
   }, [career.source, licensed]);
 
+  /**
+   * The credit line the licences require.
+   *
+   * CC BY-SA photographs have to name their author wherever the work appears, and
+   * a squad grid is not a place to hang a caption under every portrait. The
+   * compromise is a footer credit plus a per-player `title` on each photograph, so
+   * the attribution is one hover (or one long-press) from the image itself.
+   */
+  const creditLine = useMemo(() => {
+    if (!licensed) return null;
+    if (licensed.source === "wikipedia") {
+      return "Names and squads: Wikipedia (CC BY-SA 4.0) · portraits: Wikimedia Commons, credited per player";
+    }
+    return licensed.attribution ?? null;
+  }, [licensed]);
+
   return (
     <div className="min-h-screen">
       <Header career={career} />
@@ -334,12 +350,17 @@ export default function App() {
         )}
       </main>
 
-      <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 pb-10 pt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-chalk/50 sm:px-5">
-        <span>{sourceLabel}</span>
-        <span>
-          {league.name} · matchday {league.matchday} · last{" "}
-          {lastResult ? scoreline(lastResult.homeGoals, lastResult.awayGoals) : "—"} · {club?.short}
-        </span>
+      <footer className="mx-auto flex max-w-6xl flex-col gap-1 px-4 pb-10 pt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-chalk/50 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span>{sourceLabel}</span>
+          <span>
+            {league.name} · matchday {league.matchday} · last{" "}
+            {lastResult ? scoreline(lastResult.homeGoals, lastResult.awayGoals) : "—"} · {club?.short}
+          </span>
+        </div>
+        {creditLine && (
+          <p className="text-[10px] normal-case tracking-normal text-chalk/50">{creditLine}</p>
+        )}
       </footer>
     </div>
   );

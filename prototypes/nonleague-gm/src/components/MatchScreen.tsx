@@ -468,6 +468,7 @@ function GoalOverlay({ goal }: { goal: { scorer: Scorer; club: Club; player?: Pl
             age={player?.age}
             name={scorer.playerName}
             photoUrl={player?.photoUrl}
+            photoCredit={player?.photoCredit}
             colors={club.colors}
             number={player?.number}
             className="h-11 w-11 shrink-0 rounded-lg ring-1 ring-white/30"

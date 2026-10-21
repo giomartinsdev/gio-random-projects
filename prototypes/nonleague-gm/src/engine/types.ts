@@ -22,10 +22,17 @@ export interface Player {
   value: number;
   morale: number;
   /**
-   * Portrait from a licensed data provider (API-Football). Absent on the
-   * fictional dataset, where `appearanceOf()` draws a generated face instead.
+   * Portrait from a licensed data provider (API-Football) or from Wikimedia
+   * Commons under a free licence. Absent on the fictional dataset, where
+   * `appearanceOf()` draws a generated face instead.
    */
   photoUrl?: string;
+  /**
+   * Attribution for `photoUrl` when the licence requires it — Commons images are
+   * CC BY-SA, so the credit has to travel with the player rather than live in a
+   * single site-wide notice.
+   */
+  photoCredit?: string;
   /** Shirt number from the provider; generated squads derive one from index. */
   number?: number;
   /** Nationality, when the provider has it. */

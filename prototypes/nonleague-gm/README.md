@@ -37,7 +37,7 @@ npm run dev          # http://localhost:5173
 Other commands:
 
 ```bash
-npm test             # 157 tests: engine + friend league + pitch model + identity + UI
+npm test             # 175 tests: engine + friend league + pitch model + identity + parsers + UI
 npm run typecheck
 npm run build
 ./node_modules/.bin/vite-node src/engine/calibrate.ts        # match model vs. real football stats
@@ -91,7 +91,7 @@ src/
     commands.ts     the single mutation entry point
     data.ts         fictional clubs and players
     identity.ts     deterministic faces, badges, attributes, shirt numbers
-    dataset.ts      licensed data adapter (API-Football snapshot → the game model)
+    dataset.ts      real-data adapter (API-Football or Wikipedia snapshot → game model)
   components/
     Header.tsx      club bar: badge, captain's face, balance/week/board
     Dashboard.tsx   the matchday hub
@@ -101,7 +101,9 @@ src/
     PlayerCard.tsx  the player card and the compact row
     LeagueScreen.tsx the friend league hub
   scripts/
-    fetch-dataset.mjs  snapshots a real league into public/dataset/football.json
+    fetch-dataset.mjs    API-Football snapshot (licensed, needs a key)
+    fetch-wikipedia.mjs  Wikipedia/Wikidata snapshot (open, no key)
+    wikipedia-parse.mjs  the pure parsers, tested without a network
   App.tsx           screens and wiring
 ```
 
@@ -144,15 +146,37 @@ src/
 
 ## Real clubs and real players
 
-The game ships with an invented world, and that is the default. It can also run on a
-real league, because the difference between "a management sim" and "a football game"
-is whether the badge and the face are real.
+The game ships with an invented world, and that is the default. It also runs on a real
+league, because the difference between "a management sim" and "a football game" is
+whether the badge and the face are real.
 
-**What is licensed, and what is not.** Club names and badges, league marks and player
-likenesses are licensed individually — FIFPro for players, the league and the clubs
-for marks. A build that ships them without a licence is a legal risk, not a grey
-area. So the game does not embed any of it. It loads a **snapshot** you are entitled
-to produce.
+There are two ways to get there, and they are not equivalent.
+
+**The open path.** No key, no signup: `npm run data:fetch:open` reads the National
+League North (tier 6 — the division this product is actually about) from Wikipedia and
+Wikidata and writes `public/dataset/football.json`.
+
+```bash
+npm run data:fetch:open            # National League North, 22 clubs, ~520 players
+npm run data:check:open            # same, but writes nothing
+```
+
+What it can and cannot give you is set by copyright, not by the API:
+
+| | Source | Licence | Ships? |
+|---|---|---|---|
+| Names, numbers, positions, birthdays | Wikipedia article text | facts — no copyright | yes |
+| Squad lists for a tier-6 division | `{{Fs player}}` templates | CC BY-SA 4.0 | yes |
+| Player photographs | Wikimedia Commons | CC BY-SA / CC0 / PD, per file | yes, with credit |
+| Club crests | uploaded to Wikipedia | **fair use — not reusable** | **no** |
+
+That last row is the whole reason the default look still draws a shield. A real crest
+is a trademark licensed club by club; reproducing it because a fan uploaded it to
+Wikipedia under fair use is not a licence. So the fetcher reads the crest field to
+know it exists and then deliberately does not download it.
+
+**The licensed path.** API-Football sells squads, badges and official photos, and
+requires a key:
 
 ```bash
 cp .env.example .env             # paste your key
@@ -160,10 +184,9 @@ npm run data:fetch               # National League (43) 2025 by default
 npm run data:fetch -- --league 40 --season 2025   # or any league/season
 ```
 
-That writes `public/dataset/football.json`: clubs, crest URLs, venue names, squads,
-ages, shirt numbers and player photo URLs. On the next load the game starts in that
-league — real badges, real faces, real names — and the save records
-`source: "licensed"` so it never regenerates the division at the end of a season.
+Both paths write the same snapshot shape, and `parseSnapshot` accepts both, so no
+screen knows which one it is looking at. A save records `source: "licensed"` and keeps
+the real division from being regenerated at the end of a season.
 
 **Why a snapshot and not a live call.** An API key in a browser bundle is a published
 key: every visitor spends your quota and anyone can read it. The key is read only by
@@ -171,11 +194,34 @@ key: every visitor spends your quota and anyone can read it. The key is read onl
 endpoint under `.cache/`, and never prefixed with `VITE_`. The app fetches a static
 file, so it stays fast, works offline, and costs nothing to serve.
 
-**What the provider does not sell.** API-Football returns squads, not ratings. The
-1–99 ability on each card is derived from squad order and age against the division's
-baseline (`abilityFor` in `dataset.ts`), which is documented in the code and in the UI.
-It is a shape, not an official number — passing off a guess as a licensed rating would
-be the one dishonest thing in the whole model.
+**Attribution is not optional.** CC BY-SA requires the author to be named wherever the
+work appears, so the credit travels *with the player* (`Player.photoCredit`) rather
+than sitting in one site-wide notice. It renders as a footer line, and as the `title`
+on the photograph itself, so a squad grid of twenty faces does not become a wall of
+captions. The footer reads:
+
+> Names and squads: Wikipedia (CC BY-SA 4.0) · portraits: Wikimedia Commons, credited per player
+
+**What no provider sells: ratings.** Neither source returns a 1–99 ability. The number
+on each card is derived from squad order and age against the division's baseline
+(`abilityFor` in `dataset.ts`), which is documented in the code and in the UI. It is a
+shape, not an official number — passing off a guess as a licensed rating would be the
+one dishonest thing in the whole model.
+
+**Identity is the hard part, not the fetching.** A squad list gives you a name; it does
+not tell you *which* Josh Wardle that is. The first version of the fetcher attached a
+43-year-old artist's portrait to a defender, because it resolved players by bare name.
+Three things fix that, and each one exists because of a real wrong answer:
+
+- The squad template's **article link** is the identity, not the display name —
+  `Billy Waters (footballer, born 1994)`, not `Billy Waters`.
+- An unlinked name gets **no lookup at all**. A bare name is not an article title, and
+  querying one invites the collision.
+- A resolved person must be a **footballer** (Wikidata `P106`), which drops the actor,
+  the rugby player and the artist who share a name with a squad member.
+
+The fetcher reports each rejection rather than quietly dropping them, so a name that
+stops resolving is visible in the build log.
 
 **Degradation.** No key, no file, bad JSON, offline, or a single-page host that
 rewrites the missing file to the app shell: every case falls back to the invented
@@ -302,12 +348,17 @@ one device: your five rivals' picks are simulated deterministically, and the rul
 in `friendLeague.ts` are what a server would run. See `RESEARCH.md` §7 for what to
 do next and in what order.
 
-**Not built for licensed data:** a real league snapshot is a *single* division, so
-promotion and relegation move your club's tier label but do not load last season's
-league above you. Doing that properly means snapshotting a pyramid, not a league, and
-matching the provider's competition ids across seasons — a data problem, not an engine
-one. The invented world already has a pyramid (`divisions: 5`), which is why the
-default is still the invented one.
+**Not built for a real pyramid:** a real snapshot is a *single* division, so promotion
+and relegation move your club's tier label but do not load last season's league above
+you. Doing that properly means snapshotting a pyramid, not a league, and matching
+competition ids across seasons — a data problem, not an engine one. The invented world
+already has a pyramid (`divisions: 5`), which is why the default is still the invented
+one.
+
+**What the open snapshot cannot give you is a crest.** Club badges are trademarks and
+the copies on Wikipedia are fair use, so a real division currently plays in generated
+shields. That is a licensing wall, not an unfinished feature: a real crest needs a
+licence from the club, which is exactly what a commercial build would buy.
 
 **Known limitation of the prototype's league:** the engine simulates one division,
 and friend clubs are re-seated by identity across seasons, so promotion and

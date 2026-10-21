@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "data:fetch": "node scripts/fetch-dataset.mjs",
-    "data:check": "node scripts/fetch-dataset.mjs --dry-run"
+    "data:check": "node scripts/fetch-dataset.mjs --dry-run",
+    "data:fetch:open": "node scripts/fetch-wikipedia.mjs",
+    "data:check:open": "node scripts/fetch-wikipedia.mjs --dry-run"
   },
   "dependencies": {
     "clsx": "^2.1.1",

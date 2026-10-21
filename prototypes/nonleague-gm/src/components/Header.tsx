@@ -72,6 +72,7 @@ export function Header({ career }: { career: Career }) {
                 age={captain.age}
                 name={captain.name}
                 photoUrl={captain.photoUrl}
+                photoCredit={captain.photoCredit}
                 colors={club.colors}
                 number={captain.number}
                 className="h-9 w-9 rounded-lg"

@@ -8,6 +8,8 @@ interface FaceProps {
   name: string;
   /** Portrait from a licensed provider. When present it replaces the drawing. */
   photoUrl?: string;
+  /** Required attribution for `photoUrl` (Commons images are CC BY-SA). */
+  photoCredit?: string;
   colors: { primary: string; secondary: string };
   /** Shirt number, printed on the collar. */
   number?: number;
@@ -34,6 +36,7 @@ export function PlayerFace({
   age,
   name,
   photoUrl,
+  photoCredit,
   colors,
   number,
   className,
@@ -45,6 +48,11 @@ export function PlayerFace({
         <img
           src={photoUrl}
           alt={name}
+          // The credit is carried on the image rather than under it. A squad grid
+          // holds twenty portraits; CC BY-SA's requirement is that the author is
+          // named, not that the name is always on screen, and a title is the one
+          // place a photograph can be credited without becoming a caption.
+          title={photoCredit ? `${name} — ${photoCredit}` : name}
           loading="lazy"
           className="h-full w-full object-cover object-top"
           style={{ filter: "drop-shadow(0 6px 12px rgba(0,0,0,.45))" }}

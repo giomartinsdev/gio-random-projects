@@ -128,6 +128,7 @@ function FaceSlot({
         age={player.age}
         name={player.name}
         photoUrl={player.photoUrl}
+        photoCredit={player.photoCredit}
         colors={club.colors}
         number={player.number}
         className={clsx("relative mx-auto w-full", height)}
@@ -166,6 +167,7 @@ export function PlayerRow({
         age={player.age}
         name={player.name}
         photoUrl={player.photoUrl}
+        photoCredit={player.photoCredit}
         colors={club.colors}
         number={player.number}
         className="h-8 w-8 shrink-0 rounded-md"

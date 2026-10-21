@@ -23,23 +23,49 @@ import type { Club, Player, Position } from "./types";
  * match engine's output unexplainable.
  */
 
-/** The raw snapshot the fetch script writes. Only the fields we read are typed. */
+/**
+ * The raw snapshot the fetch scripts write. Only the fields we read are typed.
+ *
+ * Two providers produce this shape, and they differ in what they can be trusted
+ * for:
+ *
+ *   `api-football`  a licensed feed: squads, shirt numbers and official photos.
+ *                   Requires a key, so it is the paid path.
+ *   `wikipedia`     open data: real names, numbers, positions and birthdays from
+ *                   article text, photographs only when Wikimedia Commons holds
+ *                   one under a free licence. No crests, because club badges are
+ *                   uploaded to Wikipedia under fair use and cannot be reused.
+ *
+ * Both end up as the game's own `Club`/`Player`, so no screen has to know which
+ * one it is looking at.
+ */
+export type SnapshotSource = "api-football" | "wikipedia";
+
 export interface Snapshot {
   meta: {
-    source: "api-football";
+    source: SnapshotSource;
     leagueId: number;
     leagueName: string;
     season: number;
     fetchedAt: string;
     /** Provider attribution, shown in the UI where the data appears. */
     provider: string;
+    /** Licence of the underlying text, when the provider is an open one. */
+    licence?: string;
+    /** Long-form attribution paragraph for the footer. */
+    attribution?: string;
   };
-  teams: SnapshotTeam[];
+  /**
+   * API-Football nests under `teams`; the open-data fetcher writes `clubs`.
+   * Both are accepted and normalised, so an older snapshot keeps working.
+   */
+  teams?: SnapshotTeam[];
+  clubs?: SnapshotTeam[];
 }
 
 interface SnapshotTeam {
   team: {
-    id: number;
+    id: number | string;
     name: string;
     code?: string | null;
     logo?: string | null;
@@ -54,12 +80,16 @@ interface SnapshotTeam {
 }
 
 interface SnapshotPlayer {
-  id: number;
+  id: number | string;
   name: string;
   age?: number | null;
   number?: number | null;
   position?: string | null;
+  nationality?: string | null;
   photo?: string | null;
+  /** Commons attribution for the photograph, rendered in the footer. */
+  photoCredit?: string | null;
+  photoLicence?: string | null;
 }
 
 export interface Dataset {
@@ -67,11 +97,34 @@ export interface Dataset {
   meta: Snapshot["meta"];
 }
 
+/**
+ * Provider position → the engine's four.
+ *
+ * Both spellings have to be here. API-Football sends "Goalkeeper"; the open-data
+ * fetcher writes the squad template's `GK`/`DF`/`MF`/`FW` straight through. When
+ * only the long names were mapped, every open-data player silently fell back to
+ * a position derived from squad index — a defender wearing the number 2 in goal.
+ */
 const POSITION_MAP: Record<string, Position> = {
   Goalkeeper: "GK",
   Defender: "DF",
   Midfielder: "MF",
   Attacker: "FW",
+  "Centre-Back": "DF",
+  "Left-Back": "DF",
+  "Right-Back": "DF",
+  "Defensive Midfield": "MF",
+  "Central Midfield": "MF",
+  "Attacking Midfield": "MF",
+  "Left Midfield": "MF",
+  "Right Midfield": "MF",
+  "Left Winger": "FW",
+  "Right Winger": "FW",
+  "Centre-Forward": "FW",
+  GK: "GK",
+  DF: "DF",
+  MF: "MF",
+  FW: "FW",
 };
 
 /**
@@ -147,8 +200,9 @@ export function fromSnapshot(snapshot: Snapshot, totalTiers = 6): Dataset {
   const tier = 5;
   const baseline = tierBaseline(tier, totalTiers);
   const rng = new Rng(snapshot.meta.leagueId * 7919 + snapshot.meta.season);
+  const entries = snapshot.clubs ?? snapshot.teams ?? [];
 
-  const clubs: Club[] = snapshot.teams.map((entry) => {
+  const clubs: Club[] = entries.map((entry) => {
     const squad = entry.squad.slice(0, 26);
     const players: Player[] = squad.map((raw, index) => {
       const age = raw.age ?? 26;
@@ -165,7 +219,9 @@ export function fromSnapshot(snapshot: Snapshot, totalTiers = 6): Dataset {
         value: Math.round(Math.pow(Math.max(1, ability - 24), 2.1) * 12),
         morale: 65,
         photoUrl: raw.photo ?? undefined,
+        photoCredit: raw.photoCredit ?? undefined,
         number: raw.number ?? index + 1,
+        nationality: raw.nationality ?? undefined,
       };
     });
 
@@ -207,9 +263,21 @@ function fallbackPosition(index: number): Position {
 export function parseSnapshot(value: unknown): Snapshot | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<Snapshot>;
-  if (!candidate.meta || candidate.meta.source !== "api-football") return null;
-  if (!Array.isArray(candidate.teams) || candidate.teams.length < 2) return null;
-  if (!candidate.teams.every((t) => t?.team?.name && Array.isArray(t.squad) && t.squad.length >= 11)) {
+  if (!candidate.meta) return null;
+  if (candidate.meta.source !== "api-football" && candidate.meta.source !== "wikipedia") {
+    return null;
+  }
+  const entries = candidate.clubs ?? candidate.teams;
+  if (!Array.isArray(entries) || entries.length < 2) return null;
+  if (
+    !entries.every(
+      (t) =>
+        t?.team?.name &&
+        Array.isArray(t.squad) &&
+        t.squad.length >= 11 &&
+        typeof t.team.id !== "undefined",
+    )
+  ) {
     return null;
   }
   return candidate as Snapshot;

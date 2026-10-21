@@ -162,6 +162,7 @@ export function Squad({ career }: Props) {
                               age={player.age}
                               name={player.name}
                               photoUrl={player.photoUrl}
+                              photoCredit={player.photoCredit}
                               colors={club.colors}
                               number={player.number}
                               className="h-7 w-7 shrink-0 rounded"
@@ -222,6 +223,7 @@ function PlayerInspector({
             age={player.age}
             name={player.name}
             photoUrl={player.photoUrl}
+            photoCredit={player.photoCredit}
             colors={club.colors}
             number={player.number}
             className="h-52 w-full motion-safe:animate-pop"

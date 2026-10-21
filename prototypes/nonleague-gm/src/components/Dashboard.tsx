@@ -250,6 +250,7 @@ export function Dashboard({
                     age={player.age}
                     name={player.name}
                     photoUrl={player.photoUrl}
+                    photoCredit={player.photoCredit}
                     colors={club.colors}
                     number={player.number}
                     className="h-7 w-7 shrink-0 rounded"
@@ -330,6 +331,7 @@ function FixtureSide({
             age={star.age}
             name={star.name}
             photoUrl={star.photoUrl}
+            photoCredit={star.photoCredit}
             colors={club.colors}
             number={star.number}
             className="h-10 w-10 shrink-0 rounded-lg ring-1 ring-white/15 sm:h-11 sm:w-11"

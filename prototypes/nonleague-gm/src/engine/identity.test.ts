@@ -83,6 +83,60 @@ describe("player identity", () => {
   });
 });
 
+/**
+ * The open-data shape: no `teams`, no crests, short position codes, and portraits
+ * only where Wikimedia Commons holds one under a free licence.
+ */
+function openSnapshotOf(): Snapshot {
+  const squad = [
+    { id: "Q1", name: "Real Keeper", position: "GK", number: 1 },
+    { id: "Q2", name: "Real Defender", position: "DF", number: 2 },
+    { id: "Q3", name: "Real Midfielder", position: "MF", number: 3 },
+    {
+      id: "Q4",
+      name: "Real Striker",
+      position: "FW",
+      number: 9,
+      photo: "https://upload.wikimedia.org/example.jpg",
+      photoCredit: "A Photographer / Wikimedia Commons, CC BY-SA 4.0",
+      photoLicence: "CC BY-SA 4.0",
+      nationality: "ENG",
+    },
+    // A real division supplies eleven or more, and `parseSnapshot` refuses less —
+    // a club that cannot field a team is not a club.
+    ...Array.from({ length: 7 }, (_, i) => ({
+      id: `Q${10 + i}`,
+      name: `Squad Player ${i}`,
+      position: "MF",
+      number: 10 + i,
+    })),
+  ];
+
+  return {
+    meta: {
+      source: "wikipedia",
+      leagueId: 0,
+      leagueName: "National League North",
+      season: 2026,
+      fetchedAt: "2026-10-21T00:00:00.000Z",
+      provider: "Wikipedia and Wikidata contributors",
+      licence: "CC BY-SA 4.0",
+    },
+    clubs: [
+      {
+        team: { id: "AFC Telford United", name: "AFC Telford United", code: null, logo: null },
+        venue: { name: "New Bucks Head", capacity: 6300 },
+        squad,
+      },
+      {
+        team: { id: "Chester F.C.", name: "Chester", code: null, logo: null },
+        venue: null,
+        squad: squad.map((p) => ({ ...p, id: `${p.id}-b` })),
+      },
+    ],
+  };
+}
+
 function snapshotOf(overrides: Partial<Snapshot> = {}): Snapshot {
   return {
     meta: {
@@ -171,6 +225,42 @@ describe("licensed data", () => {
     expect(parseSnapshot({ meta: { source: "api-football" }, teams: [{ team: { name: "X" }, squad: [] }] })).toBeNull();
   });
 
+  it("accepts the open-data snapshot shape and its short position codes", () => {
+    // The Wikipedia fetcher writes `GK`/`DF`/`MF`/`FW` because that is what the
+    // squad template uses. When the mapper only knew the long API-Football names,
+    // every open-data player fell through to an index-derived position and a
+    // defender ended up in goal.
+    const snapshot = openSnapshotOf();
+    expect(parseSnapshot(snapshot)).not.toBeNull();
+
+    const dataset = fromSnapshot(snapshot);
+    const positions = dataset.clubs[0].players.map((p) => p.position);
+    expect(positions[0]).toBe("GK");
+    expect(positions[1]).toBe("DF");
+    expect(positions[2]).toBe("MF");
+    expect(positions[3]).toBe("FW");
+  });
+
+  it("keeps the Commons credit attached to the portrait it belongs to", () => {
+    // CC BY-SA requires the author to be named. If the credit is dropped in the
+    // mapping the photograph becomes an unlicensed reproduction.
+    const dataset = fromSnapshot(openSnapshotOf());
+    const striker = dataset.clubs[0].players.find((p) => p.name === "Real Striker");
+
+    expect(striker?.photoUrl).toBe("https://upload.wikimedia.org/example.jpg");
+    expect(striker?.photoCredit).toContain("Wikimedia Commons");
+    expect(striker?.nationality).toBe("ENG");
+  });
+
+  it("reads clubs from the open-data shape, not just `teams`", () => {
+    const snapshot = openSnapshotOf();
+    expect(snapshot.teams).toBeUndefined();
+    expect(fromSnapshot(snapshot).clubs.map((c) => c.name)).toEqual([
+      "AFC Telford United",
+      "Chester",
+    ]);
+  });
+
   it("starts a career in a licensed world without regenerating it", () => {
     const dataset = fromSnapshot(snapshotOf());
     const career = createCareer({
@@ -192,10 +282,11 @@ describe("licensed data", () => {
     // 23 clubs cannot be paired; the fixture generator would throw at startup,
     // which is the worst possible moment to discover a data problem.
     const snapshot = snapshotOf();
-    snapshot.teams.push({
+    const teams = snapshot.teams!;
+    teams.push({
       team: { id: 103, name: "Odd Club", code: null, logo: null },
       venue: null,
-      squad: snapshot.teams[1].squad,
+      squad: teams[1].squad,
     });
 
     const career = createCareer({
