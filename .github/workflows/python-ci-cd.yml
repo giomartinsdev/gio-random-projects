@@ -306,7 +306,7 @@ jobs:
           # container_name difira do nome do app precisa da sua propria linha.
           for id in $ids; do
             echo "== redeploy stack id=$id"
-            out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 -H 'x-gitlab-token: $DOCKHAND_WEBHOOK_SECRET' 'http://127.0.0.1:8093/api/git/stacks/$id/webhook'")
+            out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 -X POST -H 'x-gitlab-token: $DOCKHAND_WEBHOOK_SECRET' 'http://127.0.0.1:8093/api/git/stacks/$id/webhook'")
             echo "$out" | head -c 600; echo
             echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack $id"; exit 1; }
             # §10.4-4/§10.4-5, segunda metade. `success:true` sozinho nao prova

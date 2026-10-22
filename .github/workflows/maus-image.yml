@@ -159,6 +159,6 @@ jobs:
             exit 0
           fi
           echo "== redeploy stack id=22 (maus/project-apps)"
-          out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 -H 'x-gitlab-token: $DOCKHAND_WEBHOOK_SECRET' 'http://127.0.0.1:8093/api/git/stacks/22/webhook'")
+          out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 -X POST -H 'x-gitlab-token: $DOCKHAND_WEBHOOK_SECRET' 'http://127.0.0.1:8093/api/git/stacks/22/webhook'")
           echo "$out"
           echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack 22 (maus/project-apps)"; exit 1; }
