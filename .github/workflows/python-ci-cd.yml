@@ -1,8 +1,9 @@
 name: Python deploy
 
 # CI/CD for the Python workers under modules/apps/*/ (has both a
-# Dockerfile and a pyproject.toml) — touch only modules/apps/clubs-ingest/**
-# and only the clubs-ingest image rebuilds, gets pushed, and redeploys.
+# Dockerfile and a pyproject.toml) — touch only
+# modules/apps/finance-customersupport-worker/** and only that image rebuilds,
+# gets pushed, and redeploys.
 #
 # The `paths:` filter lists EVERY vendored app explicitly, and that is
 # deliberate: a filter that names one app while the discover step knows about
@@ -17,17 +18,10 @@ name: Python deploy
 # ts-frontend-ci-cd.yml — each language keeps its own pipeline because
 # the test/build steps never generalize for free.
 #
-# One difference from go-ci-cd.yml worth knowing:
-# - Build context is the REPO ROOT, not the app dir: clubs-ingest
-#   vendors its fc27 client (src/clubs_ingest/fc27_api.py) and a
-#   Dockerfile COPY of paths above the app dir would dead-end if the
-#   context were the app folder itself.
-
 on:
   push:
     branches: [main]
     paths:
-      - "modules/apps/clubs-ingest/**"
       # §11-1: the discover step below rebuilds finance-api, but without this
       # line a push that only touched that app would never start a run, so the
       # app would build never and say nothing. The filter and the discover rule
@@ -35,10 +29,6 @@ on:
       - "modules/apps/finance-api/**"
       - "modules/apps/finance-customersupport-worker/**"
       - "modules/apps/finance-openfinance-worker/**"
-      # Prospecta (stack stacks/prospecta.yml): o worker agêntico. Mesmo
-      # raciocínio do §11-1 acima -- o discover abaixo o reconstrói, então o
-      # filtro precisa nomeá-lo ou um push que só o toque não inicia run algum.
-      - "modules/apps/prospecta-agent-worker/**"
       # Shared code lives in packages/ (§7). Without this, a commit that only
       # edits the shared contract triggers NOTHING and production keeps the
       # stale contract (§11-2) — the discover rule below needs the run to
@@ -75,11 +65,11 @@ jobs:
             # §11-2: a package change rebuilds the apps that import it. The map
             # is EXPLICIT, not a blanket `^packages/` rule: a blanket rule
             # rebuilds every python app for a contract most of them cannot see
-            # (clubs-ingest does not import finance-contracts), and a package
+            # (finance-customersupport-worker does not import every package), and a package
             # whose change rebuilds nobody is the §11 risk -- green build with a
             # stale contract in production. Adding a package here is a one-line
             # change; the assertion below stops the map from rotting silently.
-            declare -A PACKAGE_APPS=( [packages/finance-contracts]="finance-api finance-customersupport-worker finance-openfinance-worker" [packages/prospecta-contracts]="prospecta-agent-worker" )
+            declare -A PACKAGE_APPS=( [packages/finance-contracts]="finance-api finance-customersupport-worker finance-openfinance-worker" )
             for pkg in "${!PACKAGE_APPS[@]}"; do
               dependents="${PACKAGE_APPS[$pkg]}"
               for dependent in $dependents; do
@@ -152,7 +142,7 @@ jobs:
           # from source. Detection, not another hard-coded map: a second
           # consumer of `packages/finance-contracts` in a later slice is picked
           # up with no workflow edit, and an app that imports nothing shared
-          # (clubs-ingest) stays exactly as it was.
+          
           pkg_args=""
           for pkg in "${{ github.workspace }}"/packages/*/; do
             [ -f "${pkg}pyproject.toml" ] || continue
@@ -292,7 +282,7 @@ jobs:
           #   [finance-customersupport-worker]=22 -- SAME stack (one compose, one
           #   webhook), so it reuses the project-apps id: deploying the worker is
           #   deploying the stack. An app with no id here fails loudly below.
-          declare -A STACK=( [clubs-ingest]=22 [finance-api]=22 [finance-customersupport-worker]=22 [finance-openfinance-worker]=22 [prospecta-agent-worker]=22 )
+          declare -A STACK=( [finance-api]=22 [finance-customersupport-worker]=22 [finance-openfinance-worker]=22 )
           if [ -z "$APPS" ] || [ "$APPS" = "[]" ]; then
             echo "nada a deployar (nenhum app descoberto)"
             exit 0
@@ -311,7 +301,7 @@ jobs:
           done
           ids=$(for p in $pairs; do echo "${p#*=}"; done | sort -u)
           # O guarda de baixo roda depois dos webhooks: o nome do container e o
-          # `container_name` do compose (`clubs-ingest`, `finance-api`), identico
+          # `container_name` do compose (`finance-api`), identico
           # ao app nos dois casos descobertos hoje. Um app novo cujo
           # container_name difira do nome do app precisa da sua propria linha.
           for id in $ids; do

@@ -56,16 +56,7 @@ locals {
       hostname = "tela-api.giomartins.dev"
       port     = 8007
     },
-    {
-      # clubs-api -- the FC Clubs Hub backend. The bare hostname is PUBLIC (in
-      # excluded_hostnames below): the whole dataset is meant to be readable by
-      # anyone with no account, which is the product. There is no Access
-      # application in front of it at all -- the personal layer does its own
-      # Google Sign-In + session cookie. Port must match
-      # module.compute_apps_clubs_api's external_port (8017).
-      hostname = "clubs-api.giomartins.dev"
-      port     = 8017
-    },
+
     {
       # 9router: OpenAI-compatible AI proxy with auto-fallback across
       # 40+ providers (Claude, GPT, Gemini, …). Dashboard at /dashboard,
@@ -148,27 +139,17 @@ locals {
       # stacks/ingress/default.conf. AUTH proprio (X-API-Key), sem Cloudflare
       # Access -- o SPA (finance.giomartins.dev) chama este host cross-origin
       # pelo browser, e um redirect de SSO Google quebraria toda chamada
-      # (mesma razao de clubs-api). O hostname esta em excluded_hostnames.
+      # (mesma razao do finance-api). O hostname esta em excluded_hostnames.
       hostname = "finance-api.giomartins.dev"
       port     = 8018
     },
-    {
-      # prospecta-api -- o backend/BFF do contexto Prospecta (stacks/prospecta.yml).
-      # A porta e a loopback publicada pelo stack (127.0.0.1:8022) e tem de bater
-      # com o server{} de stacks/ingress/default.conf. AUTH proprio (X-API-Key),
-      # sem Cloudflare Access -- o SPA (prospecta.giomartins.dev) chama este host
-      # cross-origin pelo browser, e um redirect de SSO Google quebraria toda
-      # chamada (mesma razao de finance-api/clubs-api). O hostname esta em
-      # excluded_hostnames.
-      hostname = "prospecta-api.giomartins.dev"
-      port     = 8022
-    },
+
     {
       # Alloy's OTLP/HTTP endpoint for the SPAs' browsers (see that
       # module's README for the whole data flow). Deliberately excluded
       # from Access via excluded_hostnames — a public visitor's browser
       # can't pass a Google SSO redirect, and the whole point is that
-      # tela's, clubs' and hub's visitors send telemetry without an
+      # tela's and hub's visitors send telemetry without an
       # account here. The receiver's CORS allowlist (exactly those SPA
       # origins, enforced by the browser) plus OTLP-only payloads
       # are the access control. Port must match
@@ -190,7 +171,7 @@ locals {
       # draw -- Excalidraw (stacks/excalidraw.yml): lousa de diagramas como SPA
       # estatico servido pelo nginx da propria imagem. PUBLICO de proposito
       # (esta em excluded_hostnames): qualquer pessoa entra sem conta -- e o
-      # mesmo modelo do tela/clubs (compartilhar o link e o produto). A porta e
+      # mesmo modelo do tela (compartilhar o link e o produto). A porta e
       # a loopback publicada pelo stack (127.0.0.1:8023) e tem de bater com o
       # server{} de stacks/ingress/default.conf.
       hostname = "draw.giomartins.dev"
@@ -248,24 +229,7 @@ locals {
       hostname = "hub.giomartins.dev"
       bucket   = "hub-frontend"
     },
-    {
-      # clubs-frontend: the FC Clubs Hub SPA -- rankings, match and player
-      # profiles, and the historical series the EA source does not keep. It
-      # enters the hub as a microfrontend like tela, so it must stay
-      # iframe-embeddable: the login is a Google Identity Services button the SPA
-      # renders itself, not a redirect to an edge login page (which could not
-      # complete inside the hub's renderer frame). That is also why clubs-api has
-      # no Cloudflare Access application at all.
-      hostname = "clubs.giomartins.dev"
-      bucket   = "clubs-frontend"
-      # clubs-api serve o preview de link (Open Graph) das páginas de detalhe
-      # neste host: um crawler pedindo /club/:id, /player/:id ou /match/:id
-      # recebe HTML com título, descrição e placar em vez do index.html sem
-      # metadados. A porta é a mesma que o ingress usa para clubs-api
-      # (locals.services); sem ela, link de clube compartilhado em Discord
-      # apareceria pelado.
-      og_api = 8017
-    },
+
     {
       # finance-frontend: a SPA do bounded context financeiro (tela de
       # operacao da fatia 1 -- liveness, chave de API e envio de comando).
@@ -276,16 +240,7 @@ locals {
       hostname = "finance.giomartins.dev"
       bucket   = "finance-frontend"
     },
-    {
-      # prospecta-frontend: a SPA do contexto Prospecta (cockpit de prospeccao --
-      # empresas, campanhas, leads, conversas). Entra no hub como microfrontend,
-      # entao precisa ser publica e iframe-embeddable (em excluded_hostnames): o
-      # login e a X-API-Key que o operador cola na propria tela, nao um redirect
-      # de Access. Ela chama a prospecta-api (prospecta-api.giomartins.dev)
-      # cross-origin por CORS.
-      hostname = "prospecta.giomartins.dev"
-      bucket   = "prospecta-frontend"
-    },
+
   ]
 
   # Paths that get a Cloudflare Access application of their own even
@@ -296,8 +251,6 @@ locals {
   # the shortcut targets themselves stays on each target's own Access
   # application -- this path is the UI gate, not the security one.
   #
-  # clubs does its own Google Sign-In + session cookie (clubs-api has no
-  # Access application in front of it), so it needs no entry here either.
   path_protected_hostnames = [
     "hub.giomartins.dev/sso",
   ]

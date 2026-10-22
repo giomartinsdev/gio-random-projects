@@ -58,10 +58,7 @@ flowchart TB
       dworker["domain-worker"]
       fapi["finance-api"]
       fwk["finance-customersupport-worker"]
-      clubsapi["clubs-api<br/>(pausado)"]
-      clubsing["clubs-ingest<br/>(pausado)"]
       telaapi["tela-api"]
-      prospecta["prospecta-api<br/>+ agent-worker"]
       omb["maus (omb)"]
       draw["excalidraw"]
     end
@@ -71,9 +68,6 @@ flowchart TB
     ingress -.-> evolution
     ingress -.-> telaapi
     ingress -.-> graf
-
-    classDef pausado stroke-dasharray: 4 4,opacity: .55;
-    class clubsapi,clubsing pausado
   end
 
   cf --> ingress
@@ -81,14 +75,13 @@ flowchart TB
   dockhand -.webhook de deploy.-> apps
 ```
 
-> **Frontends não são containers.** `tela-frontend`, `clubs-frontend`,
-> `hub-frontend` e `finance-frontend` são builds estáticos espelhados em
-> buckets do MinIO; o ingress serve o bucket direto.
+> **Frontends não são containers.** `tela-frontend`, `hub-frontend` e
+> `finance-frontend` são builds estáticos espelhados em buckets do MinIO; o
+> ingress serve o bucket direto.
 >
-> **`clubs` está pausado** (2026-10-19): os dois containers saíram do
-> `project-apps`, as rotas do ingress respondem 410 e o app saiu do hub.
-> Código, banco, bucket e imagens no registry seguem intactos — o como
-> religar está em `stacks/README.md`.
+> **FC Clubs e Prospecta foram removidos** do repositório (2026-10): apps,
+> stacks, rotas do ingress, DNS/Access no Terraform e as tabelas nos schemas.
+> Os dados que já existiam no banco continuam lá — nada foi dropado.
 
 ---
 
@@ -214,11 +207,9 @@ flowchart LR
   up --> verify["prova: container rodando<br/>+ guard de órfão de rename"]
 ```
 
-- **Go** (`go-ci-cd.yml`): `domain-api`, `domain-worker`, `clubs-api`,
-  `tela-api`, `prospecta-api`.
-- **Python** (`python-ci-cd.yml`): `clubs-ingest`, `finance-api`,
-  `finance-customersupport-worker`, `finance-openfinance-worker`,
-  `prospecta-agent-worker`.
+- **Go** (`go-ci-cd.yml`): `domain-api`, `domain-worker`, `tela-api`.
+- **Python** (`python-ci-cd.yml`): `finance-api`,
+  `finance-customersupport-worker`, `finance-openfinance-worker`.
 - **TypeScript** (`ts-frontend-ci-cd.yml`): builds estáticos → buckets do MinIO.
 - **Terraform** (`tf-ci-cd.yml`): Cloudflare DNS/Access + `host_baseline`.
 

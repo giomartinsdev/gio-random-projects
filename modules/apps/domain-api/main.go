@@ -85,27 +85,15 @@ func main() {
 	// mas responde 202 na hora — o worker aplica depois.
 	envelopeHandlers := httpapi.NewEnvelopeHandlers(commands, log)
 
-	// FC Clubs Hub (specs/003): read models + the write doors the clubs
-	// services call. domain-api is read-only against these tables --
-	// domain-worker is the sole writer, as everywhere else in this repo.
-	clubsRepo := postgres.NewClubsRepository(pool)
-	clubsHandlers := httpapi.NewClubsHandlers(clubsRepo, log)
-	clubsWriteHandlers := httpapi.NewClubsWriteHandlers(commands, log)
-
 	// Financeiro (§4.2): read-only projections over the finance tables the
 	// domain-worker owns. The finance-api relays these; this side is the only
 	// place that touches the database for the finance context (§1.1).
 	financeReads := postgres.NewFinanceReadRepository(pool)
 	financeHandlers := httpapi.NewFinanceHandlers(financeReads, log)
 
-	// Prospecta (specs/004-prospecta): projeções read-only das tabelas
-	// prospecta_* (o domain-worker é o único escritor) + as portas de comando.
-	prospectaReads := postgres.NewProspectaReadRepository(pool)
-	prospectaHandlers := httpapi.NewProspectaHandlers(prospectaReads, commands, log)
-
 	handlers := httpapi.NewHandlers(log)
 
-	router := httpapi.NewRouter(handlers, syncHandlers, clubsHandlers, clubsWriteHandlers, financeHandlers, envelopeHandlers, prospectaHandlers, apiKeys, rateLimiter, log)
+	router := httpapi.NewRouter(handlers, syncHandlers, financeHandlers, envelopeHandlers, apiKeys, rateLimiter, log)
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: otelhttp.NewHandler(router, "domain-api",
 		// chi's route patterns aren't visible to otelhttp, so name the

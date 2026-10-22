@@ -2,8 +2,8 @@ name: TypeScript frontend deploy
 
 # CI/CD for the TypeScript frontend apps under modules/apps/*/ --
 # tela-frontend (screen sharing's own page, split from tela-api),
-# clubs-frontend (the FC Clubs Hub SPA) and hub-frontend (the shell
-# that renders the others). go-ci-cd.yml/python-ci-cd.yml/tf-ci-cd.yml
+# finance-frontend and hub-frontend (the shell that renders the others).
+# go-ci-cd.yml/python-ci-cd.yml/tf-ci-cd.yml
 # are their own pipelines -- one per language+layer, not one generic
 # pipeline branching on every difference between them; in particular
 # only a frontend needs VITE_* env vars baked into the bundle at build
@@ -28,9 +28,7 @@ on:
     paths:
       - "modules/apps/tela-frontend/**"
       - "modules/apps/hub-frontend/**"
-      - "modules/apps/clubs-frontend/**"
       - "modules/apps/finance-frontend/**"
-      - "modules/apps/prospecta-frontend/**"
   workflow_dispatch:
     inputs:
       app:
@@ -49,7 +47,7 @@ jobs:
 
       - id: list
         env:
-          ALLOWED_APPS: "tela-frontend hub-frontend clubs-frontend finance-frontend prospecta-frontend"
+          ALLOWED_APPS: "tela-frontend hub-frontend finance-frontend"
         run: |
           all_apps=$(echo "$ALLOWED_APPS" | tr ' ' '\n')
 
@@ -105,70 +103,33 @@ jobs:
           npx tsc -p tsconfig.json --noEmit
           npm test
 
-      # E2E/BDD (playwright-bdd): só clubs-frontend tem, por enquanto. Roda os
-      # `.feature` num Chromium de verdade contra o build de produção em modo
-      # demo -- sem backend, sem banco.
-      #
-      # O browser fica em ~/Library/Caches no macOS e em ~/.cache/ms-playwright
-      # no Linux (runner); cachear aqui evita baixar ~150MB de novo a cada push.
-      # A chave inclui o commit do package-lock para o cache invalidar quando a
-      # versão do Playwright mudar (o binário é versionado junto).
-      - name: Cache do browser do Playwright
-        if: matrix.app == 'clubs-frontend'
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: pw-${{ runner.os }}-${{ hashFiles(format('modules/apps/{0}/package-lock.json', matrix.app)) }}
-
-      - name: E2E/BDD (playwright-bdd)
-        if: matrix.app == 'clubs-frontend'
-        working-directory: modules/apps/${{ matrix.app }}
-        env:
-          # Em CI não há Chrome de sistema; usa o Chromium que o Playwright
-          # instala (ver channel no playwright.config.ts).
-          CLUBS_PW_CHANNEL: chromium
-        run: |
-          # O `tsc -p tsconfig.json` do passo anterior cobre só `src`; os steps
-          # e specs de teste ficariam sem checagem de tipo. Este tsconfig os
-          # inclui -- um erro de tipo num step vira job vermelho, não surpresa.
-          npm run typecheck:tests
-          # `install-deps` (só as libs de sistema) separado do `install`: o
-          # browser em si costuma vir do cache acima; as dependências de apt são
-          # rápidas e não valem o cache.
-          npx playwright install-deps chromium
-          npx playwright install chromium
-          npx bddgen
-          npx playwright test
       # Every VITE_* below is set for every app in the matrix -- Vite
       # only ever inlines the ones a given app's own code actually
       # references (import.meta.env.VITE_X), so an unused one here is
       # a harmless no-op, same convention the old Docker build-args
-      # followed. tela-frontend uses only VITE_TELA_API_URL;
-      # clubs-frontend only VITE_CLUBS_API_URL. The SPAs with browser
+      # followed. tela-frontend uses only VITE_TELA_API_URL.
+      # The SPAs with browser
       # telemetry also get VITE_OTEL_EXPORTER_OTLP_ENDPOINT (unused here
       # is a no-op -- see src/telemetry.ts in each app).
       #
       # VITE_GOOGLE_CLIENT_ID is resolved per app. The client ID is PUBLIC
-      # (it ships in the bundle either way) -- the same value is committed in
-      # stacks/clubs.yml. A single Google OAuth client can serve several
+      # (it ships in the bundle either way). A single Google OAuth client can serve several
       # origins as long as each is in its "authorized JavaScript origins";
       # the secret overrides exist for when a product gets its OWN client.
       - name: Resolve the app's Google OAuth client ID
         working-directory: modules/apps/${{ matrix.app }}
         run: |
           # The public fallback: the shared client whose JS origins include
-          # both clubs. and finance. (same one stacks/clubs.yml commits).
+          # finance.
           shared="45441571832-4vldrm5h9ef87c82m1spuu6g8foa0k8c.apps.googleusercontent.com"
           case "${{ matrix.app }}" in
-            clubs-frontend)   id="${{ secrets.CLUBS_GOOGLE_OAUTH_CLIENT_ID }}" ;;
             finance-frontend) id="${{ secrets.FINANCE_GOOGLE_OAUTH_CLIENT_ID }}" ;;
-            prospecta-frontend) id="${{ secrets.PROSPECTA_GOOGLE_OAUTH_CLIENT_ID }}" ;;
             *)                id="" ;;
           esac
           # Fall back to the shared public client so a product whose own
           # secret isn't set still gets a working sign-in button.
           case "${{ matrix.app }}" in
-            clubs-frontend|finance-frontend|prospecta-frontend) [ -n "$id" ] || id="$shared" ;;
+            finance-frontend) [ -n "$id" ] || id="$shared" ;;
           esac
           echo "VITE_GOOGLE_CLIENT_ID=$id" >> "$GITHUB_ENV"
 
@@ -177,14 +138,10 @@ jobs:
         env:
           VITE_TELA_API_URL: https://tela-api.giomartins.dev
           VITE_OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
-          VITE_CLUBS_API_URL: https://clubs-api.giomartins.dev
           # A API do financeiro vive em finance-API., não no host da SPA
           # (finance.) -- apontar para o próprio host faria a SPA chamar a si
           # mesma e todo request virar 404.
           VITE_FINANCE_API_URL: https://finance-api.giomartins.dev
-          # O mesmo para o Prospecta: a API vive em prospecta-API., não no host
-          # da SPA (prospecta.).
-          VITE_PROSPECTA_API_URL: https://prospecta-api.giomartins.dev
         run: npm run build
 
       # scp (not the docker provider/API) because the files have to

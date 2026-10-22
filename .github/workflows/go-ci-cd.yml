@@ -223,7 +223,7 @@ jobs:
             echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a :latest já foi publicada)."
             exit 0
           fi
-          declare -A STACK=( [domain-api]=22 [domain-worker]=22 [tela-api]=22 [clubs-api]=22 [prospecta-api]=22 )
+          declare -A STACK=( [domain-api]=22 [domain-worker]=22 [tela-api]=22 )
           ids=$(echo "$APPS" | jq -r '.[]' | while read -r a; do echo "${STACK[$a]}"; done | grep -v '^$' | sort -u)
           [ -z "$ids" ] && { echo "nada a deployar"; exit 0; }
           for id in $ids; do

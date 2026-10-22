@@ -4,7 +4,7 @@ Infra-as-code and app code for the VPS, all under `modules/`.
 
 ```
 modules/
-  apps/      independently deployed apps — clubs (api, ingest, frontend), tela (api, frontend), domain (api, worker), hub-frontend
+  apps/      independently deployed apps — tela (api, frontend), domain (api, worker), finance (api, workers, frontend), hub-frontend
   infra/     terraform (Cloudflare DNS/Access + VPS containers), registry, watchtower
 ```
 

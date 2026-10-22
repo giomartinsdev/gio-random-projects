@@ -11,7 +11,7 @@ minecraft, todos orquestrados pelo Dockhand (ids 7/20/21/22):
 | --- | --- | --- | --- |
 | `core` | 7 | `core.yml` | registry, htpasswd-init, registry-docker-config, dockhand, **ingress** (boot-only; **protegida**: sem webhook, `force_redeploy=0`, `repull_images=0`) |
 | `project-infra` | 21 | `project-infra.yml` | inclui `persistence.yml`, `observability.yml`, `db-mcp.yml`, `compute.yml` (postgres, rabbitmq, minio, minio-buckets, loki/prometheus/tempo/alloy/grafana, db-mcp + gateway, vaultwarden, adminer, evolution, 9router) |
-| `project-apps` | 22 | `project-apps.yml` | inclui `domain.yml`, `finance.yml`, `prospecta.yml`, `tela.yml`, `maus.yml`, `excalidraw.yml` — **`clubs.yml` está pausado** (fora do include; ver abaixo) |
+| `project-apps` | 22 | `project-apps.yml` | inclui `domain.yml`, `finance.yml`, `tela.yml`, `maus.yml`, `excalidraw.yml` |
 | `minecraft` | 20 | `minecraft.yml` | servidor **All the Mods 11** (NeoForge, 293 mods, MC 26.1.2) + backup diário. Deployado pelo Dockhand desde 2026-10-19; `repull_images=0` porque as tags (`java25`, `mc-backup:latest`) são móveis |
 
 **`bootstrap.yml`** (rede externa `apps`) não é stack do Dockhand: suba
@@ -29,8 +29,8 @@ volumes externos continuam exatamente os mesmos de antes.
 Duas convenções que o deploy agregado exige (o standalone não pedia):
 
 - **Binds relativos são pela RAIZ do repo** (`./maus/Caddyfile:...`,
-  `./prospecta/searxng:...`) — no agregado o *project dir* é
-  `/opt/stacks/project-*`, então um `./searxng` em `prospecta.yml` montaria
+  `./maus/Caddyfile:...`) — no agregado o *project dir* é
+  `/opt/stacks/project-*`, então um caminho relativo errado montaria
   um diretório vazio no lugar do arquivo.
 - **Segredos continuam no Dockhand**: o `.env.dockhand` é gerado por deploy
   a partir das variáveis de stack (valores `enc:v1:` descriptografados na
@@ -43,15 +43,10 @@ registry local nunca foram buildadas e o usuário optou por preservar o
 `compute.yml` — ele já rodava no antigo stack `compute`). O `ai.yml` fica
 versionado como referência para quando o `decision` for implantado.
 
-`clubs.yml` **está pausado** (2026-10-19): saiu do `include` do
-`project-apps.yml`, os containers (`clubs-api`, `clubs-ingest`) foram parados
-e removidos, o hub parou de listar o app
-(`modules/apps/hub-frontend/src/lib/apps.ts`) e as duas rotas do ingress
-respondem **410**. Nada foi apagado: banco no postgres, bucket
-`clubs-frontend` no MinIO, imagens no registry, segredos `CLUBS_*` no
-Dockhand e o código em `modules/apps/clubs-*` seguem intactos. Pra religar:
-descomentar `- clubs.yml` no include, reverter os blocos do `default.conf` e
-a entrada do hub, e deployar a 22.
+**FC Clubs e Prospecta saíram do repositório** (2026-10): apps, `stacks/*.yml`,
+rotas do ingress, entradas de DNS/Access no Terraform e as tabelas nos schemas
+do domain. Os dados que já existiam no postgres continuam lá — nada foi
+dropado; apenas não são mais criados nem lidos.
 
 **`core.yml` é de boot, isolada de propósito.** O Dockhand deploya as
 stacks; se ele estiver dentro de uma stack que ele mesmo recria, o deploy
@@ -60,8 +55,8 @@ Dockhand vivem aqui, separados, e ficam **protegidos** no Dockhand. O
 **ingress** também mora aqui: é a frente de TODOS os hostnames do host —
 subir/derrubar plataforma não deve derrubar a porta 80.
 
-Os **frontends** (`tela-frontend`, `clubs-frontend`, `hub-frontend`,
-`finance-frontend`, `prospecta-frontend`) são builds estáticos espelhados em
+Os **frontends** (`tela-frontend`, `hub-frontend`, `finance-frontend`) são
+builds estáticos espelhados em
 bucket do MinIO — não são container, não entram aqui. Os buckets (e a policy
 de leitura anônima) vêm do one-shot idempotente `minio-buckets`, que hoje usa
 **`amazon/aws-cli`** pela API S3: o `minio/mc` saiu do Docker Hub e o
@@ -108,8 +103,8 @@ um app migrar e mudar a porta loopback, edite aqui e recrie o `ingress`.
   linguagem (`python-ci-cd.yml`, `go-ci-cd.yml`, …).
 - **Label `giomartins.dev/project`** em todo serviço: identifica o projeto
   (módulo/domínio do repo) dono do container — `storage`, `observability`,
-  `db-mcp`, `compute`, `ai`, `domain`, `clubs`, `finance`, `prospecta`,
-  `tela`, `maus`, `excalidraw`, `minecraft`, `core`. Filtre por aí:
+  `db-mcp`, `compute`, `ai`, `domain`, `finance`, `tela`, `maus`,
+  `excalidraw`, `minecraft`, `core`. Filtre por aí:
   `docker ps --filter label=giomartins.dev/project=finance`.
 - **Segredo nunca no git**: no compose só `${VAR}`. O valor vira variável
   de stack no Dockhand (criptografada no DB dele).
@@ -139,24 +134,14 @@ volume `ninerouter_data`, então nada se perde). Opcionais do `ai.yml`
 `domain.yml` → **project-apps**: `POSTGRES_PASSWORD` (a MESMA do persistence),
 `RABBITMQ_PASSWORD` (a MESMA do persistence), `DOMAIN_API_KEYS`.
 
-`clubs.yml` → **project-apps**: `CLUBS_SESSION_SECRET`, `CLUBS_API_DOMAIN_KEY`,
-`CLUBS_INGEST_DOMAIN_KEY`, `CLUBS_INGEST_DISCORD_WEBHOOK` (opcional).
-
 `finance.yml` → **project-apps**: `FINANCE_API_KEYS`, `FINANCE_WORKER_API_KEY`,
 `FINANCE_DOMAIN_API_KEY` (a MESMA em `DOMAIN_API_KEYS` do `domain`),
 `RABBITMQ_PASSWORD`, `EVOLUTION_API_KEY`. Open Finance (opcional):
 `POLP_OF_CLIENT_ID`, `POLP_OF_CLIENT_SECRET`, `FINANCE_OF_API_KEY` (uma key
 própria do conector em `FINANCE_API_KEYS`, rótulo `openfinance`), `OF_*`,
 `OF_TICK_*`, `SECRETS_BRIDGE_URL`, `FINANCE_CORS_ORIGINS`. Opcionais
-também: `FINANCE_GOOGLE_CLIENT_ID` (default = o client público do clubs) e
+também: `FINANCE_GOOGLE_CLIENT_ID` e
 `FINANCE_SESSION_SECRET` (derivado do `FINANCE_DOMAIN_API_KEY` se ausente).
-
-`prospecta.yml` → **project-apps**: `PROSPECTA_API_KEY`,
-`PROSPECTA_DOMAIN_API_KEY`, `NINEROUTER_API_KEY` (chave que o agent-worker
-usa no 9router), `PROSPECTA_TENANT_ID`. Opcionais: `PROSPECTA_SESSION_SECRET`,
-`PROSPECTA_GOOGLE_CLIENT_ID`, `PROSPECTA_FRONTEND_ORIGINS`,
-`PROSPECTA_APPROVAL_POLICY`, `SEARCH_*` (default searxng local),
-`ENRICH_*`, `SEARXNG_SECRET`, `EVOLUTION_API_KEY`/`EVOLUTION_INSTANCE`.
 
 `maus.yml` → **project-apps**: **nenhum segredo obrigatório**. O OpenMausBot
 não tem `OWNER_TOKEN`; o gate é o *pairing* do próprio app (um código de uso
@@ -172,7 +157,7 @@ no e-mail em vez de só pairing), `OMB_DEFAULT_BOT_ID` e
 
 `excalidraw.yml` → **project-apps**: **nenhum segredo**. É um SPA estático
 (imagem própria, sem config), público em `draw.giomartins.dev` — sem
-Cloudflare Access (qualquer pessoa entra, como tela/clubs).
+Cloudflare Access (qualquer pessoa entra, como o tela).
 
 `tela.yml` → **project-apps**: `TELA_TURN_SECRET`.
 
@@ -191,14 +176,12 @@ configurado por env: `ops.json` precisa do UUID *offline* do nick (ver
 > de stack no Dockhand; pra centralizar num cofre suportado, suba um
 > **Infisical** e ligue o provider nele.
 
-> **SSO do financeiro reusa o client público do clubs.** O *client ID* do Google
-> é público (vai no bundle), então o mesmo valor commitado em `stacks/clubs.yml`
-> é o default aqui e no `ts-frontend-ci-cd.yml`. Um client OAuth aceita várias
-> *authorized JavaScript origins*, então `https://finance.giomartins.dev`
-> precisa estar na lista desse client no Google Cloud Console — foi o
-> `origin_mismatch` que o comentário do workflow registra. Para um client
-> próprio, defina `FINANCE_GOOGLE_CLIENT_ID` (stack) e
-> `FINANCE_GOOGLE_OAUTH_CLIENT_ID` (secret do CI).
+> **SSO do financeiro usa um client público compartilhado.** O *client ID* do
+> Google é público (vai no bundle). Um client OAuth aceita várias *authorized
+> JavaScript origins*, então `https://finance.giomartins.dev` precisa estar na
+> lista desse client no Google Cloud Console — foi o `origin_mismatch` que o
+> comentário do workflow registra. Para um client próprio, defina
+> `FINANCE_GOOGLE_CLIENT_ID` (stack).
 
 ## Migração (concluída)
 
@@ -211,8 +194,8 @@ Três cortes já foram concluídos:
    (a rede `apps` virou o `bootstrap.yml`) — ver
    `modules/infra/terraform/README.md`.
 2. **12 stacks → 3 agregados + minecraft** (2026-10-18): os stacks
-   `observability`, `persistence`, `compute`, `domain`, `clubs`, `tela`,
-   `maus`, `finance`, `prospecta`, `excalidraw`, `db-mcp` e `ai` foram
+   `observability`, `persistence`, `compute`, `domain`, `tela`,
+   `maus`, `finance`, `excalidraw`, `db-mcp` e `ai` foram
    removidos do Dockhand; as variáveis de stack migraram byte-a-byte para
    `project-infra`/`project-apps` (verificado contra os valores em execução)
    e os ids de webhook dos workflows de CI apontam para 22/21. Rollback:
@@ -246,7 +229,7 @@ entram no backup).
 - **Cloudflare** (DNS, Access, service tokens, mTLS do registry, email
   routing) e o **firewall/MTU do host** (`host_baseline`) não são
   containers. Ficam pra uma fase própria (dashboard/Tunnel + script).
-- **Buckets do MinIO** (`tela-frontend`, `hub-frontend`, `clubs-frontend`,
-  `finance-frontend`, `prospecta-frontend`) eram criados por um
+- **Buckets do MinIO** (`tela-frontend`, `hub-frontend`, `finance-frontend`)
+  eram criados por um
   `null_resource`; hoje o one-shot `minio-buckets` (idempotente, roda a cada
   deploy do `project-infra`) cria e expõe os buckets.

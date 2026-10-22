@@ -47,13 +47,8 @@ func newSyncServer(t *testing.T, publisher *spyPublisher, audits *stubAudits) ht
 	return NewRouter(
 		NewHandlers(log),
 		NewSyncHandlers(publisher, audits, log),
-		// nil repos/handlers: these tests never touch the clubs routes, they
-		// only need them registered on the router.
-		NewClubsHandlers(nil, log),
-		NewClubsWriteHandlers(publisher, log),
 		NewFinanceHandlers(nil, log),
 		NewEnvelopeHandlers(publisher, log),
-		NewProspectaHandlers(nil, publisher, log),
 		APIKeys{"k1": "test"},
 		NewIPRateLimiter(1000, 1000),
 		log,

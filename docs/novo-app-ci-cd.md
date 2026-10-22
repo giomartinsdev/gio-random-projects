@@ -91,11 +91,11 @@ com esse env, traces e métricas também entram — copie o pacote
 `internal/telemetry` de um app Go. A receita completa está no README do
 módulo observability.
 
-Portas já usadas hoje: 8000 (domain-api), 8007 (tela-api), 8017
-(clubs-api). Pegue a próxima.
+Portas já usadas hoje: 8000 (domain-api), 8007 (tela-api), 8018
+(finance-api). Pegue a próxima.
 
-> Isso vale para um app que roda como container. `tela-frontend`,
-> `clubs-frontend` e `hub-frontend` não seguem mais essa receita: são
+> Isso vale para um app que roda como container. `tela-frontend` e
+> `hub-frontend` (e `finance-frontend`) não seguem mais essa receita: são
 > builds estáticos espelhados direto num bucket do MinIO, sem container
 > nenhum rodando —
 > veja `modules/infra/terraform/static_sites.tf` e o README de
