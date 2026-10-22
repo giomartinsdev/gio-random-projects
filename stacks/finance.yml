@@ -54,8 +54,8 @@ services:
       # finance.giomartins.dev; explicito aqui pra dev local tb.
       FINANCE_CORS_ORIGINS: ${FINANCE_CORS_ORIGINS:-https://finance.giomartins.dev}
       # SSO do SPA (§5). O client ID do Google é PÚBLICO (vai no bundle da SPA
-      # de qualquer forma) — o mesmo valor que o clubs.yml commita. Reusamos o
-      # MESMO client do clubs: um client OAuth do Google aceita várias
+      # de qualquer forma) — o valor fica commitado aqui. Um client OAuth do
+      # Google aceita várias
       # "authorized JavaScript origins", então finance.giomartins.dev precisa
       # estar na lista desse client no Google Cloud Console (foi o
       # origin_mismatch que o comentário do ts-frontend-ci-cd.yml registra).

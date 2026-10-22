@@ -14,7 +14,7 @@
 # hot-reload; aqui não faz sentido). Sem segredos.
 #
 # Exposto em https://draw.giomartins.dev — PÚBLICO, sem Cloudflare Access
-# (qualquer pessoa entra sem conta; mesmo modelo do tela/clubs). O ingress
+# (qualquer pessoa entra sem conta; mesmo modelo do tela). O ingress
 # (core.yml) mapeia hostname -> 127.0.0.1:8023, que esta stack publica.
 name: excalidraw
 

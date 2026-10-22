@@ -1,7 +1,7 @@
 # project-apps.yml — TUDO que é aplicação do projeto numa stack só.
 #
-# Por que existe: antes havia uma stack por bounded context (domain, clubs,
-# finance, prospecta, tela, maus, excalidraw). São serviços que sobem e descem
+# Por que existe: antes havia uma stack por bounded context (domain, finance,
+# tela, maus, excalidraw). São serviços que sobem e descem
 # juntos quando o produto muda, e separá-los só multiplicava deploys e listas
 # de segredo. Infra (banco, broker, MinIO, observabilidade) mora em
 # `project-infra.yml`; a base da VPS em `core.yml`.
@@ -10,16 +10,13 @@
 # continuam sendo a fonte da verdade, um por contexto:
 #
 #   domain.yml      domain-api (leitura) + domain-worker (único escritor, CQRS)
-#   clubs.yml       PAUSADO (2026-10-19) — não está mais no include. Ver
-#                   stacks/clubs.yml pro estado e como religar
 #   finance.yml     finance-api + workers (customersupport, openfinance)
-#   prospecta.yml   prospecta-api + prospecta-agent-worker + searxng
 #   tela.yml        tela-mediamtx + tela-coturn + tela-api (os 3 em host network)
 #   maus.yml        omb + maus-caddy + maus-slack-bridge (OpenMausBot)
 #   excalidraw.yml  excalidraw (SPA estático em nginx)
 #
 # Os `name:` dos arquivos incluídos são ignorados: o projeto é `project-apps`.
-# Os caminhos relativos (`./searxng`, `./maus/Caddyfile`) resolvem em relação
+# Os caminhos relativos (`./maus/Caddyfile`) resolvem em relação
 # ao arquivo que os declara — o Dockhand sincroniza `stacks/` inteiro, então
 # eles continuam válidos.
 #
@@ -29,10 +26,8 @@
 #
 # Segredos (variáveis de stack no Dockhand, uma lista só):
 #   DOMAIN_API_KEYS                       (chaves aceitas pela domain-api)
-#   CLUBS_SESSION_SECRET, CLUBS_*_DOMAIN_KEY
 #   FINANCE_API_KEYS, FINANCE_WORKER_API_KEY, FINANCE_DOMAIN_API_KEY,
 #   FINANCE_OF_API_KEY, OF_TICK_SECRET, POLP_OF_*, FINANCE_SESSION_SECRET
-#   PROSPECTA_API_KEY, PROSPECTA_DOMAIN_API_KEY, PROSPECTA_SESSION_SECRET
 #   TELA_TURN_SECRET
 #   SLACK_BOT_TOKEN, SLACK_APP_TOKEN
 #   RABBITMQ_PASSWORD / EVOLUTION_API_KEY / VAULTWARDEN_BRIDGE_API_KEY
@@ -41,13 +36,7 @@ name: project-apps
 
 include:
   - domain.yml
-  # PAUSADO (2026-10-19): o FC Clubs saiu do hub e os containers foram
-  # removidos. O `clubs.yml` continua aqui — religar é descomentar esta linha
-  # e o conteudo dele já está inteiro (segredos no Dockhand, banco, bucket no
-  # MinIO). As rotas do ingress respondem 410 enquanto isso (ver default.conf).
-  # - clubs.yml
   - finance.yml
-  - prospecta.yml
   - tela.yml
   - maus.yml
   - excalidraw.yml

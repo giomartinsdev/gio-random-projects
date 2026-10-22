@@ -195,9 +195,8 @@ faz o request. O contrato é o já documentado em
   assíncrona** que o `README.md` do `domain-api` descreve. Conferido no código
   (2026-10-03): **ela não existe** — em
   `domain-api/internal/infrastructure/http/router.go` as rotas são `/healthz`,
-  `/openapi.yaml`, `/docs`, `POST /sync` e `/clubs*`, e só o `/sync` decodifica o
-  envelope; os dois handlers que respondem `202` (`AppendSnapshot`, writes de
-  clubs) são route-specific.
+  `/openapi.yaml`, `/docs`, `POST /sync`, `POST /commands` e `/finance/*`; só o
+  `/sync` decodifica o envelope de forma síncrona.
 
 **Consequência prática (fatia 1):** a `finance-api` é ACL e **recusa** emitir um
 `202` que nada upstream aceitou, então ela relaya o envelope por `/sync` e
@@ -271,7 +270,7 @@ detalhada. Os templates e o PNG entram em teste de golden file (§12.4).
 ### 5.2.1. O SPA (canal web)
 
 Além do WhatsApp, a `finance-frontend` é um canal de primeira classe: login com
-Google (mesmo desenho do `clubs-api`, ver o README da `finance-api`), painel
+Google (ver o README da `finance-api`), painel
 com cards e gráficos, e formulários para registrar transação, transferência e
 orçamento. O `user_id` continua sendo o **telefone**: a SPA manda o comando sem
 `user_id` e a `finance-api` o amarra ao telefone da sessão (um payload que
@@ -324,7 +323,7 @@ mensagem é registrada como falha e o loop segue (§12.9).
 ## 6. Stack Tecnológica & Tipagem
 
 ### 6.1. O que o repositório usa hoje (fato)
-- **Python:** 3.12 (`clubs-ingest`; `python-ci-cd.yml` usa `python-version: "3.12"`,
+- **Python:** 3.12 (`python-ci-cd.yml` usa `python-version: "3.12"`,
   imagem `python:3.12-slim`). É o que o CI sabe construir hoje.
 - **Go:** 1.25 (`domain-api`, `domain-worker`).
 - **DB:** PostgreSQL **17** (`postgres:17-alpine`, stack `persistence`), com
@@ -344,7 +343,7 @@ mensagem é registrada como falha e o loop segue (§12.9).
   da wheel, não o diretório `packages/` do §7**.
 
 **`finance-customersupport-worker`** — Python 3.12:
-- Mesmo esqueleto de `clubs-ingest`: `pyproject.toml` (hatchling), `pytest` +
+- Mesmo esqueleto de `finance-api`: `pyproject.toml` (hatchling), `pytest` +
   `pytest-bdd` + `testcontainers` + `docker` nos extras `dev`.
 - `httpx` para falar com a `finance-api`; `aio-pika` para **consumir** os eventos
   do Evolution (`evolution.messages.upsert`) e os eventos de domínio (§13) —
@@ -420,7 +419,7 @@ mora num diretório `packages/` na **raiz do repo**, versionado como pacote
 próprio (`packages/finance-contracts/`: o envelope `{action, payload}` e os
 eventos de domínio — a fonte única que `finance-api` e worker importam).
 - O repo **ainda não tem** `packages/`; criá-lo é parte desta entrega. A
-  convenção de *vendorizar* que já existe (`clubs-ingest` embarca o `fc27_api.py`
+  convenção de *vendorizar* que já existe (um app que precise de um client
   no pacote) continua valendo para **terceiros** — um cliente de terceiro
   vendorizado também entra em `packages/`, e não no `src/` do app.
 - Não há registry Python privado: `packages/` é instalado **por caminho** a partir
@@ -644,7 +643,7 @@ gateway.
 Como o gateway é a **Evolution API** (§5.3), **não há webhook** e **não há**
 `finance-webhook.giomartins.dev` — a comunicação com o WhatsApp é AMQP de
 entrada + HTTP de saída, ambos internos à rede `apps`. Sobram dois hostnames,
-espelhando o padrão `clubs` / `clubs-api`:
+espelhando o padrão `tela` / `tela-api`:
 
 ```nginx
 # finance-api.giomartins.dev -> 127.0.0.1:8018  (a API; auth própria X-API-Key)
@@ -665,7 +664,7 @@ server {
 
 Portas loopback **já usadas** (conferidas nas stacks): 5000 (registry — a
 única publicada em todas as interfaces), 8000 (domain-api), 8007 (tela-api),
-8017 (clubs-api), 8018 (finance-api), 8080 (evolution), 8092 (adminer),
+8018 (finance-api), 8080 (evolution), 8092 (adminer),
 8093 (dockhand), 8222 (vaultwarden), 8799 (omb/maus), 9000/9001 (minio — S3
 API/console), 20128 (9router), 3000 (grafana), 4318 (alloy/OTLP),
 15672 (rabbit — só management). O `ingress` em si é nginx em
@@ -683,7 +682,7 @@ No Terraform (que **segue** cuidando de DNS/Access):
 2. **`modules/infra/terraform/variables.tf`** — `finance-api.giomartins.dev` e
    `finance.giomartins.dev` em **`excluded_hostnames`**: a API tem auth própria
    (`X-API-Key`) e a SPA chama ela cross-origin pelo browser — um redirect de
-   SSO Google quebraria toda chamada (mesma razão de `clubs-api`); a SPA é
+   SSO Google quebraria toda chamada (mesma razão do `finance-api`); a SPA é
    pública e precisa ser iframe-embeddable no hub. Comente o porquê na linha.
 
 ### 10.6. Conferir que subiu de verdade
@@ -705,7 +704,7 @@ ssh ubuntu@$VPS_HOST \
 
 ### 10.7. Onde a stack entra na ordem de subida
 
-`bootstrap → persistence → core → compute → observability → domain → clubs →
+`bootstrap → persistence → core → compute → observability → domain →
 tela → finance → maus`. A `finance` depende de `persistence` (postgres,
 rabbitmq), `core` (registry) e `compute`/`observability` (alloy p/ OTLP,
 evolution-api).
@@ -729,9 +728,10 @@ publica `:latest` + `:<sha>` e chama o webhook do Dockhand.
 
 Mudanças necessárias:
 
-1. **Filtro `paths:`** — hoje só `modules/apps/clubs-ingest/**`; adicionar
-   `modules/apps/finance-api/**`, `modules/apps/finance-customersupport-worker/**`
-   **e `packages/finance-contracts/**`**.
+1. **Filtro `paths:`** — hoje lista `modules/apps/finance-api/**`,
+   `modules/apps/finance-customersupport-worker/**` e
+   `modules/apps/finance-openfinance-worker/**`; inclui também
+   **`packages/finance-contracts/**`**.
 2. **`packages/**` como gatilho dos dependentes.** O `discover` só casa um app
    quando o diff contém `^modules/apps/<app>/`. Um commit que mexe **só** em
    `packages/finance-contracts/**` não rebuilda ninguém — e os dois apps importam

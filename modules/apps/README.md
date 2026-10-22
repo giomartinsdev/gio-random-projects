@@ -7,14 +7,15 @@ workflow's own header for why not watchtower). Three pipelines, one
 per language+layer:
 
 - **`.github/workflows/go-ci-cd.yml`** — Go apps, auto-discovered by
-  `go.mod` (`domain-api`, `domain-worker`, `tela-api`, `clubs-api`).
+  `go.mod` (`domain-api`, `domain-worker`, `tela-api`).
 - **`.github/workflows/ts-frontend-ci-cd.yml`** — TypeScript SPAs
-  (`tela-frontend`, `clubs-frontend`, `hub-frontend`, `finance-frontend`), which need
+  (`tela-frontend`, `hub-frontend`, `finance-frontend`), which need
   `VITE_*` env vars baked into the bundle at build time. None of them
   runs as a container: the build is mirrored straight into its own
   MinIO bucket instead (see `modules/infra/terraform/static_sites.tf`).
 - **`.github/workflows/python-ci-cd.yml`** — Python workers
-  (`clubs-ingest`), auto-discovered by `pyproject.toml`.
+  (`finance-api`, `finance-customersupport-worker`,
+  `finance-openfinance-worker`), auto-discovered by `pyproject.toml`.
 
 Unlike Go, a `package.json` alone doesn't put a TypeScript app in the
 frontend pipeline — see `docs/novo-app-ci-cd.md` for the `ALLOWED_APPS`
@@ -37,15 +38,6 @@ only ever fit one.
   Shares nothing with the rest of this folder — no Postgres, no Better
   Auth, no domain-api. See `tela-api/README.md` for how the SFU itself
   works.
-- **`clubs-api/`** / **`clubs-ingest/`** / **`clubs-frontend/`** — o FC
-  Clubs Hub em `clubs.giomartins.dev`: rankings, perfis de
-  clube/partida/jogador e o histórico que a EA não guarda. `clubs-ingest`
-  é um worker Python (sem porta, sem host) que puxa da API pública de
-  Pro Clubs e grava via `domain-api`; `clubs-api` é um BFF Go (um host,
-  sem banco) com duas camadas — leituras públicas sem identidade e uma
-  camada pessoal atrás do login próprio no `/api`; `clubs-frontend` é uma
-  SPA React estática em bucket, sem container, que entra no hub como
-  microfrontend. O design system vive em `clubs-frontend/ui.pen`.
 - **`finance-api/`** / **`finance-customersupport-worker/`** / **`finance-frontend/`** — o
   bounded context financeiro (gestão conversacional via WhatsApp, spec em
   `docs/finance-system-spec.md`). `finance-api` é a ACL do contexto (Python

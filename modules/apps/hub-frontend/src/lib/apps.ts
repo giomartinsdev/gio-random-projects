@@ -38,28 +38,12 @@ export const MICROFRONTENDS: Microfrontend[] = [
     description: "compartilhe sua tela por código de sala",
     url: "https://tela.giomartins.dev",
   },
-  // "clubs" saiu daqui em 2026-10-19: projeto pausado (containers fora,
-  // rotas do ingress em 410). Pra voltar, é só descomentar:
-  //   {
-  //     id: "clubs",
-  //     name: "FC Clubs",
-  //     emoji: "⚽",
-  //     description: "rankings de clubes e jogadores, e o histórico que a EA não guarda",
-  //     url: "https://clubs.giomartins.dev",
-  //   },
   {
     id: "finance",
     name: "Finance",
     emoji: "💳",
     description: "gestão financeira: registre e acompanhe pelas mensagens do WhatsApp",
     url: "https://finance.giomartins.dev",
-  },
-  {
-    id: "prospecta",
-    name: "Prospecta",
-    emoji: "🎯",
-    description: "prospecção agêntica: encontre e aborde clientes por e-mail e WhatsApp",
-    url: "https://prospecta.giomartins.dev",
   },
 ];
 

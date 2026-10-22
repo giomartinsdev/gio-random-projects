@@ -194,7 +194,7 @@ broker de comando além do que já existe.
 > **Por que um worker separado e não o `finance-api`:** o sync é um **loop de
 > background** com estado (cursor de última sync, retry, backoff). A ACL é
 > stateless e não tem onde guardar isso; é o mesmo motivo pelo qual o
-> `clubs-ingest` existe separado do `clubs-api`.
+> `finance-openfinance-worker` existe separado da `finance-api`.
 
 ---
 

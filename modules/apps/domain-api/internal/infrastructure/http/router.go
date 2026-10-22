@@ -8,11 +8,11 @@ import (
 )
 
 // NewRouter wires every route. /healthz and the API docs stay public
-// (no key, no rate limit) — everything under /clubs and /sync requires
+// (no key, no rate limit) — everything under /finance and /sync requires
 // the apiKey security scheme (see openapi.yaml and Secure in
 // middleware.go). /sync is the synchronous-write exception — see
 // SyncHandlers.Sync's doc comment before reaching for it.
-func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWriteHandlers, fin *FinanceHandlers, env *EnvelopeHandlers, pr *ProspectaHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
+func NewRouter(h *Handlers, sync *SyncHandlers, fin *FinanceHandlers, env *EnvelopeHandlers, keys APIKeys, limiter *IPRateLimiter, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Get("/healthz", h.Healthz)
@@ -33,97 +33,6 @@ func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWri
 		// finance-api's default write path relays to; /sync stays for callers
 		// that must not proceed until the write is durable.
 		r.Post("/commands", env.Publish)
-
-		// FC Clubs Hub (specs/003). Reads are public data + per-person
-		// preferences; writes are the doors the clubs services call --
-		// structural ones ride /sync, append-only ones (snapshot,
-		// anuncio) use the normal async 202 path.
-		r.Get("/clubs", cl.ListClubs)
-		r.Get("/clubs/search", cl.SearchClubs)
-		r.Get("/clubs/{clubId}", cl.GetClub)
-		r.Get("/clubs/{clubId}/squad", cl.GetSquad)
-		r.Get("/clubs/{clubId}/matches", cl.ListMatches)
-		r.Get("/clubs/{clubId}/evolution", cl.GetEvolution)
-		r.Get("/clubs/{clubId}/division-changes", cl.GetDivisionChanges)
-		r.Get("/clubs/{clubId}/records", cl.GetRecords)
-		// A linha do tempo do clube (o acervo do hub) e a mudança desde que a
-		// pessoa começou a acompanhar. Nenhuma das duas existe na fonte.
-		r.Get("/clubs/{clubId}/timeline", cl.GetTimeline)
-		r.Get("/clubs/{clubId}/deltas", cl.GetClubDeltas)
-		// Analytics derivadas do acervo -- temporadas, posições, rivalidade,
-		// gols pró/contra, inatividade e melhores por posição.
-		r.Get("/clubs/{clubId}/seasons", cl.GetSeasons)
-		r.Get("/clubs/{clubId}/positions", cl.GetPositionHeatmap)
-		r.Get("/clubs/{clubId}/squad-comparison", cl.GetSquadComparison)
-		r.Get("/clubs/{clubId}/rolling-goals", cl.GetRollingGoals)
-		r.Get("/clubs/{clubId}/main-rival", cl.GetMainRival)
-		r.Get("/clubs/{clubId}/idle", cl.GetIdle)
-		r.Get("/clubs/{clubId}/team-of-week", cl.GetTeamOfWeek)
-		r.Get("/clubs/{clubId}/best-by-position", cl.GetBestByPosition)
-		r.Get("/regions", cl.GetRegionBreakdown)
-		r.Get("/hub/report", cl.GetHubReport)
-		// Perfil público (opt-in): acessível sem login, porque é público por
-		// escolha da pessoa.
-		r.Get("/profiles/{handle}", cl.GetPublicProfile)
-		r.Get("/players/{playerId}/rating-evolution", cl.GetPlayerRatingEvolution)
-		r.Get("/players/{playerId}/consistency", cl.GetPlayerConsistency)
-		r.Get("/players/{playerId}/discipline", cl.GetPlayerDiscipline)
-		r.Get("/players/{playerId}/tenures", cl.GetPlayerTenures)
-		r.Get("/players/{playerId}/events", cl.GetPlayerEvents)
-		r.Get("/records/global", cl.GetGlobalRecords)
-		r.Get("/clubs/{clubId}/h2h/{rivalId}", cl.HeadToHead)
-		r.Get("/matches/{matchId}", cl.GetMatch)
-		r.Get("/rankings/clubs", cl.RankingClubs)
-		r.Get("/rankings/players", cl.RankingPlayers)
-		r.Get("/players", cl.ListPlayers)
-		r.Get("/players/{playerId}", cl.GetPlayer)
-		r.Get("/announcements", cl.ListAnnouncements)
-		r.Get("/watchlist", cl.ListWatch)
-		r.Get("/notifications", cl.GetNotificacoes)
-		r.Get("/claimed-pro", cl.GetClaimed)
-		r.Get("/sync-status", cl.GetSyncRun)
-		// Consumida pelo worker de ingestão: quem pediu sync e ainda não terminou.
-		r.Get("/sync-pending", cl.ListPendingSyncs)
-		// Fila de sync sob demanda: a tela grava o pedido, o worker de ingestão
-		// polla `fetch-pending`, busca da fonte e publica o resultado em
-		// /fetch-run. O alvo (clube ou jogador) vem do caminho.
-		r.Get("/fetch-pending", cl.ListPendingFetches)
-		r.Get("/clubs/{clubId}/fetch-run", cl.GetFetchRun)
-		r.Get("/players/{playerId}/fetch-run", cl.GetFetchRun)
-		// O que o worker consulta para traduzir "syncar jogador" em trabalho:
-		// os clubes onde ele apareceu.
-		r.Get("/players/{playerId}/clubs", cl.ClubsDoJogador)
-		// Busca ao vivo na fonte: a busca local é a do diretório; esta é a
-		// saída para um clube que o hub ainda não viu.
-		r.Get("/search-pending", cl.ListPendingSearches)
-		r.Get("/search-run", cl.GetSearchRun)
-		r.Get("/admin/status", cl.AdminStatus)
-		// Saúde do worker de ingestão (ele não tem host próprio).
-		r.Get("/admin/ingest", cl.GetIngestEstado)
-		// Recorte PÚBLICO da saúde da fonte: só "a EA está respondendo?". É o
-		// que qualquer tela consulta para avisar da dificuldade de falar com a
-		// fornecedora dos dados, sem exigir login (a tela de resgate é pública).
-		r.Get("/source-status", cl.GetSourceStatus)
-
-		r.Post("/clubs", clw.UpsertClub)
-		r.Post("/clubs/{clubId}/totals", clw.UpsertTotais)
-		r.Post("/clubs/{clubId}/matches", clw.UpsertMatch)
-		r.Post("/clubs/{clubId}/snapshots", clw.AppendSnapshot)
-		// Totais de carreira de um jogador num clube (members/career/stats).
-		r.Post("/clubs/{clubId}/career", clw.SaveCareer)
-		r.Post("/announcements", clw.CreateAnnouncement)
-		r.Post("/watchlist", clw.SetWatch)
-		r.Post("/notifications", clw.SaveNotifications)
-		r.Post("/claimed-pro", clw.ClaimPro)
-		r.Post("/sync-status", clw.SaveSyncRun)
-		r.Post("/admin/ingest", clw.SaveIngestEstado)
-		// Sync sob demanda: a SPA pede, o worker Python busca. Um POST por tipo
-		// de alvo (o caminho é o que diz se é clube ou jogador).
-		r.Post("/clubs/{clubId}/fetch-run", clw.RequestFetch)
-		r.Post("/players/{playerId}/fetch-run", clw.RequestFetch)
-		r.Post("/fetch-run/result", clw.SaveFetchRun)
-		r.Post("/search-run", clw.RequestSearch)
-		r.Post("/search-run/result", clw.SaveSearchRun)
 
 		// Financeiro (spec docs/finance-system-spec.md §4.2): leituras puras
 		// servidas das projeções. A finance-api não tem banco e relaya estes
@@ -147,32 +56,6 @@ func NewRouter(h *Handlers, sync *SyncHandlers, cl *ClubsHandlers, clw *ClubsWri
 		r.Get("/finance/exchanges", fin.GetExchanges)
 		r.Get("/finance/investment-transactions", fin.GetInvestmentTransactions)
 		r.Get("/finance/openfinance/raw", fin.GetOFRaw)
-
-		// Prospecta (specs/004-prospecta): leitura projeta direto do banco;
-		// escrita publica o comando (202) que o domain-worker aplica.
-		r.Post("/companies", pr.CreateCompany)
-		r.Get("/companies/{id}", pr.GetCompany)
-		r.Post("/companies/{companyId}/icp", pr.DefineICP)
-		// Leitura do login por e-mail: cross-tenant de propósito (o e-mail é
-		// único global), por isso NÃO leva ?tenant_id=. Devolve o password_hash
-		// (rede interna) para o login verificar o bcrypt.
-		r.Get("/users/by-email/{email}", pr.GetUserByEmail)
-		// Leituras que a prospecta-api (ACL sem banco) consome. tenant_id vem
-		// por query, como em GetCompany.
-		r.Get("/campaigns", pr.ListCampaigns)
-		r.Get("/campaigns/{id}", pr.GetCampaign)
-		r.Get("/leads", pr.ListLeads)
-		r.Get("/leads/{id}", pr.GetLead)
-		r.Get("/conversations", pr.ListConversations)
-		r.Get("/conversations/{id}", pr.GetConversation)
-		r.Get("/messages/{id}", pr.GetMessage)
-		// Run do agente (o núcleo agêntico fecha/le o run), guardrail LGPD e
-		// resolução do telefone do WhatsApp de volta ao lead (cross-tenant).
-		r.Get("/agent/runs/{id}", pr.GetAgentRun)
-		r.Get("/opt-outs/{lead_id}", pr.GetOptOut)
-		r.Get("/leads/by-phone/{number}", pr.GetLeadByPhone)
-		// Feed SSE dos runs de agente do tenant (text/event-stream).
-		r.Get("/agent/activity", pr.AgentActivity)
 	})
 
 	return r
