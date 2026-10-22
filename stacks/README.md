@@ -28,8 +28,8 @@ volumes externos continuam exatamente os mesmos de antes.
 
 Duas convenções que o deploy agregado exige (o standalone não pedia):
 
-- **Binds relativos são pela RAIZ do repo** (`./maus/Caddyfile:...`,
-  `./maus/Caddyfile:...`) — no agregado o *project dir* é
+- **Binds relativos são pela RAIZ do repo** (`./maus/Caddyfile:...`) — no
+  agregado o *project dir* é
   `/opt/stacks/project-*`, então um caminho relativo errado montaria
   um diretório vazio no lugar do arquivo.
 - **Segredos continuam no Dockhand**: o `.env.dockhand` é gerado por deploy
