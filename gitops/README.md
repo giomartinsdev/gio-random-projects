@@ -112,7 +112,29 @@ explícito: o template upstream faz `storageClassName: ""` quando o campo
 está vazio, e string vazia significa "sem storage class" — o PVC fica
 `Pending` para sempre. `local-path` resolve.
 
-### 4. `commonLabels` do kustomize contamina `spec.selector`
+### 5. O DNS do Docker sombreia o Service do k8s
+
+Um container Docker que fala `domain-api:8000` resolve para `172.18.0.27` —
+o **container Docker**, não o ClusterIP do k8s. O DNS embutido do Docker
+responde primeiro, e o nome do container vence o nome do Service.
+
+Isso é bom e ruim:
+
+- **Bom**: virar o tráfego do ingress não quebra os consumidores internos que
+  ainda estão em Docker. Eles continuam falando com o container, e o pod fica
+  só atendendo o ingress.
+- **Ruim**: "migrei o serviço" não significa "ninguém mais usa o container". O
+  `finance-openfinance-worker` em Docker continuou postando em
+  `domain-api:8000` **depois** do cutover — para o container, não para o pod.
+  O container não fica ocioso, então desligá-lo derruba o worker.
+
+Consequência de ordem: **só desligue o container Docker depois de migrar (ou
+desligar) todos os consumidores internos dele**. Verificado com um container
+efêmero na rede `apps`: `domain-api:8000` (container), `10.43.247.168:8000`
+(ClusterIP do pod) e `postgres:5432` (ponte) respondem todos OK. As duas rotas
+coexistem — o que decide é qual nome o cliente usa.
+
+### 6. `commonLabels` do kustomize contamina `spec.selector`
 
 O kustomize injeta `commonLabels` **também no `spec.selector` dos Services**.
 Num `Service` de ponte isso é destrutivo: ele precisa ficar *sem* selector
@@ -303,7 +325,7 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | `adminer` | rodando (ocioso) | **rodando** (NodePort 30092) | **k8s** — `adminer` → `:30092` ✅ |
 | `domain-api` | rodando (ocioso) | **rodando** (NodePort 30800) | **k8s** — `domain` → `:30800` ✅ |
 | `domain-worker` | rodando | manifesto, **`replicas: 0`** | Docker (único escritor do CQRS) |
-| `finance-api` | rodando | **rodando** (ClusterIP:8000) | ainda no Docker (`finance-api` → `:8018`) |
+| `finance-api` | rodando (só consumo interno) | **rodando** (NodePort 30818) | **k8s** — `finance-api` → `:30818` ✅ |
 | `finance-openfinance-worker` | rodando | manifesto, **`replicas: 0`** | Docker |
 | `finance-customersupport-worker` | rodando | manifesto, **`replicas: 0`** | Docker |
 | `vaultwarden-api` | rodando | **rodando** (ClusterIP:8080) | sem tráfego externo (bridge interna) |
