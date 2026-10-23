@@ -1,0 +1,15 @@
+# O `kustomization.yaml` é o que marca este diretório como uma unidade
+# reconciliável. O ApplicationSet cria um Application para cada pasta em
+# gitops/apps/, e o ArgoCD usa este arquivo como entrypoint — os demais
+# YAMLs da pasta não precisam ser listados em lugar nenhum.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Declarado aqui, e não herdado do ApplicationSet: `destination.namespace` só
+# preenche manifesto que NÃO declara namespace. Com o namespace no kustomize,
+# `kustomize build` local e o ArgoCD produzem o mesmo resultado.
+namespace: applications
+
+resources:
+  - deployment.yaml
+  - service.yaml

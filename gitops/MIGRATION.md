@@ -45,7 +45,43 @@ A ordem é por risco crescente, e não por importância. Estado é sempre por
 | 4 ✅ | observabilidade | `prometheus`, `loki`, `tempo`, `grafana` ✅ + `alloy-logs` (novo, absorveu o OTLP em 2026-10-23) | volumes | médio |
 | 5 ✅ | dados de apoio | `minio` ✅, `rabbitmq` ✅ | volumes | médio |
 | 6 ✅ | dados primários | `postgres`, `vaultwarden`, `evolution-redis` ✅ (2026-10-23) | volumes | **alto** |
-| 7 ☐ | ingress + registry | `ingress`, `registry` | — | alto |
+| 7 ◐ | **fatiamento de namespaces** | todos os 14 serviços, 11 PVCs | volumes (rebind) | médio |
+| 8 ☐ | ingress + registry | `ingress`, `registry` | — | alto |
+
+## Fatia 7 — o fatiamento de namespaces
+
+`giomartins` virou quatro namespaces: `persistence`, `observability`,
+`applications` e `support`. O `gitops/LAYOUT.yaml` é o mapa.
+
+**Isto não é refactor de etiquetas.** Namespace é imutável em todo objeto: mover
+é recriar, e todo pod reinicia. Três fatos dominaram o desenho, e os três foram
+provados em cluster descartável **antes** de qualquer manifesto ser escrito:
+
+1. **PVC é namespaced e `reclaimPolicy=Delete`.** Apagar o PVC antigo apagaria o
+   dado. A saída não foi copiar 3 GB: foi rebind de PV com `Retain`
+   (`Bound → Released → Available → Bound`), que não move um byte no disco. A
+   prova mediu o marcador atravessando o rebind e comparou o `volumeName` do PVC
+   novo com o PV original — sem essa asserção, um volume **novo e vazio** também
+   deixa o pod subir, e o teste passaria com o banco perdido.
+
+2. **Nome curto só resolve no próprio namespace.** As URIs vivem nos **Secrets**
+   (`postgres://...@postgres:5432/`), e o repo é público: nenhum validador
+   estático consegue vê-las. A saída foi um `ExternalName` por nome que cruza
+   namespace — o nome continua igual, só a resolução muda. Seis aliases, listados
+   em `LAYOUT.yaml` e materializados em `gitops/apps/support/dns-aliases/`.
+
+3. **Mudar o namespace de um objeto faz o ArgoCD podar o antigo** (as
+   Applications têm `resources-finalizer` e `prune: true`). Por isso todo PV vai
+   a `Retain` **antes** de qualquer mudança, e o controlador do ArgoCD é
+   congelado durante a janela.
+
+A árvore passou a ser `gitops/apps/<namespace>/<serviço>/`, e o ApplicationSet
+tira o namespace de `{{index .path.segments 2}}`. "Adicionar uma pasta" continua
+valendo — a pasta agora diz onde o serviço mora.
+
+O ingress **não muda**: ele aponta para `127.0.0.1:3xxxx`, e NodePort é
+cluster-wide. Nenhum domínio troca de porta.
+
 
 **A fatia 6 foi fechada em 2026-10-23.** Antes dela, o usuário pediu o Rancher
 como plano de controle (2.15.2 instalado e validado, ver README). A fatia

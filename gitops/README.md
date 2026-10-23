@@ -476,6 +476,84 @@ disponibilidade precisa falhar no primeiro erro, não seguir adiante.
 (apagar o EndpointSlice, parar o container, remover a ponte) vem **depois** do
 passo que pode falhar por sintaxe, nunca antes.
 
+### 15. PVC não se move de namespace, e `Delete` apaga o dado quando você tenta
+
+PVC é namespaced; PV não. Não existe "mover um PVC" — o antigo tem que ser
+apagado e um novo criado no destino. Com `reclaimPolicy=Delete` (o padrão do
+`local-path`), apagar o PVC apaga o diretório: 2,4 GB de Postgres viram pó.
+
+O caminho que **não** copia um byte, e que foi provado num PVC descartável antes
+de encostar em produção:
+
+```
+Bound --(PVC apagado + Retain)--> Released
+      --(remover claimRef)--> Available
+      --(claimRef para o PVC futuro)--> Bound no MESMO diretório
+```
+
+O PV continua apontando para o mesmo `local.path`. Só o `claimRef` muda de
+`giomartins/postgres-data` para `persistence/postgres-data`.
+
+Três armadilhas apareceram na prova, e as três teriam custado a janela:
+
+**a) Pod existente prende o PVC em `Terminating` para sempre.** Apagar o PVC com
+o pod ainda no namespace — mesmo `Completed` — deixa o finalizer
+`pvc-protection` segurando, e `kubectl delete --wait=true` **bloqueia sem prazo**.
+Ordem obrigatória: workload → 0, *esperar o pod sumir de verdade*, só então PVC.
+
+**b) `Released` não aceita claim novo.** Setar `claimRef` num PV `Released` não
+transiciona nada. O PVC fica `Pending` e o provisioner cria um volume **novo e
+vazio**. O pod sobe, roda, e o dado não está lá. Tem que passar por `Available`
+antes, removendo o `claimRef`.
+
+**c) Sem asserção de identidade, o teste passa com o banco vazio.** Depois de
+criar o PVC, compare `volumeName` do PVC novo com o PV original. Um volume novo
+também deixa o pod subir; só essa comparação distingue "migrou" de "perdeu o
+dado". Foi exatamente o que a primeira versão da prova errou.
+
+Script: `gitops/bootstrap/namespace-cutover.sh`.
+
+### 16. Namespace é fronteira de DNS, e o nome está dentro do Secret
+
+`postgres:5432` resolve para `postgres.<namespace-do-cliente>.svc.cluster.local`.
+Depois de fatiar, o cliente em `applications` procuraria
+`postgres.applications...` e não acharia o Postgres em `persistence`.
+
+O agravante: a URI inteira mora no **Secret**
+(`postgres://usuario:senha@postgres:5432/domain`), e o repositório é público.
+Reescrever para FQDN seria editar segredo com senha, em produção, em dez lugares.
+
+**Regra**: um `Service` do tipo `ExternalName` no namespace do consumidor, com o
+nome curto apontando para o FQDN do produtor. O nome não muda; só a resolução.
+Provado: `t-svc:8080` respondeu de dentro de outro namespace.
+
+Porta não é proxiada num `ExternalName` — é CNAME. O cliente tem que discar a
+porta certa, e todos discam.
+
+### 17. `ClusterRoleBinding` guarda o namespace como texto, e o kustomize não o reescreve
+
+O `ClusterRoleBinding` do Alloy tinha:
+
+```yaml
+subjects:
+  - kind: ServiceAccount
+    name: alloy-logs
+    namespace: giomartins
+```
+
+`subjects` é uma lista de campos livres, não `metadata`: o transformer de
+`namespace:` do kustomize **não** o toca. Depois do fatiamento o binding existia,
+apontava para um namespace sem esse ServiceAccount, e o RBAC ficava inerte. O
+sintoma seria "o Alloy lê zero pods" — sem erro, com o ArgoCD verde.
+
+O mesmo vale para o filtro `discovery.kubernetes { namespaces { names = [...] } }`
+na config dele: listar só o namespace antigo faz o coletor ler zero pods depois
+do fatiamento.
+
+**Regra**: ao mover algo que tem RBAC, `grep` pelo nome do namespace em TODO o
+manifesto — não só em `metadata.namespace`.
+
+
 
 ## Bootstrap (uma vez por cluster)
 

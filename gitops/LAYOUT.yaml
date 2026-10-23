@@ -1,0 +1,44 @@
+# O mapa do fatiamento, num lugar só.
+#
+# ## Por que um mapa explícito e não uma convenção implícita
+#
+# O ApplicationSet poderia deduzir o namespace do caminho da pasta. Mas deduzir
+# significa que mover um diretório muda o namespace em silêncio -- e mudar de
+# namespace apaga e recria o objeto. Com o mapa explícito, a mudança aparece no
+# diff de UM arquivo.
+#
+# Este arquivo é lido por `gitops/bootstrap/sync-app-secrets.sh` e documenta o
+# que o ApplicationSet faz via `{{index .path.segments 2}}`.
+
+# namespace        | diretórios em gitops/apps/<namespace>/
+persistence:       postgres rabbitmq minio vaultwarden evolution-redis
+observability:     observability
+applications:      domain finance evolution-api vaultwarden-api 9router excalidraw
+support:           adminer db-mcp
+
+# ## As arestas que cruzam namespaces
+#
+# Formato: <namespace-consumidor>: <alias> -> <nome>.<namespace-produtor>
+#
+# O nome do alias é SEMPRE igual ao nome do Service real. É o invariante do
+# repositório: "todo Service no k8s tem exatamente o nome do serviço no Compose".
+# O que muda é só em qual namespace ele mora.
+#
+# Um alias `ExternalName` faz o nome curto continuar resolvendo em quem está
+# fora do namespace do produtor. Sem ele, `postgres:5432` dentro de
+# `applications` procuraria `postgres.applications.svc.cluster.local`, não acharia,
+# e as URIs dentro dos Secrets quebrariam em runtime -- com o ArgoCD verde.
+#
+# Provado em /tmp/prova3.sh: nome curto + porta preservados.
+aliases:
+  applications:
+    - alloy              -> alloy.observability.svc.cluster.local
+    - postgres           -> postgres.persistence.svc.cluster.local
+    - rabbitmq           -> rabbitmq.persistence.svc.cluster.local
+    - vaultwarden        -> vaultwarden.persistence.svc.cluster.local
+    - evolution-redis    -> evolution-redis.persistence.svc.cluster.local
+  support:
+    - postgres           -> postgres.persistence.svc.cluster.local
+  # observability não precisa de alias: prometheus, loki, tempo, grafana e alloy
+  # se referenciam por nome curto e moram todos no mesmo namespace.
+  # persistence não precisa: nada dentro dele fala com outro namespace.

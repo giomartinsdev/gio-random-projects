@@ -21,8 +21,45 @@
 #   sudo sync-app-secrets.sh domain-api   # aplica um
 set -uo pipefail
 
-NS="giomartins"
 K3S="k3s"
+
+# ## O namespace de destino de cada Secret
+#
+# Antes todos os Secrets nasciam em `giomartins`. Com o fatiamento, cada Secret
+# precisa nascer no namespace do Deployment que o lê — senão o pod falha em
+# `CreateContainerConfigError` enquanto o ArgoCD mostra o Deployment `Synced` e
+# `Healthy` (o objeto existe; só não sobe).
+#
+# ## Por que esta lista existe em vez de derivar do repo
+#
+# A tentação era varrer `gitops/apps/<ns>/<serviço>/` procurando quem referencia o
+# Secret, e usar o primeiro segmento do caminho. Funciona — testei. Mas **este
+# script roda no HOST, onde não existe clone do repositório**: ele é instalado
+# avulso em `/usr/local/sbin` e deriva os valores de `docker inspect`, não do git.
+#
+# Então o namespace é dado de entrada, como o nome do container já era. A
+# duplicação é real: esta tabela e `gitops/LAYOUT.yaml` descrevem o mesmo
+# fatiamento. Mitigação: o script FALHA ALTO se um Secret não tiver namespace
+# aqui, em vez de cair em `giomartins` silenciosamente.
+#
+# `case` em vez de `declare -A`: arrays associativos são bash 4+, e este script
+# roda também em máquina de desenvolvimento com o bash 3.2 do macOS.
+namespace_do_secret() {
+  case "$1" in
+    domain-api|domain-worker|finance-api|finance-customersupport-worker)
+      echo applications ;;
+    finance-openfinance-worker|vaultwarden-api|evolution-api|9router)
+      echo applications ;;
+    vaultwarden|minio|rabbitmq|postgres)
+      echo persistence ;;
+    grafana)
+      echo observability ;;
+    db-mcp|db-mcp-gateway)
+      echo support ;;
+    *)
+      return 1 ;;
+  esac
+}
 
 # Variáveis injetadas pela imagem base (Dockerfile/linguagem), não pela
 # aplicação: copiá-las para o Secret é ruído — e no caso do nginx elas são
@@ -144,9 +181,15 @@ for entrada in "${MAPA[@]}"; do
     continue
   fi
 
+  NS=$(namespace_do_secret "$secret") || NS=""
+  if [ -z "$NS" ]; then
+    echo "[erro] $secret não tem namespace mapeado — recusando cair no default"
+    continue
+  fi
+
   $K3S kubectl create secret generic "$secret" -n "$NS" \
       "${args[@]}" --dry-run=client -o yaml \
     | $K3S kubectl apply -f - >/dev/null
 
-  echo "[ok] secret/$secret <- $container ($qtd chaves)"
+  echo "[ok] secret/$secret <- $container ($qtd chaves) em $NS"
 done

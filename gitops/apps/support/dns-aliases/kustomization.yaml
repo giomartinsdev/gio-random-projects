@@ -1,0 +1,25 @@
+# dns-aliases — a ponte de DNS entre os namespaces fatiados.
+#
+# ## Sem `namespace:` de propósito
+#
+# Cada recurso em `aliases.yaml` declara o namespace do CONSUMIDOR, e eles são
+# diferentes entre si (`applications` e `support`). O campo `namespace:` do
+# kustomization é um transformer que sobrescreve `metadata.namespace` em TODOS
+# os recursos — usá-lo aqui jogaria todos os aliases no mesmo namespace e o
+# alias de `applications` deixaria de existir onde é necessário.
+#
+# Por isso o destino da Application (`support`, vindo do caminho) e o namespace
+# dos recursos divergem: é intencional e é o único diretório do repo onde isso
+# acontece. O `AppProject default` permite qualquer destino, então o ArgoCD
+# aplica cada alias onde ele manda.
+#
+# ## Por que uma Application e não um arquivo em cada app
+#
+# Os aliases formam um conjunto fechado (ver `gitops/LAYOUT.yaml`), e ter um só
+# lugar para lê-los é melhor que cinco cópias de `ExternalName` espalhadas por
+# kustomizations de aplicações que não têm nada a ver com DNS.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - aliases.yaml
