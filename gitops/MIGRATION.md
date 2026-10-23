@@ -43,16 +43,23 @@ A ordem é por risco crescente, e não por importância. Estado é sempre por
 | 3 ✅ | apps com dependência de dados | `domain-api` ✅, `domain-worker` ✅, `finance-api` ✅, `finance-*` ✅, `vaultwarden-api` ✅, `db-mcp` ✅ | — | trivial |
 | 3b ✅ | tráfego de apps já migrados | `adminer`, `draw`, `domain`, `finance-api` no ingress | — | uma linha |
 | 4 ✅ | observabilidade | `prometheus`, `loki`, `tempo`, `grafana` ✅ + `alloy-logs` (novo) | volumes | médio |
-| 5 ◐ | dados de apoio | `minio` ✅, `rabbitmq` (provisionado, **bloqueado**) | volumes | médio |
+| 5 ✅ | dados de apoio | `minio` ✅, `rabbitmq` ✅ | volumes | médio |
 | 6 ☐ | dados primários | `postgres`, `vaultwarden` | volumes | **alto** |
 | 7 ☐ | ingress + registry | `ingress`, `registry` | — | alto |
 
-**O `rabbitmq` não pode ser cortado sozinho.** Um broker é ponto de encontro
-compartilhado: se o Service passar a apontar para o pod enquanto algum consumidor
-ainda estiver em Docker, ficam dois brokers com zero estado compartilhado —
+**O `rabbitmq` foi cortado em 2026-10-23.** Um broker é ponto de encontro
+compartilhado: se o Service passasse a apontar para o pod enquanto algum consumidor
+ainda estivesse em Docker, ficariam dois brokers com zero estado compartilhado —
 `domain-api` publica num, `domain-worker` consome do outro, sem erro em log
-nenhum. Medido: 4 consumidores, todos em Docker. Ele sai depois de
-`evolution-api`, `domain-worker` e `finance-customersupport-worker`.
+nenhum. Por isso a ordem foi: migrar os quatro consumidores primeiro
+(`evolution-api`, `domain-worker`, `finance-customersupport-worker`, e parar os
+containers órfãos de `domain-api`/`finance-api`), e só então trocar o Service.
+
+O corte foi autorizado por comparação, não por "o pod subiu": os dois brokers
+rodaram em paralelo e `list_queues` / `list_exchanges` / `list_bindings` / `list_users`
+deram **diff vazio** (29 filas, 12 exchanges, 62 bindings, 1 usuário), incluindo as
+2341 + 9 mensagens de backlog. Um mnesia vazio também responde `ping` e sobe
+`1/1 Running` — o probe não distingue broker cheio de broker vazio.
 
 Fatias 5 e 6 são as únicas que exigem janela de manutenção. Todas as outras
 são quentes — com uma exceção que apareceu na prática: o `9router` também

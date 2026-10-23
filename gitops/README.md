@@ -218,6 +218,52 @@ Armadilha dentro da armadilha: `kubectl logs --since=20m | grep allPaths | tail 
 pode devolver uma linha **antiga** se o pod tiver acabado de subir. Comparar o
 campo `time` do JSON com `date -u`, não confiar na posição da linha.
 
+### 8. `.gitignore` com padrão não ancorado engole diretório do GitOps
+
+O `.gitignore` deste repo tem uma seção de templates Python/Node, e nela estava:
+
+```gitignore
+# RabbitMQ
+mnesia/
+rabbitmq/
+rabbitmq-data/
+```
+
+Sem a barra inicial, `rabbitmq/` casa com **qualquer** diretório chamado
+`rabbitmq` em **qualquer** nível — inclusive `gitops/apps/rabbitmq/`.
+
+A falha é silenciosa em três camadas:
+
+| sintoma | leitura errada | o que era |
+| --- | --- | --- |
+| `git add -A` não reclama | "foi commitado" | o caminho foi ignorado |
+| `git status` limpo | "nada pendente" | arquivo ignorado não aparece |
+| `ls gitops/apps/` mostra 13 | "13 apps" | o remoto tinha 12 |
+
+O ApplicationSet gerou **12** Applications, e eu vinha tratando o `rabbitmq` como
+"provisionado desde a fatia 5" — o arquivo existia no meu disco. O PVC nunca fora
+criado, e a descoberta só veio quando `kubectl get pvc rabbitmq-data` deu NotFound
+no meio do cutover.
+
+A lição é sobre qual pergunta cada ferramenta responde:
+
+- `ls` / `find` → **existe no disco**
+- `git status` → **há mudança não commitada** (não: "tudo está no remoto")
+- `kubectl get` → **existe no cluster**
+
+Para o GitOps, só a terceira importa. Depois de criar qualquer diretório novo em
+`gitops/`, confirmar os dois lados:
+
+```bash
+git ls-tree -r origin/main --name-only | grep gitops/apps/<novo>   # está no remoto?
+kubectl get app <novo> -n argocd                                    # o ArgoCD viu?
+```
+
+Padrões de dados (`rabbitmq/`, `mnesia/`, `postgres/`) devem ser ancorados na
+raiz (`/rabbitmq/`) ou escopados por caminho. Verificar com
+`git status --ignored --porcelain gitops/` — o `!!` é a única forma de ver o que
+o git está escondendo.
+
 ## Bootstrap (uma vez por cluster)
 
 ```bash
@@ -385,7 +431,7 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | `vaultwarden` | rodando | manifesto, **`replicas: 0`** | Docker (`vault` → `:8222`) |
 | `9router` | rodando | manifesto, **`replicas: 0`** | Docker (`ai` → `:20128`) — **exige parada** |
 | `minio` | rodando (rollback) | **rodando** (NodePort 30900/30901) | **k8s** — 8 buckets idênticos, 3 SPAs ✅ |
-| `rabbitmq` | rodando | manifesto, **`replicas: 0`**, sem Service | **bloqueado**: 4 consumidores em Docker |
+| `rabbitmq` | rodando (rollback) | **rodando** (NodePort 31525/30672) | **k8s** — 29 filas, 12 exchanges, 62 bindings idênticos ✅ |
 | `prometheus` | rodando | **rodando** (ClusterIP:9090) | **k8s** — 898M copiados, 8.841 séries ✅ |
 | `loki` | rodando | **rodando** (ClusterIP:3100) | **k8s** — 976M copiados ✅ |
 | `tempo` | rodando | **rodando** (ClusterIP:3200) | **k8s** — 308M copiados ✅ |
@@ -407,15 +453,14 @@ RAM. Sobram ~10 GB. Nenhuma porta do host foi disputada — o cluster usa
 
 ### Serviços de ponte (`gitops/apps/bridges/`)
 
-Cinco `Service` sem selector, ligados por `EndpointSlice` aos containers Docker
-que ainda não migraram. Eram sete; `minio` migrou na fatia 5 (virou Service com
-selector em `gitops/apps/minio/`), e `vaultwarden` tinha migrado antes. Os nomes são **idênticos aos do Compose** — é o que
+Quatro `Service` sem selector, ligados por `EndpointSlice` aos containers Docker
+que ainda não migraram. Eram sete; `minio` migrou na fatia 5 e `rabbitmq` em
+2026-10-23 (viraram Services com selector em `gitops/apps/<app>/`). Os nomes são **idênticos aos do Compose** — é o que
 permite migrar um consumidor sem tocar em nenhuma env var:
 
 | Service | container | porta |
 | --- | --- | --- |
 | `postgres` | postgres | 5432 |
-| `rabbitmq` | rabbitmq | 5672 |
 | `alloy` | alloy | 4318 |
 | `evolution-api` | evolution-api | 8080 |
 | `evolution-redis` | evolution-redis | 6379 |
@@ -423,6 +468,11 @@ permite migrar um consumidor sem tocar em nenhuma env var:
 
 Morrem quando os dados migrarem (fatia 6): aí o `Service` ganha `selector` e o
 `EndpointSlice` manual deixa de existir.
+
+**`rabbitmq` saiu desta lista em 2026-10-23**, e o motivo de ter sido o último
+está em `gitops/apps/rabbitmq/deployment.yaml`: um broker é ponto de encontro
+compartilhado, e cortá-lo com qualquer consumidor ainda em Docker cria dois
+brokers com zero estado compartilhado, sem erro em log nenhum.
 
 **Exceção deliberada: `rabbitmq`.** Ele tem manifesto pronto com `replicas: 0` e
 **sem** `service.yaml`, porque um broker só pode ser cortado quando todos os
@@ -435,22 +485,29 @@ publishers e consumers estiverem do mesmo lado. Ver
 | --- | --- |
 | 30023 | excalidraw |
 | 30028 | 9router (**reservado**, pod em `replicas: 0`) |
-| 30567 | rabbitmq amqp (**reservado**, pod em `replicas: 0`) |
-| 30572 | rabbitmq management (**reservado**) |
 | 30080 | argocd-server |
 | 30092 | adminer |
 | 30200 | kubero |
 | 30300 | grafana |
 | 30421 | ingress-nginx (https) |
+| 30672 | rabbitmq management |
 | 30800 | domain-api |
+| 30808 | evolution-api |
 | 30818 | finance-api |
 | 30900 | minio s3 |
 | 30901 | minio console |
 | 30945 | ingress-nginx (http) |
+| 31525 | rabbitmq amqp (NodePort automático) |
 
 `30028` está reservado pelo Service do `9router` mesmo sem pod: um Service
 `NodePort` existe independente de ter endpoint. Reservar antes é de propósito —
 quem for escolher a próxima porta vê o número ocupado e não planeja em cima dele.
+
+`31525` é o NodePort do AMQP e não foi escolhido à mão: o Service declara
+`nodePort` só para o `management`. Os pods não precisam dele (usam o ClusterIP
+5672); ele existe porque o k3s aloca um por padrão. Nenhum NodePort é alcançável
+de fora — o firewall do host bloqueia `30000-32767`, verificado com `curl` do IP
+público.
 
 ### O que foi provado, não assumido
 
@@ -592,14 +649,15 @@ O que foi feito, em ordem:
 
 Ordem daqui pra frente:
 
-1. **Fatia 5** (`minio`, `rabbitmq`): janela de manutenção, rollback médio.
-   `finance.giomartins.dev` sai junto — não é container, é bucket do minio.
-2. **Fatia 6** (`postgres`, `vaultwarden`): janela, backup verificado,
-   rollback alto.
-3. **`9router`** (fatia 2): provisionado, `replicas: 0`. Exige parada por causa
+1. **Fatia 6** (`postgres`, `vaultwarden`): janela, backup verificado,
+   rollback alto. É o último bloqueio grande.
+2. **`9router`** (fatia 2): provisionado, `replicas: 0`. Exige parada por causa
    do SQLite com WAL — ver o procedimento escrito no topo de
    `gitops/apps/9router/deployment.yaml`. **Não é migrável pelo agente sem
    aceitar o risco**: ele serve a própria sessão que faria a migração.
+3. **`evolution-redis`**: ainda é ponte. Não é cache descartável — guarda o
+   estado Baileys da sessão do WhatsApp (2M, AOF + RDB). Migra com o mesmo
+   cuidado de um banco, não como cache.
 4. **`tela-*`** por último: `hostNetwork` + UDP (coturn/mediamtx).
 
 ### O que ainda está em Docker e por quê
@@ -608,12 +666,10 @@ Não é pendência esquecida, é ordem deliberada:
 
 | serviço | o que falta |
 | --- | --- |
-| `minio` | fatia 5 — `finance.giomartins.dev` é bucket dele, não container |
-| `rabbitmq` | fatia 5 — 113M de volume, fila de produção |
 | `postgres` | fatia 6 — 332M de dump, é o banco de tudo |
 | `vaultwarden` | fatia 6 — senha do cofre, SQLite |
 | `9router` | parada obrigatória (WAL) + é a porta de IA do host |
-| `evolution-api` + `evolution-redis` | WhatsApp; parar desconecta a sessão |
+| `evolution-redis` | guarda a sessão Baileys; migra como banco, não como cache |
 | `tela-*` | `hostNetwork` + UDP (coturn, mediamtx) |
 | `maus` | `docker.sock` + `/data` do host; exige redesenho |
 | `alloy` | não alcança a API do k3s; `alloy-logs` cobre os pods |
