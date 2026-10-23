@@ -44,7 +44,7 @@ A ordem é por risco crescente, e não por importância. Estado é sempre por
 | 3b ✅ | tráfego de apps já migrados | `adminer`, `draw`, `domain`, `finance-api` no ingress | — | uma linha |
 | 4 ✅ | observabilidade | `prometheus`, `loki`, `tempo`, `grafana` ✅ + `alloy-logs` (novo, absorveu o OTLP em 2026-10-23) | volumes | médio |
 | 5 ✅ | dados de apoio | `minio` ✅, `rabbitmq` ✅ | volumes | médio |
-| 6 ✅ | dados primários | `postgres`, `vaultwarden` | volumes | **alto** |
+| 6 ✅ | dados primários | `postgres`, `vaultwarden`, `evolution-redis` ✅ (2026-10-23) | volumes | **alto** |
 | 7 ☐ | ingress + registry | `ingress`, `registry` | — | alto |
 
 **A fatia 6 foi fechada em 2026-10-23.** Antes dela, o usuário pediu o Rancher
@@ -77,6 +77,51 @@ eles. O domínio servia ora o pod, ora o container. No vaultwarden o sintoma era
 mudo (os dois respondem o mesmo `/api/config`); no postgres seria escrito nos
 dois bancos. Por isso os dois saíram do `MAPA` do timer **no mesmo commit** em
 que o Service ganhou selector.
+
+### `evolution-redis` — 2026-10-23, a última ponte
+
+O único serviço da migração cuja janela **não** foi `stop → cp -a → start`. Não
+por escolha estética: o Redis tem replicação nativa, e os pods já alcançavam o
+container pela ponte que a migração ia substituir. Parar para copiar 2.1 MB
+custaria indisponibilidade de um serviço que o `evolution-api` usa a cada
+mensagem, sem ganho nenhum.
+
+A sequência, e nenhum passo dela é opcional:
+
+1. pod sobe **vazio** (`replicas: 1`, sem esperar janela) — um Redis vazio é
+   inofensivo, porque o nome `evolution-redis` ainda é a ponte e ninguém o
+   resolve;
+2. `REPLICAOF evolution-redis 6379` de dentro do pod → full-sync do dataset;
+3. prova de **conteúdo**, não de contagem: `md5` dos 860 pares campo+valor do
+   hash Baileys, igual nos dois lados
+   (`9ba50a5a3e2e031aa8d7a6f812a0f94e`);
+4. `delete pod` → o pod volta com `HLEN=860` lendo o próprio AOF do PVC. Sem
+   esse teste o PVC seria uma promessa, não uma prova;
+5. `REPLICAOF NO ONE` promove o pod a mestre;
+6. `CLIENT KILL TYPE normal` no container força o `evolution-api` a reconectar
+   — ele cai no Service, que já aponta para o pod;
+7. `docker stop evolution-redis`.
+
+O que guarda esse Redis é `evolution:instance:4b81fda4-…`, um hash de 860 campos
+com `pre-key-*`, `session-<jid>_1.0`, `tctoken-*`, `app-state-sync-key-*`. São
+as chaves de criptografia do Baileys: perder isso exige repareamento com QR do
+número que atende produção. `CACHE_REDIS_SAVE_INSTANCES=false` no
+`evolution-api` **não** significa "não persiste" — controla o registro da
+instância no cache, não as chaves.
+
+Verificado depois de tudo: instância `web-businesses`,
+`connectionStatus: open`, owner `5521982397951@s.whatsapp.net`, 983 mensagens —
+o mesmo estado de antes, com o container parado e o pod reiniciado.
+
+**O incidente desta janela, e o que ele ensinou.** O primeiro `apply` do Service
+com selector falhou validação (`apiVersion` cortado por um `awk`), mas o script
+seguiu adiante depois de já ter apagado o EndpointSlice manual: por cerca de dois
+minutos o `evolution-redis` ficou **sem endpoint nenhum** no cluster. O
+`evolution-api` não quebrou porque a conexão já estabelecida sobreviveu no
+conntrack — ou seja, a falha era invisível e teria aparecido no próximo
+reconnect. A lição: em script de cutover, `set -e` não é rigor, é o que impede
+que um erro de sintaxe vire um passo a mais. O `abortar` que eu tinha escrito
+para offsets diferentes salvou o corte uma vez; não salvou desta.
 
 **Plano de controle exposto em 2026-10-23**: `https://rancher.giomartins.dev`
 (DNS via Terraform, `server{}` com upstream HTTPS no ingress). Não entra como

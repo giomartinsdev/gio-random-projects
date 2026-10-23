@@ -454,6 +454,28 @@ do profile.
 **Regra**: ao aposentar um serviço, `restart: "no"` **e** `profiles: ["retired"]`.
 O primeiro é higiene; o segundo é o que segura o redeploy diário.
 
+### 14. Script de cutover sem `set -e` transforma erro de sintaxe em queda
+
+Aconteceu no `evolution-redis` (2026-10-23). O script de cutover fazia, nesta
+ordem: parar o timer → **apagar o EndpointSlice manual** → aplicar o Service com
+selector. O `apply` falhou — um `awk` meu tinha cortado a linha `apiVersion: v1`
+ao extrair o manifesto — mas o script continuou e reportou sucesso nos passos
+seguintes.
+
+Resultado: por cerca de dois minutos o `evolution-redis` ficou **sem endpoint
+nenhum**. O `evolution-api` não quebrou, e é exatamente por isso que o erro era
+perigoso: a conexão TCP já estabelecida sobreviveu no conntrack e continuou
+servindo. A falha só apareceria no próximo reconnect — possivelmente às 03:00,
+no redeploy do Dockhand, sem ninguém olhando.
+
+O `set -uo pipefail` que eu tinha posto **não** aborta em comando que falha; só
+`-e` (ou `&&` explícito, ou checar `$?`) faz isso. Um script que mexe em
+disponibilidade precisa falhar no primeiro erro, não seguir adiante.
+
+**Regra**: script de janela começa com `set -euo pipefail`. E o passo destrutivo
+(apagar o EndpointSlice, parar o container, remover a ponte) vem **depois** do
+passo que pode falhar por sintaxe, nunca antes.
+
 
 ## Bootstrap (uma vez por cluster)
 
@@ -1067,9 +1089,14 @@ Ordem daqui pra frente:
    do SQLite com WAL — ver o procedimento escrito no topo de
    `gitops/apps/9router/deployment.yaml`. **Não é migrável pelo agente sem
    aceitar o risco**: ele serve a própria sessão que faria a migração.
-2. **`evolution-redis`**: ainda é ponte. Não é cache descartável — guarda o
-   estado Baileys da sessão do WhatsApp (2M, AOF + RDB). Migra com o mesmo
-   cuidado de um banco, não como cache.
+2. ~~**`evolution-redis`**: ainda é ponte.~~ **Migrado em 2026-10-23**, sem
+   parada, por `REPLICAOF` em vez de `cp -a`: o Redis tem replicação nativa e os
+   pods já alcançavam o container pela ponte. Provado por md5 dos 860 pares
+   campo+valor do hash Baileys, e por `delete pod` com retorno de `HLEN=860`
+   lendo o AOF do PVC. O WhatsApp continuou `open` (owner
+   `5521982397951@s.whatsapp.net`, 983 mensagens) com o container já parado.
+   Detalhe: `CACHE_REDIS_SAVE_INSTANCES=false` não significa "não persiste" —
+   controla o registro da instância, não as chaves.
 3. **Fatia 7** (`ingress`, `registry`): risco alto e ganho baixo. O `ingress` é
    o que serve os 19 hosts; trocá-lo é trocar o caminho de todo o tráfego por um
    Ingress do cluster que hoje serve **zero** objetos. O `registry` guarda as
@@ -1086,7 +1113,7 @@ Não é pendência esquecida, é ordem deliberada:
 | `postgres` | migrado (fatia 6) — o container é rollback congelado |
 | `vaultwarden` | migrado (fatia 6) — idem |
 | `9router` | parada obrigatória (WAL) + é a porta de IA do host |
-| `evolution-redis` | guarda a sessão Baileys; migra como banco, não como cache |
+| `evolution-redis` | **migrado em 2026-10-23** — container parado, volume intacto como rollback |
 | `tela-*` | `hostNetwork` + UDP (coturn, mediamtx) |
 | `maus` | `docker.sock` + `/data` do host; exige redesenho |
 | `alloy` | container de pé como rollback; o OTLP já é do pod `alloy-logs` |
@@ -1107,11 +1134,14 @@ Ficam de fora, e por motivo, não por esquecimento:
 
 ## Dívidas conhecidas
 
-1. **IP do container nas pontes.** O `EndpointSlice` manual carrega o IP do
-   container Docker. Mitigado pelo `sync-external-endpoints.timer` (1 min),
-   mas o timer é um processo no host, fora do GitOps. Resta **uma** ponte
-   (`evolution-redis`); `postgres` e `vaultwarden` saíram na fatia 6 e `alloy`
-   em 2026-10-23 (o Service ganhou selector e aponta para `alloy-logs`).
+1. ~~**IP do container nas pontes.**~~ **Resolvida em 2026-10-23.** Não existe
+   mais nenhum Service de ponte: o último, `evolution-redis`, ganhou selector e
+   o `MAPA` do timer ficou `()`. `postgres` e `vaultwarden` saíram na fatia 6,
+   `alloy` e `evolution-redis` em 2026-10-23. O timer continua instalado e ativo,
+   rodando a cada minuto sem tocar em nada — é a rede de segurança para um
+   rollback de emergência (basta devolver a linha ao `MAPA`). Ele sai junto com o
+   Docker, no fim. Verificado: **0** EndpointSlices sem `managed-by` no
+   namespace.
 2. ~~Patch do `argocd-cm` não versionado.~~ **Resolvido** em
    `gitops/bootstrap/argocd/` — lista versionada + script idempotente. Ainda é
    um passo manual no bootstrap, mas não depende mais de memória.
