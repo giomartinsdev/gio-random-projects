@@ -87,8 +87,10 @@ spec:
         fsGroup: 65532
       containers:
         - name: tela-api
-          # Mesmo digest do container em produção (registry interno).
-          image: registry.giomartins.dev:5000/tela-api@sha256:35952b2b64fa1e31b83d3e61dfe6dcff92dc42dbb0f3cb5bdd6afdd795086b9f
+          # Buildado na VPS (arm64 nativo) em 2026-10-23 a partir do commit
+          # 57ce45a, que corrige o deadlock do `Delete` (armadilha 34). O
+          # digest anterior (`35952b2b...`) é a imagem que tinha o bug.
+          image: registry.giomartins.dev:5000/tela-api@sha256:91f313c461799b0f05021802ec8e259e5e7b0c234614811cd241afbdb8e6cf65
           imagePullPolicy: IfNotPresent
           env:
             - name: PORT
