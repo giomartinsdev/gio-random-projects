@@ -42,7 +42,6 @@ kind: Kustomization
 namespace: giomartins
 
 resources:
-  - postgres.yaml
   - alloy.yaml
   - evolution-redis.yaml
 
