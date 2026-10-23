@@ -1023,7 +1023,8 @@ Ficam de fora, e por motivo, não por esquecimento:
 
 1. **IP do container nas pontes.** O `EndpointSlice` manual carrega o IP do
    container Docker. Mitigado pelo `sync-external-endpoints.timer` (1 min),
-   mas o timer é um processo no host, fora do GitOps. Morre com as fatias 5/6.
+   mas o timer é um processo no host, fora do GitOps. Restam **duas** pontes
+   (`alloy`, `evolution-redis`); `postgres` e `vaultwarden` saíram na fatia 6.
 2. ~~Patch do `argocd-cm` não versionado.~~ **Resolvido** em
    `gitops/bootstrap/argocd/` — lista versionada + script idempotente. Ainda é
    um passo manual no bootstrap, mas não depende mais de memória.
@@ -1031,9 +1032,9 @@ Ficam de fora, e por motivo, não por esquecimento:
    instalados à mão em `/usr/local/sbin`. Funcionam e são idempotentes, mas não
    são reconciliados por nada — se a máquina for recriada, alguém precisa
    lembrar de rodá-los. O `bootstrap.sh` do repositório deve cobrir isso.
-4. **`vaultwarden` aparece como `Progressing` no ArgoCD.** Deployment com
-   `replicas: 0` nunca reporta `AvailableReplicas`, então o health check fica
-   inconclusivo para sempre. Cosmético, mas ruído no painel.
+4. ~~**`vaultwarden` aparece como `Progressing` no ArgoCD.**~~ **Resolvido** na
+   fatia 6: com `replicas: 1` o Deployment reporta `AvailableReplicas` e o health
+   fica `Healthy`.
 5. ~~**Os pods migrados não têm log no Loki.**~~ **Resolvido** — o coletor
    `alloy-logs` roda no cluster e cobre os pods (`loki.source.kubernetes`) e o
    que resta em Docker (`loki.source.docker` via `hostPath`).
@@ -1089,3 +1090,23 @@ Ficam de fora, e por motivo, não por esquecimento:
    disputar os mesmos objetos. Além disso, Turtles + CAPI (2 pods, ~86 Mi)
    existem para provisionar clusters que este nó único nunca vai provisionar.
    A decisão de qual plano de controle fica ainda não foi tomada.
+15. **`/opt/giomartins/stacks/` no host DIVERGE do `stacks/` no git.** Descoberto
+   ao aplicar o `restart: "no"` da fatia 6. Comparação direta:
+
+   | arquivo | host (produção) | repo (git) |
+   | --- | --- | --- |
+   | `persistence.yml` | `postgres`, **`redis`**, `minio`, `minio-buckets` | `postgres`, **`rabbitmq`**, `minio`, `minio-buckets` |
+
+   O host declara um serviço `redis` que nunca criou container (o Redis vivo é o
+   `evolution-redis`, que não é declarado em stack nenhuma), e o repo já trocou
+   esse slot pelo `rabbitmq`. **Copiar o arquivo do repo para o host apagaria a
+   declaração `redis`** — por isso a mudança da fatia 6 foi aplicada cirurgicamente
+   (só a linha de `restart`), não por `scp`.
+
+   Consequência: o repo **não é** a fonte da verdade do Docker. O plano de
+   controle real dos 24 containers ainda é o Dockhand + estes arquivos editados
+   à mão. Enquanto a fatia 7 (`ingress`, `registry`) não fechar, isso não dói;
+   depois dela, um `docker compose up` a partir do repo pode divergir do que
+   está rodando. A saída é reconciliar os dois lados e versionar o que falta
+   (`evolution-redis`, o stack `ai`), ou desligar o Dockhand e tratar o repo como
+   fonte única.
