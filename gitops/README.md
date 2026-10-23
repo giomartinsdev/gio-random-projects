@@ -1385,5 +1385,67 @@ Ficam de fora, e por motivo, não por esquecimento:
    mas um upload feito pelo console cai no MinIO velho e **não aparece nos
    sites**. Correção: trocar o `proxy_pass` para `127.0.0.1:30901` (o NodePort do
    console do pod) e só então parar o container.
+18. **Todo cliente guarda o ClusterIP, e o alias não o conserta.** Quando um
+   produtor muda de namespace, o Service antigo vira `ExternalName` e ganha
+   **outro** ClusterIP. Clientes que resolveram o nome uma vez continuam
+   discando para o IP morto para sempre. Visto em três formas:
+
+   - `ioredis` (`evolution-api`): `redis disconnected` a cada segundo, DNS
+     resolvendo certo, TCP aberto pelo `nc`. O pod tinha nascido 6 h antes do
+     alias; o IP antigo (`10.43.236.33`) estava morto. Curou com
+     `rollout restart`.
+   - `amqplib` (`domain-worker`): `dial tcp 10.43.108.164:5672: connection
+     refused`. Curou sozinho no retry — `amqplib` re-resolve, `ioredis` não.
+   - OTLP/gRPC (`alloy`): `rpc error: code = Unavailable desc = no children to
+     pick from`. O resolver gRPC guardou a resolução vazia de quando o `tempo`
+     ainda não tinha endpoints. Curou com restart.
+
+   **Regra**: depois de mover um produtor, reiniciar todo consumidor que ainda
+   esteja no namespace antigo. Não confiar em "não há erro no log" — ausência de
+   erro é compatível com cliente que nunca reconectou.
+
+   **Corolário para verificação**: `nslookup`, `getent` e `nc` de dentro do pod
+   provam **DNS e rede**, não provam **o cliente da aplicação**. São testes que
+   passam enquanto o serviço está caído. A prova tem que ser o contador do
+   próprio cliente (`sent_spans_total`, `loki_write_sent_entries_total`) ou um
+   registro novo no destino.
+19. **`kubectl apply -f` em manifesto cru ignora o `namespace:` do
+   kustomization.** O `deployment.yaml` não tem `namespace:` — ele vive em
+   `kustomization.yaml`, e o transformer do kustomize é quem o injeta. Aplicar o
+   arquivo cru cria tudo em `default`:
+
+   - o PVC nasce em `default`, o `local-path` provisiona um volume **novo e
+     vazio**, e o pod sobe "saudável" ao lado do real;
+   - dois Redis rodando, um com 860 chaves e outro com zero. Nada no
+     `kubectl get pods` distingue os dois.
+
+   **Regra**: `apply -k`, ou aplicar a saída de `kubectl kustomize`, que já traz
+   `namespace:` em cada documento. Nunca `apply -f` num arquivo de app.
+20. **Um detector de PVC que falha em silêncio é pior que nenhum.** O movedor da
+   fatia 7 dizia `sem PVC — nada a rebindar` e seguia. O `awk` usava
+   `match(doc, /^  name: .../)` sobre um buffer **multi-linha**, e `^` em awk
+   ancora no início da *string*, não da linha. Resultado: zero PVCs detectados,
+   `apply` criou um PVC novo, e o **Postgres subiu com 0 tabelas** enquanto as
+   1176 linhas de `finance_transactions` ficavam num PV órfão. Restaurado sem
+   perda (rebind no PV original, contagem conferida), mas o serviço ficou vazio
+   por alguns minutos e os workers registraram
+   `relation "finance_of_accounts" does not exist`.
+
+   **Regra**: quando o render declara PVC e o PV não é encontrado, **abortar**.
+   E a testemunha de integridade é **bytes**, não contagem de arquivos — o Loki
+   apaga chunks obsoletos ao fechar (5092 → 5090) e abortou a janela por engano.
+21. **Esperar `Ready` antes de publicar o Service trava dependência
+   intra-namespace.** O `db-mcp-gateway` (nginx) resolve o upstream `db-mcp` no
+   start e morre com `host not found in upstream` se o Service não existir. A
+   ordem "aplicar workload → esperar Ready → trocar Services" esperava Ready de
+   um pod que só ficaria Ready depois da troca. Agora o Service sobe antes, como
+   `ClusterIP` sem `nodePort` (a porta 30xxx continua com o Service antigo até o
+   workload provar que serve).
+
+   **Armadilha dentro da armadilha**: a fase 5 (apagar o Deployment antigo)
+   rodava mesmo quando a fase 4 falhava. O `db-mcp-gateway` de produção ficou
+   sem NodePort (`HTTP 000`) por alguns minutos. O Deployment antigo **é** o
+   rollback — ele só pode cair quando o Service novo está no ar.
+
 
 
