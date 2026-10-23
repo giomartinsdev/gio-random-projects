@@ -19,7 +19,7 @@
 #
 #   domain.giomartins.dev   -> 127.0.0.1:30800   (NodePort do pod)
 #   grafana.giomartins.dev  -> 127.0.0.1:30300
-#   ai.giomartins.dev       -> 127.0.0.1:20128   (container Docker, ainda)
+#   ai.giomartins.dev       -> 127.0.0.1:30028   (pod 9router, NodePort)
 #
 # Num pod comum, `127.0.0.1` é o loopback **do pod**, onde ninguém escuta — e
 # os 19 hosts dariam 502 de uma vez. Com `hostNetwork`, o pod compartilha a
