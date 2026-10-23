@@ -13,9 +13,14 @@ metadata:
   labels:
     app.kubernetes.io/name: finance-api
 spec:
+  # NodePort para o ingress alcancar o pod. 8018 -> 30818 (convencao 80xx->308xx).
+  # O ClusterIP 8000 continua valendo: finance-workers e qualquer pod falam
+  # `finance-api:8000` pelo DNS do cluster, como faziam na rede `apps`.
+  type: NodePort
   selector:
     app.kubernetes.io/name: finance-api
   ports:
     - name: http
       port: 8000
       targetPort: http
+      nodePort: 30818
