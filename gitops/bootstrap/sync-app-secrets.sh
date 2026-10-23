@@ -82,6 +82,15 @@ MAPA=(
   # `RABBITMQ_DEFAULT_USER` faz o entrypoint falhar alto, o que e melhor que
   # subir sem autenticacao.
   "rabbitmq:rabbitmq:RABBITMQ_DEFAULT_USER,RABBITMQ_DEFAULT_PASS"
+  # postgres: so as tres credenciais. As outras vars do container
+  # (PG_MAJOR, PG_SHA256, DOCKER_PG_LLVM_DEPS) sao da IMAGEM, nao do Compose --
+  # copia-las para o Secret seria ruido que muda a cada rebuild da imagem.
+  #
+  # Com o PGDATA ja populado, POSTGRES_PASSWORD nao e aplicado (a senha real
+  # esta em pg_authid). As tres precisam existir para o caso de o PVC ser
+  # recriado do zero: `initdb` exige user/password, e sem elas o pod falharia
+  # alto -- melhor que subir um banco vazio sem autenticacao.
+  "postgres:postgres:POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB"
   # evolution-api: as tres chaves que contem segredo. As outras ~55 do container
   # sao configuracao (quais eventos publicar, caminhos, log level) e ficam no
   # manifesto, onde aparecem no diff. Esconder configuracao num Secret nao a

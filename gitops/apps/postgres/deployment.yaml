@@ -82,9 +82,13 @@ spec:
   #   6. comparar contagem de linhas contra o baseline anotado antes da parada
   #   7. só então trocar o Service (ponte -> selector)
   #
-  # 1 réplica quando subir, e não escala: local-path é RWO e o Postgres não é
-  # replicado. `Recreate` porque duas instâncias no mesmo PGDATA corrompem.
-  replicas: 0
+  # 1 desde 2026-10-23, com o PGDATA já copiado e validado: 2.4G nos dois
+  # lados, `base/` íntegro, e a única diferença de inventário é `postmaster.pid`
+  # — que NÃO podia ser copiado, é o PID do container antigo.
+  #
+  # 1 réplica, e não escala: local-path é RWO e o Postgres não é replicado.
+  # `Recreate` porque duas instâncias no mesmo PGDATA corrompem.
+  replicas: 1
   strategy:
     type: Recreate
   selector:
