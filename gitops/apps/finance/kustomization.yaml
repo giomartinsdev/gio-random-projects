@@ -23,14 +23,12 @@ commonLabels:
 
 # Os workers precisam de réplicas 0 até a janela de cutover. Declarado aqui em
 # vez de em cada arquivo para que a intenção fique no topo do diretório.
+#
+# `finance-openfinance-worker` saiu desta lista: já migrou. Ele não é consumidor
+# de fila (é poller agendado, ~2,5 min), então duas réplicas fariam sync
+# duplicado em vez de processar a mesma mensagem duas vezes. O corte foi feito
+# parando o container Docker, e o container só volta se este pod falhar.
 patches:
-  - target:
-      kind: Deployment
-      name: finance-openfinance-worker
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 0
   - target:
       kind: Deployment
       name: finance-customersupport-worker
