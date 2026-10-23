@@ -34,9 +34,9 @@ metadata:
   labels:
     app.kubernetes.io/name: tela-mediamtx
 spec:
-  # 0 até o corte: com o container Docker de pé, este pod tentaria bindar a
-  # 8217 (TCP e UDP) e entraria em CrashLoop por COLISÃO, não por bug.
-  replicas: 0
+  # 1 desde o corte de 2026-10-23: o container Docker foi parado antes, então as
+  # portas 8217 (TCP+UDP) são exclusivas deste pod.
+  replicas: 1
   # hostNetwork + portas fixas: duas réplicas disputariam as mesmas portas do
   # host. Não existe sobreposição possível, só troca.
   strategy:

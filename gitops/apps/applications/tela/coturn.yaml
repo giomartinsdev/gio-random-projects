@@ -41,8 +41,9 @@ metadata:
   labels:
     app.kubernetes.io/name: tela-coturn
 spec:
-  # 0 até o corte: a porta 3478 (TCP+UDP) e a faixa de relay são do host.
-  replicas: 0
+  # 1 desde o corte de 2026-10-23: o container Docker foi parado antes, então a
+  # 3478 (TCP+UDP) e a faixa de relay são exclusivas deste pod.
+  replicas: 1
   strategy:
     type: Recreate
   selector:
