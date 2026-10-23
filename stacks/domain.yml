@@ -10,12 +10,16 @@
 name: domain
 
 services:
+  # MIGRADO para o k8s (fatia 3). O pod atende `domain.giomartins.dev` (:30800).
+  # `profiles` segura o `compose up` diário do Dockhand; `restart: "no"` sozinho
+  # não basta (up sobe container parado de qualquer jeito).
   domain-api:
     image: registry.giomartins.dev:5000/domain-api:latest
     container_name: domain-api
     labels:
       giomartins.dev/project: domain
-    restart: unless-stopped
+    profiles: ["retired"]
+    restart: "no"
     environment:
       DATABASE_URL: postgresql://domain:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}@postgres:5432/domain
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-domain}:${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}@rabbitmq:5672/
@@ -29,12 +33,15 @@ services:
       - "127.0.0.1:8000:8000"
     networks: [apps]
 
+  # MIGRADO para o k8s (fatia 3). O worker é o ESCRITOR ÚNICO do CQRS: dois
+  # deles consumindo a mesma fila duplicaria escrita. `profiles` é essencial.
   domain-worker:
     image: registry.giomartins.dev:5000/domain-worker:latest
     container_name: domain-worker
     labels:
       giomartins.dev/project: domain
-    restart: unless-stopped
+    profiles: ["retired"]
+    restart: "no"
     environment:
       DATABASE_URL: postgresql://domain:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}@postgres:5432/domain
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-domain}:${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}@rabbitmq:5672/

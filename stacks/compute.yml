@@ -47,6 +47,11 @@ services:
     # gravadas depois do corte sumiriam.
     #
     # A porta `127.0.0.1:8222` também ficaria disputada com o NodePort.
+    #
+    # `profiles` e nao so `restart: "no"`: o Dockhand roda `compose up` todo dia
+    # as 03:00 UTC e `up` SOBE container parado mesmo com restart "no" (provado
+    # em sandbox). Sem o profile, este container voltava a cada madrugada.
+    profiles: ["retired"]
     restart: "no"
     environment:
       DOMAIN: https://vault.giomartins.dev
@@ -71,7 +76,9 @@ services:
     # rede `apps` deixou de resolver `vaultwarden` quando o container parou.
     #
     # `no` para que um redeploy do stack não o ressuscite em paralelo ao pod,
-    # batendo no mesmo Vaultwarden.
+    # batendo no mesmo Vaultwarden. O `profiles` é o que de fato segura o
+    # `compose up` diário do Dockhand (ver nota no vaultwarden acima).
+    profiles: ["retired"]
     restart: "no"
     environment:
       VAULTWARDEN_URL: http://vaultwarden
@@ -116,7 +123,10 @@ services:
     container_name: adminer
     labels:
       giomartins.dev/project: compute
-    restart: unless-stopped
+    # MIGRADO para o k8s (fatia 4). O pod atende `adminer.giomartins.dev`
+    # (:30092) e a porta 8092 do host ficou livre.
+    profiles: ["retired"]
+    restart: "no"
     ports:
       - "127.0.0.1:8092:8080"
     networks: [apps]
@@ -134,7 +144,15 @@ services:
     container_name: evolution-api
     labels:
       giomartins.dev/project: compute
-    restart: unless-stopped
+    # MIGRADO para o k8s em 2026-10-23 (fatia 3). O pod atende
+    # `evolution.giomartins.dev` (:30808) e fala com o postgres do cluster.
+    #
+    # `profiles: ["retired"]` e OBRIGATORIO aqui, nao so higiene: duas
+    # instancias na mesma sessao Baileys disputam o socket do WhatsApp e a
+    # conexao cai. O `compose up` diario do Dockhand ressuscitava este
+    # container todo dia as 03:00 UTC.
+    profiles: ["retired"]
+    restart: "no"
     depends_on:
       evolution-db-init:
         condition: service_completed_successfully
@@ -234,6 +252,10 @@ services:
     labels:
       giomartins.dev/project: compute
     restart: "no"
+    # O postgres deste stack foi aposentado (fatia 6): este one-shot esperaria
+    # para sempre por um `postgres` que nao sobe mais. O schema `evolution_api`
+    # ja existe no cluster.
+    profiles: ["retired"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-domain}
       POSTGRES_DB: ${POSTGRES_DB:-domain}

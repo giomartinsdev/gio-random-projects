@@ -30,6 +30,12 @@ services:
     #
     # Para reverter de propósito: `docker start postgres` e desfazer o Service no
     # git. O volume está intacto, com o dado de 16:24.
+    #
+    # `profiles` porque `restart: "no"` sozinho NÃO impede o `compose up` de
+    # iniciar um container parado (provado em sandbox). O Dockhand roda `up` todo
+    # dia às 03:00 UTC; sem o profile, este volume congelado voltava a subir
+    # sozinho e o Docker ganhava a porta 5432 da rede `apps`.
+    profiles: ["retired"]
     restart: "no"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-domain}
@@ -49,7 +55,11 @@ services:
     container_name: rabbitmq
     labels:
       giomartins.dev/project: storage
-    restart: unless-stopped
+    # MIGRADO para o k8s (fatia 5). O pod e o NodePort 31525/30672 servem o
+    # broker; este container está parado e com o volume congelado. `profiles`
+    # impede o `compose up` diário do Dockhand de ressuscitá-lo em paralelo.
+    profiles: ["retired"]
+    restart: "no"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-domain}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?defina RABBITMQ_PASSWORD}
