@@ -77,7 +77,11 @@ metadata:
   labels:
     app.kubernetes.io/name: evolution-api
 spec:
-  # 0 até a janela de cutover. E aqui o `replicas: 0` NÃO é hábito: é requisito.
+  # 1 em 2026-10-23, DEPOIS de o container Docker ser parado (dois processos
+  # Baileys com a mesma sessão se derrubam). O container é o rollback:
+  # `docker start evolution-api` + `replicas: 0`.
+  #
+  # Nota histórica: `replicas: 0` aqui NÃO é hábito: é requisito.
   # Dois processos Baileys com a mesma sessão se derrubam (disconnect 401/440),
   # porque o WhatsApp trata conexão duplicada como conflito. Enquanto o container
   # Docker estiver de pé, subir este pod DERUBA a sessão de produção.

@@ -45,6 +45,7 @@ case "$SVC" in
   tempo)      VOL="obs_tempo_data"; PVC="tempo-data" ;;
   grafana)    VOL="obs_grafana_data"; PVC="grafana-data" ;;
   minio)      VOL="apps_minio_data"; PVC="minio-data" ;;
+  evolution-api) VOL="evolution_instances"; PVC="evolution-instances" ;;
   *) echo "serviço desconhecido: $SVC" >&2; exit 1 ;;
 esac
 
