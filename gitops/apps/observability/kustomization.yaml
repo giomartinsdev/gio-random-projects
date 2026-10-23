@@ -47,9 +47,10 @@ resources:
 commonLabels:
   app.kubernetes.io/part-of: giomartins
 
-# Prometheus sobe antes dos outros três, de propósito: é o único cujo volume já
-# foi copiado (898M) e portanto o único que pode provar, agora, que o dado
-# histórico é legível pelo pod. Os outros seguem em 0 até a cópia deles.
+# Os quatro estão em 1: os volumes foram copiados com os containers parados e o
+# procedimento religa o Docker antes de o pod subir, então o rollback segue de
+# pé. Prometheus foi o primeiro a subir e provou o caminho (8.841 séries,
+# 28.258 chunks, histórico do dia anterior legível).
 #
 # Rodar em paralelo ao container Docker é inofensivo: cada um tem o seu
 # armazenamento, e o alloy ainda escreve no do Docker. O pod fica com o
@@ -58,6 +59,27 @@ patches:
   - target:
       kind: Deployment
       name: prometheus
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: Deployment
+      name: loki
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: Deployment
+      name: tempo
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: Deployment
+      name: grafana
     patch: |-
       - op: replace
         path: /spec/replicas

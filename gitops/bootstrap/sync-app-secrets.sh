@@ -57,13 +57,25 @@ MAPA=(
   "db-mcp-gateway:db-mcp-gateway"
   # Grafana: GF_SECURITY_ADMIN_PASSWORD. O `user: "0"` do Compose e mantido no
   # manifesto, entao nao ha colisao de UID com o volume copiado.
-  "grafana:grafana"
+  # Grafana: só as chaves de CONFIGURAÇÃO fazem sentido no pod. A imagem já
+  # traz GF_PATHS_* apontando para /etc/grafana, /var/lib/grafana etc., e as do
+  # container apontam para os mesmos caminhos por acaso. Copiá-las seria inútil
+  # na melhor hipótese, e na pior (se um dia divergirem) quebraria o pod com um
+  # caminho inexistente. `:GF_SECURITY_ADMIN_PASSWORD` seleciona uma chave só.
+  "grafana:grafana:GF_SECURITY_ADMIN_PASSWORD"
 )
 
 alvo="${1:-}"
 
 for entrada in "${MAPA[@]}"; do
-  IFS=: read -r secret container <<< "$entrada"
+  # Terceiro campo opcional = filtro de chaves, separado por vírgula. Sem ele,
+  # copia tudo que não está em IGNORAR (o caso comum: a app precisa do env
+  # inteiro). Com ele, copia só o que foi pedido — necessário quando o env do
+  # container tem variáveis da imagem que não devem virar env do pod.
+  #
+  # `read` com 3 variáveis: o que sobra do último separador vai inteiro para a
+  # terceira, então o filtro pode conter vírgulas sem quebrar o split.
+  IFS=: read -r secret container filtro <<< "$entrada"
 
   if [ -n "$alvo" ] && [ "$alvo" != "$secret" ]; then
     continue
@@ -84,6 +96,8 @@ for entrada in "${MAPA[@]}"; do
     # Ignora as vars da imagem base e as que o Kubernetes injeta sozinho.
     if [[ "$chave" =~ $IGNORAR ]]; then continue; fi
     if [[ "$chave" == *"*"* ]]; then continue; fi
+    # Filtro explícito: quando presente, só passam as chaves listadas.
+    if [ -n "${filtro:-}" ] && [[ ",$filtro," != *",$chave,"* ]]; then continue; fi
     args+=(--from-literal="${chave}=${valor}")
     qtd=$((qtd+1))
   done < <(docker inspect "$container" --format '{{range .Config.Env}}{{println .}}{{end}}')
