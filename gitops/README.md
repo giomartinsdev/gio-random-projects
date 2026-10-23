@@ -495,21 +495,31 @@ No primeiro acesso, o Kubero pede para criar o usuário admin.
 
 ## Próximo serviço a migrar
 
-O `adminer` é o **primeiro serviço com tráfego real no cluster** — o
-`adminer.giomartins.dev` sai do pod, não do container. É a prova de que o
-caminho inteiro (ingress → NodePort → pod → Service → EndpointSlice → Docker)
-funciona em produção, não só em teste.
+**Antes de migrar mais um serviço, resolver o buraco de observabilidade.**
 
-Próximos passos, em ordem:
+O `alloy` filtra containers Docker (`loki.source.docker`, zero referências a
+`kubernetes` no config). Consequência medida: os 8 pods do cluster — incluindo
+`adminer`, `draw`, `domain` e `finance-api`, que já **servem produção** — não
+têm log no Grafana Loki. Se um deles quebrar, o Grafana não mostra nada, e o
+`kubectl logs` é a única fonte. Isso não é aceitável num serviço que atende
+gente.
 
-1. **Observar o adminer** por um período antes de desligar o container. O
-   Docker ficar rodando e ocioso é o rollback; não custa nada.
-2. **`draw.giomartins.dev` (excalidraw)** — mesmo movimento, já validado. É o
-   segundo cutover e confirma que o padrão se repete.
-3. **`domain.giomartins.dev`** — primeiro cutover de uma API com dependência de
-   banco. Mais arriscado, porque um erro aparece como 5xx para o cliente, não
-   como página em branco.
-4. Só então as fatias 4, 5 e 6 do `MIGRATION.md`.
+O caminho é acrescentar `discovery.kubernetes` + `loki.source.kubernetes` ao
+config do alloy, mantendo o `loki.source.docker` para o que ainda está em
+Docker. É uma edição de config, não uma migração — e precisa ser feita com o
+Grafana aberto para confirmar que os labels não explodem a cardinalidade.
+
+Depois disso, a ordem:
+
+1. **Fechar a fatia 4**: copiar os 4 volumes (883M/979M/233M/50M) com os
+   containers parados, subir para `replicas: 1`, virar
+   `grafana.giomartins.dev`. Nenhum dos quatro serve tráfego hoje, então não há
+   pressa — mas enquanto o Prometheus do cluster estiver vazio, não existe
+   métrica dos pods de produção.
+2. **Fatia 5** (`minio`, `rabbitmq`): janela de manutenção, rollback médio.
+3. **Fatia 6** (`postgres`, `vaultwarden`): janela, backup verificado,
+   rollback alto.
+4. **Fatia 2** (`9router`): SQLite com WAL, exige parar o container.
 
 Ficam de fora, e por motivo, não por esquecimento:
 
@@ -539,5 +549,15 @@ Ficam de fora, e por motivo, não por esquecimento:
 4. **`vaultwarden` aparece como `Progressing` no ArgoCD.** Deployment com
    `replicas: 0` nunca reporta `AvailableReplicas`, então o health check fica
    inconclusivo para sempre. Cosmético, mas ruído no painel.
-5. **`argocd-cm` sem `resource.exclusions` é estado do cluster, não do git** —
+5. **Os pods migrados não têm log no Loki.** O `alloy` só faz
+   `loki.source.docker`. Resolver antes de desligar mais qualquer container.
+6. **`alloy` não migra sem redesenho.** Ele monta `docker.sock` e usa
+   `discovery.docker` + `loki.source.docker`. O equivalente é
+   `discovery.kubernetes` + `loki.source.kubernetes` — outro modelo de dados.
+   Fica em Docker até a fatia 4 de verdade.
+7. **`domain.events.queue` com 585 mensagens e 0 consumidores.** O consumidor
+   previsto (`events-announcer`) nunca existiu como container neste host.
+   Pré-existente, não tocado: mexer em fila de produção sem entender o efeito
+   não é migração.
+8. **`argocd-cm` sem `resource.exclusions` é estado do cluster, não do git** —
    o mesmo item 2 visto pelo outro lado.
