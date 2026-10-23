@@ -6,8 +6,11 @@
 #     É por ele que finance-api e os workers falam `domain-api:8000` pelo DNS
 #     do cluster, o mesmo nome que usavam na rede `apps` do Docker.
 #
-#   - NodePort 30080 é só para o ingress do host alcançar o pod. Espelha a
-#     convenção das outras migrações (8023→30023, 8092→30092, 8080→30080).
+#   - NodePort 30800 é só para o ingress do host alcançar o pod. Segue a
+#     convenção das outras migrações (8023→30023, 8092→30092): 80xx→308xx.
+#     Não usei 30080 porque é do ArgoCD — um NodePort já ocupado faz o Service
+#     ficar OutOfSync no ArgoCD sem aplicar, e o teste de fumaça ainda responde
+#     200 (do ArgoCD), o que dá um falso positivo perigoso.
 #
 # Não são duas entradas de porta: um Service não pode ter dois `port` com o
 # mesmo número. O NodePort é uma segunda *forma de alcançar* a mesma porta.
@@ -25,4 +28,4 @@ spec:
     - name: http
       port: 8000
       targetPort: http
-      nodePort: 30080
+      nodePort: 30800
