@@ -72,17 +72,12 @@ metadata:
   labels:
     app.kubernetes.io/name: registry
 spec:
-  # `replicas: 0` ENQUANTO OS 12 GB SÃO COPIADOS.
-  #
-  # Não dá para fazer isto com `kubectl scale`: o AppSet reaplica o template a
-  # cada 3 minutos e o `selfHeal` do ArgoCD desfaz a escala em segundos — o pod
-  # voltaria a escrever no diretório que o `cp` está lendo. A única forma de o
-  # auto-sync CONCORDAR com o pod parado é o git dizer isso.
-  #
-  # O pod já subiu uma vez (para o PVC ligar, porque `local-path` é
-  # `WaitForFirstConsumer`) e o `copy-registry-data.sh` o escala de volta ao fim.
-  # O estado final, depois do corte, é `replicas: 1`.
-  replicas: 0
+  # `replicas: 1` é o estado final. O corte é feito por
+  # `gitops/bootstrap/corta-registry.sh`, que para o container Docker (dono da
+  # 5000), aplica este manifesto e prova um pull real. Enquanto o container
+  # existir e estiver de pé, esta réplica NÃO consegue subir: `hostPort: 5000`
+  # colidiria com ele. O script resolve a ordem.
+  replicas: 1
   strategy:
     type: Recreate
   selector:
@@ -105,6 +100,13 @@ spec:
           ports:
             - name: http
               containerPort: 5000
+              # ## O CORTE
+              #
+              # Esta linha é a migração inteira. Enquanto o container Docker
+              # publica a 5000, ela impede o pod de subir (colisão de porta) —
+              # o que é a trava, não um bug. `corta-registry.sh` para o container
+              # primeiro, e a partir daí `registry.giomartins.dev:5000` é o pod.
+              hostPort: 5000
           env:
             # Os quatro vieram de `docker inspect registry`, não do Compose
             # (o stack está escrito no host e não versionado). Reproduzir o
