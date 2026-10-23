@@ -40,7 +40,24 @@ CREATE ROLE mcp_ro WITH LOGIN PASSWORD '<MCP_DB_PASSWORD>' NOSUPERUSER NOCREATED
 GRANT CONNECT ON DATABASE domain TO mcp_ro;
 GRANT USAGE ON SCHEMA public TO mcp_ro;
 GRANT SELECT ON <todas as tabelas finance_*> TO mcp_ro;
-ALTER DEFAULT PRIVILEGES FOR ROLE domain IN SCHEMA public GRANT SELECT ON TABLES TO mcp_ro;
+```
+
+**Não use `ALTER DEFAULT PRIVILEGES ... GRANT SELECT ON TABLES TO mcp_ro`.**
+Esse comando dava `SELECT` a `mcp_ro` em *toda tabela nova* do schema, não só
+nas `finance_*` — foi assim que ele acabou lendo as 10 tabelas `prospecta_*`
+mesmo com o README dizendo que só via `finance_*`. O default privilege foi
+revogado em 2026-10-23; se uma tabela `finance_*` nova passar a dar
+`permission denied`, conceda na tabela específica:
+
+```sql
+GRANT SELECT ON finance_<tabela_nova> TO mcp_ro;
+```
+
+Verificação: `curl` sem token no gateway deve dar 401, e
+
+```sql
+SELECT has_table_privilege('mcp_ro', 'finance_transactions', 'SELECT');  -- t
+SELECT has_table_privilege('mcp_ro', 'qualquer_tabela_nao_finance', 'SELECT'); -- f
 ```
 
 Para rotacionar a senha: `ALTER ROLE mcp_ro PASSWORD '<nova>'`, atualizar
