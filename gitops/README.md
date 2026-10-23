@@ -955,8 +955,41 @@ serviço para todos.
 deadlock garantido. O teste de regressão (`TestDeleteDoesNotDeadlock`) falha no
 código antigo — provado por `git stash` — e passa no novo.
 
+### 35. Nome de container PARADO sai do DNS do Docker.
 
+O CI de imagens morreu calado na fatia 6, e a causa é essa linha só.
 
+`fetch_vault_secret.sh` roda um container na rede `apps` e o proxy interno
+aponta para `http://vaultwarden:80`. Enquanto o Vaultwarden era container, o
+nome resolvia. Depois do cutover, o **pod** assumiu o serviço e o container
+homônimo ficou parado como rollback — e o Docker removeu o nome do DNS da rede.
+Resultado, em todo pipeline de imagem:
+
+```
+Error: getaddrinfo EAI_AGAIN vaultwarden
+```
+
+Isso acontece **antes** do build, então nenhuma imagem nova era publicada desde
+a fatia 6. Verde em nenhum lugar, vermelho no primeiro passo.
+
+A lição não é "consertar o script", é que **parar um container pode quebrar
+consumidores que não parecem ligados a ele**. O `docker stop` é reversível para
+quem usa a porta; para quem usa o *nome*, o efeito é imediato e invisível.
+
+**Conserto**: o script ganhou `VAULTWARDEN_UPSTREAM` (`host:port`) e o CI passa
+`host.docker.internal:30822`, o NodePort do Service `vaultwarden` em
+`persistence`. NodePort, não ClusterIP: o IP do Service muda se o Service for
+recriado, o NodePort é constante (armadilha 31). `--add-host
+host.docker.internal:host-gateway` é o que faz o nome existir num container
+Linux.
+
+Provado com as credenciais reais, lidas do Secret `vaultwarden-api`:
+caminho novo devolve `REGISTRY_USERNAME`/`REGISTRY_PASSWORD` e sai 0; o antigo
+sai 1 com `EAI_AGAIN`.
+
+**Regra**: ao parar um container, procure quem o referencia **por nome** —
+`grep` no repo por `docker run.*--network` e por hostnames de serviço. Porta
+fechada dá erro na hora; nome que sumiu dá erro no próximo pipeline.
 
 
 ```bash
@@ -1119,14 +1152,20 @@ Escolhemos a primeira quando o serviço migrar para valer.
 
 Verificado em 2026-10-23, depois do bootstrap e da fatia 3.
 
+> **A coluna "Docker" é o retrato daquela verificação, não o estado de agora.**
+> Em 2026-10-23, na faxina final, os ociosos foram parados (`restart=no` +
+> `docker stop`, ver "A faxina final"): `excalidraw`, `adminer`, `grafana`,
+> `loki`, `minio`, `prometheus`, `tempo`, `db-mcp`, `db-mcp-gateway`. As linhas
+> abaixo já refletem isso. Todos continuam reversíveis por `docker start`.
+
 **Regra que governa a tabela:** o container Docker só é desligado *depois* de o
 equivalente no k8s provar que serve, e o tráfego só muda num commit separado.
-Por isso a coluna "tráfego" ainda diz Docker em tudo.
+A coluna "tráfego" registra onde o tráfego está **hoje**.
 
 | serviço | Docker | k8s | tráfego |
 | --- | --- | --- | --- |
-| `excalidraw` | rodando (ocioso) | **rodando** (NodePort 30023) | **k8s** — `draw` → `:30023` ✅ |
-| `adminer` | rodando (ocioso) | **rodando** (NodePort 30092) | **k8s** — `adminer` → `:30092` ✅ |
+| `excalidraw` | **parado** (2026-10-23) | **rodando** (NodePort 30023) | **k8s** — `draw` → `:30023` ✅ |
+| `adminer` | **parado** (2026-10-23) | **rodando** (NodePort 30092) | **k8s** — `adminer` → `:30092` ✅ |
 | `domain-api` | rodando (ocioso) | **rodando** (NodePort 30800) | **k8s** — `domain` → `:30800` ✅ |
 | `domain-worker` | rodando | manifesto, **`replicas: 0`** | Docker (único escritor do CQRS) |
 | `finance-api` | rodando (só consumo interno) | **rodando** (NodePort 30818) | **k8s** — `finance-api` → `:30818` ✅ |
@@ -1135,17 +1174,17 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | `vaultwarden-api` | rodando | **rodando** (ClusterIP:8080) | sem tráfego externo (bridge interna) |
 | `vaultwarden` | **parado** | **rodando** (NodePort 30822) | **k8s** — `vault` → `:30822`, `/api/config` idêntico byte a byte ✅ |
 | `9router` | rodando (`restart=no`, `profiles: retired`) | **rodando** (NodePort 30028) | **k8s** — `ai` → `:30028` ✅ |
-| `minio` | rodando (rollback) | **rodando** (NodePort 30900/30901) | **k8s** — 8 buckets idênticos, 3 SPAs ✅ |
+| `minio` | **parado** (2026-10-23) | **rodando** (NodePort 30900/30901) | **k8s** — 8 buckets idênticos, 3 SPAs ✅ |
 | `rabbitmq` | rodando (rollback) | **rodando** (NodePort 31525/30672) | **k8s** — 29 filas, 12 exchanges, 62 bindings idênticos ✅ |
 | `postgres` | **parado** | **rodando** (ClusterIP:5432) | **k8s** — 54/55 tabelas idênticas, `finance_transactions` md5 igual ✅ |
-| `prometheus` | rodando | **rodando** (ClusterIP:9090) | **k8s** — 898M copiados, 8.841 séries ✅ |
-| `loki` | rodando | **rodando** (ClusterIP:3100) | **k8s** — 976M copiados ✅ |
-| `tempo` | rodando | **rodando** (ClusterIP:3200) | **k8s** — 308M copiados ✅ |
-| `grafana` | rodando (ocioso) | **rodando** (NodePort 30300) | **k8s** — `grafana` → `:30300` ✅ |
+| `prometheus` | **parado** (2026-10-23) | **rodando** (ClusterIP:9090) | **k8s** — 898M copiados, 8.841 séries ✅ |
+| `loki` | **parado** (2026-10-23) | **rodando** (ClusterIP:3100) | **k8s** — 976M copiados ✅ |
+| `tempo` | **parado** (2026-10-23) | **rodando** (ClusterIP:3200) | **k8s** — 308M copiados ✅ |
+| `grafana` | **parado** (2026-10-23) | **rodando** (NodePort 30300) | **k8s** — `grafana` → `:30300` ✅ |
 | `alloy` | rodando (rollback) | **rodando** (OTLP 4317/4318 + logs, PVC) | **k8s** — pod `alloy-logs` serve o Service `alloy`; container só lê `docker.sock` |
 | `registry` | **parado** (`exited`, `restart=no`) | **rodando** (`hostPort: 5000`) | **k8s** — 39 repos, 12 GB verificados por sha256 ✅ |
 | `ingress` | **parado** (`exited`, `restart=no`) | **rodando** (`hostPort: 80`) | **k8s** — 19/19 hosts com o mesmo status ✅ |
-| demais 17 containers | rodando ou parados como rollback | — | Docker |
+| demais 8 containers | `alloy`, `dockhand`, `9router`, `maus`×3, `minecraft`×2 | — | Docker, com motivo (ver "O que ainda está em Docker e por quê") |
 | 19 domínios do ingress | — | — | idênticos antes/depois (mesmo status HTTP) |
 
 `replicas: 0` não é esquecimento: são consumidores de fila ou donos de volume
@@ -1583,13 +1622,14 @@ um webhook, mas o Kubero foi instalado assumindo um ingress controller
 
 ## O que falta
 
-A migração serviço a serviço acabou. O que resta não é "o próximo serviço" — é
-uma decisão sobre quatro serviços que **não são lift-and-shift**, mais a faxina
-final do Docker.
+A migração serviço a serviço acabou, e a faxina começou: os duplicados ociosos
+já estão parados. O que resta é remover o que está parado, desligar o Docker, e
+decidir sobre os quatro serviços que **não são lift-and-shift**.
 
-Estado em 2026-10-23 23:35 UTC: **18/18 Applications `Synced`**, zero pods fora de
-`Running`, 19/19 hosts respondendo pelo pod do ingress, registry servindo 39
-repositórios.
+Estado em 2026-10-23, depois da faxina: **18/18 Applications `Synced`+`Healthy`**,
+zero pods fora de `Running`, 19/19 hosts respondendo pelo pod do ingress,
+registry servindo 39 repositórios, **8 containers Docker rodando** (eram 26 no
+baseline), todos com motivo declarado.
 
 ### `9router` — migrado em 2026-10-23, container de pé como rollback
 
@@ -1627,20 +1667,48 @@ silêncio por falta de `fsGroup` (33). E um bug pré-existente da aplicação ve
 
 Ordem deliberada, e cada passo é um commit separado:
 
-1. **parar os duplicados ociosos** — `gitops/bootstrap/aposenta-duplicados.sh`,
-   escrito mas **não executado**. Alvos: `adminer excalidraw grafana loki minio
-   prometheus tempo db-mcp db-mcp-gateway`. O `alloy` fica de fora de propósito:
-   é a única forma de ler o stdout dos containers que ainda restarem.
+1. ~~**parar os duplicados ociosos**~~ — **executado em 2026-10-23**, com
+   `gitops/bootstrap/aposenta-duplicados.sh`. Os 9 (`adminer excalidraw grafana
+   loki minio prometheus tempo db-mcp db-mcp-gateway`) foram parados com
+   `docker update --restart=no` + `docker stop`. Gates do script, todos
+   satisfeitos: o k8s respondia 200 pelos cinco com porta provada, e cada alvo
+   tinha **zero** requisição HTTP de terceiros nas 3h anteriores. Depois disso,
+   os 19 hosts do ingress seguiam respondendo pelo pod (0 problemas) e as
+   Applications ficaram 18/18 `Synced`+`Healthy`.
+
+   Os containers `competent_einstein`, `priceless_chaum` e `zen_mahavira`
+   (imagens `tela-api`, criados durante os testes de cutover, bridge, sem porta
+   publicada) também saíram — `docker rm -f`. Eram lixo de teste, não rollback.
+
+   Sobraram **8 containers rodando**, todos com motivo declarado:
+   `alloy`, `dockhand`, `9router` (rollback), `maus`+`maus-caddy`+
+   `maus-slack-bridge`+`omb`, `minecraft`+`minecraft-backup`. Medido logo
+   depois da parada: **15.008 MB usados, 8.963 MB disponíveis**. Não há medição
+   de "antes" confiável — os duplicados eram quase todos ociosos, então o ganho
+   esperado é de CPU e descritores, não de RAM.
+
 2. **`docker rm`** dos parados. O container parado é o rollback; remover é o
    último ato.
 3. **desligar o Docker** (`systemctl disable --now docker`). Junto vão o
    `sync-external-endpoints.timer` (MAPA vazio desde a fatia 6, zero
    EndpointSlices manuais no cluster) e o `dockhand`.
 
-**Por que não agora**: a fatia 8 cortou `ingress` e `registry` há pouco mais de
-uma hora. A disciplina deste repositório é observar antes de remover o rollback
-— e a armadilha 26 acabou de mostrar que "o pod subiu" não é o mesmo que "o
-sistema está inteiro".
+**Por que o passo 2 ainda não**: parar é reversível com um comando; remover é o
+ponto sem volta. Os 9 parados continuam ocupando disco (imagens e volumes
+intactos) — o custo de mantê-los é disco, o custo de removê-los cedo é não ter
+para onde voltar. A fatia 8 cortou `ingress` e `registry` há pouco mais de uma
+hora, e a armadilha 26 já mostrou que "o pod subiu" não é o mesmo que "o sistema
+está inteiro".
+
+**O que a faxina provou**: parar 9 containers não derrubou nada — 19/19 hosts com
+o mesmo status HTTP, 18/18 Applications `Synced`+`Healthy`, zero pods fora de
+`Running`. É o teste que faltava para dizer que os duplicados eram mesmo
+duplicados, e não a instância que ainda servia.
+
+**E o que ela quebrou, sem avisar**: a armadilha 35 nasceu aqui. O container
+`vaultwarden` já estava parado desde a fatia 6, e o CI de imagens morria com
+`EAI_AGAIN` desde então — ninguém tinha rodado um build para ver. Parar
+containers é seguro para *portas*; não é seguro para *nomes*.
 
 
 ### O que ainda está em Docker e por quê
@@ -1654,6 +1722,7 @@ Não é pendência esquecida, é ordem deliberada:
 | `9router` | **migrado em 2026-10-23** — container de pé como rollback (`profiles: retired`) |
 | `evolution-redis` | **migrado em 2026-10-23** — container parado, volume intacto como rollback |
 | `tela-*` | **migrado em 2026-10-23** — os três containers parados, rollback em `profiles: retired` |
+| duplicados ociosos (`adminer`, `excalidraw`, `grafana`, `loki`, `minio`, `prometheus`, `tempo`, `db-mcp`, `db-mcp-gateway`) | **parados em 2026-10-23** (`restart=no` + `docker stop`) — reversível por `docker start`, sem `rm` |
 | `maus` | `docker.sock` + `/data` do host; **não será migrado** (decisão do usuário) |
 | `minecraft` | fora de escopo (jogo, não infra) |
 | `alloy` | container de pé como rollback; o OTLP já é do pod `alloy-logs` |
@@ -1741,6 +1810,14 @@ Ficam de fora, e por motivo, não por esquecimento:
    não enxerga Services do cluster. O CI de frontend foi ajustado para
    `http://172.18.0.1:30900`; qualquer outro `docker run` que precise de S3 terá
    o mesmo problema e precisa do mesmo endereço explícito.
+
+   **O caso do `vaultwarden` é a versão pior do mesmo problema** e virou a
+   armadilha 35: lá o container foi **parado**, então o nome deixou de existir
+   no DNS em vez de resolver para o lado errado. Consertado em 2026-10-23 com
+   `VAULTWARDEN_UPSTREAM` + NodePort. A regra geral que sobra: **todo
+   `docker run` que fala com um serviço migrado precisa de endereço explícito**
+   — `172.18.0.1:<nodePort>` ou `host.docker.internal:<nodePort>` com
+   `--add-host`. Nome de serviço não é endereço.
 11. ~~**O `rancher-values.yaml` vive em `/tmp` no host.**~~ **Resolvido** em
    `gitops/bootstrap/rancher/` (`values.yaml` + `install.sh` idempotente), no
    mesmo padrão do `argocd-cm`. O script exporta `KUBECONFIG`, não rotaciona a
@@ -1869,3 +1946,28 @@ Ficam de fora, e por motivo, não por esquecimento:
     console passa a aparecer nos sites. Os objetos antigos eram idênticos por
     md5 (nada se perdeu); o que estava quebrado era só o caminho de escrita novo.
     O container `minio` continua rodando como rollback, com os dados de 28/09.
+
+    **Atualização 2026-10-23 (faxina)**: o container foi **parado**. Ele era o
+    último caminho para os dados de 28/09; o rollback completo do minio agora
+    depende de `docker start minio` — que continua valendo, mas os dados de lá
+    estão congelados há um dia. Ver armadilha 35 para o efeito colateral de
+    parar containers cujo *nome* outros scripts usam.
+
+18. ~~**O CI de imagens estava cego desde a fatia 6.**~~ **Resolvido em
+    2026-10-23** (commit `1d9a103`). Nenhuma imagem nova era publicada: o passo
+    "Fetch registry credentials from Vaultwarden" morria com
+    `getaddrinfo EAI_AGAIN vaultwarden` porque o proxy do `bw` apontava para o
+    nome na rede Docker `apps`, e esse nome saiu do DNS quando o container foi
+    parado no cutover da fatia 6. O `fetch_vault_secret.sh` ganhou
+    `VAULTWARDEN_UPSTREAM` (default `vaultwarden:80`, então nada quebra em
+    rollback) e os 6 workflows passaram a usar
+    `host.docker.internal:30822` — o NodePort do Service `vaultwarden` em
+    `persistence`, que é estável. Detalhe completo na armadilha 35.
+
+    **O que isso ensina sobre detecção**: o pipeline falhava no *primeiro* passo,
+    antes de qualquer build, por quase um dia inteiro. Nada no cluster mostrou
+    isso — as Applications seguiam `Synced`, os pods `Running`. Só apareceu
+    quando alguém tentou publicar uma imagem. **Um sinal que só existe quando o
+    caminho é exercitado não é monitoramento.** Se o CI importa, ele precisa
+    rodar (ou ter um health check próprio) mesmo sem push.
+
