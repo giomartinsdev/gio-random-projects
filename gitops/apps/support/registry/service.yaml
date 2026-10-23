@@ -1,0 +1,30 @@
+# Service `registry` — o nome estável do registry dentro do cluster.
+#
+# ## Por que ClusterIP e não NodePort
+#
+# O consumidor do registry são os nós (containerd), não pods, e ele chega por
+# `127.0.0.1:5000` (o `mirrors` do `/etc/rancher/k3s/registries.yaml`). Esse
+# caminho é resolvido pelo `hostPort` do pod, que é o corte do endereço.
+#
+# Criar um NodePort novo aqui seria expor publicamente o registry numa segunda
+# porta sem que nada precise dela — e a única porta que o CI conhece é a 5000.
+#
+# O que este Service entrega é o nome: `registry.support.svc.cluster.local:5000`.
+# Nenhum pod usa hoje; no dia em que um Job do cluster quiser falar com o
+# registry, o nome existe e é o mesmo do Compose.
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+  labels:
+    app.kubernetes.io/name: registry
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: registry
+  ports:
+    # O nome da porta casa com `ports[].name` do Deployment: o kube-proxy casa
+    # Service e EndpointSlice por NOME, não por número (armadilha 5).
+    - name: http
+      port: 5000
+      targetPort: http

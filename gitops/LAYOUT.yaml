@@ -14,7 +14,7 @@
 persistence:       postgres rabbitmq minio vaultwarden evolution-redis
 observability:     observability
 applications:      domain finance evolution-api vaultwarden-api 9router excalidraw
-support:           adminer db-mcp
+support:           adminer db-mcp registry
 
 # ## As arestas que cruzam namespaces
 #
