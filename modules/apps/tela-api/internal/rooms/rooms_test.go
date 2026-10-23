@@ -3,6 +3,7 @@ package rooms_test
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/giomartinsdev/gio-random-projects/modules/apps/tela-api/internal/rooms"
 )
@@ -88,6 +89,39 @@ func TestResumeTokensDoNotCrossRooms(t *testing.T) {
 
 // An empty path means memory only, which is what local dev and the
 // tests use -- it must not try to touch the filesystem or fail.
+// A successful Delete must not deadlock the registry. This is a
+// regression test: Delete used to hold r.mu across persist(), which
+// takes the same mutex, so every delete froze the process until the
+// liveness probe killed it.
+func TestDeleteDoesNotDeadlock(t *testing.T) {
+	registry := rooms.NewRegistry(filepath.Join(t.TempDir(), "rooms.json"))
+	room, err := registry.Create("segredo123")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- registry.Delete(room.ID, "segredo123") }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("delete: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		// Count() takes the same mutex Delete would still be holding.
+		// The goroutine leak is fine: the test failed and the process
+		// is about to end.
+		t.Fatal("Delete deadlocked: it did not return within 5s")
+	}
+
+	// The registry must be usable afterwards -- that is what the old
+	// bug broke, since /healthz calls Count().
+	if n := registry.Count(); n != 0 {
+		t.Fatalf("expected 0 rooms after delete, got %d", n)
+	}
+}
+
 func TestMemoryOnlyRegistry(t *testing.T) {
 	registry := rooms.NewRegistry("")
 	if _, err := registry.Create("segredo123"); err != nil {

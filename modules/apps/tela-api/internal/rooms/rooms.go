@@ -173,16 +173,32 @@ func (r *Registry) Get(id string) (*Room, error) {
 // Delete removes a room after verifying the password. Only the room
 // creator (who knows the password) can delete it.
 func (r *Registry) Delete(id, password string) error {
+	// Not deferred: persist() takes this same mutex, so the lock has to
+	// be released before calling it rather than at function exit. A
+	// deferred Unlock here deadlocks the registry on every successful
+	// delete -- and because /healthz calls Count(), which takes the same
+	// mutex, the whole HTTP server stops answering and the pod is killed
+	// by its liveness probe. Found in production on 2026-10-23, right
+	// after the k8s migration: deleting a room froze the API for 8s,
+	// then the kubelet restarted the container.
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	room, ok := r.rooms[id]
 	if !ok {
+		r.mu.Unlock()
 		return ErrNotFound
 	}
-	if !room.CheckPassword(password) {
+	// CheckPassword runs scrypt (~100ms by design) and only reads the
+	// room's immutable salt/hash, so it is safe under r.mu -- but the
+	// room fields it reads are guarded by room.mu nowhere and never
+	// mutated, so no extra lock is needed.
+	ok = room.CheckPassword(password)
+	if !ok {
+		r.mu.Unlock()
 		return ErrWrongSecret
 	}
 	delete(r.rooms, id)
+	r.mu.Unlock()
+
 	r.persist()
 	return nil
 }
