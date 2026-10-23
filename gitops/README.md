@@ -876,7 +876,86 @@ certo.
 
 
 
-## Bootstrap (uma vez por cluster)
+### 32. Em `hostNetwork`, o probe dial-a o IP do nó — não o loopback.
+
+Descoberto ao migrar o `tela-api`, que escuta `127.0.0.1:8007` de propósito (só
+o ingress, também `hostNetwork`, precisa alcançá-lo). O pod subia, o processo
+respondia perfeitamente no host, e o pod ficava **`Running` e nunca `Ready`**:
+
+```
+Warning  Unhealthy  Readiness probe failed: Get "http://10.0.0.209:8007/healthz":
+         dial tcp 10.0.0.209:8007: connect: connection refused
+```
+
+Com `hostNetwork: true` o `podIP` **é** o IP do nó, e o kubelet monta a URL do
+probe com ele. Um processo que fez bind em `127.0.0.1` não responde nesse
+endereço. Provado com dois pods de teste lado a lado, ambos escutando só no
+loopback:
+
+| pod | probe | resultado |
+| --- | --- | --- |
+| `probe-hl2` | `tcpSocket: {host: 127.0.0.1, port: 39995}` | **1/1 Ready** |
+| `probe-hl3` | `tcpSocket: {port: 39994}` (sem `host`) | **0/1, nunca Ready** |
+
+A correção é `host: 127.0.0.1` no probe — e ela preserva o bind restrito, que é
+uma garantia estrutural. A alternativa óbvia (`BIND_HOST=0.0.0.0`) trocaria
+"não é alcançável pela internet" por "não é alcançável enquanto o firewall
+estiver certo".
+
+Os três pods do `tela` usam `host: 127.0.0.1` (o `mediamtx` e a `tela-api`
+escutam loopback; o `coturn` escuta no IP privado e poderia dispensar, mas a
+forma uniforme evita a pergunta "por que este é diferente").
+
+**Regra**: qualquer workload `hostNetwork` com bind restrito precisa de
+`host: 127.0.0.1` no probe. Sintoma diagnóstico: pod `Running`, `0/1`, processo
+comprovadamente vivo no host.
+
+### 33. `fsGroup` conserta uma persistência que falhava em silêncio.
+
+O `tela-state` do Docker era `root:root 755` e o processo rodava `nonroot`: o
+`persist()` do registry engolia o erro (`if err := ...; err != nil { return }`),
+a API respondia `201` ao criar sala, e **o arquivo nunca era gravado**. Provei
+criando uma sala: `{"roomId":"tijolo83galinha"}`, com o volume continuando
+vazio. Consequência real: todo redeploy do container perdia as salas, e nada
+nos logs dizia isso.
+
+No k8s, `securityContext.fsGroup: 65532` (o uid do `nonroot` na distroless) faz
+o kubelet dar grupo de escrita no PVC. Verificado: `rooms.json` nasce
+`65532:65532`, e um restart do pod prova a restauração
+(`rooms restored, count: 1`).
+
+**Regra**: volume montado em processo não-root precisa de `fsGroup` (ou
+`initContainer` de `chown`). "O pod subiu e a API responde" não prova que a
+gravação funciona — crie um registro e confira o arquivo.
+
+### 34. `Delete` que chama `persist()` sob lock trava o processo inteiro.
+
+Bug de aplicação encontrado **pela** migração, não causado por ela: o volume
+passou a funcionar (armadilha 33) e aí o caminho de código do `persist()` foi
+exercitado de verdade.
+
+Em `internal/rooms/rooms.go`, `Delete` fazia `defer r.mu.Unlock()` e chamava
+`r.persist()`, que pega **o mesmo** `r.mu`. `Create`, `Sweep` e `SweepIdle` já
+soltavam o lock antes; `Delete` era a única que não — e `Create` tem até um
+comentário explicando o cuidado, o que mostra que o padrão era conhecido.
+
+O sintoma é desproporcional à causa:
+
+```
+DELETE /api/rooms/<id>  →  timeout de 8s
+GET    /healthz         →  timeout de 8s   (Count() pega o mesmo mutex)
+```
+
+O mutex é do **registry inteiro**, não da sala, e `/healthz` chama `Count()`.
+Resultado: apagar uma sala congela a API toda, o liveness probe falha, e o
+kubelet mata o container. Qualquer usuário apagando uma sala derrubava o
+serviço para todos.
+
+**Regra**: um `defer Unlock` combinado com uma função que pega o mesmo lock é
+deadlock garantido. O teste de regressão (`TestDeleteDoesNotDeadlock`) falha no
+código antigo — provado por `git stash` — e passa no novo.
+
+
 
 
 
@@ -1055,7 +1134,7 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | `finance-customersupport-worker` | rodando | manifesto, **`replicas: 0`** | Docker |
 | `vaultwarden-api` | rodando | **rodando** (ClusterIP:8080) | sem tráfego externo (bridge interna) |
 | `vaultwarden` | **parado** | **rodando** (NodePort 30822) | **k8s** — `vault` → `:30822`, `/api/config` idêntico byte a byte ✅ |
-| `9router` | rodando | manifesto, **`replicas: 0`** | Docker (`ai` → `:20128`) — **exige parada** |
+| `9router` | rodando (`restart=no`, `profiles: retired`) | **rodando** (NodePort 30028) | **k8s** — `ai` → `:30028` ✅ |
 | `minio` | rodando (rollback) | **rodando** (NodePort 30900/30901) | **k8s** — 8 buckets idênticos, 3 SPAs ✅ |
 | `rabbitmq` | rodando (rollback) | **rodando** (NodePort 31525/30672) | **k8s** — 29 filas, 12 exchanges, 62 bindings idênticos ✅ |
 | `postgres` | **parado** | **rodando** (ClusterIP:5432) | **k8s** — 54/55 tabelas idênticas, `finance_transactions` md5 igual ✅ |
@@ -1125,7 +1204,7 @@ recém-criado tem `integrity_check ok` com zero usuários.
 | NodePort | serviço |
 | --- | --- |
 | 30023 | excalidraw |
-| 30028 | 9router (**reservado**, pod em `replicas: 0`) |
+| 30028 | 9router |
 | 30080 | argocd-server |
 | 30092 | adminer |
 | 30200 | kubero |
@@ -1144,9 +1223,10 @@ recém-criado tem `integrity_check ok` com zero usuários.
 | 31525 | rabbitmq amqp (NodePort automático) |
 | 31844 | rancher (https) |
 
-`30028` está reservado pelo Service do `9router` mesmo sem pod: um Service
-`NodePort` existe independente de ter endpoint. Reservar antes é de propósito —
-quem for escolher a próxima porta vê o número ocupado e não planeja em cima dele.
+`30028` deixou de ser reserva em 2026-10-23: o pod do `9router` está de pé e é
+ele quem atende `ai.giomartins.dev`. A prática de reservar o NodePort antes de
+haver pod continua valendo — quem for escolher a próxima porta vê o número
+ocupado e não planeja em cima dele.
 
 O `registry` e o `ingress` **não** aparecem nesta tabela porque não usam
 NodePort: os dois publicam no host por `hostPort` (`5000` e `80`). É a diferença
@@ -1507,28 +1587,39 @@ A migração serviço a serviço acabou. O que resta não é "o próximo serviç
 uma decisão sobre quatro serviços que **não são lift-and-shift**, mais a faxina
 final do Docker.
 
-Estado em 2026-10-23 22:12 UTC: **17/17 Applications `Synced`**, zero pods fora
-de `Running`, 19/19 hosts respondendo pelo pod do ingress, registry servindo 39
+Estado em 2026-10-23 23:35 UTC: **18/18 Applications `Synced`**, zero pods fora de
+`Running`, 19/19 hosts respondendo pelo pod do ingress, registry servindo 39
 repositórios.
 
-### `9router` — bloqueado pela própria sessão
+### `9router` — migrado em 2026-10-23, container de pé como rollback
 
-Provisionado no git, `replicas: 0`, NodePort 30028 reservado. Exige parada por
-causa do SQLite com WAL; o procedimento está no topo de
-`gitops/apps/applications/9router/deployment.yaml`.
+Corte em duas portas: o commit `23af05f` copiou o volume `ninerouter_data` para o
+PVC (backup lógico `.backup` com `integrity_check ok`, mais cópia física, em
+`/opt/k8s-backups/2026-10-23-2243-9router/`) e subiu o pod; o commit `b2d6887`
+virou o ingress de `:20128` para o NodePort `:30028`.
 
-**O bloqueio é real, não teórico**: medido em 2026-10-23, o container `9router`
-atendeu esta própria sessão (`opencode-free` → `ollama`/`deepseek-v4.1-flash`,
-348 mensagens, 12 ferramentas). Parar o container no meio da migração mata o
-agente que está fazendo a migração. Isso pede janela com o usuário presente e o
-runbook em mãos — não um `docker stop` dentro de um script.
+O container Docker continua rodando com `restart=no` e `profiles: ["retired"]`
+— é o rollback barato. **Esta sessão do agente atendeu pelo pod novo** desde o
+commit `b2d6887`, o que é a prova funcional mais direta que existe aqui.
 
-### `maus`, `tela-*`, `minecraft` — precisam de redesenho, não de manifesto
+### `tela` — migrado em 2026-10-23
+
+Os três pods (`tela-mediamtx`, `tela-coturn`, `tela-api`) rodam com
+`hostNetwork: true`, replicando o `network_mode: host` do Compose. As portas do
+host (8217 TCP+UDP, 3478 TCP+UDP, faixa 49160-49200 UDP, 8007) passaram dos
+containers para os pods sem tocar em firewall: `hostNetwork` usa a mesma netns,
+então as regras do `INPUT` que já existiam continuam valendo.
+
+Dois achados no caminho, ambos registrados como armadilhas: o probe em
+`hostNetwork` dial-a o IP do nó (32) e a persistência de salas falhava em
+silêncio por falta de `fsGroup` (33). E um bug pré-existente da aplicação veio
+à luz justamente porque o volume passou a funcionar (34).
+
+### `maus`, `minecraft` — precisam de redesenho, ou estão fora de escopo
 
 | serviço | por que não é lift-and-shift |
 | --- | --- |
-| `maus` | cria containers via `docker.sock` e monta `/data` do host. Migrar isso é emular Docker dentro do Kubernetes. |
-| `tela-api` / `tela-mediamtx` / `tela-coturn` | `network_mode: host` com UDP (STUN/TURN/WebRTC). A porta 3478 UDP seria disputada com o Docker durante a transição. |
+| `maus` | cria containers via `docker.sock` e monta `/data` do host. Migrar isso é emular Docker dentro do Kubernetes. **Decisão do usuário em 2026-10-23: não migrar.** |
 | `minecraft` | fora de escopo por decisão sua (jogo, não infra). |
 | `dockhand` | é a UI do próprio Docker. Morre com ele, por definição. |
 
@@ -1560,21 +1651,20 @@ Não é pendência esquecida, é ordem deliberada:
 | --- | --- |
 | `postgres` | migrado (fatia 6) — o container é rollback congelado |
 | `vaultwarden` | migrado (fatia 6) — idem |
-| `9router` | parada obrigatória (WAL) + é a porta de IA do host |
+| `9router` | **migrado em 2026-10-23** — container de pé como rollback (`profiles: retired`) |
 | `evolution-redis` | **migrado em 2026-10-23** — container parado, volume intacto como rollback |
-| `tela-*` | `hostNetwork` + UDP (coturn, mediamtx) |
-| `maus` | `docker.sock` + `/data` do host; exige redesenho |
+| `tela-*` | **migrado em 2026-10-23** — os três containers parados, rollback em `profiles: retired` |
+| `maus` | `docker.sock` + `/data` do host; **não será migrado** (decisão do usuário) |
+| `minecraft` | fora de escopo (jogo, não infra) |
 | `alloy` | container de pé como rollback; o OTLP já é do pod `alloy-logs` |
-| `ingress` | dono da porta 80; sai por último, com janela |
+| `dockhand` | UI do próprio Docker; morre com ele |
 
 Ficam de fora, e por motivo, não por esquecimento:
 
 - **`maus`** — cria containers via `docker.sock` e monta `/data` do host.
-  Migrar isso para k8s seria emular Docker dentro do Kubernetes. Precisa de
-  redesenho, não de manifesto.
-- **`tela-api` / `tela-mediamtx` / `tela-coturn`** — `network_mode: host` com
-  UDP (STUN/TURN/WebRTC). `hostNetwork: true` cobre parte, mas a porta 3478
-  UDP passaria a ser disputada com o Docker durante a transição.
+  Migrar isso para k8s seria emular Docker dentro do Kubernetes. **Decisão do
+  usuário em 2026-10-23: não migrar**; o serviço fica em Docker até o desligamento
+  dele, e isso é aceito.
 - **`ingress` / `registry` / `dockhand`** — os três formam um ciclo: o ingress
   é a porta de entrada, o registry serve as imagens que o cluster puxa, e o
   Dockhand é o plano de controle do que ainda está em Docker. Nessa ordem
