@@ -1,4 +1,4 @@
-# alloy-logs — coletor de logs do cluster.
+# alloy — coletor de logs, traces e métricas do cluster.
 #
 # ## O buraco que isto fecha
 #
@@ -9,29 +9,41 @@
 # não apareciam no Grafana. Um serviço que atende gente sem log é pior que um
 # serviço sem Grafana, porque o painel vazio parece "está tudo bem".
 #
-# ## Por que "logs" no nome, e não só `alloy`
+# ## Por que "logs" saiu do nome do arquivo, mas o Service não mudou de nome
 #
-# Existe um Service chamado `alloy` em `gitops/apps/bridges/`, que aponta para o
-# container Docker na 4318. Os pods usam esse nome para mandar OTLP
-# (`OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318`), e o domínio público
-# `otel.giomartins.dev` também termina nele. Dois Services com o mesmo nome no
-# mesmo namespace é impossível, e trocar o endpoint OTLP de todos os apps de uma
-# vez é exatamente o tipo de mudança em massa que esta migração evita.
+# O nome `alloy` é o que TODOS os apps já usam como
+# `OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318`, e o domínio público
+# `otel.giomartins.dev` termina nele. Trocar o nome obrigaria a editar env de
+# 10 serviços — exatamente a mudança em massa que esta migração evita.
 #
-# Então este coletor é ADITIVO: só coleta log e só escreve. Não recebe OTLP, não
-# tem Service, não tem porta publicada. O caminho OTLP continua intocado até a
-# migração dos últimos apps, quando os dois coletores podem virar um.
+# A solução foi mover o **EndpointSlice**, não o nome. Até 2026-10-23 o Service
+# `alloy` (em `gitops/apps/bridges/`) era uma ponte para o container Docker na
+# 4318. Agora ele tem `selector` e aponta para ESTE pod, que passou a ter um
+# receiver OTLP completo (grpc 4317 + http 4318).
 #
-# ## Os dois sources, lado a lado
+# ## O que isto conserta (medido, não deduzido)
 #
-#   - `loki.source.kubernetes` — pods do cluster, via API (o ServiceAccount tem
+# Antes deste corte, a telemetria de aplicação estava partida em duas metades:
+#
+#   | dado              | ia para                       | Grafana do cluster lê |
+#   | traces dos pods   | Tempo CONTAINER (172.18.0.11) | Tempo POD             |
+#   | métricas OTLP     | Prometheus CONTAINER (.0.8)   | Prometheus POD        |
+#
+# Prova: o Tempo do container tinha 20 traces recentes de `domain-worker`; o do
+# pod devolvia `traces: []`. O Prometheus do container tinha 16 séries de
+# `http_server_duration_milliseconds_count`; o do pod, **zero**. Abrir latência
+# de `domain-api` no Grafana dava vazio e parecia que a app não emitia nada.
+#
+# ## Os sources, lado a lado
+#
+#   - `otelcol.receiver.otlp` — traces e métricas dos pods e das SPAs.
+#   - `loki.source.kubernetes` — logs dos pods, via API (o ServiceAccount tem
 #     `pods` e `pods/log`).
 #   - `loki.source.docker` — os containers que ainda estão em Docker, via
 #     `hostPath: /var/run/docker.sock`.
 #
-# O segundo é o mesmo mecanismo que o collector de Docker já usa hoje: enquanto
-# houver container em pé, ele precisa ser lido. Quando o último sair, esse bloco
-# sai junto.
+# O último sai quando o último container sair. Enquanto houver `ingress`,
+# `registry` ou `9router` em Docker, ele é a única forma de ler aquele stdout.
 #
 # ## Por que o alloy em Docker não serve para isso
 #
@@ -91,6 +103,74 @@ metadata:
     app.kubernetes.io/name: alloy-logs
 data:
   config.alloy: |
+    // ---------------------------------------------------------------
+    // OTLP: traces e metricas dos pods e dos SPAs.
+    // ---------------------------------------------------------------
+    // Pipeline copiado de `stacks/observability/alloy.alloy`, sem alteracao de
+    // semantica. Ate 2026-10-23 este coletor era so de LOG: o receiver OTLP
+    // vivia apenas no Alloy em Docker, e era para la que `alloy:4318` apontava
+    // (o Service `alloy` era a ponte para o container). Efeito medido: os
+    // traces dos pods iam para o Tempo em Docker e as metricas para o
+    // Prometheus em Docker, enquanto o Grafana do cluster consulta os pods --
+    // abrir latencia de `domain-api` no Grafana dava vazio.
+    otelcol.receiver.otlp "default" {
+      grpc {
+        endpoint = "0.0.0.0:4317"
+      }
+
+      http {
+        endpoint = "0.0.0.0:4318"
+
+        // O endpoint publico (`otel.giomartins.dev`) e consumido pelos
+        // browsers das SPAs, entao o CORS e a unica barreira de origem. Os
+        // valores sao exatamente os do Alloy em Docker.
+        cors {
+          allowed_origins = ["https://tela.giomartins.dev", "https://hub.giomartins.dev", "https://finance.giomartins.dev"]
+        }
+      }
+
+      output {
+        metrics = [otelcol.processor.batch.default.input]
+        traces  = [otelcol.processor.batch.default.input]
+      }
+    }
+
+    otelcol.processor.batch "default" {
+      send_batch_size = 1024
+      timeout         = "5s"
+
+      output {
+        metrics = [otelcol.exporter.prometheus.default.input]
+        traces  = [otelcol.exporter.otlp.tempo.input]
+      }
+    }
+
+    otelcol.exporter.otlp "tempo" {
+      client {
+        // `tempo` e o Service deste diretorio: o Tempo do CLUSTER, nao mais o
+        // container. Mesmo nome do Compose, como o resto da migracao.
+        endpoint = "tempo:4317"
+        tls {
+          insecure = true
+        }
+      }
+    }
+
+    // Metrica OTLP nao pode ir direto ao Prometheus: o receiver de remote-write
+    // fala outro protocolo. Este exporter converte para o pipeline Prometheus
+    // do Alloy, cujo remote_write entrega em `prometheus:9090`.
+    otelcol.exporter.prometheus "default" {
+      forward_to = [prometheus.remote_write.default.receiver]
+    }
+
+    prometheus.remote_write "default" {
+      endpoint {
+        // O Prometheus do cluster tem `--web.enable-remote-write-receiver`;
+        // sem a flag isto levaria 404 e as metricas sumiriam em silencio.
+        url = "http://prometheus:9090/api/v1/write"
+      }
+    }
+
     // ---------------------------------------------------------------
     // Pods do cluster, lidos pela API.
     // ---------------------------------------------------------------
@@ -249,6 +329,14 @@ spec:
           ports:
             - name: http
               containerPort: 12345
+            # OTLP. O Alloy em Docker usava 4317/4318; estes nomes de porta sao
+            # os mesmos que o Service abaixo expoe, e o kube-proxy exige que os
+            # dois lados batam (armadilha que ja custou uma madrugada nas
+            # pontes).
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
           resources:
             requests:
               cpu: 25m
