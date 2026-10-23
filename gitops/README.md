@@ -369,6 +369,37 @@ ainda não cortada. Um Deployment novo nasce sem os campos defaultados, então
 **Regra**: campo defaultado pela API que conflita com um valor novo não se
 "corrige" mudando o manifesto. Ou o objeto nasce certo, ou é recriado.
 
+### 12. `restart: "no"` no Compose não muda container já criado
+
+Ao desligar de vez o `postgres`, o `vaultwarden` e o `vaultwarden-api` (fatia 6),
+editei o `restart: unless-stopped` → `restart: "no"` nos arquivos do host. O
+arquivo passou a dizer `no`, e o container **continuou** com `unless-stopped`:
+
+```bash
+$ docker inspect postgres -f '{{.HostConfig.RestartPolicy.Name}}'
+unless-stopped            # o arquivo diz "no"
+```
+
+`restart:` é lido na **criação** do container, não a cada `docker inspect`. Um
+container já criado mantém a política com que nasceu, mesmo que o YAML mude —
+e mesmo que ele esteja `exited`. A política só muda em runtime com:
+
+```bash
+docker update --restart=no postgres vaultwarden vaultwarden-api
+```
+
+Depois disso, `docker inspect` mostra `no` e um redeploy do stack não os
+ressuscita.
+
+**Por que isso importa mais que estética**: com `unless-stopped`, um redeploy do
+Dockhand religaria o `postgres` no volume congelado, ao lado do pod que já
+escreveu milhares de linhas desde o corte. Dois Postgres divergindo, e o Docker
+venceria em quem escuta a porta do host. A troca de política é parte do
+cutover, não limpeza opcional.
+
+**Regra**: mudar `restart` no arquivo sem `docker update` é mudança de
+documentação, não de comportamento.
+
 ## Bootstrap (uma vez por cluster)
 
 ```bash
