@@ -35,6 +35,62 @@ Decisões deliberadas, para não derrubar nada que já atende gente:
 | Registry continua em Compose | O k3s depende dele para puxar as 10 imagens próprias. Migrar o registry para dentro do cluster cria um ciclo de boot. |
 | Dockhand continua em Compose | Ele gerencia Docker, não k8s. Sai quando não houver mais nada em Compose. |
 
+## Duas armadilhas que custam horas
+
+### 1. Pods não alcançam a rede Docker
+
+A política `FORWARD` do iptables é **`DROP`** (o k3s muda isso ao instalar).
+Consequência: de dentro de um pod, `172.18.0.16:5432` (postgres) e
+`172.18.0.1:5432` (gateway da bridge) dão **timeout** — embora o *host*
+alcance o postgres normalmente. Isso vale para **qualquer** serviço que
+migre e ainda precise falar com o que ficou em Compose.
+
+Solução: `Service` sem selector + `EndpointSlice` apontando para o IP do
+container. O kube-proxy faz DNAT na saída do pod, e o pacote passa por
+`KUBE-SERVICES` em vez de `FORWARD`. Ver `gitops/apps/adminer/deployment.yaml`.
+
+### 2. ArgoCD exclui EndpointSlice por padrão
+
+O `argocd-cm` traz `Endpoints` e `EndpointSlice` em `resource.exclusions`
+(recursos que o control plane recria sozinho). Efeito perverso: o `Service`
+sobe, o `EndpointSlice` **não**, e as conexões caem em `connection refused`
+— enquanto os 3 recursos aparecem **`Synced`/`Healthy`** no painel. Nenhum
+erro visível.
+
+Correção aplicada (remover só o bloco que exclui esses dois kinds):
+
+```bash
+sudo k3s kubectl get cm argocd-cm -n argocd -o jsonpath='{.data.resource\.exclusions}' > /tmp/excl.yaml
+# edite removendo o bloco com "EndpointSlice" e "Endpoints"
+sudo k3s kubectl patch cm argocd-cm -n argocd --type merge \
+  -p "$(python3 -c 'import json;print(json.dumps({"data":{"resource.exclusions":open("/tmp/excl-new.yaml").read()}}))')"
+sudo k3s kubectl rollout restart deploy/argocd-server deploy/argocd-repo-server \
+  deploy/argocd-applicationset-controller -n argocd
+sudo k3s kubectl rollout restart statefulset/argocd-application-controller -n argocd
+```
+
+Isso é **dívida**: o `argocd-cm` não está versionado. Se o ArgoCD for
+reinstalado, a exclusão volta e o adminer quebra em silêncio. O caminho é
+levar esse patch para `gitops/bootstrap/`.
+
+### 3. Kubero exige ingress controller
+
+O Kubero foi projetado para **nginx ingress controller + metrics-server +
+cert-manager**. Instalamos o `ingress-nginx` no manifesto *baremetal*, que
+expõe por NodePort (30945/30421) em vez de `hostPort` — por isso ele **não**
+disputa a porta 80 com o nginx do host.
+
+O `kube-rbac-proxy` do `deploy/operator.yaml` oficial aponta para
+`gcr.io/kubebuilder/kube-rbac-proxy:v0.11.0`, que **não existe mais** (o GCR
+removeu o repositório kubebuilder). A instalação oficial quebra com
+`ErrImagePull` em qualquer cluster novo. Substituto que funciona e tem
+arm64: `quay.io/brancz/kube-rbac-proxy:v0.11.0`.
+
+O CR `Kubero` também precisa de `kubero.database.storageClassName`
+explícito: o template upstream faz `storageClassName: ""` quando o campo
+está vazio, e string vazia significa "sem storage class" — o PVC fica
+`Pending` para sempre. `local-path` resolve.
+
 ## Bootstrap (uma vez por cluster)
 
 ```bash
@@ -188,12 +244,27 @@ Verificado em 2026-10-23, depois do bootstrap:
 | serviço | Docker | k8s | tráfego |
 | --- | --- | --- | --- |
 | `excalidraw` | rodando | **rodando** (NodePort 30023, `Synced/Healthy`) | ainda no Docker (`draw.giomartins.dev` → `:8023`) |
-| demais 32 containers | rodando | — | Docker |
+| `adminer` | rodando | **rodando** (NodePort 30092, `Synced/Healthy`) | ainda no Docker (`adminer.giomartins.dev` → `:8092`) |
+| demais 31 containers | rodando | — | Docker |
 | 20 domínios do ingress | — | — | idênticos antes/depois (mesmo status HTTP) |
 
-Recursos: k3s + ArgoCD ≈ 700 MB de RAM. Sobram ~11 GB. Nenhuma porta
-existente foi disputada — o cluster usa 6443 (API), 10250 (kubelet),
-8472 (VXLAN) e o NodePort 30023.
+Plataforma no cluster: k3s, ArgoCD, ingress-nginx (NodePort), cert-manager,
+metrics-server, Kubero (operator + UI em NodePort 30200).
+
+Recursos: k3s + ArgoCD + ingress-nginx + cert-manager + Kubero ≈ 1,3 GB de
+RAM. Sobram ~10 GB. Nenhuma porta do host foi disputada — o cluster usa
+6443 (API), 10250 (kubelet), 8472 (VXLAN) e NodePorts em `30000-32767`.
+
+### NodePorts ocupados
+
+| NodePort | serviço |
+| --- | --- |
+| 30023 | excalidraw |
+| 30080 | argocd-server |
+| 30092 | adminer |
+| 30200 | kubero |
+| 30421 | ingress-nginx (https) |
+| 30945 | ingress-nginx (http) |
 
 ### O que foi provado, não assumido
 
@@ -205,12 +276,26 @@ existente foi disputada — o cluster usa 6443 (API), 10250 (kubelet),
   sozinho.
 - **git → cluster**: mudar `replicas` para 2 no git e dar push fez o
   cluster subir a segunda réplica sem nenhum `kubectl`.
+- **Pod alcança o postgres via EndpointSlice**: `fsockopen` responde OK, e
+  o PDO chega a receber `fe_sendauth: no password supplied` — prova de que
+  o TCP está estabelecido (só falta credencial, que é digitada na UI).
 - **Zero regressão**: 20/20 domínios com o mesmo status HTTP antes, depois
   e após reiniciar o k3s.
 
+### Kubero
+
+UI em **NodePort 30200** (não exposta de fora; a security list da Oracle
+bloqueia a faixa). Acesso por túnel:
+
+```bash
+ssh -N -L 30200:127.0.0.1:30200 ubuntu@168.138.135.6
+# http://localhost:30200
+```
+
+No primeiro acesso, o Kubero pede para criar o usuário admin.
+
 ## Próximo serviço a migrar
 
-`adminer` é o candidato seguinte: stateless, sem volume, e quase ninguém
-usa — se cair por alguns minutos, o custo é ~zero. Depois dele, os
-stateless com tráfego (`excalidraw` de fato, `hub`, `maus`), e só então os
-stateful.
+Depois de `adminer` (que estreou a ponte com o Docker via EndpointSlice), os
+candidatos naturais são os stateless com tráfego (`hub`, `maus`, `9router`),
+e só então os stateful.

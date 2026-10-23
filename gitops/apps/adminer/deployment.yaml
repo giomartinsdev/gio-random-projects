@@ -12,7 +12,14 @@
 # A solução é um Service sem selector + EndpointSlice apontando para o IP
 # do container. O kube-proxy faz DNAT no tráfego de saída do pod, e o pacote
 # sai pela cadeia de OUTPUT/KUBE-SERVICES, contornando o FORWARD DROP.
-# Verificado: `nc postgres-external 5432` responde "open".
+#
+# SEGUNDA ARMADILHA — o ArgoCD EXCLUI Endpoints e EndpointSlice por padrão
+# (`resource.exclusions` no argocd-cm), porque são recursos que o control
+# plane recria sozinho. Efeito: o Service sobe, o EndpointSlice não, e as
+# conexões caem em "connection refused" sem nenhum erro visível no app —
+# os 3 recursos aparecem "Synced". Foi necessário remover o bloco de
+# exclusão do argocd-cm (ver gitops/README.md) e reiniciar os componentes.
+# Sem isso, este deployment fica verdinho no painel e quebrado na prática.
 #
 # Consequência: o IP 172.18.0.16 está preso no YAML. Se o container do
 # postgres for recriado, ele pode receber outro IP e o adminer para de
@@ -38,6 +45,8 @@ spec:
 apiVersion: discovery.k8s.io/v1
 kind: EndpointSlice
 metadata:
+  # O nome precisa ser único no namespace, e o Service não o descobre pelo
+  # nome — descobre pela label `kubernetes.io/service-name` abaixo.
   name: postgres-external
   labels:
     # Esta label é o que liga o EndpointSlice ao Service. Sem ela, o Service
