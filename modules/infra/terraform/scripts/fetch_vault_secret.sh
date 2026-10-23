@@ -1,19 +1,41 @@
 #!/usr/bin/env sh
-# Reads items from Vaultwarden by name over the internal docker
-# network and prints "ENV_NAME=value" lines to stdout, one per
-# requested mapping -- the read counterpart to seed_vault.sh, used by
-# CI to fetch a secret Terraform already seeded into the vault (see
-# secrets.tf's vault_seed) instead of keeping a separate copy in
-# GitHub Secrets. Same self-signed-HTTPS-proxy wrinkle seed_vault.sh
-# has: the bw CLI refuses non-HTTPS server URLs even for purely
-# internal traffic.
+# Reads items from Vaultwarden by name and prints "ENV_NAME=value"
+# lines to stdout, one per requested mapping, used by CI to fetch a
+# secret Terraform already seeded into the vault instead of keeping a
+# separate copy in GitHub Secrets. Same self-signed-HTTPS-proxy
+# wrinkle seed_vault.sh has: the bw CLI refuses non-HTTPS server URLs
+# even for purely internal traffic.
 #
-# Required env: NETWORK_NAME, VAULTWARDEN_CLIENT_ID,
-# VAULTWARDEN_CLIENT_SECRET, VAULTWARDEN_MASTER_PASSWORD, and
-# ITEM_MAP -- space-separated "ENV_NAME=VaultItemName" pairs. The
-# left side is whatever env var the caller wants the value under;
-# the right side is the vault item's own name (e.g. REGISTRY_PASSWORD,
-# matching exactly what seed_vault.sh created it as).
+# Required env: VAULTWARDEN_CLIENT_ID, VAULTWARDEN_CLIENT_SECRET,
+# VAULTWARDEN_MASTER_PASSWORD, and ITEM_MAP -- space-separated
+# "ENV_NAME=VaultItemName" pairs. The left side is whatever env var
+# the caller wants the value under; the right side is the vault item's
+# own name (e.g. REGISTRY_PASSWORD, matching exactly what
+# seed_vault.sh created it as).
+#
+# ## VAULTWARDEN_UPSTREAM: onde o proxy procura o servidor
+#
+# `host:port`, default `vaultwarden:80` (o nome na rede Docker `apps`
+# -- o que este script fazia quando o Vaultwarden era container).
+#
+# Desde 2026-10-23 o Vaultwarden é POD (`gitops/apps/persistence/
+# vaultwarden/`), e o container homônimo só existe como rollback
+# parado -- nome de container parado sai do DNS do Docker, então
+# `vaultwarden` respondia `EAI_AGAIN` e TODO pipeline de imagem
+# quebrou no passo de buscar a credencial do registry.
+#
+# O CI passa `host.docker.internal:30822`: o NodePort do Service
+# `vaultwarden` no k3s (convenção `8xxx -> 308xx`, porta fixa por
+# decisão -- ver gitops/README.md). Precisa do `--add-host` abaixo:
+# `host.docker.internal` não vem de graça num container Linux.
+#
+# Por que NodePort e não o ClusterIP: o IP do Service é alocado pelo
+# cluster e muda se o Service for recriado; o NodePort é constante e
+# já é a forma como o ingress do host alcança o resto dos pods.
+#
+# NETWORK_NAME continua aceito e continua anexando o container à
+# rede `apps`, mas deixou de ser necessário para achar o servidor --
+# é só a rede de saída.
 set -eu
 
 SCRIPT=$(cat <<'INNER'
@@ -29,9 +51,17 @@ const options = {
   cert: fs.readFileSync('/tmp/proxy.crt'),
 };
 
+// "host:port" -- ver o comentario de VAULTWARDEN_UPSTREAM no topo
+// deste script. O default preserva o comportamento antigo (nome na
+// rede Docker `apps`).
+const upstreamSpec = process.env.VAULTWARDEN_UPSTREAM || 'vaultwarden:80';
+const sep = upstreamSpec.lastIndexOf(':');
+const upstreamHost = sep > 0 ? upstreamSpec.slice(0, sep) : upstreamSpec;
+const upstreamPort = sep > 0 ? Number(upstreamSpec.slice(sep + 1)) : 80;
+
 https.createServer(options, (req, res) => {
   const upstream = http.request(
-    { host: 'vaultwarden', port: 80, path: req.url, method: req.method, headers: req.headers },
+    { host: upstreamHost, port: upstreamPort, path: req.url, method: req.method, headers: req.headers },
     (upstreamRes) => {
       res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
       upstreamRes.pipe(res);
@@ -99,7 +129,20 @@ INNER
 # here is a plain ssh:// connection, which streams stdout back fine --
 # seed_vault.sh's detach+poll dance exists for a now-gone Access-proxy
 # hop this doesn't have to cross.
-docker run --rm --network "$NETWORK_NAME" \
+#
+# NETWORK_NAME e opcional: o servidor agora e achado por
+# VAULTWARDEN_UPSTREAM (NodePort do k3s), nao mais por DNS de rede
+# Docker. Quando definido, ainda anexa o container a ela -- o default
+# de quem chama e `apps`.
+#
+# `--add-host` e inofensivo quando o upstream e um nome normal e e o
+# que faz `host.docker.internal` existir quando o upstream e o NodePort
+# do pod (ver comentario do topo).
+NET_ARGS=""
+[ -n "${NETWORK_NAME:-}" ] && NET_ARGS="--network $NETWORK_NAME"
+
+# shellcheck disable=SC2086
+docker run --rm $NET_ARGS --add-host host.docker.internal:host-gateway \
   -e VAULTWARDEN_CLIENT_ID -e VAULTWARDEN_CLIENT_SECRET -e VAULTWARDEN_MASTER_PASSWORD \
-  -e ITEM_MAP \
+  -e ITEM_MAP -e VAULTWARDEN_UPSTREAM \
   registry.giomartins.dev:5000/vault-cli:latest sh -c "$SCRIPT"
