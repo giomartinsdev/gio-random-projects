@@ -1219,4 +1219,53 @@ Ficam de fora, e por motivo, não por esquecimento:
    docker inspect <container> \
      -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'
    ```
+16. **A observabilidade está PARTIDA em duas metades, e o painel esconde isso.**
+   Descoberto em 2026-10-23 ao responder "migrou tudo?". A fatia 4 foi marcada ✅
+   com base em paridade de *estado* (1 dashboard, 1 usuário, mesma versão), mas a
+   paridade de **fluxo** nunca foi medida. O que está acontecendo:
+
+   | dado | vai para | quem consulta no Grafana (`:30300`) |
+   | --- | --- | --- |
+   | **traces** dos pods | `tempo` **container** (172.18.0.11) | `tempo` **Service** (pod) |
+   | **métricas** OTLP | `prometheus` **container** (172.18.0.8) | `prometheus` **Service** (pod) |
+   | **logs** dos pods | `loki` Service (pod) | `loki` Service (pod) ✅ |
+
+   Medido, não deduzido:
+
+   - `tempo` **container**: 20 traces recentes de `domain-worker` e `domain-api`
+     (timestamp ~1 min antes da consulta). `tempo` **pod**: `traces: []`.
+   - `prometheus` **container**: 16 séries de `http_server_duration_milliseconds_count`
+     na última 2h. `prometheus` **pod**: **0**.
+   - O alvo `job=alloy` no Prometheus do pod está `down` — o pod tenta raspar
+     `alloy:12345`, que é o Service sem selector (a ponte OTLP) e não expõe
+     `/metrics`.
+
+   A causa é estrutural e está documentada no próprio `alloy-logs.yaml`: o
+   Service `alloy` (bridge) aponta para o container Docker, e os pods usam
+   `OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318`. Esse nome resolve para a
+   **ponte**, não para o pod. O `alloy-logs` foi desenhado como **aditivo** — só
+   logs, sem receiver OTLP — justamente para não mexer em todos os apps de uma
+   vez. O efeito colateral é que **traces e métricas dos pods migrados nunca
+   chegaram ao cluster**: quem os recebe é o Alloy em Docker, que escreve nos
+   Tempo/Prometheus em Docker, e o Grafana do cluster não os lê.
+
+   Ou seja: a fatia 4 entregou logs, não observabilidade. Quem abrir o Grafana do
+   cluster para ver latência de `domain-api` encontra vazio e vai concluir que a
+   aplicação não emite telemetria.
+
+   Correção (não feita): dar ao `alloy-logs` os receivers `otelcol.receiver.otlp`
+   (4317/4318) e apontar o Service `alloy` para ele, migrando os dois Tempo e
+   Prometheus de uma vez — ou aceitar a ponte e documentar que **a telemetria de
+   traces/métricas dos pods vive fora do cluster** até a fatia 7.
+17. **Os dois MinIOs divergiram e o console público aponta para o antigo.**
+   `minio.giomartins.dev` faz `proxy_pass` para `:9001`, que é o console do
+   **container**. Os frontends (`tela`, `hub`, `finance`) são servidos pelo
+   `:30900`, que é o **pod**. Medido: o bucket `tela-frontend` teve escrita em
+   2026-10-23 13:46 no pod e está parado em 2026-09-28 no container; o mesmo para
+   `bet-frontend` (2026-10-23 no pod, 2026-09-08 no container). Os objetos que
+   existiam antes do corte são idênticos (md5 igual), então nada foi perdido —
+   mas um upload feito pelo console cai no MinIO velho e **não aparece nos
+   sites**. Correção: trocar o `proxy_pass` para `127.0.0.1:30901` (o NodePort do
+   console do pod) e só então parar o container.
+
 
