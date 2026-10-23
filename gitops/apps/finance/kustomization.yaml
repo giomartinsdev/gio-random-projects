@@ -29,10 +29,7 @@ commonLabels:
 # duplicado em vez de processar a mesma mensagem duas vezes. O corte foi feito
 # parando o container Docker, e o container só volta se este pod falhar.
 patches:
-  - target:
-      kind: Deployment
-      name: finance-customersupport-worker
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 0
+  # finance-customersupport-worker saiu deste patch em 2026-10-23: ele precisa
+  # rodar no cluster porque o `evolution-api` migrou. De dentro do cluster
+  # `evolution-api:8080` resolve para o pod; de dentro do Docker resolve para o
+  # container, que foi parado. Ver gitops/apps/finance/customersupport-worker.yaml.
