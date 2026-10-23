@@ -43,6 +43,7 @@ resources:
   - tempo.yaml
   - grafana.yaml
   - dashboard.yaml
+  - alloy-logs.yaml
 
 commonLabels:
   app.kubernetes.io/part-of: giomartins

@@ -1,0 +1,282 @@
+# alloy-logs — coletor de logs do cluster.
+#
+# ## O buraco que isto fecha
+#
+# O `alloy` que está em Docker usa `discovery.docker` + `loki.source.docker`: ele
+# lê o stdout dos containers Docker e mais nada. Medido: o config dele tem ZERO
+# referências a `kubernetes`. Resultado, até agora: os pods do cluster —
+# incluindo `adminer`, `draw`, `domain` e `finance-api`, que já servem produção —
+# não apareciam no Grafana. Um serviço que atende gente sem log é pior que um
+# serviço sem Grafana, porque o painel vazio parece "está tudo bem".
+#
+# ## Por que "logs" no nome, e não só `alloy`
+#
+# Existe um Service chamado `alloy` em `gitops/apps/bridges/`, que aponta para o
+# container Docker na 4318. Os pods usam esse nome para mandar OTLP
+# (`OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318`), e o domínio público
+# `otel.giomartins.dev` também termina nele. Dois Services com o mesmo nome no
+# mesmo namespace é impossível, e trocar o endpoint OTLP de todos os apps de uma
+# vez é exatamente o tipo de mudança em massa que esta migração evita.
+#
+# Então este coletor é ADITIVO: só coleta log e só escreve. Não recebe OTLP, não
+# tem Service, não tem porta publicada. O caminho OTLP continua intocado até a
+# migração dos últimos apps, quando os dois coletores podem virar um.
+#
+# ## Os dois sources, lado a lado
+#
+#   - `loki.source.kubernetes` — pods do cluster, via API (o ServiceAccount tem
+#     `pods` e `pods/log`).
+#   - `loki.source.docker` — os containers que ainda estão em Docker, via
+#     `hostPath: /var/run/docker.sock`.
+#
+# O segundo é o mesmo mecanismo que o collector de Docker já usa hoje: enquanto
+# houver container em pé, ele precisa ser lido. Quando o último sair, esse bloco
+# sai junto.
+#
+# ## Por que o alloy em Docker não serve para isso
+#
+# Testado: de dentro do container `alloy`, `172.18.0.1:6443` (a API do k3s)
+# responde `Connection refused`. Não há caminho do Docker para a API do cluster.
+# Rodar como pod resolve de graça, via ServiceAccount — sem kubeconfig, sem
+# token em arquivo, sem credencial de cluster-admin montada num container.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alloy-logs
+  labels:
+    app.kubernetes.io/name: alloy-logs
+---
+# ClusterRole, não Role: `discovery.kubernetes` com `role = "pod"` lista pods de
+# todos os namespaces, e no futuro este coletor pode cobrir mais de um. Os verbos
+# são só de leitura — nenhum `create`, `update` ou `delete`.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: alloy-logs
+  labels:
+    app.kubernetes.io/name: alloy-logs
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # Sem `pods/log` o `loki.source.kubernetes` descobre os pods e não consegue
+  # ler uma linha — falha silenciosa, log vazio, nenhum erro no Grafana.
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy-logs
+  labels:
+    app.kubernetes.io/name: alloy-logs
+subjects:
+  - kind: ServiceAccount
+    name: alloy-logs
+    namespace: giomartins
+roleRef:
+  kind: ClusterRole
+  name: alloy-logs
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-logs-config
+  labels:
+    app.kubernetes.io/name: alloy-logs
+data:
+  config.alloy: |
+    // ---------------------------------------------------------------
+    // Pods do cluster, lidos pela API.
+    // ---------------------------------------------------------------
+    discovery.kubernetes "pods" {
+      role = "pod"
+
+      // Só o namespace da migração. Sem isto viriam kube-system, argocd,
+      // cert-manager e kubero: ruído que enche o Loki sem ninguém consultar.
+      // Custa cardinalidade, que é o recurso escasso do Loki.
+      namespaces {
+        names = ["giomartins"]
+      }
+    }
+
+    discovery.relabel "pods" {
+      targets = discovery.kubernetes.pods.targets
+
+      // `app` em vez de `container`: os manifestos desta migração já usam
+      // `app.kubernetes.io/name`, e é esse o nome que o operador reconhece
+      // (`domain-api`, `finance-api`). O label do container no Docker já se
+      // chama `container`, e os dois vão coexistir por um tempo — usar o mesmo
+      // nome para coisas diferentes tornaria as queries ambíguas.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+        target_label  = "app"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+
+      // Um pod com vários containers gera uma linha por container. Sem este
+      // label, não dá para separar sidecar de app.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        target_label  = "container"
+      }
+
+      // Mesmo nome de label do alloy em Docker (`job`), valores diferentes para
+      // que a query saiba a origem sem precisar de outro campo.
+      rule {
+        target_label = "job"
+        replacement  = "kubernetes"
+      }
+    }
+
+    loki.source.kubernetes "pods" {
+      targets    = discovery.relabel.pods.output
+      forward_to = [loki.process.logs.receiver]
+
+      // O collector fala com a API pelo token do ServiceAccount montado pelo
+      // kubelet. Sem `kubeconfig_file`: nenhuma credencial em arquivo.
+    }
+
+    // ---------------------------------------------------------------
+    // Containers que ainda estão em Docker, pelo socket montado.
+    // ---------------------------------------------------------------
+    discovery.docker "containers" {
+      host             = "unix:///var/run/docker.sock"
+      refresh_interval = "10s"
+    }
+
+    discovery.relabel "containers" {
+      targets = discovery.docker.containers.targets
+
+      rule {
+        source_labels = ["__meta_docker_container_name"]
+        regex         = "/(.*)"
+        target_label  = "container"
+      }
+
+      rule {
+        target_label = "job"
+        replacement  = "docker"
+      }
+    }
+
+    loki.source.docker "containers" {
+      host       = "unix:///var/run/docker.sock"
+      targets    = discovery.relabel.containers.output
+      labels     = { job = "docker" }
+      forward_to = [loki.process.logs.receiver]
+    }
+
+    // ---------------------------------------------------------------
+    // Processamento e destino: idênticos aos do collector em Docker.
+    // ---------------------------------------------------------------
+    // Manter o MESMO stage nos dois coletores não é detalhe: `level` é o label
+    // que as queries do dashboard filtram. Se um coletor extraísse `level` e o
+    // outro não, o mesmo serviço apareceria com e sem o campo dependendo de onde
+    // rodava.
+    loki.process "logs" {
+      // Apps em Go logam JSON (slog) e apps em Python também; containers de
+      // infra logam texto puro. `stage.json` extrai `level` quando a linha
+      // parseia e não faz nada quando não parseia — então tudo passa.
+      stage.json {
+        expressions = {
+          level = "level",
+        }
+      }
+
+      stage.labels {
+        values = {
+          level = "level",
+        }
+      }
+
+      forward_to = [loki.write.loki.receiver]
+    }
+
+    loki.write "loki" {
+      endpoint {
+        // `loki` é o Service deste mesmo diretório — o Loki que acabou de subir
+        // com o volume copiado (976M de histórico).
+        url = "http://loki:3100/loki/api/v1/push"
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alloy-logs
+  labels:
+    app.kubernetes.io/name: alloy-logs
+spec:
+  # Um só. Não é DaemonSet: o `loki.source.kubernetes` lê pela API, não pelo
+  # filesystem do nó, então uma réplica cobre todos os nós. Duas réplicas
+  # duplicariam cada linha no Loki.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alloy-logs
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: alloy-logs
+    spec:
+      serviceAccountName: alloy-logs
+      containers:
+        - name: alloy
+          image: grafana/alloy@sha256:b8ec653c44235fbe910879145dac3597d66b0aaecf60bcbbe82580767771a839
+          args:
+            - "run"
+            - "/etc/alloy/config.alloy"
+            # O Alloy expõe um servidor HTTP próprio (UI de componentes, /metrics)
+            # na 12345. Fixar em loopback do pod evita abrir superfície sem
+            # ninguém para usar.
+            - "--server.http.listen-addr=127.0.0.1:12345"
+            - "--storage.path=/var/lib/alloy/data"
+          ports:
+            - name: http
+              containerPort: 12345
+          resources:
+            requests:
+              cpu: 25m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alloy
+              readOnly: true
+            - name: state
+              mountPath: /var/lib/alloy/data
+            # O socket do Docker continua sendo a única forma de ler o stdout
+            # dos containers que ainda não migraram. É superfície privilegiada
+            # e é dívida com prazo: sai quando o último container sair.
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+      volumes:
+        - name: config
+          configMap:
+            name: alloy-logs-config
+        - name: state
+          # emptyDir, não PVC: o estado do Alloy guarda posição de leitura de
+          # log. Perder isso num restart significa reler desde o começo e
+          # duplicar linhas já enviadas, não perder dado. PVC aqui seria custo
+          # sem benefício.
+          emptyDir: {}
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
