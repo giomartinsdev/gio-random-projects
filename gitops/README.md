@@ -340,6 +340,35 @@ e os headers exatos que o SPA envia — foi assim que descobri que o fluxo usa
 `/v1-public/login` com `{"type":"localProvider","responseType":"cookie",...}` e
 não o `/v3-public/...?action=login` que eu estava testando por curl.
 
+### 11. `rollingUpdate: null` não funciona: ServerSideApply ignora null
+
+Trocar um Deployment existente de `RollingUpdate` para `Recreate` no GitOps
+falha, e a mensagem aponta para o lugar errado:
+
+```
+Deployment.apps "vaultwarden" is invalid: spec.strategy.rollingUpdate:
+Forbidden: may not be specified when strategy type is 'Recreate'
+```
+
+O manifesto não tem `rollingUpdate` nenhum — o campo foi **defaultado pela API**
+quando o Deployment foi criado (`maxSurge: 25%`, `maxUnavailable: 25%`) e
+sobrevive ao `type: Recreate`. A tentativa óbvia, `rollingUpdate: null` no
+manifesto, **não resolve**: com `ServerSideApply` (que o ApplicationSet usa) um
+`null` deixa o campo intacto em vez de removê-lo, porque "ausente" e "nulo" têm
+o mesmo efeito no apply — o merge simplesmente não toca na chave.
+
+Um `kubectl patch --type=json -p '[{"op":"remove",...}]'` também volta sem
+efeito: a API re-defaulta no mesmo instante, e o patch responde `patched (no
+change)`.
+
+A saída é **deletar o Deployment e deixar o ArgoCD recriar**. Seguro quando
+`replicas: 0` e não há pod — que é exatamente o estado de um manifesto de fatia
+ainda não cortada. Um Deployment novo nasce sem os campos defaultados, então
+`type: Recreate` passa limpo.
+
+**Regra**: campo defaultado pela API que conflita com um valor novo não se
+"corrige" mudando o manifesto. Ou o objeto nasce certo, ou é recriado.
+
 ## Bootstrap (uma vez por cluster)
 
 ```bash
