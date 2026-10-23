@@ -1,0 +1,21 @@
+# NodePort fixo, espelhando a convenção do excalidraw: o `8092` do Docker
+# virou `30092` aqui (prefixo 300 + a porta original).
+#
+# Enquanto o ingress do host não migrar, esta é a ponte: o nginx alcança
+# `127.0.0.1:30092` exatamente como alcança `127.0.0.1:8092` hoje.
+apiVersion: v1
+kind: Service
+metadata:
+  name: adminer
+  labels:
+    app.kubernetes.io/name: adminer
+    app.kubernetes.io/part-of: giomartins
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: adminer
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30092

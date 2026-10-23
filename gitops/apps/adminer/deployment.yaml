@@ -1,0 +1,109 @@
+# adminer no cluster — segundo serviço migrado, e o primeiro com tráfego
+#
+# Serve o mesmo papel do container Docker (stacks/compute.yml): UI web para
+# inspecionar bancos. Stateless, sem volume, sem segredo — o pior caso de
+# falha é alguém não conseguir abrir o adminer por alguns minutos.
+#
+# ATENÇÃO — o adminer precisa alcançar o postgres, que continua em Docker.
+# Isso NÃO é trivial: a política `FORWARD` do iptables é `DROP` (o k3s muda
+# isso ao instalar), então um pod não alcança 172.18.0.16:5432 diretamente,
+# nem o gateway 172.18.0.1. Verificado: ambos dão timeout de dentro do pod.
+#
+# A solução é um Service sem selector + EndpointSlice apontando para o IP
+# do container. O kube-proxy faz DNAT no tráfego de saída do pod, e o pacote
+# sai pela cadeia de OUTPUT/KUBE-SERVICES, contornando o FORWARD DROP.
+# Verificado: `nc postgres-external 5432` responde "open".
+#
+# Consequência: o IP 172.18.0.16 está preso no YAML. Se o container do
+# postgres for recriado, ele pode receber outro IP e o adminer para de
+# conectar. Isso é dívida aceita e consciente — a solução definitiva é
+# migrar o postgres para o cluster (e aí o Service é nativo). Enquanto isso,
+# ao recriar o postgres: `docker inspect postgres -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'`
+# e atualizar o endpoint abaixo.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-external
+  labels:
+    app.kubernetes.io/name: postgres-external
+    app.kubernetes.io/part-of: giomartins
+spec:
+  # Sem selector de propósito: as rotas vêm do EndpointSlice abaixo.
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: postgres-external
+  labels:
+    # Esta label é o que liga o EndpointSlice ao Service. Sem ela, o Service
+    # não tem endpoints e as conexões caem em "connection refused".
+    kubernetes.io/service-name: postgres-external
+    app.kubernetes.io/part-of: giomartins
+addressType: IPv4
+ports:
+  - name: postgres
+    port: 5432
+    protocol: TCP
+endpoints:
+  # IP do container `postgres` na rede `apps` do Docker.
+  - addresses:
+      - "172.18.0.16"
+    conditions:
+      ready: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adminer
+  labels:
+    app.kubernetes.io/name: adminer
+    app.kubernetes.io/part-of: giomartins
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: adminer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: adminer
+    spec:
+      containers:
+        - name: adminer
+          # Tag fixa (6.1.2), não `latest`. O container Docker rodava
+          # `adminer:latest` — com tag móvel o manifesto não muda entre
+          # builds e o ArgoCD não detecta imagem nova.
+          image: adminer:6.1.2
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          env:
+            # Sem isto, o adminer assume "localhost" e o usuário teria que
+            # digitar o servidor à mão a cada login. `postgres-external` é o
+            # nome do Service acima — resolve pelo DNS do cluster.
+            - name: ADMINER_DEFAULT_SERVER
+              value: "postgres-external"
+
