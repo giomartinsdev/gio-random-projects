@@ -35,7 +35,7 @@ Decisões deliberadas, para não derrubar nada que já atende gente:
 | Registry continua em Compose | O k3s depende dele para puxar as 10 imagens próprias. Migrar o registry para dentro do cluster cria um ciclo de boot. |
 | Dockhand continua em Compose | Ele gerencia Docker, não k8s. Sai quando não houver mais nada em Compose. |
 
-## Duas armadilhas que custam horas
+## Armadilhas que custam horas
 
 ### 1. Pods não alcançam a rede Docker
 
@@ -47,7 +47,23 @@ migre e ainda precise falar com o que ficou em Compose.
 
 Solução: `Service` sem selector + `EndpointSlice` apontando para o IP do
 container. O kube-proxy faz DNAT na saída do pod, e o pacote passa por
-`KUBE-SERVICES` em vez de `FORWARD`. Ver `gitops/apps/adminer/deployment.yaml`.
+`KUBE-SERVICES` em vez de `FORWARD`. O `EndpointSlice` é escrito pelo timer
+`sync-external-endpoints.timer` no host (o IP do container muda a cada
+redeploy do Dockhand); os `Service` moram em `gitops/apps/bridges/`.
+
+**O nome da porta tem de ser idêntico nos dois lados.** Não basta a porta
+numérica casar — se o `Service` declara `name: amqp` e o `EndpointSlice` diz
+`name: rabbitmq`, o kube-proxy **não cria regra nenhuma** para aquele
+ClusterIP. O sintoma é `connection refused` de dentro do pod com o ArgoCD
+mostrando `Synced`/`Healthy` e o `EndpointSlice` aparentemente correto.
+
+Isso derrubou 6 das 7 pontes de uma vez, e passou despercebido porque o
+`postgres` — a única ponte exercitada até então — funcionava por coincidência:
+o nome da porta nos dois lados era literalmente `postgres`. Diagnóstico:
+compare `spec.ports[0].name` do Service com `ports[0].name` do EndpointSlice,
+e conte as regras com `iptables-save -t nat | grep -c <clusterIP>` (tem de dar
+≥2). Por isso o script **lê o nome da porta do próprio Service** em vez de
+recebê-lo por parâmetro: a divergência passa a ser impossível.
 
 ### 2. ArgoCD exclui EndpointSlice por padrão
 
@@ -90,6 +106,37 @@ O CR `Kubero` também precisa de `kubero.database.storageClassName`
 explícito: o template upstream faz `storageClassName: ""` quando o campo
 está vazio, e string vazia significa "sem storage class" — o PVC fica
 `Pending` para sempre. `local-path` resolve.
+
+### 4. `commonLabels` do kustomize contamina `spec.selector`
+
+O kustomize injeta `commonLabels` **também no `spec.selector` dos Services**.
+Num `Service` de ponte isso é destrutivo: ele precisa ficar *sem* selector
+para o kube-proxy usar o `EndpointSlice` manual. Com `commonLabels`, ele
+passa a ter `selector: {part-of: giomartins}` — que casa com **todos** os pods
+do namespace. O `endpointslice-controller` então assume o Service, cria um
+`EndpointSlice` próprio e vazio, e o vazio vence o manual.
+
+Sintoma observado: `vaultwarden-api` em `CrashLoopBackOff` com
+`dial tcp 10.43.159.105:80: connect: connection refused`, ArgoCD `Synced`.
+
+Regra: **`Service` de ponte nunca entra num kustomization com
+`commonLabels`.** Use `labels:` (lista de `pairs`), que aplica só em metadata:
+
+```yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: giomartins
+```
+
+Em apps normais o `commonLabels` é inofensivo — lá o selector *precisa* casar
+com os pods, e é isso que ele faz.
+
+Resíduo que sobrevive à correção: o objeto **`Endpoints` legado** (v1,
+deprecado no 1.33) criado quando o Service tinha selector. O
+`endpointslicemirroring-controller` continua espelhando ele para um
+EndpointSlice novo, com os IPs errados, mesmo depois de o selector sumir.
+Depois de corrigir o `commonLabels`, apague `kubectl delete endpoints <svc> -n
+giomartins` para cada ponte — senão o espelho ressuscita o problema.
 
 ## Bootstrap (uma vez por cluster)
 
@@ -239,14 +286,29 @@ Escolhemos a primeira quando o serviço migrar para valer.
 
 ## Estado atual
 
-Verificado em 2026-10-23, depois do bootstrap:
+Verificado em 2026-10-23, depois do bootstrap e da fatia 3.
+
+**Regra que governa a tabela:** o container Docker só é desligado *depois* de o
+equivalente no k8s provar que serve, e o tráfego só muda num commit separado.
+Por isso a coluna "tráfego" ainda diz Docker em tudo.
 
 | serviço | Docker | k8s | tráfego |
 | --- | --- | --- | --- |
-| `excalidraw` | rodando | **rodando** (NodePort 30023, `Synced/Healthy`) | ainda no Docker (`draw.giomartins.dev` → `:8023`) |
-| `adminer` | rodando | **rodando** (NodePort 30092, `Synced/Healthy`) | ainda no Docker (`adminer.giomartins.dev` → `:8092`) |
-| demais 31 containers | rodando | — | Docker |
+| `excalidraw` | rodando | **rodando** (NodePort 30023) | ainda no Docker (`draw` → `:8023`) |
+| `adminer` | rodando | **rodando** (NodePort 30092) | ainda no Docker (`adminer` → `:8092`) |
+| `domain-api` | rodando | **rodando** (ClusterIP:8000) | ainda no Docker (`domain` → `:8000`) |
+| `domain-worker` | rodando | manifesto, **`replicas: 0`** | Docker (único escritor do CQRS) |
+| `finance-api` | rodando | **rodando** (ClusterIP:8000) | ainda no Docker (`finance-api` → `:8018`) |
+| `finance-openfinance-worker` | rodando | manifesto, **`replicas: 0`** | Docker |
+| `finance-customersupport-worker` | rodando | manifesto, **`replicas: 0`** | Docker |
+| `vaultwarden-api` | rodando | **rodando** (ClusterIP:8080) | sem tráfego externo (bridge interna) |
+| `vaultwarden` | rodando | manifesto, **`replicas: 0`** | Docker (`vault` → `:8222`) |
+| demais 23 containers | rodando | — | Docker |
 | 20 domínios do ingress | — | — | idênticos antes/depois (mesmo status HTTP) |
+
+`replicas: 0` não é esquecimento: são consumidores de fila ou donos de volume
+com escrita exclusiva. Rodar dois ao mesmo tempo duplica mensagem ou corrompe
+dado. Subir para 1 *é* o ato de migrar, e exige parar o Docker antes.
 
 Plataforma no cluster: k3s, ArgoCD, ingress-nginx (NodePort), cert-manager,
 metrics-server, Kubero (operator + UI em NodePort 30200).
@@ -254,6 +316,25 @@ metrics-server, Kubero (operator + UI em NodePort 30200).
 Recursos: k3s + ArgoCD + ingress-nginx + cert-manager + Kubero ≈ 1,3 GB de
 RAM. Sobram ~10 GB. Nenhuma porta do host foi disputada — o cluster usa
 6443 (API), 10250 (kubelet), 8472 (VXLAN) e NodePorts em `30000-32767`.
+
+### Serviços de ponte (`gitops/apps/bridges/`)
+
+Sete `Service` sem selector, ligados por `EndpointSlice` aos containers Docker
+que ainda não migraram. Os nomes são **idênticos aos do Compose** — é o que
+permite migrar um consumidor sem tocar em nenhuma env var:
+
+| Service | container | porta |
+| --- | --- | --- |
+| `postgres` | postgres | 5432 |
+| `rabbitmq` | rabbitmq | 5672 |
+| `minio` | minio | 9000 |
+| `alloy` | alloy | 4318 |
+| `evolution-api` | evolution-api | 8080 |
+| `evolution-redis` | evolution-redis | 6379 |
+| `vaultwarden` | vaultwarden | 80 |
+
+Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
+`selector` e o `EndpointSlice` manual deixa de existir.
 
 ### NodePorts ocupados
 
@@ -279,7 +360,16 @@ RAM. Sobram ~10 GB. Nenhuma porta do host foi disputada — o cluster usa
 - **Pod alcança o postgres via EndpointSlice**: `fsockopen` responde OK, e
   o PDO chega a receber `fe_sendauth: no password supplied` — prova de que
   o TCP está estabelecido (só falta credencial, que é digitada na UI).
-- **Zero regressão**: 20/20 domínios com o mesmo status HTTP antes, depois
+- **`domain-api` no k8s lê do postgres em Docker**: 10 `GET
+  /finance/daily-summary` no pod produziram **21 transações commitadas** no
+  banco (`xact_commit` de `pg_stat_database`, antes/depois). Não é o pod
+  respondendo do cache — é o banco do Docker executando o trabalho.
+- **`finance-api` alcança `domain-api` e `vaultwarden-api`** pelo DNS do
+  cluster, embora os três tenham sido migrados em commits diferentes.
+- **As 7 pontes abrem**: de dentro de um pod, `nc -zv` responde `open` para
+  postgres, rabbitmq, minio, alloy, evolution-api, evolution-redis e
+  vaultwarden — e cada ClusterIP tem ≥2 regras em `KUBE-SERVICES`.
+- **Zero regressão**: 20/20 domínios com o mesmo status HTTP antes, depois,
   e após reiniciar o k3s.
 
 ### Kubero
@@ -296,6 +386,43 @@ No primeiro acesso, o Kubero pede para criar o usuário admin.
 
 ## Próximo serviço a migrar
 
-Depois de `adminer` (que estreou a ponte com o Docker via EndpointSlice), os
-candidatos naturais são os stateless com tráfego (`hub`, `maus`, `9router`),
-e só então os stateful.
+Fatia 3 está no cluster mas **sem tráfego**: `domain-api` e `finance-api`
+respondem e leem o banco, mas o ingress ainda aponta para as portas do Docker.
+O próximo passo não é migrar mais um serviço — é **virar o tráfego** de um
+deles (`adminer` é o candidato mais barato: uma linha no `default.conf` e um
+`nginx -s reload`, com rollback de uma linha).
+
+Depois disso, a ordem do `MIGRATION.md`: fatia 4 (observabilidade), fatia 5
+(minio, rabbitmq), fatia 6 (postgres, vaultwarden) — as duas últimas com janela
+de manutenção, porque são as únicas sem rollback barato.
+
+Ficam de fora, e por motivo, não por esquecimento:
+
+- **`maus`** — cria containers via `docker.sock` e monta `/data` do host.
+  Migrar isso para k8s seria emular Docker dentro do Kubernetes. Precisa de
+  redesenho, não de manifesto.
+- **`tela-api` / `tela-mediamtx` / `tela-coturn`** — `network_mode: host` com
+  UDP (STUN/TURN/WebRTC). `hostNetwork: true` cobre parte, mas a porta 3478
+  UDP passaria a ser disputada com o Docker durante a transição.
+- **`ingress` / `registry` / `dockhand`** — os três formam um ciclo: o ingress
+  é a porta de entrada, o registry serve as imagens que o cluster puxa, e o
+  Dockhand é o plano de controle do que ainda está em Docker. Nessa ordem
+  inversa, no fim.
+
+## Dívidas conhecidas
+
+1. **IP do container nas pontes.** O `EndpointSlice` manual carrega o IP do
+   container Docker. Mitigado pelo `sync-external-endpoints.timer` (1 min),
+   mas o timer é um processo no host, fora do GitOps. Morre com as fatias 5/6.
+2. **Patch do `argocd-cm` não versionado.** As `resource.exclusions` foram
+   editadas à mão. Reinstalar o ArgoCD reintroduz a exclusão de `EndpointSlice`
+   e as pontes quebram em silêncio. Devia estar em `gitops/bootstrap/`.
+3. **O timer e o `sync-app-secrets.sh` não são declarativos.** São scripts
+   instalados à mão em `/usr/local/sbin`. Funcionam e são idempotentes, mas não
+   são reconciliados por nada — se a máquina for recriada, alguém precisa
+   lembrar de rodá-los. O `bootstrap.sh` do repositório deve cobrir isso.
+4. **`vaultwarden` aparece como `Progressing` no ArgoCD.** Deployment com
+   `replicas: 0` nunca reporta `AvailableReplicas`, então o health check fica
+   inconclusivo para sempre. Cosmético, mas ruído no painel.
+5. **`argocd-cm` sem `resource.exclusions` é estado do cluster, não do git** —
+   o mesmo item 2 visto pelo outro lado.
