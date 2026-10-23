@@ -49,6 +49,16 @@ resources:
   - evolution-redis.yaml
   - evolution-api.yaml
 
-commonLabels:
-  app.kubernetes.io/part-of: giomartins
-  giomartins.dev/bridge: docker
+# NÃO usar `commonLabels` aqui. O kustomize injeta commonLabels também no
+# `spec.selector` dos Services, e um Service de ponte precisa ficar SEM
+# selector — é o que faz o kube-proxy usar o EndpointSlice manual em vez de
+# gerar um vazio. Com commonLabels, os 7 Services de ponte ganharam
+# `selector: {part-of: giomartins}`, que casa com todos os pods do namespace;
+# o endpointslice-controller então criou um EndpointSlice vazio e o
+# vaultwarden-api começou a receber `connection refused`.
+#
+# `labels` (sem o prefixo `common`) aplica só em metadata.
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: giomartins
+      giomartins.dev/bridge: docker

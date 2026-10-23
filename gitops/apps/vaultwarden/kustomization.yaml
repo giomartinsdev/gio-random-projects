@@ -15,5 +15,9 @@ resources:
   - deployment.yaml
   - service.yaml
 
-commonLabels:
-  app.kubernetes.io/part-of: giomartins
+# `labels` e não `commonLabels`: ver o comentário em
+# gitops/apps/bridges/kustomization.yaml — commonLabels contamina o
+# spec.selector dos Services.
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: giomartins
