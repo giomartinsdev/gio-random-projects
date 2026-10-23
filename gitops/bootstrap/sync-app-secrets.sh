@@ -25,9 +25,14 @@ NS="giomartins"
 K3S="k3s"
 
 # Variáveis injetadas pela imagem base (Dockerfile/linguagem), não pela
-# aplicação. Copiá-las para o Secret é ruído e pode até atrapalhar — o PATH de
-# um container Go não deve ser imposto ao pod por um Secret.
-IGNORAR='^(PATH|HOSTNAME|HOME|LANG|LANGUAGE|LC_ALL|GPG_KEY|PYTHON_VERSION|PYTHON_SHA256|PYTHONUNBUFFERED|PYTHONDONTWRITEBYTECODE|NODE_VERSION|YARN_VERSION|SSL_CERT_FILE|TERM)$'
+# aplicação: copiá-las para o Secret é ruído — e no caso do nginx elas são
+# versões de pacote, que mudariam o hash do Secret a cada rebuild da imagem
+# sem nenhuma mudança de configuração.
+#
+# Os defaults do nginx (`NGINX_VERSION`, `NJS_*`, `PKG_RELEASE`, `DYNPKG_RELEASE`)
+# apareceram de fato no primeiro teste: o container é nginx puro, criado por um
+# `sh -c` que sobrescreve o entrypoint, então as variáveis da imagem sobrevivem.
+IGNORAR='^(PATH|HOSTNAME|HOME|LANG|LANGUAGE|LC_ALL|GPG_KEY|PYTHON_VERSION|PYTHON_SHA256|PYTHONUNBUFFERED|PYTHONDONTWRITEBYTECODE|NODE_VERSION|YARN_VERSION|SSL_CERT_FILE|TERM|NGINX_VERSION|NJS_VERSION|NJS_RELEASE|PKG_RELEASE|DYNPKG_RELEASE)$'
 
 # <nome-do-secret>=<container-docker>[:<chave-que-veio-de-outro-lugar>]
 #
@@ -44,6 +49,12 @@ MAPA=(
   # default `${VAR:?}` — ou seja, obrigatório). Sem este secret, o pod do
   # vaultwarden não sobe quando chegar a hora da fatia 6.
   "vaultwarden:vaultwarden"
+  # Par do MCP: o servidor carrega DATABASE_URI (senha do usuário read-only
+  # mcp_ro) e o gateway carrega MCP_DB_TOKEN, que vira literal no `map` do
+  # nginx em tempo de configuração. Dois secrets distintos de propósito: o
+  # gateway não deve ver a credencial do banco, nem o MCP o token do gateway.
+  "db-mcp:db-mcp"
+  "db-mcp-gateway:db-mcp-gateway"
 )
 
 alvo="${1:-}"

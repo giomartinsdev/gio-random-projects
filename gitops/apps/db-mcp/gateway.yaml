@@ -1,0 +1,154 @@
+# db-mcp-gateway — nginx que valida o token bearer na frente do MCP.
+#
+# Este é o único componente do par que o ingress alcança. No Compose ele publica
+# 127.0.0.1:8021; aqui ele é um Deployment com Service ClusterIP, e a troca de
+# tráfego é um passo separado.
+#
+# ## O detalhe que não pode ser "modernizado"
+#
+# O token NÃO pode virar uma env var lida por `$http_authorization` em runtime.
+# A validação é um `map` do nginx, que resolve em tempo de configuração — não há
+# `if` com variável de ambiente em `server_name`. Por isso o padrão do Compose é:
+# um template com `__MCP_DB_TOKEN__`, um `sed` no boot que substitui pelo valor,
+# e o `nginx` só então sobe.
+#
+# Isso é preservado aqui tal e qual. A alternativa "mais limpa" (`envsubst` no
+# entrypoint, ou `auth_request` para um sidecar) mudaria o mecanismo de
+# autenticação — e um mecanismo de auth reescrito durante uma migração de infra
+# é exatamente o tipo de mudança que não se consegue revisar com segurança.
+#
+# O arquivo do template entra por ConfigMap (é público: só tem o placeholder).
+# O valor real vem do Secret, por env var, e é consumido pelo `sed` em runtime.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-mcp-gateway-conf
+  labels:
+    app.kubernetes.io/name: db-mcp-gateway
+data:
+  # Cópia fiel de stacks/db-mcp/mcp-gateway.conf.tmpl. A única diferença é que
+  # `proxy_pass http://db-mcp:8000` continua funcionando: `db-mcp` é o Service
+  # deste mesmo diretório. Nenhuma outra linha mudou.
+  mcp-gateway.conf.tmpl: |
+    map_hash_bucket_size 256;
+    map $http_authorization $mcp_authorized {
+        default 0;
+        "Bearer __MCP_DB_TOKEN__" 1;
+    }
+
+    server {
+        listen 8000;
+        server_name _;
+
+        location = /healthz {
+            return 200 "ok\n";
+            add_header Content-Type text/plain;
+        }
+
+        location / {
+            if ($mcp_authorized = 0) {
+                return 401 '{"error":"unauthorized"}';
+            }
+
+            proxy_pass http://db-mcp:8000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+            proxy_set_header Connection "";
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db-mcp-gateway
+  labels:
+    app.kubernetes.io/name: db-mcp-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: db-mcp-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: db-mcp-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: nginx:1.27-alpine
+          # Mesmo comando do Compose: renderiza o template com o token do
+          # ambiente e só então executa o nginx.
+          #
+          # O `$MCP_DB_TOKEN` chega literal ao shell: o kubelet só interpola a
+          # forma `$(VAR)` em `command`/`args`/`env[].value`. Um `$` solto não é
+          # tocado, então o `sh` do container expande com o valor do Secret —
+          # que é exatamente o comportamento desejado. (No Compose era preciso
+          # `$$` para escapar do compose; aqui, não.)
+          command:
+            - sh
+            - -c
+            - |
+              sed "s|__MCP_DB_TOKEN__|$MCP_DB_TOKEN|g" /etc/nginx/tmpl/mcp-gateway.conf.tmpl \
+                > /etc/nginx/conf.d/default.conf
+              exec nginx -g 'daemon off;'
+          ports:
+            - name: http
+              containerPort: 8000
+          # /healthz é público por desenho (não exige token), então serve de
+          # probe sem precisar de credencial.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            # `readOnly` e em caminho separado (`/etc/nginx/tmpl`): o nginx
+            # escreve o renderizado em /etc/nginx/conf.d/default.conf, e o
+            # template não pode ser sobrescrito por engano.
+            - name: tmpl
+              mountPath: /etc/nginx/tmpl
+              readOnly: true
+          env:
+            - name: MCP_DB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: db-mcp-gateway
+                  key: MCP_DB_TOKEN
+      volumes:
+        - name: tmpl
+          configMap:
+            name: db-mcp-gateway-conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-mcp-gateway
+  labels:
+    app.kubernetes.io/name: db-mcp-gateway
+spec:
+  selector:
+    app.kubernetes.io/name: db-mcp-gateway
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

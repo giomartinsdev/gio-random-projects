@@ -1,0 +1,94 @@
+# db-mcp — servidor MCP de leitura do Postgres (crystaldba/postgres-mcp).
+#
+# Roda em PARALELO ao container Docker (stacks/db-mcp.yml). O ingress ainda
+# aponta para 127.0.0.1:8021, que é o gateway em Docker.
+#
+# ## Por que este serviço não tem porta publicada
+#
+# Ele fala o transporte MCP e NÃO tem autenticação própria. No Compose ele fica
+# só na rede interna `apps`, sem porta publicada — quem expõe é o gateway nginx
+# (db-mcp-gateway) que valida um token bearer.
+#
+# A mesma topologia se reproduz no cluster: este Deployment não tem Service
+# externo, e o gateway o alcança por `db-mcp:8000` pelo DNS interno.
+#
+# ## Leitura, não escrita
+#
+# Três camadas independentes (nenhuma delas desaparece na migração):
+#   1. usuário `mcp_ro` — só SELECT nas tabelas `finance_*`
+#   2. `--access-mode=restricted` — transações read-only
+#   3. token no gateway
+#
+# A camada 2 está no `args` abaixo, copiada do Compose. Se ela sumir, o MCP
+# passa a aceitar escrita com um usuário que não deveria poder escrever.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db-mcp
+  labels:
+    app.kubernetes.io/name: db-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: db-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: db-mcp
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: db-mcp
+          image: crystaldba/postgres-mcp@sha256:dbbd346860d29f1543e991f30f3284bf4ab5f096d049ecc3426528f20b1b6e6b
+          # Copiado literalmente do `command:` no Compose. `restricted` não é
+          # default da imagem — é escolha explícita.
+          args:
+            - "--access-mode=restricted"
+            - "--transport=sse"
+            - "--sse-host=0.0.0.0"
+            - "--sse-port=8000"
+          ports:
+            - name: sse
+              containerPort: 8000
+          # Probe TCP, não HTTP: este é um servidor SSE. Um GET em /sse abre um
+          # stream que nunca fecha, então um httpGet ficaria pendurado até o
+          # timeout a cada verificação.
+          readinessProbe:
+            tcpSocket:
+              port: sse
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: sse
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 20m
+              memory: 96Mi
+            limits:
+              memory: 384Mi
+          envFrom:
+            # DATABASE_URI (com a senha de mcp_ro) — derivado do container
+            # Docker por gitops/bootstrap/sync-app-secrets.sh. Aponta para
+            # `postgres:5432`, que no cluster é a ponte para o Docker.
+            - secretRef:
+                name: db-mcp
+---
+# Service interno. Sem NodePort de propósito: só o gateway deve alcançá-lo.
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-mcp
+  labels:
+    app.kubernetes.io/name: db-mcp
+spec:
+  selector:
+    app.kubernetes.io/name: db-mcp
+  ports:
+    - name: sse
+      port: 8000
+      targetPort: sse
