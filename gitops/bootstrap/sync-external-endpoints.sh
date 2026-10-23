@@ -2,30 +2,54 @@
 # sync-external-endpoints.sh — mantém os EndpointSlices do k8s apontando para os
 # containers Docker que ainda não migraram.
 #
-# Por que isto existe: pods NÃO alcançam a rede Docker diretamente (a política
-# FORWARD do iptables é DROP). A ponte é um Service sem selector + EndpointSlice
-# com o IP do container — o kube-proxy faz DNAT e o tráfego passa por
-# KUBE-SERVICES em vez de FORWARD.
+# ## O problema
 #
-# ## Divisão de responsabilidade (importante)
+# Pods NÃO alcançam a rede Docker diretamente: a política `FORWARD` do iptables
+# é `DROP`. Verificado de dentro de um pod — `172.18.0.16:5432` e
+# `172.18.0.1:5432` dão timeout, embora o host alcance o postgres normalmente.
 #
-#   - Os **Services** (postgres, rabbitmq, minio, alloy, evolution-*) são
-#     declarados em gitops/apps/bridges/ e reconciliados pelo ArgoCD.
-#   - Os **EndpointSlices** são escritos POR ESTE SCRIPT. Eles contêm o IP do
+# A ponte é um Service sem selector + EndpointSlice com o IP do container. O
+# kube-proxy faz DNAT na saída do pod e o pacote passa por `KUBE-SERVICES` em
+# vez de `FORWARD`.
+#
+# ## A armadilha que custou uma madrugada
+#
+# O kube-proxy só liga uma porta do EndpointSlice a uma porta do Service quando
+# **os nomes são idênticos** — não basta a porta numérica casar. Sintoma: o
+# Service existe, o EndpointSlice existe, o IP está certo, o ArgoCD diz
+# `Synced/Healthy`, e o pod leva `connection refused`.
+#
+# Aconteceu exatamente isso: o Service declarava `name: amqp` (porta 5672) e o
+# EndpointSlice dizia `name: rabbitmq`. Nenhuma regra de iptables era criada
+# para aquele ClusterIP. Só o `postgres` funcionava, porque por coincidência os
+# dois lados se chamavam `postgres`.
+#
+# Por isso este script **lê o nome e o número da porta do próprio Service** em
+# vez de receber os dois por parâmetro. Assim o nome não pode divergir: ele é
+# copiado da única fonte da verdade.
+#
+# ## Divisão de responsabilidade
+#
+#   - **Services** (postgres, rabbitmq, minio, alloy, evolution-*, vaultwarden)
+#     são declarados em `gitops/apps/bridges/` e reconciliados pelo ArgoCD.
+#   - **EndpointSlices** são escritos POR ESTE SCRIPT. Eles contêm o IP do
 #     container, que muda quando o Dockhand redeploya a stack.
 #
-# O script NÃO cria nem altera Services. Se criasse, o ArgoCD (com selfHeal
-# ligado) os reverteria, e os dois ficariam brigando em loop.
+# O script NÃO cria nem altera Services. Se criasse, o ArgoCD (com `selfHeal`
+# ligado) os reverteria e os dois brigariam em loop.
 #
-# O problema que isto resolve: o Dockhand redeploya `project-infra` por git-sync
-# agendado, o postgres renasce com outro IP, e os apps no k8s param de conectar
-# — com o ArgoCD mostrando tudo `Synced/Healthy`, porque Deployment e Service
-# não têm nada de errado. O erro só apareceria no log da aplicação.
+# ## Por que isto existe
+#
+# O Dockhand redeploya `project-infra` por git-sync agendado. O postgres renasce
+# com outro IP e os apps no k8s param de conectar — com o ArgoCD mostrando tudo
+# `Synced/Healthy`, porque Deployment e Service não têm nada de errado. O erro
+# só apareceria no log da aplicação.
 #
 # Isto é ponte, não destino. Morre quando os dados migrarem para o cluster
 # (fatias 5 e 6 do MIGRATION.md).
 #
-# Instalação (host):
+# ## Instalação (host)
+#
 #   sudo install -m 755 sync-external-endpoints.sh /usr/local/sbin/
 #   sudo install -m 644 sync-external-endpoints.{service,timer} /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now sync-external-endpoints.timer
@@ -34,19 +58,22 @@ set -uo pipefail
 K3S="k3s"
 NS="giomartins"
 
-# <nome-do-service-no-k8s>:<container-docker>:<porta>
+# <service-no-k8s>:<container-docker>
+#
+# A porta NÃO aparece aqui de propósito: vem do Service. Ver o comentário do
+# topo sobre nomes de porta.
 MAPA=(
-  "postgres:postgres:5432"
-  "rabbitmq:rabbitmq:5672"
-  "minio:minio:9000"
-  "alloy:alloy:4318"
-  "evolution-redis:evolution-redis:6379"
-  "evolution-api:evolution-api:8080"
-  "vaultwarden:vaultwarden:80"
+  "postgres:postgres"
+  "rabbitmq:rabbitmq"
+  "minio:minio"
+  "alloy:alloy"
+  "evolution-redis:evolution-redis"
+  "evolution-api:evolution-api"
+  "vaultwarden:vaultwarden"
 )
 
 for entrada in "${MAPA[@]}"; do
-  IFS=: read -r svc container porta <<< "$entrada"
+  IFS=: read -r svc container <<< "$entrada"
 
   ip=$(docker inspect "$container" \
         --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null)
@@ -59,18 +86,44 @@ for entrada in "${MAPA[@]}"; do
     continue
   fi
 
-  atual=$($K3S kubectl get endpointslice "$svc" -n "$NS" \
-            -o jsonpath='{.endpoints[0].addresses[0]}' 2>/dev/null)
+  # Nome e número da porta vêm do Service: fonte única da verdade. Se o Service
+  # ainda não existe (primeiro minuto após um push), pula sem inventar.
+  porta_nome=$($K3S kubectl get svc "$svc" -n "$NS" \
+                 -o jsonpath='{.spec.ports[0].name}' 2>/dev/null)
+  porta_num=$($K3S kubectl get svc "$svc" -n "$NS" \
+                 -o jsonpath='{.spec.ports[0].port}' 2>/dev/null)
 
-  if [ "$atual" = "$ip" ]; then
+  if [ -z "$porta_num" ]; then
+    echo "[skip] Service $svc ainda não existe — nada a fazer"
     continue
   fi
 
-  echo "[sync] $svc: ${atual:-<vazio>} -> $ip"
+  atual=$($K3S kubectl get endpointslice "$svc" -n "$NS" \
+            -o jsonpath='{.endpoints[0].addresses[0]}' 2>/dev/null)
+  atual_nome=$($K3S kubectl get endpointslice "$svc" -n "$NS" \
+            -o jsonpath='{.ports[0].name}' 2>/dev/null)
 
-  # `kubectl apply` num EndpointSlice exige o campo `ports`; ele é o mesmo do
-  # Service, mas precisa estar aqui porque o EndpointSlice é um objeto
-  # independente (o Service não o gera, já que não tem selector).
+  # Reaplica também quando o NOME da porta diverge, mesmo com o IP igual. Sem
+  # isso, corrigir o nome exigiria apagar o EndpointSlice à mão — e o sintoma
+  # (connection refused com tudo verde no ArgoCD) não aponta para cá.
+  if [ "$atual" = "$ip" ] && [ "$atual_nome" = "$porta_nome" ]; then
+    continue
+  fi
+
+  echo "[sync] $svc: ip ${atual:-<vazio>} -> $ip, porta ${atual_nome:-<vazio>} -> ${porta_nome:-<sem-nome>}/$porta_num"
+
+  # O campo `name` do EndpointSlice PRECISA ser igual ao do Service. Ver o
+  # comentário do topo. Se o Service usa porta sem nome, `name` é omitido —
+  # kube-proxy casa sem nome dos dois lados.
+  if [ -n "$porta_nome" ]; then
+    bloco_porta="  - name: ${porta_nome}
+    port: ${porta_num}
+    protocol: TCP"
+  else
+    bloco_porta="  - port: ${porta_num}
+    protocol: TCP"
+  fi
+
   cat <<YAML | $K3S kubectl apply -f - >/dev/null
 apiVersion: discovery.k8s.io/v1
 kind: EndpointSlice
@@ -82,9 +135,7 @@ metadata:
     giomartins.dev/bridge: docker
 addressType: IPv4
 ports:
-  - name: ${svc}
-    port: ${porta}
-    protocol: TCP
+${bloco_porta}
 endpoints:
   - addresses:
       - "${ip}"
