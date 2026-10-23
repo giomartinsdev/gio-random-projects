@@ -70,9 +70,28 @@ spec:
       labels:
         app.kubernetes.io/name: minio
     spec:
+      imagePullSecrets:
+        - name: registry-credentials
       containers:
         - name: minio
-          image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+          # NÃO é `minio/minio@sha256:...`. Aquele repositório saiu do Docker Hub
+          # e agora responde `pull access denied, repository does not exist`.
+          # O container em produção continuava rodando só porque a imagem estava
+          # no cache local do Docker — e o primeiro pod falhou com ErrImagePull,
+          # provando que "está rodando há 11 horas" não é prova de que a imagem
+          # é puxável.
+          #
+          # A imagem foi retaggeada para o registry próprio, que é o contrato
+          # deste repositório (`registry.giomartins.dev:5000/<app>:<tag>`):
+          # minio/minio@sha256:14cea... -> local, tag RELEASE.2025-09-07T16-13-09Z
+          #
+          # Consequência assumida: o cluster agora depende do registry local para
+          # subir o minio. Ele já dependia para todas as apps próprias; a diferença
+          # é que esta imagem não existe em mais lugar nenhum. Ver a dívida
+          # registrada no README.
+          image: registry.giomartins.dev:5000/minio:RELEASE.2025-09-07T16-13-09Z
+          imagePullPolicy: IfNotPresent
+
           # Comando lido do container, não do Compose. O `--console-address`
           # importa: sem ele o console sobe numa porta aleatória e o
           # `minio.giomartins.dev` (que aponta para a 9001) para de funcionar
