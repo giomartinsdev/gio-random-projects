@@ -1,0 +1,65 @@
+# excalidraw no cluster — piloto da migração.
+#
+# Roda em PARALELO com o container Docker atual (stacks/excalidraw.yml), que
+# continua servindo draw.giomartins.dev. Nada no ingress aponta para cá
+# ainda; a troca de tráfego é um passo separado e reversível.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: excalidraw
+  labels:
+    app.kubernetes.io/name: excalidraw
+    app.kubernetes.io/part-of: giomartins
+spec:
+  # 1 réplica de propósito: nó único, e duas cópias de um SPA estático não
+  # trazem disponibilidade real — só consumo. Subir para 2 quando houver
+  # um segundo nó.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: excalidraw
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: excalidraw
+    spec:
+      # Criado uma vez no bootstrap (gitops/README.md). Fica fora do git
+      # porque o repositório é público.
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: excalidraw
+          # Tag fixa, não `latest`. Com `latest`, o ArgoCD não vê diferença
+          # no manifesto e nunca re-sincroniza uma imagem nova — o build
+          # publicaria e o cluster continuaria rodando a versão antiga.
+          # Atualizar a versão = editar esta linha e commitar.
+          image: registry.giomartins.dev:5000/excalidraw:v0.18.1
+          ports:
+            - name: http
+              containerPort: 80
+          # A imagem do upstream já declara HEALTHCHECK (wget na 80), mas
+          # healthcheck de imagem não vira probe no k8s — precisa ser
+          # explícito, senão o Service manda tráfego para pod não pronto.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            # Requests honestos medidos no consumo real do container Docker
+            # atual (~5m CPU, ~15Mi). Limite de memória contém o pior caso;
+            # não há limite de CPU porque um SPA estático só usa CPU no
+            # boot e throttling artificial atrasaria o start.
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      # Sem volume: é um SPA estático, todo o estado vive no navegador.

@@ -1,0 +1,26 @@
+# NodePort fixo (30023) e não ClusterIP.
+#
+# Motivo: o ingress nginx atual roda em `network_mode: host` e fala com os
+# containers por `127.0.0.1:<porta>`. Enquanto não migrarmos o ingress, a
+# ponte entre ele e o cluster é o NodePort — o nginx alcança
+# `127.0.0.1:30023` exatamente como alcança `127.0.0.1:8023` hoje.
+#
+# Fixar o número (em vez de deixar o k8s sortear) é o que permite escrever
+# o `proxy_pass` no default.conf com antecedência. 30023 foi escolhido por
+# espelhar o 8023 do Docker, para reduzir confusão durante a migração.
+apiVersion: v1
+kind: Service
+metadata:
+  name: excalidraw
+  labels:
+    app.kubernetes.io/name: excalidraw
+    app.kubernetes.io/part-of: giomartins
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: excalidraw
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30023

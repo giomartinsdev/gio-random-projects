@@ -1,0 +1,77 @@
+# Validação dos manifestos GitOps.
+#
+# Não valida Dockerfile nem testa código: isso é papel dos pipelines por
+# linguagem. Aqui o escopo é estreito — garantir que o que vai para
+# `gitops/` é YAML de Kubernetes sintaticamente válido e que o kustomize
+# renderiza. Um manifesto quebrado mergeado em `main` não "falha o deploy"
+# de forma visível: o ArgoCD fica em `OutOfSync`/`SyncFailed` em silêncio e
+# o cluster continua na versão anterior. Este check é o que torna isso um
+# erro de CI em vez de um mistério semanas depois.
+name: gitops-validate
+
+on:
+  pull_request:
+    paths:
+      - 'gitops/**'
+      - '.github/workflows/gitops-validate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'gitops/**'
+      - '.github/workflows/gitops-validate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # kubectl embute o kustomize, então não há binário extra para instalar
+      # e a versão do validador acompanha a do cliente.
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.5
+
+      # `--dry-run=client` valida schema sem precisar de cluster — o CI não
+      # tem kubeconfig, e não deveria ter.
+      - name: Renderiza cada app e valida o schema
+        run: |
+          set -euo pipefail
+          # `bootstrap/` é um ApplicationSet (CRD do ArgoCD): não existe no
+          # schema do Kubernetes puro, então `kubectl apply --dry-run` sem o
+          # CRD instalado falharia. Ele é aplicado uma vez, à mão, e é
+          # validado pelo próprio ArgoCD ao reconciliar.
+          dirs=$(find gitops/apps -name kustomization.yaml -exec dirname {} \; | sort)
+          if [ -z "$dirs" ]; then
+            echo "nenhum app em gitops/apps/ — nada a validar"
+            exit 0
+          fi
+          for d in $dirs; do
+            echo "::group::$d"
+            kubectl kustomize "$d" > /tmp/rendered.yaml
+            if [ ! -s /tmp/rendered.yaml ]; then
+              echo "::error::$d renderizou vazio"
+              exit 1
+            fi
+            kubectl apply --dry-run=client -f /tmp/rendered.yaml
+            echo "::endgroup::"
+          done
+
+      # Guarda contra o erro mais caro deste setup: tag móvel em GitOps.
+      # Com `latest` o ArgoCD não detecta build novo e o cluster fica
+      # silenciosamente defasado.
+      - name: Proíbe tag `latest` nos manifestos
+        run: |
+          set -euo pipefail
+          # Procura `image:` com `:latest` ou sem tag (que implica latest).
+          if grep -rnE '^\s*image:\s*[^[:space:]]+' gitops/apps \
+               | grep -E ':latest(\s|$)' ; then
+            echo "::error::Use tag imutável (semver/sha) em gitops/. 'latest' impede o ArgoCD de detectar builds novos."
+            exit 1
+          fi
+          echo "nenhuma tag móvel encontrada"
