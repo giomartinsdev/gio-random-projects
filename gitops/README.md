@@ -70,12 +70,18 @@ pasta em `gitops/apps/` cria o Application sozinho.
 
 ### Acessar o ArgoCD
 
-Ele não tem Ingress (a 80 é do nginx). O acesso é por túnel SSH:
+Ele não tem Ingress (a 80 é do nginx). O acesso é por túnel SSH.
+
+**Cuidado com a porta 8080: ela já é do `evolution-api`** (`127.0.0.1:8080`).
+Um port-forward para 8080 falha com "address already in use" — e pior, quem
+apontar o navegador para 8080 vai falar com o evolution, não com o ArgoCD.
+Use uma porta alta livre.
 
 ```bash
-ssh -L 8088:127.0.0.1:8080 ubuntu@168.138.135.6 \
-  'sudo k3s kubectl -n argocd port-forward svc/argocd-server 8080:443'
-# depois: https://localhost:8088  (usuário: admin)
+# No SEU computador: 18443 local -> 18443 na VPS
+ssh -L 18443:127.0.0.1:18443 ubuntu@168.138.135.6 \
+  'sudo k3s kubectl -n argocd port-forward svc/argocd-server 18443:443 --address 127.0.0.1'
+# depois: https://localhost:18443  (usuário: admin)
 ```
 
 Senha inicial:
@@ -84,6 +90,8 @@ Senha inicial:
 sudo k3s kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath='{.data.password}' | base64 -d
 ```
+
+Verificado: `/healthz` responde `200` e `/api/version` responde `v3.5.6`.
 
 ## Como um serviço migra
 
@@ -98,6 +106,26 @@ sudo k3s kubectl -n argocd get secret argocd-initial-admin-secret \
    Compose.
 
 Rollback de qualquer passo 4 é uma linha no `default.conf` + reload.
+
+### Escolha de NodePort
+
+Use a faixa `30000-32767` (o k8s não aceita fora dela de qualquer forma) e
+**espelhe o número do Docker** quando possível — `8023` → `30023`, como no
+piloto. Facilita a leitura durante a migração e evita que dois serviços
+diferentes acabem com nomes trocados.
+
+Registre aqui o que já está ocupado:
+
+| NodePort | serviço |
+| --- | --- |
+| 30023 | excalidraw |
+
+Não confunda com portas do **host** ocupadas pelo Docker: `8080`
+(evolution-api), `3000` (grafana), `8000`, `8007`, `8018`, `8021`, `8023`,
+`8092`, `8093`, `5000` (registry), `9000`/`9001` (minio), `15672`
+(rabbitmq), `25565` (minecraft), entre outras. Nenhuma delas conflita com
+NodePort, mas conflitam com `port-forward` — use porta alta e livre para
+túneis.
 
 ## Contrato de imagem
 
