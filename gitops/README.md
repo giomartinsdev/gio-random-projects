@@ -300,7 +300,7 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | serviço | Docker | k8s | tráfego |
 | --- | --- | --- | --- |
 | `excalidraw` | rodando | **rodando** (NodePort 30023) | ainda no Docker (`draw` → `:8023`) |
-| `adminer` | rodando | **rodando** (NodePort 30092) | ainda no Docker (`adminer` → `:8092`) |
+| `adminer` | rodando (ocioso) | **rodando** (NodePort 30092) | **k8s** — `adminer` → `:30092` ✅ |
 | `domain-api` | rodando | **rodando** (ClusterIP:8000) | ainda no Docker (`domain` → `:8000`) |
 | `domain-worker` | rodando | manifesto, **`replicas: 0`** | Docker (único escritor do CQRS) |
 | `finance-api` | rodando | **rodando** (ClusterIP:8000) | ainda no Docker (`finance-api` → `:8018`) |
@@ -354,6 +354,18 @@ Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
 
 ### O que foi provado, não assumido
 
+- **Primeiro tráfego real no cluster**: `adminer.giomartins.dev` passou a
+  servir do pod (`:30092`) em vez do container (`:8092`). Prova de que veio do
+  k8s: o log do pod recebe de `10.42.0.1` (a ponte do cluster) e o log do
+  Docker parou de receber requisições no mesmo instante. Rollback é uma linha
+  no `default.conf` (`30092` → `8092`) + `nginx -s reload`.
+- **adminer no k8s alcança o postgres em Docker**: PDO devolve
+  `password authentication failed` com senha errada de propósito — prova de
+  que o TCP abriu *e* o protocolo do Postgres respondeu. `could not connect`
+  seria a ponte quebrada.
+- **Paridade de versão conferida antes do cutover**: as duas instâncias
+  serviam Adminer **6.0.1**. O manifesto estava em 6.1.2 — desvio pego
+  comparando o HTML, não o status HTTP (o `<title>` era idêntico nas duas).
 - **Pull do registry privado**: pod puxou `excalidraw` em 1,4 s pelo mirror
   `127.0.0.1:5000` com `imagePullSecret`.
 - **Conteúdo idêntico**: `:30023` e `:8023` devolvem 6605 bytes e o mesmo
@@ -391,15 +403,21 @@ No primeiro acesso, o Kubero pede para criar o usuário admin.
 
 ## Próximo serviço a migrar
 
-Fatia 3 está no cluster mas **sem tráfego**: `domain-api` e `finance-api`
-respondem e leem o banco, mas o ingress ainda aponta para as portas do Docker.
-O próximo passo não é migrar mais um serviço — é **virar o tráfego** de um
-deles (`adminer` é o candidato mais barato: uma linha no `default.conf` e um
-`nginx -s reload`, com rollback de uma linha).
+O `adminer` é o **primeiro serviço com tráfego real no cluster** — o
+`adminer.giomartins.dev` sai do pod, não do container. É a prova de que o
+caminho inteiro (ingress → NodePort → pod → Service → EndpointSlice → Docker)
+funciona em produção, não só em teste.
 
-Depois disso, a ordem do `MIGRATION.md`: fatia 4 (observabilidade), fatia 5
-(minio, rabbitmq), fatia 6 (postgres, vaultwarden) — as duas últimas com janela
-de manutenção, porque são as únicas sem rollback barato.
+Próximos passos, em ordem:
+
+1. **Observar o adminer** por um período antes de desligar o container. O
+   Docker ficar rodando e ocioso é o rollback; não custa nada.
+2. **`draw.giomartins.dev` (excalidraw)** — mesmo movimento, já validado. É o
+   segundo cutover e confirma que o padrão se repete.
+3. **`domain.giomartins.dev`** — primeiro cutover de uma API com dependência de
+   banco. Mais arriscado, porque um erro aparece como 5xx para o cliente, não
+   como página em branco.
+4. Só então as fatias 4, 5 e 6 do `MIGRATION.md`.
 
 Ficam de fora, e por motivo, não por esquecimento:
 
