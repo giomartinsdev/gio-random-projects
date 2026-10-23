@@ -64,15 +64,16 @@ NS="giomartins"
 # A porta NÃO aparece aqui de propósito: vem do Service. Ver o comentário do
 # topo sobre nomes de porta.
 MAPA=(
-  "postgres:postgres"
   "alloy:alloy"
   "evolution-redis:evolution-redis"
-  # `vaultwarden` saiu em 2026-10-23: o Service ganhou selector (NodePort 30822)
-  # e o EndpointSlice do controller passou a ser a fonte. Deixá-lo aqui fazia o
-  # timer recriar o EndpointSlice manual a cada minuto, e o kube-proxy passava a
-  # balancear entre o POD e o CONTAINER — o domínio servia os dois, alternando.
-  # Sintoma: `vault.giomartins.dev` respondia 200 e o log do container continuava
-  # recebendo requisições que deveriam ir para o pod.
+  # `postgres` saiu em 2026-10-23 e `vaultwarden` em 2026-10-23: os dois
+  # Services ganharam selector e o EndpointSlice do controller passou a ser a
+  # fonte. Deixá-los aqui fazia o timer recriar o EndpointSlice manual, e o
+  # kube-proxy passava a balancear entre o POD e o CONTAINER -- metade do
+  # tráfego para o alvo antigo.
+  #
+  # No vaultwarden o sintoma foi mudo (os dois respondem o mesmo /api/config);
+  # no postgres seria pior: escritas indo para dois bancos diferentes.
 )
 
 for entrada in "${MAPA[@]}"; do

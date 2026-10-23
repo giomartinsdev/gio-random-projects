@@ -1,32 +1,32 @@
 # postgres — o banco de tudo (fatia 6).
 #
-# ## Por que `service.yaml` NÃO está nesta lista
+# ## A troca é atômica, e este é o commit dela
 #
-# O Service `postgres` já existe no cluster como PONTE (`gitops/apps/bridges/`,
+# O Service `postgres` existia no cluster como PONTE (`gitops/apps/bridges/`,
 # sem selector, EndpointSlice escrito pelo timer). Dois Services com o mesmo
-# nome não coexistem.
+# nome não coexistem. Então este commit faz três coisas juntas:
 #
-# Se `service.yaml` (com `selector`) fosse aplicado agora, o ArgoCD o
-# reconciliaria por cima da ponte — e o selector apontaria para um Deployment
-# com `replicas: 0`, ou seja, um Service com ZERO endpoints. Todos os
-# consumidores (`domain-api`, `domain-worker`, `finance-*`, `adminer`, `db-mcp`,
-# `evolution-api`, `vaultwarden-api`) levariam `connection refused` de uma vez.
+#   1. `git rm gitops/apps/bridges/postgres.yaml`  (a ponte sai)
+#   2. `service.yaml` entra em `resources`          (o Service com selector entra)
+#   3. `replicas: 1` no Deployment                  (já feito no commit anterior)
 #
-# O arquivo está no diretório mas FORA do kustomization de propósito: pronto
-# para o commit da janela, invisível para o `kustomize build` (que só aplica o
-# que está listado em `resources`). Mesmo padrão do `rabbitmq`, que ficou com
-# manifesto pronto e sem `service.yaml` até o dia do corte.
+# Remover a ponte sem o Service derrubaria de uma vez os 9 consumidores:
+# `domain-api`, `domain-worker`, `finance-api`, `finance-customersupport-worker`,
+# `finance-openfinance-worker`, `vaultwarden-api`, `adminer`, `db-mcp`,
+# `evolution-api`.
 #
-# ## A troca é atômica
+# ## O timer das pontes
 #
-# No commit da janela, três coisas entram juntas:
+# `sync-external-endpoints.sh` também perdeu a entrada `postgres`. Se ficasse,
+# ele recriaria o EndpointSlice manual a cada minuto e o kube-proxy balancearia
+# entre o POD e o CONTAINER — metade das conexões iria para o banco antigo.
+# Foi exatamente o que aconteceu com o vaultwarden (ver o comentário lá): o
+# domínio respondia 200 e o dado era o mesmo, então só um marcador por
+# requisição revelou o split. Aqui o sintoma seria pior: escritas indo para dois
+# bancos diferentes.
 #
-#   git rm gitops/apps/bridges/postgres.yaml
-#   + service.yaml nesta lista
-#   + `replicas: 1` no deployment
-#
-# Remover a ponte sem o Service derruba tudo; aplicar o Service sem a ponte
-# removida é rejeitado.
+# A ordem do commit importa: a ponte sai e o timer perde a entrada ANTES de o
+# Service ganhar selector, senão o timer corre contra o controller.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -34,8 +34,7 @@ namespace: giomartins
 
 resources:
   - deployment.yaml
-  # - service.yaml   # <- LIGAR NO COMMIT DA JANELA, junto com:
-  #                  #    git rm gitops/apps/bridges/postgres.yaml
+  - service.yaml
 
 labels:
   - pairs:

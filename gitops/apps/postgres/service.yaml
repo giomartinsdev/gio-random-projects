@@ -12,6 +12,20 @@
 #
 # É uma troca atômica, não duas operações.
 #
+# ## O EndpointSlice manual
+#
+# A ponte tinha DOIS artefatos: o Service (aqui, via bridges/) e o
+# EndpointSlice (escrito pelo timer `sync-external-endpoints`). Nenhum dos dois
+# pode sobreviver ao cutover:
+#
+#   - o Service sem selector impediria este arquivo de existir;
+#   - o EndpointSlice manual, convivendo com o do controller, faria o kube-proxy
+#     balancear entre o pod e o container — metade das conexões no banco antigo.
+#
+# Por isso `postgres` também saiu do MAPA do timer, no mesmo commit. Ver o
+# comentário da entrada removida lá: é a mesma armadilha que custou o split do
+# vaultwarden.
+#
 # ## Por que NÃO tem NodePort
 #
 # Nenhum consumidor do banco é o nginx do host: todos são pods, e para pods o
