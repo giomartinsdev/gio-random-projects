@@ -177,6 +177,21 @@ locals {
       hostname = "draw.giomartins.dev"
       port     = 8023
     },
+    {
+      # Rancher -- plano de controle do cluster (helm, nao stack; ver
+      # gitops/bootstrap/rancher/). Porta e o NodePort HTTPS fixado pelo
+      # install.sh (31844); o nginx do host fala HTTPS com ele porque o
+      # certificado do Rancher e auto-assinado e ele NAO aceita HTTP na 443
+      # do Service. Por isso o server{} correspondente usa proxy_pass https://
+      # e proxy_ssl_verify off -- ver stacks/ingress/default.conf.
+      #
+      # PROPOSITALMENTE fora do Cloudflare Access (excluded_hostnames): o
+      # Rancher recebe chamadas de agentes nao-browser e de webhooks do
+      # proprio cluster, e um redirect de SSO Google quebraria ambos. O
+      # login do Rancher (admin + senha) e a camada de autenticacao.
+      hostname = "rancher.giomartins.dev"
+      port     = 31844
+    },
   ]
 
   # Hosts that need a DNS record pointing straight at the VPS but are NOT
