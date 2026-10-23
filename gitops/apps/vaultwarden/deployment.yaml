@@ -1,23 +1,39 @@
 # vaultwarden — o servidor (não confundir com vaultwarden-api, a bridge).
 #
-# Este é o serviço com ESTADO da fatia 6. O container Docker continua intacto e
-# servindo vault.giomartins.dev; o que este manifesto faz é preparar o caminho.
+# Este é o serviço com ESTADO da fatia 6, e o MENOS arriscado dela: 1 MB de
+# SQLite contra 2.4 GB de Postgres. Por isso ele é o primeiro da janela — prova
+# o procedimento de volume stateful de ponta a ponta antes de encostar no banco
+# onde tudo mora.
 #
-# Estado: vaultwarden_data é um named volume Docker com o banco SQLite + anexos.
-# Na migração, NÃO se copia o banco com o servidor rodando — o SQLite com WAL
-# ativo produz cópia inconsistente. O procedimento é:
+# ## O que é o volume
 #
-#   docker stop vaultwarden
-#   docker run --rm -v vaultwarden_data:/data -v /tmp:/backup alpine \
-#     tar czf /backup/vw.tgz -C /data .
-#   # restaurar no PVC antes de subir o pod
+# `vaultwarden_data` é um named volume Docker com `db.sqlite3` (770 KB),
+# `db.sqlite3-wal`, `db.sqlite3-shm`, `rsa_key.pem` e `icon_cache/`. O SQLite
+# está em modo WAL, então NÃO se copia com o servidor rodando: a cópia pegaria
+# um WAL pela metade e o banco abriria "malformed" ou perderia as últimas
+# escritas. O procedimento é parar → copiar → religar (ver `copy-volume.sh`).
 #
-# Enquanto isso, este Deployment fica com replicas 0 para não disputar o
-# volume com o container Docker (SQLite não suporta dois escritores).
+# O `rsa_key.pem` é o que assina os tokens de sessão: se ele chegar diferente, os
+# clientes já logados caem. Está dentro da cópia, e é um dos itens conferidos na
+# paridade (sha256 igual nos dois lados).
 #
-# O Service `vaultwarden` (service.yaml) existe agora porque vaultwarden-api no
-# k8s precisa resolver `vaultwarden` — e hoje ele resolve para o container
-# Docker via EndpointSlice.
+# ## A ordem do cutover
+#
+#   1. PVC + pod filler só para o `local-path` criar a pasta do PV
+#   2. docker stop vaultwarden
+#   3. cp -a do volume para a pasta do PV
+#   4. docker start vaultwarden  (rollback vivo de novo)
+#   5. remover o filler, `replicas: 1`, ArgoCD reconcilia
+#   6. provar: mesmo `rsa_key.pem` (sha256), mesmo `/api/config`, mesma contagem
+#      de usuários via `vaultwarden-api`
+#   7. só então trocar o Service (ponte -> selector) e o ingress (:8222 -> NodePort)
+#
+# ## Por que o container roda como root e eu não forço outro uid
+#
+# O volume é `root:root 755` e o binário do Vaultwarden é um único executável que
+# roda como root no Compose. Copiado com `cp -a`, chega root no PVC. Forçar
+# `runAsUser: 65534` faria o processo não conseguir escrever no `db.sqlite3` (o
+# SQLite cria `-wal`/`-shm` ao lado) — falha na primeira escrita, não no boot.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,8 +41,11 @@ metadata:
   labels:
     app.kubernetes.io/name: vaultwarden
 spec:
-  # 0 até o cutover da fatia 6. Dois processos no mesmo SQLite corrompem.
+  # 0 até a janela: SQLite não admite dois escritores, e o container Docker
+  # continua servindo `vault.giomartins.dev`. `Recreate`, pelo mesmo motivo.
   replicas: 0
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: vaultwarden
@@ -37,11 +56,14 @@ spec:
     spec:
       containers:
         - name: vaultwarden
-          # Versão real em produção, verificada com `/vaultwarden --version`
-          # (Vaultwarden 1.37.2, Web-Vault 2026.7.0). Não é a tag mais recente do
-          # Docker Hub: é a que está rodando. Trocar de versão na migração
-          # misturaria duas mudanças (infra + upgrade) num momento só.
-          image: vaultwarden/server:1.37.2
+          # Digest do ÍNDICE multi-arch da imagem EM EXECUÇÃO. Verificado contra
+          # o registry: a tag `1.37.2` resolve exatamente para este digest
+          # (`vaultwarden/server@sha256:094b5689…`), e é o mesmo que o container
+          # usa hoje (`/vaultwarden --version` → Vaultwarden 1.37.2, Web-Vault
+          # 2026.7.0). Pinar por digest, e não pela tag, porque `latest` já
+          # aponta para outro (`efb3cde9…`): um `pull` implícito traria um
+          # upgrade que ninguém pediu.
+          image: vaultwarden/server@sha256:094b5689ed81549bd293418395c7cf495ae9d960fc2d4928cef2083ef913d912
           ports:
             - name: http
               containerPort: 80

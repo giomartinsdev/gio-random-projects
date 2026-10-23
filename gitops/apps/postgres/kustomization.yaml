@@ -1,0 +1,42 @@
+# postgres — o banco de tudo (fatia 6).
+#
+# ## Por que `service.yaml` NÃO está nesta lista
+#
+# O Service `postgres` já existe no cluster como PONTE (`gitops/apps/bridges/`,
+# sem selector, EndpointSlice escrito pelo timer). Dois Services com o mesmo
+# nome não coexistem.
+#
+# Se `service.yaml` (com `selector`) fosse aplicado agora, o ArgoCD o
+# reconciliaria por cima da ponte — e o selector apontaria para um Deployment
+# com `replicas: 0`, ou seja, um Service com ZERO endpoints. Todos os
+# consumidores (`domain-api`, `domain-worker`, `finance-*`, `adminer`, `db-mcp`,
+# `evolution-api`, `vaultwarden-api`) levariam `connection refused` de uma vez.
+#
+# O arquivo está no diretório mas FORA do kustomization de propósito: pronto
+# para o commit da janela, invisível para o `kustomize build` (que só aplica o
+# que está listado em `resources`). Mesmo padrão do `rabbitmq`, que ficou com
+# manifesto pronto e sem `service.yaml` até o dia do corte.
+#
+# ## A troca é atômica
+#
+# No commit da janela, três coisas entram juntas:
+#
+#   git rm gitops/apps/bridges/postgres.yaml
+#   + service.yaml nesta lista
+#   + `replicas: 1` no deployment
+#
+# Remover a ponte sem o Service derruba tudo; aplicar o Service sem a ponte
+# removida é rejeitado.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: giomartins
+
+resources:
+  - deployment.yaml
+  # - service.yaml   # <- LIGAR NO COMMIT DA JANELA, junto com:
+  #                  #    git rm gitops/apps/bridges/postgres.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: giomartins

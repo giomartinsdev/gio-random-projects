@@ -1,0 +1,170 @@
+# postgres — o banco de tudo (fatia 6). O serviço de estado mais crítico da
+# migração.
+#
+# ## Por que este arquivo nasceu sozinho, e não junto do cutover
+#
+# O `postgres` é o único serviço cuja ponte NÃO permite convivência. Minio e
+# RabbitMQ tinham armazenamento separado do Docker (PVC próprio, populado por
+# cópia) e puderam rodar em paralelo por horas, comparando os dois lados antes
+# de trocar a rota. Aqui também há dois armazenamentos separados — mas o
+# `pg_basebackup`/cópia só faz sentido se o dado for o mesmo, e o pod não
+# alcança o container (rede `apps`), então não existe "os dois no ar, comparo".
+#
+# O que existe é: parar, copiar, subir, comparar contra um baseline anotado
+# ANTES da parada, e reverter barato se não bater.
+#
+# ## A troca do Service é atômica
+#
+# O Service `postgres` hoje é uma PONTE (gitops/apps/bridges/postgres.yaml, sem
+# selector, EndpointSlice escrito pelo timer `sync-external-endpoints`). Dois
+# Services com o mesmo nome no mesmo namespace não coexistem.
+#
+#   git rm gitops/apps/bridges/postgres.yaml
+#   gitops/apps/postgres/service.yaml
+#
+# têm que entrar no MESMO commit. Remover a ponte sem o Service derruba de uma
+# vez TODOS os consumidores (`domain-api`, `domain-worker`, `finance-*`,
+# `adminer`, `db-mcp`, `evolution-api`, `vaultwarden-api`).
+#
+# ## Por que `spec.hostname` não é necessário aqui
+#
+# O `rabbitmq` precisou de `spec.hostname: fbbc4443ed70` porque o nome do nó e o
+# diretório de dados derivam do hostname, e os dados reais moravam em
+# `mnesia/rabbit@<hostname-antigo>`. O Postgres não deriva nada do hostname:
+# PGDATA é um caminho fixo do volume. Verificado: `node()` não existe aqui, o
+# diretório é `/var/lib/postgresql/data` por `PGDATA` da imagem.
+#
+# ## O problema que o Postgres tem e o RabbitMQ não tinha: uid
+#
+# Os arquivos do PGDATA são do uid 70 (`postgres`), e o diretório é `700`.
+# `cp -a` preserva isso, então os donos chegam certos no PVC. O entrypoint da
+# imagem oficial (`docker-entrypoint.sh` linhas 51-59) roda como root, faz
+# `chown -R postgres` em PGDATA e depois `exec gosu postgres`. Por isso o
+# container NÃO declara `runAsUser`: precisa começar como root para consertar
+# dono de volume vindo de tar/cópia. `runAsUser: 70` faria o chown falhar com
+# `Operation not permitted` e o banco não subiria.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      # 2.4G agora (banco `domain` = 2258 MB). 10Gi dá folga para o
+      # `audit_log`, que é a maior tabela (2.554.124 linhas) e só cresce.
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  # 0 ATÉ A JANELA. Subir com o PVC ainda vazio faz o entrypoint rodar `initdb`
+  # e criar um banco novo — que responde `pg_isready` e sobe `1/1 Running` com
+  # zero tabelas. É o mesmo falso positivo do broker vazio no rabbitmq, e aqui
+  # seria pior: o PGDATA recém-inicializado ocuparia o PVC, e a cópia do banco
+  # real teria que sobrescrever um cluster que já se considera consistente.
+  #
+  # A ordem da janela é:
+  #
+  #   1. PVC + pod "filler" (sleep) só para o `local-path` criar o PV/Pasta —
+  #      senão o PVC fica `Pending` e não há destino para a cópia.
+  #   2. docker stop postgres
+  #   3. cp -a do volume para a pasta do PV
+  #   4. docker start postgres  (rollback vivo de novo)
+  #   5. remover o filler, commitar `replicas: 1` e deixar o ArgoCD reconciliar
+  #   6. comparar contagem de linhas contra o baseline anotado antes da parada
+  #   7. só então trocar o Service (ponte -> selector)
+  #
+  # 1 réplica quando subir, e não escala: local-path é RWO e o Postgres não é
+  # replicado. `Recreate` porque duas instâncias no mesmo PGDATA corrompem.
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+    spec:
+      containers:
+        - name: postgres
+          # Digest do índice multi-arch da imagem em execução
+          # (`postgres:17-alpine`, PostgreSQL 17.11). É um ÍNDICE, não um
+          # manifest de plataforma: contém `linux/arm64 → dfc27809…` e
+          # `linux/amd64 → 7456ef82…`, então o mesmo manifesto sobe certo tanto
+          # neste nó ARM64 quanto numa máquina amd64.
+          #
+          # `17-alpine` é tag MÓVEL: `17.11` de hoje pode virar `17.12` amanhã.
+          # A migração não mistura mudança de infra com upgrade de versão
+          # (ver "Contrato de imagem" no README).
+          image: postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+          env:
+            # Nomes idênticos ao Compose. Com o PGDATA já populado o
+            # `POSTGRES_PASSWORD` NÃO é aplicado (a senha real está em
+            # `pg_authid`), mas as três variáveis precisam existir: se o PVC for
+            # recriado do zero o entrypoint inicializa um banco novo, e
+            # `initdb` exige POSTGRES_USER/PASSWORD. Sem elas o pod falharia
+            # alto — que é melhor que subir um banco vazio sem autenticação.
+            - name: POSTGRES_DB
+              value: domain
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: POSTGRES_PASSWORD
+            # Sem isto o Postgres usa o default da imagem (`/var/lib/postgresql`),
+            # e montar o volume em `.../data` deixaria o banco fora do PVC.
+            - name: PGDATA
+              value: /var/lib/postgresql/data
+          ports:
+            - name: postgres
+              containerPort: 5432
+          # `pg_isready` responde quando o servidor aceita conexões. Ele NÃO
+          # prova que o dado certo está lá — um PGDATA vazio inicializado agora
+          # também responde ready. É por isso que o cutover compara contagem de
+          # linhas, e não confia neste probe. Mesma lição do `rabbitmq-diagnostics
+          # ping` com broker vazio.
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "domain", "-d", "domain"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "domain", "-d", "domain"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 100m
+              # Cabe o `shared_buffers` default da imagem (128MB) com folga.
+              memory: 512Mi
+            limits:
+              # 2.4G de dados, e o Postgres usa memória para sort/hash join.
+              # 2Gi é o teto que o nó aguenta ao lado de Prometheus e Loki.
+              memory: 2Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data

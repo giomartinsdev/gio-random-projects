@@ -1,0 +1,41 @@
+# Service `postgres` — o banco do cluster (substitui a ponte para o container).
+#
+# ## Por que este arquivo só pode existir no mesmo commit que `git rm bridges/postgres.yaml`
+#
+# Dois Services com o mesmo nome e namespace não coexistem. Enquanto a ponte
+# existir, este arquivo é rejeitado; se a ponte sair e este arquivo não entrar,
+# TODOS os consumidores perdem o banco de uma vez:
+#
+#   domain-api · domain-worker · finance-api · finance-customersupport-worker
+#   finance-openfinance-worker · vaultwarden-api · adminer · db-mcp
+#   evolution-api
+#
+# É uma troca atômica, não duas operações.
+#
+# ## Por que NÃO tem NodePort
+#
+# Nenhum consumidor do banco é o nginx do host: todos são pods, e para pods o
+# ClusterIP basta (`postgres:5432` é o Service). O `adminer`, que é a UI web,
+# conecta no `postgres` por dentro do cluster (`ADMINER_DEFAULT_SERVER=postgres`),
+# não por NodePort. Ao contrário do `rabbitmq`, que precisou de NodePort por
+# causa do `rabbit.giomartins.dev` (management UI servida pelo nginx do host).
+#
+# ## Por que a porta se chama `postgres`
+#
+# O kube-proxy casa Service e EndpointSlice por NOME de porta, não por número
+# (armadilha 5). A ponte que este Service substitui já usava `name: postgres`, e
+# o script `sync-external-endpoints` lê o nome do próprio Service. Manter o nome
+# garante que, se for preciso reverter para a ponte, nada muda do outro lado.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

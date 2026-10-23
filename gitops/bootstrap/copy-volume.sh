@@ -47,6 +47,8 @@ case "$SVC" in
   minio)      VOL="apps_minio_data"; PVC="minio-data" ;;
   evolution-api) VOL="evolution_instances"; PVC="evolution-instances" ;;
   rabbitmq)   VOL="apps_rabbitmq_data"; PVC="rabbitmq-data" ;;
+  postgres)   VOL="apps_postgres_data"; PVC="postgres-data" ;;
+  vaultwarden) VOL="vaultwarden_data"; PVC="vaultwarden-data" ;;
   *) echo "serviço desconhecido: $SVC" >&2; exit 1 ;;
 esac
 
