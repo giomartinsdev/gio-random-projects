@@ -264,6 +264,39 @@ raiz (`/rabbitmq/`) ou escopados por caminho. Verificar com
 `git status --ignored --porcelain gitops/` — o `!!` é a única forma de ver o que
 o git está escondendo.
 
+### 9. `stacks/ingress/default.conf` do repo não era a fonte de verdade
+
+**Esta custou 4 hosts em 502.** Ao adicionar o `server{}` do Rancher, copiei
+`stacks/ingress/default.conf` do repositório para o host. O arquivo do repo
+estava **desatualizado**: nas migrações das fatias 3–5 as portas foram trocadas
+diretamente no host (`:8000` → NodePort `:30800`, `:8092` → `:30092`, `:3000` →
+`:30300`, e o mesmo em rabbit, evolution, draw e finance-api), e o repo nunca
+acompanhou. O `install` sobrescreveu as portas boas pelas antigas.
+
+Sintoma: 4 hosts em `502` (`domain`, `evolution`, `rabbit`, `finance-api`) e o
+resto funcionando — porque só os que tiveram a porta trocada quebraram.
+
+O que protege contra isso, e que agora está no fluxo:
+
+1. **Antes de sobrescrever, compare** — `diff <(ssh host cat arquivo) arquivo`
+   deve mostrar **apenas adições**. Se aparecer qualquer linha `<` (remoção), o
+   repo está atrás do host: traga o host para o repo primeiro, nunca o contrário.
+2. `docker inspect ingress` → `network_mode: host`, e o mount é de **arquivo**
+   (`./ingress/default.conf:/etc/nginx/conf.d/default.conf`). Substituir o
+   arquivo no host **não** é visto pelo container: o bind aponta para o inode
+   antigo. `nginx -s reload` recarrega o inode velho. Só `docker restart ingress`
+   resolve — e ele leva ~12s, durante os quais **todos** os hosts ficam sem
+   ingress.
+3. Restaurar é uma linha (o backup é feito antes de cada troca), mas o certo é
+   não precisar: o repo passou a ser cópia fiel do host neste commit.
+
+Verificação de paridade, que deve virar hábito:
+
+```bash
+ssh host 'sudo md5sum /opt/giomartins/stacks/ingress/default.conf'
+docker exec ingress md5sum /etc/nginx/conf.d/default.conf   # tem que bater
+```
+
 ## Bootstrap (uma vez por cluster)
 
 ```bash
@@ -458,12 +491,12 @@ dado. Subir para 1 *é* o ato de migrar, e exige parar o Docker antes.
 
 Plataforma no cluster: k3s, ArgoCD, ingress-nginx (NodePort), cert-manager,
 metrics-server, Kubero (operator + UI em NodePort 30200), Rancher 2.15.2 +
-Fleet (NodePort 31198/31844).
+Fleet + Turtles + CAPI (NodePort 31198/31844).
 
 Recursos: k3s + ArgoCD + ingress-nginx + cert-manager + Kubero ≈ 1,3 GB de
-RAM; com o Rancher + Fleet, ≈ 2,9 GB. Sobram ~8 GB. Nenhuma porta do host foi
-disputada — o cluster usa 6443 (API), 10250 (kubelet), 8472 (VXLAN) e NodePorts
-em `30000-32767`.
+RAM; com o Rancher e o que ele instala (Fleet/Turtles/CAPI), ≈ 2,5 GB. Sobram
+~7,4 GB. Nenhuma porta do host foi disputada — o cluster usa 6443 (API), 10250
+(kubelet), 8472 (VXLAN) e NodePorts em `30000-32767`.
 
 ### Serviços de ponte (`gitops/apps/bridges/`)
 
@@ -688,21 +721,33 @@ Decisões que não são default do chart, e por quê:
 | `tls` | `ingress` | `rancher` | auto-assinado; `letsEncrypt` falharia porque `rancher.giomartins.dev` ainda não existe no DNS |
 | `agentTLSMode` | `strict` | `strict` | default de instalação nova desde 2.9; funciona porque o CA é o do próprio Rancher |
 
-`hostname: rancher.giomartins.dev` já é o nome final, **mesmo sem o registro DNS
-existir**. Isso é de propósito: o certificado e os links da UI nascem com o
-nome definitivo, então criar o DNS depois não exige reinstalar.
+`hostname: rancher.giomartins.dev` já é o nome final. Isso é de propósito: o
+certificado e os links da UI nascem com o nome definitivo.
 
-**Acesso (túnel):**
+**Acesso público: `https://rancher.giomartins.dev`** (desde 2026-10-23).
+
+O caminho completo, e por que ele tem um salto a mais que os outros 18 hosts:
+
+```
+navegador ──TLS──> Cloudflare ──HTTP──> nginx do host :80 ──HTTPS──> Rancher :31844
+                                                          (proxy_ssl_verify off)
+```
+
+O Rancher é o **único** host do `default.conf` com upstream HTTPS: o Service do
+chart expõe 80 e 443, mas a 80 só redireciona, e o `server-url` exige TLS. Como o
+certificado dele é auto-assinado, o `server{}` usa `proxy_ssl_verify off` — a
+verificação que importa acontece no navegador, que vê o certificado do Cloudflare.
+
+**Acesso por túnel** (continua válido, útil para debug quando o Cloudflare está no
+meio do caminho):
 
 ```bash
 ssh -N -L 31844:127.0.0.1:31844 ubuntu@168.138.135.6
-# https://rancher.giomartins.dev:31844  → mas o cert é self-signed
+# https://localhost:31844 — aviso de cert auto-assinado, normal
 ```
 
-Como o certificado é auto-assinado e o NodePort não é 443, o caminho que
-funciona sem briga de browser é mapear o host e usar `https://localhost:31844`
-com o aviso de cert aceito. A senha de bootstrap **não está no chat nem no
-git**: está em `/root/.rancher-bootstrap-password` (mode 600) e em
+A senha de bootstrap **não está no chat nem no git**: está em
+`/root/.rancher-bootstrap-password` (mode 600) e em
 `cattle-system/bootstrap-secret`.
 
 ```bash
@@ -746,20 +791,33 @@ for exposto publicamente (dívida 12), isso deve ser revisto junto.
   `cert-manager-webhook` e `ingress-nginx-admission`. Se o pod não responder,
   `kubectl create` trava — por isso o Rancher não guarda estado crítico de
   produção, e `helm uninstall rancher -n cattle-system` remove webhook e CRDs.
-- **1.576 Mi de RAM, medidos** (`kubectl top`), não os ~700 MB estimados antes
-  de instalar. O pod do Rancher sozinho são **1.385 Mi**; o resto é o Fleet.
-  Host foi de 13G para 15,4G de 23G — sobram 8,4G.
-- **O Rancher trouxe o Fleet junto, e isso não é opcional.** `helm install
-  rancher` instala `cattle-fleet-system` + `cattle-fleet-local-system`
-  (`fleet-controller`, `gitjob`, `helmops`, `fleet-agent`): 4 pods, ~216 Mi.
-  É o motor de GitOps distribuído do Rancher e agora é um **terceiro** motor de
-  reconciliação no cluster, ao lado do ArgoCD e do Kubero. Hoje todos os apps
-  do Fleet estão vazios (`0` GitRepos, `0` Bundles), então ele não disputa
-  nenhum objeto — mas é dívida, não desenho. Ver item 14.
+- **~1.150 Mi de RAM, medidos** (`kubectl top`, 3 amostras estáveis), não os
+  ~700 MB estimados antes de instalar. O pod do Rancher sozinho são ~830 Mi; o
+  resto é o ecossistema que ele instala junto. Host foi de 13G para 16,6G de
+  23G — sobram 7,4G.
+- **O Rancher instala cinco namespaces além do `cattle-system`, e isso não é
+  opcional.** `helm install rancher` traz, além dele: `cattle-fleet-system` +
+  `cattle-fleet-local-system` (Fleet: 4 pods, ~230 Mi), `cattle-turtles-system`
+  (Turtles, ~55 Mi) e `cattle-capi-system` (Cluster API, ~31 Mi). Mais
+  `cattle-global-data`, `cattle-ui-plugin-system`, `cattle-impersonation-system`
+  e `cattle-local-user-passwords`, que não rodam pods.
+  Os dois últimos existem para **provisionar clusters** — capacidade que este
+  nó único não vai usar. É o preço de instalar o Rancher inteiro em vez de só a
+  UI; desativar não é suportado pelo chart.
+- **O Fleet é um segundo motor de GitOps**, vazio hoje (`0` GitRepos, `0`
+  Bundles). No dia em que alguém criar um `GitRepo` apontando para este
+  repositório, ArgoCD e Fleet disputam os mesmos objetos. Ver dívida 14.
 - **CPU**: 449m no pod do Rancher é o pico de boot, não o regime. O nó tem
   4 vCPU; se isso persistir, é o maior consumidor individual do cluster.
-- **`rancher.giomartins.dev` não resolve.** A UI é inalcançável de fora hoje; é
-  o combinado ("DNS público depois").
+- **A UI ficou PÚBLICA, sem Cloudflare Access.** Decisão tomada em 2026-10-23 e
+  registrada com o risco: agentes de cluster e webhooks do próprio Rancher são
+  clientes não-browser que não completam um redirect de SSO Google. O login
+  `admin` + senha do Rancher é a única camada. Medido: a API responde 401 sem
+  token (`/v3/clusters`, `/v3/users`), e **não há lockout** — 5 tentativas de
+  senha errada deram 401 sem bloqueio. Com a UI exposta, um ataque de força
+  bruta contra `admin` é possível e ilimitado. Mitigação pendente: regra de
+  WAF/rate-limit no Cloudflare para `/v3-public/localProviders/local?action=login`,
+  ou reavaliar o Access com um *service token* para os agentes. Ver dívida 12.
 - O pod do Rancher **não** é `replicas: 1` por escolha de disponibilidade — é o
   máximo que um nó único comporta.
 
@@ -885,11 +943,17 @@ Ficam de fora, e por motivo, não por esquecimento:
    mesmo padrão do `argocd-cm`. O script exporta `KUBECONFIG`, não rotaciona a
    senha em execuções seguintes e fixa os NodePorts, que o chart deixa o k8s
    sortear a cada reinstall.
-12. **`rancher.giomartins.dev` não existe no DNS.** A UI do Rancher só é
-   alcançável por túnel SSH. Expor exige: criar o A record (proxied) no
-   Cloudflare, apontar o nginx do host para `:31844` com `proxy_ssl_verify off`
-   (cert self-signed) e, se for o caso, pôr atrás do Access. Enquanto isso, o
-   `hostname` já é o definitivo, então não há reinstalação pendente.
+12. **`rancher.giomartins.dev` está público, sem Access e sem rate-limit.**
+   Resolvido em 2026-10-23 o DNS + ingress (A record no Terraform, `server{}`
+   com upstream HTTPS no `default.conf`). O que **não** foi resolvido é a
+   proteção: o hostname ficou em `excluded_hostnames` porque agentes e webhooks
+   não-browser não passam por SSO, então o login `admin`+senha é a única camada
+   — e o Rancher **não tem lockout** (5 senhas erradas seguidas, 5× `401`, sem
+   bloqueio). Saídas, em ordem de custo:
+   - regra de WAF/rate-limit no Cloudflare só para
+     `/v3-public/localProviders/local?action=login` (não quebra agente);
+   - Access com *service token* nos paths de agente + SSO no resto;
+   - trocar `tls=rancher` por cert real e reativar `proxy_ssl_verify on`.
 13. **`ingress-nginx` está EOL desde março/2026 e roda sem servir nada.** Detalhe
    e decisão na seção própria acima. Não é urgente (zero Ingress), mas é o
    componente mais desatualizado da plataforma.
@@ -900,4 +964,6 @@ Ficam de fora, e por motivo, não por esquecimento:
    *segundo* motor de GitOps — vazio, mas presente. Três reconciliadores com um
    deles vazio é armadilha esperando acontecer: no dia em que alguém criar um
    `GitRepo` no Fleet apontando para este repositório, ArgoCD e Fleet vão
-   disputar os mesmos objetos. A decisão de qual fica ainda não foi tomada.
+   disputar os mesmos objetos. Além disso, Turtles + CAPI (2 pods, ~86 Mi)
+   existem para provisionar clusters que este nó único nunca vai provisionar.
+   A decisão de qual plano de controle fica ainda não foi tomada.

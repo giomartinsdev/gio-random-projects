@@ -53,6 +53,11 @@ Rancher 2.15.2 instalado e validado (ver README, seção "Rancher") — a UI é
 `helm`, fora do `gitops/apps/`, e não altera nenhum serviço em produção. A
 fatia 6 continua sendo o próximo passo e continua exigindo janela.
 
+**Plano de controle exposto em 2026-10-23**: `https://rancher.giomartins.dev`
+(DNS via Terraform, `server{}` com upstream HTTPS no ingress). Não entra como
+fatia — não é migração de serviço, é ferramenta de operação. O `server-url` do
+Rancher aponta para esse hostname, então agentes futuros já nascem certos.
+
 **O `rabbitmq` foi cortado em 2026-10-23.** Um broker é ponto de encontro
 compartilhado: se o Service passasse a apontar para o pod enquanto algum consumidor
 ainda estivesse em Docker, ficariam dois brokers com zero estado compartilhado —
