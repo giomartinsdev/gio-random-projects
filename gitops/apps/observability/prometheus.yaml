@@ -1,0 +1,140 @@
+# prometheus — métricas, recebidas por remote-write do alloy e por OTLP.
+#
+# Config copiada de stacks/observability/prometheus.yml SEM alteração. Os
+# targets são `alloy:12345`, `grafana:3000`, `loki:3100`, `tempo:3200` e
+# `localhost:9090` — todos resolvem no cluster porque cada Service tem
+# exatamente o nome do Compose. É o retorno do "DNS como interruptor".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  labels:
+    app.kubernetes.io/name: prometheus
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: prometheus
+        static_configs:
+          - targets: ["localhost:9090"]
+
+      - job_name: alloy
+        static_configs:
+          - targets: ["alloy:12345"]
+
+      - job_name: grafana
+        static_configs:
+          - targets: ["grafana:3000"]
+
+      - job_name: loki
+        static_configs:
+          - targets: ["loki:3100"]
+
+      - job_name: tempo
+        static_configs:
+          - targets: ["tempo:3200"]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data
+  labels:
+    app.kubernetes.io/name: prometheus
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      # O volume Docker está em 883M. 5Gi dá espaço para a retenção de 15d
+      # crescer sem um alerta por falta de disco — o host tem 136G livres.
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+spec:
+  # 0 até a cópia do volume (883M) ser feita com o container parado.
+  # Subir vazio começaria o histórico do zero — perder 15d de série temporal é
+  # aceitável em teoria, mas não é uma decisão para tomar sem avisar.
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+    spec:
+      # O Compose roda `user: "0"`. O volume do Prometheus tem arquivos do
+      # root, e o processo precisa escrever no WAL. Trocar o UID exigiria
+      # `chown` nos dados copiados; fora do escopo desta fatia.
+      securityContext:
+        runAsUser: 0
+      containers:
+        - name: prometheus
+          image: prom/prometheus@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.path=/prometheus"
+            - "--storage.tsdb.retention.time=15d"
+            # Sem esta flag o remote-write do alloy e do tempo leva 404. É o
+            # único motivo de o Prometheus receber métrica empurrada em vez de
+            # ser raspado — não é opcional.
+            - "--web.enable-remote-write-receiver"
+          ports:
+            - name: http
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 45
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              # Mesmo limite do Compose (mem_limit 512m). O Prometheus não
+              # devolve memória ao SO com facilidade; sem limite ele cresce
+              # até o OOM do node, derrubando vizinhos.
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+              readOnly: true
+            - name: data
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: prometheus-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+spec:
+  selector:
+    app.kubernetes.io/name: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http

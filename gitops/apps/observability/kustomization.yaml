@@ -1,0 +1,48 @@
+# observability — Prometheus, Loki, Tempo e Grafana.
+#
+# ## O que fica de fora, e por quê
+#
+# O `alloy` NÃO entra. Ele lê o stdout de todos os containers Docker via
+# `discovery.docker` + `loki.source.docker`, montando `/var/run/docker.sock`
+# (ver stacks/observability/alloy.alloy linhas 67-85). Migrar isso para o
+# cluster não é mover infra, é reescrever o pipeline de coleta de logs: o
+# equivalente no k8s é `discovery.kubernetes` + `loki.source.kubernetes`, outro
+# modelo de dados, outro conjunto de labels, outra cardinalidade.
+#
+# Consequência: enquanto o alloy ficar em Docker, ele continua sendo o único
+# coletor de logs de containers. Os apps já migrados (domain-api, finance-api…)
+# passam a ter o stdout lido pelo `kubectl logs` e NÃO pelo alloy — ou seja,
+# eles somem do Grafana Loki. Isso é uma regressão visível e precisa ser
+# resolvida antes de virar o tráfego de qualquer serviço que se queira observar.
+#
+# A saída barata é apontar o alloy para o containerd do k3s, mas isso é uma
+# mudança de config a ser feita e validada com o Grafana aberto — não junto com
+# a migração dos backends.
+#
+# ## Estado
+#
+# `replicas: 0` em todos: os volumes têm dados reais (Prometheus 883M/15d,
+# Loki 979M/7d, Tempo 233M/72h, Grafana 50M com grafana.db) e a cópia precisa ser
+# feita com o container parado, num passo controlado. Subir vazio perderia o
+# histórico e, no caso do Grafana, os usuários e dashboards criados na UI.
+#
+# ## Os nomes dos Services são os do Compose
+#
+# `prometheus`, `loki`, `tempo`, `grafana`. O alloy em Docker já fala
+# `http://prometheus:9090`, `http://loki:3100` e `tempo:4317` — e continuará
+# falando, sem editar o config dele. No cluster esses nomes são ClusterIP.
+# (Do Docker, alcançar ClusterIP funciona; é a ponte que já está provada.)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: giomartins
+
+resources:
+  - prometheus.yaml
+  - loki.yaml
+  - tempo.yaml
+  - grafana.yaml
+  - dashboard.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: giomartins

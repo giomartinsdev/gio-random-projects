@@ -1,0 +1,178 @@
+# tempo — traces. Config copiada de stacks/observability/tempo.yaml sem
+# alteração, exceto uma linha comentada abaixo.
+#
+# ## Por que o limite de memória é 1Gi e não 512Mi
+#
+# O Compose documenta um crash loop real: com 512m o container era OOMKilled
+# durante o boot (replay do WAL + leitura de meta.json de ~2,5k blocos) e o
+# compactor nunca completava um ciclo — blocos de 72h+ ficavam para sempre e o
+# volume cresceu até 1.6G. O limite de 1Gi é a correção, não um chute.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-config
+  labels:
+    app.kubernetes.io/name: tempo
+data:
+  tempo.yaml: |
+    server:
+      http_listen_port: 3200
+
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+
+    query_frontend:
+      metrics:
+        max_duration: 24h
+
+    metrics_generator:
+      registry:
+        external_labels:
+          source: tempo
+      storage:
+        path: /var/tempo/generator/wal
+        # `prometheus` resolve para o Service deste diretório. No Compose
+        # resolvia para o container — mesmo nome, mesmo efeito.
+        remote_write:
+          - url: http://prometheus:9090/api/v1/write
+            send_exemplars: true
+      traces_storage:
+        path: /var/tempo/generator/traces
+      processor:
+        local_blocks:
+          filter_server_spans: false
+          flush_to_storage: true
+
+    overrides:
+      defaults:
+        metrics_generator:
+          processors: [service-graphs, span-metrics, local-blocks]
+
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /var/tempo/blocks
+        wal:
+          path: /var/tempo/wal
+
+    compactor:
+      compaction:
+        block_retention: 72h
+        compacted_block_retention: 1h
+        compaction_window: 1h
+        max_block_bytes: 536870912
+        v2_in_buffer_bytes: 5242880
+
+    usage_report:
+      reporting_enabled: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tempo-data
+  labels:
+    app.kubernetes.io/name: tempo
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      # 233M hoje, mas o volume já chegou a 1.6G quando o compactor travou.
+      # 5Gi é o tamanho que absorve esse modo de falha sem encher o disco.
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+  labels:
+    app.kubernetes.io/name: tempo
+spec:
+  # 0 até a cópia dos 233M com o container parado.
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tempo
+    spec:
+      securityContext:
+        runAsUser: 0
+      containers:
+        - name: tempo
+          image: grafana/tempo@sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a
+          args:
+            - "-config.file=/etc/tempo/tempo.yaml"
+          ports:
+            - name: http
+              containerPort: 3200
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            # 1Gi de limite e um boot que faz replay de WAL: 90s de carência
+            # antes de o kubelet matar, senão o próprio kubelet recria o crash
+            # loop que o Compose levou dias para diagnosticar.
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/tempo
+              readOnly: true
+            - name: data
+              mountPath: /var/tempo
+      volumes:
+        - name: config
+          configMap:
+            name: tempo-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: tempo-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+  labels:
+    app.kubernetes.io/name: tempo
+spec:
+  selector:
+    app.kubernetes.io/name: tempo
+  ports:
+    - name: http
+      port: 3200
+      targetPort: http
+    # O alloy em Docker envia trace para `tempo:4317`. Este Service é o que
+    # mantém essa linha do config.alloy válida sem edição.
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http

@@ -1,0 +1,192 @@
+# grafana — UI. Único serviço desta fatia com porta pública.
+#
+# ## O estado que importa não está no git
+#
+# Dashboards e datasources vêm de provisioning (arquivos versionados em
+# stacks/observability/), MAS o `grafana.db` (SQLite) guarda o que foi criado
+# pela UI: usuários, senhas, preferências, pastas, alertas. No volume Docker ele
+# tem 50M e existe de fato.
+#
+# Por isso `replicas: 0` e o cutover exigem uma cópia do volume com o container
+# parado — e não um `emptyDir` que começaria com o admin/admin padrão.
+#
+# ## A senha vem de Secret, e o nome da chave é o do Compose
+#
+# `GF_SECURITY_ADMIN_PASSWORD` é lida do Secret `grafana`, gerado por
+# sync-app-secrets.sh a partir do env real do container. A variável tem o mesmo
+# nome nos dois lados porque é o que o Grafana lê.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning
+  labels:
+    app.kubernetes.io/name: grafana
+data:
+  # Cópia fiel de stacks/observability/grafana-datasources.yaml. As URLs
+  # `http://prometheus:9090`, `http://loki:3100` e `http://tempo:3200` continuam
+  # válidas: são os nomes dos Services deste diretório.
+  datasources.yaml: |
+    apiVersion: 1
+
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: false
+
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki:3100
+        editable: false
+        jsonData:
+          derivedFields:
+            - name: TraceID
+              matcherRegex: 'trace_id[=:]"?([0-9a-f]+)'
+              datasourceUid: tempo
+              url: "$${__value.raw}"
+
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        url: http://tempo:3200
+        editable: false
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: loki
+            filterByTraceID: true
+            spanStartTimeShift: "-1h"
+            spanEndTimeShift: "1h"
+
+  dashboards.yaml: |
+    apiVersion: 1
+
+    providers:
+      - name: apps
+        folder: Apps
+        type: file
+        updateIntervalSeconds: 30
+        options:
+          path: /etc/grafana/provisioning/dashboards
+          foldersFromFilesStructure: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+  labels:
+    app.kubernetes.io/name: grafana
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  labels:
+    app.kubernetes.io/name: grafana
+spec:
+  # 0 até o grafana.db ser copiado com o container parado. Subir vazio daria
+  # admin/admin e perderia usuários, preferências e o que foi criado na UI.
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grafana
+    spec:
+      securityContext:
+        runAsUser: 0
+      containers:
+        - name: grafana
+          image: grafana/grafana-oss@sha256:2e986801428cd689c2358605289c90ab37d2b39e24808874971f54c99bcdc412
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana
+                  key: GF_SECURITY_ADMIN_PASSWORD
+            - name: GF_SERVER_ROOT_URL
+              value: https://grafana.giomartins.dev
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+            - name: GF_ANALYTICS_REPORTING_ENABLED
+              value: "false"
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+            # Arquivo por arquivo, igual aos bind mounts do Compose. Montar o
+            # ConfigMap inteiro num diretório colocaria `dashboards.yaml` dentro
+            # de `provisioning/datasources/`, e o Grafana tentaria interpretá-lo
+            # como definição de datasource — falha no boot, não em runtime.
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/datasources/datasources.yaml
+              readOnly: true
+              subPath: datasources.yaml
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml
+              readOnly: true
+              subPath: dashboards.yaml
+            - name: dashboard-json
+              mountPath: /etc/grafana/provisioning/dashboards/apps-overview.json
+              readOnly: true
+              subPath: apps-overview.json
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: grafana-data
+        - name: provisioning
+          configMap:
+            name: grafana-provisioning
+        # apps-overview.json tem 28K e é um dashboard real. Entra como ConfigMap
+        # separado para não esbarrar no limite de 1 MiB por ConfigMap e para
+        # deixar claro que ele é dado, não configuração.
+        - name: dashboard-json
+          configMap:
+            name: grafana-dashboard-apps-overview
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  labels:
+    app.kubernetes.io/name: grafana
+spec:
+  selector:
+    app.kubernetes.io/name: grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

@@ -55,6 +55,9 @@ MAPA=(
   # gateway não deve ver a credencial do banco, nem o MCP o token do gateway.
   "db-mcp:db-mcp"
   "db-mcp-gateway:db-mcp-gateway"
+  # Grafana: GF_SECURITY_ADMIN_PASSWORD. O `user: "0"` do Compose e mantido no
+  # manifesto, entao nao ha colisao de UID com o volume copiado.
+  "grafana:grafana"
 )
 
 alvo="${1:-}"
