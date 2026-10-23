@@ -1356,10 +1356,31 @@ Ficam de fora, e por motivo, não por esquecimento:
    sobrepõem. O container sai quando o último container sair; até lá, os logs
    dos containers são ingeridos **duas vezes** (labels `job=docker` em ambos),
    em dois Lokis diferentes. Custo: ~2 GB de disco, não corrupção.
-7. **`domain.events.queue` com 585 mensagens e 0 consumidores.** O consumidor
-   previsto (`events-announcer`) nunca existiu como container neste host.
-   Pré-existente, não tocado: mexer em fila de produção sem entender o efeito
-   não é migração.
+7. **`domain.events.queue` acumulando sem consumidor.** Medido em 2026-10-23
+   21:57 UTC: **2.929 mensagens, 0 consumidores**. A linha antiga deste README
+   dizia 585 — cresceu 5× em poucas horas, o que muda a leitura: não é um resto
+   inerte de um recurso abandonado, é um produtor ativo escrevendo para ninguém.
+   O consumidor previsto (`events-announcer`) nunca existiu como container neste
+   host. Pré-existente, não tocado: mexer em fila de produção sem entender o
+   efeito não é migração.
+
+   O total do broker é **2.954 mensagens em 28 filas, 6 delas com mensagens e
+   zero consumidores** — as outras cinco são de `evolution.*` e somam 25. A
+   diferença de ordem de grandeza entre as duas é o que aponta o produtor:
+   `domain-worker` publica eventos de domínio e ninguém assina.
+
+   **A fila está congelada, não crescendo.** Medido duas vezes com 45 s de
+   intervalo: `2929 → 2929`, e nenhuma das 28 filas mudou. O `domain-worker`
+   **está rodando** no cluster (1 pod, `processing loop started`), então o
+   número parado não é "produtor morto": é produtor que só publica quando há
+   evento de domínio. A medição importa porque um número que cresce pede ação
+   imediata e um número parado pede decisão — e o README antigo (585) não
+   distinguia os dois.
+
+   Antes de "consertar": enfileirar sem consumidor **não** perde dado, mas o
+   disco cresce. A correção certa é decidir se o `events-announcer` deve existir
+   ou se o produtor deve parar de publicar — não criar um consumidor às pressas
+   para drenar 2.929 eventos de origem desconhecida.
 8. **`argocd-cm` sem `resource.exclusions` é estado do cluster, não do git** —
    o mesmo item 2 visto pelo outro lado.
 9. **A imagem do `minio` existe só no registry local.** `minio/minio` saiu do
@@ -1489,16 +1510,20 @@ Ficam de fora, e por motivo, não por esquecimento:
 
    Novo NodePort **30418** para `otel.giomartins.dev`; o `:4318` do container
    segue de pé como rollback (uma linha no ingress).
-17. **Os dois MinIOs divergiram e o console público aponta para o antigo.**
-   `minio.giomartins.dev` faz `proxy_pass` para `:9001`, que é o console do
-   **container**. Os frontends (`tela`, `hub`, `finance`) são servidos pelo
-   `:30900`, que é o **pod**. Medido: o bucket `tela-frontend` teve escrita em
-   2026-10-23 13:46 no pod e está parado em 2026-09-28 no container; o mesmo para
-   `bet-frontend` (2026-10-23 no pod, 2026-09-08 no container). Os objetos que
-   existiam antes do corte são idênticos (md5 igual), então nada foi perdido —
-   mas um upload feito pelo console cai no MinIO velho e **não aparece nos
-   sites**. Correção: trocar o `proxy_pass` para `127.0.0.1:30901` (o NodePort do
-   console do pod) e só então parar o container.
+17. ~~**Os dois MinIOs divergiram e o console público aponta para o antigo.**~~
+    **Resolvido em 2026-10-23, junto com o corte do ingress.** O `proxy_pass` do
+    `server_name minio.giomartins.dev` era `127.0.0.1:9001` (console do container)
+    e virou `127.0.0.1:30901` (console do pod), no mesmo arquivo que migrou para
+    o pod. Verificado **no pod em produção**, não no repo:
+    `sha256 08e10fe5…` e `proxy_pass http://127.0.0.1:30901` lidos de
+    `/etc/nginx/conf.d/default.conf` dentro do pod do ingress.
+
+    O par S3 (`:30900`) e o console (`:30901`) apontam agora para a **mesma**
+    instância, que é a condição para o sintoma sumir: um upload feito pelo
+    console passa a aparecer nos sites. Os objetos antigos eram idênticos por
+    md5 (nada se perdeu); o que estava quebrado era só o caminho de escrita novo.
+    O container `minio` continua rodando como rollback, com os dados de 28/09.
+
 18. **Todo cliente guarda o ClusterIP, e o alias não o conserta.** Quando um
    produtor muda de namespace, o Service antigo vira `ExternalName` e ganha
    **outro** ClusterIP. Clientes que resolveram o nome uma vez continuam
@@ -1624,6 +1649,52 @@ Ficam de fora, e por motivo, não por esquecimento:
    admin é semeado no **SQLite** (`/app/server/db/kubero.sqlite`, tabela `User`)
    na primeira subida, e o log confirma `No legacy users to migrate. KUBERO_USERS
    is not set.` Trocar a env não faz nada.
+
+26. **Perder as posições do coletor não "duplica log", perde log.** O
+    `alloy-logs` guardava o estado em `emptyDir`, justificado no manifesto com
+    uma frase que parecia razoável: *"perder isso num restart significa reler
+    desde o começo e duplicar linhas já enviadas, não perder dado"*. Era o
+    contrário, e o Loki prova.
+
+    A cadeia, medida em 2026-10-23 num pod com 1h45 de vida:
+
+    ```
+    loki_write_sent_entries_total      285.328
+    loki_write_dropped_entries_total   115.696   reason=ingester_error
+    ```
+
+    **29% das linhas foram perdidas**, não duplicadas:
+
+    1. o pod reinicia (nesta sessão: rollout do `ingress`, do `minio`, do
+       `excalidraw`);
+    2. o `emptyDir` vai junto, e o Alloy torna a ler o log Docker **desde o byte
+       zero** — o log tem linhas de 19/10, 20/10, 22/10;
+    3. o Loki rejeita com `400 entry too far behind` (default
+       `reject_old_samples_max_age: 1h`);
+    4. `4xx` não tem retry no `loki.write` → `no retries left, dropping data`.
+
+    O sintoma no `alloy` é uma linha `error` a cada ~10 min, fácil de ignorar
+    entre `warn` de tailer. O sintoma no Loki é `write operation failed` no
+    ingester. Nenhum dos dois aparece no Grafana, porque o dado que falta é
+    exatamente o que ninguém consulta.
+
+    **Regra**: o `positions.yml` é estado, não cache. Se o componente tem
+    `storage.path`, ele precisa de volume persistente — e a justificativa
+    "perder só duplica" tem de ser medida no destino, não deduzida. Duplicar e
+    perder são resultados opostos da mesma causa, e qual dos dois acontece
+    depende do `reject_old_samples_max_age` de quem recebe.
+
+    **Corolário**: PVC em `local-path` é `WaitForFirstConsumer`. O PVC fica
+    `Pending` para sempre até um pod montá-lo, então "esperar `Bound` antes de
+    criar o pod" trava num laço que nunca termina. A ordem é pod → `Bound`.
+
+    **Corolário 2**: com PVC `RWO` num nó único, o scheduler deixa **dois pods**
+    montarem o mesmo volume — `RWO` significa "um nó", não "um pod". Um
+    `RollingUpdate` com `maxSurge` padrão faria os dois escreverem
+    `positions.yml` e corromperia o arquivo que deveria salvar. `Recreate` é
+    obrigatório, e ele esbarra na armadilha 11 (campo defaultado pela API) →
+    deletar o Deployment e deixar o ArgoCD recriar.
+
 
 
 
