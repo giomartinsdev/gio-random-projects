@@ -46,3 +46,19 @@ resources:
 
 commonLabels:
   app.kubernetes.io/part-of: giomartins
+
+# Prometheus sobe antes dos outros três, de propósito: é o único cujo volume já
+# foi copiado (898M) e portanto o único que pode provar, agora, que o dado
+# histórico é legível pelo pod. Os outros seguem em 0 até a cópia deles.
+#
+# Rodar em paralelo ao container Docker é inofensivo: cada um tem o seu
+# armazenamento, e o alloy ainda escreve no do Docker. O pod fica com o
+# histórico até a cópia ser atualizada no cutover.
+patches:
+  - target:
+      kind: Deployment
+      name: prometheus
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
