@@ -819,10 +819,10 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | `loki` | rodando | **rodando** (ClusterIP:3100) | **k8s** — 976M copiados ✅ |
 | `tempo` | rodando | **rodando** (ClusterIP:3200) | **k8s** — 308M copiados ✅ |
 | `grafana` | rodando (ocioso) | **rodando** (NodePort 30300) | **k8s** — `grafana` → `:30300` ✅ |
-| `alloy` | rodando | **não migrável** (docker.sock) | Docker — e `alloy-logs` no cluster cobre os pods |
+| `alloy` | rodando (rollback) | **rodando** (OTLP 4317/4318 + logs, PVC) | **k8s** — pod `alloy-logs` serve o Service `alloy`; container só lê `docker.sock` |
 | `registry` | **parado** (`exited`, `restart=no`) | **rodando** (`hostPort: 5000`) | **k8s** — 39 repos, 12 GB verificados por sha256 ✅ |
 | `ingress` | **parado** (`exited`, `restart=no`) | **rodando** (`hostPort: 80`) | **k8s** — 19/19 hosts com o mesmo status ✅ |
-| demais 19 containers | rodando | — | Docker |
+| demais 17 containers | rodando ou parados como rollback | — | Docker |
 | 19 domínios do ingress | — | — | idênticos antes/depois (mesmo status HTTP) |
 
 `replicas: 0` não é esquecimento: são consumidores de fila ou donos de volume
