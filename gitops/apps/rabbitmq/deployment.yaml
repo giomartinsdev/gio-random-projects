@@ -105,10 +105,16 @@ metadata:
   labels:
     app.kubernetes.io/name: rabbitmq
 spec:
-  # 0 até a cópia do volume terminar. O cutover do broker não é "sobe e aponta":
-  # o pod só pode entrar quando o mnesia estiver no PVC, porque subir com volume
-  # vazio produz um broker saudável e vazio (`ping` responde igual).
-  replicas: 0
+  # 1 desde 2026-10-23, com o container AINDA de pé. Isso é intencional e é
+  # justamente o que um broker permite e um Baileys não: os dois brokers têm
+  # armazenamento SEPARADO (`apps_rabbitmq_data` vs o PVC), então não disputam
+  # nada. Subir o pod primeiro deixa comparar `list_queues` dos dois antes de
+  # trocar a rota -- se o pod tivesse carregado menos mensagens que o original,
+  # ainda daria para abortar sem ninguém perceber.
+  #
+  # O que NÃO pode coexistir por muito tempo: dois brokers com o mesmo nome de
+  # nó recebendo tráfego. Por isso o Service só troca depois desta comparação.
+  replicas: 1
   strategy:
     type: Recreate
   selector:

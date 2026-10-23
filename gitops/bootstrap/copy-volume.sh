@@ -46,6 +46,7 @@ case "$SVC" in
   grafana)    VOL="obs_grafana_data"; PVC="grafana-data" ;;
   minio)      VOL="apps_minio_data"; PVC="minio-data" ;;
   evolution-api) VOL="evolution_instances"; PVC="evolution-instances" ;;
+  rabbitmq)   VOL="apps_rabbitmq_data"; PVC="rabbitmq-data" ;;
   *) echo "serviço desconhecido: $SVC" >&2; exit 1 ;;
 esac
 
