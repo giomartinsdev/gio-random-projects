@@ -41,7 +41,7 @@ A ordem é por risco crescente, e não por importância. Estado é sempre por
 | 1 ✅ | stateless puro | `excalidraw`, `adminer` | — | trivial |
 | 2 ☐ | stateless com volume próprio | `9router` | SQLite + WAL | trivial |
 | 3 ✅ | apps com dependência de dados | `domain-api` ✅, `domain-worker` ✅, `finance-api` ✅, `finance-*` ✅, `vaultwarden-api` ✅, `db-mcp` ✅ | — | trivial |
-| 3b ☐ | tráfego de app já migrado | virar `adminer` no ingress | — | uma linha |
+| 3b ✅ | tráfego de apps já migrados | `adminer`, `draw`, `domain`, `finance-api` no ingress | — | uma linha |
 | 4 ☐ | observabilidade | `prometheus`, `loki`, `tempo`, `grafana`, `alloy` | volumes | médio |
 | 5 ☐ | dados de apoio | `minio`, `rabbitmq` | volumes | médio |
 | 6 ☐ | dados primários | `postgres`, `vaultwarden` | volumes | **alto** |
@@ -59,6 +59,45 @@ O que a fatia 3 provou, e que importa mais que a lista: um serviço migrado
 alcança outro serviço migrado (`finance-api` → `domain-api`), e alcança um que
 ficou em Docker (`domain-api` → `postgres`) — **sem alterar uma única env var**.
 A composição de serviços em estágios diferentes de migração funciona.
+
+## O que já está em produção no cluster (fatia 3b ✅)
+
+Três cutovers de tráfego HTTP e um serviço de background:
+
+| host | antes | agora | paridade provada por |
+| --- | --- | --- | --- |
+| `adminer.giomartins.dev` | `:8092` Docker | `:30092` k8s | HTML idêntico (fora nonce/token) |
+| `draw.giomartins.dev` | `:8023` Docker | `:30023` k8s | sha256 do HTML **e** do bundle JS |
+| `domain.giomartins.dev` | `:8000` Docker | `:30800` k8s | resposta autenticada de dado real |
+| `finance-api.giomartins.dev` | `:8018` Docker | `:30818` k8s | corpo 422 + CORS header a header |
+| `finance-openfinance-worker` | Docker | pod `replicas: 1` | `finance_of_raw.captured_at` |
+
+O `finance-openfinance-worker` foi o **primeiro container desligado de vez**
+(`exited`), não apenas posto em paralelo.
+
+### A regra de desligamento que emergiu
+
+Um container Docker continua sendo usado mesmo depois do cutover do ingress:
+o DNS do Docker resolve `domain-api` para o **container**, não para o ClusterIP
+do pod. O worker em Docker seguiu postando no container depois do cutover.
+
+Portanto: **só desligue o container depois de migrar todos os consumidores
+internos dele**. Verificado com container efêmero na rede `apps` — as duas
+rotas coexistem (`domain-api:8000` → container, `10.43.x.x:8000` → pod), e o
+que decide é o nome que o cliente usa.
+
+### A ordem correta para trocar um worker
+
+```text
+1. remover o patch de replicas do kustomization (git = fonte da verdade)
+2. esperar o ArgoCD reconciliar e o pod ficar 1/1
+3. confirmar no log que ele executa o trabalho
+4. só então parar o Docker
+```
+
+A ordem inversa (parar o Docker primeiro) cria lacuna: com `selfHeal` ligado,
+`kubectl scale` é revertido em segundos e o pod nunca sobe. Aconteceu, e o
+worker ficou parado dos dois lados por ~3 min.
 
 ## Como o estado é preservado
 
