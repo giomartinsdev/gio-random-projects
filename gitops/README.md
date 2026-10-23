@@ -348,6 +348,11 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | `finance-customersupport-worker` | rodando | manifesto, **`replicas: 0`** | Docker |
 | `vaultwarden-api` | rodando | **rodando** (ClusterIP:8080) | sem tráfego externo (bridge interna) |
 | `vaultwarden` | rodando | manifesto, **`replicas: 0`** | Docker (`vault` → `:8222`) |
+| `prometheus` | rodando | **rodando** (ClusterIP:9090) | **k8s** — 898M copiados, 8.841 séries ✅ |
+| `loki` | rodando | **rodando** (ClusterIP:3100) | **k8s** — 976M copiados ✅ |
+| `tempo` | rodando | **rodando** (ClusterIP:3200) | **k8s** — 308M copiados ✅ |
+| `grafana` | rodando (ocioso) | **rodando** (NodePort 30300) | **k8s** — `grafana` → `:30300` ✅ |
+| `alloy` | rodando | **não migrável** (docker.sock) | Docker — e `alloy-logs` no cluster cobre os pods |
 | demais 23 containers | rodando | — | Docker |
 | 20 domínios do ingress | — | — | idênticos antes/depois (mesmo status HTTP) |
 
@@ -402,6 +407,16 @@ Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
   `http://prometheus:9090` e `http://loki:3100`) e loki sobem com a config real.
   O Loki **falhou no primeiro teste** — ver armadilha 5.
   `kubeconform` aprovou os 17 recursos com esse bug presente.
+- **Fatia 4 fechada com estado, não com tela**: Prometheus subiu com
+  `8.841 séries / 28.258 chunks` e `minTime` do dia anterior (nome de métrica de
+  produção: `alloy_build_info`), Loki devolveu os labels históricos
+  (`container`, `job`, `level`, `service_name`), e o Grafana respondeu
+  `200` com a senha do Secret e `1 dashboard / 1 usuário` nos dois lados —
+  prova de que o `grafana.db` copiado é o real, não um banco novo.
+- **`alloy` em Docker não alcança a API do k3s**: `https://172.18.0.1:6443`
+  responde `connection refused` de dentro do container. Por isso o coletor novo
+  roda como pod (ServiceAccount), e não como edição do config existente — não
+  há caminho de rede, não é escolha de arquitetura.
 - **Persistência do `local-path` exercitada**: PVC `Pending` é o comportamento
   correto (`WaitForFirstConsumer`) enquanto o Deployment tem `replicas: 0` —
   mas significava que o caminho de dados nunca tinha sido testado. Criei um PVC
@@ -495,31 +510,30 @@ No primeiro acesso, o Kubero pede para criar o usuário admin.
 
 ## Próximo serviço a migrar
 
-**Antes de migrar mais um serviço, resolver o buraco de observabilidade.**
+A fatia 4 está fechada: os quatro backends servem do cluster com o histórico
+real, e o buraco de observabilidade que ela escancarou está fechado também.
 
-O `alloy` filtra containers Docker (`loki.source.docker`, zero referências a
-`kubernetes` no config). Consequência medida: os 8 pods do cluster — incluindo
-`adminer`, `draw`, `domain` e `finance-api`, que já **servem produção** — não
-têm log no Grafana Loki. Se um deles quebrar, o Grafana não mostra nada, e o
-`kubectl logs` é a única fonte. Isso não é aceitável num serviço que atende
-gente.
+O que foi feito, em ordem:
 
-O caminho é acrescentar `discovery.kubernetes` + `loki.source.kubernetes` ao
-config do alloy, mantendo o `loki.source.docker` para o que ainda está em
-Docker. É uma edição de config, não uma migração — e precisa ser feita com o
-Grafana aberto para confirmar que os labels não explodem a cardinalidade.
+1. **Coletor de logs no cluster** (`alloy-logs`): `loki.source.kubernetes` para
+   os pods + `loki.source.docker` (via `hostPath: docker.sock`) para o que ainda
+   está em Docker. Foi o passo que revelou que o alloy em Docker **não alcança**
+   a API do k3s (`172.18.0.1:6443` → connection refused), então rodar como pod
+   não é preferência, é a única opção.
+2. **Volumes copiados** com o container parado e religado antes do pod subir:
+   898M / 976M / 308M / 50M, tamanhos idênticos à origem.
+3. **Grafana** virou para `:30300`. Paridade provada por estado, não por tela:
+   1 dashboard e 1 usuário nos dois lados, `version 12.4.3 commit 86c83248`
+   iguais nos dois — e um request marcado apareceu 1× no pod, 0× no Docker.
 
-Depois disso, a ordem:
+Ordem daqui pra frente:
 
-1. **Fechar a fatia 4**: copiar os 4 volumes (883M/979M/233M/50M) com os
-   containers parados, subir para `replicas: 1`, virar
-   `grafana.giomartins.dev`. Nenhum dos quatro serve tráfego hoje, então não há
-   pressa — mas enquanto o Prometheus do cluster estiver vazio, não existe
-   métrica dos pods de produção.
-2. **Fatia 5** (`minio`, `rabbitmq`): janela de manutenção, rollback médio.
-3. **Fatia 6** (`postgres`, `vaultwarden`): janela, backup verificado,
+1. **Fatia 5** (`minio`, `rabbitmq`): janela de manutenção, rollback médio.
+   `finance.giomartins.dev` sai junto — não é container, é bucket do minio.
+2. **Fatia 6** (`postgres`, `vaultwarden`): janela, backup verificado,
    rollback alto.
-4. **Fatia 2** (`9router`): SQLite com WAL, exige parar o container.
+3. **Fatia 2** (`9router`): SQLite com WAL, exige parar o container.
+4. **`tela-*`** por último: `hostNetwork` + UDP (coturn/mediamtx).
 
 Ficam de fora, e por motivo, não por esquecimento:
 
@@ -549,12 +563,14 @@ Ficam de fora, e por motivo, não por esquecimento:
 4. **`vaultwarden` aparece como `Progressing` no ArgoCD.** Deployment com
    `replicas: 0` nunca reporta `AvailableReplicas`, então o health check fica
    inconclusivo para sempre. Cosmético, mas ruído no painel.
-5. **Os pods migrados não têm log no Loki.** O `alloy` só faz
-   `loki.source.docker`. Resolver antes de desligar mais qualquer container.
-6. **`alloy` não migra sem redesenho.** Ele monta `docker.sock` e usa
-   `discovery.docker` + `loki.source.docker`. O equivalente é
-   `discovery.kubernetes` + `loki.source.kubernetes` — outro modelo de dados.
-   Fica em Docker até a fatia 4 de verdade.
+5. ~~**Os pods migrados não têm log no Loki.**~~ **Resolvido** — o coletor
+   `alloy-logs` roda no cluster e cobre os pods (`loki.source.kubernetes`) e o
+   que resta em Docker (`loki.source.docker` via `hostPath`).
+6. **O `alloy` continua em Docker, e continua sendo necessário.** Ele monta
+   `docker.sock` e usa `discovery.docker` + `loki.source.docker`, e não alcança
+   a API do k3s de dentro do container (`172.18.0.1:6443` → refused). Sai
+   quando o último container sair. Enquanto isso, dois coletores coexistem: é
+   dívida com prazo, não desenho final.
 7. **`domain.events.queue` com 585 mensagens e 0 consumidores.** O consumidor
    previsto (`events-announcer`) nunca existiu como container neste host.
    Pré-existente, não tocado: mexer em fila de produção sem entender o efeito
