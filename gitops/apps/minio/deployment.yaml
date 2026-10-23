@@ -55,11 +55,11 @@ metadata:
   labels:
     app.kubernetes.io/name: minio
 spec:
-  # 0 até o cutover. Diferente do 9router, aqui a parada é barata: nenhum
-  # container escreve neste volume, então não há WAL a reconciliar. O
-  # `replicas: 0` é hábito, não necessidade — e o hábito serve para que o
-  # primeiro `kubectl apply` nunca seja o cutover.
-  replicas: 0
+  # Ativado em 2026-10-23 depois de o volume ser copiado com o container parado
+  # (7,5M -> 7,5M, idêntico) e o container religado antes deste pod subir.
+  # `replicas: 1` na primeira vez é uma prova, não um corte: o ingress ainda
+  # falava 127.0.0.1:9000 (container) enquanto o pod subia.
+  replicas: 1
   strategy:
     type: Recreate
   selector:
