@@ -1,0 +1,41 @@
+# Service `rabbitmq` — o broker do cluster (substitui a ponte para o container).
+#
+# ## Por que este arquivo só pode existir no mesmo commit que `git rm bridges/rabbitmq.yaml`
+#
+# Dois Services com o mesmo nome e namespace não coexistem. Enquanto a ponte
+# existir, este arquivo é rejeitado; se a ponte for removida e este arquivo não
+# entrar, TODOS os consumidores perdem o broker de uma vez (`domain-api`,
+# `domain-worker`, `evolution-api`, `finance-customersupport-worker`). É uma troca
+# atômica, não duas operações.
+#
+# ## Por que NodePort, se os consumidores são pods
+#
+# Para os pods, ClusterIP bastaria: `rabbitmq:5672` é o Service. O NodePort existe
+# por causa do ingress: `rabbit.giomartins.dev` (management UI) é servido pelo nginx
+# do HOST, que enxerga os pods só por NodePort. Antes apontava para
+# `127.0.0.1:15672`, que era o container.
+#
+# Sem este NodePort, o management continuaria servindo o broker ANTIGO depois do
+# cutover — mostrando 2341 mensagens que não existem mais do lado que os
+# consumidores usam. Seria pior que ficar sem UI.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  labels:
+    app.kubernetes.io/name: rabbitmq
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: rabbitmq
+  ports:
+    # Os nomes têm que bater com `ports[].name` do Deployment: o kube-proxy casa
+    # Service e EndpointSlice por NOME de porta, não por número (armadilha 5).
+    - name: amqp
+      port: 5672
+      targetPort: amqp
+    - name: management
+      port: 15672
+      targetPort: management
+      # 15672 -> 30672 (convenção 15xxx -> 30xxx não existe; escolhi 30672 livre).
+      nodePort: 30672

@@ -43,7 +43,6 @@ namespace: giomartins
 
 resources:
   - postgres.yaml
-  - rabbitmq.yaml
   - alloy.yaml
   - evolution-redis.yaml
 

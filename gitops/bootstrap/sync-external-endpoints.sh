@@ -64,7 +64,6 @@ NS="giomartins"
 # topo sobre nomes de porta.
 MAPA=(
   "postgres:postgres"
-  "rabbitmq:rabbitmq"
   "alloy:alloy"
   "evolution-redis:evolution-redis"
   "vaultwarden:vaultwarden"
