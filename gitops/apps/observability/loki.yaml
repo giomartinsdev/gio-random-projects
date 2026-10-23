@@ -10,7 +10,13 @@ metadata:
   labels:
     app.kubernetes.io/name: loki
 data:
-  loki.yaml: |
+  # A chave tem de ser `local-config.yaml`, e não `loki.yaml`: o container
+  # recebe `-config.file=/etc/loki/local-config.yaml`. No Compose o bind era
+  # arquivo-para-arquivo com esse nome de destino. Montar o ConfigMap como
+  # diretório preserva o nome da CHAVE, não o do arquivo de origem — por isso a
+  # chave é que precisa casar. (Descoberto subindo o pod: o Loki morria com
+  # "does not exist, set config.file for custom config path".)
+  local-config.yaml: |
     auth_enabled: false
 
     server:
