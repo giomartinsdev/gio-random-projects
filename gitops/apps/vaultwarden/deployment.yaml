@@ -46,6 +46,12 @@ spec:
   replicas: 0
   strategy:
     type: Recreate
+    # Precisa vir explícito como null. O Deployment existia com `RollingUpdate`
+    # (default da API), e com ServerSideApply o campo defaultado
+    # `strategy.rollingUpdate` sobrevive ao `type: Recreate` — a API então
+    # rejeita: "may not be specified when strategy type is 'Recreate'". Só
+    # anular o campo faz a troca passar.
+    rollingUpdate: null
   selector:
     matchLabels:
       app.kubernetes.io/name: vaultwarden
