@@ -1,0 +1,22 @@
+# Service do domain-api.
+#
+# ClusterIP, não NodePort: quem consome este serviço são outras aplicações
+# (finance-api, finance-workers) que falam `domain-api:8000` pelo DNS do
+# cluster — o mesmo nome que usavam na rede `apps` do Docker. Um NodePort aqui
+# só abriria uma porta no host sem ninguém para usar.
+#
+# A porta publicada no host (127.0.0.1:8000, para o ingress) continua sendo a
+# do container Docker até a troca de tráfego.
+apiVersion: v1
+kind: Service
+metadata:
+  name: domain-api
+  labels:
+    app.kubernetes.io/name: domain-api
+spec:
+  selector:
+    app.kubernetes.io/name: domain-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

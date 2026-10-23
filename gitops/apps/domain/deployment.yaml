@@ -1,0 +1,71 @@
+# domain-api — API de leitura do bounded context `domain`.
+#
+# Roda em PARALELO com o container Docker (stacks/domain.yml). O ingress ainda
+# aponta para 127.0.0.1:8000, que é o Docker. Esta cópia existe para validar que
+# a aplicação conecta em postgres e rabbitmq a partir do cluster.
+#
+# O ponto central: DATABASE_URL e RABBITMQ_URL vêm do Secret e apontam para
+# `postgres:5432` e `rabbitmq:5672` — os MESMOS nomes que a aplicação usava na
+# rede `apps` do Docker. Isso só funciona porque os Services do k8s têm
+# exatamente esses nomes e estão ligados, por EndpointSlice, aos containers
+# Docker que ainda rodam. Ver gitops/bootstrap/sync-external-endpoints.sh.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: domain-api
+  labels:
+    app.kubernetes.io/name: domain-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: domain-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: domain-api
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: domain-api
+          # Digest, não tag. A imagem em produção foi buildada por SHA de
+          # commit; nenhuma tag do registry corresponde ao ID da imagem local
+          # (verificado comparando config digest de todas as 56 tags). O digest
+          # é imutável e é exatamente o que está rodando hoje — sem risco de
+          # subir código diferente do que atende gente.
+          image: registry.giomartins.dev:5000/domain-api@sha256:f59520314e9e1f2241e569b3f5f5c433d581932102fe6f1a4c8c2cd97d749bbf
+          ports:
+            - name: http
+              containerPort: 8000
+          # A aplicação declara HTTP_ADDR=":8000" e tem /healthz no router.
+          # Sem readiness, o Service manda tráfego para um pod que ainda está
+          # abrindo pool de conexão e a primeira requisição falha.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            # Medido no container Docker em produção: ~8m CPU, ~45Mi.
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          envFrom:
+            # Traz DATABASE_URL, RABBITMQ_URL, DOMAIN_API_KEYS,
+            # OTEL_EXPORTER_OTLP_ENDPOINT e o resto — derivado do env real do
+            # container Docker por gitops/bootstrap/sync-app-secrets.sh.
+            - secretRef:
+                name: domain-api
+          # A aplicação é estática (Go). Não precisa de securityContext
+          # explícito: a imagem declara USER nonroot:nonroot e o kubelet
+          # respeita isso.

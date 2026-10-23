@@ -1,0 +1,22 @@
+# Timer que mantém a ponte k8s -> Docker viva.
+#
+# Contexto: os Services `postgres`, `rabbitmq`, `minio`, `alloy` e
+# `evolution-redis` no k8s apontam, por EndpointSlice, para os containers que
+# ainda rodam em Docker. O IP do container muda quando o Dockhand redeploya a
+# stack `project-infra` (ele faz isso sozinho, por git-sync agendado).
+#
+# Sem este timer, o IP muda e os consumidores no k8s param de conectar — com o
+# ArgoCD mostrando tudo `Synced/Healthy`, porque o Deployment e o Service não
+# têm nada de errado. O erro só aparece no log da aplicação.
+#
+# 1 minuto é deliberadamente agressivo: o custo de rodar é uma chamada a
+# `docker inspect` e uma a `kubectl get`, e o custo de não rodar é um serviço
+# quebrado em silêncio.
+[Unit]
+Description=Sincroniza EndpointSlices do k8s com os IPs dos containers Docker
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sync-external-endpoints.sh
+# O script fala com o daemon do Docker e com a API do k3s; ambos precisam de root.
+User=root

@@ -1,0 +1,43 @@
+# domain-worker — o único escritor do CQRS do contexto `domain`.
+#
+# Consome da fila do rabbitmq e escreve no postgres. Sem porta HTTP: não tem
+# Service, porque nada precisa alcançá-lo.
+#
+# ATENÇÃO — este é o serviço mais perigoso de rodar em dobro. Se o worker do
+# Docker e o do k8s consumirem a mesma fila ao mesmo tempo, mensagens são
+# processadas duas vezes. A migração correta é PARAR o Docker antes de subir
+# este, não rodar os dois em paralelo como o domain-api.
+#
+# Por isso o Deployment começa com réplicas 0: o manifesto existe e é
+# reconciliado pelo ArgoCD, mas não consome nada até a janela de cutover.
+# Trocar para 1 é o ato de migrar (e exige `docker stop domain-worker`).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: domain-worker
+  labels:
+    app.kubernetes.io/name: domain-worker
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: domain-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: domain-worker
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: domain-worker
+          image: registry.giomartins.dev:5000/domain-worker@sha256:b70bbf9d970de41ca3903a0eb684c9edd7d97accd8fce526e453f0aca206890c
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          envFrom:
+            - secretRef:
+                name: domain-worker

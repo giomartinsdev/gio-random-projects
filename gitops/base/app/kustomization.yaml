@@ -1,0 +1,40 @@
+# app-base — o esqueleto comum das aplicações migradas.
+#
+# Extraído depois do terceiro serviço com a mesma forma (Deployment + Service +
+# Secret via envFrom), para não repetir 40 linhas idênticas em cada pasta. O que
+# muda entre serviços é image, porta, env e probes.
+#
+# Não é um Helm chart nem uma abstração esperta: é um `kustomization.yaml`
+# composto. Quem lê `gitops/apps/domain/kustomization.yaml` vê exatamente quais
+# campos foram sobrescritos.
+#
+# Uso, em gitops/apps/<serviço>/kustomization.yaml:
+#
+#   resources:
+#     - ../../base/app
+#   nameSuffix: ""            # ou nada
+#   images:
+#     - name: APP_IMAGE
+#       newName: registry.giomartins.dev:5000/<imagem>
+#       newTag: sha-<commit>
+#   patches:
+#     - path: deployment.yaml
+#
+# O `namespace` é fixo aqui porque todos os serviços moram em `giomartins`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: giomartins
+
+resources:
+  - deployment.yaml
+  - service.yaml
+
+# `commonLabels` (e não `labels`): quero as labels também nos selectors, para
+# que `kubectl get pods -l app.kubernetes.io/part-of=giomartins` funcione sem
+# saber o nome do serviço.
+commonLabels:
+  app.kubernetes.io/part-of: giomartins
+
+# Usado pelo CI (`kubeconform -strict`) para pegar typo em campo antes do push.
+images: []

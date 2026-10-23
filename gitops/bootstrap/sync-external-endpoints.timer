@@ -1,0 +1,11 @@
+[Unit]
+Description=Sincroniza EndpointSlices do k8s com IPs do Docker (a cada 1 min)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+# Não empilha execuções se uma demorar mais que o intervalo.
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target
