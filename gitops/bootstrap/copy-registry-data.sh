@@ -25,8 +25,9 @@
 #   1. o PVC precisa estar `Bound` — e `local-path` é `WaitForFirstConsumer`,
 #      então ele só liga quando um pod o referencia. Por isso o Deployment sobe
 #      primeiro (vazio) e é escalado a 0 para a cópia;
-#   2. rsync com o pod parado: um registry lendo um diretório que muda embaixo
-#      dele pode servir manifesto pela metade;
+#   2. cópia com o pod parado: um registry lendo um diretório que muda embaixo
+#      dele pode servir manifesto pela metade. `cp -a` (o host não tem rsync),
+#      e a prova de conteúdo da fase 4 substitui o `--checksum`;
 #   3. verificação de conteúdo;
 #   4. só então escalar de volta.
 #
@@ -64,15 +65,32 @@ fi
 echo
 echo "=== 2. parando o pod para copiar (registry não escreve enquanto lê) ==="
 $K scale "deploy/$DEP" -n "$NS" --replicas=0 >/dev/null || exit 1
-$K wait --for=delete "pod" -n "$NS" -l app.kubernetes.io/name=registry --timeout=120s 2>/dev/null
-echo "  pods do registry: $($K get pods -n "$NS" -l app.kubernetes.io/name=registry --no-headers 2>/dev/null | wc -l | tr -d ' ')"
+# `wait --for=delete` sai na hora se não houver pod nenhum, e `Recreate` pode
+# deixar o antigo terminando por alguns segundos. O laço é a única forma de
+# garantir que o diretório não muda debaixo da cópia.
+for _ in $(seq 1 60); do
+  n=$($K get pods -n "$NS" -l app.kubernetes.io/name=registry --no-headers 2>/dev/null | grep -c . || true)
+  [ "$n" = "0" ] && break
+  sleep 2
+done
+n=$($K get pods -n "$NS" -l app.kubernetes.io/name=registry --no-headers 2>/dev/null | grep -c . || true)
+[ "$n" = "0" ] || { echo "  ERRO: ainda há $n pod(s) do registry; não copio com o registry no ar"; exit 1; }
+echo "  pods do registry: 0"
 
 echo
-echo "=== 3. rsync (12 GB; alguns minutos) ==="
-# `-a` preserva modo/mtime; `--numeric-ids` evita mapeamento de usuário;
-# `--delete` NÃO é usado de propósito: apagar do destino o que não está na
-# origem seria destrutivo se a origem estiver incompleta por qualquer motivo.
-rsync -a --numeric-ids --info=progress2 "$ORIGEM"/ "$DESTINO"/ || { echo "  ERRO: rsync falhou"; exit 1; }
+echo "=== 3. cópia (12 GB; alguns minutos) ==="
+# `rsync` NÃO está instalado neste host (Ubuntu mínimo). `cp -a` preserva modo,
+# dono e mtime — que é tudo o que o registry precisa — e não tem a semântica de
+# `--delete`, então nunca apaga nada no destino. A verificação de conteúdo da
+# fase 4 é o que compensa a ausência do `--checksum` do rsync: ela recalcula o
+# sha256 de TODOS os blobs e compara com o nome do arquivo.
+if command -v rsync >/dev/null 2>&1; then
+  echo "  usando rsync"
+  rsync -a --numeric-ids --info=progress2 "$ORIGEM"/ "$DESTINO"/ || { echo "  ERRO: rsync falhou"; exit 1; }
+else
+  echo "  usando cp -a (rsync ausente)"
+  cp -a "$ORIGEM"/. "$DESTINO"/ || { echo "  ERRO: cp falhou"; exit 1; }
+fi
 echo "  destino agora: $(du -sh "$DESTINO" 2>/dev/null | cut -f1) em $(find "$DESTINO" -type f 2>/dev/null | wc -l | tr -d ' ') arquivos"
 
 echo

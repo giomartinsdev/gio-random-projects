@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Declarado aqui, e não herdado do ApplicationSet: `destination.namespace` só
+# preenche manifesto que NÃO declara namespace. Com o namespace no kustomize,
+# `kustomize build` local e o ArgoCD produzem o mesmo resultado.
+namespace: support
+
+resources:
+  - deployment.yaml
+
+# ## `configMapGenerator` em vez de um ConfigMap escrito à mão
+#
+# O `default.conf` tem 403 linhas e é o arquivo que serve os 19 hosts. Duplicá-lo
+# dentro de um `data: default.conf: |` significaria duas fontes de verdade: a
+# próxima alteração feita no `default.conf` (para apontar um serviço recém-
+# migrado) ficaria sem efeito, e o ArgoCD mostraria tudo `Synced` — o pior tipo
+# de divergência, a que não faz barulho.
+#
+# O generator lê o arquivo do disco, então `default.conf` é a única fonte. O
+# sufixo de hash no nome (`ingress-conf-<hash>`) é o que faz o kustomize
+# atualizar o ConfigMap quando o conteúdo muda — sem ele, um `kubectl apply`
+# de um ConfigMap já existente é recusado (a `data` é imutável desde 1.21) ou
+# deixa versões antigas para trás.
+#
+# `disableNameSuffixHash: false` é o padrão e é o que queremos. O Deployment
+# referencia o nome sem hash no `volumes[].configMap.name`, e o kustomize
+# reescreve a referência para o nome com hash. É a única forma de o pod
+# reiniciar sozinho quando o config mudar — sem isso ele continuaria servindo o
+# config antigo até alguém reiniciar à mão.
+configMapGenerator:
+  - name: ingress-conf
+    files:
+      - default.conf
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: giomartins

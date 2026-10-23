@@ -72,10 +72,17 @@ metadata:
   labels:
     app.kubernetes.io/name: registry
 spec:
-  # O primeiro commit sobe com o pod no ar para o PVC ligar (`local-path` é
-  # `WaitForFirstConsumer`) e para a cópia poder ser verificada. Não é corte:
-  # nada aponta para este pod ainda.
-  replicas: 1
+  # `replicas: 0` ENQUANTO OS 12 GB SÃO COPIADOS.
+  #
+  # Não dá para fazer isto com `kubectl scale`: o AppSet reaplica o template a
+  # cada 3 minutos e o `selfHeal` do ArgoCD desfaz a escala em segundos — o pod
+  # voltaria a escrever no diretório que o `cp` está lendo. A única forma de o
+  # auto-sync CONCORDAR com o pod parado é o git dizer isso.
+  #
+  # O pod já subiu uma vez (para o PVC ligar, porque `local-path` é
+  # `WaitForFirstConsumer`) e o `copy-registry-data.sh` o escala de volta ao fim.
+  # O estado final, depois do corte, é `replicas: 1`.
+  replicas: 0
   strategy:
     type: Recreate
   selector:
