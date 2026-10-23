@@ -77,18 +77,13 @@ metadata:
   labels:
     app.kubernetes.io/name: evolution-api
 spec:
-  # 1 em 2026-10-23, DEPOIS de o container Docker ser parado (dois processos
-  # Baileys com a mesma sessão se derrubam). O container é o rollback:
-  # `docker start evolution-api` + `replicas: 0`.
+  # 1 desde 2026-10-23, e o `1` só foi seguro porque o container Docker foi
+  # PARADO antes. Dois processos Baileys com a mesma sessão se derrubam
+  # (disconnect 401/440): o WhatsApp trata conexão duplicada como conflito.
+  # Subir este pod com o container de pé teria derrubado a sessão de produção.
   #
-  # Nota histórica: `replicas: 0` aqui NÃO é hábito: é requisito.
-  # Dois processos Baileys com a mesma sessão se derrubam (disconnect 401/440),
-  # porque o WhatsApp trata conexão duplicada como conflito. Enquanto o container
-  # Docker estiver de pé, subir este pod DERUBA a sessão de produção.
-  #
-  # Ordem: parar o container -> `replicas: 1` -> provar `connectionStatus: open`
-  # -> só então o ingress. Rollback: `replicas: 0` + `docker start evolution-api`.
-  replicas: 0
+  # Rollback, nessa ordem: `replicas: 0` -> `docker start evolution-api`.
+  replicas: 1
   # `Recreate`: a sessão Baileys não admite dois processos na mesma instância.
   # Dois pods conectariam o mesmo número e o WhatsApp derrubaria um dos dois
   # (disconnect 401/440), com o agravante de ambos escreverem no mesmo Redis.
