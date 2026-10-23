@@ -46,7 +46,7 @@ A ordem é por risco crescente, e não por importância. Estado é sempre por
 | 5 ✅ | dados de apoio | `minio` ✅, `rabbitmq` ✅ | volumes | médio |
 | 6 ✅ | dados primários | `postgres`, `vaultwarden`, `evolution-redis` ✅ (2026-10-23) | volumes | **alto** |
 | 7 ◐ | **fatiamento de namespaces** | todos os 14 serviços, 11 PVCs | volumes (rebind) | médio |
-| 8 ☐ | ingress + registry | `ingress`, `registry` | — | alto |
+| 8 ✅ | ingress + registry | `ingress` ✅, `registry` ✅ (2026-10-23) | — | alto |
 
 ## Fatia 7 — o fatiamento de namespaces
 
@@ -278,3 +278,87 @@ inofensivo.
   o container for recriado com outro IP. Morre junto com a fatia 6.
 - O patch do `argocd-cm` (exclusão de `EndpointSlice`) não está versionado.
 - `docker compose` no host ainda é o plano de controle de 31 containers.
+
+## Fatia 8 — ingress e registry (2026-10-23)
+
+Fechada. Os dois eram os únicos serviços em que **o rollback pode ser necessário
+para consertar o rollback**, e por isso foram os últimos.
+
+### `registry` — o mais perigoso do conjunto
+
+Todo pod nasce de uma imagem em `registry.giomartins.dev:5000`. Se ele morre,
+os pods que já rodam continuam rodando (imagens no containerd, `IfNotPresent`),
+mas **nenhum pod novo sobe** — inclusive o do próprio registry, que por isso usa
+`docker.io/library/registry` e não a si mesmo.
+
+**O desenho tem dois commits.** O primeiro sobe o pod **sem** `hostPort`, num
+endereço que ninguém usa (`ClusterIP:5000`), para provar antes de qualquer corte:
+
+- os 12 GB copiados abrem: **2.594 blobs, zero divergências** de sha256 contra o
+  próprio nome do arquivo (o registry guarda blobs em `sha256/<hash>/data`, e o
+  nome do diretório **é** o sha256 do conteúdo — uma cópia truncada não passa);
+- 39 repositórios no catálogo, `401` sem credencial;
+- o digest de `vault-cli:latest` é **idêntico** ao do container;
+- um pull real de 59,1 MB pelo pod, em 4,2 s.
+
+O segundo commit é o corte: `hostPort: 5000`. `NodePort` não serve — a porta
+5000 está **dentro** do nome da imagem, gravada em 39 repositórios, nos
+manifests, no `imagePullSecret` e no CI (que empurra de um runner na internet
+pelo IP público). `hostPort` preserva o endereço byte a byte.
+
+**Prova pós-corte, com o container `exited`:** um manifesto que **não existia**
+no content store do containerd foi puxado pelo nome de produção, apareceu no
+disco com o hash batendo com o nome, e 2,3 MiB de blobs atravessaram a rede.
+
+### `ingress` — lift-and-shift, não reescrita
+
+O nginx que serve os 19 hosts virou um pod com `hostNetwork: true`, a **mesma**
+imagem (`nginx:1.27-alpine`, por digest), o **mesmo** `default.conf`
+(sha256 `08e10fe5…`, 403 linhas, byte-idêntico ao do host) e a **mesma** porta 80.
+**Zero `Ingress` objects.**
+
+`hostNetwork` é obrigatório e não é preferência: os 23 `proxy_pass` são
+`127.0.0.1:<NodePort>`. Num pod comum, `127.0.0.1` é o loopback do pod e os 19
+hosts dariam 502 de uma vez.
+
+A paridade foi provada **antes** do corte, sem tocar na produção: um pod de teste
+com o mesmo ConfigMap, na mesma netns, escutando na 8080 (o único `sed` é
+`listen 80` → `8080`). Os **19 hosts deram o mesmo status na 8080 e na 80**, e
+18 deram o mesmo corpo. O `adminer` difere porque cada resposta tem nonce e
+token CSRF próprios — provado que varia **na mesma porta** entre duas
+requisições seguidas.
+
+O corte tem um instante sem dono na 80 (dois processos não publicam a mesma
+porta). Os containeres `ingress` e `registry` ficaram `exited` com
+`restart=no`: num reboot do host eles brigariam pela porta com os pods.
+
+### O que quebrou no caminho, e a lição
+
+O primeiro corte do registry deixou o serviço **fora do ar por ~2 minutos**:
+o script parou o container e aplicou por `kubectl apply`, mas o ArgoCD ainda
+estava no commit anterior (`replicas: 0`) e o `selfHeal` desfez o apply em
+segundos. Contêiner parado, pod em zero, porta sem dono. O container foi
+religado e voltou em segundos (401).
+
+Duas armadilhas novas saíram daí (18 e 20 no `README.md`), e os dois scripts de
+corte passaram a **esperar o ArgoCD** como passo 0 — pelo estado no cluster, não
+pela revisão no git.
+
+O `ingress` pagou mais duas (18 e 19): o `hostPort` que o k8s injeta sozinho faz
+o **scheduler** recusar o pod antes do `CrashLoop`, e o `httpGet` probe reprovava
+404/401/302/444 — todos corretos para um proxy. O pod chegou a servir os 19
+hosts com `0/1 Running`: o pior estado possível, porque o Deployment nunca fica
+`Available` e o ArgoCD mostra `Progressing` para sempre.
+
+### Como reverter
+
+```bash
+# registry
+sudo docker start registry && sudo k3s kubectl delete pod -n support -l app.kubernetes.io/name=registry
+
+# ingress (apaga o pod PRIMEIRO: ele detém a 80)
+sudo k3s kubectl delete pod -n support -l app.kubernetes.io/name=ingress && sudo docker start ingress
+```
+
+Depois do rollback, reverter o `replicas: 1` no git — senão o ArgoCD recria o pod
+e ele volta a disputar a porta.

@@ -555,7 +555,86 @@ manifesto — não só em `metadata.namespace`.
 
 
 
+### 18. `hostPort` injetado: o scheduler recusa antes do `CrashLoop`
+
+Com `hostNetwork: true` e `containerPort: 80`, o apiserver **injeta**
+`hostPort: 80` no pod mesmo que o manifesto não declare. Consequência prática:
+enquanto o container Docker detém a 80, o pod do ingress fica **`Pending`** com
+`FailedScheduling: 1 node(s) didn't have free ports`, não em `CrashLoopBackOff`.
+
+O primeiro script de corte esperava o socket `:80` "ficar livre" depois de
+`docker stop`. Ele não ficou — porque `docker stop` não é instantâneo — e o
+script concluiu "porta ocupada", religou o Docker, e abortou. O gate correto é o
+**estado do container** (`docker inspect .State.Running == false`), com espera
+de até 120 s. O socket mente; o estado do processo não.
+
+E isso é uma trava melhor que qualquer `ss`: o scheduler se recusa a agendar
+enquanto a porta está ocupada, então o pod nunca "quase sobe".
+
+### 19. `httpGet` probe reprova 404/401/302/444 — e os quatro são corretos
+
+O nginx que serve os 19 hosts devolve, de propósito:
+
+| host | status | por quê |
+| --- | --- | --- |
+| `domain` | 404 | API sem rota em `/` |
+| `db-mcp` | 401 | exige bearer token |
+| `grafana` | 302 | redireciona para login |
+| `_` (default) | 444 | fecha conexão sem Host |
+
+Um `httpGet` considera sucesso só 200–399. Com ele, o pod fica `0/1 Running`
+**servindo tráfego**: os 19 hosts respondem normalmente, `docker` está parado, e
+o `kubectl rollout status` estoura com `error: timed out waiting for the
+condition`. O Deployment nunca fica `Available` e o ArgoCD mostra `Progressing`
+para sempre.
+
+O probe tem que ser `tcpSocket`. Aqui ele mede "o processo aceita conexão", que é
+exatamente o que um proxy precisa provar sobre si mesmo. Saúde de backend é
+problema de cada backend — e cada um tem o seu probe.
+
+### 20. O cluster não pode divergir do git por zero segundo
+
+Ao cortar o registry, o script parou o container e aplicou o manifesto com
+`kubectl apply`. O ArgoCD ainda estava sincronizado no commit **anterior**
+(`replicas: 0`) e o `selfHeal` desfez o apply em segundos: container parado, pod
+escalado a zero, porta 5000 sem dono. O registry ficou fora por ~2 minutos.
+
+A regra: **antes de tocar na infraestrutura que o git governa, espere o ArgoCD
+reconciliar.** O critério tem que ser o estado no CLUSTER (`deploy.spec.replicas
+== 1`), não a revisão que o git diz. Os dois scripts de corte
+(`corta-registry.sh`, `corta-ingress.sh`) fazem essa espera como passo 0, e
+enquanto o ArgoCD não chega eles não tocam em nada.
+
+Corolário para `replicas: 0` temporário: não dá para escalar o pod com
+`kubectl scale` enquanto o AppSet reaplica o template a cada 3 min. Ou o git
+diz `replicas: 0`, ou o pod volta. A cópia dos 12 GB do registry exigiu um
+commit só para isso.
+
+### 21. `rm` de imagem no `ctr` não remove blobs, e o teste passa pelo cache
+
+`ctr images rm` apaga a **referência**, não o conteúdo. O content store do
+containerd é endereçado por digest e compartilhado entre imagens: puxar de novo
+uma imagem que já foi baixada mostra `elapsed 0.1s, total 9.5 KiB` — só o
+manifesto — e o comando diz `Completed`.
+
+Isso produz um falso positivo perigoso num teste de registry: "o pull
+funcionou" pode significar "nada atravessou a rede".
+
+Três provas que não mentem:
+
+1. **delta do content store** em bytes (`du -sb .../io.containerd.content.v1.content`);
+2. **existência do arquivo do blob do manifesto** em
+   `.../blobs/sha256/<digest>` antes e depois — binário, sem "quase";
+3. escolher um repositório que **nenhum pod jamais puxou**. Metade do catálogo
+   (`apostas-*`, `bet-*`, `clubs-*`, `uhumarketing-*`) é de projetos aposentados
+   e serve exatamente para isso.
+
+A prova aceita é a 2 ou a 3. A 1 engana quando os layers já estão no store por
+outra tag do mesmo repositório.
+
 ## Bootstrap (uma vez por cluster)
+
+
 
 ```bash
 # 1. k3s sem ingress controller (não toca em nada existente)
@@ -741,8 +820,10 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | `tempo` | rodando | **rodando** (ClusterIP:3200) | **k8s** — 308M copiados ✅ |
 | `grafana` | rodando (ocioso) | **rodando** (NodePort 30300) | **k8s** — `grafana` → `:30300` ✅ |
 | `alloy` | rodando | **não migrável** (docker.sock) | Docker — e `alloy-logs` no cluster cobre os pods |
-| demais 23 containers | rodando | — | Docker |
-| 20 domínios do ingress | — | — | idênticos antes/depois (mesmo status HTTP) |
+| `registry` | **parado** (`exited`, `restart=no`) | **rodando** (`hostPort: 5000`) | **k8s** — 39 repos, 12 GB verificados por sha256 ✅ |
+| `ingress` | **parado** (`exited`, `restart=no`) | **rodando** (`hostPort: 80`) | **k8s** — 19/19 hosts com o mesmo status ✅ |
+| demais 19 containers | rodando | — | Docker |
+| 19 domínios do ingress | — | — | idênticos antes/depois (mesmo status HTTP) |
 
 `replicas: 0` não é esquecimento: são consumidores de fila ou donos de volume
 com escrita exclusiva. Rodar dois ao mesmo tempo duplica mensagem ou corrompe
@@ -822,6 +903,11 @@ recém-criado tem `integrity_check ok` com zero usuários.
 `30028` está reservado pelo Service do `9router` mesmo sem pod: um Service
 `NodePort` existe independente de ter endpoint. Reservar antes é de propósito —
 quem for escolher a próxima porta vê o número ocupado e não planeja em cima dele.
+
+O `registry` e o `ingress` **não** aparecem nesta tabela porque não usam
+NodePort: os dois publicam no host por `hostPort` (`5000` e `80`). É a diferença
+que os torna migráveis sem reescrever referência nenhuma — a porta faz parte do
+nome da imagem no caso do registry, e é a porta pública no caso do ingress.
 
 `31525` é o NodePort do AMQP e não foi escolhido à mão: o Service declara
 `nodePort` só para o `management`. Os pods não precisam dele (usam o ClusterIP
@@ -1126,6 +1212,27 @@ for exposto publicamente (dívida 12), isso deve ser revisto junto.
 - O pod do Rancher **não** é `replicas: 1` por escolha de disponibilidade — é o
   máximo que um nó único comporta.
 
+### O ingress é um nginx, e não um Ingress controller (fatia 8)
+
+O nginx que serve os 19 hosts agora é um pod (`gitops/apps/support/ingress/`),
+com `hostNetwork: true` e `hostPort: 80`, rodando o **mesmo** `default.conf` do
+host (`sha256 08e10fe5…`, 403 linhas, byte-idêntico). **Zero `Ingress` objects**
+foram criados.
+
+Isso é deliberado, e a alternativa foi considerada e recusada:
+
+- migrar 19 hosts para `Ingress` objects significaria reescrever cada um dos 23
+  `proxy_pass` como um backend + annotations para os casos que não são
+  `location /` (as três SPAs servidas do MinIO por prefixo de bucket, o Rancher
+  com upstream HTTPS e `proxy_ssl_verify off`, o SSE do `maus` e do `db-mcp`);
+- e faria isso na **mesma janela** em que se muda quem publica a porta 80;
+- um erro de digitação em uma linha derrubaria **um** host, sem erro visível no
+  cluster — o ArgoCD mostraria tudo `Synced`.
+
+O que se ganhou com a migração é o que se queria: **a porta 80 saiu do Docker**.
+O arquivo continua sendo a fonte da verdade, agora por `configMapGenerator` —
+o sufixo de hash faz o pod reiniciar sozinho quando uma linha muda.
+
 ### `ingress-nginx` está fora de suporte (dívida consciente)
 
 `ingress-nginx` foi **aposentado em março/2026**; este ambiente é outubro/2026.
@@ -1134,9 +1241,16 @@ deprecado "due to ingress-nginx retiring in March 2026") e a seção de EOL do
 projeto recomenda migrar para Gateway API ou outro controller.
 
 Estado aqui, medido: **zero `Ingress` objects no cluster**. O controller roda
-com NodePort `30945`/`30421` e não serve nenhum tráfego. Quem serve os 18 hosts
-é o nginx do **host** (`nginx:1.27-alpine`, `network_mode: host`, porta 80), que
-não é `ingress-nginx` e não é afetado por esse EOL.
+com NodePort `30945`/`30421` e não serve nenhum tráfego. Quem serve os 19 hosts
+é o nginx da fatia 8 — um pod com `hostNetwork`, não o `ingress-nginx`.
+
+Uma consequência disso para a dívida: como o `ingress-nginx` **nunca serviu
+tráfego**, removê-lo hoje é uma operação de faxina (liberar RAM e um webhook de
+admission), não uma migração. O que a decisão de 2026-10-23 protegia — "a troca
+por Traefik/Gateway API afeta o roteamento dos 18 hosts" — não vale mais: o
+roteamento está no `default.conf` do pod, que nenhum controller lê. A troca de
+motor, se acontecer, é reescrever o `default.conf` como `Ingress` objects, e
+isso é a migração própria que continua fora de escopo.
 
 Decisão registrada em 2026-10-23: **não mexer agora**. Removê-lo liberaria RAM e
 um webhook, mas o Kubero foi instalado assumindo um ingress controller
