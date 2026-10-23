@@ -1,0 +1,20 @@
+# Service do vaultwarden-api.
+#
+# ClusterIP: quem consome são finance-api e finance-openfinance-worker, ambos no
+# cluster, via SECRETS_BRIDGE_URL=http://vaultwarden-api:8080.
+#
+# O `vault` do ingress (vault.giomartins.dev -> 127.0.0.1:8222) aponta para o
+# Vaultwarden (servidor), não para esta bridge.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vaultwarden-api
+  labels:
+    app.kubernetes.io/name: vaultwarden-api
+spec:
+  selector:
+    app.kubernetes.io/name: vaultwarden-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

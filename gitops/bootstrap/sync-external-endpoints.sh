@@ -1,40 +1,49 @@
 #!/bin/bash
-# sync-external-endpoints.sh — mantém os Service/EndpointSlice do k8s apontando
-# para os containers Docker que ainda não migraram.
+# sync-external-endpoints.sh — mantém os EndpointSlices do k8s apontando para os
+# containers Docker que ainda não migraram.
 #
 # Por que isto existe: pods NÃO alcançam a rede Docker diretamente (a política
 # FORWARD do iptables é DROP). A ponte é um Service sem selector + EndpointSlice
 # com o IP do container — o kube-proxy faz DNAT e o tráfego passa por
 # KUBE-SERVICES em vez de FORWARD.
 #
-# O problema: o IP não é estável. O Dockhand redeploya `project-infra` (de onde
-# vêm postgres/rabbitmq/minio) e o container pode renascer com outro IP. Sem
-# sincronizar, os apps no k8s param de conectar — e o ArgoCD mostra tudo verde,
-# porque o Service e o Deployment estão "Synced".
+# ## Divisão de responsabilidade (importante)
+#
+#   - Os **Services** (postgres, rabbitmq, minio, alloy, evolution-*) são
+#     declarados em gitops/apps/bridges/ e reconciliados pelo ArgoCD.
+#   - Os **EndpointSlices** são escritos POR ESTE SCRIPT. Eles contêm o IP do
+#     container, que muda quando o Dockhand redeploya a stack.
+#
+# O script NÃO cria nem altera Services. Se criasse, o ArgoCD (com selfHeal
+# ligado) os reverteria, e os dois ficariam brigando em loop.
+#
+# O problema que isto resolve: o Dockhand redeploya `project-infra` por git-sync
+# agendado, o postgres renasce com outro IP, e os apps no k8s param de conectar
+# — com o ArgoCD mostrando tudo `Synced/Healthy`, porque Deployment e Service
+# não têm nada de errado. O erro só apareceria no log da aplicação.
 #
 # Isto é ponte, não destino. Morre quando os dados migrarem para o cluster
-# (fatias 5 e 6 do MIGRATION.md), porque aí o Service passa a ter selector e o
-# IP deixa de importar.
+# (fatias 5 e 6 do MIGRATION.md).
 #
 # Instalação (host):
-#   sudo install -m 755 sync-external-endpoints.sh /usr/local/sbin/sync-external-endpoints.sh
-#   sudo install -m 644 sync-external-endpoints.service /etc/systemd/system/
-#   sudo install -m 644 sync-external-endpoints.timer   /etc/systemd/system/
+#   sudo install -m 755 sync-external-endpoints.sh /usr/local/sbin/
+#   sudo install -m 644 sync-external-endpoints.{service,timer} /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now sync-external-endpoints.timer
 set -uo pipefail
 
 K3S="k3s"
 NS="giomartins"
-# Formato: <nome-do-service-no-k8s>:<container-docker>:<porta>
+
+# <nome-do-service-no-k8s>:<container-docker>:<porta>
 MAPA=(
   "postgres:postgres:5432"
   "rabbitmq:rabbitmq:5672"
   "minio:minio:9000"
   "alloy:alloy:4318"
   "evolution-redis:evolution-redis:6379"
+  "evolution-api:evolution-api:8080"
+  "vaultwarden:vaultwarden:80"
 )
-
-alterado=0
 
 for entrada in "${MAPA[@]}"; do
   IFS=: read -r svc container porta <<< "$entrada"
@@ -42,9 +51,9 @@ for entrada in "${MAPA[@]}"; do
   ip=$(docker inspect "$container" \
         --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null)
 
-  # Container ausente ou parado: não mexe no endpoint. Zerar aqui derrubaria os
-  # consumidores no k8s sem necessidade — melhor deixar o último IP conhecido e
-  # falhar só o que depende dele.
+  # Container ausente ou parado: NÃO mexe no endpoint. Zerar aqui derrubaria os
+  # consumidores no k8s sem necessidade — melhor manter o último IP conhecido e
+  # deixar falhar só o que depende dele. Um `[skip]` no journal é o sinal.
   if [ -z "$ip" ]; then
     echo "[skip] $container não está rodando — endpoint de $svc intocado"
     continue
@@ -59,23 +68,10 @@ for entrada in "${MAPA[@]}"; do
 
   echo "[sync] $svc: ${atual:-<vazio>} -> $ip"
 
-  # EndpointSlice pode não existir na primeira execução; o apply cobre os dois
-  # casos e é idempotente.
+  # `kubectl apply` num EndpointSlice exige o campo `ports`; ele é o mesmo do
+  # Service, mas precisa estar aqui porque o EndpointSlice é um objeto
+  # independente (o Service não o gera, já que não tem selector).
   cat <<YAML | $K3S kubectl apply -f - >/dev/null
-apiVersion: v1
-kind: Service
-metadata:
-  name: ${svc}
-  namespace: ${NS}
-  labels:
-    app.kubernetes.io/part-of: giomartins
-    giomartins.dev/bridge: docker
-spec:
-  ports:
-    - name: ${svc}
-      port: ${porta}
-      targetPort: ${porta}
----
 apiVersion: discovery.k8s.io/v1
 kind: EndpointSlice
 metadata:
@@ -95,12 +91,4 @@ endpoints:
     conditions:
       ready: true
 YAML
-
-  alterado=1
 done
-
-# Revalida do lado de dentro de um pod: um IP certo no EndpointSlice não prova
-# que o caminho funciona. Só loga, não falha o timer.
-if [ "$alterado" = "1" ]; then
-  echo "[info] endpoints alterados; conexões existentes podem precisar reconectar"
-fi

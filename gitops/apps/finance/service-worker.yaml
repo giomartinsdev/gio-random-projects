@@ -1,0 +1,20 @@
+# Service do finance-openfinance-worker.
+#
+# Existe porque o finance-api chama `http://finance-openfinance-worker:8088`
+# (OF_TICK_BASE_URL) — um gatilho HTTP para disparar o sync, além do polling
+# interno do próprio worker.
+#
+# ClusterIP e não NodePort: só o finance-api consome, e ele está no cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finance-openfinance-worker
+  labels:
+    app.kubernetes.io/name: finance-openfinance-worker
+spec:
+  selector:
+    app.kubernetes.io/name: finance-openfinance-worker
+  ports:
+    - name: http
+      port: 8088
+      targetPort: http

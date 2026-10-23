@@ -1,0 +1,57 @@
+# finance-openfinance-worker — sincroniza extratos via Open Finance (Polp).
+#
+# Sem porta HTTP própria voltada ao usuário, mas ESCUTA na 8088: o finance-api
+# chama `finance-openfinance-worker:8088` (ver OF_TICK_BASE_URL). Por isso tem
+# Service.
+#
+# replicas fica em 0 no kustomization.yaml até a janela de cutover: é
+# consumidor de fila e escritor no finance-api. Dois rodando = mensagem
+# processada duas vezes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finance-openfinance-worker
+  labels:
+    app.kubernetes.io/name: finance-openfinance-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finance-openfinance-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finance-openfinance-worker
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: finance-openfinance-worker
+          image: registry.giomartins.dev:5000/finance-openfinance-worker@sha256:797d02b34df66259bd55fe8830ff5e46eac8eb22e362f6560e161b4681149abe
+          ports:
+            - name: http
+              containerPort: 8088
+          # O worker expõe /healthz na 8088 (verificado no container Docker).
+          # O kubelet chama de dentro da netns do pod, então não depende de o
+          # Service estar ligado.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 20m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+          envFrom:
+            - secretRef:
+                name: finance-openfinance-worker

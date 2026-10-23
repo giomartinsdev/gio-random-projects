@@ -1,69 +1,17 @@
-# adminer no cluster — segundo serviço migrado, e o primeiro com tráfego
+# adminer no cluster — UI web para inspecionar bancos.
 #
-# Serve o mesmo papel do container Docker (stacks/compute.yml): UI web para
-# inspecionar bancos. Stateless, sem volume, sem segredo — o pior caso de
-# falha é alguém não conseguir abrir o adminer por alguns minutos.
+# Roda em paralelo ao container Docker (stacks/compute.yml), que ainda serve
+# adminer.giomartins.dev -> 127.0.0.1:8092.
 #
-# ATENÇÃO — o adminer precisa alcançar o postgres, que continua em Docker.
-# Isso NÃO é trivial: a política `FORWARD` do iptables é `DROP` (o k3s muda
-# isso ao instalar), então um pod não alcança 172.18.0.16:5432 diretamente,
-# nem o gateway 172.18.0.1. Verificado: ambos dão timeout de dentro do pod.
+# ## A ponte com o postgres
 #
-# A solução é um Service sem selector + EndpointSlice apontando para o IP
-# do container. O kube-proxy faz DNAT no tráfego de saída do pod, e o pacote
-# sai pela cadeia de OUTPUT/KUBE-SERVICES, contornando o FORWARD DROP.
+# O adminer precisa alcançar o postgres, que continua em Docker. Pods NÃO
+# alcançam a rede Docker (a política FORWARD do iptables é DROP), então a ponte
+# é o Service sem selector `postgres` em gitops/apps/bridges/ — mantido pelo
+# timer sync-external-endpoints.
 #
-# SEGUNDA ARMADILHA — o ArgoCD EXCLUI Endpoints e EndpointSlice por padrão
-# (`resource.exclusions` no argocd-cm), porque são recursos que o control
-# plane recria sozinho. Efeito: o Service sobe, o EndpointSlice não, e as
-# conexões caem em "connection refused" sem nenhum erro visível no app —
-# os 3 recursos aparecem "Synced". Foi necessário remover o bloco de
-# exclusão do argocd-cm (ver gitops/README.md) e reiniciar os componentes.
-# Sem isso, este deployment fica verdinho no painel e quebrado na prática.
-#
-# Consequência: o IP 172.18.0.16 está preso no YAML. Se o container do
-# postgres for recriado, ele pode receber outro IP e o adminer para de
-# conectar. Isso é dívida aceita e consciente — a solução definitiva é
-# migrar o postgres para o cluster (e aí o Service é nativo). Enquanto isso,
-# ao recriar o postgres: `docker inspect postgres -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'`
-# e atualizar o endpoint abaixo.
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres-external
-  labels:
-    app.kubernetes.io/name: postgres-external
-    app.kubernetes.io/part-of: giomartins
-spec:
-  # Sem selector de propósito: as rotas vêm do EndpointSlice abaixo.
-  ports:
-    - name: postgres
-      port: 5432
-      targetPort: 5432
----
-apiVersion: discovery.k8s.io/v1
-kind: EndpointSlice
-metadata:
-  # O nome precisa ser único no namespace, e o Service não o descobre pelo
-  # nome — descobre pela label `kubernetes.io/service-name` abaixo.
-  name: postgres-external
-  labels:
-    # Esta label é o que liga o EndpointSlice ao Service. Sem ela, o Service
-    # não tem endpoints e as conexões caem em "connection refused".
-    kubernetes.io/service-name: postgres-external
-    app.kubernetes.io/part-of: giomartins
-addressType: IPv4
-ports:
-  - name: postgres
-    port: 5432
-    protocol: TCP
-endpoints:
-  # IP do container `postgres` na rede `apps` do Docker.
-  - addresses:
-      - "172.18.0.16"
-    conditions:
-      ready: true
+# Este manifesto NÃO define Service nem EndpointSlice: a fonte é única, em
+# bridges/. Antes havia um `postgres-external` aqui, que duplicava a ponte.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -114,5 +62,5 @@ spec:
             # digitar o servidor à mão a cada login. `postgres-external` é o
             # nome do Service acima — resolve pelo DNS do cluster.
             - name: ADMINER_DEFAULT_SERVER
-              value: "postgres-external"
+              value: "postgres"
 

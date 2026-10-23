@@ -1,0 +1,21 @@
+# Service do finance-api.
+#
+# ClusterIP: consumido por finance-openfinance-worker e
+# finance-customersupport-worker (FINANCE_API_BASE_URL=http://finance-api:8000)
+# e por nada de fora. O ingress continua na 8018 do Docker.
+#
+# O finance-openfinance-worker também tem Service, porque o finance-api chama
+# `finance-openfinance-worker:8088` — ver service-worker.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finance-api
+  labels:
+    app.kubernetes.io/name: finance-api
+spec:
+  selector:
+    app.kubernetes.io/name: finance-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

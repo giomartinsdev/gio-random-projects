@@ -1,0 +1,19 @@
+# Service `vaultwarden` — a ponte que o vaultwarden-api do k8s usa hoje.
+#
+# Sem selector de propósito: não há pod `vaultwarden` rodando (replicas 0). O
+# EndpointSlice é mantido pelo timer sync-external-endpoints, apontando para o
+# container Docker. Assim que o Deployment subir para 1 réplica e o Docker for
+# desligado, este Service ganha selector e o EndpointSlice manual sai — é o
+# mesmo arquivo, com uma transição de 6 linhas documentada no MIGRATION.md.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vaultwarden
+  labels:
+    app.kubernetes.io/name: vaultwarden
+    giomartins.dev/bridge: docker
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

@@ -1,0 +1,94 @@
+# vaultwarden — o servidor (não confundir com vaultwarden-api, a bridge).
+#
+# Este é o serviço com ESTADO da fatia 6. O container Docker continua intacto e
+# servindo vault.giomartins.dev; o que este manifesto faz é preparar o caminho.
+#
+# Estado: vaultwarden_data é um named volume Docker com o banco SQLite + anexos.
+# Na migração, NÃO se copia o banco com o servidor rodando — o SQLite com WAL
+# ativo produz cópia inconsistente. O procedimento é:
+#
+#   docker stop vaultwarden
+#   docker run --rm -v vaultwarden_data:/data -v /tmp:/backup alpine \
+#     tar czf /backup/vw.tgz -C /data .
+#   # restaurar no PVC antes de subir o pod
+#
+# Enquanto isso, este Deployment fica com replicas 0 para não disputar o
+# volume com o container Docker (SQLite não suporta dois escritores).
+#
+# O Service `vaultwarden` (service.yaml) existe agora porque vaultwarden-api no
+# k8s precisa resolver `vaultwarden` — e hoje ele resolve para o container
+# Docker via EndpointSlice.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vaultwarden
+  labels:
+    app.kubernetes.io/name: vaultwarden
+spec:
+  # 0 até o cutover da fatia 6. Dois processos no mesmo SQLite corrompem.
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vaultwarden
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vaultwarden
+    spec:
+      containers:
+        - name: vaultwarden
+          # Versão real em produção, verificada com `/vaultwarden --version`
+          # (Vaultwarden 1.37.2, Web-Vault 2026.7.0). Não é a tag mais recente do
+          # Docker Hub: é a que está rodando. Trocar de versão na migração
+          # misturaria duas mudanças (infra + upgrade) num momento só.
+          image: vaultwarden/server:1.37.2
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /alive
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /alive
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          # Volume persistente. `local-path` é o provisioner do k3s (hostPath
+          # em /var/lib/rancher/k3s/storage). Não tem snapshot nem replicação —
+          # o backup é o dump do SQLite descrito acima.
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          envFrom:
+            - secretRef:
+                name: vaultwarden
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: vaultwarden-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vaultwarden-data
+  labels:
+    app.kubernetes.io/name: vaultwarden
+spec:
+  # Explícito: o default do cluster é local-path, mas deixar implícito faz o
+  # PVC depender de configuração de cluster em vez de intenção declarada.
+  storageClassName: local-path
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

@@ -40,6 +40,10 @@ MAPA=(
   "finance-customersupport-worker:finance-customersupport-worker"
   "finance-openfinance-worker:finance-openfinance-worker"
   "vaultwarden-api:vaultwarden-api"
+  # O servidor Vaultwarden tem o próprio conjunto de envs (ADMIN_TOKEN com
+  # default `${VAR:?}` — ou seja, obrigatório). Sem este secret, o pod do
+  # vaultwarden não sobe quando chegar a hora da fatia 6.
+  "vaultwarden:vaultwarden"
 )
 
 alvo="${1:-}"

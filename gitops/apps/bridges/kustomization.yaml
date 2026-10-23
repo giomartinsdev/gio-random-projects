@@ -1,0 +1,54 @@
+# bridges — Services que apontam para containers Docker que ainda não migraram.
+#
+# ## O problema
+#
+# Pods NÃO alcançam a rede Docker diretamente. A política `FORWARD` do iptables
+# é `DROP` (o k3s muda isso ao instalar). Verificado: de dentro de um pod,
+# `172.18.0.16:5432` e `172.18.0.1:5432` dão timeout, embora o host alcance o
+# postgres normalmente.
+#
+# ## A solução
+#
+# Service sem selector + EndpointSlice com o IP do container. O kube-proxy faz
+# DNAT na saída do pod e o pacote passa por `KUBE-SERVICES` em vez de `FORWARD`.
+#
+# ## Por que o Service está no git e o EndpointSlice não
+#
+# Separados de propósito:
+#
+#   - **Service** — declarativo, estável, mora aqui. Não muda quando o IP muda.
+#   - **EndpointSlice** — volátil, contém o IP do container. É escrito pelo
+#     timer `sync-external-endpoints.timer` no host, a cada minuto.
+#
+# Se o EndpointSlice estivesse no git, o ArgoCD o reconciliaria de volta para o
+# IP antigo a cada `selfHeal` — brigando com o timer. Como ele é criado por
+# `kubectl` e não é rastreado pelo ArgoCD, o `prune` não o toca.
+#
+# ## Quando isto morre
+#
+# Quando os dados migrarem (fatias 5 e 6 do MIGRATION.md). Aí o Service ganha
+# `selector`, aponta para pods de verdade, e o EndpointSlice manual deixa de
+# existir. Não é dívida permanente — é a ponte deste período.
+#
+# ## Nomes
+#
+# Cada Service tem EXATAMENTE o nome do serviço no Compose. Não é cosmético: as
+# aplicações referenciam `postgres:5432`, `rabbitmq:5672` etc. no seu env, e é
+# isso que permite migrar um serviço sem tocar na configuração de nenhum
+# consumidor.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: giomartins
+
+resources:
+  - postgres.yaml
+  - rabbitmq.yaml
+  - minio.yaml
+  - alloy.yaml
+  - evolution-redis.yaml
+  - evolution-api.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: giomartins
+  giomartins.dev/bridge: docker

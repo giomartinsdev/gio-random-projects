@@ -1,0 +1,58 @@
+# vaultwarden-api — bridge de segredos para o Vaultwarden.
+#
+# Traduz "lê o campo X do item Y no cofre" em uma chamada HTTP, autenticada por
+# API_KEY. É o que permite às apps buscarem credencial em runtime em vez de ter
+# segredo em env var.
+#
+# Depende de `vaultwarden` (o servidor), que continua em Docker na fatia 6.
+# VAULTWARDEN_URL=http://vaultwarden — e existe um Service `vaultwarden` no
+# cluster apontando para o container Docker via EndpointSlice. Sem ele, este
+# pod inicia mas toda chamada de segredo falha.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vaultwarden-api
+  labels:
+    app.kubernetes.io/name: vaultwarden-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vaultwarden-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vaultwarden-api
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: vaultwarden-api
+          image: registry.giomartins.dev:5000/vaultwarden-api@sha256:f780ce98a2836a217ba0586da41f7f43cfd9678dbc5646cf6f545c684714281b
+          ports:
+            - name: http
+              containerPort: 8080
+          # A rota /health não exige API key e responde 200 (verificado); as
+          # outras devolvem 401. Usar /health evita que o probe precise de
+          # credencial — e evita que uma rotação de chave derrube o pod.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          envFrom:
+            - secretRef:
+                name: vaultwarden-api

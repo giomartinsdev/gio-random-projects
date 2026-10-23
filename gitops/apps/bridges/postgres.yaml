@@ -1,0 +1,21 @@
+# Service `postgres` — ponte para o container Docker.
+#
+# Sem selector: os endpoints vêm do EndpointSlice `postgres`, mantido pelo timer
+# `sync-external-endpoints.timer` no host. O IP do container muda quando o
+# Dockhand redeploya `project-infra`, e o timer corrige em até 1 minuto.
+#
+# O nome é `postgres` porque é o nome que TODAS as aplicações usam no seu
+# DATABASE_URL (`postgresql://domain:***@postgres:5432/domain`). Quando o banco
+# migrar para o cluster, este arquivo ganha `selector` e o EndpointSlice manual
+# sai — nenhum consumidor percebe.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

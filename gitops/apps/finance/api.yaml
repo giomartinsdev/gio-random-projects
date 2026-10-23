@@ -1,0 +1,61 @@
+# finance-api — API HTTP do contexto `finance`.
+#
+# Roda em paralelo ao Docker. O ingress continua apontando para a 8018.
+#
+# Três dependências internas, todas por nome DNS — e é por isso que a migração
+# funciona sem tocar em nenhuma env var:
+#   - domain-api:8000          (Service deste mesmo cluster)
+#   - vaultwarden-api:8080     (Service deste mesmo cluster)
+#   - finance-openfinance-worker:8088 (Service deste mesmo cluster)
+#
+# Enquanto domain-api estiver em Docker e finance-api em k8s, o nome
+# `domain-api` no cluster resolve para o Service do k8s — que hoje aponta para
+# o container Docker via EndpointSlice. Quando o domain migrar de fato, a única
+# coisa que muda é o EndpointSlice, e o finance nem percebe.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finance-api
+  labels:
+    app.kubernetes.io/name: finance-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finance-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finance-api
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: finance-api
+          image: registry.giomartins.dev:5000/finance-api@sha256:9de9ed118c8f42dd8aa2e9e8a3b9bc63b080c2a84d7cdcdd2c8b52063d88d967
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 30m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+          envFrom:
+            - secretRef:
+                name: finance-api
+          # A imagem declara USER app (uid 1000). O kubelet respeita, não
+          # precisa de securityContext explícito.
