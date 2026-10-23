@@ -146,9 +146,15 @@ metadata:
   labels:
     app.kubernetes.io/name: db-mcp-gateway
 spec:
+  # NodePort fixo: o nginx do HOST precisa de um endereço estável para o
+  # `server{}` de db-mcp.giomartins.dev. O container Docker publicava
+  # 127.0.0.1:8021 (docker-proxy); a convenção da migração é 80xx -> 308xx,
+  # então 8021 -> 30821.
+  type: NodePort
   selector:
     app.kubernetes.io/name: db-mcp-gateway
   ports:
     - name: http
       port: 8000
       targetPort: http
+      nodePort: 30821
