@@ -14,7 +14,7 @@ spec:
   # 1 réplica de propósito: nó único, e duas cópias de um SPA estático não
   # trazem disponibilidade real — só consumo. Subir para 2 quando houver
   # um segundo nó.
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: excalidraw
