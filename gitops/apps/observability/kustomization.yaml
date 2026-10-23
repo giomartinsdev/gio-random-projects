@@ -44,6 +44,7 @@ resources:
   - grafana.yaml
   - dashboard.yaml
   - alloy-logs.yaml
+  - alloy-service.yaml
 
 commonLabels:
   app.kubernetes.io/part-of: giomartins

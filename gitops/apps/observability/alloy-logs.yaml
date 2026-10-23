@@ -321,10 +321,12 @@ spec:
           args:
             - "run"
             - "/etc/alloy/config.alloy"
-            # O Alloy expõe um servidor HTTP próprio (UI de componentes, /metrics)
-            # na 12345. Fixar em loopback do pod evita abrir superfície sem
-            # ninguém para usar.
-            - "--server.http.listen-addr=127.0.0.1:12345"
+            # O Alloy expõe um servidor HTTP próprio (UI de componentes,
+            # /metrics) na 12345. Antes ficava em loopback do pod, o que fazia o
+            # Prometheus raspar `alloy:12345` e receber connection refused --
+            # target `alloy` Down permanente. Como agora este pod é o `alloy` do
+            # Service, o Prometheus precisa alcançá-lo: 0.0.0.0 e não 127.0.0.1.
+            - "--server.http.listen-addr=0.0.0.0:12345"
             - "--storage.path=/var/lib/alloy/data"
           ports:
             - name: http

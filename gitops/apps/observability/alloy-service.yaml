@@ -1,0 +1,81 @@
+# Service `alloy` — OTLP para o coletor do CLUSTER.
+#
+# ## Por que este arquivo existe aqui e não em `apps/bridges/`
+#
+# `bridges/` guarda Services sem selector que apontam para containers Docker, via
+# EndpointSlice escrito pelo timer do host. Este aqui **deixou de ser ponte** em
+# 2026-10-23: tem selector e o endpoint vem do controller do Kubernetes, porque
+# o `alloy-logs` passou a ter receiver OTLP completo.
+#
+# Deixá-lo em `bridges/` seria mentira estrutural: o diretório existe para
+# documentar "o que ainda está em Docker", e este não está mais. O
+# `kustomization.yaml` de `bridges/` foi atualizado no mesmo commit.
+#
+# ## Por que o nome continua `alloy`
+#
+# Todos os apps usam `OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318`, e o
+# domínio público `otel.giomartins.dev` termina neste Service. Renomear
+# obrigaria a editar env de 10 serviços de uma vez — o que esta migração evita.
+# Mudou o **endpoint**, não o nome. É a tese central do projeto: DNS como
+# interruptor.
+#
+# ## O que muda no comportamento
+#
+# Antes: `alloy:4318` → container Docker (172.18.0.23) → Tempo/Prometheus em
+# Docker.
+# Depois: `alloy:4318` → pod `alloy-logs` → Tempo/Prometheus **do cluster**.
+#
+# Os dois ports são expostos porque o mesmo endpoint serve dois públicos:
+# gRPC (4317) para os exporters OTLP dos backends, HTTP (4318) para os browsers
+# das SPAs e para quem só fala `http/protobuf`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: alloy
+  labels:
+    app.kubernetes.io/name: alloy
+spec:
+  # Selector, não ponte. O label tem de casar com o Deployment em
+  # `alloy-logs.yaml`; um typo aqui gera Service com zero endpoints, que é o
+  # modo de falha mais silencioso desta migração (o ArgoCD mostra Healthy).
+  selector:
+    app.kubernetes.io/name: alloy-logs
+  ports:
+    # O Prometheus raspa `alloy:12345` (job `alloy` em prometheus.yaml). Antes
+    # esse target ficava Down para sempre: a porta existia no pod em loopback,
+    # e o Service apontava para o container Docker. Agora ele sobe no pod e é
+    # exposto aqui, então o job volta a coletar as métricas do próprio coletor
+    # (otelcol_receiver_accepted_spans_total etc., que o dashboard usa).
+    - name: http
+      port: 12345
+      targetPort: http
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+---
+# NodePort do endpoint público. `otel.giomartins.dev` no ingress do host aponta
+# para 127.0.0.1:4318, que é o container Alloy. Este Service mantém a mesma
+# porta lógica com um NodePort 30xxx, seguindo a convenção 80xx → 308xx do
+# projeto... exceto que 4318 não segue a convenção 80xx, então o número é
+# escolhido à parte: 30418 fica no bloco dos 304xx e é fácil de lembrar
+# ("4318").
+#
+# Sem ele, o passo equivalente no ingress (`:4318` → `:30418`) não tem destino.
+apiVersion: v1
+kind: Service
+metadata:
+  name: alloy-otlp
+  labels:
+    app.kubernetes.io/name: alloy-logs
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: alloy-logs
+  ports:
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      nodePort: 30418

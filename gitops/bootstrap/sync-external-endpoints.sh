@@ -64,13 +64,18 @@ NS="giomartins"
 # A porta NÃO aparece aqui de propósito: vem do Service. Ver o comentário do
 # topo sobre nomes de porta.
 MAPA=(
-  "alloy:alloy"
   "evolution-redis:evolution-redis"
+  # `alloy` saiu em 2026-10-23: o Service ganhou selector e passou a apontar
+  # para o pod `alloy-logs`, que agora tem receiver OTLP completo. Deixá-lo
+  # aqui era pior que no postgres: o timer recriaria o EndpointSlice manual
+  # `alloy` (mesmo nome do Service) e o kube-proxy passaria a balancear entre o
+  # POD e o CONTAINER -- metade dos traces e métricas indo para o Tempo/
+  # Prometheus em Docker, a outra metade para os do cluster. Sintoma mudo: os
+  # dois aceitam OTLP (200), e o dado simplesmente some do Grafana pela metade.
+  #
   # `postgres` saiu em 2026-10-23 e `vaultwarden` em 2026-10-23: os dois
   # Services ganharam selector e o EndpointSlice do controller passou a ser a
-  # fonte. Deixá-los aqui fazia o timer recriar o EndpointSlice manual, e o
-  # kube-proxy passava a balancear entre o POD e o CONTAINER -- metade do
-  # tráfego para o alvo antigo.
+  # fonte.
   #
   # No vaultwarden o sintoma foi mudo (os dois respondem o mesmo /api/config);
   # no postgres seria pior: escritas indo para dois bancos diferentes.

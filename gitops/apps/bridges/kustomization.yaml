@@ -42,7 +42,6 @@ kind: Kustomization
 namespace: giomartins
 
 resources:
-  - alloy.yaml
   - evolution-redis.yaml
 
 # NÃO usar `commonLabels` aqui. O kustomize injeta commonLabels também no
