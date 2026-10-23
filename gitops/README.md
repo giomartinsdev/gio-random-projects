@@ -1655,6 +1655,33 @@ Dois achados no caminho, ambos registrados como armadilhas: o probe em
 silêncio por falta de `fsGroup` (33). E um bug pré-existente da aplicação veio
 à luz justamente porque o volume passou a funcionar (34).
 
+**Sessão real validada em 2026-10-23**, pelo browser, através do pod:
+
+- sala criada pelo formulário em `tela.giomartins.dev` → código
+  `panela35hipopotamo`, e `rooms.json` no PVC com o registro (`65532:65532`);
+- `/api/rtc/ice` devolveu credencial TURN efêmera
+  (`turn:168.138.135.6:3478?transport=udp|tcp`, usuário `1792802701:tela`) —
+  prova de que o pod do `coturn` assina, não o container;
+- **mídia real ponta a ponta**: `canvas.captureStream()` → WebSocket
+  (`tela-api`) → `whip` no MediaMTX → caminho online com 1 track VP8; um segundo
+  peer assinou por `whep` e **decodificou 14 frames / 4.868 bytes em 320x180**.
+  O log do MediaMTX registrou publisher e reader na mesma path.
+- **persistência provada por restart de verdade**: `kubectl delete pod` no
+  `tela-api`, pod novo 13 s depois, `/healthz` já voltou `{"rooms":1}` — a sala
+  sobreviveu porque está no PVC, não em memória.
+- roster limpa corretamente: fechar os sockets levou `people` de 2 → 0. O que
+  parecia peer zumbi eram as minhas próprias conexões de teste abertas.
+
+**PV do `tela-state` estava com `reclaimPolicy: Delete`** (o padrão do
+`local-path`), sozinho entre os 13 — todos os outros já eram `Retain`. Corrigido
+com `kubectl patch pv ... persistentVolumeReclaimPolicy=Retain`. Não é mudança
+declarativa no manifesto: `reclaimPolicy` é campo do **PV**, criado pelo
+provisioner, não do PVC. Os outros 12 foram patchados à mão pelos mesmos scripts
+de cutover (`copy-volume.sh`, `namespace-cutover.sh`), e o `tela` entrou por
+manifesto direto, sem passar por eles — por isso escapou. A regra vale para todo
+PVC futuro: **depois que o PV fica `Bound`, conferir se é `Retain`**.
+
+
 ### `maus`, `minecraft` — precisam de redesenho, ou estão fora de escopo
 
 | serviço | por que não é lift-and-shift |
