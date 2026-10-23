@@ -44,7 +44,6 @@ namespace: giomartins
 resources:
   - postgres.yaml
   - rabbitmq.yaml
-  - minio.yaml
   - alloy.yaml
   - evolution-redis.yaml
   - evolution-api.yaml

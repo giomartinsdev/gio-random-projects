@@ -65,7 +65,6 @@ NS="giomartins"
 MAPA=(
   "postgres:postgres"
   "rabbitmq:rabbitmq"
-  "minio:minio"
   "alloy:alloy"
   "evolution-redis:evolution-redis"
   "evolution-api:evolution-api"
