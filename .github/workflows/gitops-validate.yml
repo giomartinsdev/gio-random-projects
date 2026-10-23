@@ -37,15 +37,26 @@ jobs:
         with:
           version: v1.36.5
 
-      # `--dry-run=client` valida schema sem precisar de cluster — o CI não
-      # tem kubeconfig, e não deveria ter.
+      # kubeconform e não `kubectl apply --dry-run=client`: o kubectl busca o
+      # OpenAPI no API server mesmo em dry-run client, então sem kubeconfig
+      # ele falha com "dial tcp [::1]:8080: connection refused". kubeconform
+      # valida contra schemas baixados, sem cluster.
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          KUBECONFORM_VERSION=v0.6.7
+          curl -sSLo /tmp/kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          sudo install -m 0755 /tmp/kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+
       - name: Renderiza cada app e valida o schema
         run: |
           set -euo pipefail
           # `bootstrap/` é um ApplicationSet (CRD do ArgoCD): não existe no
-          # schema do Kubernetes puro, então `kubectl apply --dry-run` sem o
-          # CRD instalado falharia. Ele é aplicado uma vez, à mão, e é
-          # validado pelo próprio ArgoCD ao reconciliar.
+          # schema do Kubernetes puro, então validá-lo aqui falharia. Ele é
+          # aplicado uma vez, à mão, e é validado pelo próprio ArgoCD.
           dirs=$(find gitops/apps -name kustomization.yaml -exec dirname {} \; | sort)
           if [ -z "$dirs" ]; then
             echo "nenhum app em gitops/apps/ — nada a validar"
@@ -58,7 +69,11 @@ jobs:
               echo "::error::$d renderizou vazio"
               exit 1
             fi
-            kubectl apply --dry-run=client -f /tmp/rendered.yaml
+            # `-strict` trata campo desconhecido como erro, e não só como
+            # aviso: um typo em `readinessProbe` seria aceito em silêncio
+            # pelo API server e ignorado no cluster.
+            kubeconform -strict -summary -kubernetes-version 1.36.0 \
+              -output text /tmp/rendered.yaml
             echo "::endgroup::"
           done
 
