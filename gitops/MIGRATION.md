@@ -47,6 +47,12 @@ A ordem é por risco crescente, e não por importância. Estado é sempre por
 | 6 ☐ | dados primários | `postgres`, `vaultwarden` | volumes | **alto** |
 | 7 ☐ | ingress + registry | `ingress`, `registry` | — | alto |
 
+**A fatia 6 foi adiada por decisão explícita em 2026-10-23**: antes de migrar
+`postgres`/`vaultwarden`, o usuário pediu o Rancher como plano de controle.
+Rancher 2.15.2 instalado e validado (ver README, seção "Rancher") — a UI é
+`helm`, fora do `gitops/apps/`, e não altera nenhum serviço em produção. A
+fatia 6 continua sendo o próximo passo e continua exigindo janela.
+
 **O `rabbitmq` foi cortado em 2026-10-23.** Um broker é ponto de encontro
 compartilhado: se o Service passasse a apontar para o pod enquanto algum consumidor
 ainda estivesse em Docker, ficariam dois brokers com zero estado compartilhado —

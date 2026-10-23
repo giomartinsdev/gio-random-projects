@@ -1,0 +1,55 @@
+# Rancher 2.15.2 no k3s de nó único (arm64), atrás do nginx do HOST.
+#
+# ## Por que este arquivo não está em gitops/apps/
+#
+# O ApplicationSet raiz gera uma Application por diretório em `gitops/apps/`.
+# O chart do Rancher instala CRDs e um webhook de admissão próprios, e um
+# diretório ali o colocaria sob reconciliação do ArgoCD — misturando dois
+# donos para o mesmo objeto. Aqui ele é `helm` explícito, como o ArgoCD.
+#
+# ## Por que networkExposure.type=none
+#
+# O Rancher normalmente se expõe por Ingress. Aqui o Ingress do cluster
+# (ingress-nginx) não serve nenhum objeto e está EOL desde março/2026 — o
+# próprio chart registra isso na linha do `includeDefaultExtraAnnotations`.
+# Quem serve os 18 hosts de produção é o nginx do HOST, que fala com o cluster
+# por NodePort. Então: sem Ingress, Service NodePort, acesso inicial por túnel.
+#
+# ## Por que replicas 1 e não 3
+#
+# O default do chart é 3. Num nó único, 2 ficariam Pending para sempre — e o
+# Deployment nunca chegaria a Ready. 1 é o máximo que faz sentido.
+replicas: 1
+
+networkExposure:
+  type: "none"
+
+ingress:
+  enabled: false
+
+service:
+  type: NodePort
+
+# Certificado auto-assinado gerado pelo Rancher (tls.source=rancher é o default).
+# Não usamos letsEncrypt: o DNS rancher.giomartins.dev ainda não existe, e ACME
+# falharia alto no primeiro boot. Quando o registro existir, isso vira strict +
+# Origin CA ou LE, em commit próprio.
+tls: rancher
+
+# `strict` é o default em instalações novas desde 2.9. Com certificado
+# auto-assinado, o agente confia no CA que o Rancher injeta — funciona para o
+# cluster local. Se um cluster downstream for importado depois, isso precisa de
+# atenção (ver docs: agent-tls-mode / privateCA).
+agentTLSMode: strict
+
+# Sem hostname o pod do Rancher aborta no boot ("hostname is required").
+# Este é o nome que consta nos links da UI e no certificado. É o nome FINAL,
+# mesmo sem registro DNS: criar o DNS depois não exige reinstalar.
+hostname: rancher.giomartins.dev
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    memory: 2Gi

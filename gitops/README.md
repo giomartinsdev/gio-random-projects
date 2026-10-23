@@ -295,6 +295,10 @@ sudo k3s kubectl create secret generic registry-credentials -n giomartins \
 # 5. expõe a UI do ArgoCD na 30080 e roda o GitOps
 sudo k3s kubectl apply -f gitops/bootstrap/argocd-server-nodeport.yaml
 sudo k3s kubectl apply -f gitops/bootstrap/appset.yaml
+
+# 6. UIs de plataforma (opcionais, fora do GitOps — ver seções próprias)
+#    Kubero:  helm install ... -f gitops/bootstrap/kubero.yaml
+#    Rancher: sudo gitops/bootstrap/rancher/install.sh
 ```
 
 Do passo 5 em diante, **nada mais é `kubectl apply`**: adicionar uma
@@ -305,14 +309,15 @@ os únicos manifestos de plataforma. Para reaplicar do zero num cluster novo,
 a ordem é: k3s → registries.yaml → namespace argocd → install.yaml →
 namespace giomartins + secret → `server.insecure=true` no
 `argocd-cmd-params-cm` → rollout do `argocd-server` → os dois YAMLs de
-`bootstrap/`.
+`bootstrap/` → (opcional) Kubero e Rancher.
 
 ### Acessar o ArgoCD
 
-**A tela do cluster é o próprio ArgoCD** — não há uma UI separada de
-Kubernetes para instalar. Ele mostra os Applications, a árvore de recursos
-(Deployment → ReplicaSet → Pod → Service), diff contra o git, logs, eventos e
-o botão de sync.
+**A tela do cluster era o próprio ArgoCD** — a decisão original era não instalar
+uma UI separada de Kubernetes. Isso mudou em 2026-10-23, com o Rancher: ele
+mostra nós, workloads, eventos e logs por uma interface de cluster de verdade,
+não só Applications. O ArgoCD continua sendo quem reconcilia o `gitops/`; a
+divergência entre as duas telas é esperada e está explicada na seção "Rancher".
 
 **Cuidado com a porta 8080: ela já é do `evolution-api`** (`127.0.0.1:8080`).
 Um port-forward para 8080 falha com "address already in use" — e pior, quem
@@ -355,10 +360,17 @@ apply` para o A record + Access, e um `server{}` no `default.conf` com
 | Grafana | dashboards de cluster **se** houver kube-prometheus-stack | pesado (~1-2 GB); hoje o Grafana só vê métricas OTel das apps |
 | Headlamp / Kubernetes Dashboard | UI web alternativa | mais um serviço para expor e proteger |
 
-Recomendação: **ArgoCD para estado de deploy + `k9s` para operação**. O k9s
-usa o kubeconfig (copie `/etc/rancher/k3s/k3s.yaml`, troque
-`server: https://127.0.0.1:6443` pelo IP e acesse por túnel na 6443); o plano
-de controle está em `127.0.0.1:6443` e a security list já bloqueia de fora.
+Recomendação: **ArgoCD para estado de deploy + Rancher para operar o cluster +
+`k9s` para o dia a dia no terminal**. O k9s usa o kubeconfig (copie
+`/etc/rancher/k3s/k3s.yaml`, troque `server: https://127.0.0.1:6443` pelo IP e
+acesse por túnel na 6443); o plano de controle está em `127.0.0.1:6443` e a
+security list já bloqueia de fora.
+
+O Rancher entrou nessa lista em 2026-10-23 por escolha do usuário e **não
+substitui o ArgoCD**: ele não reconcilia o `gitops/`. É a tela de operação
+(nós, pods, eventos, logs, kubectl no browser); o ArgoCD é a fonte de verdade
+do que está deployado. Confundir os dois leva a "corrigir" na UI algo que o
+próximo sync desfaz.
 
 ## Como um serviço migra
 
@@ -445,11 +457,13 @@ com escrita exclusiva. Rodar dois ao mesmo tempo duplica mensagem ou corrompe
 dado. Subir para 1 *é* o ato de migrar, e exige parar o Docker antes.
 
 Plataforma no cluster: k3s, ArgoCD, ingress-nginx (NodePort), cert-manager,
-metrics-server, Kubero (operator + UI em NodePort 30200).
+metrics-server, Kubero (operator + UI em NodePort 30200), Rancher 2.15.2 +
+Fleet (NodePort 31198/31844).
 
 Recursos: k3s + ArgoCD + ingress-nginx + cert-manager + Kubero ≈ 1,3 GB de
-RAM. Sobram ~10 GB. Nenhuma porta do host foi disputada — o cluster usa
-6443 (API), 10250 (kubelet), 8472 (VXLAN) e NodePorts em `30000-32767`.
+RAM; com o Rancher + Fleet, ≈ 2,9 GB. Sobram ~8 GB. Nenhuma porta do host foi
+disputada — o cluster usa 6443 (API), 10250 (kubelet), 8472 (VXLAN) e NodePorts
+em `30000-32767`.
 
 ### Serviços de ponte (`gitops/apps/bridges/`)
 
@@ -497,7 +511,9 @@ publishers e consumers estiverem do mesmo lado. Ver
 | 30900 | minio s3 |
 | 30901 | minio console |
 | 30945 | ingress-nginx (http) |
+| 31198 | rancher (http, redireciona para 443) |
 | 31525 | rabbitmq amqp (NodePort automático) |
+| 31844 | rancher (https) |
 
 `30028` está reservado pelo Service do `9router` mesmo sem pod: um Service
 `NodePort` existe independente de ter endpoint. Reservar antes é de propósito —
@@ -629,6 +645,141 @@ ssh -N -L 30200:127.0.0.1:30200 ubuntu@168.138.135.6
 
 No primeiro acesso, o Kubero pede para criar o usuário admin.
 
+### Rancher
+
+Instalado em 2026-10-23, **antes** da fatia 6, por decisão do usuário: a tela do
+Rancher é a que ele quer usar como plano de controle.
+
+**Não** é gerenciado pelo ArgoCD — é `helm`, não manifesto em `gitops/apps/`.
+O motivo: o chart instala CRDs e um webhook de admissão próprios, e o
+`ApplicationSet` sincroniza só diretórios de app. Os valores e o script de
+instalação ficam versionados em `gitops/bootstrap/rancher/`.
+
+```bash
+helm repo add rancher-stable https://releases.rancher.com/server-charts/stable
+helm repo update
+kubectl create namespace cattle-system
+helm install rancher rancher-stable/rancher \
+  --version 2.15.2 --namespace cattle-system \
+  -f rancher-values.yaml --set bootstrapPassword="$P"
+```
+
+O comando acima é o que foi digitado à mão na primeira vez. O que **reproduz**
+é o script versionado:
+
+```bash
+sudo gitops/bootstrap/rancher/install.sh     # install ou upgrade, idempotente
+```
+
+Ele resolve três coisas que o `helm install` cru não resolve: exporta
+`KUBECONFIG` (o k3s guarda o seu em `/etc/rancher/k3s/k3s.yaml`, que o `helm` não
+conhece), não rotaciona a senha em execuções seguintes, e **fixa os NodePorts**
+— o chart não expõe `nodePort` em `values`, então o k8s sorteia a cada
+reinstall e o comando de túnel passaria a mentir.
+
+Decisões que não são default do chart, e por quê:
+
+| valor | default | usado | motivo |
+| --- | --- | --- | --- |
+| `replicas` | `3` | `1` | nó único; 2 réplicas ficariam `Pending` e o Deployment nunca fecharia |
+| `networkExposure.type` | `ingress` | `none` | o Ingress do cluster não serve nada e o `ingress-nginx` está EOL; quem expõe é o nginx do host |
+| `ingress.enabled` | `true` | `false` | idem |
+| `service.type` | `""` | `NodePort` | acesso por túnel, sem DNS e sem tocar no Cloudflare |
+| `tls` | `ingress` | `rancher` | auto-assinado; `letsEncrypt` falharia porque `rancher.giomartins.dev` ainda não existe no DNS |
+| `agentTLSMode` | `strict` | `strict` | default de instalação nova desde 2.9; funciona porque o CA é o do próprio Rancher |
+
+`hostname: rancher.giomartins.dev` já é o nome final, **mesmo sem o registro DNS
+existir**. Isso é de propósito: o certificado e os links da UI nascem com o
+nome definitivo, então criar o DNS depois não exige reinstalar.
+
+**Acesso (túnel):**
+
+```bash
+ssh -N -L 31844:127.0.0.1:31844 ubuntu@168.138.135.6
+# https://rancher.giomartins.dev:31844  → mas o cert é self-signed
+```
+
+Como o certificado é auto-assinado e o NodePort não é 443, o caminho que
+funciona sem briga de browser é mapear o host e usar `https://localhost:31844`
+com o aviso de cert aceito. A senha de bootstrap **não está no chat nem no
+git**: está em `/root/.rancher-bootstrap-password` (mode 600) e em
+`cattle-system/bootstrap-secret`.
+
+```bash
+sudo cat /root/.rancher-bootstrap-password
+# ou:
+kubectl get secret bootstrap-secret -n cattle-system \
+  -o go-template='{{.data.bootstrapPassword|base64decode}}{{ "\n" }}'
+```
+
+No primeiro login o Rancher **obriga** trocar a senha de bootstrap.
+
+**A senha fica legível em `helm get values`.** Consequência de passar por
+`--set`: o Helm guarda os valores do release num Secret (`sh.helm.release.v1.rancher.v1`),
+e `helm get values rancher -n cattle-system` devolve o `bootstrapPassword` em
+texto claro para quem tiver `get secret` naquele namespace. Não é vazamento
+para fora do cluster (o Secret não é versionado nem exposto), mas quebra a
+premissa de "só em `/root`". O remédio definitivo é `--set-file` com um arquivo
+efêmero ou um `Secret` pré-criado com `bootstrapPassword` — quando o Rancher
+for exposto publicamente (dívida 12), isso deve ser revisto junto.
+
+**O que foi provado, não assumido:**
+
+- pod `1/1 Running`, imagem `rancher/rancher:v2.15.2` arm64 (945 MB) puxada
+- `POST /v3-public/localProviders/local?action=login` → **201** com token
+- `GET /` → **200** com `Host: rancher.giomartins.dev`; `/dashboard/` → 200
+- cluster `local` existe em `clusters.management.cattle.io` com `Ready=True`
+- **zero Ingress objects** criados (confirmado) e os NodePorts novos não
+  colidem com nenhum dos 15 anteriores
+- 18/18 hosts de produção com o mesmo status HTTP; 26 containers (baseline 26);
+  pods Running sem nenhum fora de `Running`
+- **reinstall do zero provado**: `helm uninstall` + `install.sh` de novo. O k8s
+  sorteou `32164`/`30789` para os NodePorts e o script corrigiu para
+  `31198`/`31844`; login voltou `201` e a UI `200`. Sem esse passo o comando de
+  túnel documentado apontaria para uma porta que não existe mais.
+- **idempotência provada**: `install.sh` duas vezes seguidas não rotaciona a
+  senha nem reescreve os NodePorts.
+
+**Riscos aceitos, medidos:**
+
+- **+1 admission webhook** num nó único: `rancher` soma aos
+  `cert-manager-webhook` e `ingress-nginx-admission`. Se o pod não responder,
+  `kubectl create` trava — por isso o Rancher não guarda estado crítico de
+  produção, e `helm uninstall rancher -n cattle-system` remove webhook e CRDs.
+- **1.576 Mi de RAM, medidos** (`kubectl top`), não os ~700 MB estimados antes
+  de instalar. O pod do Rancher sozinho são **1.385 Mi**; o resto é o Fleet.
+  Host foi de 13G para 15,4G de 23G — sobram 8,4G.
+- **O Rancher trouxe o Fleet junto, e isso não é opcional.** `helm install
+  rancher` instala `cattle-fleet-system` + `cattle-fleet-local-system`
+  (`fleet-controller`, `gitjob`, `helmops`, `fleet-agent`): 4 pods, ~216 Mi.
+  É o motor de GitOps distribuído do Rancher e agora é um **terceiro** motor de
+  reconciliação no cluster, ao lado do ArgoCD e do Kubero. Hoje todos os apps
+  do Fleet estão vazios (`0` GitRepos, `0` Bundles), então ele não disputa
+  nenhum objeto — mas é dívida, não desenho. Ver item 14.
+- **CPU**: 449m no pod do Rancher é o pico de boot, não o regime. O nó tem
+  4 vCPU; se isso persistir, é o maior consumidor individual do cluster.
+- **`rancher.giomartins.dev` não resolve.** A UI é inalcançável de fora hoje; é
+  o combinado ("DNS público depois").
+- O pod do Rancher **não** é `replicas: 1` por escolha de disponibilidade — é o
+  máximo que um nó único comporta.
+
+### `ingress-nginx` está fora de suporte (dívida consciente)
+
+`ingress-nginx` foi **aposentado em março/2026**; este ambiente é outubro/2026.
+O próprio chart do Rancher registra isso (`includeDefaultExtraAnnotations` está
+deprecado "due to ingress-nginx retiring in March 2026") e a seção de EOL do
+projeto recomenda migrar para Gateway API ou outro controller.
+
+Estado aqui, medido: **zero `Ingress` objects no cluster**. O controller roda
+com NodePort `30945`/`30421` e não serve nenhum tráfego. Quem serve os 18 hosts
+é o nginx do **host** (`nginx:1.27-alpine`, `network_mode: host`, porta 80), que
+não é `ingress-nginx` e não é afetado por esse EOL.
+
+Decisão registrada em 2026-10-23: **não mexer agora**. Removê-lo liberaria RAM e
+um webhook, mas o Kubero foi instalado assumindo um ingress controller
+(armadilha 3) e a troca por Traefik/Gateway API afeta o roteamento dos 18 hosts
+— é migração própria, não faxina. Fica como dívida, com a data visível.
+
 ## Próximo serviço a migrar
 
 A fatia 4 está fechada: os quatro backends servem do cluster com o histórico
@@ -729,3 +880,24 @@ Ficam de fora, e por motivo, não por esquecimento:
    não enxerga Services do cluster. O CI de frontend foi ajustado para
    `http://172.18.0.1:30900`; qualquer outro `docker run` que precise de S3 terá
    o mesmo problema e precisa do mesmo endereço explícito.
+11. ~~**O `rancher-values.yaml` vive em `/tmp` no host.**~~ **Resolvido** em
+   `gitops/bootstrap/rancher/` (`values.yaml` + `install.sh` idempotente), no
+   mesmo padrão do `argocd-cm`. O script exporta `KUBECONFIG`, não rotaciona a
+   senha em execuções seguintes e fixa os NodePorts, que o chart deixa o k8s
+   sortear a cada reinstall.
+12. **`rancher.giomartins.dev` não existe no DNS.** A UI do Rancher só é
+   alcançável por túnel SSH. Expor exige: criar o A record (proxied) no
+   Cloudflare, apontar o nginx do host para `:31844` com `proxy_ssl_verify off`
+   (cert self-signed) e, se for o caso, pôr atrás do Access. Enquanto isso, o
+   `hostname` já é o definitivo, então não há reinstalação pendente.
+13. **`ingress-nginx` está EOL desde março/2026 e roda sem servir nada.** Detalhe
+   e decisão na seção própria acima. Não é urgente (zero Ingress), mas é o
+   componente mais desatualizado da plataforma.
+14. **Três planos de controle de UI convivem no cluster** (ArgoCD, Kubero,
+   Rancher). Consome RAM e confunde qual é a fonte de verdade: o ArgoCD
+   reconcilia o `gitops/`; o Kubero e o Rancher não reconciliam nada hoje.
+   Pior: o Rancher instalou o **Fleet** (`cattle-fleet-system`), que é um
+   *segundo* motor de GitOps — vazio, mas presente. Três reconciliadores com um
+   deles vazio é armadilha esperando acontecer: no dia em que alguém criar um
+   `GitRepo` no Fleet apontando para este repositório, ArgoCD e Fleet vão
+   disputar os mesmos objetos. A decisão de qual fica ainda não foi tomada.
