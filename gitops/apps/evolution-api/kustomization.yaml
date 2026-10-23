@@ -1,0 +1,17 @@
+# evolution-api — gateway WhatsApp -> RabbitMQ.
+#
+# Ver o aviso em `service.yaml`: o Service não pode ser aplicado antes do
+# Deployment estar saudável, porque o nome `evolution-api` já existe como ponte
+# para o container Docker. Por isso `replicas` fica em 0 até o volume estar
+# copiado e o pod provado.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: giomartins
+
+resources:
+  - deployment.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: giomartins

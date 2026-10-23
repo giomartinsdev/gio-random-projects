@@ -1,0 +1,289 @@
+# evolution-api — gateway WhatsApp -> RabbitMQ (fatia 2 estendida).
+#
+# ## O que eu tinha assumido, e estava errado
+#
+# Eu disse ao usuário que migrar isto derrubaria a sessão do WhatsApp e exigiria
+# re-escanear o QR. Não é verdade, e o próprio host já provava:
+#
+#   - todos os containers subiram há 11h (restart do host);
+#   - a instância estava `connectionStatus: "open"` desde então;
+#   - `docker inspect evolution-api` mostra `RestartCount=0`, `StartedAt` 03:00.
+#
+# Fui verificar de onde vinha a persistência, porque "reiniciou e voltou" só é
+# prova se a sessão não tiver sido recriada do zero:
+#
+#   /var/lib/docker/volumes/evolution_instances/_data  8K, VAZIO desde 04/out
+#   evolution_api."Instance" (postgres)                token/clientName, sem creds
+#   evolution_api."IntegrationSession"                 creds? coluna não existe
+#   evolution-redis db6                                UM hash, 857 campos
+#
+# O hash é a resposta: `pre-key-1..812`, `session-<jid>_1.0`, `tctoken-*`,
+# `app-state-sync-key-*`, `device-list-*`, `lid-mapping-*`. São as estruturas do
+# Baileys. O Redis declara `CACHE_REDIS_SAVE_INSTANCES=false`, o que sugeriria
+# "não persiste sessão" -- mas o que a flag controla é outra coisa (o registro da
+# instância no cache), não o armazenamento das chaves de criptografia.
+#
+# ## O teste que decidiu
+#
+# Em vez de deduzir, reiniciei o container e medi:
+#
+#   ANTES:  web-businesses  open  5521982397951@s.whatsapp.net
+#   docker restart evolution-api
+#   DEPOIS: web-businesses  open  5521982397951@s.whatsapp.net
+#
+# Sem QR, mesmo ownerJid. O volume `evolution_redis_data` (2M) tem
+# `appendonly yes` E `dump.rdb` sendo gravado (190K, 13:10). A sessão está em
+# disco, não em memória.
+#
+# Conclusão que muda o plano: parar o container por alguns segundos é seguro.
+# Ainda assim, o Redis NÃO migra junto: o pod fala `evolution-redis:6379` pela
+# ponte, como falava antes. Migrar o Redis é outra fatia, com outro risco.
+#
+# ## Por que este pod não quebra o broker
+#
+# O `evolution-api` é PUBLISHER no RabbitMQ (exchange `evolution`, topic), não
+# consumer. Publicar num broker e consumir de outro não perde mensagem do mesmo
+# jeito que o caso `domain-worker` -- mas continua sendo dois brokers. Por isso
+# ele fica apontado para a PONTE `rabbitmq:5672` (container), igual a hoje: nada
+# muda de lado. Quando o rabbitmq migrar, este pod migra junto, sem editar env.
+#
+# ## O consumidor que existe
+#
+# `finance-customersupport-worker` (Docker) chama `evolution-api:8080`. Enquanto
+# ele estiver em Docker, o nome resolve para o container. O cutover do ingress
+# (`evolution.giomartins.dev`) não afeta esse caminho: um usa o nginx, o outro o
+# DNS do Docker. Ver a dívida registrada no README.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: evolution-instances
+  labels:
+    app.kubernetes.io/name: evolution-api
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      # 8K hoje -- está vazio de fato. Existe porque o Compose monta este
+      # caminho e a aplicação pode escrever nele em versões futuras; recriar o
+      # Deployment sem o volume faria a app usar o filesystem efêmero do pod em
+      # silêncio. 1Gi é folga barata.
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: evolution-api
+  labels:
+    app.kubernetes.io/name: evolution-api
+spec:
+  # 0 até a janela de cutover. E aqui o `replicas: 0` NÃO é hábito: é requisito.
+  # Dois processos Baileys com a mesma sessão se derrubam (disconnect 401/440),
+  # porque o WhatsApp trata conexão duplicada como conflito. Enquanto o container
+  # Docker estiver de pé, subir este pod DERUBA a sessão de produção.
+  #
+  # Ordem: parar o container -> `replicas: 1` -> provar `connectionStatus: open`
+  # -> só então o ingress. Rollback: `replicas: 0` + `docker start evolution-api`.
+  replicas: 0
+  # `Recreate`: a sessão Baileys não admite dois processos na mesma instância.
+  # Dois pods conectariam o mesmo número e o WhatsApp derrubaria um dos dois
+  # (disconnect 401/440), com o agravante de ambos escreverem no mesmo Redis.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: evolution-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: evolution-api
+    spec:
+      containers:
+        - name: evolution-api
+          image: evoapicloud/evolution-api@sha256:966625532d9076a2381e973a271307d107e6f070450de3abeeea8bd18be07252
+          env:
+            # Valores transcritos do container, um a um (ver o teste no topo).
+            - name: SERVER_TYPE
+              value: http
+            - name: SERVER_PORT
+              value: "8080"
+            - name: SERVER_URL
+              value: https://evolution.giomartins.dev
+            - name: LANGUAGE
+              value: pt-BR
+            - name: CONFIG_SESSION_PHONE_CLIENT
+              value: Evolution API
+            - name: CONFIG_SESSION_PHONE_NAME
+              value: Chrome
+            - name: DEL_INSTANCE
+              value: "false"
+            - name: LOG_LEVEL
+              value: ERROR,WARN,INFO,WEBSOCKET
+            - name: LOG_COLOR
+              value: "true"
+            - name: LOG_BAILEYS
+              value: error
+            - name: TELEMETRY_ENABLED
+              value: "false"
+            - name: AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES
+              value: "true"
+            - name: DATABASE_PROVIDER
+              value: postgresql
+            - name: DATABASE_CONNECTION_CLIENT_NAME
+              value: evolution_api
+            - name: DATABASE_SAVE_DATA_INSTANCE
+              value: "true"
+            - name: DATABASE_SAVE_DATA_NEW_MESSAGE
+              value: "true"
+            - name: DATABASE_SAVE_MESSAGE_UPDATE
+              value: "true"
+            - name: DATABASE_SAVE_DATA_CONTACTS
+              value: "true"
+            - name: DATABASE_SAVE_DATA_CHATS
+              value: "true"
+            - name: DATABASE_SAVE_DATA_LABELS
+              value: "true"
+            - name: DATABASE_SAVE_DATA_HISTORIC
+              value: "true"
+            - name: DATABASE_SAVE_IS_ON_WHATSAPP
+              value: "true"
+            # --- cache / sessão Baileys ---
+            - name: CACHE_REDIS_ENABLED
+              value: "true"
+            - name: CACHE_REDIS_URI
+              value: redis://evolution-redis:6379/6
+            - name: CACHE_REDIS_PREFIX_KEY
+              value: evolution
+            # `false` é o valor real do container. Não é contradição com a sessão
+            # persistir: a flag controla o registro da instância no cache, não as
+            # chaves de criptografia (ver o topo). Manter o valor real evita
+            # mudar comportamento sem saber o efeito.
+            - name: CACHE_REDIS_SAVE_INSTANCES
+              value: "false"
+            - name: CACHE_LOCAL_ENABLED
+              value: "false"
+            # --- rabbitmq ---
+            - name: RABBITMQ_ENABLED
+              value: "true"
+            - name: RABBITMQ_EXCHANGE_NAME
+              value: evolution
+            - name: RABBITMQ_GLOBAL_ENABLED
+              value: "true"
+            - name: RABBITMQ_PREFIX_KEY
+              value: evolution
+            - name: RABBITMQ_EVENTS_APPLICATION_STARTUP
+              value: "true"
+            - name: RABBITMQ_EVENTS_INSTANCE_CREATE
+              value: "true"
+            - name: RABBITMQ_EVENTS_INSTANCE_DELETE
+              value: "true"
+            - name: RABBITMQ_EVENTS_REMOVE_INSTANCE
+              value: "true"
+            - name: RABBITMQ_EVENTS_LOGOUT_INSTANCE
+              value: "true"
+            - name: RABBITMQ_EVENTS_QRCODE_UPDATED
+              value: "true"
+            - name: RABBITMQ_EVENTS_CONNECTION_UPDATE
+              value: "true"
+            - name: RABBITMQ_EVENTS_MESSAGES_SET
+              value: "true"
+            - name: RABBITMQ_EVENTS_MESSAGES_UPSERT
+              value: "true"
+            - name: RABBITMQ_EVENTS_MESSAGES_EDITED
+              value: "true"
+            - name: RABBITMQ_EVENTS_MESSAGES_UPDATE
+              value: "true"
+            - name: RABBITMQ_EVENTS_MESSAGES_DELETE
+              value: "true"
+            - name: RABBITMQ_EVENTS_SEND_MESSAGE
+              value: "true"
+            - name: RABBITMQ_EVENTS_SEND_MESSAGE_UPDATE
+              value: "true"
+            - name: RABBITMQ_EVENTS_CONTACTS_SET
+              value: "true"
+            - name: RABBITMQ_EVENTS_CONTACTS_UPSERT
+              value: "true"
+            - name: RABBITMQ_EVENTS_CONTACTS_UPDATE
+              value: "true"
+            - name: RABBITMQ_EVENTS_CHATS_SET
+              value: "true"
+            - name: RABBITMQ_EVENTS_CHATS_UPSERT
+              value: "true"
+            - name: RABBITMQ_EVENTS_CHATS_UPDATE
+              value: "true"
+            - name: RABBITMQ_EVENTS_CHATS_DELETE
+              value: "true"
+            - name: RABBITMQ_EVENTS_GROUPS_UPSERT
+              value: "true"
+            - name: RABBITMQ_EVENTS_GROUP_UPDATE
+              value: "true"
+            - name: RABBITMQ_EVENTS_GROUP_PARTICIPANTS_UPDATE
+              value: "true"
+            - name: RABBITMQ_EVENTS_PRESENCE_UPDATE
+              value: "true"
+            - name: RABBITMQ_EVENTS_CALL
+              value: "true"
+            - name: RABBITMQ_EVENTS_TYPEBOT_START
+              value: "true"
+            - name: RABBITMQ_EVENTS_TYPEBOT_CHANGE_STATUS
+              value: "true"
+            # --- segredos ---
+            # `DATABASE_CONNECTION_URI` e `RABBITMQ_URI` contêm senha, então vão
+            # pelo Secret inteiro (o gerador copia do container). Recortá-las em
+            # host/senha separados exigiria reescrever a URI no manifesto e
+            # duplicaria o conhecimento do formato em dois lugares.
+            - name: AUTHENTICATION_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: evolution-api
+                  key: AUTHENTICATION_API_KEY
+            - name: DATABASE_CONNECTION_URI
+              valueFrom:
+                secretKeyRef:
+                  name: evolution-api
+                  key: DATABASE_CONNECTION_URI
+            - name: RABBITMQ_URI
+              valueFrom:
+                secretKeyRef:
+                  name: evolution-api
+                  key: RABBITMQ_URI
+          ports:
+            - name: http
+              containerPort: 8080
+          # Medido: `/` responde 200 e `/health` responde 404. `/instance/fetchInstances`
+          # dá 401 sem apikey -- ou seja, está vivo mas protegido. Uso `/` porque
+          # é o único que responde sem credencial, e uma probe que precisa de
+          # segredo no YAML vaza segredo.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 4
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            # Boot de Node + reconexão Baileys. Generoso de propósito: reiniciar
+            # durante a reconexão é pior que esperar.
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            # O Compose não define limite; o container consome ~200-400M com a
+            # sessão aberta. 1Gi é teto de segurança.
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: instances
+              mountPath: /evolution/instances
+      volumes:
+        - name: instances
+          persistentVolumeClaim:
+            claimName: evolution-instances

@@ -82,6 +82,15 @@ MAPA=(
   # `RABBITMQ_DEFAULT_USER` faz o entrypoint falhar alto, o que e melhor que
   # subir sem autenticacao.
   "rabbitmq:rabbitmq:RABBITMQ_DEFAULT_USER,RABBITMQ_DEFAULT_PASS"
+  # evolution-api: as tres chaves que contem segredo. As outras ~55 do container
+  # sao configuracao (quais eventos publicar, caminhos, log level) e ficam no
+  # manifesto, onde aparecem no diff. Esconder configuracao num Secret nao a
+  # protege e tira do revisor a informacao do que o servico faz.
+  #
+  # DATABASE_CONNECTION_URI e RABBITMQ_URI carregam senha embutida na URL. Nao
+  # as recorto em host/senha: isso duplicaria o conhecimento do formato em dois
+  # lugares, e uma mudanca de driver/framework quebraria em silencio.
+  "evolution-api:evolution-api:AUTHENTICATION_API_KEY,DATABASE_CONNECTION_URI,RABBITMQ_URI"
 )
 
 alvo="${1:-}"
