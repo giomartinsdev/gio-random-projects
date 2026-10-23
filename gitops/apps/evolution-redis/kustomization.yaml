@@ -1,0 +1,25 @@
+# evolution-redis — a ÚLTIMA ponte. Quando este Service virar, o diretório
+# `gitops/apps/bridges/` fica vazio e o timer `sync-external-endpoints` perde a
+# razão de existir.
+#
+# ## A ordem dos dois commits
+#
+#   1. ESTE: `deployment.yaml` em `resources`, `service.yaml` FORA. O pod sobe,
+#      replica do container e prova o dado — mas ninguém resolve
+#      `evolution-redis` para ele, porque o nome ainda é a ponte.
+#   2. O CUTOVER: `service.yaml` entra em `resources` + `bridges/evolution-redis.yaml`
+#      sai + `evolution-redis` sai do `MAPA` do timer. Os três juntos.
+#
+# Fazer o passo 2 antes do 1 derrubaria o `evolution-api` (que fala
+# `redis://evolution-redis:6379/6`) contra um Redis vazio: o Baileys perderia as
+# 860 chaves e precisaria de QR novo. Fazer o 2 sem o 3 faria o kube-proxy
+# balancear entre o pod e o container — metade das chaves indo para cada lado,
+# que é pior que qualquer um dos dois sozinho.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: giomartins
+
+resources:
+  - deployment.yaml
+  # - service.yaml   # ← janela: descomentar junto com o git rm da ponte
