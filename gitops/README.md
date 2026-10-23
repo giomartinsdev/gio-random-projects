@@ -632,6 +632,239 @@ Três provas que não mentem:
 A prova aceita é a 2 ou a 3. A 1 engana quando os layers já estão no store por
 outra tag do mesmo repositório.
 
+
+### 22. Todo cliente guarda o ClusterIP, e o alias não o conserta.
+
+Quando um
+produtor muda de namespace, o Service antigo vira `ExternalName` e ganha
+**outro** ClusterIP. Clientes que resolveram o nome uma vez continuam
+discando para o IP morto para sempre. Visto em três formas:
+
+- `ioredis` (`evolution-api`): `redis disconnected` a cada segundo, DNS
+  resolvendo certo, TCP aberto pelo `nc`. O pod tinha nascido 6 h antes do
+  alias; o IP antigo (`10.43.236.33`) estava morto. Curou com
+  `rollout restart`.
+- `amqplib` (`domain-worker`): `dial tcp 10.43.108.164:5672: connection
+  refused`. Curou sozinho no retry — `amqplib` re-resolve, `ioredis` não.
+- OTLP/gRPC (`alloy`): `rpc error: code = Unavailable desc = no children to
+  pick from`. O resolver gRPC guardou a resolução vazia de quando o `tempo`
+  ainda não tinha endpoints. Curou com restart.
+
+**Regra**: depois de mover um produtor, reiniciar todo consumidor que ainda
+esteja no namespace antigo. Não confiar em "não há erro no log" — ausência de
+erro é compatível com cliente que nunca reconectou.
+
+**Corolário para verificação**: `nslookup`, `getent` e `nc` de dentro do pod
+provam **DNS e rede**, não provam **o cliente da aplicação**. São testes que
+passam enquanto o serviço está caído. A prova tem que ser o contador do
+próprio cliente (`sent_spans_total`, `loki_write_sent_entries_total`) ou um
+registro novo no destino.
+
+### 23. `kubectl apply -f` em manifesto cru ignora o `namespace:` do kustomization.
+
+O `deployment.yaml` não tem `namespace:` — ele vive em
+`kustomization.yaml`, e o transformer do kustomize é quem o injeta. Aplicar o
+arquivo cru cria tudo em `default`:
+
+- o PVC nasce em `default`, o `local-path` provisiona um volume **novo e
+  vazio**, e o pod sobe "saudável" ao lado do real;
+- dois Redis rodando, um com 860 chaves e outro com zero. Nada no
+  `kubectl get pods` distingue os dois.
+
+**Regra**: `apply -k`, ou aplicar a saída de `kubectl kustomize`, que já traz
+`namespace:` em cada documento. Nunca `apply -f` num arquivo de app.
+
+### 24. Um detector de PVC que falha em silêncio é pior que nenhum.
+
+O movedor da
+fatia 7 dizia `sem PVC — nada a rebindar` e seguia. O `awk` usava
+`match(doc, /^  name: .../)` sobre um buffer **multi-linha**, e `^` em awk
+ancora no início da *string*, não da linha. Resultado: zero PVCs detectados,
+`apply` criou um PVC novo, e o **Postgres subiu com 0 tabelas** enquanto as
+1176 linhas de `finance_transactions` ficavam num PV órfão. Restaurado sem
+perda (rebind no PV original, contagem conferida), mas o serviço ficou vazio
+por alguns minutos e os workers registraram
+`relation "finance_of_accounts" does not exist`.
+
+**Regra**: quando o render declara PVC e o PV não é encontrado, **abortar**.
+E a testemunha de integridade é **bytes**, não contagem de arquivos — o Loki
+apaga chunks obsoletos ao fechar (5092 → 5090) e abortou a janela por engano.
+
+### 25. Esperar `Ready` antes de publicar o Service trava dependência intra-namespace.
+
+O `db-mcp-gateway` (nginx) resolve o upstream `db-mcp` no
+start e morre com `host not found in upstream` se o Service não existir. A
+ordem "aplicar workload → esperar Ready → trocar Services" esperava Ready de
+um pod que só ficaria Ready depois da troca. Agora o Service sobe antes, como
+`ClusterIP` sem `nodePort` (a porta 30xxx continua com o Service antigo até o
+workload provar que serve).
+
+**Armadilha dentro da armadilha**: a fase 5 (apagar o Deployment antigo)
+rodava mesmo quando a fase 4 falhava. O `db-mcp-gateway` de produção ficou
+sem NodePort (`HTTP 000`) por alguns minutos. O Deployment antigo **é** o
+rollback — ele só pode cair quando o Service novo está no ar.
+
+A causa da fase 4 falhar foi banal e vale registrar: a fase 2.5 passou a
+gravar `/tmp/<app>.<svc>.render.yaml`, e a fase 4 continuou lendo
+`.svc.yaml`. O `grep` que deveria extrair o tipo devolveu vazio, o `apply`
+apontou para arquivo inexistente, e o script seguiu. Duas fases que
+compartilham um arquivo precisam compartilhar o **nome** dele — derivar duas
+vezes é como as duas divergem.
+
+### 26. Trocar o glob do ApplicationSet antes do push apaga tudo.
+
+O AppSet lê do
+GitHub, não do disco. A sequência natural — editar o repo, aplicar o
+`appset` novo, depois commitar — gera **zero** Applications, porque o glob
+novo (`gitops/apps/*/*`) não casa com o layout que ainda está no remoto. O
+controller então considera as 15 Applications antigas órfãs e as remove, e
+remover uma Application com `prune: true` **apaga os recursos dela**. Ou seja:
+o cluster inteiro, por uma ordem de dois comandos.
+
+**Regra**: `git push` é pré-requisito do `appset apply`, não consequência.
+Antes de mudar o glob, confirmar que o remoto já tem a árvore que o glob
+descreve (`git rev-parse HEAD` = `git rev-parse origin/main`).
+
+Sintoma de que deu errado, se algum dia der: o AppSet reconcilia e o número
+de Applications **cai**, em vez de se manter. Ver o `allPaths` no log do
+`applicationset-controller` — ele lista o que o glob realmente viu no repo.
+
+### 27. O caminho do usuário não passa pelo `ingress-nginx` do cluster.
+
+O que
+serve os 19 hosts é o nginx **em Docker no host**, que faz `proxy_pass` para
+`127.0.0.1:<NodePort>`. O `ingress-nginx` do cluster tem zero `Ingress` e
+escuta em `30945`/`30421`, fora do caminho.
+
+Duas consequências práticas que custaram tempo:
+
+- **"Não mudar NodePort" não é conservadorismo, é o que preserva o
+  site.** O contrato entre o nginx do host e o cluster é só `host:porta`.
+  Namespace, nome de Deployment e ClusterIP podem mudar à vontade; a porta
+  30xxx não pode.
+- **Testar com `curl --resolve host:443:127.0.0.1` dá `000` em todos os
+  hosts** — inclusive nos que nunca foram tocados. Não há nada escutando na
+  443 do host: o TLS termina no Cloudflare e chega em HTTP na 80. Um alarme
+  de "todos os 24 hosts caíram" que era só o teste errado. O teste válido é
+  `curl https://host/` de verdade, ou `curl http://127.0.0.1:<NodePort>/`.
+
+### 28. `head -c 160` no corpo de um login é vazamento de token.
+
+Ao verificar a
+rotação da senha do Kubero, o script fez `echo "corpo: $(head -c 160 ...)"`.
+O corpo é JSON com `access_token` no topo — um JWT de ~528 caracteres. Em 160
+caracteres já vão o header e boa parte do payload.
+
+Neste caso não houve dano: o corte caiu no meio da assinatura, e o pedaço não
+autentica (`/api/auth/session` devolveu `400`). Mas isso foi **sorte de onde
+o corte caiu**, não desenho. Um `head -c 600` teria exfiltrado sessão de admin.
+
+**Regra**: em verificação de credencial, imprimir só `sorted(d.keys())`,
+tamanho e presença — nunca `d["token"][:N]`. E se o corpo for logado por
+engano, redigir o arquivo **e** trate o token como comprometido: rotacione de
+novo se ele estiver completo.
+
+### 29. O status HTTP do login do Kubero não significa nada.
+
+`POST
+/api/auth/login` devolve **201** para credencial inválida (com
+`{"statusCode":403}` no corpo) **e** para requisição vazia (com
+`{"status":400}`). Julgar por `code` daria "login ok" para qualquer coisa.
+A verificação olha o corpo: ausência de `status`/`message` **e** presença de
+`access_token`.
+
+E a senha do admin **não** está no Secret: `KUBERO_ADMIN_PASSWORD` é
+referenciado no Deployment, mas a chave não existe em `kubero-secrets` — o
+admin é semeado no **SQLite** (`/app/server/db/kubero.sqlite`, tabela `User`)
+na primeira subida, e o log confirma `No legacy users to migrate. KUBERO_USERS
+is not set.` Trocar a env não faz nada.
+
+### 30. Perder as posições do coletor não "duplica log", perde log.
+
+O `alloy-logs` guardava o estado em `emptyDir`, justificado no manifesto com
+uma frase que parecia razoável: *"perder isso num restart significa reler
+desde o começo e duplicar linhas já enviadas, não perder dado"*. Era o
+contrário, e o Loki prova.
+
+A cadeia, medida em 2026-10-23 num pod com 1h45 de vida:
+
+```
+loki_write_sent_entries_total      285.328
+loki_write_dropped_entries_total   115.696   reason=ingester_error
+```
+
+**29% das linhas foram perdidas**, não duplicadas:
+
+1. o pod reinicia (nesta sessão: rollout do `ingress`, do `minio`, do
+   `excalidraw`);
+2. o `emptyDir` vai junto, e o Alloy torna a ler o log Docker **desde o byte
+   zero** — o log tem linhas de 19/10, 20/10, 22/10;
+3. o Loki rejeita com `400 entry too far behind` (default
+   `reject_old_samples_max_age: 1h`);
+4. `4xx` não tem retry no `loki.write` → `no retries left, dropping data`.
+
+O sintoma no `alloy` é uma linha `error` a cada ~10 min, fácil de ignorar
+entre `warn` de tailer. O sintoma no Loki é `write operation failed` no
+ingester. Nenhum dos dois aparece no Grafana, porque o dado que falta é
+exatamente o que ninguém consulta.
+
+**Regra**: o `positions.yml` é estado, não cache. Se o componente tem
+`storage.path`, ele precisa de volume persistente — e a justificativa
+"perder só duplica" tem de ser medida no destino, não deduzida. Duplicar e
+perder são resultados opostos da mesma causa, e qual dos dois acontece
+depende do `reject_old_samples_max_age` de quem recebe.
+
+**Corolário**: PVC em `local-path` é `WaitForFirstConsumer`. O PVC fica
+`Pending` para sempre até um pod montá-lo, então "esperar `Bound` antes de
+criar o pod" trava num laço que nunca termina. A ordem é pod → `Bound`.
+
+**Corolário 2**: com PVC `RWO` num nó único, o scheduler deixa **dois pods**
+montarem o mesmo volume — `RWO` significa "um nó", não "um pod". Um
+`RollingUpdate` com `maxSurge` padrão faria os dois escreverem
+`positions.yml` e corromperia o arquivo que deveria salvar. `Recreate` é
+obrigatório, e ele esbarra na armadilha 11 (campo defaultado pela API) →
+deletar o Deployment e deixar o ArgoCD recriar.
+
+### 31. `hostPort` fura o firewall do host; NodePort não.
+
+Medido em 2026-10-23, do meu computador contra `168.138.135.6`:
+
+| porta | mecanismo | de fora |
+| --- | --- | --- |
+| `5000` | `hostPort` (registry) | **200/401 em 27 ms** |
+| `30092`, `30900`, `30821`, `30200`, `30080`, `31844` | NodePort | `000` (timeout) |
+| `80` | `hostPort` (ingress) | 200 |
+
+A causa está na ordem das cadeias do netfilter. O `INPUT` do host termina com
+`-A INPUT -p tcp -j REJECT --reject-with tcp-reset`, e é isso que barra os
+NodePorts. Mas `hostPort` no k3s é **DNAT** (`CNI-DN-...-j DNAT
+--to-destination 10.42.0.x:porta`), e pacote DNAT não percorre o `INPUT`: entra
+por `PREROUTING` e sai por `FORWARD`. O `REJECT` do `INPUT` nunca é consultado.
+O NodePort, ao contrário, é atendido por um socket do `kube-proxy` no próprio
+host — e aí sim passa pelo `INPUT`.
+
+**Consequência**: trocar um serviço de NodePort para `hostPort` muda o modelo de
+exposição sem que o firewall perceba. Foi o que aconteceu com o `registry` na
+fatia 8: ele está em **HTTP puro com Basic auth** no IP público, e a Cloudflare
+não cobre isso (só proxia 80/443; na 5000 o `dig` resolve direto para o IP do
+host). Não é vazamento de dado — `/v2/_catalog` responde `401` — mas é uma porta
+que ninguém escolheu abrir.
+
+Saídas, em ordem de custo:
+
+- regra no `INPUT` para a 5000 vinda de fora, deixando passar `127.0.0.1` e as
+  redes dos pods — o CI **precisa** dela aberta, então tem de ser por origem,
+  não cega;
+- pôr a 5000 atrás da Cloudflare com TLS (quebra o nome das 39 imagens:
+  `registry.giomartins.dev:5000` viraria `registry.giomartins.dev`);
+- mover o push do CI para ghcr e deixar o registry só para pull interno.
+
+**Regra**: depois de trocar NodePort por `hostPort`, testar a porta **de fora**
+(`curl http://<ip-publico>:<porta>`), nunca só do host. Do host os dois parecem
+iguais, e o `iptables -S INPUT` mostra um `REJECT` que dá a falsa impressão de
+que tudo está fechado.
+
+
 ## Bootstrap (uma vez por cluster)
 
 
@@ -1535,178 +1768,3 @@ Ficam de fora, e por motivo, não por esquecimento:
     console passa a aparecer nos sites. Os objetos antigos eram idênticos por
     md5 (nada se perdeu); o que estava quebrado era só o caminho de escrita novo.
     O container `minio` continua rodando como rollback, com os dados de 28/09.
-
-18. **Todo cliente guarda o ClusterIP, e o alias não o conserta.** Quando um
-   produtor muda de namespace, o Service antigo vira `ExternalName` e ganha
-   **outro** ClusterIP. Clientes que resolveram o nome uma vez continuam
-   discando para o IP morto para sempre. Visto em três formas:
-
-   - `ioredis` (`evolution-api`): `redis disconnected` a cada segundo, DNS
-     resolvendo certo, TCP aberto pelo `nc`. O pod tinha nascido 6 h antes do
-     alias; o IP antigo (`10.43.236.33`) estava morto. Curou com
-     `rollout restart`.
-   - `amqplib` (`domain-worker`): `dial tcp 10.43.108.164:5672: connection
-     refused`. Curou sozinho no retry — `amqplib` re-resolve, `ioredis` não.
-   - OTLP/gRPC (`alloy`): `rpc error: code = Unavailable desc = no children to
-     pick from`. O resolver gRPC guardou a resolução vazia de quando o `tempo`
-     ainda não tinha endpoints. Curou com restart.
-
-   **Regra**: depois de mover um produtor, reiniciar todo consumidor que ainda
-   esteja no namespace antigo. Não confiar em "não há erro no log" — ausência de
-   erro é compatível com cliente que nunca reconectou.
-
-   **Corolário para verificação**: `nslookup`, `getent` e `nc` de dentro do pod
-   provam **DNS e rede**, não provam **o cliente da aplicação**. São testes que
-   passam enquanto o serviço está caído. A prova tem que ser o contador do
-   próprio cliente (`sent_spans_total`, `loki_write_sent_entries_total`) ou um
-   registro novo no destino.
-19. **`kubectl apply -f` em manifesto cru ignora o `namespace:` do
-   kustomization.** O `deployment.yaml` não tem `namespace:` — ele vive em
-   `kustomization.yaml`, e o transformer do kustomize é quem o injeta. Aplicar o
-   arquivo cru cria tudo em `default`:
-
-   - o PVC nasce em `default`, o `local-path` provisiona um volume **novo e
-     vazio**, e o pod sobe "saudável" ao lado do real;
-   - dois Redis rodando, um com 860 chaves e outro com zero. Nada no
-     `kubectl get pods` distingue os dois.
-
-   **Regra**: `apply -k`, ou aplicar a saída de `kubectl kustomize`, que já traz
-   `namespace:` em cada documento. Nunca `apply -f` num arquivo de app.
-20. **Um detector de PVC que falha em silêncio é pior que nenhum.** O movedor da
-   fatia 7 dizia `sem PVC — nada a rebindar` e seguia. O `awk` usava
-   `match(doc, /^  name: .../)` sobre um buffer **multi-linha**, e `^` em awk
-   ancora no início da *string*, não da linha. Resultado: zero PVCs detectados,
-   `apply` criou um PVC novo, e o **Postgres subiu com 0 tabelas** enquanto as
-   1176 linhas de `finance_transactions` ficavam num PV órfão. Restaurado sem
-   perda (rebind no PV original, contagem conferida), mas o serviço ficou vazio
-   por alguns minutos e os workers registraram
-   `relation "finance_of_accounts" does not exist`.
-
-   **Regra**: quando o render declara PVC e o PV não é encontrado, **abortar**.
-   E a testemunha de integridade é **bytes**, não contagem de arquivos — o Loki
-   apaga chunks obsoletos ao fechar (5092 → 5090) e abortou a janela por engano.
-21. **Esperar `Ready` antes de publicar o Service trava dependência
-   intra-namespace.** O `db-mcp-gateway` (nginx) resolve o upstream `db-mcp` no
-   start e morre com `host not found in upstream` se o Service não existir. A
-   ordem "aplicar workload → esperar Ready → trocar Services" esperava Ready de
-   um pod que só ficaria Ready depois da troca. Agora o Service sobe antes, como
-   `ClusterIP` sem `nodePort` (a porta 30xxx continua com o Service antigo até o
-   workload provar que serve).
-
-   **Armadilha dentro da armadilha**: a fase 5 (apagar o Deployment antigo)
-   rodava mesmo quando a fase 4 falhava. O `db-mcp-gateway` de produção ficou
-   sem NodePort (`HTTP 000`) por alguns minutos. O Deployment antigo **é** o
-   rollback — ele só pode cair quando o Service novo está no ar.
-
-   A causa da fase 4 falhar foi banal e vale registrar: a fase 2.5 passou a
-   gravar `/tmp/<app>.<svc>.render.yaml`, e a fase 4 continuou lendo
-   `.svc.yaml`. O `grep` que deveria extrair o tipo devolveu vazio, o `apply`
-   apontou para arquivo inexistente, e o script seguiu. Duas fases que
-   compartilham um arquivo precisam compartilhar o **nome** dele — derivar duas
-   vezes é como as duas divergem.
-22. **Trocar o glob do ApplicationSet antes do push apaga tudo.** O AppSet lê do
-   GitHub, não do disco. A sequência natural — editar o repo, aplicar o
-   `appset` novo, depois commitar — gera **zero** Applications, porque o glob
-   novo (`gitops/apps/*/*`) não casa com o layout que ainda está no remoto. O
-   controller então considera as 15 Applications antigas órfãs e as remove, e
-   remover uma Application com `prune: true` **apaga os recursos dela**. Ou seja:
-   o cluster inteiro, por uma ordem de dois comandos.
-
-   **Regra**: `git push` é pré-requisito do `appset apply`, não consequência.
-   Antes de mudar o glob, confirmar que o remoto já tem a árvore que o glob
-   descreve (`git rev-parse HEAD` = `git rev-parse origin/main`).
-
-   Sintoma de que deu errado, se algum dia der: o AppSet reconcilia e o número
-   de Applications **cai**, em vez de se manter. Ver o `allPaths` no log do
-   `applicationset-controller` — ele lista o que o glob realmente viu no repo.
-23. **O caminho do usuário não passa pelo `ingress-nginx` do cluster.** O que
-   serve os 19 hosts é o nginx **em Docker no host**, que faz `proxy_pass` para
-   `127.0.0.1:<NodePort>`. O `ingress-nginx` do cluster tem zero `Ingress` e
-   escuta em `30945`/`30421`, fora do caminho.
-
-   Duas consequências práticas que custaram tempo:
-
-   - **"Não mudar NodePort" não é conservadorismo, é o que preserva o
-     site.** O contrato entre o nginx do host e o cluster é só `host:porta`.
-     Namespace, nome de Deployment e ClusterIP podem mudar à vontade; a porta
-     30xxx não pode.
-   - **Testar com `curl --resolve host:443:127.0.0.1` dá `000` em todos os
-     hosts** — inclusive nos que nunca foram tocados. Não há nada escutando na
-     443 do host: o TLS termina no Cloudflare e chega em HTTP na 80. Um alarme
-     de "todos os 24 hosts caíram" que era só o teste errado. O teste válido é
-     `curl https://host/` de verdade, ou `curl http://127.0.0.1:<NodePort>/`.
-24. **`head -c 160` no corpo de um login é vazamento de token.** Ao verificar a
-   rotação da senha do Kubero, o script fez `echo "corpo: $(head -c 160 ...)"`.
-   O corpo é JSON com `access_token` no topo — um JWT de ~528 caracteres. Em 160
-   caracteres já vão o header e boa parte do payload.
-
-   Neste caso não houve dano: o corte caiu no meio da assinatura, e o pedaço não
-   autentica (`/api/auth/session` devolveu `400`). Mas isso foi **sorte de onde
-   o corte caiu**, não desenho. Um `head -c 600` teria exfiltrado sessão de admin.
-
-   **Regra**: em verificação de credencial, imprimir só `sorted(d.keys())`,
-   tamanho e presença — nunca `d["token"][:N]`. E se o corpo for logado por
-   engano, redigir o arquivo **e** trate o token como comprometido: rotacione de
-   novo se ele estiver completo.
-
-25. **O status HTTP do login do Kubero não significa nada.** `POST
-   /api/auth/login` devolve **201** para credencial inválida (com
-   `{"statusCode":403}` no corpo) **e** para requisição vazia (com
-   `{"status":400}`). Julgar por `code` daria "login ok" para qualquer coisa.
-   A verificação olha o corpo: ausência de `status`/`message` **e** presença de
-   `access_token`.
-
-   E a senha do admin **não** está no Secret: `KUBERO_ADMIN_PASSWORD` é
-   referenciado no Deployment, mas a chave não existe em `kubero-secrets` — o
-   admin é semeado no **SQLite** (`/app/server/db/kubero.sqlite`, tabela `User`)
-   na primeira subida, e o log confirma `No legacy users to migrate. KUBERO_USERS
-   is not set.` Trocar a env não faz nada.
-
-26. **Perder as posições do coletor não "duplica log", perde log.** O
-    `alloy-logs` guardava o estado em `emptyDir`, justificado no manifesto com
-    uma frase que parecia razoável: *"perder isso num restart significa reler
-    desde o começo e duplicar linhas já enviadas, não perder dado"*. Era o
-    contrário, e o Loki prova.
-
-    A cadeia, medida em 2026-10-23 num pod com 1h45 de vida:
-
-    ```
-    loki_write_sent_entries_total      285.328
-    loki_write_dropped_entries_total   115.696   reason=ingester_error
-    ```
-
-    **29% das linhas foram perdidas**, não duplicadas:
-
-    1. o pod reinicia (nesta sessão: rollout do `ingress`, do `minio`, do
-       `excalidraw`);
-    2. o `emptyDir` vai junto, e o Alloy torna a ler o log Docker **desde o byte
-       zero** — o log tem linhas de 19/10, 20/10, 22/10;
-    3. o Loki rejeita com `400 entry too far behind` (default
-       `reject_old_samples_max_age: 1h`);
-    4. `4xx` não tem retry no `loki.write` → `no retries left, dropping data`.
-
-    O sintoma no `alloy` é uma linha `error` a cada ~10 min, fácil de ignorar
-    entre `warn` de tailer. O sintoma no Loki é `write operation failed` no
-    ingester. Nenhum dos dois aparece no Grafana, porque o dado que falta é
-    exatamente o que ninguém consulta.
-
-    **Regra**: o `positions.yml` é estado, não cache. Se o componente tem
-    `storage.path`, ele precisa de volume persistente — e a justificativa
-    "perder só duplica" tem de ser medida no destino, não deduzida. Duplicar e
-    perder são resultados opostos da mesma causa, e qual dos dois acontece
-    depende do `reject_old_samples_max_age` de quem recebe.
-
-    **Corolário**: PVC em `local-path` é `WaitForFirstConsumer`. O PVC fica
-    `Pending` para sempre até um pod montá-lo, então "esperar `Bound` antes de
-    criar o pod" trava num laço que nunca termina. A ordem é pod → `Bound`.
-
-    **Corolário 2**: com PVC `RWO` num nó único, o scheduler deixa **dois pods**
-    montarem o mesmo volume — `RWO` significa "um nó", não "um pod". Um
-    `RollingUpdate` com `maxSurge` padrão faria os dois escreverem
-    `positions.yml` e corromperia o arquivo que deveria salvar. `Recreate` é
-    obrigatório, e ele esbarra na armadilha 11 (campo defaultado pela API) →
-    deletar o Deployment e deixar o ArgoCD recriar.
-
-
-
-
