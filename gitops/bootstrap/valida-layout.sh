@@ -64,6 +64,58 @@ dup=$(find gitops/apps -mindepth 2 -maxdepth 2 -type d -exec basename {} \; | so
 [ -n "$dup" ] && falha "diretórios de serviço com nome repetido: $(echo $dup)"
 
 echo
+echo "=== 4b. a lista de cada namespace no LAYOUT.yaml bate com o disco ==="
+# ## Por que isto faltava, e o que custou
+#
+# As checagens 1-4 olham o Disco; a 5 olha os aliases. Nenhuma comparava o
+# LAYOUT.yaml com a árvore. Resultado: `dns-aliases` e `ingress` existiam em
+# `gitops/apps/support/` e **não** apareciam na lista do LAYOUT, e o validador
+# dizia "LAYOUT CONSISTENTE" havia commits. O LAYOUT é o mapa que
+# `sync-app-secrets.sh` e quem escolhe a próxima fatia leem -- um mapa que omite
+# dois serviços é pior que mapa nenhum, porque dá confiança.
+#
+# A comparação é de CONJUNTO: ordem no LAYOUT é legível, não contratual.
+python3 - gitops/LAYOUT.yaml <<'PY' || FALHAS=$((FALHAS+1))
+import os, re, sys
+
+txt = open(sys.argv[1]).read().splitlines()
+layout = {}
+for linha in txt:
+    # Só o bloco de namespaces: `namespace:  svc svc svc`, antes de `aliases:`.
+    if linha.startswith("aliases:"):
+        break
+    m = re.match(r"^([a-z][a-z0-9-]*):\s+(.*\S)\s*$", linha)
+    if m:
+        layout[m.group(1)] = set(m.group(2).split())
+
+disco = {}
+base = "gitops/apps"
+for ns in sorted(os.listdir(base)):
+    p = os.path.join(base, ns)
+    if not os.path.isdir(p):
+        continue
+    disco[ns] = {d for d in os.listdir(p) if os.path.isdir(os.path.join(p, d))}
+
+falhas = 0
+for ns in sorted(set(layout) | set(disco)):
+    no_mapa = layout.get(ns, set())
+    no_disco = disco.get(ns, set())
+    if no_mapa != no_disco:
+        so_mapa = sorted(no_mapa - no_disco)
+        so_disco = sorted(no_disco - no_mapa)
+        if so_mapa:
+            print("  FALHA: LAYOUT.yaml lista em %s, mas não existe no disco: %s"
+                  % (ns, " ".join(so_mapa)))
+        if so_disco:
+            print("  FALHA: existe em gitops/apps/%s/ e o LAYOUT.yaml não lista: %s"
+                  % (ns, " ".join(so_disco)))
+        falhas += 1
+
+print("  %d namespaces, %d serviços conferidos" % (len(disco), sum(len(v) for v in disco.values())))
+sys.exit(1 if falhas else 0)
+PY
+
+echo
 echo "=== 5. o conjunto de aliases do repo bate com o LAYOUT.yaml ==="
 # ## O que esta checagem NÃO consegue provar
 #

@@ -305,6 +305,38 @@ data:
       }
     }
 ---
+# Estado do Alloy: `positions.yml` de cada fonte de log.
+#
+# A versão anterior usava `emptyDir` com esta justificativa: "perder isso num
+# restart significa reler desde o começo e duplicar linhas já enviadas, não
+# perder dado. PVC aqui seria custo sem benefício."
+#
+# A premissa está errada, e o Loki prova. O Alloy volta a ler o log Docker desde
+# o começo do arquivo, e o arquivo contém linhas de DIAS atrás. O Loki rejeita
+# com `400 entry too far behind, oldest acceptable timestamp is ...` (default
+# `reject_old_samples_max_age: 1h`), o Alloy não tem retry para 4xx, e o lote
+# inteiro é descartado. Medido no pod com 1h45 de vida:
+#
+#   loki_write_sent_entries_total      282.836
+#   loki_write_dropped_entries_total   115.696   (reason=ingester_error)
+#
+# Ou seja: 29% das linhas foram perdidas, não duplicadas. O custo do PVC é
+# 1Gi, dos quais o estado real ocupa 376K.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: alloy-state
+  labels:
+    app.kubernetes.io/name: alloy-logs
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      # Medido: 376K com 61 streams (20 containers Docker + pods). 1Gi é folga
+      # de três ordens de grandeza, e o local-path não sabe crescer sozinho.
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -316,6 +348,17 @@ spec:
   # filesystem do nó, então uma réplica cobre todos os nós. Duas réplicas
   # duplicariam cada linha no Loki.
   replicas: 1
+  # ## Recreate, nunca RollingUpdate
+  #
+  # O PVC é `ReadWriteOnce`, e RWO no Kubernetes significa "um nó", não "um pod".
+  # Num nó único (este) o scheduler deixa um SEGUNDO pod montar o mesmo volume.
+  # Com o `maxSurge: 25%` padrão, o rollout subiria o pod novo antes de matar o
+  # velho, os dois escreveriam `positions.yml` ao mesmo tempo, e o arquivo
+  # chegaria corrompido no pod que fica -- trocando perda de log por perda de
+  # log. `Recreate` mata antes de subir; a indisponibilidade é de segundos e o
+  # único afetado é a coleta de log, não o tráfego.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: alloy-logs
@@ -371,11 +414,11 @@ spec:
           configMap:
             name: alloy-logs-config
         - name: state
-          # emptyDir, não PVC: o estado do Alloy guarda posição de leitura de
-          # log. Perder isso num restart significa reler desde o começo e
-          # duplicar linhas já enviadas, não perder dado. PVC aqui seria custo
-          # sem benefício.
-          emptyDir: {}
+          # PVC, não `emptyDir`: ver o comentário do PVC `alloy-state` no topo
+          # deste arquivo. As posições são o que impede a releitura de logs de
+          # dias atrás, que o Loki rejeita por `entry too far behind`.
+          persistentVolumeClaim:
+            claimName: alloy-state
         - name: docker-sock
           hostPath:
             path: /var/run/docker.sock
