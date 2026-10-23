@@ -326,7 +326,7 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | `domain-api` | rodando (ocioso) | **rodando** (NodePort 30800) | **k8s** — `domain` → `:30800` ✅ |
 | `domain-worker` | rodando | manifesto, **`replicas: 0`** | Docker (único escritor do CQRS) |
 | `finance-api` | rodando (só consumo interno) | **rodando** (NodePort 30818) | **k8s** — `finance-api` → `:30818` ✅ |
-| `finance-openfinance-worker` | rodando | manifesto, **`replicas: 0`** | Docker |
+| `finance-openfinance-worker` | **parado** | **rodando** (`replicas: 1`) | **k8s** — poller do Polp, sem tráfego externo ✅ |
 | `finance-customersupport-worker` | rodando | manifesto, **`replicas: 0`** | Docker |
 | `vaultwarden-api` | rodando | **rodando** (ClusterIP:8080) | sem tráfego externo (bridge interna) |
 | `vaultwarden` | rodando | manifesto, **`replicas: 0`** | Docker (`vault` → `:8222`) |
@@ -376,6 +376,11 @@ Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
 
 ### O que foi provado, não assumido
 
+- **Primeiro container Docker desligado de vez**: `finance-openfinance-worker`
+  parado (`exited`), pod atendendo em `replicas: 1`. Prova de que assumiu o
+  trabalho: `finance_of_raw` recebeu linha com `captured_at` de 1 segundo antes
+  da consulta, com o Docker parado. Não é "parece que subiu" — o dado apareceu
+  no banco.
 - **O timer das pontes se auto-recupera**: apontei o `EndpointSlice` do
   postgres para `172.18.0.250` (inexistente) de propósito; em <1 min o timer
   reaplicou `172.18.0.16` sozinho. Ele compara o IP atual com o do container,
