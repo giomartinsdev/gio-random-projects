@@ -6,11 +6,22 @@ Infra-as-code and app code for the VPS, all under `modules/`.
 modules/
   apps/      independently deployed apps — tela (api, frontend), domain (api, worker), finance (api, workers, frontend), hub-frontend
   infra/     terraform (Cloudflare DNS/Access + VPS containers), registry, watchtower
+stacks/      Docker Compose stacks managed by Dockhand (the current, live plane)
+gitops/      Kubernetes manifests reconciled by ArgoCD (the new plane, side by side)
 ```
+
+## Two planes, one host
+
+`stacks/` (Docker Compose via Dockhand) is what serves traffic today.
+`gitops/` (k3s + ArgoCD) is being brought up **alongside** it, with nothing
+cut over yet — no DNS, no ingress route, no existing container touched.
+Services migrate one at a time, each with a one-line rollback. See
+[`gitops/README.md`](gitops/README.md) for why the cluster deliberately has
+no ingress controller and how a service moves over.
 
 ## Pipelines
 
-Four, split by language and by layer — one pipeline per concern rather
+Five, split by language and by layer — one pipeline per concern rather
 than one generic pipeline branching on every difference between them:
 
 - **`.github/workflows/go-ci-cd.yml`** — CI/CD for Go apps under
@@ -22,6 +33,11 @@ than one generic pipeline branching on every difference between them:
   (Vite, `VITE_*` build-args baked into the bundle).
 - **`.github/workflows/tf-ci-cd.yml`** — plans on PRs touching
   `modules/infra/terraform/`, applies on push to `main`.
+- **`.github/workflows/gitops-validate.yml`** — renders every app under
+  `gitops/apps/` with kustomize, validates against the Kubernetes schema
+  with `kubeconform -strict`, and fails on a movable (`latest`) image tag.
+  A broken manifest merged to `main` doesn't fail loudly — ArgoCD just sits
+  in `SyncFailed` while the cluster keeps running the old version.
 
 Unlike Go's and Python's, the TypeScript pipeline doesn't auto-discover
 by file presence alone — see `docs/novo-app-ci-cd.md` for its

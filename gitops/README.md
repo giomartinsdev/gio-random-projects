@@ -117,7 +117,34 @@ Escolhemos a primeira quando o serviço migrar para valer.
 
 ## Estado atual
 
+Verificado em 2026-10-23, depois do bootstrap:
+
 | serviço | Docker | k8s | tráfego |
 | --- | --- | --- | --- |
-| `excalidraw` | rodando | **rodando** (NodePort 30023) | ainda no Docker (`draw.giomartins.dev` → `:8023`) |
+| `excalidraw` | rodando | **rodando** (NodePort 30023, `Synced/Healthy`) | ainda no Docker (`draw.giomartins.dev` → `:8023`) |
 | demais 32 containers | rodando | — | Docker |
+| 20 domínios do ingress | — | — | idênticos antes/depois (mesmo status HTTP) |
+
+Recursos: k3s + ArgoCD ≈ 700 MB de RAM. Sobram ~11 GB. Nenhuma porta
+existente foi disputada — o cluster usa 6443 (API), 10250 (kubelet),
+8472 (VXLAN) e o NodePort 30023.
+
+### O que foi provado, não assumido
+
+- **Pull do registry privado**: pod puxou `excalidraw` em 1,4 s pelo mirror
+  `127.0.0.1:5000` com `imagePullSecret`.
+- **Conteúdo idêntico**: `:30023` e `:8023` devolvem 6605 bytes e o mesmo
+  `<title>`.
+- **`selfHeal`**: `kubectl scale --replicas=2` à mão foi revertido para 1
+  sozinho.
+- **git → cluster**: mudar `replicas` para 2 no git e dar push fez o
+  cluster subir a segunda réplica sem nenhum `kubectl`.
+- **Zero regressão**: 20/20 domínios com o mesmo status HTTP antes, depois
+  e após reiniciar o k3s.
+
+## Próximo serviço a migrar
+
+`adminer` é o candidato seguinte: stateless, sem volume, e quase ninguém
+usa — se cair por alguns minutos, o custo é ~zero. Depois dele, os
+stateless com tráfego (`excalidraw` de fato, `hub`, `maus`), e só então os
+stateful.
