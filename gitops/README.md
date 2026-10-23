@@ -376,6 +376,12 @@ Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
 
 ### O que foi provado, não assumido
 
+- **Persistência do `local-path` exercitada**: PVC `Pending` é o comportamento
+  correto (`WaitForFirstConsumer`) enquanto o Deployment tem `replicas: 0` —
+  mas significava que o caminho de dados nunca tinha sido testado. Criei um PVC
+  e um pod descartáveis: escreveu, montou e o PV ficou `Bound`. Os dados vão
+  para `/var/lib/rancher/k3s/storage/` (136 GB livres; o postgres ocupa 2,3 GB,
+  então a fatia 6 cabe). Criar PVC sem pod **não** prova nada — fica `Pending`.
 - **Primeiro container Docker desligado de vez**: `finance-openfinance-worker`
   parado (`exited`), pod atendendo em `replicas: 1`. Prova de que assumiu o
   trabalho: `finance_of_raw` recebeu linha com `captured_at` de 1 segundo antes
