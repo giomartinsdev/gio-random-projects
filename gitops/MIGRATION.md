@@ -44,14 +44,39 @@ A ordem é por risco crescente, e não por importância. Estado é sempre por
 | 3b ✅ | tráfego de apps já migrados | `adminer`, `draw`, `domain`, `finance-api` no ingress | — | uma linha |
 | 4 ✅ | observabilidade | `prometheus`, `loki`, `tempo`, `grafana` ✅ + `alloy-logs` (novo) | volumes | médio |
 | 5 ✅ | dados de apoio | `minio` ✅, `rabbitmq` ✅ | volumes | médio |
-| 6 ☐ | dados primários | `postgres`, `vaultwarden` | volumes | **alto** |
+| 6 ✅ | dados primários | `postgres`, `vaultwarden` | volumes | **alto** |
 | 7 ☐ | ingress + registry | `ingress`, `registry` | — | alto |
 
-**A fatia 6 foi adiada por decisão explícita em 2026-10-23**: antes de migrar
-`postgres`/`vaultwarden`, o usuário pediu o Rancher como plano de controle.
-Rancher 2.15.2 instalado e validado (ver README, seção "Rancher") — a UI é
-`helm`, fora do `gitops/apps/`, e não altera nenhum serviço em produção. A
-fatia 6 continua sendo o próximo passo e continua exigindo janela.
+**A fatia 6 foi fechada em 2026-10-23.** Antes dela, o usuário pediu o Rancher
+como plano de controle (2.15.2 instalado e validado, ver README). A fatia
+exigia janela e a exigência foi paga do jeito mais barato possível:
+
+`vaultwarden` primeiro (1 MB de SQLite), porque provava o procedimento de volume
+stateful de ponta a ponta sem encostar no banco onde tudo mora. Depois o
+`postgres` (2.4 GB), com paridade medida contra um baseline anotado **antes** da
+parada: 54 das 55 tabelas com contagem idêntica e `finance_transactions` com
+md5 do dado idêntico (`89358a62`, 1176 linhas). A única tabela que divergiu foi
+`audit_log` (+1458 linhas), que é a tabela de escrita ativa — cresceu depois do
+baseline, não é divergência.
+
+O que autorizou o corte do postgres não foi `pg_isready`: um PGDATA vazio
+inicializado na hora também responde. Foi o log do pod dizer
+`database system was shut down at 16:24:07` e `ready to accept connections`
+**sem** `initdb` (`Skipping initialization`), e a prova de que uma conexão nova
+pelo Service chega ao pod (`inet_server_addr()` = IP do pod, com o Docker já
+parado).
+
+Os dois cutovers foram em commits separados de propósito: o pod sobe
+(`replicas: 1`), prova que lê o dado, e **só então** o Service vira. No caso do
+postgres, isso significou 3 commits (manifesto → pod → Service+ponte).
+
+**A armadilha que a fatia custou** (detalhe no README, seção de pontes): o
+timer `sync-external-endpoints` recriava o EndpointSlice manual a cada minuto, e
+com **dois** EndpointSlices para o mesmo Service o kube-proxy balanceia entre
+eles. O domínio servia ora o pod, ora o container. No vaultwarden o sintoma era
+mudo (os dois respondem o mesmo `/api/config`); no postgres seria escrito nos
+dois bancos. Por isso os dois saíram do `MAPA` do timer **no mesmo commit** em
+que o Service ganhou selector.
 
 **Plano de controle exposto em 2026-10-23**: `https://rancher.giomartins.dev`
 (DNS via Terraform, `server{}` com upstream HTTPS no ingress). Não entra como

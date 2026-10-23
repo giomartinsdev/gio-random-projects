@@ -545,10 +545,11 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | `finance-openfinance-worker` | **parado** | **rodando** (`replicas: 1`) | **k8s** — poller do Polp, sem tráfego externo ✅ |
 | `finance-customersupport-worker` | rodando | manifesto, **`replicas: 0`** | Docker |
 | `vaultwarden-api` | rodando | **rodando** (ClusterIP:8080) | sem tráfego externo (bridge interna) |
-| `vaultwarden` | rodando | manifesto, **`replicas: 0`** | Docker (`vault` → `:8222`) |
+| `vaultwarden` | **parado** | **rodando** (NodePort 30822) | **k8s** — `vault` → `:30822`, `/api/config` idêntico byte a byte ✅ |
 | `9router` | rodando | manifesto, **`replicas: 0`** | Docker (`ai` → `:20128`) — **exige parada** |
 | `minio` | rodando (rollback) | **rodando** (NodePort 30900/30901) | **k8s** — 8 buckets idênticos, 3 SPAs ✅ |
 | `rabbitmq` | rodando (rollback) | **rodando** (NodePort 31525/30672) | **k8s** — 29 filas, 12 exchanges, 62 bindings idênticos ✅ |
+| `postgres` | **parado** | **rodando** (ClusterIP:5432) | **k8s** — 54/55 tabelas idênticas, `finance_transactions` md5 igual ✅ |
 | `prometheus` | rodando | **rodando** (ClusterIP:9090) | **k8s** — 898M copiados, 8.841 séries ✅ |
 | `loki` | rodando | **rodando** (ClusterIP:3100) | **k8s** — 976M copiados ✅ |
 | `tempo` | rodando | **rodando** (ClusterIP:3200) | **k8s** — 308M copiados ✅ |
@@ -572,31 +573,41 @@ RAM; com o Rancher e o que ele instala (Fleet/Turtles/CAPI), ≈ 2,5 GB. Sobram
 
 ### Serviços de ponte (`gitops/apps/bridges/`)
 
-Quatro `Service` sem selector, ligados por `EndpointSlice` aos containers Docker
-que ainda não migraram. Eram sete; `minio` migrou na fatia 5 e `rabbitmq` em
-2026-10-23 (viraram Services com selector em `gitops/apps/<app>/`). Os nomes são **idênticos aos do Compose** — é o que
-permite migrar um consumidor sem tocar em nenhuma env var:
+**Duas** `Service` sem selector, ligadas por `EndpointSlice` aos containers
+Docker que ainda não migraram. Eram sete. `minio` migrou na fatia 5, `rabbitmq`
+em 2026-10-23, e `postgres` + `vaultwarden` fecharam a fatia 6 (viraram Services
+com selector em `gitops/apps/<app>/`). Os nomes são **idênticos aos do Compose**
+— é o que permite migrar um consumidor sem tocar em nenhuma env var:
 
 | Service | container | porta |
 | --- | --- | --- |
-| `postgres` | postgres | 5432 |
 | `alloy` | alloy | 4318 |
-| `evolution-api` | evolution-api | 8080 |
 | `evolution-redis` | evolution-redis | 6379 |
-| `vaultwarden` | vaultwarden | 80 |
 
-Morrem quando os dados migrarem (fatia 6): aí o `Service` ganha `selector` e o
-`EndpointSlice` manual deixa de existir.
+`postgres` e `vaultwarden` saíram desta tabela em 2026-10-23 (fatia 6): os dois
+Services ganharam `selector` e o `EndpointSlice` do controller passou a ser a
+fonte.
+
+Morrem quando os dois últimos containers migrarem: aí o `Service` ganha
+`selector` e o `EndpointSlice` manual deixa de existir.
 
 **`rabbitmq` saiu desta lista em 2026-10-23**, e o motivo de ter sido o último
 está em `gitops/apps/rabbitmq/deployment.yaml`: um broker é ponto de encontro
 compartilhado, e cortá-lo com qualquer consumidor ainda em Docker cria dois
 brokers com zero estado compartilhado, sem erro em log nenhum.
 
-**Exceção deliberada: `rabbitmq`.** Ele tem manifesto pronto com `replicas: 0` e
-**sem** `service.yaml`, porque um broker só pode ser cortado quando todos os
-publishers e consumers estiverem do mesmo lado. Ver
-`gitops/apps/rabbitmq/deployment.yaml` para a lista medida de quem está onde.
+**`postgres` e `vaultwarden` saíram em 2026-10-23** (fatia 6). Os dois tinham uma
+diferença em relação a `rabbitmq`/`minio` que mudou o procedimento: o pod não
+alcança a rede Docker, então **não havia como rodar os dois em paralelo e
+comparar**. Minio e RabbitMQ tinham armazenamento separado e puderam conviver
+por horas; aqui a cópia só faz sentido se o dado for o mesmo, e o pod não
+conversa com o container.
+
+O que substituiu a comparação lado a lado foi **baseline anotado antes da
+parada**: contagem por tabela + md5 de uma tabela real, medidos com o container
+ainda no ar; depois do corte, a mesma consulta no pod. Para um banco, "o pod
+subiu" não prova nada — `pg_isready` responde num PGDATA vazio, e um SQLite
+recém-criado tem `integrity_check ok` com zero usuários.
 
 ### NodePorts ocupados
 
@@ -613,6 +624,8 @@ publishers e consumers estiverem do mesmo lado. Ver
 | 30800 | domain-api |
 | 30808 | evolution-api |
 | 30818 | finance-api |
+| 30821 | db-mcp gateway |
+| 30822 | vaultwarden |
 | 30900 | minio s3 |
 | 30901 | minio console |
 | 30945 | ingress-nginx (http) |
@@ -681,6 +694,36 @@ público.
   Service, que abre conexão do zero. Foi assim que o bug do nome de porta
   apareceu.
 
+- **Fatia 6 fechada com o Docker parado**: `postgres` e `vaultwarden` migraram
+  em 2026-10-23. A prova não foi "o pod subiu":
+  - `vaultwarden`: `/api/config` idêntico **byte a byte** pelo domínio e pelo
+    container (589 bytes, mesmo sha256), `rsa_key.pem` com sha256 idêntico (a
+    chave de assinatura, então sessões antigas continuam válidas), e o
+    `vaultwarden-api` sincronizando **42 vault items** — o mesmo número do PVC.
+  - `postgres`: log do pod dizendo `database system was shut down at 16:24:07`
+    e `ready to accept connections` **sem** `initdb`; 54 das 55 tabelas com
+    contagem idêntica; `finance_transactions` com **md5 do dado idêntico**
+    (`89358a62`, 1176 linhas); e uma conexão nova, com o Docker **já parado**,
+    retornando `inet_server_addr() = 10.42.0.231` (o IP do pod).
+  - A única tabela que divergiu foi `audit_log` (+1458 linhas) — é a tabela de
+    escrita ativa, cresceu entre o baseline e o corte. Divergir aqui seria o
+    esperado mesmo num banco saudável; comparar contagem de tabela viva sem
+    congelar escrita é comparar instantes diferentes.
+- **O split silencioso do kube-proxy com dois EndpointSlices**: depois de o
+  Service do vaultwarden ganhar selector, o timer `sync-external-endpoints`
+  continuou recriando o EndpointSlice manual. Com **dois** EndpointSlices para o
+  mesmo Service, o kube-proxy balanceia entre eles: o domínio servia ora o pod,
+  ora o container. O sintoma é mudo — `/api/config` responde igual dos dois
+  lados, e o `vaultwarden-api` sincroniza 42 itens dos dois jeitos (mesmo dado).
+  Só um **marcador por requisição** revelou: 6 requisições com query única, 6 no
+  log do pod, 0 no do container. Antes da correção (tirar o serviço do `MAPA` do
+  timer) era metade para cada lado. No postgres isso teria sido escrito em dois
+  bancos.
+- **Remover arquivo de `kustomization` é duas edições**: `git rm` do YAML **e**
+  a linha em `resources`. O `kustomize` não avisa no commit; a Application
+  `bridges` virou `Unknown` com `ComparisonError` só no reconcile. Nada caiu
+  porque o Service já era gerenciado pela Application `postgres`, mas as duas
+  pontes restantes dependiam de `bridges` reconciliando.
 - **Terceiro cutover, primeira API de produção**: `domain.giomartins.dev` →
   `:30800`. Paridade provada com resposta **autenticada de dados reais**:
   `GET /finance/daily-summary?user_id=…&date=2026-10-23` devolveu 200 e
@@ -934,15 +977,18 @@ O que foi feito, em ordem:
 
 Ordem daqui pra frente:
 
-1. **Fatia 6** (`postgres`, `vaultwarden`): janela, backup verificado,
-   rollback alto. É o último bloqueio grande.
-2. **`9router`** (fatia 2): provisionado, `replicas: 0`. Exige parada por causa
+1. **`9router`** (fatia 2): provisionado, `replicas: 0`. Exige parada por causa
    do SQLite com WAL — ver o procedimento escrito no topo de
    `gitops/apps/9router/deployment.yaml`. **Não é migrável pelo agente sem
    aceitar o risco**: ele serve a própria sessão que faria a migração.
-3. **`evolution-redis`**: ainda é ponte. Não é cache descartável — guarda o
+2. **`evolution-redis`**: ainda é ponte. Não é cache descartável — guarda o
    estado Baileys da sessão do WhatsApp (2M, AOF + RDB). Migra com o mesmo
    cuidado de um banco, não como cache.
+3. **Fatia 7** (`ingress`, `registry`): risco alto e ganho baixo. O `ingress` é
+   o que serve os 19 hosts; trocá-lo é trocar o caminho de todo o tráfego por um
+   Ingress do cluster que hoje serve **zero** objetos. O `registry` guarda as
+   imagens próprias (`minio`, `excalidraw`, `vaultwarden-api`, `9router`…), então
+   derrubá-lo impede subir pods que dependem delas.
 4. **`tela-*`** por último: `hostNetwork` + UDP (coturn/mediamtx).
 
 ### O que ainda está em Docker e por quê
