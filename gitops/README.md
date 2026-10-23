@@ -6,7 +6,9 @@ rodam lado a lado na mesma VPS, e a migração é serviço a serviço.
 
 ```
 gitops/
-  bootstrap/appset.yaml        # o ÚNICO manifesto aplicado à mão, 1x por cluster
+  bootstrap/                   # aplicado à mão, 1x por cluster
+    appset.yaml                #   ApplicationSet que varre apps/
+    argocd-server-nodeport.yaml #   expõe a UI do ArgoCD na 30080
   apps/<serviço>/              # 1 pasta = 1 Application (descoberta automática)
     kustomization.yaml
     deployment.yaml
@@ -61,27 +63,42 @@ sudo k3s kubectl create secret generic registry-credentials -n giomartins \
   --from-file=.dockerconfigjson=/root/.docker/config.json \
   --type=kubernetes.io/dockerconfigjson
 
-# 5. o único apply manual do GitOps
+# 5. expõe a UI do ArgoCD na 30080 e roda o GitOps
+sudo k3s kubectl apply -f gitops/bootstrap/argocd-server-nodeport.yaml
 sudo k3s kubectl apply -f gitops/bootstrap/appset.yaml
 ```
 
 Do passo 5 em diante, **nada mais é `kubectl apply`**: adicionar uma
 pasta em `gitops/apps/` cria o Application sozinho.
 
+O passo 3 do `install.yaml` e o passo 5 (`argocd-server-nodeport.yaml`) são
+os únicos manifestos de plataforma. Para reaplicar do zero num cluster novo,
+a ordem é: k3s → registries.yaml → namespace argocd → install.yaml →
+namespace giomartins + secret → `server.insecure=true` no
+`argocd-cmd-params-cm` → rollout do `argocd-server` → os dois YAMLs de
+`bootstrap/`.
+
 ### Acessar o ArgoCD
 
-Ele não tem Ingress (a 80 é do nginx). O acesso é por túnel SSH.
+**A tela do cluster é o próprio ArgoCD** — não há uma UI separada de
+Kubernetes para instalar. Ele mostra os Applications, a árvore de recursos
+(Deployment → ReplicaSet → Pod → Service), diff contra o git, logs, eventos e
+o botão de sync.
 
 **Cuidado com a porta 8080: ela já é do `evolution-api`** (`127.0.0.1:8080`).
 Um port-forward para 8080 falha com "address already in use" — e pior, quem
 apontar o navegador para 8080 vai falar com o evolution, não com o ArgoCD.
-Use uma porta alta livre.
+
+O ArgoCD roda em modo `server.insecure` (HTTP atrás do proxy), igual ao resto
+da infra: o TLS termina no Cloudflare, o nginx fala HTTP na 80. Ele está
+exposto no **NodePort 30080**, que **não** é alcançável de fora (a security
+list da Oracle bloqueia 30000-32767). O acesso é por túnel:
 
 ```bash
-# No SEU computador: 18443 local -> 18443 na VPS
-ssh -L 18443:127.0.0.1:18443 ubuntu@168.138.135.6 \
-  'sudo k3s kubectl -n argocd port-forward svc/argocd-server 18443:443 --address 127.0.0.1'
-# depois: https://localhost:18443  (usuário: admin)
+# No SEU computador. -N mantém o túnel aberto sem rodar comando remoto;
+# sem -N o ssh encerra assim que o comando remoto termina.
+ssh -N -L 30080:127.0.0.1:30080 ubuntu@168.138.135.6
+# depois: http://localhost:30080  (usuário: admin)
 ```
 
 Senha inicial:
@@ -91,7 +108,28 @@ sudo k3s kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath='{.data.password}' | base64 -d
 ```
 
-Verificado: `/healthz` responde `200` e `/api/version` responde `v3.5.6`.
+Verificado: `/healthz` → `200`, `/api/version` → `v3.5.6`, login
+`POST /api/v1/session` → `200`, e a UI serve `<title>Argo CD</title>`.
+
+Para ter a tela em `https://argocd.giomartins.dev` (sem túnel), o caminho é o
+mesmo dos outros serviços: adicionar o hostname em
+`modules/infra/terraform/locals.tf` (`hostname` + `port = 30080`), `terraform
+apply` para o A record + Access, e um `server{}` no `default.conf` com
+`proxy_pass http://127.0.0.1:30080`. **Isso ainda não foi feito.**
+
+### Alternativas à UI do ArgoCD
+
+| ferramenta | o que dá | custo |
+| --- | --- | --- |
+| `k9s` | TUI no terminal: pods, logs, shell, eventos. Mais rápido que qualquer web UI para operar no dia a dia | 1 binário, ~0 RAM (roda na sua máquina) |
+| `kubectl` + `--watch` | o básico, sem instalar nada | já existe |
+| Grafana | dashboards de cluster **se** houver kube-prometheus-stack | pesado (~1-2 GB); hoje o Grafana só vê métricas OTel das apps |
+| Headlamp / Kubernetes Dashboard | UI web alternativa | mais um serviço para expor e proteger |
+
+Recomendação: **ArgoCD para estado de deploy + `k9s` para operação**. O k9s
+usa o kubeconfig (copie `/etc/rancher/k3s/k3s.yaml`, troque
+`server: https://127.0.0.1:6443` pelo IP e acesse por túnel na 6443); o plano
+de controle está em `127.0.0.1:6443` e a security list já bloqueia de fora.
 
 ## Como um serviço migra
 
