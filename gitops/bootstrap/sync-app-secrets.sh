@@ -76,6 +76,12 @@ MAPA=(
   # existiram -- e o modo de falha seria "credencial invalida", que aponta para
   # o lugar errado.
   "minio:minio:MINIO_ROOT_USER,MINIO_ROOT_PASSWORD"
+  # rabbitmq: as duas credenciais do usuario `domain`. Com o mnesia copiado o
+  # usuario ja existe no banco interno, mas as variaveis precisam existir para o
+  # caso de o volume ser recriado do zero -- e `RABBITMQ_DEFAULT_PASS` sem
+  # `RABBITMQ_DEFAULT_USER` faz o entrypoint falhar alto, o que e melhor que
+  # subir sem autenticacao.
+  "rabbitmq:rabbitmq:RABBITMQ_DEFAULT_USER,RABBITMQ_DEFAULT_PASS"
 )
 
 alvo="${1:-}"
