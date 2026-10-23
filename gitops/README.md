@@ -299,7 +299,7 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 
 | serviço | Docker | k8s | tráfego |
 | --- | --- | --- | --- |
-| `excalidraw` | rodando | **rodando** (NodePort 30023) | ainda no Docker (`draw` → `:8023`) |
+| `excalidraw` | rodando (ocioso) | **rodando** (NodePort 30023) | **k8s** — `draw` → `:30023` ✅ |
 | `adminer` | rodando (ocioso) | **rodando** (NodePort 30092) | **k8s** — `adminer` → `:30092` ✅ |
 | `domain-api` | rodando | **rodando** (ClusterIP:8000) | ainda no Docker (`domain` → `:8000`) |
 | `domain-worker` | rodando | manifesto, **`replicas: 0`** | Docker (único escritor do CQRS) |
@@ -359,6 +359,11 @@ Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
   k8s: o log do pod recebe de `10.42.0.1` (a ponte do cluster) e o log do
   Docker parou de receber requisições no mesmo instante. Rollback é uma linha
   no `default.conf` (`30092` → `8092`) + `nginx -s reload`.
+- **Segundo cutover, SPA com WebSocket**: `draw.giomartins.dev` → `:30023`.
+  Paridade provada por hash, não por inspeção: HTML `4409a45a…` e bundle
+  `index-CcD73-6E.js` `23c190c5…` idênticos nos dois lados. O WebSocket já
+  estava configurado no `server{}` e continuou funcionando. Request marcado
+  (`?prova=draw-k8s`) apareceu no pod e não no container.
 - **adminer no k8s alcança o postgres em Docker**: PDO devolve
   `password authentication failed` com senha errada de propósito — prova de
   que o TCP abriu *e* o protocolo do Postgres respondeu. `could not connect`
