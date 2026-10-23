@@ -45,18 +45,12 @@ metadata:
   labels:
     app.kubernetes.io/name: ingress
 spec:
-  # `replicas: 0` no primeiro commit. O corte (1) só entra depois de:
-  #
-  #   1. o `default.conf` ter sido provado numa porta de teste (8080) dentro da
-  #      netns do host, com os 19 hosts respondendo o mesmo status que na 80;
-  #   2. o container Docker estar parado — dois processos não podem publicar a
-  #      mesma porta 80.
-  #
-  # Subir com `replicas: 1` antes disso entraria em CrashLoopBackOff ("bind()
-  # to 0.0.0.0:80 failed") e, quando o Docker parasse, o k8s levaria até 5 min
-  # de backoff para tentar de novo. `replicas: 0` é o que torna o corte um
-  # instante, e não uma espera.
-  replicas: 0
+  # `replicas: 1` é o estado final. O corte é feito por
+  # `gitops/bootstrap/corta-ingress.sh`, que para o container Docker (dono da
+  # porta 80) e só então espera este pod. Enquanto o container existir e estiver
+  # de pé, esta réplica NÃO sobe ("bind() to 0.0.0.0:80 failed") — a colisão é a
+  # trava, e o script resolve a ordem.
+  replicas: 1
   # Recreate: duas instâncias com `hostNetwork` disputariam a porta 80, e o
   # RollingUpdate padrão tentaria exatamente isso.
   strategy:
