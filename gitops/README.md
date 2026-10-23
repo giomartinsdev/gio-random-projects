@@ -388,8 +388,10 @@ e mesmo que ele esteja `exited`. A política só muda em runtime com:
 docker update --restart=no postgres vaultwarden vaultwarden-api
 ```
 
-Depois disso, `docker inspect` mostra `no` e um redeploy do stack não os
-ressuscita.
+Depois disso, `docker inspect` mostra `no`.
+
+**Cuidado**: `no` **não** impede um redeploy de ressuscitar o container. Isso é
+a armadilha 13 — a frase anterior aqui dizia o contrário e estava errada.
 
 **Por que isso importa mais que estética**: com `unless-stopped`, um redeploy do
 Dockhand religaria o `postgres` no volume congelado, ao lado do pod que já
@@ -399,6 +401,59 @@ cutover, não limpeza opcional.
 
 **Regra**: mudar `restart` no arquivo sem `docker update` é mudança de
 documentação, não de comportamento.
+
+### 13. `restart: "no"` não impede `compose up` de subir um container parado
+
+`restart:` rege o **auto-restart após crash**. Não é uma trava de "não suba".
+`docker compose up` inicia o serviço parado de qualquer jeito. Provado em
+sandbox:
+
+```bash
+$ docker stop rp-test
+$ docker compose up -d
+ Container rp-test Starting
+ Container rp-test Started
+$ docker inspect rp-test -f '{{.State.Status}} {{.HostConfig.RestartPolicy.Name}}'
+running no
+```
+
+Isso importa porque o Dockhand tem `auto_update=1` e cron `0 3 * * *` nos
+projetos `project-infra` e `project-apps`. Todo dia às 03:00 UTC ele roda
+`compose up` no diretório que ele mesmo sincroniza (`/opt/stacks/<projeto>/`)
+— não em `/opt/giomartins/stacks/`. O log de 2026-10-23 03:00 é explícito:
+
+```
+Container postgres Recreate → Container postgres Started
+Container vaultwarden Recreate → Container vaultwarden Started
+```
+
+Ou seja: os volumes congelados voltariam a subir contra os pods, e duas
+sessões Baileys disputariam o mesmo número do WhatsApp.
+
+**A trava correta é `profiles:`**:
+
+```yaml
+  postgres:
+    profiles: ["retired"]
+    restart: "no"
+```
+
+Validado em sandbox: `up` sem `--profile` **pula** o serviço, `up
+--remove-orphans` **não** o remove, e o volume sobrevive. O rollback continua
+barato — uma flag, não um `git revert`:
+
+```bash
+docker compose --profile retired up -d postgres
+```
+
+**Limite**: um serviço não-profileado **não pode** ter `depends_on` para um
+profileado — o compose recusa o projeto inteiro (`service "app" depends on
+undefined service "db"`). Se o dependente ainda está vivo, os dois ficam fora
+do profile.
+
+**Regra**: ao aposentar um serviço, `restart: "no"` **e** `profiles: ["retired"]`.
+O primeiro é higiene; o segundo é o que segura o redeploy diário.
+
 
 ## Bootstrap (uma vez por cluster)
 
@@ -1141,3 +1196,27 @@ Ficam de fora, e por motivo, não por esquecimento:
    está rodando. A saída é reconciliar os dois lados e versionar o que falta
    (`evolution-redis`, o stack `ai`), ou desligar o Dockhand e tratar o repo como
    fonte única.
+
+   **Atualização 2026-10-23 (armadilha 13)**: o parágrafo acima subestima o
+   problema. Não é que `/opt/giomartins/stacks/` divirja — é que **ele não é o
+   diretório que roda nada**. Os containers de aplicação vêm de
+   `/opt/stacks/project-infra/` e `/opt/stacks/project-apps/`, que o Dockhand
+   sincroniza do git (`git_stacks.repository_id=1`,
+   `compose_path=stacks/project-infra.yml`) e redeploya às 03:00 UTC. Dos 37
+   containers, só 5 rodam de `/opt/giomartins/stacks/` (`ingress`, `registry`,
+   `dockhand`, e 2 one-shots); 18 são de `project-infra`, 12 de `project-apps`,
+   2 do `minecraft`.
+
+   Por isso as edições da fatia 6 em `/opt/giomartins/stacks/` eram inertes para
+   o Docker: o arquivo que o `compose up` lê é outro. O `restart: "no"` que
+   aplicamos em runtime via `docker update` funcionava, mas teria sido desfeito
+   na recriação seguinte de qualquer forma (o YAML de lá não tinha o `no`).
+
+   A lição: antes de editar YAML "do host", confirme qual arquivo o processo de
+   deploy realmente consome:
+
+   ```bash
+   docker inspect <container> \
+     -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'
+   ```
+

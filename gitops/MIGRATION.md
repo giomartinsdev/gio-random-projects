@@ -83,6 +83,22 @@ que o Service ganhou selector.
 fatia — não é migração de serviço, é ferramenta de operação. O `server-url` do
 Rancher aponta para esse hostname, então agentes futuros já nascem certos.
 
+**A fatia 6 tinha um furo que só apareceu no fim do dia.** O `restart: "no"` que
+aplicamos nos serviços migrados não impedia a ressurreição: o Dockhand roda
+`compose up` nos projetos `project-infra` e `project-apps` **todo dia às 03:00
+UTC** (`auto_update=1`), e `up` sobe container parado mesmo com `restart: "no"`.
+O log de 03:00 daquele dia mostra `Container postgres Recreate → Started`. Sem
+correção, os volumes congelados do `postgres`/`vaultwarden` voltariam a subir
+contra os pods na madrugada seguinte, e duas sessões Baileys disputariam o mesmo
+número.
+
+A trava correta é `profiles: ["retired"]`, validada em sandbox (`up` pula,
+`--remove-orphans` não remove, volume sobrevive). Doze serviços passaram a
+tê-la; onze ficaram de fora por ainda estarem vivos (`evolution-redis`, `minio`,
+`alloy`, `9router`, `db-mcp*`, observabilidade, `excalidraw`, `tela-*`, `maus*`).
+Rollback segue sendo uma flag: `docker compose --profile retired up -d <svc>`.
+Detalhe na armadilha 13 do README.
+
 **O `rabbitmq` foi cortado em 2026-10-23.** Um broker é ponto de encontro
 compartilhado: se o Service passasse a apontar para o pod enquanto algum consumidor
 ainda estivesse em Docker, ficariam dois brokers com zero estado compartilhado —
