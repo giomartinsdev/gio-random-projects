@@ -376,6 +376,17 @@ Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
 
 ### O que foi provado, não assumido
 
+- **O timer das pontes se auto-recupera**: apontei o `EndpointSlice` do
+  postgres para `172.18.0.250` (inexistente) de propósito; em <1 min o timer
+  reaplicou `172.18.0.16` sozinho. Ele compara o IP atual com o do container,
+  não espera "algo mudar".
+- **Cuidado com o falso 200**: durante essa sabotagem, `domain` continuou
+  respondendo 200 — mas por causa do pool de conexões do app, com sockets já
+  abertos. Um pod novo teria falhado. "A URL respondeu 200" **não** prova que a
+  ponte está boa; a verificação honesta é `nc` de um pod **novo** para o
+  Service, que abre conexão do zero. Foi assim que o bug do nome de porta
+  apareceu.
+
 - **Terceiro cutover, primeira API de produção**: `domain.giomartins.dev` →
   `:30800`. Paridade provada com resposta **autenticada de dados reais**:
   `GET /finance/daily-summary?user_id=…&date=2026-10-23` devolveu 200 e
