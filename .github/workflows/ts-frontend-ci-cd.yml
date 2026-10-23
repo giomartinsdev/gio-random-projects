@@ -204,13 +204,27 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ env.MINIO_ROOT_USER }}
           AWS_SECRET_ACCESS_KEY: ${{ env.MINIO_ROOT_PASSWORD }}
           AWS_DEFAULT_REGION: us-east-1
+          # NodePort do Service `minio` no k3s (9000 -> 30900).
+          #
+          # Por que não `http://minio:9000`: esse nome resolve pelo DNS do
+          # Docker para o CONTAINER, que desde 2026-10-23 é só o rollback. O CI
+          # continuaria publicando num container ocioso enquanto o site serve do
+          # pod — verde, sem erro, e o bucket servido nunca recebia o build.
+          # `172.18.0.1` é o gateway da rede `apps` no host, então o NodePort
+          # é alcançável de dentro dela (verificado: resposta S3 real).
+          #
+          # Quando o container do minio sair de vez, o nome `minio` volta a ser
+          # resolvível pelo Service do cluster para pods — mas continuaria NÃO
+          # resolvendo para containers Docker, porque o DNS do Docker não conhece
+          # o cluster. Por isso o endereço explícito, e não o nome.
+          MINIO_ENDPOINT: http://172.18.0.1:30900
         run: |
           docker run --rm --network apps \
             -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
             -v "$REMOTE_DIR:/dist" \
             amazon/aws-cli:latest \
             s3 sync /dist "s3://${{ matrix.app }}" \
-              --endpoint-url http://minio:9000 --delete
+              --endpoint-url "$MINIO_ENDPOINT" --delete
 
       - name: Clean up the copy on the VPS
         if: always()

@@ -69,6 +69,13 @@ MAPA=(
   # Copiá-las para o Secret as esconderia sem protegê-las, e o pod leria o
   # manifest para descobrir em que porta escuta.
   "9router:9router:JWT_SECRET,INITIAL_PASSWORD"
+  # minio: so as duas credenciais. As MINIO_*_FILE do container sao da IMAGEM
+  # (estao no Dockerfile, nao no Compose): MINIO_ROOT_USER_FILE=access_key,
+  # MINIO_KMS_SECRET_KEY_FILE=kms_master_key etc. Copia-las para o Secret e
+  # depois para o env do pod faria o MinIO procurar arquivos em /data que nunca
+  # existiram -- e o modo de falha seria "credencial invalida", que aponta para
+  # o lugar errado.
+  "minio:minio:MINIO_ROOT_USER,MINIO_ROOT_PASSWORD"
 )
 
 alvo="${1:-}"
