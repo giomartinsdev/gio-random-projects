@@ -384,6 +384,8 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | `vaultwarden-api` | rodando | **rodando** (ClusterIP:8080) | sem tráfego externo (bridge interna) |
 | `vaultwarden` | rodando | manifesto, **`replicas: 0`** | Docker (`vault` → `:8222`) |
 | `9router` | rodando | manifesto, **`replicas: 0`** | Docker (`ai` → `:20128`) — **exige parada** |
+| `minio` | rodando (rollback) | **rodando** (NodePort 30900/30901) | **k8s** — 8 buckets idênticos, 3 SPAs ✅ |
+| `rabbitmq` | rodando | manifesto, **`replicas: 0`**, sem Service | **bloqueado**: 4 consumidores em Docker |
 | `prometheus` | rodando | **rodando** (ClusterIP:9090) | **k8s** — 898M copiados, 8.841 séries ✅ |
 | `loki` | rodando | **rodando** (ClusterIP:3100) | **k8s** — 976M copiados ✅ |
 | `tempo` | rodando | **rodando** (ClusterIP:3200) | **k8s** — 308M copiados ✅ |
@@ -405,22 +407,27 @@ RAM. Sobram ~10 GB. Nenhuma porta do host foi disputada — o cluster usa
 
 ### Serviços de ponte (`gitops/apps/bridges/`)
 
-Sete `Service` sem selector, ligados por `EndpointSlice` aos containers Docker
-que ainda não migraram. Os nomes são **idênticos aos do Compose** — é o que
+Cinco `Service` sem selector, ligados por `EndpointSlice` aos containers Docker
+que ainda não migraram. Eram sete; `minio` migrou na fatia 5 (virou Service com
+selector em `gitops/apps/minio/`), e `vaultwarden` tinha migrado antes. Os nomes são **idênticos aos do Compose** — é o que
 permite migrar um consumidor sem tocar em nenhuma env var:
 
 | Service | container | porta |
 | --- | --- | --- |
 | `postgres` | postgres | 5432 |
 | `rabbitmq` | rabbitmq | 5672 |
-| `minio` | minio | 9000 |
 | `alloy` | alloy | 4318 |
 | `evolution-api` | evolution-api | 8080 |
 | `evolution-redis` | evolution-redis | 6379 |
 | `vaultwarden` | vaultwarden | 80 |
 
-Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
-`selector` e o `EndpointSlice` manual deixa de existir.
+Morrem quando os dados migrarem (fatia 6): aí o `Service` ganha `selector` e o
+`EndpointSlice` manual deixa de existir.
+
+**Exceção deliberada: `rabbitmq`.** Ele tem manifesto pronto com `replicas: 0` e
+**sem** `service.yaml`, porque um broker só pode ser cortado quando todos os
+publishers e consumers estiverem do mesmo lado. Ver
+`gitops/apps/rabbitmq/deployment.yaml` para a lista medida de quem está onde.
 
 ### NodePorts ocupados
 
@@ -428,6 +435,8 @@ Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
 | --- | --- |
 | 30023 | excalidraw |
 | 30028 | 9router (**reservado**, pod em `replicas: 0`) |
+| 30567 | rabbitmq amqp (**reservado**, pod em `replicas: 0`) |
+| 30572 | rabbitmq management (**reservado**) |
 | 30080 | argocd-server |
 | 30092 | adminer |
 | 30200 | kubero |
@@ -435,6 +444,8 @@ Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
 | 30421 | ingress-nginx (https) |
 | 30800 | domain-api |
 | 30818 | finance-api |
+| 30900 | minio s3 |
+| 30901 | minio console |
 | 30945 | ingress-nginx (http) |
 
 `30028` está reservado pelo Service do `9router` mesmo sem pod: um Service
@@ -457,6 +468,15 @@ quem for escolher a próxima porta vê o número ocupado e não planeja em cima 
   (`container`, `job`, `level`, `service_name`), e o Grafana respondeu
   `200` com a senha do Secret e `1 dashboard / 1 usuário` nos dois lados —
   prova de que o `grafana.db` copiado é o real, não um banco novo.
+- **`minio/minio` não é mais puxável do Docker Hub** — `pull access denied,
+  repository does not exist`. O container rodava há 11 horas com aquele digest
+  porque a imagem estava no cache local; nenhum pod herda esse cache. A imagem
+  foi retaggeada para o registry próprio com tag imutável. **Consequência: o
+  cluster depende de um registry de cópia única para subir o minio.**
+- **`RABBITMQ_NODENAME` não substitui `spec.hostname`** — fixar o nome do nó num
+  pod falha com `{epmd_error, "...", nxdomain}`, porque o epmd resolve o *host*
+  do nome pelo DNS. A solução é `spec.hostname: <nome-antigo>` no Pod. Provado
+  com volume vazio: hostname, diretório mnesia e `node()` coincidem.
 - **`alloy` em Docker não alcança a API do k3s**: `https://172.18.0.1:6443`
   responde `connection refused` de dentro do container. Por isso o coletor novo
   roda como pod (ServiceAccount), e não como edição do config existente — não
@@ -641,3 +661,15 @@ Ficam de fora, e por motivo, não por esquecimento:
    não é migração.
 8. **`argocd-cm` sem `resource.exclusions` é estado do cluster, não do git** —
    o mesmo item 2 visto pelo outro lado.
+9. **A imagem do `minio` existe só no registry local.** `minio/minio` saiu do
+   Docker Hub; a única cópia é
+   `registry.giomartins.dev:5000/minio:RELEASE.2025-09-07T16-13-09Z`, num
+   volume em `/var/lib/registry`. Se o host se perder, o minio não volta de
+   lugar nenhum — diferente das apps próprias, que a CI reconstrói a partir do
+   git. Saída: espelhar essa imagem para um registro externo (ghcr público ou
+   um tar em object storage) e registrar o procedimento de restauração.
+10. **O `minio` no k8s não é alcançável por containers Docker pelo nome.** O DNS
+   do Docker resolve `minio` para o container (que segue de pé como rollback), e
+   não enxerga Services do cluster. O CI de frontend foi ajustado para
+   `http://172.18.0.1:30900`; qualquer outro `docker run` que precise de S3 terá
+   o mesmo problema e precisa do mesmo endereço explícito.
