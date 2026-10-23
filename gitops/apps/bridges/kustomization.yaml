@@ -46,7 +46,6 @@ resources:
   - rabbitmq.yaml
   - alloy.yaml
   - evolution-redis.yaml
-  - evolution-api.yaml
 
 # NÃO usar `commonLabels` aqui. O kustomize injeta commonLabels também no
 # `spec.selector` dos Services, e um Service de ponte precisa ficar SEM

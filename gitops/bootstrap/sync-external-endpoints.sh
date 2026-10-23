@@ -67,7 +67,6 @@ MAPA=(
   "rabbitmq:rabbitmq"
   "alloy:alloy"
   "evolution-redis:evolution-redis"
-  "evolution-api:evolution-api"
   "vaultwarden:vaultwarden"
 )
 
