@@ -93,12 +93,29 @@ services:
   # Ver a nota do topo: provisório até as imagens do `ai.yml` existirem.
   # A imagem é a do upstream (ghcr), NÃO a do registry privado, e o volume
   # `ninerouter_data` (external) preserva providers/credenciais/uso.
+  #
+  # MIGRADO para o k8s em 2026-10-23 (cutover em duas portas: git commit
+  # 23af05f subiu o pod com os dados copiados do `ninerouter_data` para o PVC
+  # `9router-data`; commit b2d6887 trocou o ingress de `:20128` para
+  # `:30028`). Este container permanece de pé como rollback barato -- virar
+  # `ai.giomartins.dev` de volta é trocar uma linha no ingress e esperar o
+  # ArgoCD, NÃO religar nada daqui.
+  #
+  # `profiles: ["retired"]` é a trava real: o `compose up` diário do Dockhand
+  # (03:00 UTC) subiria este container de qualquer jeito, e um 9router
+  # paralelo teria o PRÓPRIO SQLite (o mesmo arquivo, dois escritores) --
+  # corrompe o banco em silêncio.
+  #
+  # O volume `ninerouter_data` fica intacto. É o rollback profundo: se o PVC
+  # do k8s for perdido, `docker compose --profile retired up -d 9router`
+  # devolve o serviço como ele era em 2026-10-23 22:44.
   9router:
     image: ghcr.io/decolua/9router:latest
     container_name: 9router
     labels:
       giomartins.dev/project: ai
-    restart: unless-stopped
+    profiles: ["retired"]
+    restart: "no"
     environment:
       JWT_SECRET: ${NINEROUTER_JWT_SECRET:?defina NINEROUTER_JWT_SECRET}
       INITIAL_PASSWORD: ${NINEROUTER_INITIAL_PASSWORD:?defina NINEROUTER_INITIAL_PASSWORD}
