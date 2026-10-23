@@ -39,16 +39,19 @@ A ordem é por risco crescente, e não por importância. Estado é sempre por
 | # | fatia | serviços | estado | rollback |
 | --- | --- | --- | --- | --- |
 | 1 ✅ | stateless puro | `excalidraw`, `adminer` | — | trivial |
-| 2 ☐ | stateless com volume próprio | `9router` | SQLite + WAL | trivial |
+| 2 ◐ | stateless com volume próprio | `9router` | SQLite + WAL | **parada obrigatória** |
 | 3 ✅ | apps com dependência de dados | `domain-api` ✅, `domain-worker` ✅, `finance-api` ✅, `finance-*` ✅, `vaultwarden-api` ✅, `db-mcp` ✅ | — | trivial |
 | 3b ✅ | tráfego de apps já migrados | `adminer`, `draw`, `domain`, `finance-api` no ingress | — | uma linha |
-| 4 ☐ | observabilidade | `prometheus`, `loki`, `tempo`, `grafana`, `alloy` | volumes | médio |
+| 4 ✅ | observabilidade | `prometheus`, `loki`, `tempo`, `grafana` ✅ + `alloy-logs` (novo) | volumes | médio |
 | 5 ☐ | dados de apoio | `minio`, `rabbitmq` | volumes | médio |
 | 6 ☐ | dados primários | `postgres`, `vaultwarden` | volumes | **alto** |
 | 7 ☐ | ingress + registry | `ingress`, `registry` | — | alto |
 
 Fatias 5 e 6 são as únicas que exigem janela de manutenção. Todas as outras
-são quentes.
+são quentes — com uma exceção que apareceu na prática: o `9router` também
+exige parada, não por ser stateful no sentido clássico, mas porque SQLite em
+WAL não admite dois escritores. "Stateless com volume próprio" não é sinônimo
+de "cutover quente".
 
 A fatia 2 encolheu: `hub` não é um container (é um bucket servido pelo
 `minio`), e `maus` precisa de `docker.sock` + `/data` do host — não migra sem

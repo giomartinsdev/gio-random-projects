@@ -183,6 +183,41 @@ EndpointSlice novo, com os IPs errados, mesmo depois de o selector sumir.
 Depois de corrigir o `commonLabels`, apague `kubectl delete endpoints <svc> -n
 giomartins` para cada ponte — senão o espelho ressuscita o problema.
 
+### 7. Diretório novo no ApplicationSet pode demorar, e a ordem dos fatos engana
+
+Criar `gitops/apps/<novo>/` e dar push **não** faz o Application aparecer. O
+sintoma é `Error from server (NotFound): applications.argoproj.io "<novo>" not
+found` ao tentar anotar refresh — e é fácil ler isso como "o manifesto está
+errado".
+
+O que realmente acontece, medido:
+
+1. `annotate appset root ... refresh=hard` **não** força o gerador `git`. O
+   annotation é honrado pelo controller de Application, não pelo que lista
+   diretórios.
+2. Depois de `rollout restart` do `applicationset-controller`, a primeira
+   listagem pode vir **antes** de o `repo-server` atualizar o clone. Foi
+   exatamente o que aconteceu: listagem às 11:48:43, `git fetch` concluído às
+   11:49:05. A listagem viu o repo antigo e concluiu, corretamente para o que
+   viu, que `9router` não existia.
+3. O requeue seguinte chegou ~3 min depois, já com o clone fresco, e o
+   Application apareceu.
+
+Regra: depois de criar diretório novo, reinicie os dois (`applicationset-controller`
+e `repo-server`), espere **uma** listagem nova nos logs e confira que o caminho
+apareceu no `allPaths` **com o timestamp de agora** — antes de concluir que algo
+falhou. Procurar `gitops/apps/<novo>` no log é a verificação honesta:
+
+```bash
+sudo k3s kubectl logs -n argocd deploy/argocd-applicationset-controller --since=5m \
+  | grep "applications result from the repo service" | tail -1 \
+  | python3 -c 'import json,sys; print([x for x in json.load(sys.stdin)["allPaths"] if x.startswith("gitops/apps/")])'
+```
+
+Armadilha dentro da armadilha: `kubectl logs --since=20m | grep allPaths | tail -1`
+pode devolver uma linha **antiga** se o pod tiver acabado de subir. Comparar o
+campo `time` do JSON com `date -u`, não confiar na posição da linha.
+
 ## Bootstrap (uma vez por cluster)
 
 ```bash
@@ -348,6 +383,7 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | `finance-customersupport-worker` | rodando | manifesto, **`replicas: 0`** | Docker |
 | `vaultwarden-api` | rodando | **rodando** (ClusterIP:8080) | sem tráfego externo (bridge interna) |
 | `vaultwarden` | rodando | manifesto, **`replicas: 0`** | Docker (`vault` → `:8222`) |
+| `9router` | rodando | manifesto, **`replicas: 0`** | Docker (`ai` → `:20128`) — **exige parada** |
 | `prometheus` | rodando | **rodando** (ClusterIP:9090) | **k8s** — 898M copiados, 8.841 séries ✅ |
 | `loki` | rodando | **rodando** (ClusterIP:3100) | **k8s** — 976M copiados ✅ |
 | `tempo` | rodando | **rodando** (ClusterIP:3200) | **k8s** — 308M copiados ✅ |
@@ -391,11 +427,19 @@ Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
 | NodePort | serviço |
 | --- | --- |
 | 30023 | excalidraw |
+| 30028 | 9router (**reservado**, pod em `replicas: 0`) |
 | 30080 | argocd-server |
 | 30092 | adminer |
 | 30200 | kubero |
+| 30300 | grafana |
 | 30421 | ingress-nginx (https) |
+| 30800 | domain-api |
+| 30818 | finance-api |
 | 30945 | ingress-nginx (http) |
+
+`30028` está reservado pelo Service do `9router` mesmo sem pod: um Service
+`NodePort` existe independente de ter endpoint. Reservar antes é de propósito —
+quem for escolher a próxima porta vê o número ocupado e não planeja em cima dele.
 
 ### O que foi provado, não assumido
 
@@ -532,8 +576,28 @@ Ordem daqui pra frente:
    `finance.giomartins.dev` sai junto — não é container, é bucket do minio.
 2. **Fatia 6** (`postgres`, `vaultwarden`): janela, backup verificado,
    rollback alto.
-3. **Fatia 2** (`9router`): SQLite com WAL, exige parar o container.
+3. **`9router`** (fatia 2): provisionado, `replicas: 0`. Exige parada por causa
+   do SQLite com WAL — ver o procedimento escrito no topo de
+   `gitops/apps/9router/deployment.yaml`. **Não é migrável pelo agente sem
+   aceitar o risco**: ele serve a própria sessão que faria a migração.
 4. **`tela-*`** por último: `hostNetwork` + UDP (coturn/mediamtx).
+
+### O que ainda está em Docker e por quê
+
+Não é pendência esquecida, é ordem deliberada:
+
+| serviço | o que falta |
+| --- | --- |
+| `minio` | fatia 5 — `finance.giomartins.dev` é bucket dele, não container |
+| `rabbitmq` | fatia 5 — 113M de volume, fila de produção |
+| `postgres` | fatia 6 — 332M de dump, é o banco de tudo |
+| `vaultwarden` | fatia 6 — senha do cofre, SQLite |
+| `9router` | parada obrigatória (WAL) + é a porta de IA do host |
+| `evolution-api` + `evolution-redis` | WhatsApp; parar desconecta a sessão |
+| `tela-*` | `hostNetwork` + UDP (coturn, mediamtx) |
+| `maus` | `docker.sock` + `/data` do host; exige redesenho |
+| `alloy` | não alcança a API do k3s; `alloy-logs` cobre os pods |
+| `ingress` | dono da porta 80; sai por último, com janela |
 
 Ficam de fora, e por motivo, não por esquecimento:
 
