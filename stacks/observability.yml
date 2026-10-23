@@ -62,8 +62,13 @@ services:
     volumes:
       - ./observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
       - obs_tempo_data:/var/tempo
-    mem_limit: 512m
-    memswap_limit: 1024m
+    # 1g, não 512m: o replay do WAL + a leitura do meta.json de ~2.5k blocos
+    # no boot passa fácil de meio giga. Com 512m o container era OOMKilled
+    # durante o startup, caía em crash loop (~24k restarts desde 19/10) e o
+    # compactor nunca completava um ciclo -- daí os blocos de 72h+ nunca
+    # saírem e o volume crescer até 1.6G.
+    mem_limit: 1g
+    memswap_limit: 2g
     logging:
       options: { max-size: "10m", max-file: "3" }
     networks: [apps]

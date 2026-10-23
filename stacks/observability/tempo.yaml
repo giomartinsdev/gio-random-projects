@@ -59,12 +59,21 @@ storage:
 
 # Compaction/retention are their own top-level block in Tempo 2.x —
 # nesting them under storage.trace fails to parse ("field compactor
-# not found in type tempodb.Config"). Only block_retention is set:
-# the compaction window and max block size keep Tempo's defaults
-# (1h / 100GiB — far beyond what this box produces).
+# not found in type tempodb.Config").
+#
+# The windows are set explicitly (Tempo's defaults are 1h/1h) so the
+# compactor actually completes cycles instead of only replaying: with
+# the container OOMKilled mid-startup the loop never finished, and
+# blocks from 2026-10-19 outlived the 72h retention by days.
 compactor:
   compaction:
     block_retention: 72h
+    compacted_block_retention: 1h
+    compaction_window: 1h
+    # Smaller output blocks means each compaction cycle reads/writes
+    # less at once, which keeps peak RSS well under the container limit.
+    max_block_bytes: 536870912
+    v2_in_buffer_bytes: 5242880
 
 usage_report:
   reporting_enabled: false
