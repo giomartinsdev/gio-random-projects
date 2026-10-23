@@ -17,16 +17,19 @@
 # A combinação das duas é o motivo de o manifesto existir agora e o cutover
 # ficar para uma janela explícita, com o procedimento escrito abaixo.
 #
-# ## Procedimento de cutover (não executado ainda)
+# ## Procedimento de cutover (EXECUTADO em 2026-10-23)
 #
-#   1. `sudo sqlite3 data.sqlite ".backup /opt/k8s-backups/<data>/9router.sqlite"`
-#      com o container AINDA rodando — `.backup` é consistente sob WAL e não
-#      precisa parar. É a rede de segurança.
-#   2. parar o container (WAL checkpoint no shutdown)
-#   3. copiar `_data/.` para o PVC, com um pod filler (ver copy-obs-volume.sh)
-#   4. religar o container, subir o pod, comparar `/api/health` e a lista de
-#      providers (`/api/providers` ou equivalente)
-#   5. só então virar `ai.giomartins.dev` para o NodePort
+#   1. ✅ `sqlite3 data.sqlite ".backup ..."` com o container AINDA rodando —
+#      `.backup` é consistente sob WAL e não precisa parar. Rede de segurança
+#      em /opt/k8s-backups/2026-10-23-2243-9router/9router.sqlite
+#      (`integrity_check: ok`).
+#   2. ✅ parar o container (WAL encontra-se vazio no shutdown: nenhum
+#      checkpoint pendente)
+#   3. ✅ copiar o volume inteiro para o PVC (`auth/`, `db/`, `logs/`,
+#      `runtime/`, `machine-id`) — 13M, destino verificado com `du`
+#   4. ✅ religar o container (rollback de pé), subir o pod, provar
+#      `/api/health` no NodePort :30028
+#   5. ⏳ então virar `ai.giomartins.dev` no ingress para :30028 (Gate 2)
 #
 # O passo 4 é o que permite rollback: o container volta antes de o pod assumir.
 #
@@ -65,9 +68,12 @@ metadata:
   labels:
     app.kubernetes.io/name: 9router
 spec:
-  # 0 até a janela de cutover: SQLite com WAL não admite dois escritores, e o
-  # container Docker é hoje o único. Ver o procedimento no topo do arquivo.
-  replicas: 0
+  # Cutover executado em 2026-10-23: dados copiados do volume `ninerouter_data`
+  # para o PVC (backup lógico `.backup` + cópia física em
+  # /opt/k8s-backups/2026-10-23-2243-9router/), container religado como rollback
+  # de pé. O `replicas: 1` sobe o pod enquanto o ingress ainda aponta o
+  # container — nenhum tráfego muda aqui.
+  replicas: 1
   # `Recreate`, não `RollingUpdate`: dois pods montando o mesmo PVC RWO nem
   # agendam, mas a intenção precisa estar dita — para este serviço não existe
   # sobreposição de versões, só troca.
