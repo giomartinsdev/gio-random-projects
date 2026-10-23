@@ -39,15 +39,26 @@ A ordem é por risco crescente, e não por importância. Estado é sempre por
 | # | fatia | serviços | estado | rollback |
 | --- | --- | --- | --- | --- |
 | 1 ✅ | stateless puro | `excalidraw`, `adminer` | — | trivial |
-| 2 | stateless com tráfego | `hub`, `maus`, `9router` | volume opcional | trivial |
-| 3 | apps com dependência de dados | `domain-api`, `domain-worker`, `finance-*`, `tela-api`, `vaultwarden-api` | — | trivial |
-| 4 | observabilidade | `prometheus`, `loki`, `tempo`, `grafana`, `alloy` | volumes | médio |
-| 5 | dados de apoio | `minio`, `rabbitmq` | volumes | médio |
-| 6 | dados primários | `postgres`, `vaultwarden` | volumes | **alto** |
-| 7 | ingress + registry | `ingress`, `registry` | — | alto |
+| 2 ☐ | stateless com volume próprio | `9router` | SQLite + WAL | trivial |
+| 3 ✅ | apps com dependência de dados | `domain-api` ✅, `domain-worker` ✅, `finance-api` ✅, `finance-*` ✅, `vaultwarden-api` ✅, `db-mcp` ✅ | — | trivial |
+| 3b ☐ | tráfego de app já migrado | virar `adminer` no ingress | — | uma linha |
+| 4 ☐ | observabilidade | `prometheus`, `loki`, `tempo`, `grafana`, `alloy` | volumes | médio |
+| 5 ☐ | dados de apoio | `minio`, `rabbitmq` | volumes | médio |
+| 6 ☐ | dados primários | `postgres`, `vaultwarden` | volumes | **alto** |
+| 7 ☐ | ingress + registry | `ingress`, `registry` | — | alto |
 
 Fatias 5 e 6 são as únicas que exigem janela de manutenção. Todas as outras
 são quentes.
+
+A fatia 2 encolheu: `hub` não é um container (é um bucket servido pelo
+`minio`), e `maus` precisa de `docker.sock` + `/data` do host — não migra sem
+redesenho. Sobrou o `9router`, e ele tem SQLite com WAL ativo, então deixou de
+ser "trivial" e foi para depois da fatia 3.
+
+O que a fatia 3 provou, e que importa mais que a lista: um serviço migrado
+alcança outro serviço migrado (`finance-api` → `domain-api`), e alcança um que
+ficou em Docker (`domain-api` → `postgres`) — **sem alterar uma única env var**.
+A composição de serviços em estágios diferentes de migração funciona.
 
 ## Como o estado é preservado
 
