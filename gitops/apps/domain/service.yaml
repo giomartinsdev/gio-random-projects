@@ -1,12 +1,16 @@
 # Service do domain-api.
 #
-# ClusterIP, não NodePort: quem consome este serviço são outras aplicações
-# (finance-api, finance-workers) que falam `domain-api:8000` pelo DNS do
-# cluster — o mesmo nome que usavam na rede `apps` do Docker. Um NodePort aqui
-# só abriria uma porta no host sem ninguém para usar.
+# `type: NodePort` serve os dois consumidores com UMA porta:
 #
-# A porta publicada no host (127.0.0.1:8000, para o ingress) continua sendo a
-# do container Docker até a troca de tráfego.
+#   - ClusterIP 8000 continua existindo (todo NodePort também é ClusterIP).
+#     É por ele que finance-api e os workers falam `domain-api:8000` pelo DNS
+#     do cluster, o mesmo nome que usavam na rede `apps` do Docker.
+#
+#   - NodePort 30080 é só para o ingress do host alcançar o pod. Espelha a
+#     convenção das outras migrações (8023→30023, 8092→30092, 8080→30080).
+#
+# Não são duas entradas de porta: um Service não pode ter dois `port` com o
+# mesmo número. O NodePort é uma segunda *forma de alcançar* a mesma porta.
 apiVersion: v1
 kind: Service
 metadata:
@@ -14,9 +18,11 @@ metadata:
   labels:
     app.kubernetes.io/name: domain-api
 spec:
+  type: NodePort
   selector:
     app.kubernetes.io/name: domain-api
   ports:
     - name: http
       port: 8000
       targetPort: http
+      nodePort: 30080
