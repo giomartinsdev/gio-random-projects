@@ -145,9 +145,14 @@ celerybeat.pid
 *.pid
 
 # RabbitMQ
-mnesia/
-rabbitmq/
-rabbitmq-data/
+# Ancorados na raiz de propósito. Sem a "/" inicial, `rabbitmq/` casa com
+# QUALQUER diretório chamado `rabbitmq` em qualquer nível — e engoliu
+# `gitops/apps/rabbitmq/` inteiro, em silêncio: `git add` não reclamou, o
+# commit ficou vazio para esse caminho, e o ArgoCD simplesmente gerou 12
+# Applications em vez de 13. O manifesto do broker nunca chegou ao remoto.
+/mnesia/
+/rabbitmq/
+/rabbitmq-data/
 
 # ActiveMQ
 activemq-data/

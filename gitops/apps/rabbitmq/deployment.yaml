@@ -1,0 +1,185 @@
+# rabbitmq — broker AMQP (fatia 5). Desbloqueado em 2026-10-23.
+#
+# ## Por que um broker não migra como os outros
+#
+# Todos os outros foram "sobe o pod, aponta o ingress". Um broker é um ponto de
+# encontro COMPARTILHADO: enquanto QUALQUER consumidor estiver em Docker, ele
+# resolve `rabbitmq` pelo DNS do Docker -> container, e os pods resolvem pelo
+# Service do cluster -> pod. São DOIS brokers, com zero estado compartilhado.
+#
+# `domain-api` (pod) publicaria `domain.commands` no broker do pod; `domain-worker`
+# (Docker) consumiria do container e nunca veria a mensagem. Nenhum erro em log
+# nenhum: AMQP não avisa quando o destino é outro broker — a conexão está
+# estabelecida, o publish dá ack, o consumo simplesmente não acontece.
+#
+# O teste que pega isso é a fila. `domain.commands.queue` tinha 1 consumer; um
+# cutover errado a deixaria em 0 consumers com mensagens acumulando, e a única
+# pista seria a fila crescendo.
+#
+# ## Como os quatro consumidores saíram (todos antes deste commit)
+#
+#   finance-customersupport-worker  -> pod (precisava do evolution-api no cluster)
+#   evolution-api                   -> pod (sessão Baileys em Redis, provada)
+#   domain-api                      -> já era pod; o container era rollback órfão
+#   domain-worker                   -> pod, container parado ANTES (escritor de fila)
+#
+# Medido depois: `list_connections` só mostra `172.18.0.1` (pods via SNAT), zero
+# containers, e as filas com consumer voltaram a 1. Baseline de backlog:
+# `domain.events.queue` 2341 + `evolution.connection.update` 9 = 2350 mensagens.
+#
+# ## A troca do Service é atômica
+#
+# O Service `rabbitmq` já existe no cluster como PONTE (sem selector). Dois
+# Services com o mesmo nome não coexistem, então `git rm bridges/rabbitmq.yaml` +
+# `service.yaml` aqui têm que entrar no MESMO commit. Deixar o Service fora deste
+# diretório antes disso foi de propósito: o manifesto não podia ser aplicado pela
+# metade e derrubar os pods que já funcionavam.
+#
+# ## O problema que quase passou: o nome do nó vem do hostname
+#
+# ## O problema que quase passou: o nome do nó vem do hostname
+#
+# Medido no container:
+#
+#   $ docker exec rabbitmq rabbitmqctl -q eval "node()."
+#   rabbit@fbbc4443ed70
+#
+# `fbbc4443ed70` não é configuração, é o hostname do container. O RabbitMQ deriva
+# `RABBITMQ_NODENAME` de `$(hostname)`, e o diretório de dados é
+# `mnesia/rabbit@<hostname>`.
+#
+# No volume há CINCO diretórios, um por recriação do container:
+#
+#   rabbit@06a50ef923e4  rabbit@a1b3ca142ddc  rabbit@c3c2674c124d
+#   rabbit@eec43005badf  rabbit@fbbc4443ed70  <- o vivo, 2,8M
+#
+# Num pod o hostname seria o nome do pod. O RabbitMQ criaria `mnesia/rabbit@<pod>`
+# NOVO, subiria com zero filas, responderia `ping` no healthcheck e apareceria
+# `1/1 Running`. Broker vazio e saudável, com as 2.346 mensagens do volume antigo
+# ignoradas.
+#
+# ## A solução, e a que NÃO funcionou
+#
+# Primeira tentativa: `RABBITMQ_NODENAME=rabbit@fbbc4443ed70`. FALHOU, e o motivo
+# importa:
+#
+#   {epmd_error, "fbbc4443ed70", nxdomain}
+#
+# O epmd (mapeador de portas do Erlang) resolve o HOST do nome do nó pelo DNS.
+# Num pod cujo hostname é `rabbitmq-abc123`, o nome `rabbit@fbbc4443ed70` aponta
+# para um host que não existe na rede do cluster. O Erlang não negocia: o nó não
+# sobe.
+#
+# A solução correta é fazer o HOSTNAME do pod ser o nome antigo:
+#
+#   spec.hostname: fbbc4443ed70
+#
+# Verificado num pod descartável, com volume vazio:
+#
+#   $ hostname                          -> fbbc4443ed70
+#   $ ls /var/lib/rabbitmq/mnesia/      -> rabbit@fbbc4443ed70
+#   $ rabbitmqctl -q eval "node()."     -> rabbit@fbbc4443ed70
+#
+# Assim o nó e o diretório do volume coincidem por construção, sem forçar nada
+# no Erlang. `spec.hostname` é campo de Pod, não de container -- vale a pena
+# notar porque não aparece em nenhum exemplo de Deployment do RabbitMQ.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-data
+  labels:
+    app.kubernetes.io/name: rabbitmq
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      # 114M hoje, dos quais só 2,8M são o nó vivo (o resto são nós mortos de
+      # containers antigos). 5Gi permite as filas crescerem sem alerta.
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  labels:
+    app.kubernetes.io/name: rabbitmq
+spec:
+  # 0 até a cópia do volume terminar. O cutover do broker não é "sobe e aponta":
+  # o pod só pode entrar quando o mnesia estiver no PVC, porque subir com volume
+  # vazio produz um broker saudável e vazio (`ping` responde igual).
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rabbitmq
+    spec:
+      # Faz o nó ser `rabbit@fbbc4443ed70`, casando com o diretório que já existe
+      # no volume. Ver o topo do arquivo: `RABBITMQ_NODENAME` sozinho falha com
+      # epmd_error/nxdomain porque o host do nome precisa resolver via DNS.
+      hostname: fbbc4443ed70
+      containers:
+        - name: rabbitmq
+          # Digest do container em execução. `4-management-alpine` é tag MÓVEL --
+          # o manifesto não pode depender dela (ver "Contrato de imagem").
+          image: rabbitmq@sha256:628bd74c1c7e2a820bf417b32e75eed1bd8d517345d9749ee8bd4076ae393abe
+          env:
+            # Com o mnesia copiado, o usuário `domain` já existe no banco interno
+            # com a senha antiga; `RABBITMQ_DEFAULT_*` só se aplica na CRIAÇÃO do
+            # banco, que aqui não acontece. Ficam para o caso de o volume ser
+            # recriado do zero -- e `DEFAULT_PASS` sem `DEFAULT_USER` faz o
+            # entrypoint falhar alto, o que é melhor que subir sem autenticação.
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq
+                  key: RABBITMQ_DEFAULT_USER
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq
+                  key: RABBITMQ_DEFAULT_PASS
+          ports:
+            - name: amqp
+              containerPort: 5672
+            - name: management
+              containerPort: 15672
+          # `rabbitmq-diagnostics ping` é o mesmo healthcheck do Compose. Ele
+          # responde quando o nó Erlang está de pé -- INCLUSIVE com o banco vazio.
+          # É por isso que a validação do cutover compara `list_queues`, e não
+          # confia neste probe.
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 4
+          livenessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            # O Compose não define limite. O broker guarda mensagens em memória
+            # antes de paginar para disco; 1Gi é o teto que o node aguenta ao lado
+            # do Postgres e do Prometheus.
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rabbitmq-data

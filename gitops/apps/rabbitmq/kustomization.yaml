@@ -1,0 +1,25 @@
+# rabbitmq — broker AMQP (fatia 5).
+#
+# O Service mora aqui, e não em `gitops/apps/bridges/`, porque a migração do
+# broker é justamente a troca da ponte por um Service com selector. Ver o
+# comentário equivalente em `gitops/apps/minio/kustomization.yaml` para o
+# raciocínio completo (dois Services com o mesmo nome não coexistem; um Service
+# com selector ao lado de um EndpointSlice manual é a armadilha 6).
+#
+# Diferente do minio, aqui os consumidores SÃO pods e containers ao mesmo tempo:
+# `domain-api` e `finance-api` já rodam no cluster e falam `rabbitmq:5672` pelo
+# DNS do cluster; `domain-worker` e `evolution-api` ainda estão em Docker e
+# resolvem pelo DNS do Docker. Por isso o cutover do rabbitmq é o único em que a
+# mesma migração precisa servir os dois lados -- e é o motivo de ele ficar para
+# depois de o minio estar provado.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: giomartins
+
+resources:
+  - deployment.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: giomartins
