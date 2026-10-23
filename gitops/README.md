@@ -297,6 +297,49 @@ ssh host 'sudo md5sum /opt/giomartins/stacks/ingress/default.conf'
 docker exec ingress md5sum /etc/nginx/conf.d/default.conf   # tem que bater
 ```
 
+### 10. Atrás de Cloudflare, `X-Forwarded-Proto $scheme` quebra o Rancher
+
+**Esta apareceu como "Network Error" no login.** O `server{}` do Rancher copiou o
+padrão dos outros 18 hosts:
+
+```nginx
+proxy_set_header X-Forwarded-Proto $scheme;   # ERRADO para o Rancher
+```
+
+O Cloudflare fala **HTTP** com a origem, então `$scheme` é `http`. O Rancher lê
+esse header, conclui que está sendo servido por HTTP e passa a gerar **todas** as
+URLs como `http://`:
+
+```bash
+curl -s http://127.0.0.1/v3-public/localProviders/local -H 'Host: rancher.giomartins.dev' \
+  | jq -r .links.self
+# http://rancher.giomartins.dev/v3-public/localProviders/local   ← o browser bloqueia
+```
+
+O SPA roda em página `https://`, então cada chamada para um endpoint `http://` é
+**mixed content**: o browser bloqueia antes de sair, a promise do `fetch` rejeita,
+e a tela mostra "Network Error". Nada aparece no log do nginx, porque a requisição
+nunca chega — é por isso que esse erro não deixa rastro no servidor.
+
+A prova que isola a causa: **direto no NodePort o Rancher gera `https://` sozinho**
+(ele detecta o TLS da conexão). A única coisa que estraga é o nginx sobrescrever o
+header. A correção é fixar o valor:
+
+```nginx
+proxy_set_header X-Forwarded-Proto https;   # correto: o browser SEMPRE chega por https
+```
+
+Fixar em `https` é seguro porque a perna Cloudflare→origem é sempre HTTP e o
+Cloudflare sempre termina TLS para o visitante — não existe acesso por `http://`
+que precise ser reportado como tal.
+
+**Para achar esse tipo de bug, o DevTools é o único caminho**: o log do nginx
+mostra `200`, e o erro existe só no browser. `list_console_messages` dá o
+`Failed to load resource`; `get_network_request` no POST de login mostra o corpo
+e os headers exatos que o SPA envia — foi assim que descobri que o fluxo usa
+`/v1-public/login` com `{"type":"localProvider","responseType":"cookie",...}` e
+não o `/v3-public/...?action=login` que eu estava testando por curl.
+
 ## Bootstrap (uma vez por cluster)
 
 ```bash
@@ -737,6 +780,10 @@ O Rancher é o **único** host do `default.conf` com upstream HTTPS: o Service d
 chart expõe 80 e 443, mas a 80 só redireciona, e o `server-url` exige TLS. Como o
 certificado dele é auto-assinado, o `server{}` usa `proxy_ssl_verify off` — a
 verificação que importa acontece no navegador, que vê o certificado do Cloudflare.
+
+Esse `server{}` também é o único que **fixa** `X-Forwarded-Proto: https` em vez de
+usar `$scheme`. Com `$scheme`, o Rancher passa a gerar links `http://` e o SPA
+mostra "Network Error" no login — a explicação completa está na armadilha 10.
 
 **Acesso por túnel** (continua válido, útil para debug quando o Cloudflare está no
 meio do caminho):
