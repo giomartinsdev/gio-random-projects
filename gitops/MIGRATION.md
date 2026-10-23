@@ -42,7 +42,7 @@ A ordem é por risco crescente, e não por importância. Estado é sempre por
 | 2 ◐ | stateless com volume próprio | `9router` | SQLite + WAL | **parada obrigatória** |
 | 3 ✅ | apps com dependência de dados | `domain-api` ✅, `domain-worker` ✅, `finance-api` ✅, `finance-*` ✅, `vaultwarden-api` ✅, `db-mcp` ✅ | — | trivial |
 | 3b ✅ | tráfego de apps já migrados | `adminer`, `draw`, `domain`, `finance-api` no ingress | — | uma linha |
-| 4 ✅ | observabilidade | `prometheus`, `loki`, `tempo`, `grafana` ✅ + `alloy-logs` (novo) | volumes | médio |
+| 4 ✅ | observabilidade | `prometheus`, `loki`, `tempo`, `grafana` ✅ + `alloy-logs` (novo, absorveu o OTLP em 2026-10-23) | volumes | médio |
 | 5 ✅ | dados de apoio | `minio` ✅, `rabbitmq` ✅ | volumes | médio |
 | 6 ✅ | dados primários | `postgres`, `vaultwarden` | volumes | **alto** |
 | 7 ☐ | ingress + registry | `ingress`, `registry` | — | alto |

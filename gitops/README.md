@@ -1083,13 +1083,13 @@ Não é pendência esquecida, é ordem deliberada:
 
 | serviço | o que falta |
 | --- | --- |
-| `postgres` | fatia 6 — 332M de dump, é o banco de tudo |
-| `vaultwarden` | fatia 6 — senha do cofre, SQLite |
+| `postgres` | migrado (fatia 6) — o container é rollback congelado |
+| `vaultwarden` | migrado (fatia 6) — idem |
 | `9router` | parada obrigatória (WAL) + é a porta de IA do host |
 | `evolution-redis` | guarda a sessão Baileys; migra como banco, não como cache |
 | `tela-*` | `hostNetwork` + UDP (coturn, mediamtx) |
 | `maus` | `docker.sock` + `/data` do host; exige redesenho |
-| `alloy` | não alcança a API do k3s; `alloy-logs` cobre os pods |
+| `alloy` | container de pé como rollback; o OTLP já é do pod `alloy-logs` |
 | `ingress` | dono da porta 80; sai por último, com janela |
 
 Ficam de fora, e por motivo, não por esquecimento:
@@ -1109,8 +1109,9 @@ Ficam de fora, e por motivo, não por esquecimento:
 
 1. **IP do container nas pontes.** O `EndpointSlice` manual carrega o IP do
    container Docker. Mitigado pelo `sync-external-endpoints.timer` (1 min),
-   mas o timer é um processo no host, fora do GitOps. Restam **duas** pontes
-   (`alloy`, `evolution-redis`); `postgres` e `vaultwarden` saíram na fatia 6.
+   mas o timer é um processo no host, fora do GitOps. Resta **uma** ponte
+   (`evolution-redis`); `postgres` e `vaultwarden` saíram na fatia 6 e `alloy`
+   em 2026-10-23 (o Service ganhou selector e aponta para `alloy-logs`).
 2. ~~Patch do `argocd-cm` não versionado.~~ **Resolvido** em
    `gitops/bootstrap/argocd/` — lista versionada + script idempotente. Ainda é
    um passo manual no bootstrap, mas não depende mais de memória.
@@ -1124,11 +1125,15 @@ Ficam de fora, e por motivo, não por esquecimento:
 5. ~~**Os pods migrados não têm log no Loki.**~~ **Resolvido** — o coletor
    `alloy-logs` roda no cluster e cobre os pods (`loki.source.kubernetes`) e o
    que resta em Docker (`loki.source.docker` via `hostPath`).
-6. **O `alloy` continua em Docker, e continua sendo necessário.** Ele monta
-   `docker.sock` e usa `discovery.docker` + `loki.source.docker`, e não alcança
-   a API do k3s de dentro do container (`172.18.0.1:6443` → refused). Sai
-   quando o último container sair. Enquanto isso, dois coletores coexistem: é
-   dívida com prazo, não desenho final.
+6. **O `alloy` continua em Docker, mas deixou de receber telemetria.** Desde
+   2026-10-23 o OTLP (traces e métricas) vai para o pod `alloy-logs`, que assumiu
+   o Service `alloy`. O container monta `docker.sock` e usa
+   `discovery.docker` + `loki.source.docker`, e não alcança a API do k3s
+   (`172.18.0.1:6443` → refused) — mas o `alloy-logs` **também** monta
+   `docker.sock` e já lê os containers, então os dois pipelines de log se
+   sobrepõem. O container sai quando o último container sair; até lá, os logs
+   dos containers são ingeridos **duas vezes** (labels `job=docker` em ambos),
+   em dois Lokis diferentes. Custo: ~2 GB de disco, não corrupção.
 7. **`domain.events.queue` com 585 mensagens e 0 consumidores.** O consumidor
    previsto (`events-announcer`) nunca existiu como container neste host.
    Pré-existente, não tocado: mexer em fila de produção sem entender o efeito
@@ -1219,44 +1224,49 @@ Ficam de fora, e por motivo, não por esquecimento:
    docker inspect <container> \
      -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'
    ```
-16. **A observabilidade está PARTIDA em duas metades, e o painel esconde isso.**
-   Descoberto em 2026-10-23 ao responder "migrou tudo?". A fatia 4 foi marcada ✅
-   com base em paridade de *estado* (1 dashboard, 1 usuário, mesma versão), mas a
-   paridade de **fluxo** nunca foi medida. O que está acontecendo:
+16. ~~**A observabilidade está PARTIDA em duas metades, e o painel esconde isso.**~~
+   **Resolvido em 2026-10-23.** Descoberto ao responder "migrou tudo?". A fatia 4
+   foi marcada ✅ com base em paridade de *estado* (1 dashboard, 1 usuário, mesma
+   versão), mas a paridade de **fluxo** nunca foi medida. O que estava
+   acontecendo:
 
-   | dado | vai para | quem consulta no Grafana (`:30300`) |
+   | dado | ia para | quem consulta no Grafana (`:30300`) |
    | --- | --- | --- |
    | **traces** dos pods | `tempo` **container** (172.18.0.11) | `tempo` **Service** (pod) |
    | **métricas** OTLP | `prometheus` **container** (172.18.0.8) | `prometheus` **Service** (pod) |
-   | **logs** dos pods | `loki` Service (pod) | `loki` Service (pod) ✅ |
+   | **logs** dos pods | `loki` Service (pod) | `loki` Service (pod) |
 
-   Medido, não deduzido:
+   A causa: os apps usam `OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318`, e o
+   Service `alloy` era a **ponte** para o container Docker. O `alloy-logs` era
+   aditivo de propósito — só logs, sem receiver OTLP.
 
-   - `tempo` **container**: 20 traces recentes de `domain-worker` e `domain-api`
-     (timestamp ~1 min antes da consulta). `tempo` **pod**: `traces: []`.
-   - `prometheus` **container**: 16 séries de `http_server_duration_milliseconds_count`
-     na última 2h. `prometheus` **pod**: **0**.
-   - O alvo `job=alloy` no Prometheus do pod está `down` — o pod tenta raspar
-     `alloy:12345`, que é o Service sem selector (a ponte OTLP) e não expõe
-     `/metrics`.
+   **Correção em dois passos** (commits `f15181d` e `ca8c954`), no padrão dos
+   cutovers da fatia 6 — o pod prova antes de o Service virar:
 
-   A causa é estrutural e está documentada no próprio `alloy-logs.yaml`: o
-   Service `alloy` (bridge) aponta para o container Docker, e os pods usam
-   `OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318`. Esse nome resolve para a
-   **ponte**, não para o pod. O `alloy-logs` foi desenhado como **aditivo** — só
-   logs, sem receiver OTLP — justamente para não mexer em todos os apps de uma
-   vez. O efeito colateral é que **traces e métricas dos pods migrados nunca
-   chegaram ao cluster**: quem os recebe é o Alloy em Docker, que escreve nos
-   Tempo/Prometheus em Docker, e o Grafana do cluster não os lê.
+   1. `alloy-logs` ganhou `otelcol.receiver.otlp` (grpc 4317 + http 4318) com o
+      pipeline copiado de `stacks/observability/alloy.alloy` e o CORS idêntico.
+      Nada mudou de roteamento ainda.
+   2. Provado ponta a ponta **mandando OTLP direto no IP do pod**:
+      - span com `service.name=prova3-<ts>` → **1 trace** no Tempo do pod
+      - gauge `metricprova_<ts>=42` → **1 série** no Prometheus do pod
+   3. Só então o Service `alloy` ganhou `selector` e saiu do `MAPA` do timer —
+      os três no mesmo commit: Service com selector, remoção do `MAPA`, e
+      `bridges/alloy.yaml` apagado. Sem o segundo, o timer recriaria o
+      EndpointSlice manual e o kube-proxy balancearia entre pod e container:
+      metade dos traces sumindo, com `200 OK` nos dois alvos.
 
-   Ou seja: a fatia 4 entregou logs, não observabilidade. Quem abrir o Grafana do
-   cluster para ver latência de `domain-api` encontra vazio e vai concluir que a
-   aplicação não emite telemetria.
+   Resultado medido depois: `job=finance-api` com 16 séries
+   `http_server_duration_milliseconds_count` no Prometheus **do cluster** (era
+   0), Tempo do pod com 20 traces de `domain-worker`, e span metrics
+   (`traces_spanmetrics_calls_total`) de 6 chamadas.
 
-   Correção (não feita): dar ao `alloy-logs` os receivers `otelcol.receiver.otlp`
-   (4317/4318) e apontar o Service `alloy` para ele, migrando os dois Tempo e
-   Prometheus de uma vez — ou aceitar a ponte e documentar que **a telemetria de
-   traces/métricas dos pods vive fora do cluster** até a fatia 7.
+   Efeito colateral corrigido junto: o target `job=alloy` do Prometheus estava
+   `Down` permanente desde a fatia 4 — o Alloy escutava em `127.0.0.1:12345`
+   dentro do pod e o Service apontava para o container. Agora escuta em
+   `0.0.0.0` e a porta 12345 é exposta, então `up{job="alloy"}` = 1.
+
+   Novo NodePort **30418** para `otel.giomartins.dev`; o `:4318` do container
+   segue de pé como rollback (uma linha no ingress).
 17. **Os dois MinIOs divergiram e o console público aponta para o antigo.**
    `minio.giomartins.dev` faz `proxy_pass` para `:9001`, que é o console do
    **container**. Os frontends (`tela`, `hub`, `finance`) são servidos pelo

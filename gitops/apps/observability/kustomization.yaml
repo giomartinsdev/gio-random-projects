@@ -1,23 +1,25 @@
-# observability — Prometheus, Loki, Tempo e Grafana.
+# observability — Prometheus, Loki, Tempo, Grafana e o coletor Alloy.
 #
-# ## O que fica de fora, e por quê
+# ## O `alloy` (antigo `alloy-logs`)
 #
-# O `alloy` NÃO entra. Ele lê o stdout de todos os containers Docker via
-# `discovery.docker` + `loki.source.docker`, montando `/var/run/docker.sock`
-# (ver stacks/observability/alloy.alloy linhas 67-85). Migrar isso para o
-# cluster não é mover infra, é reescrever o pipeline de coleta de logs: o
-# equivalente no k8s é `discovery.kubernetes` + `loki.source.kubernetes`, outro
-# modelo de dados, outro conjunto de labels, outra cardinalidade.
+# Entrou no diretório em 2026-10-23, quando deixou de ser só logs. Hoje ele é o
+# coletor único de log, trace e métrica do cluster: `otelcol.receiver.otlp`
+# (grpc 4317 + http 4318), `loki.source.kubernetes` e `loki.source.docker`.
 #
-# Consequência: enquanto o alloy ficar em Docker, ele continua sendo o único
-# coletor de logs de containers. Os apps já migrados (domain-api, finance-api…)
-# passam a ter o stdout lido pelo `kubectl logs` e NÃO pelo alloy — ou seja,
-# eles somem do Grafana Loki. Isso é uma regressão visível e precisa ser
-# resolvida antes de virar o tráfego de qualquer serviço que se queira observar.
+# O nome do Deployment continua `alloy-logs` por histórico, mas o **Service** se
+# chama `alloy` — é o nome que todos os apps já usam em
+# `OTEL_EXPORTER_OTLP_ENDPOINT`. O Service saiu de `bridges/` no mesmo dia, ao
+# ganhar selector (ver `alloy-service.yaml`).
 #
-# A saída barata é apontar o alloy para o containerd do k3s, mas isso é uma
-# mudança de config a ser feita e validada com o Grafana aberto — não junto com
-# a migração dos backends.
+# O container `alloy` em Docker continua de pé como rollback e ainda lê
+# `docker.sock`. Ele não recebe mais OTLP. Sai quando o último container sair —
+# e enquanto estiver lá, os logs dos containers são ingeridos duas vezes (dois
+# Lokis, labels `job=docker`), custo de ~2 GB, não corrupção.
+#
+# ## O que ficou de fora
+#
+# Nada de observabilidade. O que ainda está em Docker (`ingress`, `registry`,
+# `9router`, `tela-*`, `maus`) está descrito em `gitops/MIGRATION.md`.
 #
 # ## Estado
 #
