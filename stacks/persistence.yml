@@ -21,7 +21,16 @@ services:
     container_name: postgres
     labels:
       giomartins.dev/project: storage
-    restart: unless-stopped
+    # MIGRADO para o k8s em 2026-10-23 (fatia 6). `no` e não `unless-stopped`:
+    # com o Serviço do cluster servindo, um `docker compose up` deste stack (ou
+    # um redeploy do Dockhand) religaria ESTE container no mesmo volume
+    # `apps_postgres_data`, que agora está CONGELADO como era em 16:24. O pod já
+    # escreveu mais de 2.300 linhas que este volume não tem — subir os dois seria
+    # dois Postgres divergindo, e o Docker venceria em quem escuta.
+    #
+    # Para reverter de propósito: `docker start postgres` e desfazer o Service no
+    # git. O volume está intacto, com o dado de 16:24.
+    restart: "no"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-domain}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}

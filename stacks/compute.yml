@@ -40,7 +40,14 @@ services:
     container_name: vaultwarden
     labels:
       giomartins.dev/project: compute
-    restart: unless-stopped
+    # MIGRADO para o k8s em 2026-10-23 (fatia 6). `no` e não `unless-stopped`:
+    # o pod já atende `vault.giomartins.dev` (:30822) e o `vaultwarden-api`, e o
+    # volume `vaultwarden_data` está CONGELADO. Religar este container daria dois
+    # Vaultwarden no mesmo SQLite — o WAL do pod seria sobrescrito e as senhas
+    # gravadas depois do corte sumiriam.
+    #
+    # A porta `127.0.0.1:8222` também ficaria disputada com o NodePort.
+    restart: "no"
     environment:
       DOMAIN: https://vault.giomartins.dev
       SIGNUPS_ALLOWED: "true"
@@ -57,7 +64,15 @@ services:
     container_name: vaultwarden-api
     labels:
       giomartins.dev/project: compute
-    restart: unless-stopped
+    # MIGRADO para o k8s (fatia 3, cutover em 2026-10-23). Este container é um
+    # ÓRFÃO: sem porta publicada, sem host no ingress, e nenhum outro container
+    # o consome. O pod equivalente sincroniza 42 vault items a cada 5 min; este
+    # aqui falhava com `lookup vaultwarden: server misbehaving` porque o DNS da
+    # rede `apps` deixou de resolver `vaultwarden` quando o container parou.
+    #
+    # `no` para que um redeploy do stack não o ressuscite em paralelo ao pod,
+    # batendo no mesmo Vaultwarden.
+    restart: "no"
     environment:
       VAULTWARDEN_URL: http://vaultwarden
       VAULTWARDEN_EMAIL: ${VAULTWARDEN_ACCOUNT_EMAIL:?defina VAULTWARDEN_ACCOUNT_EMAIL}
