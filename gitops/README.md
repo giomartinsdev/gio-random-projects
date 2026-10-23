@@ -112,7 +112,7 @@ explícito: o template upstream faz `storageClassName: ""` quando o campo
 está vazio, e string vazia significa "sem storage class" — o PVC fica
 `Pending` para sempre. `local-path` resolve.
 
-### 5. O DNS do Docker sombreia o Service do k8s
+### 4. O DNS do Docker sombreia o Service do k8s
 
 Um container Docker que fala `domain-api:8000` resolve para `172.18.0.27` —
 o **container Docker**, não o ClusterIP do k8s. O DNS embutido do Docker
@@ -133,6 +133,24 @@ desligar) todos os consumidores internos dele**. Verificado com um container
 efêmero na rede `apps`: `domain-api:8000` (container), `10.43.247.168:8000`
 (ClusterIP do pod) e `postgres:5432` (ponte) respondem todos OK. As duas rotas
 coexistem — o que decide é qual nome o cliente usa.
+
+### 5. Nome da chave do ConfigMap vira nome do arquivo montado
+
+Montar um `ConfigMap` num diretório cria **um arquivo por chave**, com o nome da
+chave. Não importa como o arquivo se chamava no repositório.
+
+O `loki.yaml` era bind-montado em `/etc/loki/local-config.yaml` no Compose, e o
+argumento continuou `-config.file=/etc/loki/local-config.yaml`. Ao virar
+ConfigMap com a chave `loki.yaml:`, o arquivo montado virou
+`/etc/loki/loki.yaml` — e o Loki morreu com
+`local-config.yaml does not exist, set config.file for custom config path`.
+
+`prometheus.yml` e `tempo.yml` não sofreram porque neles a chave e o nome do
+destino coincidiam. É uma armadilha que passa em qualquer validação de schema:
+o YAML é válido, o mount é válido, e o processo não sobe.
+
+Regra: ao converter bind mount em ConfigMap, a chave tem de ser **o nome do
+arquivo no destino**, não o nome do arquivo no repo.
 
 ### 6. `commonLabels` do kustomize contamina `spec.selector`
 
@@ -376,6 +394,14 @@ Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
 
 ### O que foi provado, não assumido
 
+- **Os 4 ConfigMaps da observabilidade sobem de verdade**: pods avulsos com os
+  mesmos ConfigMaps (`emptyDir`, fora do ArgoCD para não brigar com `selfHeal`)
+  provaram que prometheus (`Completed loading of configuration file` →
+  `Server is ready`), tempo (`server listening` 3200/9095), grafana (3 arquivos
+  de provisioning montados, datasources registrados em `/api/datasources` com
+  `http://prometheus:9090` e `http://loki:3100`) e loki sobem com a config real.
+  O Loki **falhou no primeiro teste** — ver armadilha 5.
+  `kubeconform` aprovou os 17 recursos com esse bug presente.
 - **Persistência do `local-path` exercitada**: PVC `Pending` é o comportamento
   correto (`WaitForFirstConsumer`) enquanto o Deployment tem `replicas: 0` —
   mas significava que o caminho de dados nunca tinha sido testado. Criei um PVC
