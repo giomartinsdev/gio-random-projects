@@ -1257,44 +1257,56 @@ um webhook, mas o Kubero foi instalado assumindo um ingress controller
 (armadilha 3) e a troca por Traefik/Gateway API afeta o roteamento dos 18 hosts
 — é migração própria, não faxina. Fica como dívida, com a data visível.
 
-## Próximo serviço a migrar
+## O que falta
 
-A fatia 4 está fechada: os quatro backends servem do cluster com o histórico
-real, e o buraco de observabilidade que ela escancarou está fechado também.
+A migração serviço a serviço acabou. O que resta não é "o próximo serviço" — é
+uma decisão sobre quatro serviços que **não são lift-and-shift**, mais a faxina
+final do Docker.
 
-O que foi feito, em ordem:
+Estado em 2026-10-23 22:12 UTC: **17/17 Applications `Synced`**, zero pods fora
+de `Running`, 19/19 hosts respondendo pelo pod do ingress, registry servindo 39
+repositórios.
 
-1. **Coletor de logs no cluster** (`alloy-logs`): `loki.source.kubernetes` para
-   os pods + `loki.source.docker` (via `hostPath: docker.sock`) para o que ainda
-   está em Docker. Foi o passo que revelou que o alloy em Docker **não alcança**
-   a API do k3s (`172.18.0.1:6443` → connection refused), então rodar como pod
-   não é preferência, é a única opção.
-2. **Volumes copiados** com o container parado e religado antes do pod subir:
-   898M / 976M / 308M / 50M, tamanhos idênticos à origem.
-3. **Grafana** virou para `:30300`. Paridade provada por estado, não por tela:
-   1 dashboard e 1 usuário nos dois lados, `version 12.4.3 commit 86c83248`
-   iguais nos dois — e um request marcado apareceu 1× no pod, 0× no Docker.
+### `9router` — bloqueado pela própria sessão
 
-Ordem daqui pra frente:
+Provisionado no git, `replicas: 0`, NodePort 30028 reservado. Exige parada por
+causa do SQLite com WAL; o procedimento está no topo de
+`gitops/apps/applications/9router/deployment.yaml`.
 
-1. **`9router`** (fatia 2): provisionado, `replicas: 0`. Exige parada por causa
-   do SQLite com WAL — ver o procedimento escrito no topo de
-   `gitops/apps/9router/deployment.yaml`. **Não é migrável pelo agente sem
-   aceitar o risco**: ele serve a própria sessão que faria a migração.
-2. ~~**`evolution-redis`**: ainda é ponte.~~ **Migrado em 2026-10-23**, sem
-   parada, por `REPLICAOF` em vez de `cp -a`: o Redis tem replicação nativa e os
-   pods já alcançavam o container pela ponte. Provado por md5 dos 860 pares
-   campo+valor do hash Baileys, e por `delete pod` com retorno de `HLEN=860`
-   lendo o AOF do PVC. O WhatsApp continuou `open` (owner
-   `5521982397951@s.whatsapp.net`, 983 mensagens) com o container já parado.
-   Detalhe: `CACHE_REDIS_SAVE_INSTANCES=false` não significa "não persiste" —
-   controla o registro da instância, não as chaves.
-3. **Fatia 7** (`ingress`, `registry`): risco alto e ganho baixo. O `ingress` é
-   o que serve os 19 hosts; trocá-lo é trocar o caminho de todo o tráfego por um
-   Ingress do cluster que hoje serve **zero** objetos. O `registry` guarda as
-   imagens próprias (`minio`, `excalidraw`, `vaultwarden-api`, `9router`…), então
-   derrubá-lo impede subir pods que dependem delas.
-4. **`tela-*`** por último: `hostNetwork` + UDP (coturn/mediamtx).
+**O bloqueio é real, não teórico**: medido em 2026-10-23, o container `9router`
+atendeu esta própria sessão (`opencode-free` → `ollama`/`deepseek-v4.1-flash`,
+348 mensagens, 12 ferramentas). Parar o container no meio da migração mata o
+agente que está fazendo a migração. Isso pede janela com o usuário presente e o
+runbook em mãos — não um `docker stop` dentro de um script.
+
+### `maus`, `tela-*`, `minecraft` — precisam de redesenho, não de manifesto
+
+| serviço | por que não é lift-and-shift |
+| --- | --- |
+| `maus` | cria containers via `docker.sock` e monta `/data` do host. Migrar isso é emular Docker dentro do Kubernetes. |
+| `tela-api` / `tela-mediamtx` / `tela-coturn` | `network_mode: host` com UDP (STUN/TURN/WebRTC). A porta 3478 UDP seria disputada com o Docker durante a transição. |
+| `minecraft` | fora de escopo por decisão sua (jogo, não infra). |
+| `dockhand` | é a UI do próprio Docker. Morre com ele, por definição. |
+
+### A faxina final (só depois de observar)
+
+Ordem deliberada, e cada passo é um commit separado:
+
+1. **parar os duplicados ociosos** — `gitops/bootstrap/aposenta-duplicados.sh`,
+   escrito mas **não executado**. Alvos: `adminer excalidraw grafana loki minio
+   prometheus tempo db-mcp db-mcp-gateway`. O `alloy` fica de fora de propósito:
+   é a única forma de ler o stdout dos containers que ainda restarem.
+2. **`docker rm`** dos parados. O container parado é o rollback; remover é o
+   último ato.
+3. **desligar o Docker** (`systemctl disable --now docker`). Junto vão o
+   `sync-external-endpoints.timer` (MAPA vazio desde a fatia 6, zero
+   EndpointSlices manuais no cluster) e o `dockhand`.
+
+**Por que não agora**: a fatia 8 cortou `ingress` e `registry` há pouco mais de
+uma hora. A disciplina deste repositório é observar antes de remover o rollback
+— e a armadilha 26 acabou de mostrar que "o pod subiu" não é o mesmo que "o
+sistema está inteiro".
+
 
 ### O que ainda está em Docker e por quê
 
