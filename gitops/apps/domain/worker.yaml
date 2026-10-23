@@ -8,9 +8,13 @@
 # processadas duas vezes. A migração correta é PARAR o Docker antes de subir
 # este, não rodar os dois em paralelo como o domain-api.
 #
-# Por isso o Deployment começa com réplicas 0: o manifesto existe e é
-# reconciliado pelo ArgoCD, mas não consome nada até a janela de cutover.
-# Trocar para 1 é o ato de migrar (e exige `docker stop domain-worker`).
+# Por isso o Deployment começou com réplicas 0: o manifesto existia e era
+# reconciliado pelo ArgoCD, mas não consumia nada até a janela de cutover.
+#
+# Em 2026-10-23 o container foi PARADO primeiro e só então isto virou 1. Não é
+# cerimônia: dois consumers em `domain.commands.queue` processam a mesma
+# mensagem duas vezes, e o efeito é escrita duplicada no postgres, não um erro
+# visível. Verificado depois: o broker voltou a mostrar 1 consumer na fila.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,7 +22,7 @@ metadata:
   labels:
     app.kubernetes.io/name: domain-worker
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: domain-worker
