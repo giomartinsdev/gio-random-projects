@@ -73,21 +73,26 @@ sobe, o `EndpointSlice` **não**, e as conexões caem em `connection refused`
 — enquanto os 3 recursos aparecem **`Synced`/`Healthy`** no painel. Nenhum
 erro visível.
 
-Correção aplicada (remover só o bloco que exclui esses dois kinds):
+Correção — **agora versionada**, não mais aplicada à mão:
 
 ```bash
-sudo k3s kubectl get cm argocd-cm -n argocd -o jsonpath='{.data.resource\.exclusions}' > /tmp/excl.yaml
-# edite removendo o bloco com "EndpointSlice" e "Endpoints"
-sudo k3s kubectl patch cm argocd-cm -n argocd --type merge \
-  -p "$(python3 -c 'import json;print(json.dumps({"data":{"resource.exclusions":open("/tmp/excl-new.yaml").read()}}))')"
-sudo k3s kubectl rollout restart deploy/argocd-server deploy/argocd-repo-server \
-  deploy/argocd-applicationset-controller -n argocd
-sudo k3s kubectl rollout restart statefulset/argocd-application-controller -n argocd
+sudo ./gitops/bootstrap/argocd/apply-resource-exclusions.sh
 ```
 
-Isso é **dívida**: o `argocd-cm` não está versionado. Se o ArgoCD for
-reinstalado, a exclusão volta e o adminer quebra em silêncio. O caminho é
-levar esse patch para `gitops/bootstrap/`.
+A lista vive em `gitops/bootstrap/argocd/resource-exclusions.yaml` (é a do
+cluster, com o cabeçalho explicando por que difere do padrão). O script faz
+patch de **uma chave** do `argocd-cm` — não do ConfigMap inteiro, que tem
+outras chaves (`url`, `server.insecure`, `timeout.*`) não versionadas.
+
+Dois detalhes que o script acerta e que é fácil errar à mão:
+
+- O `argocd-application-controller` é **StatefulSet**, não Deployment. Um
+  `rollout restart deploy/...` nele falha com `not found`.
+- O `restart` é obrigatório: o `argocd-cm` é lido no boot, não recarregado a
+  quente. Sem ele o patch fica aplicado e sem efeito — pior que não aplicar.
+
+Reinstalar o ArgoCD sem rodar este script reintroduz a exclusão e derruba as 7
+pontes em silêncio.
 
 ### 3. Kubero exige ingress controller
 
@@ -414,9 +419,9 @@ Ficam de fora, e por motivo, não por esquecimento:
 1. **IP do container nas pontes.** O `EndpointSlice` manual carrega o IP do
    container Docker. Mitigado pelo `sync-external-endpoints.timer` (1 min),
    mas o timer é um processo no host, fora do GitOps. Morre com as fatias 5/6.
-2. **Patch do `argocd-cm` não versionado.** As `resource.exclusions` foram
-   editadas à mão. Reinstalar o ArgoCD reintroduz a exclusão de `EndpointSlice`
-   e as pontes quebram em silêncio. Devia estar em `gitops/bootstrap/`.
+2. ~~Patch do `argocd-cm` não versionado.~~ **Resolvido** em
+   `gitops/bootstrap/argocd/` — lista versionada + script idempotente. Ainda é
+   um passo manual no bootstrap, mas não depende mais de memória.
 3. **O timer e o `sync-app-secrets.sh` não são declarativos.** São scripts
    instalados à mão em `/usr/local/sbin`. Funcionam e são idempotentes, mas não
    são reconciliados por nada — se a máquina for recriada, alguém precisa
