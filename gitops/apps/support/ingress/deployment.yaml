@@ -82,22 +82,25 @@ spec:
           ports:
             - name: http
               containerPort: 80
-          # `nginx -t` já roda no entrypoint da imagem; o probe HTTP prova que
-          # ele está de fato servindo. `GET /` no `default_server` devolve 444
-          # (conexão fechada) SEM Host — o que um probe HTTP trataria como
-          # falha. Por isso o probe manda o header Host de um vhost real e
-          # aceita qualquer resposta < 500: o que se mede é "o nginx atendeu",
-          # não "o backend está saudável" (isso é problema do backend).
+          # ## Por que os dois probes são TCP, e não HTTP
+          #
+          # `httpGet` só considera sucesso status 200–399. Este nginx devolve,
+          # de propósito, 404 em `domain`, 401 em `db-mcp`, 302 em `grafana` e
+          # 444 no `default_server` (conexão fechada sem Host) — todos são o
+          # comportamento CORRETO de um proxy. Com `httpGet` o pod ficaria
+          # eternamente `0/1 Running` servindo tráfego: o pior estado possível,
+          # porque o Deployment nunca fica `Available` e o ArgoCD mostra
+          # `Progressing` para sempre.
+          #
+          # Isto já aconteceu na primeira tentativa do corte. O sintoma foi
+          # `error: timed out waiting for the condition` no `rollout status`,
+          # com os 19 hosts respondendo 200/404 corretamente na 80.
+          #
+          # O que se mede aqui é só "o processo aceita conexão". Saúde de backend
+          # é problema de cada backend, e cada um tem o próprio probe.
           readinessProbe:
-            httpGet:
-              path: /
+            tcpSocket:
               port: http
-              httpHeaders:
-                - name: Host
-                  value: domain.giomartins.dev
-            # 444 (default_server) e 502 (backend fora) contam como resposta —
-            # o nginx está no ar. Só 000/conexão recusada é falha, e esse não
-            # chega como status.
             initialDelaySeconds: 2
             periodSeconds: 10
             failureThreshold: 3
