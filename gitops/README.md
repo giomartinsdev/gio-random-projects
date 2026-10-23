@@ -301,7 +301,7 @@ Por isso a coluna "tráfego" ainda diz Docker em tudo.
 | --- | --- | --- | --- |
 | `excalidraw` | rodando (ocioso) | **rodando** (NodePort 30023) | **k8s** — `draw` → `:30023` ✅ |
 | `adminer` | rodando (ocioso) | **rodando** (NodePort 30092) | **k8s** — `adminer` → `:30092` ✅ |
-| `domain-api` | rodando | **rodando** (ClusterIP:8000) | ainda no Docker (`domain` → `:8000`) |
+| `domain-api` | rodando (ocioso) | **rodando** (NodePort 30800) | **k8s** — `domain` → `:30800` ✅ |
 | `domain-worker` | rodando | manifesto, **`replicas: 0`** | Docker (único escritor do CQRS) |
 | `finance-api` | rodando | **rodando** (ClusterIP:8000) | ainda no Docker (`finance-api` → `:8018`) |
 | `finance-openfinance-worker` | rodando | manifesto, **`replicas: 0`** | Docker |
@@ -354,6 +354,23 @@ Morrem quando os dados migrarem (fatias 5 e 6): aí o `Service` ganha
 
 ### O que foi provado, não assumido
 
+- **Terceiro cutover, primeira API de produção**: `domain.giomartins.dev` →
+  `:30800`. Paridade provada com resposta **autenticada de dados reais**:
+  `GET /finance/daily-summary?user_id=…&date=2026-10-23` devolveu 200 e
+  **133 bytes idênticos** dos dois lados
+  (`{"income":"0.00",…,"transaction_count":0}`), com o `user_id` lido da
+  tabela `finance_bills` no Postgres que continua em Docker. Status 200 e
+  corpo de erro idêntico não provariam leitura de banco — foi preciso acertar
+  os dois parâmetros obrigatórios e usar um `user_id` que existe.
+- **`domain-api` no cluster é distroless** (sem `sh`): probes e diagnóstico
+  usam `tcpSocket`, e qualquer investigação tem de ser feita de um pod
+  auxiliar, não com `kubectl exec ... sh`.
+- **Duas ciladas de NodePort**: `30080` já é do ArgoCD — o k8s recusa a
+  alocação, o Service fica `OutOfSync` sem aplicar, e um `curl` na porta
+  devolve 200 *do ArgoCD*, falso positivo. E a `operation` do ArgoCD trava em
+  retry com o manifesto obsoleto em cache; a saída foi `delete app
+  --cascade=orphan` e deixar o ApplicationSet recriar. `30800` segue a
+  convenção 80xx→308xx.
 - **Primeiro tráfego real no cluster**: `adminer.giomartins.dev` passou a
   servir do pod (`:30092`) em vez do container (`:8092`). Prova de que veio do
   k8s: o log do pod recebe de `10.42.0.1` (a ponte do cluster) e o log do
