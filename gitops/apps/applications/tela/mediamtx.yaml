@@ -1,0 +1,123 @@
+# tela-mediamtx — servidor WebRTC (WHIP/WHEP) do screen sharing.
+#
+# ## O que ele faz, e por que tem porta de mídia no host
+#
+# A `tela-api` fala WHIP/WHEP com ele por `127.0.0.1:8889` e devolve ao browser
+# a oferta SDP. A partir daí a mídia NÃO passa pela API: o browser conecta
+# direto na porta 8217 (UDP, com TCP como fallback) deste processo. Por isso
+# `hostNetwork` — os candidatos ICE anunciam 168.138.135.6:8217, e o pacote tem
+# de chegar nesse IP:porta do host, não num IP de pod.
+#
+# ## `MTX_WEBRTCIPSFROMINTERFACES: "no"` é obrigatório
+#
+# Sem isso o MediaMTX enumera as interfaces do host e anuncia também
+# `docker0`/`br-*`, que não são roteáveis da internet. O browser recebe um
+# candidato inválido, tenta primeiro por ele, e a sessão demora ou falha. O IP
+# público vai explícito em `MTX_WEBRTCADDITIONALHOSTS`.
+#
+# ## Por que os probes apontam `host: 127.0.0.1`
+#
+# Medido em 2026-10-23 num pod `hostNetwork` de teste: o `tcpSocket` do kubelet
+# dial-a o IP DO NÓ (10.0.0.209), não o loopback. Este processo escuta o HTTP
+# em `127.0.0.1:8889` (de propósito: só a API precisa falar com ele), então um
+# probe sem `host` daria `Connection refused` para sempre — pod `Running` e
+# nunca `Ready`. Com `host: 127.0.0.1` o probe passa (provado no mesmo teste).
+#
+# ## Por que não há shell para um probe `exec`
+#
+# A imagem é `scratch`+binário: não tem `/bin/sh` nem `/bin/ls` (verificado:
+# `exec: "/bin/sh": no such file or directory`). Probe `exec` é impossível aqui.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tela-mediamtx
+  labels:
+    app.kubernetes.io/name: tela-mediamtx
+spec:
+  # 0 até o corte: com o container Docker de pé, este pod tentaria bindar a
+  # 8217 (TCP e UDP) e entraria em CrashLoop por COLISÃO, não por bug.
+  replicas: 0
+  # hostNetwork + portas fixas: duas réplicas disputariam as mesmas portas do
+  # host. Não existe sobreposição possível, só troca.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tela-mediamtx
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tela-mediamtx
+    spec:
+      hostNetwork: true
+      # Sem DNS do cluster: tudo que este processo fala é loopback e IP público.
+      dnsPolicy: Default
+      containers:
+        - name: mediamtx
+          # Mesmo digest do container em produção (`docker image inspect`).
+          image: bluenviron/mediamtx@sha256:c7540465f868a02652118bea5a0daab12a29ac0f6cb8485abd535939ecddf886
+          imagePullPolicy: IfNotPresent
+          env:
+            # HTTP WHIP/WHEP no loopback: a tela-api é a única cliente.
+            - name: MTX_WEBRTCADDRESS
+              value: 127.0.0.1:8889
+            # Porta de mídia: uma só, TCP e UDP, bind no host.
+            - name: MTX_WEBRTCLOCALUDPADDRESS
+              value: ":8217"
+            - name: MTX_WEBRTCLOCALTCPADDRESS
+              value: ":8217"
+            # O endereço que vai nos candidatos ICE.
+            - name: MTX_WEBRTCADDITIONALHOSTS
+              value: "168.138.135.6"
+            - name: MTX_WEBRTCIPSFROMINTERFACES
+              value: "no"
+            # Protocolos fora de uso, desligados: menos superfície, menos log.
+            - name: MTX_RTSP
+              value: "no"
+            - name: MTX_RTMP
+              value: "no"
+            - name: MTX_HLS
+              value: "no"
+            - name: MTX_SRT
+              value: "no"
+            - name: MTX_MOQ
+              value: "no"
+            - name: MTX_API
+              value: "no"
+            - name: MTX_METRICS
+              value: "no"
+            - name: MTX_LOGLEVEL
+              value: info
+            - name: MTX_LOGDESTINATIONS
+              value: stdout
+          ports:
+            - name: webrtc-http
+              containerPort: 8889
+            - name: media-tcp
+              containerPort: 8217
+              protocol: TCP
+            - name: media-udp
+              containerPort: 8217
+              protocol: UDP
+          readinessProbe:
+            tcpSocket:
+              host: 127.0.0.1
+              port: webrtc-http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              host: 127.0.0.1
+              port: webrtc-http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            # Sem `mem_limit` no Compose. A mídia é repassada, não transcodificada
+            # (nenhum codec é reencodado aqui), então o teto não é previsão de uso.
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi

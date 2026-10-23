@@ -48,7 +48,7 @@ namespace_do_secret() {
   case "$1" in
     domain-api|domain-worker|finance-api|finance-customersupport-worker)
       echo applications ;;
-    finance-openfinance-worker|vaultwarden-api|evolution-api|9router)
+    finance-openfinance-worker|vaultwarden-api|evolution-api|9router|tela-turn)
       echo applications ;;
     vaultwarden|minio|rabbitmq|postgres)
       echo persistence ;;
@@ -106,6 +106,11 @@ MAPA=(
   # Copiá-las para o Secret as esconderia sem protegê-las, e o pod leria o
   # manifest para descobrir em que porta escuta.
   "9router:9router:JWT_SECRET,INITIAL_PASSWORD"
+  # tela: o `static-auth-secret` do coturn, que a `tela-api` usa para assinar
+  # credenciais TURN de curta duracao. O nome do Secret (`tela-turn`) e o do
+  # container (`tela-api`) diferem porque o segredo e COMPARTILHADO pelos dois
+  # pods do diretorio `tela/`, e o dono do valor no Compose e o `tela-api`.
+  "tela-turn:tela-api:TELA_TURN_SECRET"
   # minio: so as duas credenciais. As MINIO_*_FILE do container sao da IMAGEM
   # (estao no Dockerfile, nao no Compose): MINIO_ROOT_USER_FILE=access_key,
   # MINIO_KMS_SECRET_KEY_FILE=kms_master_key etc. Copia-las para o Secret e

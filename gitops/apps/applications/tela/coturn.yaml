@@ -1,0 +1,128 @@
+# tela-coturn — relay TURN/STUN para quando o caminho direto entre browsers falha.
+#
+# ## O que ele resolve
+#
+# WebRTC tenta conexão direta primeiro (candidatos host/srflx). Quando as duas
+# pontas estão atrás de NAT simétrico, ou quando o handshake DTLS grande é
+# descartado no caminho, a mídia não passa. Aí o coturn entra: o browser recebe
+# credenciais TURN de curta duração (geradas pela `tela-api` a partir do
+# `static-auth-secret`) e manda o tráfego por ele.
+#
+# `iceTransportPolicy: "relay"` em `/api/rtc/ice` é o que a API devolve hoje —
+# ou seja, o relay não é fallback: é o caminho principal. Parar este serviço
+# para o screen sharing, mesmo que o MediaMTX esteja de pé.
+#
+# ## Por que `hostNetwork` e a faixa 49160-49200
+#
+# O coturn anuncia `--external-ip=168.138.135.6/10.0.0.209`: recebe no IP
+# privado, entrega no público (o host não faz hairpin). Cada alocação consome
+# uma porta UDP da faixa de relay, e essas portas são as do HOST — o firewall
+# já as libera (`INPUT -p udp --dport 49160:49200 ACCEPT`). Em pod com rede
+# normal, a faixa seria do pod e o browser não a alcançaria.
+#
+# ## `--listening-ip`/`--relay-ip` continuam sendo o IP privado do nó
+#
+# Não são valores de exemplo: são o endereço em que o host recebe o tráfego da
+# VPC. Em `hostNetwork` o pod vê exatamente as mesmas interfaces, então o
+# argumento não muda na migração. Se um dia houver mais de um nó, isto vira
+# `status.hostIP` via `fieldRef` — e o desenho precisa ser revisto, porque a
+# faixa de relay seria disputada entre nós.
+#
+# ## O segredo vem do Secret, nunca do git
+#
+# `static-auth-secret` é a chave que assina as credenciais TURN. O manifest
+# referencia `tela-turn` (chave `TELA_TURN_SECRET`), criado por
+# `sync-app-secrets.sh` a partir do env real do container. O valor não aparece
+# aqui, e o repositório é público.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tela-coturn
+  labels:
+    app.kubernetes.io/name: tela-coturn
+spec:
+  # 0 até o corte: a porta 3478 (TCP+UDP) e a faixa de relay são do host.
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tela-coturn
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tela-coturn
+    spec:
+      hostNetwork: true
+      dnsPolicy: Default
+      containers:
+        - name: coturn
+          # Mesmo digest do container em produção.
+          image: coturn/coturn@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
+          imagePullPolicy: IfNotPresent
+          # Os argumentos são o `command` do Compose, um a um. O entrypoint da
+          # imagem (`docker-entrypoint.sh`) faz `eval "echo $i"` em cada
+          # argumento, então `${TELA_TURN_SECRET}` é expandido ali, a partir da
+          # env do pod. De propósito NÃO usei `$(TELA_TURN_SECRET)`: essa é a
+          # sintaxe de expansão do próprio kubelet, que substituiria o valor
+          # ANTES do `eval` — e o `eval` então reprocessaria o segredo literal,
+          # quebrando se ele tiver caractere de shell. Aqui o valor só é
+          # expandido uma vez, no lugar certo.
+          #
+          # Usar `args` (e não `command`) preserva o entrypoint — que é o que
+          # transforma um argumento começando com `-` em `turnserver ...`.
+          args:
+            - "-n"
+            - "--use-auth-secret"
+            - "--static-auth-secret=${TELA_TURN_SECRET}"
+            - "--realm=tela.giomartins.dev"
+            - "--no-cli"
+            - "--no-tls"
+            - "--log-file=stdout"
+            - "--fingerprint"
+            - "--listening-ip=10.0.0.209"
+            - "--relay-ip=10.0.0.209"
+            - "--listening-port=3478"
+            - "--min-port=49160"
+            - "--max-port=49200"
+            - "--external-ip=168.138.135.6/10.0.0.209"
+          env:
+            - name: TELA_TURN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tela-turn
+                  key: TELA_TURN_SECRET
+          ports:
+            - name: stun-tcp
+              containerPort: 3478
+              protocol: TCP
+            - name: stun-udp
+              containerPort: 3478
+              protocol: UDP
+          # ## Por que o probe é TCP na 3478, e não `exec turnserver`
+          #
+          # A imagem tem shell, mas o processo roda como `nobody` e não existe um
+          # subcomando de status barato e sem efeito colateral. O que se mede aqui
+          # é "o processo aceita conexão na porta que o browser vai usar" — se o
+          # bind falhou (porta ocupada, argumento inválido), a 3478 não responde e
+          # o pod não fica Ready. Saúde de relay é provada pelo browser, não pelo
+          # kubelet.
+          readinessProbe:
+            tcpSocket:
+              port: stun-tcp
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: stun-tcp
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            # O relay só move pacotes; sem mem_limit no Compose.
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
