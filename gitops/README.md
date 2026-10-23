@@ -864,6 +864,17 @@ Saídas, em ordem de custo:
 iguais, e o `iptables -S INPUT` mostra um `REJECT` que dá a falsa impressão de
 que tudo está fechado.
 
+**Prova do conserto da armadilha 30** (mesmo dia, `prova-restart-alloy.sh`): o
+pod foi **deletado e recriado** com o PVC montado. Resultado: 61 linhas de
+`positions.yml` no Docker preservadas, 1.893 entradas enviadas em 90 s,
+**zero descartadas**, zero linhas `dropping data`, e OTLP íntegro
+(`accepted_spans_total` = `exporter_sent_spans_total` = 3.035). Antes do
+conserto, o mesmo restart produzia os 115.696 descartes. O critério de
+verificação é **contagem de linhas** (≈61 contra 1–2 se vazio), não md5: o
+arquivo avança a cada linha lida, então o hash difere mesmo quando está tudo
+certo.
+
+
 
 ## Bootstrap (uma vez por cluster)
 
