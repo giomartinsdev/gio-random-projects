@@ -1447,5 +1447,69 @@ Ficam de fora, e por motivo, não por esquecimento:
    sem NodePort (`HTTP 000`) por alguns minutos. O Deployment antigo **é** o
    rollback — ele só pode cair quando o Service novo está no ar.
 
+   A causa da fase 4 falhar foi banal e vale registrar: a fase 2.5 passou a
+   gravar `/tmp/<app>.<svc>.render.yaml`, e a fase 4 continuou lendo
+   `.svc.yaml`. O `grep` que deveria extrair o tipo devolveu vazio, o `apply`
+   apontou para arquivo inexistente, e o script seguiu. Duas fases que
+   compartilham um arquivo precisam compartilhar o **nome** dele — derivar duas
+   vezes é como as duas divergem.
+22. **Trocar o glob do ApplicationSet antes do push apaga tudo.** O AppSet lê do
+   GitHub, não do disco. A sequência natural — editar o repo, aplicar o
+   `appset` novo, depois commitar — gera **zero** Applications, porque o glob
+   novo (`gitops/apps/*/*`) não casa com o layout que ainda está no remoto. O
+   controller então considera as 15 Applications antigas órfãs e as remove, e
+   remover uma Application com `prune: true` **apaga os recursos dela**. Ou seja:
+   o cluster inteiro, por uma ordem de dois comandos.
+
+   **Regra**: `git push` é pré-requisito do `appset apply`, não consequência.
+   Antes de mudar o glob, confirmar que o remoto já tem a árvore que o glob
+   descreve (`git rev-parse HEAD` = `git rev-parse origin/main`).
+
+   Sintoma de que deu errado, se algum dia der: o AppSet reconcilia e o número
+   de Applications **cai**, em vez de se manter. Ver o `allPaths` no log do
+   `applicationset-controller` — ele lista o que o glob realmente viu no repo.
+23. **O caminho do usuário não passa pelo `ingress-nginx` do cluster.** O que
+   serve os 19 hosts é o nginx **em Docker no host**, que faz `proxy_pass` para
+   `127.0.0.1:<NodePort>`. O `ingress-nginx` do cluster tem zero `Ingress` e
+   escuta em `30945`/`30421`, fora do caminho.
+
+   Duas consequências práticas que custaram tempo:
+
+   - **"Não mudar NodePort" não é conservadorismo, é o que preserva o
+     site.** O contrato entre o nginx do host e o cluster é só `host:porta`.
+     Namespace, nome de Deployment e ClusterIP podem mudar à vontade; a porta
+     30xxx não pode.
+   - **Testar com `curl --resolve host:443:127.0.0.1` dá `000` em todos os
+     hosts** — inclusive nos que nunca foram tocados. Não há nada escutando na
+     443 do host: o TLS termina no Cloudflare e chega em HTTP na 80. Um alarme
+     de "todos os 24 hosts caíram" que era só o teste errado. O teste válido é
+     `curl https://host/` de verdade, ou `curl http://127.0.0.1:<NodePort>/`.
+24. **`head -c 160` no corpo de um login é vazamento de token.** Ao verificar a
+   rotação da senha do Kubero, o script fez `echo "corpo: $(head -c 160 ...)"`.
+   O corpo é JSON com `access_token` no topo — um JWT de ~528 caracteres. Em 160
+   caracteres já vão o header e boa parte do payload.
+
+   Neste caso não houve dano: o corte caiu no meio da assinatura, e o pedaço não
+   autentica (`/api/auth/session` devolveu `400`). Mas isso foi **sorte de onde
+   o corte caiu**, não desenho. Um `head -c 600` teria exfiltrado sessão de admin.
+
+   **Regra**: em verificação de credencial, imprimir só `sorted(d.keys())`,
+   tamanho e presença — nunca `d["token"][:N]`. E se o corpo for logado por
+   engano, redigir o arquivo **e** trate o token como comprometido: rotacione de
+   novo se ele estiver completo.
+
+25. **O status HTTP do login do Kubero não significa nada.** `POST
+   /api/auth/login` devolve **201** para credencial inválida (com
+   `{"statusCode":403}` no corpo) **e** para requisição vazia (com
+   `{"status":400}`). Julgar por `code` daria "login ok" para qualquer coisa.
+   A verificação olha o corpo: ausência de `status`/`message` **e** presença de
+   `access_token`.
+
+   E a senha do admin **não** está no Secret: `KUBERO_ADMIN_PASSWORD` é
+   referenciado no Deployment, mas a chave não existe em `kubero-secrets` — o
+   admin é semeado no **SQLite** (`/app/server/db/kubero.sqlite`, tabela `User`)
+   na primeira subida, e o log confirma `No legacy users to migrate. KUBERO_USERS
+   is not set.` Trocar a env não faz nada.
+
 
 

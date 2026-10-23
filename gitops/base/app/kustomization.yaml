@@ -20,11 +20,19 @@
 #   patches:
 #     - path: deployment.yaml
 #
-# O `namespace` é fixo aqui porque todos os serviços moram em `giomartins`.
+# ## O `namespace` NÃO mora aqui (fatia 7)
+#
+# Até a fatia 7 este arquivo declarava `namespace: giomartins`, porque havia um
+# namespace só. Com o fatiamento, o namespace passou a ser propriedade do
+# CAMINHO (`gitops/apps/<namespace>/<serviço>/`), e a app declara o seu.
+#
+# Deixar `giomartins` aqui viraria armadilha: quem usasse o base sem declarar
+# namespace no kustomization do app criaria o serviço no namespace morto, e o
+# `kubectl get pods` mostraria tudo "saudável" no lugar errado. O transformer de
+# namespace do kustomize externo até sobrescreveria este valor, mas depender
+# dessa precedência silenciosa é exatamente o tipo de coisa que custa uma janela.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
-namespace: giomartins
 
 resources:
   - deployment.yaml
