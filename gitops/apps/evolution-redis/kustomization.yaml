@@ -1,13 +1,13 @@
-# evolution-redis — a ÚLTIMA ponte. Quando este Service virar, o diretório
+# evolution-redis — a ÚLTIMA ponte. Com este Service virando, o diretório
 # `gitops/apps/bridges/` fica vazio e o timer `sync-external-endpoints` perde a
 # razão de existir.
 #
 # ## A ordem dos dois commits
 #
-#   1. ESTE: `deployment.yaml` em `resources`, `service.yaml` FORA. O pod sobe,
-#      replica do container e prova o dado — mas ninguém resolve
-#      `evolution-redis` para ele, porque o nome ainda é a ponte.
-#   2. O CUTOVER: `service.yaml` entra em `resources` + `bridges/evolution-redis.yaml`
+#   1. `deployment.yaml` sozinho: o pod subiu, replicou do container e provou o
+#      dado (md5 dos 860 pares campo+valor idêntico). Ninguém resolvia
+#      `evolution-redis` para ele, porque o nome ainda era a ponte.
+#   2. ESTE: `service.yaml` entra em `resources` + `bridges/evolution-redis.yaml`
 #      sai + `evolution-redis` sai do `MAPA` do timer. Os três juntos.
 #
 # Fazer o passo 2 antes do 1 derrubaria o `evolution-api` (que fala
@@ -15,6 +15,14 @@
 # 860 chaves e precisaria de QR novo. Fazer o 2 sem o 3 faria o kube-proxy
 # balancear entre o pod e o container — metade das chaves indo para cada lado,
 # que é pior que qualquer um dos dois sozinho.
+#
+# ## Depois deste commit
+#
+# `bridges/` fica vazio. O timer continua instalado mas com `MAPA` vazio, o que
+# é inofensivo; ele sai junto com o Docker no fim da migração. Não apagar o
+# diretório `bridges/` ainda: o ApplicationSet geraria uma Application sem
+# recursos, e é mais honesto desmontar isso de uma vez quando o último container
+# parar.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -22,4 +30,4 @@ namespace: giomartins
 
 resources:
   - deployment.yaml
-  # - service.yaml   # ← janela: descomentar junto com o git rm da ponte
+  - service.yaml

@@ -63,23 +63,35 @@ NS="giomartins"
 #
 # A porta NÃO aparece aqui de propósito: vem do Service. Ver o comentário do
 # topo sobre nomes de porta.
-MAPA=(
-  "evolution-redis:evolution-redis"
-  # `alloy` saiu em 2026-10-23: o Service ganhou selector e passou a apontar
-  # para o pod `alloy-logs`, que agora tem receiver OTLP completo. Deixá-lo
-  # aqui era pior que no postgres: o timer recriaria o EndpointSlice manual
-  # `alloy` (mesmo nome do Service) e o kube-proxy passaria a balancear entre o
-  # POD e o CONTAINER -- metade dos traces e métricas indo para o Tempo/
-  # Prometheus em Docker, a outra metade para os do cluster. Sintoma mudo: os
-  # dois aceitam OTLP (200), e o dado simplesmente some do Grafana pela metade.
-  #
-  # `postgres` saiu em 2026-10-23 e `vaultwarden` em 2026-10-23: os dois
-  # Services ganharam selector e o EndpointSlice do controller passou a ser a
-  # fonte.
-  #
-  # No vaultwarden o sintoma foi mudo (os dois respondem o mesmo /api/config);
-  # no postgres seria pior: escritas indo para dois bancos diferentes.
-)
+#
+# VAZIO desde 2026-10-23. Não há mais nenhum Service de ponte: `postgres` e
+# `vaultwarden` saíram na fatia 6, `alloy` e `evolution-redis` em 2026-10-23.
+#
+# O timer continua instalado e roda a cada minuto sem fazer nada. Não é
+# desleixo: é a rede de segurança do estado atual. Se um Service de ponte
+# reaparecer (rollback de emergência), basta acrescentar a linha de volta e
+# `systemctl restart`. Com o Docker desligado, o loop não tem em que tocar --
+# e o `[skip]` do journal deixa isso explícito.
+#
+# ## Por que cada saída foi perigosa
+#
+# `alloy` saiu porque o Service ganhou selector e passou a apontar para o pod
+# `alloy-logs`. Deixá-lo aqui era pior que no postgres: o timer recriaria o
+# EndpointSlice manual `alloy` (mesmo nome do Service) e o kube-proxy passaria a
+# balancear entre o POD e o CONTAINER -- metade dos traces e métricas indo para
+# o Tempo/Prometheus em Docker, a outra metade para os do cluster. Sintoma mudo:
+# os dois aceitam OTLP (200), e o dado simplesmente some do Grafana pela metade.
+#
+# `postgres` saiu em 2026-10-23 e `vaultwarden` em 2026-10-23: os dois Services
+# ganharam selector e o EndpointSlice do controller passou a ser a fonte. No
+# vaultwarden o sintoma foi mudo (os dois respondem o mesmo /api/config); no
+# postgres seria pior: escritas indo para dois bancos diferentes.
+#
+# `evolution-redis` saiu em 2026-10-23 pelo mesmo motivo, com um agravante: o
+# dado é a sessão Baileys. Balancear entre pod e container faria o
+# evolution-api escrever `pre-key-*` em dois Redis diferentes, e o hash de 860
+# campos divergiria sem erro nenhum -- só um QR novo no dia seguinte.
+MAPA=()
 
 for entrada in "${MAPA[@]}"; do
   IFS=: read -r svc container <<< "$entrada"
