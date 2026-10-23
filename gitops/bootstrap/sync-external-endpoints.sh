@@ -30,8 +30,9 @@
 #
 # ## Divisão de responsabilidade
 #
-#   - **Services** (postgres, rabbitmq, minio, alloy, evolution-*, vaultwarden)
-#     são declarados em `gitops/apps/bridges/` e reconciliados pelo ArgoCD.
+#   - **Services** (postgres, alloy, evolution-redis) são declarados em
+#     `gitops/apps/bridges/` (ou no diretório do app, no caso do vaultwarden
+#     até 2026-10-23) e reconciliados pelo ArgoCD.
 #   - **EndpointSlices** são escritos POR ESTE SCRIPT. Eles contêm o IP do
 #     container, que muda quando o Dockhand redeploya a stack.
 #
@@ -66,7 +67,12 @@ MAPA=(
   "postgres:postgres"
   "alloy:alloy"
   "evolution-redis:evolution-redis"
-  "vaultwarden:vaultwarden"
+  # `vaultwarden` saiu em 2026-10-23: o Service ganhou selector (NodePort 30822)
+  # e o EndpointSlice do controller passou a ser a fonte. Deixá-lo aqui fazia o
+  # timer recriar o EndpointSlice manual a cada minuto, e o kube-proxy passava a
+  # balancear entre o POD e o CONTAINER — o domínio servia os dois, alternando.
+  # Sintoma: `vault.giomartins.dev` respondia 200 e o log do container continuava
+  # recebendo requisições que deveriam ir para o pod.
 )
 
 for entrada in "${MAPA[@]}"; do
