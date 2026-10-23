@@ -230,13 +230,26 @@ services:
       - evolution_instances:/evolution/instances
     networks: [apps]
 
-  # Cache do Evolution (dedicado).
+  # `evolution-redis` — último container de DADOS a sair do Compose.
+  #
+  # MIGRADO para o k8s em 2026-10-23. O pod `evolution-redis` replicou o dataset
+  # do container por `REPLICAOF` (sem parada), provou os 860 campos do hash
+  # Baileys por md5 e foi promovido a mestre antes de o Service virar.
+  #
+  # `profiles: ["retired"]` e a trava real: `restart: "no"` só rege auto-restart
+  # pós-crash, e o `compose up` diário do Dockhand (03:00 UTC) subiria o
+  # container de qualquer jeito. Com o profile, ele nem é considerado.
+  #
+  # O volume `evolution_redis_data` fica intacto. É o rollback: enquanto ele
+  # existir, `docker compose --profile retired up -d evolution-redis` devolve o
+  # serviço como era. Apagar isso é o último passo da migração, não este.
   evolution-redis:
     image: redis:7-alpine
     container_name: evolution-redis
     labels:
       giomartins.dev/project: compute
-    restart: unless-stopped
+    profiles: ["retired"]
+    restart: "no"
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - evolution_redis_data:/data
