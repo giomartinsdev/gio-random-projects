@@ -63,6 +63,12 @@ MAPA=(
   # na melhor hipótese, e na pior (se um dia divergirem) quebraria o pod com um
   # caminho inexistente. `:GF_SECURITY_ADMIN_PASSWORD` seleciona uma chave só.
   "grafana:grafana:GF_SECURITY_ADMIN_PASSWORD"
+  # 9router: mesmas duas chaves do grafana, mesmo motivo. As outras 10 vars do
+  # container (PORT, BASE_URL, DATA_DIR, NODE_ENV...) são configuração, não
+  # segredo: ficam literais no manifesto, onde podem ser revisadas no diff.
+  # Copiá-las para o Secret as esconderia sem protegê-las, e o pod leria o
+  # manifest para descobrir em que porta escuta.
+  "9router:9router:JWT_SECRET,INITIAL_PASSWORD"
 )
 
 alvo="${1:-}"

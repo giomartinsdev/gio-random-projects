@@ -1,0 +1,183 @@
+# 9router — proxy OpenAI-compatible + rota de decisão System One.
+#
+# ## Por que `replicas: 0`, e o que isso significa aqui
+#
+# Este é o caso mais delicado da migração até agora, por dois motivos que se
+# somam:
+#
+#   1. **SQLite com WAL.** `data.sqlite` (11,8M) + `data.sqlite-wal` (1,4M).
+#      Dois processos escrevendo no mesmo arquivo por dois caminhos diferentes
+#      (bind mount do Docker e PVC do k8s) corrompem o banco. Não existe
+#      "rodar em paralelo para comparar" — este serviço exige parada.
+#
+#   2. **Ele é a porta de IA do host inteiro**, e está servindo a sessão que
+#      escreve esta migração. Derrubar por engano não quebra um site: quebra o
+#      acesso ao próprio agente que poderia consertar.
+#
+# A combinação das duas é o motivo de o manifesto existir agora e o cutover
+# ficar para uma janela explícita, com o procedimento escrito abaixo.
+#
+# ## Procedimento de cutover (não executado ainda)
+#
+#   1. `sudo sqlite3 data.sqlite ".backup /opt/k8s-backups/<data>/9router.sqlite"`
+#      com o container AINDA rodando — `.backup` é consistente sob WAL e não
+#      precisa parar. É a rede de segurança.
+#   2. parar o container (WAL checkpoint no shutdown)
+#   3. copiar `_data/.` para o PVC, com um pod filler (ver copy-obs-volume.sh)
+#   4. religar o container, subir o pod, comparar `/api/health` e a lista de
+#      providers (`/api/providers` ou equivalente)
+#   5. só então virar `ai.giomartins.dev` para o NodePort
+#
+# O passo 4 é o que permite rollback: o container volta antes de o pod assumir.
+#
+# ## O volume tem mais que o banco
+#
+# `auth/`, `db/`, `logs/`, `runtime/` e `machine-id`. O `machine-id` é
+# significativo: identifica a instância para o licenciamento/telemetria do
+# próprio 9router. Copiar só o `db/` daria um banco com credenciais e uma
+# instância que se apresenta como nova.
+#
+# ## `DATA_DIR` é a única env de caminho
+#
+# As demais (`JWT_SECRET`, `INITIAL_PASSWORD`) vêm do Secret, gerado por
+# `sync-app-secrets.sh` a partir do env real do container. O nome das chaves é o
+# mesmo dos dois lados porque é o que o processo lê.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: 9router-data
+  labels:
+    app.kubernetes.io/name: 9router
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      # 14M hoje. 2Gi é folga para o histórico de requests (ENABLE_REQUEST_LOGS)
+      # crescer sem um alerta por disco — o volume cresce com o uso, não com o
+      # número de providers.
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: 9router
+  labels:
+    app.kubernetes.io/name: 9router
+spec:
+  # 0 até a janela de cutover: SQLite com WAL não admite dois escritores, e o
+  # container Docker é hoje o único. Ver o procedimento no topo do arquivo.
+  replicas: 0
+  # `Recreate`, não `RollingUpdate`: dois pods montando o mesmo PVC RWO nem
+  # agendam, mas a intenção precisa estar dita — para este serviço não existe
+  # sobreposição de versões, só troca.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: 9router
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: 9router
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: 9router
+          image: ghcr.io/decolua/9router@sha256:f00fe389ef41a1999dd0d0275ad0c2955d13d176f7c4c5cb844b2f88c293c471
+          env:
+            - name: DATA_DIR
+              value: /app/data
+            - name: PORT
+              value: "20128"
+            - name: NODE_ENV
+              value: production
+            - name: BASE_URL
+              value: https://ai.giomartins.dev
+            - name: NEXT_PUBLIC_BASE_URL
+              value: https://ai.giomartins.dev
+            - name: AUTH_COOKIE_SECURE
+              value: "true"
+            - name: REQUIRE_API_KEY
+              value: "false"
+            - name: ENABLE_REQUEST_LOGS
+              value: "true"
+            - name: OBSERVABILITY_ENABLED
+              value: "true"
+            # Estava no container e não no meu primeiro rascunho. É telemetria
+            # do Next.js indo para a Vercel — num host que roda tudo local, é
+            # exatamente o tipo de ligação externa que ninguém lembra que existe.
+            - name: NEXT_TELEMETRY_DISABLED
+              value: "1"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: 9router
+                  key: JWT_SECRET
+            - name: INITIAL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: 9router
+                  key: INITIAL_PASSWORD
+          ports:
+            - name: http
+              containerPort: 20128
+          # `/api/health` é o único que responde 200; `/health` e `/alive` dão
+          # 404. Foi verificado nos dois endpoints antes de escolher — usar o
+          # errado deixaria o pod em CrashLoop por probe, não por bug.
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            # Boot de Next.js com SQLite de 12M: 60s é generoso, e o custo de
+            # ser generoso é só demorar a detectar travamento real.
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              # Não há mem_limit no Compose para este serviço. 768Mi é teto de
+              # segurança: acima disso o node (23G, ~10G livres) começa a
+              # brigar com o Postgres e o Prometheus.
+              memory: 768Mi
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: 9router-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: 9router
+  labels:
+    app.kubernetes.io/name: 9router
+spec:
+  # NodePort 30028 (20128 -> 30028). O ClusterIP 20128 continua: quem fala
+  # `9router:20128` pela rede `apps` (o container `decision`, se um dia voltar)
+  # segue valendo.
+  #
+  # ATENÇÃO: o `decision` não está rodando hoje. O Compose o declara, mas
+  # `docker ps -a` mostra só o 9router. Não foi migrado porque não existe.
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: 9router
+  ports:
+    - name: http
+      port: 20128
+      targetPort: http
+      nodePort: 30028
