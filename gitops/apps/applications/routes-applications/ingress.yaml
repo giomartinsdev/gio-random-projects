@@ -29,6 +29,25 @@ spec:
 # 9router — proxy OpenAI-compatible + rota de decisão System One. É a porta de
 # entrada da própria sessão do agente: qualquer mudança aqui se sente dentro
 # desta conversa. O serve é direto (svc ninerouter :20128, NodePort fixo).
+#
+# ## Por que NÃO tem `nginx.org/websocket-services` (2026-10-24)
+#
+# A annotation emite `proxy_set_header Connection $connection_upgrade`, e o map
+# global do NIC é `default upgrade; '' close;`. Request normal de LLM não manda
+# `Upgrade`, então o header resolvia para `close` — e o 9router abortava a
+# leitura do corpo grande (o opencode manda 480KB de histórico). Sintoma: `400`
+# com **0 bytes** de resposta, intermitente, e `502` quando o abort acontecia no
+# meio do stream.
+#
+# Medido no cluster, 15 requests intercaladas com body de 480KB:
+#
+#   probe-plain (sem a annotation)  15/15 → 200
+#   probe-ws    (com a annotation)   9/15 → 200, 6/15 → 400
+#   ai          (produção, com ela) 12/15 → 200, 3/15 → 400
+#
+# O 9router é HTTP + SSE (streaming de token), não WebSocket: a annotation só
+# custava. Se algum dia a UI do 9router precisar de WS num path específico, a
+# saída é um `location ~ ^/<path>$` aninhado só ali — não no host inteiro.
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -36,7 +55,6 @@ metadata:
   name: ing-ai
   annotations:
     nginx.org/client-max-body-size: "50m"
-    nginx.org/websocket-services: "ninerouter"
     nginx.org/location-snippets: "proxy_http_version 1.1;"
 spec:
   ingressClassName: nic
