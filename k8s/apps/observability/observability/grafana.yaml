@@ -67,12 +67,30 @@ data:
     apiVersion: 1
 
     providers:
+      # Dois providers, duas pastas. O path aponta para um subdiretório do
+      # volume projetado — `/var/lib/grafana/dashboards/apps` e `.../cluster`.
+      #
+      # ## Por que NÃO `subPath` no volumeMount
+      #
+      # A primeira versão montava cada `.json` com `subPath`. Funciona no boot e
+      # nunca mais: o kubelet não atualiza um `subPath` quando o ConfigMap muda,
+      # então editar o dashboard no git exigia `rollout restart` do Grafana —
+      # e sem isso a UI mostrava o JSON velho com o ArgoCD verde. Volume
+      # PROJETADO em diretório propaga a atualização (~60s) e o
+      # `updateIntervalSeconds: 30` recarrega o dashboard sozinho.
       - name: apps
         folder: Apps
         type: file
         updateIntervalSeconds: 30
         options:
-          path: /etc/grafana/provisioning/dashboards
+          path: /var/lib/grafana/dashboards/apps
+          foldersFromFilesStructure: false
+      - name: cluster
+        folder: Cluster
+        type: file
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards/cluster
           foldersFromFilesStructure: false
 ---
 apiVersion: v1
@@ -147,10 +165,12 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/grafana
-            # Arquivo por arquivo, igual aos bind mounts do Compose. Montar o
-            # ConfigMap inteiro num diretório colocaria `dashboards.yaml` dentro
-            # de `provisioning/datasources/`, e o Grafana tentaria interpretá-lo
-            # como definição de datasource — falha no boot, não em runtime.
+            # datasources.yaml e dashboards.yaml continuam com subPath: são
+            # configuração, lidas só no boot, e não mudam com frequência.
+            # Montar o ConfigMap inteiro num diretório colocaria `dashboards.yaml`
+            # dentro de `provisioning/datasources/`, e o Grafana tentaria
+            # interpretá-lo como definição de datasource — falha no boot, não em
+            # runtime.
             - name: provisioning
               mountPath: /etc/grafana/provisioning/datasources/datasources.yaml
               readOnly: true
@@ -160,13 +180,11 @@ spec:
               readOnly: true
               subPath: dashboards.yaml
             - name: dashboard-json
-              mountPath: /etc/grafana/provisioning/dashboards/apps-overview.json
+              mountPath: /var/lib/grafana/dashboards/apps
               readOnly: true
-              subPath: apps-overview.json
             - name: cluster-dashboard-json
-              mountPath: /etc/grafana/provisioning/dashboards/cluster-overview.json
+              mountPath: /var/lib/grafana/dashboards/cluster
               readOnly: true
-              subPath: cluster-overview.json
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -174,9 +192,10 @@ spec:
         - name: provisioning
           configMap:
             name: grafana-provisioning
-        # apps-overview.json tem 28K e é um dashboard real. Entra como ConfigMap
-        # separado para não esbarrar no limite de 1 MiB por ConfigMap e para
-        # deixar claro que ele é dado, não configuração.
+        # Cada dashboard é seu próprio ConfigMap: são 28K e 27K de JSON real, e
+        # separar deixa óbvio que é dado, não configuração. Montados como
+        # DIRETÓRIO (volume projetado), não arquivo com subPath — ver o
+        # comentário em dashboards.yaml sobre propagação de update.
         - name: dashboard-json
           configMap:
             name: grafana-dashboard-apps-overview
