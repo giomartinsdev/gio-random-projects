@@ -22,9 +22,13 @@ services:
   excalidraw:
     image: registry.giomartins.dev:5000/excalidraw:latest
     container_name: excalidraw
+    # Migrado para o k8s em 2026-10-23. `profiles` e a trava: sem
+    # `--profile retired`, o `compose up -d` do Dockhand (03:00 UTC)
+    # ressuscita o container e ele disputa porta com o pod.
+    profiles: ["retired"]
+    restart: "no"
     labels:
       giomartins.dev/project: excalidraw
-    restart: unless-stopped
     ports:
       - "127.0.0.1:8023:80"
     networks: [apps]

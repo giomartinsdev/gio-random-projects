@@ -15,9 +15,13 @@ services:
   loki:
     image: grafana/loki:3.7.7
     container_name: loki
+    # Migrado para o k8s em 2026-10-23. `profiles` e a trava: sem
+    # `--profile retired`, o `compose up -d` do Dockhand (03:00 UTC)
+    # ressuscita o container e ele disputa porta com o pod.
+    profiles: ["retired"]
+    restart: "no"
     labels:
       giomartins.dev/project: observability
-    restart: unless-stopped
     user: "0"
     command: ["-config.file=/etc/loki/local-config.yaml"]
     volumes:
@@ -32,9 +36,13 @@ services:
   prometheus:
     image: prom/prometheus:v3.14.0
     container_name: prometheus
+    # Migrado para o k8s em 2026-10-23. `profiles` e a trava: sem
+    # `--profile retired`, o `compose up -d` do Dockhand (03:00 UTC)
+    # ressuscita o container e ele disputa porta com o pod.
+    profiles: ["retired"]
+    restart: "no"
     labels:
       giomartins.dev/project: observability
-    restart: unless-stopped
     user: "0"
     entrypoint: ["/bin/prometheus"]
     command:
@@ -54,9 +62,13 @@ services:
   tempo:
     image: grafana/tempo:2.10.8
     container_name: tempo
+    # Migrado para o k8s em 2026-10-23. `profiles` e a trava: sem
+    # `--profile retired`, o `compose up -d` do Dockhand (03:00 UTC)
+    # ressuscita o container e ele disputa porta com o pod.
+    profiles: ["retired"]
+    restart: "no"
     labels:
       giomartins.dev/project: observability
-    restart: unless-stopped
     user: "0"
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     volumes:
@@ -76,9 +88,30 @@ services:
   alloy:
     image: grafana/alloy:v1.19.2
     container_name: alloy
+    # Migrado para o k8s em 2026-10-23 -> o pod `alloy-logs`.
+    #
+    # Este container ficou por ULTIMO de proposito, como fonte de log dos
+    # containers que ainda restassem. Mas ele virou peso morto de duas formas:
+    #   1. escrevia em `loki:3100`, e o container `loki` foi parado. Desde
+    #      entao cada batch falha com `server misbehaving` / conexao recusada
+    #      e o log se perde;
+    #   2. o POD `alloy-logs` ja monta o mesmo `docker.sock` e le os MESMOS
+    #      containers (`loki.source.docker`), entregando no Loki do cluster.
+    #      Verificado: 25 containers tailing no pod, incluindo os parados.
+    #
+    # Ou seja: parar este container nao tira visibilidade de nada. O que ele
+    # fazia de util (logs de Docker) o pod faz; o que ele fazia de unico
+    # (receiver OTLP em :4318 no host) tambem -- o pod expoe :4318 no
+    # NodePort 30418, e o ingress ja aponta para la desde a armadilha 16.
+    #
+    # `depends_on` sai junto: ele citava loki/prometheus/tempo, todos
+    # `profiles: ["retired"]` agora, e o compose recusa o projeto inteiro com
+    # `depends on undefined service` -- derrubaria o stack todo no `up` das
+    # 03:00 UTC.
+    profiles: ["retired"]
+    restart: "no"
     labels:
       giomartins.dev/project: observability
-    restart: unless-stopped
     user: "0"
     command:
       - "run"
@@ -96,14 +129,17 @@ services:
     logging:
       options: { max-size: "10m", max-file: "3" }
     networks: [apps]
-    depends_on: [loki, prometheus, tempo]
 
   grafana:
     image: grafana/grafana-oss:12.4.3
     container_name: grafana
+    # Migrado para o k8s em 2026-10-23. `profiles` e a trava: sem
+    # `--profile retired`, o `compose up -d` do Dockhand (03:00 UTC)
+    # ressuscita o container e ele disputa porta com o pod.
+    profiles: ["retired"]
+    restart: "no"
     labels:
       giomartins.dev/project: observability
-    restart: unless-stopped
     user: "0"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?defina GRAFANA_ADMIN_PASSWORD}
@@ -122,7 +158,9 @@ services:
     logging:
       options: { max-size: "10m", max-file: "3" }
     networks: [apps]
-    depends_on: [loki, prometheus, tempo]
+    # `depends_on` removido junto com o profile: citava loki/prometheus/tempo,
+    # todos retired, e o compose recusa o projeto inteiro
+    # (`depends on undefined service`).
 
 networks:
   apps:

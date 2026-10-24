@@ -77,9 +77,13 @@ services:
   minio:
     image: minio/minio:latest
     container_name: minio
+    # Migrado para o k8s em 2026-10-23. `profiles` e a trava: sem
+    # `--profile retired`, o `compose up -d` do Dockhand (03:00 UTC)
+    # ressuscita o container e ele disputa porta com o pod.
+    profiles: ["retired"]
+    restart: "no"
     labels:
       giomartins.dev/project: storage
-    restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-bookclub-minio-admin}
@@ -113,9 +117,13 @@ services:
     # `mc mb --ignore-existing` + `mc anonymous set download`.
     image: amazon/aws-cli:latest
     container_name: minio-buckets-init
+    # Migrado para o k8s em 2026-10-23. `profiles` e a trava: sem
+    # `--profile retired`, o `compose up -d` do Dockhand (03:00 UTC)
+    # ressuscita o container e ele disputa porta com o pod.
+    profiles: ["retired"]
+    restart: "no"
     labels:
       giomartins.dev/project: storage
-    restart: "no"
     depends_on:
       minio:
         condition: service_healthy

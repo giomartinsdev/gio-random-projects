@@ -25,9 +25,13 @@ services:
   db-mcp:
     image: crystaldba/postgres-mcp:latest
     container_name: db-mcp
+    # Migrado para o k8s em 2026-10-23. `profiles` e a trava: sem
+    # `--profile retired`, o `compose up -d` do Dockhand (03:00 UTC)
+    # ressuscita o container e ele disputa porta com o pod.
+    profiles: ["retired"]
+    restart: "no"
     labels:
       giomartins.dev/project: db-mcp
-    restart: unless-stopped
     command: ["--access-mode=restricted", "--transport=sse",
               "--sse-host=0.0.0.0", "--sse-port=8000"]
     environment:
@@ -38,9 +42,13 @@ services:
   db-mcp-gateway:
     image: nginx:1.27-alpine
     container_name: db-mcp-gateway
+    # Migrado para o k8s em 2026-10-23. `profiles` e a trava: sem
+    # `--profile retired`, o `compose up -d` do Dockhand (03:00 UTC)
+    # ressuscita o container e ele disputa porta com o pod.
+    profiles: ["retired"]
+    restart: "no"
     labels:
       giomartins.dev/project: db-mcp
-    restart: unless-stopped
     depends_on: [db-mcp]
     environment:
       MCP_DB_TOKEN: ${MCP_DB_TOKEN:?defina MCP_DB_TOKEN}
