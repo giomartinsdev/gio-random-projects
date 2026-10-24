@@ -1,0 +1,87 @@
+# Rotas públicas dos apps do namespace applications, migradas do ConfigMap
+# `default.conf` do ingress legado para VirtualServers do NIC.
+#
+# O padrão é simples: um VS por host, upstream apontando para o Service local
+# na porta do contêiner (não no NodePort — o controller diala direto), e o
+# `client-max-body-size: 50m` herdado do global do legado explícito por
+# upstream.
+---
+apiVersion: k8s.nginx.org/v1
+kind: VirtualServer
+metadata:
+  name: vs-domain
+spec:
+  host: domain.giomartins.dev
+  upstreams:
+    - name: domain-api
+      service: domain-api
+      port: 8000
+      client-max-body-size: 50m
+  routes:
+    - path: /
+      action:
+        pass: domain-api
+---
+apiVersion: k8s.nginx.org/v1
+kind: VirtualServer
+metadata:
+  name: vs-ai
+spec:
+  host: ai.giomartins.dev
+  upstreams:
+    - name: router
+      service: 9router
+      port: 20128
+      client-max-body-size: 50m
+  routes:
+    - path: /
+      action:
+        pass: router
+---
+apiVersion: k8s.nginx.org/v1
+kind: VirtualServer
+metadata:
+  name: vs-evolution
+spec:
+  host: evolution.giomartins.dev
+  upstreams:
+    - name: evolution
+      service: evolution-api
+      port: 8080
+      client-max-body-size: 50m
+  routes:
+    - path: /
+      action:
+        pass: evolution
+---
+apiVersion: k8s.nginx.org/v1
+kind: VirtualServer
+metadata:
+  name: vs-draw
+spec:
+  host: draw.giomartins.dev
+  upstreams:
+    - name: excalidraw
+      service: excalidraw
+      port: 80
+      client-max-body-size: 50m
+  routes:
+    - path: /
+      action:
+        pass: excalidraw
+---
+apiVersion: k8s.nginx.org/v1
+kind: VirtualServer
+metadata:
+  name: vs-finance-api
+spec:
+  host: finance-api.giomartins.dev
+  upstreams:
+    - name: finance-api
+      service: finance-api
+      port: 8000
+      client-max-body-size: 50m
+  routes:
+    - path: /
+      action:
+        pass: finance-api

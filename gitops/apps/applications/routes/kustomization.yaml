@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Declarado aqui, e não herdado do ApplicationSet: `destination.namespace` só
+# preenche manifesto que NÃO declara namespace. Com o namespace no kustomize,
+# `kustomize build` local e o ArgoCD produzem o mesmo resultado.
+namespace: applications
+
+resources:
+  - routes.yaml
+  - tela-api.yaml

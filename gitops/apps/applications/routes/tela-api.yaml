@@ -1,0 +1,67 @@
+# tela-api — o caso especial da migração.
+#
+# ## A restrição que define o design
+#
+# O pod da tela-api é `hostNetwork` e a API escuta `127.0.0.1:8007` **de
+# propósito** (ver api.yaml): o bind no loopback é a garantia estrutural de que
+# a porta 8007 não é alcançável pela internet — ela só existe para quem está na
+# netns do host, e o único desses no esquecimento do ingress legado era o
+# próprio nginx.
+#
+# Isso fecha três caminhos:
+#
+#   1. `Service` + `Endpoints` manual apontando para 127.0.0.1 — o apij
+#      Kubernetes recusa (`may not be in the loopback range`), provado.
+#   2. Mudar o bind para `0.0.0.0` — trocar uma garantia estrutural por uma
+#      condicional de firewall; decisão registrada que não se faz.
+#   3. Upstream de um Service ExternalName — o NIC não diala DNS de Service,
+#      um ExternalName vira o socket 502 dummy dele (provado em probe).
+#
+# ## A solução: controller hostNetwork + location aninhada
+#
+# O NIC vai rodar `hostNetwork` no cutover — a mesma netns do host que o
+# ingress legado ocupava. Nela, `127.0.0.1:8007` volta a ser a API. O VirtualServer
+# abaixo declara um upstream "inerte" (domínio real do cluster, nunca atingido)
+# porque o schema do VS exige `action`, e injeta no `location-snippets` uma
+# **location aninhada** regex `~ ^/` que intercepta TODA request e faz o
+# `proxy_pass http://127.0.0.1:8007` real (nginx permite location dentro de
+# location; o outer passa a existir só para o schema).
+#
+# O mecanismo foi provado em probe descartável: return 999 dentro da location
+# aninhada respondeu na rota; a raiz seguiu no caminho do outer.
+#
+# ## Na fase azul (NodePort)
+#
+# O controller ainda está na rede CNI — `127.0.0.1:8007` dentro do pod do NIC
+# é o próprio contêiner, onde ninguém escuta → 502. É o resultado ESPERADO até
+# o cutover, não um defeito.
+---
+apiVersion: k8s.nginx.org/v1
+kind: VirtualServer
+metadata:
+  name: vs-tela-api
+spec:
+  host: tela-api.giomartins.dev
+  upstreams:
+    # Upstream inerte: o schema do VS exige uma action de proxy com upstream.
+    # A location aninhada do snippet intercepta toda request antes de nenhum
+    # pacote chegar aqui — domain-api foi escolhido por ser um Service vivo e
+    # estável, não por ser o destino.
+    - name: tela-inert
+      service: domain-api
+      port: 8000
+  routes:
+    - path: /
+      action:
+        pass: tela-inert
+      location-snippets: |
+        location ~ ^/ {
+          proxy_http_version 1.1;
+          proxy_pass http://127.0.0.1:8007;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection $vs_connection_header;
+        }
