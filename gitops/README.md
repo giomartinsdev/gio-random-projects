@@ -991,6 +991,95 @@ sai 1 com `EAI_AGAIN`.
 `grep` no repo por `docker run.*--network` e por hostnames de serviço. Porta
 fechada dá erro na hora; nome que sumiu dá erro no próximo pipeline.
 
+### 36. `profiles: ["retired"]` só protege se estiver em TODOS os serviços.
+
+A armadilha mais cara da faxina, e a única com prazo: ela tinha hora marcada
+para acontecer.
+
+O `docker compose up -d` que o Dockhand roda nos stacks 21 e 22 é:
+
+```
+docker compose -p project-apps \
+  -f /opt/stacks/project-apps/project-apps.yml \
+  --env-file /opt/stacks/project-apps/.env.dockhand \
+  up -d --remove-orphans --force-recreate --pull always
+```
+
+Note o que **não** está ali: `--profile`. Consequência direta: um serviço só
+fica de fora do `up` se ele mesmo declarar `profiles: ["retired"]`. O
+`restart: "no"` não ajuda em nada — ele rege auto-restart pós-crash e reboot,
+não o `up` explícito.
+
+Em 2026-10-23 a trava existia em 4 arquivos (`domain`, `finance`, `tela`,
+`compute`) e faltava em 6 (`persistence`, `observability`, `db-mcp`,
+`excalidraw`, `maus`, `core`). O stack 22 tem
+`auto_update=1, auto_update_cron='0 3 * * *'`.
+
+**Isso não era teórico.** Publiquei o `tela-api` pelo CI, o workflow chamou o
+webhook do stack 22, e o Dockhand rodou o comando acima. Resultado em 20
+segundos: `excalidraw`, `omb`, `maus-caddy` e `maus-slack-bridge` voltaram a
+rodar — containers que eu tinha acabado de parar. As 03:00 UTC de hoje o mesmo
+comando teria subido mais oito (`minio`, `loki`, `prometheus`, `tempo`,
+`grafana`, `db-mcp`, `db-mcp-gateway`), todos disputando porta com os pods
+(9000, 3100, 9090, 3200, 3000, 8023…).
+
+O sintoma é silencioso do jeito pior: o compose faz o que mandaram, sai 0, o
+Dockhand marca `synced`, e o ArgoCD continua `Healthy` porque os pods não
+caíram — os dois passam a servir a mesma porta, um pelo DNAT do Docker e outro
+pelo NodePort, e qual responde depende da regra de iptables que vier primeiro.
+
+**Duas armadilhas embutidas na primeira:**
+
+1. `profiles` não é herdado por `include:`. O `project-infra.yml` inclui
+   `observability.yml`, e o profile tem de estar no serviço, no arquivo-folha.
+2. `depends_on` não respeita profile. `alloy` e `grafana` dependiam de
+   `loki`/`prometheus`/`tempo`; ao aposentar os três, o compose passou a
+   recusar o projeto **inteiro** com `depends on undefined service` — o `up`
+   falharia por completo, inclusive para o que deveria subir. Os dois
+   `depends_on` saíram junto.
+
+**A prova que vale**, com o comando exato do Dockhand numa cópia dos stacks:
+
+```bash
+# sem profile -> a lista de serviços é VAZIA (a trava funciona)
+docker compose -f persistence.yml config --services          # (nada)
+# com profile -> aparecem os cinco, para rollback consciente
+docker compose -f observability.yml --profile retired config --services
+# e o agregado, que é o que o Dockhand roda:
+docker compose -p project-infra -f project-infra.yml --dry-run up -d --remove-orphans
+#   -> "no service selected": não sobe e não remove nada
+docker compose -p project-apps -f project-apps.yml --dry-run up -d --remove-orphans
+#   -> toca só omb/maus-caddy/maus-slack-bridge; NÃO remove os parados
+```
+
+O último ponto importa: `--remove-orphans` **não** apaga os containers
+parados, porque eles pertencem a outro project name (`maus` vs `project-apps`).
+Se apagasse, a faxina teria destruído o próprio rollback.
+
+**Efeito colateral bom**: o `alloy` do Docker também ganhou a trava, e por um
+motivo próprio. Ele escrevia em `loki:3100`, que está parado, então desde o
+cutover *todo* batch falhava com `server misbehaving` — log ingerido em lugar
+nenhum. O pod `alloy-logs` já lê os mesmos containers via `docker.sock`;
+provado consultando o Loki do cluster, que tem `job=docker` com logs de
+`excalidraw`, `tela-api`, `9router` e mais 22. Parar o container não tirou
+visibilidade de nada.
+
+**Regra**: todo serviço migrado precisa de `profiles: ["retired"]` **no
+próprio bloco** — `include:` não herda profile. Isso é verificável, e agora é
+gate de CI (`gitops-validate`), porque um comentário não impede regressão:
+
+```bash
+gitops/bootstrap/checa-profiles.sh stacks
+```
+
+A saída lista o que o `up` das 03:00 vai subir. O esperado é só `maus`
+(não migrado), `minecraft` (fora de escopo) e `core` (morre com o Docker).
+Qualquer outro nome é um migrado voltando — o script sai 1, e o CI com ele.
+
+## Bootstrap (uma vez por cluster)
+
+Reconstruir do zero neste host, na ordem. Nada aqui é reconciliado pelo
+ArgoCD — é o chão que o ArgoCD precisa existir antes de assumir.
 
 ```bash
 # 1. k3s sem ingress controller (não toca em nada existente)
