@@ -46,7 +46,12 @@ jobs:
       - name: Install kubeconform
         run: |
           set -euo pipefail
-          KUBECONFORM_VERSION=v0.6.7
+          # v0.8.0 e não versões mais velhas: as template vars `.Group`/
+          # `.ResourceKind` na -schema-location (usadas para achar os
+          # schemas de CRD do NIC em .github/schemas/) só resolvem
+          # direito a partir da 0.8.0 — na 0.6.7 o VirtualServer caía em
+          # `could not find schema` mesmo com o arquivo presente.
+          KUBECONFORM_VERSION=v0.8.0
           curl -sSLo /tmp/kubeconform.tar.gz \
             "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
           tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
