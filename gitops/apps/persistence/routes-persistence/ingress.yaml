@@ -71,8 +71,10 @@ spec:
             backend:
               service:
                 name: minio
+                # 9001 = console (o S3 API é 9000, que responde 403 XML ao
+                # browser). O legado e o VS apontam para o console.
                 port:
-                  number: 9000
+                  number: 9001
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
