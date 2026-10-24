@@ -46,11 +46,14 @@ jobs:
       - name: Install kubeconform
         run: |
           set -euo pipefail
-          # v0.8.0 e não versões mais velhas: as template vars `.Group`/
-          # `.ResourceKind` na -schema-location (usadas para achar os
-          # schemas de CRD do NIC em .github/schemas/) só resolvem
-          # direito a partir da 0.8.0 — na 0.6.7 o VirtualServer caía em
-          # `could not find schema` mesmo com o arquivo presente.
+          # v0.8.0 e não versões mais velhas: o template de schema-location
+          # custom é resolvido de forma estável nessa linha (0.6.7 trocava
+          # classificando valores de resolução). Os schemas de CRD do NIC
+          # ficam em .github/schemas/ — gerados do próprio cluster por
+          # .github/scripts/kubeconform-crds.py — com nome LOWERCASE
+          # (o template `.Group`_`.ResourceKind` rende o kind em minúsculas;
+          # arquivo capitalizado existe no mac (APFS case-insensitive) mas
+          # não existe no CI (ext4) — armadilha registrada no script).
           KUBECONFORM_VERSION=v0.8.0
           curl -sSLo /tmp/kubeconform.tar.gz \
             "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
@@ -72,16 +75,6 @@ jobs:
           for d in $dirs; do
             echo "::group::$d"
             kubectl kustomize "$d" > /tmp/rendered.yaml
-            if [ "$d" = "gitops/apps/applications/routes-applications" ]; then
-              # Diagnóstico do schema de CRD do NIC (remover após estabilizar
-              # o gate): GVK real do VS e tentativa de resolver a location
-              # SEM o `default` (isolar interplay catálogo nativo vs custom).
-              grep -m1 -B1 "kind: VirtualServer" /tmp/rendered.yaml | head -3
-              kubeconform -strict -summary -kubernetes-version 1.36.0 \
-                -schema-location '.github/schemas/{{.Group}}_{{.ResourceKind}}.json' \
-                -output text /tmp/rendered.yaml || \
-                echo "::warning::sem 'default' tambem falhou"
-            fi
             kubectl kustomize "$d" > /tmp/rendered.yaml
             if [ ! -s /tmp/rendered.yaml ]; then
               echo "::error::$d renderizou vazio"

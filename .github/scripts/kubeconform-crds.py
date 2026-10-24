@@ -46,6 +46,12 @@ for crd in nic:
     version = next(v for v in crd["spec"]["versions"] if v["name"] == "v1")
     schema = version["schema"]["openAPIV3Schema"]
     schema["$schema"] = "http://json-schema.org/draft-07/schema#"
-    out = SCHEMAS_DIR / f"{group}_{kind}.json"
+    # O template do kubeconform (`{{.Group}}_{{.ResourceKind}}.json`) baixa o
+    # kind para minúsculas (strings.ToLower no código dele). O nome do ARQUIVO
+    # tem que bater: `k8s.nginx.org_virtualserver.json`. E em filesystem
+    # case-sensitive (Linux CI) não há 'caso feliz': nome capitalizado = schema
+    # não encontrado no CI, enquanto no mac (APFS case-insensitive) passava —
+    # a armadilha clássica de dev em mac.
+    out = SCHEMAS_DIR / f"{group.lower()}_{kind.lower()}.json"
     out.write_text(json.dumps(schema, indent=2) + "\n")
     print(f"gerado {out} ({out.stat().st_size} bytes)")
