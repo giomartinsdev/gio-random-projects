@@ -186,6 +186,12 @@ spec:
               mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml
               readOnly: true
               subPath: dashboards.yaml
+            # Alert rules + contact point. Diretório inteiro (não subPath) para
+            # que `alert-templates/` também possa ser montado depois sem mexer
+            # no Deployment de novo.
+            - name: alerting
+              mountPath: /etc/grafana/provisioning/alerting
+              readOnly: true
             - name: dashboard-json
               mountPath: /var/lib/grafana/dashboards/apps
               readOnly: true
@@ -202,6 +208,11 @@ spec:
         - name: provisioning
           configMap:
             name: grafana-provisioning
+        # Regras que disparam WhatsApp. ConfigMap separado porque é outro tipo
+        # de dado: dashboards são leitura, alertas têm efeito externo.
+        - name: alerting
+          configMap:
+            name: grafana-alerting
         # Cada dashboard é seu próprio ConfigMap: são 28K e 27K de JSON real, e
         # separar deixa óbvio que é dado, não configuração. Montados como
         # DIRETÓRIO (volume projetado), não arquivo com subPath — ver o

@@ -1,0 +1,287 @@
+# alert-relay — traduz o webhook do Grafana para o `sendText` da Evolution.
+#
+# ## Por que este pod existe
+#
+# A ideia óbvia era apontar o contact point do Grafana direto para
+# `POST http://evolution-api.../message/sendText/web-businesses` e usar
+# "Extra headers" para mandar o `apikey`. Testado num pod echo dentro do
+# cluster, e **não funciona**:
+#
+#   - Os headers de `httpHeaderSettings` são aceitos pela API, ficam salvos no
+#     objeto do contact point, e **nunca aparecem no request**. O relay de
+#     teste recebeu só `Host`, `User-Agent: Grafana`, `Content-Type`,
+#     `Accept-Encoding` e `Connection`. Nem `apikey`, nem um `X-Teste` de
+#     controle. Sem `apikey`, a Evolution devolve 401.
+#   - `payloadTemplate` (o `coll.Dict ... | data.ToJSON`) também é ignorado no
+#     caminho de envio real: o corpo chegou com o esquema padrão do Grafana
+#     (`receiver`/`status`/`alerts`/`values`...), não com `number`/`text`.
+#
+# Ou seja: o Grafana manda um JSON próprio, com headers próprios, e a Evolution
+# exige `{"number","text"}` com `apikey`. Alguém precisa traduzir. É este pod.
+#
+# ## Por que não patch no Evolution ou no Grafana
+#
+# A alternativa era um sidecar/initContainer mexendo no Evolution, ou um
+# Alertmanager para conseguir um webhook com headers. Ambas trocam um arquivo
+# de 50 linhas por um componente a mais. Aqui é stdlib pura, ~15Mi, e o
+# contrato é um só: recebe JSON, manda WhatsApp.
+#
+# ## O que ele faz com o payload
+#
+# O corpo do Grafana tem `alerts[]` com `status`, `labels.alertname` e
+# `annotations` (a `summary` que a regra define). O relay monta uma mensagem
+# legível: cabeçalho com o estado do grupo, uma linha por alerta, e a URL do
+# dashboard quando existir — porque "disco cheio" sem link para o painel é
+# alerta que não se investiga.
+#
+# `number` é o destinatário: número com DDI, vindo de `ALERT_WHATSAPP_NUMBER`.
+# Um alerta que vai para o número errado é pior que alerta nenhum, então o
+# relay recusa subir sem essa variável.
+#
+# ## Idempotência e resposta
+#
+# A Evolution responde 201. Qualquer 2xx vira 200 para o Grafana; o resto vira
+# 502 com o corpo da Evolution no log — 401 (apikey errado) e 400 (payload
+# inválido) precisam ser distinguíveis no `kubectl logs`, não virar um "falhou"
+# genérico.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alert-relay-code
+  labels:
+    app.kubernetes.io/name: alert-relay
+data:
+  relay.py: |
+    """Grafana webhook -> Evolution API sendText. Stdlib only."""
+
+    import json
+    import os
+    import sys
+    import urllib.error
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    EVOLUTION_URL = os.environ["EVOLUTION_API_URL"].rstrip("/")
+    EVOLUTION_KEY = os.environ["EVOLUTION_API_KEY"]
+    INSTANCE = os.environ.get("EVOLUTION_INSTANCE", "web-businesses")
+    NUMBER = os.environ["ALERT_WHATSAPP_NUMBER"]
+    PORT = int(os.environ.get("PORT", "8080"))
+
+    # O Grafana manda `status` do GRUPO (`firing`/`resolved`) e, por alerta, o
+    # mesmo campo. O do alerta é o que interessa numa notificação individual.
+    ICONE = {"firing": "ALERTA", "resolved": "RESOLVIDO"}
+
+
+    def montar_texto(payload):
+        """Monta a mensagem de WhatsApp a partir do payload do Grafana.
+
+        Nunca inventa conteúdo: se o payload não tiver os campos, a mensagem
+        fica mais curta, não errada.
+        """
+        alerts = payload.get("alerts") or []
+        estado_grupo = payload.get("status", "firing")
+
+        # Sem a lista de alertas o payload é de outro formato (teste manual via
+        # curl, por exemplo). Nesse caso manda o que houver em vez de uma
+        # mensagem vazia que pareceria sucesso.
+        if not alerts:
+            return "%s (sem detalhe)\n%s" % (
+                ICONE.get(estado_grupo, estado_grupo.upper()),
+                json.dumps(payload, ensure_ascii=False)[:500],
+            )
+
+        linhas = []
+        for a in alerts:
+            estado = a.get("status", estado_grupo)
+            labels = a.get("labels") or {}
+            ann = a.get("annotations") or {}
+            nome = labels.get("alertname", "sem nome")
+            resumo = ann.get("summary") or ann.get("description") or ""
+            linhas.append("%s: %s" % (ICONE.get(estado, estado.upper()), nome))
+            if resumo:
+                linhas.append("  " + resumo)
+
+        # A URL do dashboard é o que transforma alerta em ação. O Grafana já
+        # manda `dashboardURL` por alerta; usa-se a do primeiro que tiver.
+        url = next(
+            (a.get("dashboardURL") for a in alerts if a.get("dashboardURL")),
+            None,
+        )
+        if url:
+            linhas.append("")
+            linhas.append(url)
+
+        return "\n".join(linhas)
+
+
+    def enviar(texto):
+        """POST no /message/sendText/<instancia>. Levanta com o corpo do erro."""
+        corpo = json.dumps({"number": NUMBER, "text": texto}).encode()
+        req = urllib.request.Request(
+            "%s/message/sendText/%s" % (EVOLUTION_URL, INSTANCE),
+            data=corpo,
+            headers={"apikey": EVOLUTION_KEY, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.status
+
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            # Graficos health probes do k8s chegam em GET; este handler só
+            # aceita POST e responde 405 no resto (padrão do módulo).
+            n = int(self.headers.get("Content-Length") or 0)
+            bruto = self.rfile.read(n)
+            try:
+                payload = json.loads(bruto or b"{}")
+            except ValueError:
+                self.send_error(400, "payload nao e JSON")
+                return
+
+            texto = montar_texto(payload)
+            try:
+                enviar(texto)
+            except urllib.error.HTTPError as e:
+                # 401 = apikey; 400 = instancia/payload. Os dois vão para o log
+                # com o corpo, porque são a diferença entre "segredo errado" e
+                # "instância desconectada".
+                print("evolution %s: %s" % (e.code, e.read()[:300]), file=sys.stderr, flush=True)
+                self.send_error(502, "evolution %s" % e.code)
+                return
+            except Exception as e:
+                print("falha ao enviar: %r" % (e,), file=sys.stderr, flush=True)
+                self.send_error(502, "falha ao enviar")
+                return
+
+            print("enviado (%d chars)" % len(texto), file=sys.stderr, flush=True)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
+
+        def do_GET(self):
+            # Readiness/livenessProbe.
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *a):
+            pass
+
+    if __name__ == "__main__":
+        if not NUMBER:
+            raise SystemExit("ALERT_WHATSAPP_NUMBER vazio")
+        print("alert-relay em :%d -> %s/%s" % (PORT, EVOLUTION_URL, INSTANCE), flush=True)
+        HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-relay
+  labels:
+    app.kubernetes.io/name: alert-relay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alert-relay
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: alert-relay
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: relay
+          # Mesma python:3.12-alpine que já está no nó (nenhum pull novo).
+          # Digest do ÍNDICE multi-arch no registry: o `inspecti` local devolve
+          # o digest da imagem já resolvida para arm64, e usá-lo aqui dá
+          # `ImagePullBackOff` porque esse digest não existe como entrada
+          # pullable por nome (medido: 255f4922... falhou, este funciona).
+          image: python:3.12-alpine@sha256:57f679a3910bed1eb16ad722b904a118bca8586ec8ad39d98dd13350e7062cb2
+          command: ["python", "/app/relay.py"]
+          env:
+            # DNS do Service do Evolution. `evolution-api` está em `applications`;
+            # nome curto não resolve entre namespaces.
+            - name: EVOLUTION_API_URL
+              value: http://evolution-api.applications.svc.cluster.local:8080
+            - name: EVOLUTION_INSTANCE
+              value: web-businesses
+            # O destinatário. Fica em ConfigMap (não é segredo: é o seu número),
+            # e trocá-lo é editar uma linha no git — não recriar Secret.
+            - name: ALERT_WHATSAPP_NUMBER
+              value: "5521982397951"
+            - name: EVOLUTION_API_KEY
+              # A chave é a MESMA do Evolution, no namespace `applications`.
+              # `secretKeyRef` NÃO cruza namespace: o Secret tem que existir
+              # aqui em `observability` com outro nome, criado fora do git
+              # (o repo é público). É o mesmo padrão dos outros segredos do
+              # cluster — ver `k8s/bootstrap/sync-app-secrets.sh`.
+              #
+              # Criar/rotacionar:
+              #   KEY=$(sudo kubectl -n applications get secret evolution-api \
+              #     -o jsonpath='{.data.AUTHENTICATION_API_KEY}')
+              #   sudo kubectl -n observability create secret generic alert-relay \
+              #     --from-literal=EVOLUTION_API_KEY="$(echo "$KEY" | base64 -d)" \
+              #     --dry-run=client -o yaml | sudo kubectl apply -f -
+              #
+              # Sem este Secret o pod fica em CreateContainerConfigError — falha
+              # alta, e não um relay que sobe e devolve 401 em silêncio.
+              valueFrom:
+                secretKeyRef:
+                  name: alert-relay
+                  key: EVOLUTION_API_KEY
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 24Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: alert-relay-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-relay
+  labels:
+    app.kubernetes.io/name: alert-relay
+spec:
+  # ClusterIP: só o Grafana fala com ele, dentro do namespace.
+  selector:
+    app.kubernetes.io/name: alert-relay
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

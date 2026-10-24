@@ -50,6 +50,7 @@ resources:
   - alloy-service.yaml
   - kube-state-metrics.yaml
   - node-exporter.yaml
+  - alert-relay.yaml
 
 commonLabels:
   app.kubernetes.io/part-of: giomartins
