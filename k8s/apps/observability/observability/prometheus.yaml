@@ -53,15 +53,25 @@ data:
         # neste job descartaria toda série sem label `mountpoint` — CPU,
         # memória e load — e só o filesystem chegaria no Prometheus. Medido.
 
-      # ## O kubelet `/metrics` — os volumes dos PVCs
+      # ## O kubelet `/metrics` — log filesystem por container
       #
-      # Diferente do cadvisor: este endpoint tem `kubelet_volume_stats_*`, o
-      # disco REAL de cada PVC (usado, disponível, inodes) reportado pelo
-      # kubelet. É o que responde "o volume do postgres está enchendo?".
+      # Diferente do cadvisor: este endpoint tem
+      # `kubelet_container_log_filesystem_used_bytes`, o espaço que o log de cada
+      # container ocupa no disco. É o que responde "algum pod está enchendo o
+      # disco com log?".
       #
-      # O `/metrics` do kubelet no k3s não traz `node_cpu_*`/`node_memory_*`
-      # (coletor de nó desabilitado) — para isso serve o node-exporter. Aqui só
-      # interessam as métricas de volume.
+      # ## Por que `kubelet_volume_stats_*` NÃO está aqui
+      #
+      # `kubelet_volume_stats_used_bytes` parece o disco de cada PVC, mas no
+      # `local-path` não é: o provisioner não cria quota, o PV é um diretório no
+      # filesystem do host, e o kubelet reporta o uso do FILESYSTEM INTEIRO para
+      # todos os PVCs. Medido: os 15 PVCs retornavam exatamente 80.05/192.69 Gi
+      # — o mesmo número do `df /`, e o `du` real de cada diretório era 12G,
+      # 2.5G, 993M, 939M...
+      #
+      # Ou seja: série inútil e enganosa. Quota real por volume vem de
+      # `kube_persistentvolume_capacity_bytes` (KSM, do spec do PV), e uso real
+      # do host vem do `node_filesystem_*` (node-exporter).
       - job_name: kubelet
         scheme: https
         authorization:
@@ -72,9 +82,13 @@ data:
           - targets: ["10.0.0.209:10250"]
         metric_relabel_configs:
           # O `/metrics` do kubelet tem ~1000 séries de apiserver/etcd/runtime
-          # que ninguém aqui usa. Manter só volume_stats e log filesystem.
+          # que ninguém aqui usa.
+          #
+          # Este `keep` é seguro porque filtra por `__name__` — a única label que
+          # TODA métrica tem. Métrica nova do kubelet que você queira depois
+          # precisa entrar neste regex, ou fica invisível com o scrape `up`.
           - source_labels: [__name__]
-            regex: "kubelet_volume_stats_.*|kubelet_container_log_filesystem_used_bytes"
+            regex: "kubelet_container_log_filesystem_used_bytes"
             action: keep
 
       # ## O kubelet, via cadvisor — e por que este job existe
@@ -99,31 +113,25 @@ data:
         static_configs:
           - targets: ["10.0.0.209:10250"]
         metric_relabel_configs:
-          # ## Quais séries de `namespace=""` sobrevivem
+          # ## Só o `labeldrop` do `image`. Nada de `keep`, nada de `drop`.
           #
-          # O cadvisor emite série por cgroup: `system.slice`, `kubepods.slice`,
-          # `kubepods-besteffort.slice`, ... Todas têm `namespace=""` e nenhum
-          # painel as usa — o dashboard agrupa por namespace/pod. Cortá-las tira
-          # ~40% das séries.
+          # Três tentativas de cortar série aqui, três incidentes:
           #
-          # **Exceção: `container_fs_*`.** O disco do host é reportado por
-          # DEVICE (`device="/dev/sda1"`), não por pod — logo `namespace=""`
-          # sempre. É a única fonte de disco do host no cadvisor (85.7GB de
-          # 206.9GB medidos). Cortar por namespace apagaria justamente o número
-          # que o dashboard de alerta precisa. O relabel abaixo preserva essas
-          # séries e só derruba as demais de `namespace=""`.
+          #   1. `drop` em `container=""` → apagou 100% de `container_network_*`
+          #      (rede é medida no sandbox do pod e tem `container=""` sempre).
+          #   2. `drop` em `namespace=""` → apagou `container_fs_*`, a única
+          #      fonte de disco do host no cadvisor (é reportado por device).
+          #   3. `keep` em `container_fs_*` + `drop` em `namespace=""` → o
+          #      `keep` descartou TODA série que não casou, e o `drop` seguinte
+          #      removeu as próprias `container_fs_*` (todas têm namespace vazio).
+          #      Resultado: zero série do cadvisor, todos os painéis de CPU,
+          #      memória e rede do cluster vazios.
           #
-          # A tentação era filtrar por `container=""`. **Errado**: as métricas
-          # de REDE (`container_network_*`) são medidas no sandbox do pod e têm
-          # `container=""` SEMPRE, inclusive nas séries boas. Filtrar por
-          # `container` apagou 100% de `container_network_receive_bytes_total`
-          # e o painel de rede ficou `No data` com o scrape `up`.
-          - source_labels: [__name__, namespace]
-            regex: "container_fs_.*;.*"
-            action: keep
-          - source_labels: [namespace]
-            regex: ""
-            action: drop
+          # `keep` em `metric_relabel_configs` é global ao job: descarta tudo
+          # que não casa, inclusive métricas sem o label usado na regra. É
+          # armadilha fácil de repetir e o ganho (séries de cgroup raiz) não
+          # paga o risco num cluster deste tamanho.
+          #
           # `image` no cadvisor carrega o digest completo, que muda a cada push.
           # Como label de série isso estoura a cardinalidade; o painel usa o
           # nome do container.
