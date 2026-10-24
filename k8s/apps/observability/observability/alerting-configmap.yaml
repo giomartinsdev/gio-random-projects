@@ -1,0 +1,376 @@
+# ConfigMap que entrega as regras de alerta ao Grafana.
+#
+# ## Por que o YAML de alerta vive num arquivo separado
+#
+# `alerting.yaml` não é um manifest do k8s: é o formato de PROVISIONING do
+# Grafana (`apiVersion: 1`, `contactPoints`, `policies`, `groups`). Colocá-lo
+# direto em `resources:` do kustomization quebra o build com
+# `missing kind in object` — o kustomize tenta lê-lo como recurso.
+#
+# Então ele é embutido aqui como dado de ConfigMap. Editar a regra é editar
+# `alerting.yaml`; este arquivo só a embrulha.
+#
+# ## Por que ConfigMap e não volume com subPath direto
+#
+# O Grafana lê `/etc/grafana/provisioning/alerting/*.yaml` no BOOT (diferente
+# dos dashboards, que têm `updateIntervalSeconds`). Mudar uma regra exige
+# `rollout restart` do Deployment — é configuração com efeito externo, não
+# dado de leitura.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-alerting
+  labels:
+    app.kubernetes.io/name: grafana
+data:
+  alerting.yaml: |
+    # Alertas do cluster — regras que DISPARAM, não só pintam o painel.
+    #
+    # ## O que muda em relação ao `alerts-dashboard.yaml`
+    #
+    # O dashboard tem thresholds visuais: mudam a cor do painel e param aí. Este
+    # arquivo tem as mesmas queries, mas com `for` (duração) e um contact point —
+    # ou seja, viram mensagem no WhatsApp.
+    #
+    # Os números são os MESMOS do dashboard de propósito. Um alerta que discorda do
+    # painel destrói a confiança nos dois: você vê verde na tela e vermelho no
+    # celular, e passa a duvidar de ambos.
+    #
+    # ## Por que cada regra existe (e o que ela pega antes)
+    #
+    # | Regra | Pega antes de | `for` |
+    # |---|---|---|
+    # | Disco > 80% | o k3s parar de escrever no etcd e derrubar tudo | 15m |
+    # | Memória > 90% | o OOM killer escolher um pod pela soma de limits | 10m |
+    # | CPU > 85% | throttling virar p99 alto nas apps | 15m |
+    # | Deployment incompleto | a app ficar sem capacidade com ArgoCD verde | 15m |
+    # | Target de scrape caído | você ficar CEGO e "vazio" parecer "saudável" | 5m |
+    # | Nó NotReady | o ingress perder o backend | 2m |
+    #
+    # ## O `for` não é decoração
+    #
+    # Sem `for`, um pico de 3 segundos no deploy dispara WhatsApp. Alerta que toca
+    # por ruído é alerta que você silencia — e aí ele não serve para nada no dia em
+    # que importa. Cada `for` foi escolhido pela janela em que o problema é real,
+    # não pelo tempo que leva para o número passar do limite.
+    #
+    # ## A regra mais importante é a de scrape
+    #
+    # Disco, memória e CPU só alertam se o Prometheus estiver coletando. Se o
+    # `node-exporter` cair, os painéis ficam vazios, nenhum threshold dispara, e o
+    # cluster parece saudável justamente quando você está cego. Por isso
+    # `TargetsDown` tem `for: 5m` e não depende de nenhuma outra métrica.
+    #
+    # ## Provisioning
+    #
+    # Montado em `/etc/grafana/provisioning/alerting/`. O Grafana lê no boot; para
+    # mudar uma regra é `rollout restart` (é configuração, não dashboard — não vale
+    # montar volume projetado). O contact point aponta para o `alert-relay`, que
+    # traduz o payload do Grafana para o `sendText` da Evolution.
+    apiVersion: 1
+
+    contactPoints:
+      - orgId: 1
+        name: WhatsApp
+        receivers:
+          - uid: alert-whatsapp
+            type: webhook
+            disableResolveMessage: false
+            settings:
+              url: http://alert-relay:8080/
+              httpMethod: POST
+
+    policies:
+      - orgId: 1
+        receiver: WhatsApp
+        group_by: ["alertname"]
+        # 10s para o primeiro: alerta de infra não deve esperar 30s para sair.
+        group_wait: 10s
+        # 5m: se o problema persistir, agrupa. Evita 20 mensagens do mesmo disco.
+        group_interval: 5m
+        # 4h: o mesmo alerta ainda disparando repete a cada 4h. Curto demais vira
+        # spam; longo demais você esquece que está quebrado.
+        repeat_interval: 4h
+
+    groups:
+      - orgId: 1
+        name: infra
+        folder: Alerts
+        interval: 1m
+        rules:
+          # ## Disco
+          #
+          # É o alerta mais caro de ignorar neste host: o `local-path` guarda os 15
+          # PVCs no MESMO filesystem, então disco cheio não degrada uma app — para o
+          # k3s inteiro (etcd não escreve, container não sobe).
+          #
+          # 80% e não 90% porque a partir daí a limpeza leva tempo: descobrir o que
+          # cresceu, decidir, agir. 15m porque escrita em disco não oscila como CPU.
+          - uid: alert-disco
+            title: Disco raiz acima de 80%
+            condition: D
+            noDataState: NoData
+            execErrState: Error
+            for: 15m
+            annotations:
+              summary: >-
+                Disco / em {{ humanizePercentage $values.A.Value }} —
+                {{ humanize $values.B.Value }} livres de {{ humanize $values.C.Value }}.
+              description: >-
+                O local-path guarda todos os PVCs neste filesystem. Ver o runbook no
+                dashboard Alertas (secao "O que fazer quando ficar vermelho"):
+                du -sh /var/lib/rancher/k3s/storage/*/ | sort -hr
+            labels:
+              severity: critical
+            data:
+              - refId: A
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  expr: >-
+                    100 * (1 - node_filesystem_avail_bytes{mountpoint="/"}
+                    / node_filesystem_size_bytes{mountpoint="/"})
+              - refId: B
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: B
+                  instant: true
+                  expr: node_filesystem_avail_bytes{mountpoint="/"}
+              - refId: C
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: C
+                  instant: true
+                  expr: node_filesystem_size_bytes{mountpoint="/"}
+              - refId: D
+                datasourceUid: __expr__
+                model:
+                  refId: D
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator: { type: gt, params: [80] }
+
+          # ## Memória
+          #
+          # 90% porque `MemAvailable` já desconta page cache reivindicável — se está
+          # em 90%, é memória de verdade. O OOM killer escolhe pela SOMA DE LIMITS,
+          # não pelo uso, então um pod com limit alto e uso baixo é o primeiro a
+          # morrer (ver painel "Memória: uso real / limits / allocatable").
+          - uid: alert-memoria
+            title: Memória do host acima de 90%
+            condition: D
+            noDataState: NoData
+            execErrState: Error
+            for: 10m
+            annotations:
+              summary: >-
+                Memória em {{ humanizePercentage $values.A.Value }} —
+                {{ humanize $values.B.Value }} disponíveis de {{ humanize $values.C.Value }}.
+              description: >-
+                Ver "Memória por pod" no dashboard Cluster k3s. O OOM killer mata
+                pela soma de limits; reduzir o limit no git e o conserto.
+            labels:
+              severity: critical
+            data:
+              - refId: A
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  expr: >-
+                    100 * (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
+                    / node_memory_MemTotal_bytes
+              - refId: B
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: B
+                  instant: true
+                  expr: node_memory_MemAvailable_bytes
+              - refId: C
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: C
+                  instant: true
+                  expr: node_memory_MemTotal_bytes
+              - refId: D
+                datasourceUid: __expr__
+                model:
+                  refId: D
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator: { type: gt, params: [90] }
+
+          # ## CPU
+          #
+          # 15m porque CPU oscila de verdade (build, deploy, GC). CPU é
+          # compressível: bater no limite gera throttling, não kill — o sintoma é
+          # latência, não indisponibilidade. Por isso `warning`, não `critical`.
+          - uid: alert-cpu
+            title: CPU do host acima de 85%
+            condition: B
+            noDataState: NoData
+            execErrState: Error
+            for: 15m
+            annotations:
+              summary: CPU em {{ humanizePercentage $values.A.Value }} há 15 min.
+              description: >-
+                CPU e compressivel — o sintoma e p99 alto nas apps, nao queda. Se o
+                load estiver alto com CPU baixa, o gargalo e I/O: ver painel iowait.
+            labels:
+              severity: warning
+            data:
+              - refId: A
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  expr: >-
+                    100 * sum(rate(node_cpu_seconds_total{mode!="idle"}[5m]))
+                    / sum(rate(node_cpu_seconds_total[5m]))
+              - refId: B
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator: { type: gt, params: [85] }
+
+          # ## Deployments incompletos
+          #
+          # Este é o que o ArgoCD NÃO pega: ele compara o manifesto, não o rollout.
+          # `Synced Healthy` com réplica faltando é estado normal para o ArgoCD e
+          # app degradada para você. 15m porque rolling update em andamento é
+          # normal por alguns minutos.
+          - uid: alert-deploy
+            title: Deployment com réplicas faltando
+            condition: B
+            # `NoData` e nao `OK`: a query tem `or vector(0)`, entao vazio so
+            # acontece se o Prometheus/KSM estiver fora — e cegueira nao e saude.
+            noDataState: NoData
+            execErrState: Error
+            for: 15m
+            annotations:
+              summary: >-
+                {{ $values.A.Value }} Deployment(s) com réplicas prontas abaixo do
+                desejado.
+              description: >-
+                kubectl -n <ns> get pods | grep -v Running e depois describe pod
+                <pod>. ArgoCD Synced Healthy NAO significa rollout completo.
+            labels:
+              severity: warning
+            data:
+              - refId: A
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  expr: >-
+                    count(kube_deployment_spec_replicas
+                    - kube_deployment_status_replicas_ready > 0) or vector(0)
+              - refId: B
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator: { type: gt, params: [0] }
+
+          # ## O alerta mais importante: você está cego?
+          #
+          # Todos os outros dependem do Prometheus coletando. Se um target cai, os
+          # painéis ficam vazios e "vazio" parece "zero, tudo bem". 5m porque um
+          # scrape perdido é normal; 5 minutos de cegueira não.
+          - uid: alert-scrape
+            title: Target de scrape caiu
+            condition: B
+            noDataState: Alerting
+            execErrState: Alerting
+            for: 5m
+            annotations:
+              summary: >-
+                {{ $values.A.Value }} target(s) do Prometheus fora do ar.
+              description: >-
+                node-exporter -> disco/CPU/memoria do host; cadvisor -> uso por pod;
+                kube-state-metrics -> replicas/PVC. Ver os targets em
+                /targets do Prometheus e o runbook no dashboard Alertas.
+            labels:
+              severity: critical
+            data:
+              # `count(up == 0)` em vez de comparar dois números: uma query só, e
+              # zero é o valor normal. `up` é a métrica do próprio Prometheus, então
+              # esta regra funciona mesmo se o node-exporter ou o KSM estiverem
+              # mortos — que é exatamente o caso que ela precisa pegar.
+              - refId: A
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  expr: count(up == 0) or vector(0)
+              - refId: B
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator: { type: gt, params: [0] }
+
+          # ## Nó NotReady
+          #
+          # 2m e não 15m: NotReady é binário e não tem falso positivo por oscilação
+          # — o kubelet marca depois de ~40s sem heartbeat. Os pods já rodando
+          # continuam respondendo por um tempo, então a app parece bem até o
+          # primeiro restart.
+          - uid: alert-node
+            title: Nó NotReady
+            condition: B
+            noDataState: NoData
+            execErrState: Error
+            for: 2m
+            annotations:
+              summary: '{{ $labels.node }} não está Ready.'
+              description: >-
+                kubectl get nodes; kubectl describe node {{ $labels.node }}.
+                O ingress perde o backend e os pods param de ser reagendados.
+            labels:
+              severity: critical
+            data:
+              - refId: A
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  # `min()` em vez de `== 0` de proposito. Filtro (`== 0`) devolve
+                  # vetor VAZIO no estado saudavel (a serie vale 1), e vazio vira
+                  # `DatasourceNoData` — medido: alerta falso de NoData a cada
+                  # avaliacao com o no Ready. `min()` de um vetor sempre devolve um
+                  # escalar, entao o threshold tem numero em todo scrape.
+                  #
+                  # Se o KSM cair e a serie sumir, aí sim vira NoData — e isso e
+                  # correto: cego nao e saudavel. Quem avisa primeiro, nesse caso,
+                  # e a regra `alert-scrape`.
+                  expr: >-
+                    min(kube_node_status_condition{condition="Ready",status="true"})
+              - refId: B
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator: { type: lt, params: [1] }
