@@ -158,6 +158,13 @@ metadata:
     app.kubernetes.io/name: prometheus
 spec:
   replicas: 0
+  # `Recreate`, não `RollingUpdate`. O PVC é `ReadWriteOnce`: durante um
+  # rolling update os dois pods tentam montar o mesmo volume e o novo falha
+  # com `lock DB directory: resource temporarily unavailable`. Recreate para o
+  # antigo antes de subir o novo — para um Prometheus de nó único, não há
+  # perda real, só ~20s sem scrape.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: prometheus
