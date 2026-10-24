@@ -1357,7 +1357,8 @@ Escolhemos a primeira quando o serviço migrar para valer.
 ## Estado atual
 
 **O cluster é tudo o que roda na VPS** desde 2026-10-24: o Docker foi
-desinstalado. 18/18 Applications `Synced`+`Healthy`, zero pods fora de
+desinstalado. **21/21 Applications** `Synced`+`Healthy` (18 originais + 4 de
+rotas VirtualServer − 1 do ingress legado prunado), zero pods fora de
 `Running`, zero containers.
 
 A tabela abaixo é o retrato da migração serviço a serviço (verificada em
@@ -1400,17 +1401,16 @@ A coluna "tráfego" registra onde o tráfego está **hoje**.
 | `grafana` | **parado** (2026-10-23) | **rodando** (NodePort 30300) | **k8s** — `grafana` → `:30300` ✅ |
 | `alloy` | **removido** (2026-10-24) | **rodando** (OTLP 4317/4318 + logs, PVC) | **k8s** — pod `alloy-logs` serve o Service `alloy` |
 | `registry` | **removido** (2026-10-24) | **rodando** (`hostPort: 5000`) | **k8s** — 39 repos, 12 GB verificados por sha256 ✅ |
-| `ingress` | **removido** (2026-10-24) | **rodando** (`hostPort: 80`) | **k8s** — 19/19 hosts com o mesmo status ✅ |
+| ingress legado (nginx em CM) | **removido** (cutover 2026-10-24 03:23Z, ver "O ingress virou controller") |NIC 5.7.0 em `hostNetwork` responde :80 | **NIC** — 17/17 hosts com paridade provada (21/21 na matriz interna) ✅ |
 | demais 6 containers | `dockhand`, `maus`×3, `minecraft`×2 | **nenhum** (daemon desinstalado em 2026-10-24) | parados/descomissionados — ver "O que ainda está em Docker" |
-| 19 domínios do ingress | — | — | idênticos antes/depois (mesmo status HTTP) |
-
-`replicas: 0` não é esquecimento: são consumidores de fila ou donos de volume
+| 17 hosts do ingress | — | — | status idêntico antes/depois (matriz repetida nos dois) |`replicas: 0` não é esquecimento: são consumidores de fila ou donos de volume
 com escrita exclusiva. Rodar dois ao mesmo tempo duplica mensagem ou corrompe
 dado. Subir para 1 *é* o ato de migrar, e exige parar o Docker antes.
 
-Plataforma no cluster: k3s, ArgoCD, ingress-nginx (NodePort), cert-manager,
-metrics-server, Kubero (operator + UI em NodePort 30200), Rancher 2.15.2 +
-Fleet + Turtles + CAPI (NodePort 31198/31844).
+Plataforma no cluster: k3s, ArgoCD, **NIC 5.7.0** (hostNetwork :80 — ver "O
+ingress virou controller"), cert-manager, metrics-server, Kubero (operator +
+UI em NodePort 30200), Rancher 2.15.2 + Fleet + Turtles + CAPI (NodePort
+31198/31844).
 
 Recursos: k3s + ArgoCD + ingress-nginx + cert-manager + Kubero ≈ 1,3 GB de
 RAM; com o Rancher e o que ele instala (Fleet/Turtles/CAPI), ≈ 2,5 GB. Sobram
@@ -1465,7 +1465,6 @@ recém-criado tem `integrity_check ok` com zero usuários.
 | 30092 | adminer |
 | 30200 | kubero |
 | 30300 | grafana |
-| 30421 | ingress-nginx (https) |
 | 30672 | rabbitmq management |
 | 30800 | domain-api |
 | 30808 | evolution-api |
@@ -1474,7 +1473,8 @@ recém-criado tem `integrity_check ok` com zero usuários.
 | 30822 | vaultwarden |
 | 30900 | minio s3 |
 | 30901 | minio console |
-| 30945 | ingress-nginx (http) |
+| 31528 | NIC — debug da fase azul (o serve é pelo hostNetwork :80) |
+| 31759 | NIC debug https (fase azul) |
 | 31198 | rancher (http, redireciona para 443) |
 | 31525 | rabbitmq amqp (NodePort automático) |
 | 31844 | rancher (https) |
@@ -1792,50 +1792,87 @@ for exposto publicamente (dívida 12), isso deve ser revisto junto.
 - O pod do Rancher **não** é `replicas: 1` por escolha de disponibilidade — é o
   máximo que um nó único comporta.
 
-### O ingress é um nginx, e não um Ingress controller (fatia 8)
+### O ingress virou controller + `VirtualServer` (2026-10-24)
 
-O nginx que serve os 19 hosts agora é um pod (`gitops/apps/support/ingress/`),
-com `hostNetwork: true` e `hostPort: 80`, rodando o **mesmo** `default.conf` do
-host (`sha256 08e10fe5…`, 403 linhas, byte-idêntico). **Zero `Ingress` objects**
-foram criados.
+A história mudou duas vezes em 24h. A primeira (fatia 8) levou o nginx com os
+`server` blocks para dentro do cluster (`gitops/apps/support/ingress/`,
+ConfigMap gerado do `default.conf`). A segunda — esta — trocou o motor: o
+namespace `support/ingress` foi removido e a rota dos hosts virou
+**`VirtualServer` (CRD `k8s.nginx.org/v1`)** servida pelo **NIC
+(nginx-ingress 5.7.0)** da NGINX/F5, em `helm release nic/namespace nic`,
+rodando **`hostNetwork`** e respondendo pela :80 do host.
 
-Isso é deliberado, e a alternativa foi considerada e recusada:
+Por que `_VirtualServer_` e não `Ingress` nativo: o `Ingress` não expressa o
+que estas rotas fazem — reescrita de SPA por host com capture
+(`/tela-frontend$1`), upstream HTTPS com `proxy_ssl_verify off` (rancher),
+SSE de 1h (db-mcp). O CRD expressa tudo declarativamente, e o resultado é o
+mesmo nginx. A rota vive em 4 folders do GitOps, um por namespace (nomes
+únicos — ver armadilha 42):
 
-- migrar 19 hosts para `Ingress` objects significaria reescrever cada um dos 23
-  `proxy_pass` como um backend + annotations para os casos que não são
-  `location /` (as três SPAs servidas do MinIO por prefixo de bucket, o Rancher
-  com upstream HTTPS e `proxy_ssl_verify off`, o SSE do `maus` e do `db-mcp`);
-- e faria isso na **mesma janela** em que se muda quem publica a porta 80;
-- um erro de digitação em uma linha derrubaria **um** host, sem erro visível no
-  cluster — o ArgoCD mostraria tudo `Synced`.
+- `gitops/apps/persistence/routes/` — vault, minio, rabbit + as 3 SPAs
+- `gitops/apps/applications/routes-*/` — domain, ai, evolution, draw, finance-api, **tela-api**
+- `gitops/apps/observability/routes-*/` — grafana, otel
+- `gitops/apps/support/routes-*/` — adminer, db-mcp (timeout 1h + buffering off no upstream), **rancher** (upstream cross-ns `cattle-system/rancher:443` com `tls.enable`)
 
-O que se ganhou com a migração é o que se queria: **a porta 80 saiu do Docker**.
-O arquivo continua sendo a fonte da verdade, agora por `configMapGenerator` —
-o sufixo de hash faz o pod reiniciar sozinho quando uma linha muda.
+#### O caso `tela-api` — por que o controller hostNetwork
 
-### `ingress-nginx` está fora de suporte (dívida consciente)
+A tela-api escuta `127.0.0.1:8007` de propósito (ver
+`gitops/apps/applications/tela/api.yaml`): o bind no loopback é a garantia
+estrutural de que a 8007 não existe para a internet. Isso fechou três caminhos,
+**todos provados**:
 
-`ingress-nginx` foi **aposentado em março/2026**; este ambiente é outubro/2026.
-O próprio chart do Rancher registra isso (`includeDefaultExtraAnnotations` está
-deprecado "due to ingress-nginx retiring in March 2026") e a seção de EOL do
-projeto recomenda migrar para Gateway API ou outro controller.
+1. `Endpoints` manual apontando para `127.0.0.1` — o API server **recusa**
+   (`may not be in the loopback range`);
+2. mudar o bind para `0.0.0.0` + firewall — trocar garantia estrutural por
+   condicional é decisão recusada no manifesto do app;
+3. `Service ExternalName` — o NIC não diala DNS de Service; upstream vira o
+   socket 502 dummy dele (provado em probe).
 
-Estado aqui, medido: **zero `Ingress` objects no cluster**. O controller roda
-com NodePort `30945`/`30421` e não serve nenhum tráfego. Quem serve os 19 hosts
-é o nginx da fatia 8 — um pod com `hostNetwork`, não o `ingress-nginx`.
+O que funcionou: o **NIC em `hostNetwork`** (mesma netns do pod legado, que já
+era) + `location-snippets` com **location aninhada** — o CRD exige uma
+`action` com upstream (dummy, nunca atingido), e o snippet injeta uma
+`location ~ ^/` dentro da location gerada que intercepta 100% das requests e
+faz o `proxy_pass http://127.0.0.1:8007` real. Nginx permite location dentro
+de location; o mecanismo foi provado com `return 999` antes de ir pra
+produção.
 
-Uma consequência disso para a dívida: como o `ingress-nginx` **nunca serviu
-tráfego**, removê-lo hoje é uma operação de faxina (liberar RAM e um webhook de
-admission), não uma migração. O que a decisão de 2026-10-23 protegia — "a troca
-por Traefik/Gateway API afeta o roteamento dos 18 hosts" — não vale mais: o
-roteamento está no `default.conf` do pod, que nenhum controller lê. A troca de
-motor, se acontecer, é reescrever o `default.conf` como `Ingress` objects, e
-isso é a migração própria que continua fora de escopo.
+#### O cutover em si (aplicado 2026-10-24 03:23Z)
 
-Decisão registrada em 2026-10-23: **não mexer agora**. Removê-lo liberaria RAM e
-um webhook, mas o Kubero foi instalado assumindo um ingress controller
-(armadilha 3) e a troca por Traefik/Gateway API afeta o roteamento dos 18 hosts
-— é migração própria, não faxina. Fica como dívida, com a data visível.
+Fase azul primeiro: NIC em NodePort (31528/31759) com os 17 hosts + matriz de
+21 provas (19/21 idênticas ao legado; o `tela-api` 502 azul é o dial de
+`127.0.0.1` na netns CNI — vira 404 com hostNetwork). O cutover:
+
+1. `helm upgrade` — NIC para `hostNetwork` (o pod fica `Pending` até a :80
+   liberar: o kubelet não agenda pod com conflito de porta declarada);
+2. commit removendo `gitops/apps/support/ingress/` — o AppSet `root` prune o
+   Application, o controller de cascade mata o pod legado;
+3. **script nohup no VPS** (`/opt/k8s-backups/cutover-2026-10-24/cutover.sh`)
+   que no instante em que o *objeto* do pod legado desaparece (não basta sair
+   de `Running`: em `Terminating` o socket da :80 ainda é dele), faz
+   `rollout restart` no NIC — o pod prende a :80 em segundos;
+4. matriz de 17 hosts em :80 comparada aos códigos provados na fase azul;
+   **qualquer divergência → rollback automático** (reaplicar o snapshot YAML
+   do ingress legado, salvo em `/opt/k8s-backups/cutover-2026-10-24/`, +
+   helm do NIC de volta pra NodePort).
+
+Resultado medido: **17/17 hosts com paridade**, incluindo `tela-api` 404, e a
+sessão do próprio agente (que atravessa `ai.giomartins.dev`) sobreviveu.
+
+#### `ingress-nginx` foi removido (a dívida morreu)
+
+O controller EOL (`kubernetes/ingress-nginx`) foi instalado em 2026-10-23 e
+**nunca serviu um byte de tráfego público** — zero `Ingress` objects em
+qualquer momento. Era faxina, não migração. Removido em 2026-10-24: helm
+release (q.q. tenha sido o método de instalação — nada de `helm list` apontava
+pra ele), namespace `ingress-nginx`, `IngressClass nginx` e o webhook
+`ingress-nginx-admission`. O Kubero que foi instalado assumindo ingress
+controller (armadilha 3) segue com um controller real: o NIC, agora com
+`IngressClass nic`. Rollback documenta-se: `helm install` do chart + namespace
+— nada de estado nele.
+
+Plataforma no cluster: k3s, ArgoCD, **NIC 5.7.0 (hostNetwork :80)**,
+cert-manager, metrics-server, Kubero (NodePort 30200), Rancher 2.15.2 +
+Fleet + Turtles + CAPI (NodePort 31198/31844).
 
 ## O Docker acabou (2026-10-24)
 
@@ -2206,6 +2243,44 @@ encontra, e o script "funciona" sem alterar o arquivo.
 
 Precisa de `\@`. Custou um teste que parecia passar (`exit 0`) e um
 `grep` mostrando o digest velho no arquivo.
+
+### 41. O ApplicationSet usa o basename do diretório como nome da Application.
+
+`{{ .path.basename }}` + glob `gitops/apps/*/*` significa que o nome do folder
+do serviço **é** o nome da Application — na íntegra do `gitops/apps/`. Quatro
+folders chamados `routes/{persistence,applications,...}` geraram quatro
+Applications com o mesmo nome, e o controller recusou **todas** com
+`duplicate name: routes` (o app inteiro não sobe, inclusive nada novo).
+Diagnóstico visível só no `logs` do controller. Regra: basename único em todo
+o `gitops/apps/` — os folders de rota se chamam `routes-<namespace>`.
+
+### 42. O template do kubeconform rende o kind em MINÚSCULAS.
+
+Para schemas de CRD customizados (`-schema-location
+'.github/schemas/{{.Group}}_{{.ResourceKind}}.json'`), o código do kubeconform
+mostra `strings.ToLower(resourceKind)` — o arquivo esperado é
+`k8s.nginx.org_virtualserver.json`, não `..._VirtualServer.json`. No macOS
+(APFS default *case-insensitive*) o nome capitalizado **funciona**; no CI
+(ext4) lê "could not find schema" e falha o gate. Custou 3 runs de CI e a
+leitura do código fonte descubrir. Os schemas dos CRDs do NIC agora seguem
+gerados lowercase por `.github/scripts/kubeconform-crds.py` (source = CRD
+instalado no cluster, a versão exata que o API server aceita).
+
+### 43. O NIC valida `upstream.service` com DNS-1035 — o `Service` `9router` existe, mas o VS era rejeitado.
+
+Um Service llamado `9router` aceita ser criado, mas o campo `service: 9river` no
+VirtualServer falha na validação do CRD do NIC (DNS-1035: `must start with an
+alphabetic character`). O nome do Service virou `ninerouter` (nodePort 30028
+e selector intactos; o app não referenciava o nome antigo em nenhum lugar).
+
+### 44. Localização aninhada no `location-snippets` — o único caminho pro loopback.
+
+O `location-snippets` do VirtualServer entra DENTRO da location gerada, onde
+um segundo `proxy_pass` é `duplicate directive` (`nginx -t` falha, reload
+pede down). A saída: a location aninhada `location ~ ^/ {}` dentro do snippet
+— intercepta 100% das requests e permite `proxy_pass` próprio (é o mecanismo
+que serve o tela-api em `127.0.0.1:8007`). Provado com `return 999` antes de
+produção.
 
 ## Dívidas conhecidas
 
