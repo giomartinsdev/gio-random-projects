@@ -93,11 +93,15 @@ data:
           {
             "name": "level",
             "label": "Level (logs)",
-            "type": "custom",
-            "query": "INFO,WARN,ERROR,FATAL,30,40,50",
+            "type": "query",
+            "datasource": { "type": "loki", "uid": "loki" },
+            "definition": "label_values({job=`kubernetes`}, level)",
+            "query": { "query": "label_values({job=`kubernetes`}, level)", "refId": "var-level" },
+            "refresh": 2,
             "includeAll": true,
             "allValue": ".*",
             "multi": true,
+            "sort": 1,
             "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
             "options": []
           }
@@ -479,7 +483,7 @@ data:
           "options": { "showTime": true, "showLabels": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true },
           "targets": [
             { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{job=`kubernetes`, container=~\"$container\", level=~\"$level\"}", "queryType": "range" },
-            { "refId": "B", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{job=`kubernetes`, container=~\"$container\"} |= `ERROR`", "queryType": "range" }
+            { "refId": "B", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{job=`kubernetes`, container=~\"$container\"} |~ `(?i)ERROR`", "queryType": "range" }
           ]
         },
         {
@@ -589,7 +593,7 @@ data:
           "fieldConfig": { "defaults": {}, "overrides": [] },
           "options": {
             "mode": "markdown",
-            "content": "# Fluxo rápido de debug\n\n1. **Deu erro em algum lugar?** Painel **Erros (logs)** (aba de logs, com o filtro de *Container* e *Level* no topo). Toda linha de log das apps Go/TS que rodou dentro de um request carrega `trace_id` — **clique na linha e no link *TraceID*** para abrir a trace exata no Tempo.\n2. **Uma app \"tá lenta\"?** Painel **Latência p50/p95/p99** para ver se é geral ou pontual, e **Alocação/s + Goroutines** para pressão de GC/leak. Span latency p95 (por serviço) cobre o que passou pelo Tempo.\n3. **A app está de pé?** Stat **Serviços DOWN** (scrape do Prometheus) + **Scrape health** na seção de infra.\n4. **Pipeline de telemetria morreu?** Se **Spans/s no collector** e **Loki bytes/s** zerarem, o problema é no alloy/loki/tempo — não na app.\n\n## Queries prontas (Explore)\n\n| Onde | Query | Para quê |\n|---|---|---|\n| Tempo | `{resource.service.name=\"tela-api\" && status=error}` | traces com erro da tela |\n| Tempo | `{resource.service.name=~\"domain-.*\" \\|\\| span.http.route != nil}` | rotas HTTP dos domains |\n| Tempo | `{span.duration > 1s}` | tudo que passou de 1s |\n| Loki | `{job=\"docker\", container=~\"tela-api\"} \\| level=~\"ERROR\\|FATAL\"` | erros da tela (JSON) |\n| Loki | `{job=\"docker\"} \\|= \\`trace_id\\`` | só linhas com trace |\n| Prometheus | `histogram_quantile(0.99, sum by (le, job) (rate(http_server_request_duration_seconds_bucket[5m])))` | p99 por app |\n\n> Dica: os **filtros no topo** (Serviço HTTP, Serviço de traces, Container, Level) aplicam a todos os painéis. O time picker padrão é 6h — para o TraceQL metrics do painel de traces, janelas até 24h são aceitas pelo Tempo."
+            "content": "# Fluxo rápido de debug\n\n1. **Deu erro em algum lugar?** Painel **Erros (logs)** (aba de logs, com o filtro de *Container* e *Level* no topo). Toda linha de log das apps Go/TS que rodou dentro de um request carrega `trace_id` — **clique na linha e no link *TraceID*** para abrir a trace exata no Tempo.\n2. **Uma app \"tá lenta\"?** Painel **Latência p50/p95/p99** para ver se é geral ou pontual, e **Alocação/s + Goroutines** para pressão de GC/leak. Span latency p95 (por serviço) cobre o que passou pelo Tempo.\n3. **A app está de pé?** Stat **Apps com pod não-ready** (readinessProbe do pod) + **Scrape health**. O dashboard **Cluster k3s** (link no topo) completa com réplica faltando e pod reiniciando.\n4. **Pipeline de telemetria morreu?** Se **Spans/s no collector** e **Loki bytes/s** zerarem, o problema é no alloy/loki/tempo — não na app.\n\n## Queries prontas (Explore)\n\n| Onde | Query | Para quê |\n|---|---|---|\n| Tempo | `{resource.service.name=\"tela-api\" && status=error}` | traces com erro da tela |\n| Tempo | `{resource.service.name=~\"domain-.*\" \\|\\| span.http.route != nil}` | rotas HTTP dos domains |\n| Tempo | `{span.duration > 1s}` | tudo que passou de 1s |\n| Loki | `{job=\"kubernetes\", container=\"tela-api\", level=\"ERROR\"}` | erros da tela (JSON) |\n| Loki | `{job=\"kubernetes\"} \\|= \\`trace_id\\`` | só linhas com trace |\n| Prometheus | `histogram_quantile(0.99, sum by (le, job) (rate(http_server_request_duration_seconds_bucket[5m])))` | p99 por app |\n\n> Dica: os **filtros no topo** (Serviço HTTP, Serviço de traces, Container, Level) aplicam a todos os painéis. O time picker padrão é 6h — para o TraceQL metrics do painel de traces, janelas até 24h são aceitas pelo Tempo."
           },
           "targets": []
         }
