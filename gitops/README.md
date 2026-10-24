@@ -1249,7 +1249,13 @@ Escolhemos a primeira quando o serviço migrar para valer.
 
 ## Estado atual
 
-Verificado em 2026-10-23, depois do bootstrap e da fatia 3.
+**O cluster é tudo o que roda na VPS** desde 2026-10-24: o Docker foi
+desinstalado. 18/18 Applications `Synced`+`Healthy`, zero pods fora de
+`Running`, zero containers.
+
+A tabela abaixo é o retrato da migração serviço a serviço (verificada em
+2026-10-23, depois do bootstrap e da fatia 3). Mantida como registro do
+corte — não é o inventário de agora.
 
 > **A coluna "Docker" é o retrato daquela verificação, não o estado de agora.**
 > Em 2026-10-23 os ociosos foram parados (`restart=no` + `docker stop`, ver "A
@@ -1257,7 +1263,9 @@ Verificado em 2026-10-23, depois do bootstrap e da fatia 3.
 > `prometheus`, `tempo`, `db-mcp`, `db-mcp-gateway`. Em **2026-10-24 todos os
 > parados foram removidos** (`docker rm`, ver "A remoção dos parados"): não há
 > mais rollback por `docker start` em lugar nenhum desta tabela. O rollback
-> agora é `docker compose --profile retired up -d`. A tabela fica como registro
+> agora é `docker compose --profile retired up -d` — e desde o fim de
+> 2026-10-24 exige reinstalar o Docker (o daemon foi desinstalado). A tabela
+> fica como registro
 > histórico da verificação.
 
 **Regra que governa a tabela:** o container Docker só é desligado *depois* de o
@@ -1286,7 +1294,7 @@ A coluna "tráfego" registra onde o tráfego está **hoje**.
 | `alloy` | **removido** (2026-10-24) | **rodando** (OTLP 4317/4318 + logs, PVC) | **k8s** — pod `alloy-logs` serve o Service `alloy` |
 | `registry` | **removido** (2026-10-24) | **rodando** (`hostPort: 5000`) | **k8s** — 39 repos, 12 GB verificados por sha256 ✅ |
 | `ingress` | **removido** (2026-10-24) | **rodando** (`hostPort: 80`) | **k8s** — 19/19 hosts com o mesmo status ✅ |
-| demais 6 containers | `dockhand`, `maus`×3, `minecraft`×2 | — | Docker, com motivo (ver "O que ainda está em Docker e por quê") |
+| demais 6 containers | `dockhand`, `maus`×3, `minecraft`×2 | **nenhum** (daemon desinstalado em 2026-10-24) | parados/descomissionados — ver "O que ainda está em Docker" |
 | 19 domínios do ingress | — | — | idênticos antes/depois (mesmo status HTTP) |
 
 `replicas: 0` não é esquecimento: são consumidores de fila ou donos de volume
@@ -1722,22 +1730,103 @@ um webhook, mas o Kubero foi instalado assumindo um ingress controller
 (armadilha 3) e a troca por Traefik/Gateway API afeta o roteamento dos 18 hosts
 — é migração própria, não faxina. Fica como dívida, com a data visível.
 
-## O que falta
+## O Docker acabou (2026-10-24)
 
-A migração serviço a serviço acabou, e a faxina começou: os duplicados ociosos
-já estão parados. O que resta é remover o que está parado, desligar o Docker, e
-decidir sobre os quatro serviços que **não são lift-and-shift**.
+**A VPS é só o cluster.** O daemon foi parado, desabilitado e desinstalado
+(`apt purge docker-ce docker-ce-cli containerd.io ...`), e `/var/lib/docker`
+removido. Não existe mais `docker`, `docker.sock`, `docker0`, nem unit do
+systemd com esse nome. O k3s usa o **containerd próprio** (`/var/lib/rancher`),
+nunca o do Docker — por isso o cluster não sentiu nada.
 
-Estado em 2026-10-24, depois da faxina completa: **18/18 Applications
-`Synced`+`Healthy`**, zero pods fora de `Running`, 19/19 hosts respondendo pelo
-pod do ingress, registry servindo 39 repositórios, **6 containers Docker
-rodando** (eram 26 no baseline), todos com motivo declarado: `maus-caddy`,
-`maus-slack-bridge`, `omb`, `minecraft`, `minecraft-backup` e `dockhand`.
+Estado no fim do dia: **18/18 Applications `Synced`+`Healthy`**, zero pods fora
+de `Running`, 16/16 hosts públicos respondendo, e **zero containers**.
 
-O que sobrou de Docker não é resíduo da migração — é o que nunca foi migrado,
-por decisão explícita (`maus`, `minecraft`) ou por definição (`dockhand` é a UI
-do próprio Docker). Não há mais nenhum container parado, nenhuma imagem de
-serviço migrado e nenhum volume de serviço migrado no daemon.
+### A ordem em que foi feito (e por quê)
+
+Nada foi destruído antes do equivalente em k8s provar que serve. O que mudou:
+
+1. **`maus` e `minecraft` — parados, não migrados** (decisão do usuário). Eram
+   os dois últimos serviços legítimos em Docker. O `omb` era o bloqueio duro:
+   monta `/var/run/docker.sock` e **cria containers** como parte do produto —
+   migrá-lo seria emular Docker dentro do Kubernetes. O `minecraft` estava 5
+   dias sem jogador e custava 5,4 GB de RAM.
+
+2. **O CI deixou de depender do daemon** — e essa era a parte não óbvia. Os 6
+   workflows buildavam com `DOCKER_HOST=ssh://ubuntu@$VPS_HOST` e provavam o
+   deploy com `docker ps`. Ver "O CI sem o daemon", abaixo.
+
+3. **`alloy-logs` perdeu o pipeline Docker** (`discovery.docker` +
+   `loki.source.docker` + o `hostPath` do socket). Provado antes de remover:
+   `up{job="docker"}` já não existia no Prometheus e o Loki só tinha 6 séries
+   `job=docker`, todas de containers parados ou do `dockhand`.
+
+4. **Timers do host**: `sync-external-endpoints.timer` desabilitado (o `MAPA`
+   estava vazio, ele só rodava `docker inspect` à toa).
+
+5. **`systemctl disable --now docker` + `docker.socket`**. Parar só o
+   `docker.service` não basta: o `.socket` é *socket-activated* e ressuscita o
+   daemon em qualquer conexão ao `/var/run/docker.sock`.
+
+6. **`apt purge` + `rm -rf /var/lib/docker`** — 5 GB liberados (84G → 79G).
+
+### O que foi preservado (nada foi perdido)
+
+Backups em `/opt/k8s-backups/2026-10-24-pre-descomissionamento/`, todos com
+integridade verificada:
+
+| arquivo | tamanho | conteúdo |
+|---|---|---|
+| `data.tar.gz` | 4,8 GB | todo o `/data` (mundo do Minecraft, `.openmausbot`) |
+| `vm-home.tar.gz` | 2,9 GB | os 52 repos git e scripts pessoais do `vm-home` |
+| `data-minecraft-maus.tar.gz` | 1,4 GB | recorte seletivo (mundo + estado do maus) |
+| `dockhand-db.tar.gz` | 3,3 MB | snapshot consistente do banco do Dockhand |
+| `volume-omb-data.tar.gz` | 100 K | volume do `omb` |
+| `volume-maus-caddy-*.tar.gz` | — | volumes do Caddy do maus |
+
+**O banco do Dockhand importa**: ele guardava 37 variáveis de 3 stacks, e 23
+delas **não existem com esse nome** em nenhum Secret do cluster (tokens de
+Vaultwarden, `SLACK_*`, `GITHUB`-adjacent, senha do Grafana). Sem o snapshot,
+essas 23 seriam perdidas no `apt purge`. Foi por isso que o snapshot veio antes.
+
+`/opt/dockhand` (475 MB, arquivos mortos) e `/opt/stacks` (732 K, cópia
+desatualizada do git) **ficaram no disco**: o ganho de apagar é pequeno e o
+risco de precisar de um deploy-log antigo não é zero.
+
+### O CI sem o daemon
+
+O bloqueio real não era o `maus` — era o CI. Resolvido assim:
+
+- **build**: `runs-on: ubuntu-24.04-arm`, runner arm64 **nativo** (grátis e
+  ilimitado em repo público). Saiu o QEMU, que existia só porque o build rodava
+  no daemon amd64-para-arm64.
+- **push**: **túnel SSH** (`ssh -L 5000:127.0.0.1:5000` → `localhost:5000`). A
+  credencial não cruza a internet em claro, e o registry deixa de precisar
+  ficar aberto na `:5000` — o que fecha a armadilha 31 de graça.
+- **credenciais**: do **Secret do cluster** (`registry-credentials`,
+  `minio`), não do Vaultwarden. O `fetch_vault_secret.sh` fazia `docker run` na
+  VPS; o cluster já é a fonte da verdade do que os pods usam.
+- **deploy**: o CI grava o **digest** no manifesto e commita; o ArgoCD aplica.
+
+Provado duas vezes com o daemon já morto (`domain-api` e `domain-worker`):
+build verde → digest commitado pelo bot → pod no digest novo em ~10 s.
+
+### O buraco que o Dockhand escondia
+
+Vale registrar porque vai voltar à memória: **o "deploy" do CI nunca foi
+deploy**. Todo manifesto fixa digest, e o webhook do Dockhand só mexe em
+Docker. O CI publicava `:latest`, chamava o webhook, ficava verde, e o pod
+continuava na imagem antiga — para sempre.
+
+Medido antes de corrigir, o drift já existia:
+
+```
+tela-api  rodando   @sha256:91f313c4...
+:latest   registry  @sha256:52326c1d...
+```
+
+Não era regressão da faxina; era o estado desde a migração, com o CI verde por
+cima. `tela-api` continua no digest velho até alguém rodar o workflow dela (o
+bump agora existe).
 
 ### `9router` — migrado em 2026-10-23
 
@@ -1829,12 +1918,12 @@ Ordem deliberada, e cada passo é um commit separado:
 2. ~~**`docker rm`** dos parados. O container parado é o rollback; remover é o
    último ato.~~ — **executado em 2026-10-24**, em três camadas, com
    `gitops/bootstrap/remove-parados.sh` (ver abaixo).
-3. **desligar o Docker** (`systemctl disable --now docker`). **Bloqueado, e não
-   por esquecimento**: `omb` (o `maus`) monta `/var/run/docker.sock` e monta
-   `/data` do host — ele *cria containers* como parte do produto. Enquanto o
-   `maus` existir, o daemon existe. O `dockhand` monta o mesmo socket. Desligar
-   o Docker em 2026-10-24 não é faxina: é desligar o `maus`. Ver "O que ainda
-   está em Docker e por quê".
+3. ~~**desligar o Docker** (`systemctl disable --now docker`).~~ — **executado
+   em 2026-10-24**. Estava bloqueado pelo `maus` (`omb` monta
+   `/var/run/docker.sock`) e pelo CI (buildava com `DOCKER_HOST=ssh://`). O
+   usuário decidiu descomissionar o `maus` e o `minecraft` em vez de migrá-los;
+   o CI foi movido para runner arm64 + túnel SSH. Daemon parado,
+   `docker.socket` desabilitado e pacotes removidos. Ver "O Docker acabou".
 
 ### A remoção dos parados (2026-10-24)
 
@@ -1887,28 +1976,94 @@ duplicados, e não a instância que ainda servia.
 containers é seguro para *portas*; não é seguro para *nomes*.
 
 
-### O que ainda está em Docker e por quê
+### O que ainda está em Docker: nada
 
-Depois da remoção de 2026-10-24, o daemon tem **6 containers, todos rodando**, e
-nenhum deles é resíduo da migração:
+Esta seção existia para listar os 6 containers que resistiam. Em 2026-10-24 eles
+saíram, e com eles o próprio daemon:
 
-| serviço | por que ainda está aqui |
+| serviço | destino |
 | --- | --- |
-| `maus` (`omb`, `maus-caddy`, `maus-slack-bridge`) | `docker.sock` + `/data` do host; **não será migrado** (decisão do usuário). É o motivo pelo qual o daemon não pode ser desligado. |
-| `minecraft`, `minecraft-backup` | fora de escopo (jogo, não infra) |
-| `dockhand` | UI do próprio Docker; morre com ele |
+| `maus` (`omb`, `maus-caddy`, `maus-slack-bridge`) | **parado e descomissionado** (decisão do usuário). O `omb` monta `docker.sock` e cria containers — migrar seria emular Docker no k8s. Dados preservados. |
+| `minecraft`, `minecraft-backup` | **parado e descomissionado** (decisão do usuário). 5 dias sem jogador, 5,4 GB de RAM. Mundo preservado em `/data` + backup. |
+| `dockhand` | **parado.** UI do próprio Docker; morreu com ele. O banco (37 variáveis de 3 stacks, 23 sem equivalente no cluster) está em backup. |
 
-**O que não existe mais**: nenhum container parado, nenhuma imagem de serviço
-migrado (as 7 restantes são exatamente as que os 6 containers usam), nenhum
-volume de serviço migrado. Só sobraram 3 volumes, todos do `maus`:
-`omb-data`, `maus-caddy-data`, `maus-caddy-config`.
+Dos 3 volumes (`omb-data`, `maus-caddy-data`, `maus-caddy-config`), cada um tem
+um `.tar.gz` verificado em `/opt/k8s-backups/2026-10-24-pre-descomissionamento/`
+— e o `/var/lib/docker` foi removido depois deles.
 
-> **O bloqueio, dito sem rodeio**: `omb` monta `/var/run/docker.sock`. Ele usa
-> Docker como parte do produto — cria containers. Enquanto o `maus` tiver que
-> funcionar, `systemctl disable --now docker` derruba o `maus`. As duas decisões
-> ("manter o `maus`" e "desligar o Docker") são mutuamente exclusivas; a ordem
-> correta é decidir o `maus` primeiro. `dockhand` monta o mesmo socket e sai
-> junto.
+**Para trazer qualquer um de volta**: `stacks/*.yml` continua no git com a trava
+(`profiles: ["retired"]`). Reinstalar o Docker e rodar
+`docker compose --profile retired -f stacks/<x>.yml up -d`. Não há nada de
+Docker na VPS hoje, então isso é uma decisão de reinstalação, não um `start`.
+
+### 37. `systemctl disable --now docker` não desliga o Docker.
+
+O `docker.socket` é *socket-activated*: ele fica `active` e o próprio systemd
+sobe o `docker.service` na primeira conexão a `/var/run/docker.sock`. Desabilitar
+só o service devolve:
+
+```
+Disabling 'docker.service', but its triggering units are still active:
+docker.socket
+docker.service: inactive / disabled
+docker.socket:  active / enabled
+```
+
+E o socket continua lá (`test -S /var/run/docker.sock` → SIM). Qualquer coisa
+que toque nele — o timer do `sync-external-endpoints`, um `docker ps` de
+curiosidade — ressuscita o daemon e os containers com `restart` voltam.
+
+A ordem que funciona: `systemctl disable --now docker` **e**
+`systemctl disable --now docker.socket`, depois `rm -f /var/run/docker.sock`.
+A prova não é `systemctl is-active docker` (ele fica `inactive` nos dois casos):
+é o socket não existir mais.
+
+### 38. O CI "deployava" sem deployar, e o verde escondia.
+
+Todo manifesto em `gitops/apps/` fixa **digest** (`image: ...@sha256:...`), o que
+é a escolha certa. Mas o único passo de "deploy" do CI era um webhook para o
+Dockhand, que só faz `docker compose up`. Nenhum passo escrevia o digest novo no
+manifesto.
+
+Resultado: o CI publicava `:latest`, o webhook rodava, o workflow ficava verde,
+e o pod continuava na imagem antiga **para sempre**. O ArgoCD mostrava
+`Synced`/`Healthy`, porque o git realmente não tinha mudado.
+
+O drift já tinha acontecido quando medi:
+
+```
+tela-api  rodando   @sha256:91f313c4...
+:latest   registry  @sha256:52326c1d...
+```
+
+A lição não é "faltou um passo": é que **"CI verde" não prova deploy quando o
+deploy é provado por um sistema que não fala com o alvo**. O `docker ps` do fim
+do job provava que um container subiu — e o alvo era um pod.
+
+Correção: o build devolve o digest, o job de deploy reescreve o manifesto e
+commita, o ArgoCD aplica. A prova é o pod rodando o digest novo.
+
+### 39. O driver `docker-container` do buildx tem netns própria.
+
+Ao mover o build para o runner e publicar por **túnel SSH**, o push falha com
+`connection refused` se o BuildKit estiver no driver `docker-container`: lá
+dentro `localhost:5000` é o loopback do *container* do BuildKit, não o do
+runner, onde o túnel escuta. `driver-opts: network=host` resolve.
+
+Mas não dá para simplesmente trocar para o driver `docker` embutido: ele recusa
+`cache-to: type=gha` ("cache export is not supported for the docker driver"), e
+o build passa a reconstruir tudo a cada push. A combinação que funciona é
+`docker-container` **com** `network=host`.
+
+### 40. Em Perl, `@sha256` dentro de string é um ARRAY.
+
+Um `perl -pi -e "s|$app@sha256:[0-9a-f]{64}|...|"` não casa nada e **não dá
+erro**: dentro de aspas duplas, `@sha256` é interpolado como array (é um nome de
+array válido) e vira string vazia. O regex vira `$app:` seguido de nada, não
+encontra, e o script "funciona" sem alterar o arquivo.
+
+Precisa de `\@`. Custou um teste que parecia passar (`exit 0`) e um
+`grep` mostrando o digest velho no arquivo.
 
 ## Dívidas conhecidas
 
@@ -2119,10 +2274,14 @@ volume de serviço migrado. Só sobraram 3 volumes, todos do `maus`:
    os antigos, perdidos só na aparência — o PVC tem o estado vivo.
 
     **Atualização 2026-10-23 (faxina)**: o container foi **parado**. Ele era o
-    último caminho para os dados de 28/09; o rollback completo do minio agora
-    depende de `docker start minio` — que continua valendo, mas os dados de lá
-    estão congelados há um dia. Ver armadilha 35 para o efeito colateral de
-    parar containers cujo *nome* outros scripts usam.
+    último caminho para os dados de 28/09; o rollback completo do minio dependia
+    de `docker start minio` — que valia até o dia seguinte. Ver armadilha 35
+    para o efeito colateral de parar containers cujo *nome* outros scripts usam.
+
+    **Atualização 2026-10-24 (descomissionamento)**: o container foi removido e
+    o daemon desinstalado. Os dados de 28/09 só existem agora em
+    `/opt/k8s-backups/2026-10-24-volumes-rollback/apps_minio_data.tar.gz`. Esta
+    dívida está **encerrada**: não há mais o que reverter.
 
 18. ~~**O CI de imagens estava cego desde a fatia 6.**~~ **Resolvido em
     2026-10-23** (commit `1d9a103`). Nenhuma imagem nova era publicada: o passo
@@ -2168,6 +2327,22 @@ volume de serviço migrado. Só sobraram 3 volumes, todos do `maus`:
     (`project-infra`, `project-apps`, `minecraft`, `core`) e resolve `include:`
     recursivamente. Provado com regressão plantada: tirar a trava do
     `9router` em `compute.yml` faz o gate sair 1 apontando o serviço. E a
-    saída hoje lista exatamente os 6 que devem subir: `dockhand`, `maus`×3,
-    `minecraft`×2.
+    saída hoje lista um só: `dockhand`. (Em 2026-10-24 ele deixou de subir
+    também, com o `apt purge`.)
+21. ~~**`project-infra`/`project-apps` sem serviço vivo e o `auto_update`
+    ligado.**~~ **Resolvida de outro jeito, em 2026-10-24**: o `dockhand` foi
+    desinstalado junto com o daemon, então não existe mais `crash`/`auto_update`
+    às 03:00 UTC para dar falso alarme. A dívida deixou de ter onde acontecer.
+22. **`tela-api` roda um digest mais velho que o `:latest` do registry.**
+    Medido em 2026-10-24: pod em `@sha256:91f313c4...`, registry em
+    `@sha256:52326c1d...`. É resíduo do buraco da dívida 38/armadilha 38 (o
+    deploy do CI nunca escrevia o digest). O bump agora existe, mas **só roda
+    quando aquele workflow roda**: um build de `tela-api` corrige. Não é
+    urgente (o pod funciona), mas é drift conhecido — e drift não medido volta.
+23. **`excalidraw` usa tag fixa (`v0.18.1`), não digest.** É de propósito (a
+    versão é escolhida por input do workflow, e o manifesto é a decisão
+    explícita de qual roda), mas viola o "contrato de imagem" do resto do repo e
+    fica fora do gate que proíbe `:latest` — uma tag mutável passaria. A
+    alternativa (digest + input) exige decidir o que "escolher versão" significa
+    no GitOps. Registrado, não decidido.
 
