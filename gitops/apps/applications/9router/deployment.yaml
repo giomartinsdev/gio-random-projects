@@ -169,12 +169,18 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: 9router
+  # `ninerouter`, não `9router`: o upstream do VirtualServer no NIC valida o
+  # nome com DNS-1035 (não pode começar com dígito) — o Service `9router`
+  # existia no cluster, mas o vs-ai (gitops/apps/applications/routes-*) era
+  # recusado com `Invalid value: "9router"`. O Deployment/PVC/Secret continuam
+  # `9router`: o rename vale só para o Service, que é o nome que o controller
+  # diala.
+  name: ninerouter
   labels:
     app.kubernetes.io/name: 9router
 spec:
   # NodePort 30028 (20128 -> 30028). O ClusterIP 20128 continua: quem fala
-  # `9router:20128` pela rede `apps` (o container `decision`, se um dia voltar)
+  # `ninerouter:20128` pela rede (o container `decision`, se um dia voltar)
   # segue valendo.
   #
   # ATENÇÃO: o `decision` não está rodando hoje. O Compose o declara, mas

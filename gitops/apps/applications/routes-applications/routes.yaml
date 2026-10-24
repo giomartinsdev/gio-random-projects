@@ -30,7 +30,7 @@ spec:
   host: ai.giomartins.dev
   upstreams:
     - name: router
-      service: 9router
+      service: ninerouter
       port: 20128
       client-max-body-size: 50m
   routes:
