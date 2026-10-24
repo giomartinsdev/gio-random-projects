@@ -1047,10 +1047,20 @@ docker compose -f persistence.yml config --services          # (nada)
 docker compose -f observability.yml --profile retired config --services
 # e o agregado, que é o que o Dockhand roda:
 docker compose -p project-infra -f project-infra.yml --dry-run up -d --remove-orphans
-#   -> "no service selected": não sobe e não remove nada
+#   -> "no service selected", exit 1: não sobe e não remove nada
 docker compose -p project-apps -f project-apps.yml --dry-run up -d --remove-orphans
 #   -> toca só omb/maus-caddy/maus-slack-bridge; NÃO remove os parados
+docker compose -p core -f core.yml --dry-run up -d --remove-orphans
+#   -> toca só dockhand (registry/ingress foram aposentados em 2026-10-24)
 ```
+
+> **`no service selected` sai com código 1**, e isso é intencional do Compose —
+> não é erro, é "não há nada a fazer". A consequência a observar: o Dockhand
+> pode registrar a execução de `project-infra` como falha. Vale checar em
+> `schedule_executions` depois do primeiro `auto_update` real às 03:00 UTC. Se
+> marcar `failed`, a saída é dar a `project-infra` um serviço vivo ou desligar
+> o `auto_update` dele — o que **não** apaga nada, só para de rodar um comando
+> que não tem o que fazer. (Dívida 19.)
 
 O último ponto importa: `--remove-orphans` **não** apaga os containers
 parados, porque eles pertencem a outro project name (`maus` vs `project-apps`).
@@ -1242,10 +1252,13 @@ Escolhemos a primeira quando o serviço migrar para valer.
 Verificado em 2026-10-23, depois do bootstrap e da fatia 3.
 
 > **A coluna "Docker" é o retrato daquela verificação, não o estado de agora.**
-> Em 2026-10-23, na faxina final, os ociosos foram parados (`restart=no` +
-> `docker stop`, ver "A faxina final"): `excalidraw`, `adminer`, `grafana`,
-> `loki`, `minio`, `prometheus`, `tempo`, `db-mcp`, `db-mcp-gateway`. As linhas
-> abaixo já refletem isso. Todos continuam reversíveis por `docker start`.
+> Em 2026-10-23 os ociosos foram parados (`restart=no` + `docker stop`, ver "A
+> faxina final"): `excalidraw`, `adminer`, `grafana`, `loki`, `minio`,
+> `prometheus`, `tempo`, `db-mcp`, `db-mcp-gateway`. Em **2026-10-24 todos os
+> parados foram removidos** (`docker rm`, ver "A remoção dos parados"): não há
+> mais rollback por `docker start` em lugar nenhum desta tabela. O rollback
+> agora é `docker compose --profile retired up -d`. A tabela fica como registro
+> histórico da verificação.
 
 **Regra que governa a tabela:** o container Docker só é desligado *depois* de o
 equivalente no k8s provar que serve, e o tráfego só muda num commit separado.
@@ -1256,24 +1269,24 @@ A coluna "tráfego" registra onde o tráfego está **hoje**.
 | `excalidraw` | **parado** (2026-10-23) | **rodando** (NodePort 30023) | **k8s** — `draw` → `:30023` ✅ |
 | `adminer` | **parado** (2026-10-23) | **rodando** (NodePort 30092) | **k8s** — `adminer` → `:30092` ✅ |
 | `domain-api` | rodando (ocioso) | **rodando** (NodePort 30800) | **k8s** — `domain` → `:30800` ✅ |
-| `domain-worker` | rodando | manifesto, **`replicas: 0`** | Docker (único escritor do CQRS) |
+| `domain-worker` | **removido** (2026-10-24) | **rodando** (`replicas: 1`) | **k8s** — único escritor do CQRS; o container foi parado antes de subir o pod |
 | `finance-api` | rodando (só consumo interno) | **rodando** (NodePort 30818) | **k8s** — `finance-api` → `:30818` ✅ |
 | `finance-openfinance-worker` | **parado** | **rodando** (`replicas: 1`) | **k8s** — poller do Polp, sem tráfego externo ✅ |
-| `finance-customersupport-worker` | rodando | manifesto, **`replicas: 0`** | Docker |
+| `finance-customersupport-worker` | **removido** (2026-10-24) | **rodando** (`replicas: 1`) | **k8s** — consumidor de fila, sem porta |
 | `vaultwarden-api` | rodando | **rodando** (ClusterIP:8080) | sem tráfego externo (bridge interna) |
 | `vaultwarden` | **parado** | **rodando** (NodePort 30822) | **k8s** — `vault` → `:30822`, `/api/config` idêntico byte a byte ✅ |
-| `9router` | rodando (`restart=no`, `profiles: retired`) | **rodando** (NodePort 30028) | **k8s** — `ai` → `:30028` ✅ |
+| `9router` | **removido** (2026-10-24) | **rodando** (NodePort 30028) | **k8s** — `ai` → `:30028` ✅ |
 | `minio` | **parado** (2026-10-23) | **rodando** (NodePort 30900/30901) | **k8s** — 8 buckets idênticos, 3 SPAs ✅ |
-| `rabbitmq` | rodando (rollback) | **rodando** (NodePort 31525/30672) | **k8s** — 29 filas, 12 exchanges, 62 bindings idênticos ✅ |
+| `rabbitmq` | **removido** (2026-10-24) | **rodando** (NodePort 31525/30672) | **k8s** — 29 filas, 12 exchanges, 62 bindings idênticos ✅ |
 | `postgres` | **parado** | **rodando** (ClusterIP:5432) | **k8s** — 54/55 tabelas idênticas, `finance_transactions` md5 igual ✅ |
 | `prometheus` | **parado** (2026-10-23) | **rodando** (ClusterIP:9090) | **k8s** — 898M copiados, 8.841 séries ✅ |
 | `loki` | **parado** (2026-10-23) | **rodando** (ClusterIP:3100) | **k8s** — 976M copiados ✅ |
 | `tempo` | **parado** (2026-10-23) | **rodando** (ClusterIP:3200) | **k8s** — 308M copiados ✅ |
 | `grafana` | **parado** (2026-10-23) | **rodando** (NodePort 30300) | **k8s** — `grafana` → `:30300` ✅ |
-| `alloy` | rodando (rollback) | **rodando** (OTLP 4317/4318 + logs, PVC) | **k8s** — pod `alloy-logs` serve o Service `alloy`; container só lê `docker.sock` |
-| `registry` | **parado** (`exited`, `restart=no`) | **rodando** (`hostPort: 5000`) | **k8s** — 39 repos, 12 GB verificados por sha256 ✅ |
-| `ingress` | **parado** (`exited`, `restart=no`) | **rodando** (`hostPort: 80`) | **k8s** — 19/19 hosts com o mesmo status ✅ |
-| demais 8 containers | `alloy`, `dockhand`, `9router`, `maus`×3, `minecraft`×2 | — | Docker, com motivo (ver "O que ainda está em Docker e por quê") |
+| `alloy` | **removido** (2026-10-24) | **rodando** (OTLP 4317/4318 + logs, PVC) | **k8s** — pod `alloy-logs` serve o Service `alloy` |
+| `registry` | **removido** (2026-10-24) | **rodando** (`hostPort: 5000`) | **k8s** — 39 repos, 12 GB verificados por sha256 ✅ |
+| `ingress` | **removido** (2026-10-24) | **rodando** (`hostPort: 80`) | **k8s** — 19/19 hosts com o mesmo status ✅ |
+| demais 6 containers | `dockhand`, `maus`×3, `minecraft`×2 | — | Docker, com motivo (ver "O que ainda está em Docker e por quê") |
 | 19 domínios do ingress | — | — | idênticos antes/depois (mesmo status HTTP) |
 
 `replicas: 0` não é esquecimento: são consumidores de fila ou donos de volume
@@ -1715,21 +1728,29 @@ A migração serviço a serviço acabou, e a faxina começou: os duplicados ocio
 já estão parados. O que resta é remover o que está parado, desligar o Docker, e
 decidir sobre os quatro serviços que **não são lift-and-shift**.
 
-Estado em 2026-10-23, depois da faxina: **18/18 Applications `Synced`+`Healthy`**,
-zero pods fora de `Running`, 19/19 hosts respondendo pelo pod do ingress,
-registry servindo 39 repositórios, **8 containers Docker rodando** (eram 26 no
-baseline), todos com motivo declarado.
+Estado em 2026-10-24, depois da faxina completa: **18/18 Applications
+`Synced`+`Healthy`**, zero pods fora de `Running`, 19/19 hosts respondendo pelo
+pod do ingress, registry servindo 39 repositórios, **6 containers Docker
+rodando** (eram 26 no baseline), todos com motivo declarado: `maus-caddy`,
+`maus-slack-bridge`, `omb`, `minecraft`, `minecraft-backup` e `dockhand`.
 
-### `9router` — migrado em 2026-10-23, container de pé como rollback
+O que sobrou de Docker não é resíduo da migração — é o que nunca foi migrado,
+por decisão explícita (`maus`, `minecraft`) ou por definição (`dockhand` é a UI
+do próprio Docker). Não há mais nenhum container parado, nenhuma imagem de
+serviço migrado e nenhum volume de serviço migrado no daemon.
+
+### `9router` — migrado em 2026-10-23
 
 Corte em duas portas: o commit `23af05f` copiou o volume `ninerouter_data` para o
 PVC (backup lógico `.backup` com `integrity_check ok`, mais cópia física, em
 `/opt/k8s-backups/2026-10-23-2243-9router/`) e subiu o pod; o commit `b2d6887`
 virou o ingress de `:20128` para o NodePort `:30028`.
 
-O container Docker continua rodando com `restart=no` e `profiles: ["retired"]`
-— é o rollback barato. **Esta sessão do agente atendeu pelo pod novo** desde o
-commit `b2d6887`, o que é a prova funcional mais direta que existe aqui.
+O container Docker ficou de pé como rollback até **2026-10-24**, quando foi
+parado e removido junto com os demais; o volume, depois de conferido o conteúdo
+(mesmas pastas `auth`, `db`, `logs`, `machine-id`, `runtime` do PVC) e
+backupado. **Esta sessão do agente atendeu pelo pod novo** desde o commit
+`b2d6887`, o que é a prova funcional mais direta que existe aqui.
 
 ### `tela` — migrado em 2026-10-23
 
@@ -1796,25 +1817,64 @@ Ordem deliberada, e cada passo é um commit separado:
    (imagens `tela-api`, criados durante os testes de cutover, bridge, sem porta
    publicada) também saíram — `docker rm -f`. Eram lixo de teste, não rollback.
 
-   Sobraram **8 containers rodando**, todos com motivo declarado:
-   `alloy`, `dockhand`, `9router` (rollback), `maus`+`maus-caddy`+
+   Naquele momento sobraram **8 containers rodando**, todos com motivo
+   declarado: `alloy`, `dockhand`, `9router` (rollback), `maus`+`maus-caddy`+
    `maus-slack-bridge`+`omb`, `minecraft`+`minecraft-backup`. Medido logo
    depois da parada: **15.008 MB usados, 8.963 MB disponíveis**. Não há medição
    de "antes" confiável — os duplicados eram quase todos ociosos, então o ganho
-   esperado é de CPU e descritores, não de RAM.
+   esperado é de CPU e descritores, não de RAM. (Em 2026-10-24, com a remoção,
+   esses 8 viraram **6**: `alloy` e `9router` saíram, o resto é `maus`,
+   `minecraft` e `dockhand`.)
 
-2. **`docker rm`** dos parados. O container parado é o rollback; remover é o
-   último ato.
-3. **desligar o Docker** (`systemctl disable --now docker`). Junto vão o
-   `sync-external-endpoints.timer` (MAPA vazio desde a fatia 6, zero
-   EndpointSlices manuais no cluster) e o `dockhand`.
+2. ~~**`docker rm`** dos parados. O container parado é o rollback; remover é o
+   último ato.~~ — **executado em 2026-10-24**, em três camadas, com
+   `gitops/bootstrap/remove-parados.sh` (ver abaixo).
+3. **desligar o Docker** (`systemctl disable --now docker`). **Bloqueado, e não
+   por esquecimento**: `omb` (o `maus`) monta `/var/run/docker.sock` e monta
+   `/data` do host — ele *cria containers* como parte do produto. Enquanto o
+   `maus` existir, o daemon existe. O `dockhand` monta o mesmo socket. Desligar
+   o Docker em 2026-10-24 não é faxina: é desligar o `maus`. Ver "O que ainda
+   está em Docker e por quê".
 
-**Por que o passo 2 ainda não**: parar é reversível com um comando; remover é o
-ponto sem volta. Os 9 parados continuam ocupando disco (imagens e volumes
-intactos) — o custo de mantê-los é disco, o custo de removê-los cedo é não ter
-para onde voltar. A fatia 8 cortou `ingress` e `registry` há pouco mais de uma
-hora, e a armadilha 26 já mostrou que "o pod subiu" não é o mesmo que "o sistema
-está inteiro".
+### A remoção dos parados (2026-10-24)
+
+Feita em camadas, cada uma verificada antes da seguinte, porque "apagar" e
+"perder o rollback" são a mesma operação:
+
+1. **Metadado backupado** (`/opt/k8s-backups/2026-10-24-0009-pre-rm-docker/`):
+   `docker inspect` de todos os 40 containers, mais `images.txt` (com digests),
+   `volumes.txt` e `containers.txt`. Com isso mais o `stacks/` do git, qualquer
+   container volta por `docker compose --profile retired up -d`.
+2. **30 containers parados removidos** por `remove-parados.sh`, que confere o
+   pod **daquele** serviço (`1/1 Running`) imediatamente antes de cada remoção.
+   Conferir "o namespace tem 5 pods" não provaria nada: o gate é o pod do
+   serviço estar `Ready`, senão o script aborta sem remover. Sobraram rodando
+   apenas os 6 que já rodavam.
+3. **Build cache e imagens órfãs**: 3,3 GB + 9,1 GB + 0,65 GB liberados.
+   Justificado por uma verificação, não por confiança: o `_catalog` do registry
+   **pod** (12 GB, autenticado) devolve os 39 repositórios, então toda imagem
+   local é re-puxável. As 7 imagens em uso por container ficaram.
+4. **Volumes sem equivalente no k8s** (`intelligence-postgres-data` 77 MB,
+   `opendots-*` 7 volumes, `apps_redis_data`, 5 anônimos) — backup verificado em
+   `/opt/k8s-backups/2026-10-24-orfaos-docker/` antes de remover. Eram dados
+   pré-migração sem dono, não resíduo do cutover.
+5. **Volumes dos serviços migrados** — backup verificado (14 arquivos, 2,0 GB)
+   em `/opt/k8s-backups/2026-10-24-volumes-rollback/`, depois removidos. O
+   registry foi o único conferido por **conteúdo** e não por tamanho: os nomes
+   dos blobs são o SHA256 deles, e `comm -23` mostrou **zero** blobs e **zero**
+   manifests do volume Docker ausentes no PVC (2594 ⊂ 2604 e 4136 ⊂ 4152 — o PVC
+   é superconjunto estrito, porque recebeu pushes depois do cutover).
+
+**O resultado**: disco de 107 G → 75 G usados (56% → 39%), ou **118 GB livres**.
+Nada caiu: 19/19 hosts com o mesmo status HTTP de antes, 18/18 Applications
+`Synced`+`Healthy`, zero pods fora de `Running`.
+
+**O que isso custa**: o rollback por `docker start` deixou de existir. O rollback
+agora é `docker compose --profile retired up -d`, que recria o container a partir
+do `stacks/` (git) e da imagem no registry (pod). É mais lento — puxa imagem em
+vez de só religar — mas não depende de nada que tenha sido apagado aqui. Para os
+dados, o caminho é o `.tar.gz` do backup ou o PVC, não o volume Docker.
+
 
 **O que a faxina provou**: parar 9 containers não derrubou nada — 19/19 hosts com
 o mesmo status HTTP, 18/18 Applications `Synced`+`Healthy`, zero pods fora de
@@ -1829,31 +1889,26 @@ containers é seguro para *portas*; não é seguro para *nomes*.
 
 ### O que ainda está em Docker e por quê
 
-Não é pendência esquecida, é ordem deliberada:
+Depois da remoção de 2026-10-24, o daemon tem **6 containers, todos rodando**, e
+nenhum deles é resíduo da migração:
 
-| serviço | o que falta |
+| serviço | por que ainda está aqui |
 | --- | --- |
-| `postgres` | migrado (fatia 6) — o container é rollback congelado |
-| `vaultwarden` | migrado (fatia 6) — idem |
-| `9router` | **migrado em 2026-10-23** — container de pé como rollback (`profiles: retired`) |
-| `evolution-redis` | **migrado em 2026-10-23** — container parado, volume intacto como rollback |
-| `tela-*` | **migrado em 2026-10-23** — os três containers parados, rollback em `profiles: retired` |
-| duplicados ociosos (`adminer`, `excalidraw`, `grafana`, `loki`, `minio`, `prometheus`, `tempo`, `db-mcp`, `db-mcp-gateway`) | **parados em 2026-10-23** (`restart=no` + `docker stop`) — reversível por `docker start`, sem `rm` |
-| `maus` | `docker.sock` + `/data` do host; **não será migrado** (decisão do usuário) |
-| `minecraft` | fora de escopo (jogo, não infra) |
-| `alloy` | container de pé como rollback; o OTLP já é do pod `alloy-logs` |
+| `maus` (`omb`, `maus-caddy`, `maus-slack-bridge`) | `docker.sock` + `/data` do host; **não será migrado** (decisão do usuário). É o motivo pelo qual o daemon não pode ser desligado. |
+| `minecraft`, `minecraft-backup` | fora de escopo (jogo, não infra) |
 | `dockhand` | UI do próprio Docker; morre com ele |
 
-Ficam de fora, e por motivo, não por esquecimento:
+**O que não existe mais**: nenhum container parado, nenhuma imagem de serviço
+migrado (as 7 restantes são exatamente as que os 6 containers usam), nenhum
+volume de serviço migrado. Só sobraram 3 volumes, todos do `maus`:
+`omb-data`, `maus-caddy-data`, `maus-caddy-config`.
 
-- **`maus`** — cria containers via `docker.sock` e monta `/data` do host.
-  Migrar isso para k8s seria emular Docker dentro do Kubernetes. **Decisão do
-  usuário em 2026-10-23: não migrar**; o serviço fica em Docker até o desligamento
-  dele, e isso é aceito.
-- **`ingress` / `registry` / `dockhand`** — os três formam um ciclo: o ingress
-  é a porta de entrada, o registry serve as imagens que o cluster puxa, e o
-  Dockhand é o plano de controle do que ainda está em Docker. Nessa ordem
-  inversa, no fim.
+> **O bloqueio, dito sem rodeio**: `omb` monta `/var/run/docker.sock`. Ele usa
+> Docker como parte do produto — cria containers. Enquanto o `maus` tiver que
+> funcionar, `systemctl disable --now docker` derruba o `maus`. As duas decisões
+> ("manter o `maus`" e "desligar o Docker") são mutuamente exclusivas; a ordem
+> correta é decidir o `maus` primeiro. `dockhand` monta o mesmo socket e sai
+> junto.
 
 ## Dívidas conhecidas
 
@@ -1863,8 +1918,8 @@ Ficam de fora, e por motivo, não por esquecimento:
    `alloy` e `evolution-redis` em 2026-10-23. O timer continua instalado e ativo,
    rodando a cada minuto sem tocar em nada — é a rede de segurança para um
    rollback de emergência (basta devolver a linha ao `MAPA`). Ele sai junto com o
-   Docker, no fim. Verificado: **0** EndpointSlices sem `managed-by` no
-   namespace.
+   Docker, no fim — e o Docker só sai depois que o `maus` sair (ver o bloqueio
+   acima). Verificado: **0** EndpointSlices sem `managed-by` no namespace.
 2. ~~Patch do `argocd-cm` não versionado.~~ **Resolvido** em
    `gitops/bootstrap/argocd/` — lista versionada + script idempotente. Ainda é
    um passo manual no bootstrap, mas não depende mais de memória.
@@ -1878,15 +1933,11 @@ Ficam de fora, e por motivo, não por esquecimento:
 5. ~~**Os pods migrados não têm log no Loki.**~~ **Resolvido** — o coletor
    `alloy-logs` roda no cluster e cobre os pods (`loki.source.kubernetes`) e o
    que resta em Docker (`loki.source.docker` via `hostPath`).
-6. **O `alloy` continua em Docker, mas deixou de receber telemetria.** Desde
-   2026-10-23 o OTLP (traces e métricas) vai para o pod `alloy-logs`, que assumiu
-   o Service `alloy`. O container monta `docker.sock` e usa
-   `discovery.docker` + `loki.source.docker`, e não alcança a API do k3s
-   (`172.18.0.1:6443` → refused) — mas o `alloy-logs` **também** monta
-   `docker.sock` e já lê os containers, então os dois pipelines de log se
-   sobrepõem. O container sai quando o último container sair; até lá, os logs
-   dos containers são ingeridos **duas vezes** (labels `job=docker` em ambos),
-   em dois Lokis diferentes. Custo: ~2 GB de disco, não corrupção.
+6. ~~**O `alloy` continua em Docker, mas deixou de receber telemetria.**~~
+   **Resolvido em 2026-10-24**: o container foi parado em 2026-10-23 e removido
+   junto com os outros parados. Sobrou um único pipeline (`alloy-logs`, no pod),
+   então os logs dos containers deixaram de ser ingeridos duas vezes. O
+   `discovery.docker` que não alcançava a API do k3s deixou de existir junto.
 7. **`domain.events.queue` acumulando sem consumidor.** Medido em 2026-10-23
    21:57 UTC: **2.929 mensagens, 0 consumidores**. A linha antiga deste README
    dizia 585 — cresceu 5× em poucas horas, o que muda a leitura: não é um resto
@@ -1922,10 +1973,12 @@ Ficam de fora, e por motivo, não por esquecimento:
    git. Saída: espelhar essa imagem para um registro externo (ghcr público ou
    um tar em object storage) e registrar o procedimento de restauração.
 10. **O `minio` no k8s não é alcançável por containers Docker pelo nome.** O DNS
-   do Docker resolve `minio` para o container (que segue de pé como rollback), e
+   do Docker resolvia `minio` para o container (que existia como rollback), e
    não enxerga Services do cluster. O CI de frontend foi ajustado para
    `http://172.18.0.1:30900`; qualquer outro `docker run` que precise de S3 terá
-   o mesmo problema e precisa do mesmo endereço explícito.
+   o mesmo problema e precisa do mesmo endereço explícito. Desde 2026-10-24 o
+   container `minio` não existe mais: o nome simplesmente não resolve, então o
+   endereço explícito deixou de ser preferência e passou a ser obrigatório.
 
    **O caso do `vaultwarden` é a versão pior do mesmo problema** e virou a
    armadilha 35: lá o container foi **parado**, então o nome deixou de existir
@@ -2048,7 +2101,7 @@ Ficam de fora, e por motivo, não por esquecimento:
    `0.0.0.0` e a porta 12345 é exposta, então `up{job="alloy"}` = 1.
 
    Novo NodePort **30418** para `otel.giomartins.dev`; o `:4318` do container
-   segue de pé como rollback (uma linha no ingress).
+   ficou de pé como rollback até 2026-10-24, quando o container foi removido.
 17. ~~**Os dois MinIOs divergiram e o console público aponta para o antigo.**~~
     **Resolvido em 2026-10-23, junto com o corte do ingress.** O `proxy_pass` do
     `server_name minio.giomartins.dev` era `127.0.0.1:9001` (console do container)
@@ -2061,7 +2114,9 @@ Ficam de fora, e por motivo, não por esquecimento:
     instância, que é a condição para o sintoma sumir: um upload feito pelo
     console passa a aparecer nos sites. Os objetos antigos eram idênticos por
     md5 (nada se perdeu); o que estava quebrado era só o caminho de escrita novo.
-    O container `minio` continua rodando como rollback, com os dados de 28/09.
+    O container `minio` ficou de pé como rollback até **2026-10-24**, quando foi
+   removido; os dados de 28/09 foram copiados para o PVC (8 buckets idênticos) e
+   os antigos, perdidos só na aparência — o PVC tem o estado vivo.
 
     **Atualização 2026-10-23 (faxina)**: o container foi **parado**. Ele era o
     último caminho para os dados de 28/09; o rollback completo do minio agora
@@ -2086,4 +2141,33 @@ Ficam de fora, e por motivo, não por esquecimento:
     quando alguém tentou publicar uma imagem. **Um sinal que só existe quando o
     caminho é exercitado não é monitoramento.** Se o CI importa, ele precisa
     rodar (ou ter um health check próprio) mesmo sem push.
+19. **`project-infra` não tem mais nenhum serviço vivo, e o `auto_update` dele
+    continua ligado.** Depois da faxina de 2026-10-24, todos os 18 serviços de
+    `project-infra` estão em `profiles: ["retired"]`. O comando do Dockhand
+    termina com `no service selected` e **exit 1** — que é o comportamento
+    correto do Compose (nada a fazer), mas o Dockhand pode registrar a execução
+    como falha. Não apaga nada, não sobe nada; o risco é só um alarme falso
+    diário e a tentação de "consertar" mexendo em quem não devia.
+
+    **Como fechar**, quando o primeiro `auto_update` real rodar (03:00 UTC):
+    olhar `schedule_executions` no banco do Dockhand para a stack 21. Se vier
+    `success`, não há nada a fazer. Se vier `failed`, desligar o `auto_update`
+    da stack 21 — que é mudança de configuração, não de código, e não toca em
+    container nenhum. A alternativa (manter um serviço "vivo" só para o comando
+    não ficar vazio) é pior: ressuscitaria algo migrado.
+20. ~~**O gate de `profiles` estava cego justamente onde importava.**~~
+    **Resolvido em 2026-10-24.** O `checa-profiles.sh` varria `stacks/*.yml`
+    inteiro, então via serviços de arquivos que **nenhuma stack inclui**
+    (`ai.yml`), e ao mesmo tempo não seguia os `include:` — que é como
+    `project-infra.yml` e `project-apps.yml` realmente montam o projeto. Dois
+    efeitos opostos: `9router`/`decision` apareciam na saída como se fossem
+    subir (e passavam pela whitelist, mascarando o caso), enquanto os arquivos
+    incluídos nunca eram conferidos um a um.
+
+    Agora o script parte dos quatro `compose_path` que o Dockhand executa
+    (`project-infra`, `project-apps`, `minecraft`, `core`) e resolve `include:`
+    recursivamente. Provado com regressão plantada: tirar a trava do
+    `9router` em `compute.yml` faz o gate sair 1 apontando o serviço. E a
+    saída hoje lista exatamente os 6 que devem subir: `dockhand`, `maus`×3,
+    `minecraft`×2.
 

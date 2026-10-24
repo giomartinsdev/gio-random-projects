@@ -9,9 +9,22 @@
 # nova e não é atualizada pelo Dockhand. Fica protegida no Dockhand
 # (force_redeploy=0, repull_images=0, webhook desligado).
 #
+# ## O que ainda sobe aqui: só o `dockhand`
+#
+# `registry`, `ingress` e os dois one-shots de htpasswd/config foram MIGRADOS
+# para o k3s (pods `support/registry` com `hostPort: 5000` e `support/ingress`
+# com `hostPort: 80`). Ficaram com `profiles: ["retired"]` em 2026-10-24: sem
+# isso, um `up -d` sem `--profile` tentaria recriá-los, bateria de frente com
+# os pods pelas portas 5000 e 80, e — pior — falharia antes de tudo porque os
+# volumes externos `registry_registry-*` foram removidos na faxina
+# ("external volume not found" aborta o projeto inteiro, não só o serviço).
+#
+# O `dockhand` monta `docker.sock` e é a UI do Docker: morre com ele, de
+# propósito. É o último serviço desta stack, e o motivo de a stack existir.
+#
 # Variáveis necessárias (env do stack no Dockhand ou /opt/giomartins/.env.core):
-#   REGISTRY_USER      (default: admin)
-#   REGISTRY_PASSWORD  (obrigatória; auth do registry)
+#   REGISTRY_USER      (default: admin)   [só usada pelos one-shots aposentados]
+#   REGISTRY_PASSWORD  (obrigatória)      [idem]
 name: core
 
 networks:
@@ -19,6 +32,13 @@ networks:
     external: true
     name: apps
 
+# Estes dois volumes foram REMOVIDOS na faxina de 2026-10-24 (o PVC
+# `support/registry-data` é a fonte da verdade, conferido blob a blob).
+# Continuam declarados porque os serviços que os montam estão em
+# `profiles: ["retired"]`, e o Compose só resolve volume externo de serviço
+# que entra no projeto. Se um dia forem reativados, recrie-os com
+# `docker volume create` antes — senão o `up` aborta com "external volume
+# not found", que derruba o projeto inteiro.
 volumes:
   registry_registry-data:
     external: true
@@ -33,6 +53,7 @@ services:
   registry-htpasswd:
     image: httpd:2.4-alpine
     container_name: htpasswd-init
+    profiles: ["retired"]   # migrado p/ k8s (pod) em 2026-10-24
     labels:
       giomartins.dev/project: core
     restart: "no"
@@ -52,6 +73,7 @@ services:
   registry-docker-config:
     image: alpine:3
     container_name: registry-docker-config-install
+    profiles: ["retired"]   # migrado p/ k8s (pod) em 2026-10-24
     labels:
       giomartins.dev/project: core
     restart: "no"
@@ -74,6 +96,7 @@ services:
   registry:
     image: registry:2
     container_name: registry
+    profiles: ["retired"]   # migrado p/ k8s (pod) em 2026-10-24
     labels:
       giomartins.dev/project: core
     restart: unless-stopped
@@ -103,6 +126,7 @@ services:
   ingress:
     image: nginx:1.27-alpine
     container_name: ingress
+    profiles: ["retired"]   # migrado p/ k8s (pod) em 2026-10-24
     labels:
       giomartins.dev/project: core
     restart: unless-stopped
