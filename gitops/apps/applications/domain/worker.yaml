@@ -35,7 +35,7 @@ spec:
         - name: registry-credentials
       containers:
         - name: domain-worker
-          image: registry.giomartins.dev:5000/domain-worker@sha256:b70bbf9d970de41ca3903a0eb684c9edd7d97accd8fce526e453f0aca206890c
+          image: registry.giomartins.dev:5000/domain-worker@sha256:93d492894708d25d385b26a4dd359bea8ea525c2c9e874a2b047c1924179cc29
           resources:
             requests:
               cpu: 20m
