@@ -98,7 +98,7 @@ jobs:
       # sem `profiles: ["retired"]` ressuscita e briga por porta com o pod.
       # Isso já aconteceu de verdade — `excalidraw` voltou ao vivo durante um
       # redeploy — então virou gate, não comentário.
-      - name: Todo serviço migrado tem `profiles: ["retired"]`
+      - name: Todo serviço migrado tem profiles retired
         run: |
           set -euo pipefail
           # yq v4 (mikefarah) do runner, sem instalar nada.
