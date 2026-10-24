@@ -36,6 +36,100 @@ data:
       - job_name: tempo
         static_configs:
           - targets: ["tempo:3200"]
+
+      - job_name: kube-state-metrics
+        static_configs:
+          - targets: ["kube-state-metrics:8080"]
+
+      # ## O kubelet, por proxy — e por que não `https://<node>:10250` direto
+      #
+      # O kubelet responde 401 sem token válido. Em vez de montar um
+      # `bearer_token_file` (que exige um Secret com o token do SA do
+      # Prometheus), a API do Kubernetes faz o proxy: `/api/v1/nodes/<node>/proxy`
+      # autentica com o token do SA do Prometheus, e o Prometheus só precisa de
+      # RBAC (`nodes/proxy: get`). É o mesmo padrão do prometheus-operator, com
+      # menos peça móvel.
+      #
+      # `role: pod` (cadvisor) dá CPU/mem/rede por container com `namespace` e
+      # `pod` nos labels; `role: node` (kubelet) dá o `/metrics` do kubelet,
+      # usado só para o painel de "kubelet está coletando?".
+      - job_name: kubelet
+        scheme: https
+        authorization:
+          credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        tls_config:
+          insecure_skip_verify: true
+        static_configs:
+          - targets: ["10.0.0.209:10250"]
+
+      - job_name: cadvisor
+        scheme: https
+        metrics_path: /metrics/cadvisor
+        authorization:
+          credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        tls_config:
+          insecure_skip_verify: true
+        static_configs:
+          - targets: ["10.0.0.209:10250"]
+        metric_relabel_configs:
+          # O cadvisor emite uma série por cgroup (system.slice, kubepods.slice,
+          # kubepods-besteffort.slice, ...) com `container=""`. São ~40% das
+          # séries e nenhum painel as usa: o dashboard agrupa por namespace/pod.
+          - source_labels: [container]
+            regex: ""
+            action: drop
+          - source_labels: [id]
+            regex: "/"
+            action: drop
+          # `image` no cadvisor carrega o digest completo, que muda a cada push.
+          # Como label de série isso estoura a cardinalidade; o painel usa o
+          # nome do container.
+          - regex: "image"
+            action: labeldrop
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+---
+# O Prometheus precisa de UM verbo: `get` em `nodes/proxy`. É o que autoriza
+# raspar o kubelet/cadvisor pela API. Nada de `pods` (quem lista pod é o
+# kube-state-metrics e o alloy), nada de `secrets`.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-kubelet-scrape
+  labels:
+    app.kubernetes.io/name: prometheus
+rules:
+  - apiGroups: [""]
+    resources: ["nodes/metrics", "nodes/proxy"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  # A API de discovery é o que o Prometheus usa se um dia trocarmos os targets
+  # estáticos por `kubernetes_sd_configs`. Já fica concedido para não exigir
+  # outra rodada de RBAC.
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-kubelet-scrape
+  labels:
+    app.kubernetes.io/name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-kubelet-scrape
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: observability
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -50,6 +144,10 @@ spec:
     requests:
       # O volume Docker está em 883M. 5Gi dá espaço para a retenção de 15d
       # crescer sem um alerta por falta de disco — o host tem 136G livres.
+      #
+      # Com cadvisor + kube-state-metrics o volume cresce mais rápido (~2500
+      # séries novas), mas 5Gi segue folgado: a 15d de retenção a projeção é
+      # ~1.5Gi.
       storage: 5Gi
 ---
 apiVersion: apps/v1
@@ -59,9 +157,6 @@ metadata:
   labels:
     app.kubernetes.io/name: prometheus
 spec:
-  # 0 até a cópia do volume (883M) ser feita com o container parado.
-  # Subir vazio começaria o histórico do zero — perder 15d de série temporal é
-  # aceitável em teoria, mas não é uma decisão para tomar sem avisar.
   replicas: 0
   selector:
     matchLabels:
@@ -71,6 +166,11 @@ spec:
       labels:
         app.kubernetes.io/name: prometheus
     spec:
+      # O token do SA precisa existir como arquivo para o `credentials_file` do
+      # scrape do kubelet. No k8s >= 1.24 ele não é montado por padrão.
+      serviceAccountName: prometheus
+      automountServiceAccountToken: true
+
       # O Compose roda `user: "0"`. O volume do Prometheus tem arquivos do
       # root, e o processo precisa escrever no WAL. Trocar o UID exigiria
       # `chown` nos dados copiados; fora do escopo desta fatia.
