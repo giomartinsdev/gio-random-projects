@@ -1,0 +1,1655 @@
+# Dashboard de ALERTA — os big numbers que dizem se algo vai dar merda.
+#
+# ## Por que um terceiro dashboard
+#
+#   `apps-overview`    → "a minha aplicação está funcionando?"
+#   `cluster-overview` → "o cluster está saudável?" (detalhe, por pod)
+#   `alerts-overview`  → **"estou prestes a ter um problema?"** (este)
+#
+# Os três respondem perguntas diferentes. Este é o que você abre de manhã e
+# fecha em 5 segundos: se todos os números estão verdes, nada mais importa.
+# Tem threshold em todos os painéis, então a cor já é o veredito.
+#
+# ## Todos os números foram MEDIDOS no cluster vivo (2026-10-24)
+#
+# Medir antes de escrever não é preciosismo aqui: três queries deste dashboard
+# teriam ficado vazias ou erradas por suposição — `kubelet_volume_stats_*`
+# reporta o FS do host para os 15 PVCs (não quota), `node_load1` não tem
+# `/` por core, e o `local-path` não impõe limite por volume.
+#
+#   cpu usado        24.99%   (de 4 cores)
+#   memória usada    25.81%   (de 23.41 Gi allocatable)
+#   disco /          41.57%   (112.6 Gi livres de 192.69)
+#   load1            1.91
+#   pods             56 (55 Running, 1 não-ready = CronJob transitório)
+#   restarts         90
+#   PVCs             15/15 Bound, quota total 73.25 Gi
+#   limits memória   17.38 Gi de 23.41 allocatable (74% de overcommit)
+#   limits cpu       2.0 de 4.0 cores (50%)
+#   uso real (pods)  6.2 Gi de memória, 0.18 cores
+#   logs no disco    0.12 GB
+#
+# ## O que NÃO existe aqui (e por quê)
+#
+# O k3s desabilita o coletor `node` do kubelet. `node_cpu_*`, `node_memory_*` e
+# `node_filesystem_*` só existem porque o `node-exporter` roda como DaemonSet
+# lendo /proc e /sys do host. Sem ele, metade deste dashboard seria `No data`.
+#
+# ## Alertas: ainda não há canal
+#
+# Os thresholds abaixo são VISUAIS: mudam a cor do painel, não mandam
+# mensagem. O Grafana 12.4.3 tem Unified Alerting ativo, mas nenhum contact
+# point configurado — um alerta sem canal não avisa ninguém. Quando decidir
+# onde receber (Telegram, Discord, e-mail), o passo é criar o contact point e
+# as regras apontando para as mesmas queries daqui.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-alerts-overview
+  labels:
+    app.kubernetes.io/name: grafana
+data:
+  alerts-overview.json: |
+    {
+      "title": "Alertas — big numbers",
+      "uid": "alerts-overview",
+      "tags": [
+        "observability",
+        "alerts",
+        "sre"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "links": [
+        {
+          "title": "Cluster k3s",
+          "url": "/d/cluster-overview",
+          "type": "link",
+          "icon": "external link",
+          "targetBlank": false
+        },
+        {
+          "title": "Apps Overview",
+          "url": "/d/apps-overview",
+          "type": "link",
+          "icon": "external link",
+          "targetBlank": false
+        }
+      ],
+      "templating": {
+        "list": []
+      },
+      "panels": [
+        {
+          "id": 100,
+          "type": "row",
+          "title": "Veredito — está tudo bem?",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "panels": []
+        },
+        {
+          "id": 1,
+          "title": "CPU do host",
+          "description": "Uso real de CPU do HOST (node-exporter). Medido: 24.99% de 4 cores. Acima de 80% por tempo prolongado, os pods começam a sofrer throttling e a latência p95 das apps sobe antes de qualquer erro aparecer.",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 4,
+            "x": 0,
+            "y": 1
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 85
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "100 * sum(rate(node_cpu_seconds_total{mode!=\"idle\"}[5m])) / sum(rate(node_cpu_seconds_total[5m]))",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Memória do host",
+          "description": "Memória usada no HOST (total - available, que conta page cache reivindicável como livre). Medido: 25.81% de 23.41 Gi. Acima de 90% o OOM killer começa a matar pod — e ele escolhe pela soma de limits, não pelo uso real.",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 4,
+            "x": 4,
+            "y": 1
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 75
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "100 * (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Disco / (host)",
+          "description": "Disco raiz do HOST (node-exporter). Medido: 41.57%, 112.6 Gi livres de 192.69 Gi. É o número mais importante deste dashboard: disco cheio derruba o k3s inteiro (etcd não escreve, container não sobe), e enche sem aviso — o local-path guarda TODOS os 15 PVCs neste mesmo filesystem.",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 4,
+            "x": 8,
+            "y": 1
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 75
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"})",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Load (1 min)",
+          "description": "Load average de 1 minuto do HOST. Medido: 1.91 em 4 cores (48% de ocupação). Em Linux, load conta processo em fila por CPU E por disco: load alto com CPU baixa significa I/O travado, não processamento.",
+          "type": "gauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 4,
+            "x": 12,
+            "y": 1
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 4
+                  },
+                  {
+                    "color": "red",
+                    "value": 8
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "node_load1",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Pods não-ready",
+          "description": "Containers cujo readinessProbe falha. Medido: 1 — um CronJob transitório (rke2-machineconfig-cleanup), não uma app. O Service tira um pod não-ready do balanceamento antes de ele cair, então >0 por minutos é sinal de degradação iminente.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 4,
+            "x": 16,
+            "y": 1
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 4
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(kube_pod_container_status_ready == 0) or vector(0)",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Deployments incompletos",
+          "description": "Deployments cujo número de réplicas prontas é menor que o desejado. Medido: 0. É o painel que pega o caso em que o ArgoCD está `Synced Healthy` mas a app não tem capacidade — o ArgoCD compara o manifesto, não o status do rollout.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 4,
+            "x": 20,
+            "y": 1
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(kube_deployment_spec_replicas - kube_deployment_status_replicas_ready > 0) or vector(0)",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 101,
+          "type": "row",
+          "title": "Recursos — uso real vs o que o git promete",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 7
+          },
+          "panels": []
+        },
+        {
+          "id": 7,
+          "title": "Memória: uso real / limits / allocatable",
+          "description": "Três linhas que respondem \"cabe mais coisa aqui?\": uso real (cadvisor, working_set), soma dos LIMITS declarados no git, e o allocatable do nó (KSM). Medido: 6.2 Gi de uso, 17.38 Gi de limits, 23.41 Gi allocatable.\n\nUso muito abaixo dos limits é normal (limit é teto, não reserva). O que importa é limits encostando no allocatable: aí o OOM killer fica a um pico de distância, e ele mata o pod de maior soma de limits — não o que está usando mais.",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "showPoints": "never"
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "limits (git)"
+                },
+                "properties": [
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "dash": [
+                        10,
+                        10
+                      ],
+                      "fill": "dash"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "yellow"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "allocatable (nó)"
+                },
+                "properties": [
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "dash": [
+                        2,
+                        4
+                      ],
+                      "fill": "dash"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(container_memory_working_set_bytes{container!=\"\"})",
+              "legendFormat": "uso real"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(kube_pod_container_resource_limits{resource=\"memory\"})",
+              "legendFormat": "limits (git)"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(kube_node_status_allocatable{resource=\"memory\"})",
+              "legendFormat": "allocatable (nó)"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "title": "CPU: uso real / limits / allocatable",
+          "description": "Mesma leitura do painel de memória, em cores. Medido: 0.18 cores em uso, 2.0 de limits, 4.0 allocatable.\n\nCPU é compressível: bater no limit gera throttling (latência sobe), não kill. Por isso o alerta de CPU é menos urgente que o de memória — mas throttling em app Go aparece como p99 alto antes de qualquer erro.",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cores",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "showPoints": "never"
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "limits (git)"
+                },
+                "properties": [
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "dash": [
+                        10,
+                        10
+                      ],
+                      "fill": "dash"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "yellow"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "allocatable (nó)"
+                },
+                "properties": [
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "dash": [
+                        2,
+                        4
+                      ],
+                      "fill": "dash"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(container_cpu_usage_seconds_total{container!=\"\"}[5m]))",
+              "legendFormat": "uso real"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(kube_pod_container_resource_limits{resource=\"cpu\"})",
+              "legendFormat": "limits (git)"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(kube_node_status_allocatable{resource=\"cpu\"})",
+              "legendFormat": "allocatable (nó)"
+            }
+          ]
+        },
+        {
+          "id": 102,
+          "type": "row",
+          "title": "Disco — onde o espaço vai",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 15
+          },
+          "panels": []
+        },
+        {
+          "id": 9,
+          "title": "Disco: uso vs total",
+          "description": "Uso do filesystem raiz ao longo do tempo, com o total como referência. Medido: 41.57% de 192.69 Gi.\n\nA inclinação importa mais que o valor: 42% subindo 1%/dia dá 58 dias; parado, não é problema. Como o `local-path` guarda os 15 PVCs no MESMO filesystem, um pod que enche o volume enche este gráfico.",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 16
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 20,
+                "lineWidth": 2,
+                "showPoints": "never"
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "total"
+                },
+                "properties": [
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "dash": [
+                        6,
+                        6
+                      ],
+                      "fill": "dash"
+                    }
+                  },
+                  {
+                    "id": "custom.fillOpacity",
+                    "value": 0
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "min",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "node_filesystem_size_bytes{mountpoint=\"/\"} - node_filesystem_avail_bytes{mountpoint=\"/\"}",
+              "legendFormat": "usado"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "node_filesystem_size_bytes{mountpoint=\"/\"}",
+              "legendFormat": "total"
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "title": "Quota de PV por volume",
+          "description": "Quota declarada de cada PersistentVolume (spec.capacity), do KSM. Total medido: 73.25 Gi em 15 volumes.\n\n**Não existe painel de \"uso por PVC\" — e é de propósito.** O provisioner `local-path` não cria quota: o PV é um diretório no filesystem do host, então `kubelet_volume_stats_used_bytes` reporta o uso do FS INTEIRO para todos os PVCs. Medido nos 15: exatamente 80.05/192.69 Gi, enquanto o `du` real era 12G (registry), 2.5G (postgres), 993M (loki), 939M (prometheus), 51M (grafana).\n\nPara uso real por volume só com `hostPath` no node-exporter por diretório, ou trocando o provisioner. Este painel mostra o que é honesto: quem pode crescer até quanto.",
+          "type": "bargauge",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 16
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "min": 0,
+              "decimals": 1,
+              "color": {
+                "mode": "continuous-GrYlRd"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "displayMode": "gradient",
+            "orientation": "horizontal",
+            "showUnfilled": true,
+            "valueMode": "color",
+            "namePlacement": "auto",
+            "sizing": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "kube_persistentvolume_capacity_bytes",
+              "format": "time_series",
+              "legendFormat": "{{persistentvolume}}"
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "title": "Logs acumulados no disco",
+          "description": "Espaço que os arquivos de log dos containers ocupam no disco do nó (kubelet). Medido: 0.12 GB.\n\nÉ o vazamento silencioso clássico: um pod em CrashLoop escreve log sem parar, e ninguém vê — o disco enche, o k3s cai, e a causa é um container que reiniciou 5000 vezes. Este painel pega isso antes.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 23
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "decimals": 2,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 5368709120
+                  },
+                  {
+                    "color": "red",
+                    "value": 21474836480
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(kubelet_container_log_filesystem_used_bytes)",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "title": "I/O de disco (leitura + escrita)",
+          "description": "Taxa de I/O no disco raiz. Load alto com CPU baixa costuma ser este painel subindo: processo em fila de I/O, não de CPU. Em VPS com disco de rede, iowait é o gargalo mais comum e o menos visível.",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 23
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 15,
+                "lineWidth": 1,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(node_disk_read_bytes_total{device=\"sda\"}[5m]))",
+              "legendFormat": "leitura"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(node_disk_written_bytes_total{device=\"sda\"}[5m]))",
+              "legendFormat": "escrita"
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "title": "iowait (% de CPU)",
+          "description": "Fração do tempo de CPU esperando I/O. Medido: ~0.1%. Acima de 20% significa que o disco é o gargalo de tudo que roda no nó — e nenhum ajuste de CPU resolve.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 23
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "decimals": 2,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 10
+                  },
+                  {
+                    "color": "red",
+                    "value": 25
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "100 * sum(rate(node_cpu_seconds_total{mode=\"iowait\"}[5m])) / sum(rate(node_cpu_seconds_total[5m]))",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 103,
+          "type": "row",
+          "title": "Saúde do cluster e da coleta",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 30
+          },
+          "panels": []
+        },
+        {
+          "id": 14,
+          "title": "Pods Running / total",
+          "description": "Pods em fase Running sobre o total de pods. Medido: 55/56. O 1 fora é um CronJob transitório. Queda de Running sem queda de total = pod preso em Pending ou CrashLoop.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 0,
+            "y": 31
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value_and_name",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(kube_pod_info and on(pod, namespace) kube_pod_status_phase{phase=\"Running\"} == 1)",
+              "instant": true,
+              "legendFormat": "Running"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(kube_pod_info)",
+              "instant": true,
+              "legendFormat": "total"
+            }
+          ]
+        },
+        {
+          "id": 15,
+          "title": "Restarts acumulados",
+          "description": "Soma de restarts de container desde que cada pod nasceu. Medido: 90. O número absoluto importa pouco (pods antigos acumulam); a INCLINAÇÃO é o sinal — subindo em linha reta significa CrashLoopBackOff em algum lugar. Qual pod, no dashboard Cluster k3s.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 4,
+            "y": 31
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "none",
+            "graphMode": "area",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(kube_pod_container_status_restarts_total)",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 16,
+          "title": "PVCs Bound",
+          "description": "PVCs com volume ligado sobre o total. Medido: 15/15. Um PVC Pending significa pod preso esperando disco — e o Deployment nunca fica Ready.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 8,
+            "y": 31
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value_and_name",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(kube_persistentvolumeclaim_status_phase{phase=\"Bound\"})",
+              "instant": true,
+              "legendFormat": "Bound"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(kube_persistentvolumeclaim_info)",
+              "instant": true,
+              "legendFormat": "total"
+            }
+          ]
+        },
+        {
+          "id": 17,
+          "title": "Workloads",
+          "description": "Deployments e StatefulSets gerenciados pelo cluster. Medido: 51 Deployments. Serve de contexto: se este número cair sem você ter removido nada, o ArgoCD prunou algo — e a app sumiu com o cluster 'saudável'.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 12,
+            "y": 31
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value_and_name",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(kube_deployment_spec_replicas)",
+              "instant": true,
+              "legendFormat": "Deployments"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(kube_statefulset_replicas)",
+              "instant": true,
+              "legendFormat": "StatefulSets"
+            }
+          ]
+        },
+        {
+          "id": 18,
+          "title": "Targets de scrape UP",
+          "description": "Targets do Prometheus respondendo. Medido: 9. Se cair, os painéis deste dashboard ficam vazios — e vazio é indistinguível de 'tudo zero'. É o painel que separa 'cluster saudável' de 'estou cego'.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 16,
+            "y": 31
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value_and_name",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(up == 1)",
+              "instant": true,
+              "legendFormat": "up"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(up)",
+              "instant": true,
+              "legendFormat": "total"
+            }
+          ]
+        },
+        {
+          "id": 19,
+          "title": "Nó Ready",
+          "description": "Condição Ready do nó. Medido: 1. Um nó NotReady para de aceitar pods e o ingress perde o backend — mas os pods já rodando continuam respondendo por um tempo, então a app parece bem até o primeiro restart.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 4,
+            "x": 20,
+            "y": 31
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "NOT READY",
+                      "color": "red"
+                    },
+                    "1": {
+                      "text": "READY",
+                      "color": "green"
+                    }
+                  }
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(kube_node_status_condition{condition=\"Ready\",status=\"true\"} == 1)",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 104,
+          "type": "row",
+          "title": "Quem está crescendo — detectar antes de doer",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 36
+          },
+          "panels": []
+        },
+        {
+          "id": 20,
+          "title": "Top pods — crescimento de memória (15 min)",
+          "description": "Quanto a memória de cada pod cresceu nos últimos 15 min. É o detector de vazamento que funciona com histórico curto.\n\n**Por que não `predict_linear` em 7 dias:** medido neste cluster, a projeção devolvia 70.6% de disco em QUALQUER janela (1h a 24h) e -588% para memória. O Prometheus tinha apenas 15 min de histórico (reiniciou várias vezes durante a instalação do node-exporter), e `predict_linear` com 2 pontos é ruído multiplicado. Uma projeção que dá -588% é pior que não ter projeção: dá falsa confiança.\n\nCom 6h+ de histórico, trocar por `predict_linear(...[6h], 7*24*3600)` é uma linha. Até lá, crescimento absoluto é o sinal honesto.\n\nMedido: prometheus +395.8 Mi (pico do restart), loki +26.9 Mi, 9router +14.9 Mi.",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 37
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "topk(10, sum by (namespace, pod) (container_memory_working_set_bytes{container!=\"\"}))",
+              "legendFormat": "{{namespace}}/{{pod}}"
+            }
+          ]
+        },
+        {
+          "id": 21,
+          "title": "Top pods — crescimento de CPU (15 min)",
+          "description": "Consumo de CPU por pod. Um pod que sobe de 0.01 para 0.5 cores num dia é candidato a loop infinito, retry sem backoff ou query sem índice — antes de virar incidente.\n\nMedido: o cluster inteiro consome 0.18 cores dos 4 disponíveis. Qualquer pod acima de 0.1 aqui é o maior consumidor e merece uma olhada.",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 37
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cores",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "topk(10, sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\"}[5m])))",
+              "legendFormat": "{{namespace}}/{{pod}}"
+            }
+          ]
+        },
+        {
+          "id": 105,
+          "type": "row",
+          "title": "O que fazer quando ficar vermelho",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 44
+          },
+          "panels": []
+        },
+        {
+          "id": 22,
+          "title": "Runbook",
+          "type": "text",
+          "datasource": {
+            "type": "datasource",
+            "uid": "grafana"
+          },
+          "gridPos": {
+            "h": 11,
+            "w": 24,
+            "x": 0,
+            "y": 45
+          },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "options": {
+            "mode": "markdown",
+            "content": "# Runbook — por painel vermelho\n\n## Disco / acima de 75%\n\n1. **O que está crescendo?** `ssh ubuntu@168.138.135.6` e:\n   ```\n   sudo du -sh /var/lib/rancher/k3s/storage/*/ | sort -hr | head\n   sudo du -sh /var/log/pods/* 2>/dev/null | sort -hr | head\n   ```\n2. **Log de container é o campeão habitual.** Confira *Logs acumulados no disco*: se passar de 5GB, um pod está em CrashLoop escrevendo sem parar. Ache-o em *Restarts acumulados* subindo + dashboard **Cluster k3s** → *Restarts por pod*.\n3. **Imagem órfã:** `sudo k3s crictl rmi --prune` (remove imagem sem container usando).\n4. **`/var/lib/rancher/k3s/storage` inchar** sem PVC novo = um volume cresceu. `du` no passo 1 diz qual.\n5. **Não apague PVC para liberar espaço** — `prune` do ArgoCD recria vazio e você perde o dado.\n\n## Memória acima de 90%\n\n1. **Quem come:** *Memória por pod* no dashboard **Cluster k3s**.\n2. **Compare com limits:** o OOM killer escolhe pela soma de limits, não pelo uso. Um pod com `limits.memory: 4Gi` e uso de 100Mi é o primeiro candidato. Reduzir o limit no git (`k8s/apps/...`) é o conserto.\n3. **Cache não conta:** `MemAvailable` já desconta page cache reivindicável. Se está em 90%, é memória de verdade.\n4. **Vazamento lento:** *Top pods — crescimento de memória*. Com 6h+ de histórico, `predict_linear` em 7 dias passa a valer (hoje não: o Prometheus tem 15 min).\n\n## CPU acima de 85%\n\n1. **Throttling, não morte.** CPU é compressível: o kernel limita o pod, não mata. O sintoma é p99 alto no **Apps Overview**.\n2. **Quem consome:** *CPU por pod* no **Cluster k3s**. Compare com `limits.cpu` do manifesto.\n3. **Load alto com CPU baixa** → não é CPU, é I/O. Veja *iowait* e *I/O de disco*.\n\n## Deployments incompletos > 0\n\n1. `sudo kubectl -n <ns> get pods | grep -v Running`\n2. `sudo kubectl -n <ns> describe pod <pod>` → seção `Events`.\n3. **ArgoCD `Synced Healthy` + réplica faltando** é normal: o ArgoCD compara manifesto, não rollout. O dashboard **Cluster k3s** → *Réplicas: desejadas vs prontas* é a fonte de verdade.\n\n## Targets de scrape caindo\n\n| Target | O que some | Conserto |\n|---|---|---|\n| `node-exporter` | disco, CPU, memória e load do host (metade deste dashboard) | DaemonSet do node-exporter: pod, hostPath, porta 9100 ocupada |\n| `cadvisor` | CPU/memória/rede por pod | token do SA, RBAC `nodes/proxy`, kubelet em :10250 |\n| `kube-state-metrics` | réplicas, PVC, restarts | pod do KSM, ou RBAC sem `list/watch` |\n| `kubelet` | log filesystem | RBAC, :10250 |\n\n**Cego não é saudável.** Se um target cai, o painel correspondente fica vazio — e vazio parece \"zero, tudo bem\".\n\n## O dado que NÃO existe (e a tentação de inventar)\n\n- **Projeção de disco/memória em 7 dias:** `predict_linear` precisa de histórico longo. Medido aqui: com 15 min de série ele devolvia 70.6% fixo para disco (em qualquer janela) e **-588%** para memória. Um número desses é pior que nenhum. Quando o Prometheus tiver dias de histórico, predict_linear(node_filesystem_avail_bytes[6h], 7*24*3600) volta a ser a query certa.\n- **Uso de disco por PVC:** o provisioner `local-path` não cria quota. O PV é um diretório no FS do host, e o kubelet reporta o uso do **filesystem inteiro** para todos os PVCs. Medido: os 15 retornavam 80.05/192.69 Gi (o mesmo `df /`), enquanto o `du` real era 12G, 2.5G, 993M, 939M. Use `du` no host.\n- **Load por core:** não é uma métrica, é uma razão. `node_load1 / 4` é cálculo no painel, não série.\n- **Filesystem por mountpoint além do `/`:** o exporter está com `--collector.filesystem.mount-points-include=^/$`. Os loop devices do snap enchem e esvaziam sozinhos e fariam o alerta disparar à toa.\n\n## Quando você configurar o canal de alerta\n\nO Grafana 12.4.3 já tem Unified Alerting ativo, sem contact point. O caminho curto:\n\n1. *Alerting → Contact points → New* (Telegram, Discord ou e-mail).\n2. *Alert rules → New* apontando para as queries dos painéis acima, com `for: 10m` (evita ruído de pico).\n3. Os thresholds deste dashboard são visuais. Copiar os mesmos números para as regras mantém a cor e a notificação coerentes — um alerta que discorda do painel destrói a confiança nos dois.\n\nSugestão de regras mínimas: disco > 80% por 15m, memória > 90% por 10m, `Deployments incompletos > 0` por 15m, `Targets de scrape < 9` por 5m (este último é o mais importante: sem ele, os outros não têm como avisar)."
+          },
+          "targets": []
+        }
+      ]
+    }

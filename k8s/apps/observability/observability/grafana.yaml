@@ -92,6 +92,13 @@ data:
         options:
           path: /var/lib/grafana/dashboards/cluster
           foldersFromFilesStructure: false
+      - name: alerts
+        folder: Alerts
+        type: file
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards/alerts
+          foldersFromFilesStructure: false
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -185,6 +192,9 @@ spec:
             - name: cluster-dashboard-json
               mountPath: /var/lib/grafana/dashboards/cluster
               readOnly: true
+            - name: alerts-dashboard-json
+              mountPath: /var/lib/grafana/dashboards/alerts
+              readOnly: true
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -203,6 +213,10 @@ spec:
         - name: cluster-dashboard-json
           configMap:
             name: grafana-dashboard-cluster-overview
+        # O de alertas: os big numbers com threshold, para abrir e fechar em 5s.
+        - name: alerts-dashboard-json
+          configMap:
+            name: grafana-dashboard-alerts-overview
 ---
 apiVersion: v1
 kind: Service

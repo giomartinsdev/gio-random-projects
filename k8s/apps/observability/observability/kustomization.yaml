@@ -45,6 +45,7 @@ resources:
   - grafana.yaml
   - dashboard.yaml
   - cluster-dashboard.yaml
+  - alerts-dashboard.yaml
   - alloy-logs.yaml
   - alloy-service.yaml
   - kube-state-metrics.yaml
