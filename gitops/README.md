@@ -1991,6 +1991,34 @@ shell/log do rancher, adminer, terminal do db-mcp) — todos com corpo pequeno,
 onde `Connection: close` só custa keepalive. `plain` provou que dá para viver
 sem ela onde não há WS.
 
+##### Auditoria dos 9 outros hosts com `websocket-services`
+
+Feita logo depois do fix, com probes (mesmo host/upstream, só a annotation a
+menos) e o log de acesso do NIC:
+
+- **`502` (`Connection reset`) por host, desde o boot do NIC**: `ai` 160,
+  `minio` 2, todos os outros **zero**. Os 160 do `ai` são a fase anterior ao
+  fix (e a fase `probe-ws`, que eu mesmo criei) — nenhum outro host reproduziu.
+- **`body` maior que o buffer (escrito em disco)**: `ai` 760, `rancher` 43,
+  `db-mcp` 11, `draw` 5, `grafana` 4, `finance` 1. Só `ai` combina body grande
+  com volume alto — os outros são POSTs ocasionais.
+- **Paridade medida** (prod com annotation vs probe sem, 10 requests
+  intercaladas cada): `db-mcp` (`/sse` + JSON-RPC de 29KB) **10/10 = 10/10**,
+  `minio` (upload de 200KB) **200 = 200**, `grafana` (`/login` e
+  `/api/live/ws`) **200/401 = 200/401**.
+- **WebSocket real no cluster**: os **135** requests `101` do log são todos do
+  Rancher (`/k8s/clusters/local/v1/subscribe`, `/v3/subscribe`) — e o Rancher
+  usa snippet próprio com `Upgrade`/`Connection`, **não** a annotation. Nenhum
+  outro host logou `101`.
+
+Conclusão: a annotation é inofensiva onde o request é pequeno e ocasional, e é
+necessária onde há WS. O `ai` era o único host com a combinação fatal (body de
+centenas de KB em toda request). Não vale trocar os outros 9: o custo de errar
+para menos (quebrar WS) é maior que o de manter `Connection: close` num POST
+esporádico. Se um dia um desses passar a receber body grande com frequência, a
+regra é a mesma do `ai`: tirar a annotation e, se precisar de WS num path
+específico, um `location` aninhado só ali.
+
 #### `ingress-nginx` foi removido (a dívida morreu)
 
 O controller EOL (`kubernetes/ingress-nginx`) foi instalado em 2026-10-23 e
