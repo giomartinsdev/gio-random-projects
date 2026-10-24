@@ -1401,7 +1401,7 @@ A coluna "tráfego" registra onde o tráfego está **hoje**.
 | `grafana` | **parado** (2026-10-23) | **rodando** (NodePort 30300) | **k8s** — `grafana` → `:30300` ✅ |
 | `alloy` | **removido** (2026-10-24) | **rodando** (OTLP 4317/4318 + logs, PVC) | **k8s** — pod `alloy-logs` serve o Service `alloy` |
 | `registry` | **removido** (2026-10-24) | **rodando** (`hostPort: 5000`) | **k8s** — 39 repos, 12 GB verificados por sha256 ✅ |
-| ingress legado (nginx em CM) | **removido** (cutover 2026-10-24 03:23Z, ver "O ingress virou controller") |NIC 5.7.0 em `hostNetwork` responde :80 | **NIC** — 17/17 hosts com paridade provada (21/21 na matriz interna) ✅ |
+| ingress legado (nginx em CM) | **removido** (cutover 2026-10-24 03:23Z, ver "O ingress virou controller") |NIC 5.7.0 em `hostNetwork` responde :80 | **NIC** — 17/17 hosts, hoje em **Ingress nativo** (ver "Ingress NATIVO substituiu os VirtualServer") ✅ |
 | demais 6 containers | `dockhand`, `maus`×3, `minecraft`×2 | **nenhum** (daemon desinstalado em 2026-10-24) | parados/descomissionados — ver "O que ainda está em Docker" |
 | 17 hosts do ingress | — | — | status idêntico antes/depois (matriz repetida nos dois) |`replicas: 0` não é esquecimento: são consumidores de fila ou donos de volume
 com escrita exclusiva. Rodar dois ao mesmo tempo duplica mensagem ou corrompe
@@ -1874,6 +1874,67 @@ status ≠ paridade de conteúdo — headers absolutos de apps SPA são o lugar
 onde migração de proxy quebra silenciosa; (2) o comentário que explica um
 header estranho num ConfigMap velho é documentation operacional — leia antes
 de trocar o motor.
+
+#### Ingress NATIVO substituiu os `VirtualServer` (2026-10-24, mesmo dia)
+
+Os 17 hosts viveram poucas horas em `VirtualServer`. Motivo da segunda troca:
+**visibilidade**. A página Service Discovery → Ingress do Rancher só lista o
+recurso nativo `networking.k8s.io/Ingress`; com VirtualServer a lista ficava
+vazia, e o cluster é operado pelo UI. O NIC entende os dois, então a troca é de
+"dialeto", não de motor — as próprias annotations `nginx.org/*` fazem o que o
+CRD fazia.
+
+**O que foi provado ANTES de mexer no que servia** (probe em host não-exposto
+`probe-ingress.giomartins.dev`, em produção viva):
+
+- snippet aninhado `location ~ ^/` intercepta a location gerada — vale para o
+  Ingress nativo exatamente como valia para o VS (é o que serve tela-api em
+  `127.0.0.1:8007`);
+- `rewrite ^ /bucket/index.html break;` dentro da location (as três SPAs),
+  com `proxy_pass http://…$uri` no ramo de asset;
+- nome do upstream gerado é determinístico:
+  `<ns>-<ingress>-<host>-<svc>-<port>` — é o que os snippets usam no
+  `proxy_pass`. Renomear o Ingress quebra o snippet **em silêncio**: o
+  `nginx -t` interno falha ("host not found in upstream"), o reload é retido e
+  a rota continua com a config velha;
+- `X-Forwarded-Proto https` no rancher via snippet com o **conjunto completo**
+  de `proxy_set_header` (corta a herança da location externa, sem duplicar);
+- `proxy_ssl_server_name on` + `proxy_ssl_name $host` no upstream do rancher.
+
+A fase azul foi um segundo controller (`nic-blue`, NodePort 31643,
+`enableCustomResources=false`, `watchNamespace` nos 5 namespaces donos dos
+Ingress): os 17 Ingress nasceram na class `nic-blue`, produção seguia nos VS.
+**Matriz: 19/20 idênticas** — o único DIF era o `tela-api` 502, esperado por não
+ser hostNetwork (provado à parte: um Ingress-probe na class `nic` respondeu
+**404**, igual ao legado).
+
+Cutover: 1 commit com os Ingress indo para a class `nic` **e** os VS saindo do
+git (prune no mesmo sync) — as duas definições, durante a sobreposição,
+apontavam para os mesmos backends, então não havia divergência possível, só
+duplicação. Script `nohup` no VPS com rollback autônomo via branch
+`rollback-vs` (o ArgoCD tem credencial; o VPS não — e `kubectl apply` de VS
+seria desfeito pelo `selfHeal`). **Resultado: 17/17, zero FAIL.** O `nic-blue`
+foi desinstalado depois.
+
+**Regras que ficaram para os 17 Ingress:**
+
+- `nginx.org/location-snippets: "proxy_http_version 1.1;"` em todos — o NIC
+  **não** emite `proxy_http_version 1.1` no Ingress nativo (default do nginx é
+  1.0) e o legado tinha 1.1 em todo bloco; sem isso o upgrade WebSocket morre;
+- `nginx.org/websocket-services` por host (emite `Upgrade`/`Connection`; o map
+  `$connection_upgrade` o NIC gera no nginx.conf, mesmo formato do legado);
+- `nginx.org/client-max-body-size: "50m"` em todos (era global no legado);
+- `lb-method` não se fixa: o default do NIC é `random two least_conn`, o mesmo
+  que ele renderizava nos VS;
+- timeouts de 1h só onde o legado tinha (`db-mcp`, `rancher`);
+- **o rancher mora em `cattle-system`**, e não em `support`: Ingress só
+  referencia Service do próprio namespace. É o custo de abandonar o upstream
+  cross-ns do VS — e o resultado é mais limpo (sem Service-espelho).
+
+Armadilha do caminho: `nginx.org/proxy-buffering` quer **booleano**
+(`"false"`), não `"off"` como no ingress-nginx EOL — o webhook do NIC rejeita
+com `must be a boolean`. E o chart ignora `controller.service.nodePorts` no
+primeiro install (as portas saem aleatórias; anote as reais no log).
 
 #### `ingress-nginx` foi removido (a dívida morreu)
 
