@@ -7,13 +7,34 @@ name: Go deploy
 # Python ones through python-ci-cd.yml — see either workflow's own
 # header for why this isn't one generic pipeline for every language.
 #
-# Deploys: este workflow só BUILD e PUSH da imagem pro registry. O
-# redeploy é do Dockhand (stacks persistidas em `stacks/`, ver
-# stacks/README.md) — o antigo deploy job que rodava `terraform apply`
-# foi removido na migração. O job `deploy` chama o webhook do git stack
-# no Dockhand (mapa app->id em `declare -A STACK` abaixo).
-# Desde a migração para os stacks agregados, todos os apps Go caem no
-# stack `project-apps` (stacks/project-apps.yml), id 22.
+# ## Build, push e deploy (reescrito em 2026-10-24)
+#
+# Antes: o build rodava no daemon do **Docker da VPS** (via
+# `DOCKER_HOST=ssh://`), com QEMU porque o runner era amd64 e a VPS arm64.
+# O deploy era um webhook do Dockhand.
+#
+# Agora, com o Docker da VPS descomissionado:
+#
+#   1. `runs-on: ubuntu-24.04-arm` — runner arm64 NATIVO (grátis e ilimitado
+#      em repo público). Sem QEMU, sem `DOCKER_HOST`, sem o daemon da VPS.
+#   2. push pelo **túnel SSH** (`ssh -L 5000:127.0.0.1:5000`), falando com
+#      `localhost:5000`. A credencial nunca cruza a internet em claro — o
+#      registry não precisa mais ficar aberto na :5000 (armadilha 31).
+#   3. `deploy` grava o digest no manifesto e commita. O ArgoCD aplica.
+#
+# POR QUE O PASSO 3 EXISTE: todo manifesto fixa digest
+# (`image: ...@sha256:...`), e fixar digest é o certo. Mas ninguém escrevia o
+# digest novo — o webhook do Dockhand só mexe em Docker. Resultado: o CI
+# ficava verde e o pod continuava na imagem velha. Medido antes de corrigir:
+# `tela-api` rodava `@sha256:91f313c4...` com `:latest` já em
+# `@sha256:52326c1d...`. Ver `.github/scripts/bump-digest.sh`.
+
+# O default do repositório é `read` (verificado: default_workflow_permissions
+# = "read"). O job de deploy commita o digest de volta em `main`, então precisa
+# de `contents: write` — sem isto o push falha com 403 e a imagem publicada
+# nunca chega ao pod.
+permissions:
+  contents: write
 
 on:
   push:
@@ -62,7 +83,11 @@ jobs:
   build-and-push:
     needs: discover
     if: needs.discover.outputs.apps != '[]'
-    runs-on: ubuntu-latest
+    # Runner arm64 NATIVO. Grátis e ilimitado em repositório público (este é).
+    # Substitui `ubuntu-latest` + `setup-qemu-action`: compilar arm64 em amd64
+    # via QEMU era ~10x mais lento e existia só porque o build rodava no daemon
+    # da VPS.
+    runs-on: ubuntu-24.04-arm
     # Um push novo cancela o build do anterior: dois pushes seguidos não devem
     # gastar dois builds completos quando o segundo já os substitui. O grupo
     # inclui o APP (matrix.app) -- sem ele, os jobs da mesma matrix entram no
@@ -101,139 +126,99 @@ jobs:
         # test` seguinte reaproveita o que o vet compilou.
         run: go vet ./... && go test -count=1 ./...
 
-      # The VPS is arm64 (Oracle's free-tier Ampere instances), but this
-      # runner is amd64 -- QEMU is what lets BuildKit actually produce
-      # an arm64 image here instead of one that immediately crash-loops
-      # on the VPS with "exec format error" (confirmed live: that's
-      # exactly what happened to vaultwarden_bridge's amd64 image on
-      # first deploy).
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      # registry.giomartins.dev:5000 is plain HTTP (Phase 1 — see
-      # modules/infra/terraform/README.md), which dockerd rejects by
-      # default unless explicitly allow-listed as insecure. `docker
-      # login` itself is routed through the runner's own dockerd, so it
-      # needs this regardless of which buildx driver builds the image.
-      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
-        run: |
-          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
-          sudo systemctl restart docker
-
-      # Cross-arch builds need BuildKit's own isolated docker-container
-      # driver (the "docker" driver used before this could only ever
-      # target the runner's own architecture) -- which runs its own
-      # BuildKit daemon, so the insecure-registry trust above has to be
-      # repeated here in BuildKit's own config format.
-      - uses: docker/setup-buildx-action@v3
-        with:
-          buildkitd-config-inline: |
-            [registry."registry.giomartins.dev:5000"]
-              http = true
-              insecure = true
-
-      # SSH access + fetch are only for reaching the vault below --
-      # this job doesn't touch Terraform or var.docker_host at all.
-      - name: Set up SSH access to the VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          echo "DOCKER_HOST=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
-
-      # registry_password isn't secret zero -- it's a regular
-      # Terraform resource input Terraform already keeps mirrored in
-      # Vaultwarden (secrets.tf's "registry" vault_seed group), so CI
-      # reads it from there instead of also holding its own
-      # GitHub-secret copy.
-      - name: Fetch registry credentials from Vaultwarden
-        env:
-          NETWORK_NAME: apps
-          # Vaultwarden e POD desde 2026-10-23; o nome `vaultwarden` na rede
-          # `apps` so resolve para o container de ROLLBACK (parado). NodePort
-          # fixo do Service em `persistence` -- ver fetch_vault_secret.sh.
-          VAULTWARDEN_UPSTREAM: host.docker.internal:30822
-          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
-          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
-        run: |
-          set -o pipefail
-          modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
-            echo "::add-mask::$v"
-            echo "${k}=${v}" >> "$GITHUB_ENV"
-          done
-
-      - name: Log in to registry.giomartins.dev:5000
-        uses: docker/login-action@v3
-        with:
-          registry: registry.giomartins.dev:5000
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ env.REGISTRY_PASSWORD }}
-
+      # Build + push + digest. Toda a mecânica (túnel do registry, credencial
+      # vinda do Secret do cluster, BuildKit com netns do host, cache no
+      # Actions) vive em `.github/actions/build-push-cluster` — ver o
+      # cabeçalho deste arquivo para o porquê de cada peça.
+      #
+      # O que saiu daqui: `setup-qemu` (runner agora é arm64 nativo), o
+      # `daemon.json` com `insecure-registries`, `DOCKER_HOST=ssh://` (o build
+      # era no daemon da VPS) e `fetch_vault_secret.sh` (fazia `docker run`).
       - name: Build and push ${{ matrix.app }}
-        uses: docker/build-push-action@v6
+        id: build
+        uses: ./.github/actions/build-push-cluster
         with:
+          vps-host: ${{ secrets.VPS_HOST }}
+          app: ${{ matrix.app }}
           context: modules/apps/${{ matrix.app }}
-          push: true
-          platforms: linux/arm64
-          # Cache de camadas no cache do Actions. Sem isto, cada push reconstrói
-          # do zero: baixa a imagem base, roda `go mod download` e compila tudo
-          # de novo, mesmo num commit que só mexeu em um arquivo. `mode=max`
-          # cacheia todas as camadas (não só a final), que é o que interessa
-          # aqui -- a camada de dependências é a cara e quase nunca muda.
-          cache-from: type=gha,scope=go-${{ matrix.app }}
-          cache-to: type=gha,mode=max,scope=go-${{ matrix.app }}
-          tags: |
-            registry.giomartins.dev:5000/${{ matrix.app }}:latest
-            registry.giomartins.dev:5000/${{ matrix.app }}:${{ github.sha }}
+          dockerfile: modules/apps/${{ matrix.app }}/Dockerfile
+          cache-scope: go-${{ matrix.app }}
 
-  # Redeploy da stack no Dockhand depois de buildar/pushar a imagem. O
-  # webhook é do git stack (por id), chamado pelo loopback do VPS via SSH --
-  # não passa pelo Cloudflare Access e não precisa de API token, só do
-  # DOCKHAND_WEBHOOK_SECRET (GitHub secret, enviado como header
-  # x-gitlab-token). O stack tem repull_images ligado, então puxa a
-  # :latest nova e recria. Todos os apps Go caem no stack project-apps (22).
+      # O `digest` que o build-push-action devolve é o do manifesto que
+      # ACABOU de subir — não precisa consultar o registry de novo (o que
+      # exigiria credencial e túnel no job de deploy).
+      - name: Hand the digest to the deploy job
+        run: echo "${{ steps.build.outputs.digest }}" > "$RUNNER_TEMP/digest.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.app }}
+          path: ${{ runner.temp }}/digest.txt
+          retention-days: 1
+
+  # Deploy = gravar o digest publicado no manifesto e commitar. O ArgoCD
+  # (auto-sync + selfHeal) aplica no cluster.
+  #
+  # Substituiu o webhook do Dockhand, que fazia `compose up` numa stack onde
+  # todos os serviços já estavam `profiles: ["retired"]` — um no-op que ainda
+  # provava o sucesso com `docker ps` (que nunca mais encontraria o container).
+  # Ver o cabeçalho do arquivo.
   deploy:
     needs: [discover, build-and-push]
     if: needs.discover.outputs.apps != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
+    # Serializa com os outros workflows (python/ts/ai/excalidraw): todos
+    # escrevem no MESMO repositório. Dois commits simultâneos em `main` dão
+    # non-fast-forward. O rebase com retry abaixo cobre, mas evitar a corrida
+    # é melhor que remediá-la.
     concurrency:
-      group: dockhand-deploy-${{ github.ref }}
+      group: image-deploy-${{ github.ref }}
       cancel-in-progress: false
     steps:
-      - name: Set up SSH access to the VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+      - uses: actions/checkout@v4
+        with:
+          # O bump commita; o GITHUB_TOKEN padrão precisa de `contents: write`.
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Trigger Dockhand redeploy
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          DOCKHAND_WEBHOOK_SECRET: ${{ secrets.DOCKHAND_WEBHOOK_SECRET }}
-          APPS: ${{ needs.discover.outputs.apps }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+
+      - name: Record each digest in git
         run: |
-          if [ -z "$DOCKHAND_WEBHOOK_SECRET" ]; then
-            echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a :latest já foi publicada)."
-            exit 0
-          fi
-          declare -A STACK=( [domain-api]=22 [domain-worker]=22 [tela-api]=22 )
-          ids=$(echo "$APPS" | jq -r '.[]' | while read -r a; do echo "${STACK[$a]}"; done | grep -v '^$' | sort -u)
-          [ -z "$ids" ] && { echo "nada a deployar"; exit 0; }
-          for id in $ids; do
-            echo "== redeploy stack id=$id"
-            out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 -X POST -H 'x-gitlab-token: $DOCKHAND_WEBHOOK_SECRET' 'http://127.0.0.1:8093/api/git/stacks/$id/webhook'")
-            echo "$out" | head -c 600; echo
-            echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack $id"; exit 1; }
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # `bump-digest.sh` só PREPARA (`git add`); o commit é um só, aqui.
+          # Um commit por app daria N pushes concorrentes em `main`.
+          for d in "$RUNNER_TEMP"/digests/digest-*/; do
+            app=$(basename "$d"); app=${app#digest-}
+            digest=$(tr -d '\r\n' < "${d}digest.txt")
+            [ -n "$digest" ] || { echo "::error::digest vazio para $app"; exit 1; }
+            echo "== $app -> $digest"
+            .github/scripts/bump-digest.sh "$app" "$digest"
           done
 
+          if git diff --cached --quiet; then
+            echo "nenhum manifesto mudou"
+            exit 0
+          fi
+          git commit -m "deploy: imagens arm64 do CI ($(date -u +%Y-%m-%dT%H:%MZ))"
+
+      - name: Push the digest commits
+        run: |
+          set -euo pipefail
+          if [ -z "$(git log "origin/${GITHUB_REF_NAME}..HEAD" --oneline)" ]; then
+            echo "nada a publicar (digests já estavam no git)"; exit 0
+          fi
+          for i in 1 2 3 4; do
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "digest publicado"; exit 0
+            fi
+            echo "  push falhou (tentativa $i); rebase e repete"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            sleep $((i * 3))
+          done
+          echo "::error::não consegui publicar o commit dos digests"
+          exit 1

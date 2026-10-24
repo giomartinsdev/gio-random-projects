@@ -15,9 +15,15 @@ name: Maus image
 # version file (e.g. stacks/maus/VERSION holding "v0.1.95") and a push path
 # trigger; bumping the file then rebuilds.
 #
-# Depois do primeiro build de sucesso: no Dockhand, deixe a stack `maus`
-# (id 11) com repull_images + force_redeploy ligados (default do stack) --
-# assim o webhook abaixo puxa a :latest nova e recria.
+# ## DESCOMISSIONADO em 2026-10-24
+#
+# O `maus` foi parado (ver stacks/maus.yml). Este workflow continua existindo
+# por um motivo só: se um dia o maus voltar (`--profile retired`), a imagem
+# arm64 precisa poder ser reconstruída — o upstream só publica amd64.
+#
+# Ele NÃO tem job de deploy. Antes chamava o webhook do Dockhand, que recriava
+# containers `profiles: ["retired"]` (no-op) e provava o deploy com `docker ps`
+# (que nunca mais acharia o container).
 
 on:
   workflow_dispatch:
@@ -32,37 +38,14 @@ env:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    # arm64 NATIVO (ver go-ci-cd.yml) -- sem QEMU, sem daemon da VPS.
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
       # The VPS is arm64 (Oracle Ampere) but this runner is amd64 -- QEMU is
       # what lets BuildKit actually produce an arm64 image here (same reason
       # go-ci-cd.yml sets it up).
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      # registry.giomartins.dev:5000 is plain HTTP (Phase 1), which dockerd
-      # rejects unless allow-listed as insecure; `docker login` goes through
-      # the runner's dockerd, so it needs this regardless of buildx.
-      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
-        run: |
-          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
-          sudo systemctl restart docker
-
-      # Cross-arch builds need BuildKit's isolated docker-container driver;
-      # its own daemon needs the insecure-registry trust in BuildKit's config
-      # format (see go-ci-cd.yml for the full explanation).
-      - uses: docker/setup-buildx-action@v3
-        with:
-          buildkitd-config-inline: |
-            [registry."registry.giomartins.dev:5000"]
-              http = true
-              insecure = true
-
-      # SSH + the vault fetch are only for reading the registry credentials;
-      # this job doesn't touch Terraform or var.docker_host.
       - name: Set up SSH access to the VPS
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
@@ -72,97 +55,16 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          echo "DOCKER_HOST=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
-
-      - name: Fetch registry credentials from Vaultwarden
-        env:
-          NETWORK_NAME: apps
-          # Vaultwarden e POD desde 2026-10-23; o nome `vaultwarden` na rede
-          # `apps` so resolve para o container de ROLLBACK (parado). NodePort
-          # fixo do Service em `persistence` -- ver fetch_vault_secret.sh.
-          VAULTWARDEN_UPSTREAM: host.docker.internal:30822
-          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
-          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
-        run: |
-          set -o pipefail
-          modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
-            echo "::add-mask::$v"
-            echo "${k}=${v}" >> "$GITHUB_ENV"
-          done
-
-      - name: Log in to registry.giomartins.dev:5000
-        uses: docker/login-action@v3
-        with:
-          registry: registry.giomartins.dev:5000
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ env.REGISTRY_PASSWORD }}
-
-      # Upstream's own Dockerfile fails on Linux arm64 (Chrome for Testing has
-      # no ARM64 build). Clone the pinned tag and overlay our vendored
-      # Dockerfile (stacks/maus/Dockerfile), which also adds the docker CLI and
-      # the uid-1000 user the Local VM needs. Then apply our source patches:
-      # newbot-full (every bot defaults to Full access — the only level that
-      # stops Allow/Deny cards on the OpenAI-compatible/9router engine),
-      # agentic-rounds (remove the 16-model-call turn cap and the 32 tool-call
-      # cap, too small for agentic work), and vm-git-credentials (git in the
-      # Local VM image + a credential helper reading a token from the durable
-      # workspace bind, so bots can push to GitHub).
-      - name: Fetch upstream at the pinned tag
-        run: |
-          git clone --depth 1 --branch "$MAUS_VERSION" \
-            https://github.com/milind-soni/OpenMausBot.git _maus-upstream
-          cp stacks/maus/Dockerfile _maus-upstream/Dockerfile
-          git -C _maus-upstream apply --verbose "$GITHUB_WORKSPACE/stacks/maus/newbot-full.patch"
-          git -C _maus-upstream apply --verbose "$GITHUB_WORKSPACE/stacks/maus/agentic-rounds.patch"
-          git -C _maus-upstream apply --verbose "$GITHUB_WORKSPACE/stacks/maus/vm-computer.patch"
+          echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
 
       - name: Build and push maus (arm64)
-        uses: docker/build-push-action@v6
+        uses: ./.github/actions/build-push-cluster
         with:
+          vps-host: ${{ secrets.VPS_HOST }}
+          app: maus
           context: _maus-upstream
-          file: _maus-upstream/Dockerfile
-          push: true
-          platforms: linux/arm64
-          cache-from: type=gha,scope=maus
-          cache-to: type=gha,mode=max,scope=maus
-          tags: |
-            registry.giomartins.dev:5000/maus:latest
-            registry.giomartins.dev:5000/maus:${{ env.MAUS_VERSION }}
+          dockerfile: _maus-upstream/Dockerfile
+          cache-scope: maus
 
-  # Redeploy do Dockhand (maus/omb vive no stack agregado `project-apps`,
-  # id 22 desde a migração de 2026-10-18), mesmo desenho dos outros
-  # workflows (webhook do git stack pelo loopback do VPS via SSH, secret
-  # DOCKHAND_WEBHOOK_SECRET como header x-gitlab-token). O stack está com
-  # repull_images ligado, então a :latest nova é puxada no webhook.
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    concurrency:
-      group: dockhand-deploy-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-      - name: Set up SSH access to the VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-
-      - name: Trigger Dockhand redeploy
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          DOCKHAND_WEBHOOK_SECRET: ${{ secrets.DOCKHAND_WEBHOOK_SECRET }}
-        run: |
-          if [ -z "$DOCKHAND_WEBHOOK_SECRET" ]; then
-            echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a imagem já foi publicada)."
-            exit 0
-          fi
-          echo "== redeploy stack id=22 (maus/project-apps)"
-          out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 -X POST -H 'x-gitlab-token: $DOCKHAND_WEBHOOK_SECRET' 'http://127.0.0.1:8093/api/git/stacks/22/webhook'")
-          echo "$out"
-          echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack 22 (maus/project-apps)"; exit 1; }
+  # SEM job de deploy: o maus está descomissionado (stacks/maus.yml com
+  # `profiles: ["retired"]`). Publicar a imagem não deve ressuscitar nada.

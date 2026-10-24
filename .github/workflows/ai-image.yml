@@ -36,25 +36,10 @@ jobs:
   # Imagem do servidor de decisão (não compila nada; só empacota o jev-style).
   # ---------------------------------------------------------------------------
   decision-image:
-    runs-on: ubuntu-latest
+    # arm64 NATIVO (ver go-ci-cd.yml) -- sem QEMU, sem daemon da VPS.
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
-        run: |
-          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
-          sudo systemctl restart docker
-
-      - uses: docker/setup-buildx-action@v3
-        with:
-          buildkitd-config-inline: |
-            [registry."registry.giomartins.dev:5000"]
-              http = true
-              insecure = true
 
       - name: Set up SSH access to the VPS
         env:
@@ -65,68 +50,25 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          echo "DOCKER_HOST=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
-
-      - name: Fetch registry credentials from Vaultwarden
-        env:
-          NETWORK_NAME: apps
-          # Vaultwarden e POD desde 2026-10-23; o nome `vaultwarden` na rede
-          # `apps` so resolve para o container de ROLLBACK (parado). NodePort
-          # fixo do Service em `persistence` -- ver fetch_vault_secret.sh.
-          VAULTWARDEN_UPSTREAM: host.docker.internal:30822
-          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
-          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
-        run: |
-          set -o pipefail
-          modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
-            echo "::add-mask::$v"
-            echo "${k}=${v}" >> "$GITHUB_ENV"
-          done
-
-      - name: Log in to registry.giomartins.dev:5000
-        uses: docker/login-action@v3
-        with:
-          registry: registry.giomartins.dev:5000
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ env.REGISTRY_PASSWORD }}
+          echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
 
       - name: Build and push decision (arm64)
-        uses: docker/build-push-action@v6
+        uses: ./.github/actions/build-push-cluster
         with:
+          vps-host: ${{ secrets.VPS_HOST }}
+          app: decision
           context: stacks/ai/decision
-          file: stacks/ai/decision/Dockerfile
-          push: true
-          platforms: linux/arm64
-          cache-from: type=gha,scope=ai-decision
-          cache-to: type=gha,mode=max,scope=ai-decision
-          tags: registry.giomartins.dev:5000/decision:latest
+          dockerfile: stacks/ai/decision/Dockerfile
+          cache-scope: ai-decision
 
   # ---------------------------------------------------------------------------
   # Imagem do 9router: upstream + provider `decision` no registry.
   # ---------------------------------------------------------------------------
   router-image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
-        run: |
-          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
-          sudo systemctl restart docker
-
-      - uses: docker/setup-buildx-action@v3
-        with:
-          buildkitd-config-inline: |
-            [registry."registry.giomartins.dev:5000"]
-              http = true
-              insecure = true
-
       - name: Set up SSH access to the VPS
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
@@ -136,107 +78,25 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          echo "DOCKER_HOST=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
-
-      - name: Fetch registry credentials from Vaultwarden
-        env:
-          NETWORK_NAME: apps
-          # Vaultwarden e POD desde 2026-10-23; o nome `vaultwarden` na rede
-          # `apps` so resolve para o container de ROLLBACK (parado). NodePort
-          # fixo do Service em `persistence` -- ver fetch_vault_secret.sh.
-          VAULTWARDEN_UPSTREAM: host.docker.internal:30822
-          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
-          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
-        run: |
-          set -o pipefail
-          modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
-            echo "::add-mask::$v"
-            echo "${k}=${v}" >> "$GITHUB_ENV"
-          done
-
-      - name: Log in to registry.giomartins.dev:5000
-        uses: docker/login-action@v3
-        with:
-          registry: registry.giomartins.dev:5000
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ env.REGISTRY_PASSWORD }}
-
-      # Clona o upstream no tag pinado e injeta o provider `decision` no
-      # registry ANTES do build (o registry é bundled pelo Next; ver o header).
-      # O patch é idempotente e falha alto se o layout mudou (o import default
-      # e o array têm que existir, senão a injeção viraria no-op silencioso).
-      - name: Fetch upstream 9router and inject the local decision provider
-        run: |
-          set -euo pipefail
-          git clone --depth 1 --branch "$ROUTER_VERSION" \
-            https://github.com/decolua/9router.git _9router-upstream
-          reg="_9router-upstream/open-sse/providers/registry"
-          test -f "$reg/index.js" || { echo "::error::registry/index.js não existe no tag $ROUTER_VERSION"; exit 1; }
-          cp stacks/ai/9router/decision.js "$reg/decision.js"
-          grep -q './decision.js' "$reg/index.js" || \
-            sed -i 's#^export default \[#import pDecision from "./decision.js";\nexport default [#' "$reg/index.js"
-          grep -q '  pDecision,' "$reg/index.js" || \
-            sed -i 's#^export default \[#export default [\n  pDecision,#' "$reg/index.js"
-          grep -q './decision.js' "$reg/index.js" || { echo "::error::import do decision não injetado"; exit 1; }
-          grep -q '  pDecision,' "$reg/index.js" || { echo "::error::entrada pDecision não injetada"; exit 1; }
-          echo "registry patch ok"
+          echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
 
       - name: Build and push 9router (arm64)
-        # Context na RAIZ do repo (o Dockerfile do 9router copia paths relativos
-        # dele mesmo); o clone fica em _9router-upstream/, então buildamos de lá
-        # com o Dockerfile do upstream já patchado.
-        uses: docker/build-push-action@v6
+        # O clone fica em `_9router-upstream/`, então buildamos de lá com o
+        # Dockerfile do upstream já patchado.
+        #
+        # NÃO há bump de digest: o `9router` que roda no cluster é
+        # `ghcr.io/decolua/9router` (imagem pública do upstream, ver
+        # gitops/apps/applications/9router/). Esta imagem local só existe como
+        # rollback/experimento do stack `ai`, que não está habilitado.
+        uses: ./.github/actions/build-push-cluster
         with:
+          vps-host: ${{ secrets.VPS_HOST }}
+          app: 9router
           context: _9router-upstream
-          file: _9router-upstream/Dockerfile
-          push: true
-          platforms: linux/arm64
-          cache-from: type=gha,scope=ai-9router
-          cache-to: type=gha,mode=max,scope=ai-9router
-          tags: |
-            registry.giomartins.dev:5000/9router:latest
-            registry.giomartins.dev:5000/9router:${{ env.ROUTER_VERSION }}
+          dockerfile: _9router-upstream/Dockerfile
+          cache-scope: ai-9router
 
-  # ---------------------------------------------------------------------------
-  # Redeploy do stack `ai` (Dockhand). O id só é legível na UI do Dockhand
-  # depois de logar: NÃO invente. Ajuste após criar a stack.
-  # ---------------------------------------------------------------------------
-  deploy:
-    needs: [decision-image, router-image]
-    runs-on: ubuntu-latest
-    concurrency:
-      group: dockhand-deploy-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-      - name: Set up SSH access to the VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-
-      - name: Trigger Dockhand redeploy
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          DOCKHAND_WEBHOOK_SECRET: ${{ secrets.DOCKHAND_WEBHOOK_SECRET }}
-          # Desde a migração de 2026-10-18 o 9router vive no stack agregado
-          # `project-infra` (stacks/project-infra.yml), id 21 -- o stack `ai`
-          # (id 18) foi removido. Atenção: o project-infra roda com
-          # repull_images=0 (minio/minio saiu do Docker Hub), então publicar
-          # uma :latest nova aqui NÃO recria o container sozinho; o compute.yml
-          # aponta hoje para o ghcr.io/decolua/9router:latest upstream.
-          STACK_ID: "21"
-        run: |
-          if [ -z "$DOCKHAND_WEBHOOK_SECRET" ]; then
-            echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (as imagens já foram publicadas)."
-            exit 0
-          fi
-          echo "== redeploy stack id=$STACK_ID (project-infra/ai)"
-          out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 -X POST -H 'x-gitlab-token: $DOCKHAND_WEBHOOK_SECRET' 'http://127.0.0.1:8093/api/git/stacks/$STACK_ID/webhook'")
-          echo "$out"
-          echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack $STACK_ID (project-infra/ai)"; exit 1; }
+  # SEM job de deploy: o stack `ai` NÃO está habilitado (ver stacks/project-infra.yml
+  # — `ai.yml` fica fora até as imagens existirem, e o `9router` que roda no
+  # cluster vem do ghcr). O webhook do Dockhand que existia aqui recriava
+  # containers `profiles: ["retired"]` — no-op.

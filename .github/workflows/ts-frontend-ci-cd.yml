@@ -77,7 +77,7 @@ jobs:
     if: needs.discover.outputs.apps != '[]'
     runs-on: ubuntu-latest
     # Um push novo cancela o anterior. Aqui o "deploy" é espelhar o build no
-    # MinIO (`mc mirror --overwrite --remove`), idempotente -- diferente dos
+    # MinIO (`aws s3 sync --delete`), idempotente -- diferente dos
     # outros workflows, este job não roda terraform apply, então cancelar não
     # deixa container pela metade. Se um mirror for interrompido, o run novo
     # (que é quem dispara o cancel) remirrora por cima.
@@ -144,11 +144,8 @@ jobs:
           VITE_FINANCE_API_URL: https://finance-api.giomartins.dev
         run: npm run build
 
-      # scp (not the docker provider/API) because the files have to
-      # land on the VPS's own filesystem before "mc mirror" below can
-      # bind-mount them into a container -- DOCKER_HOST=ssh://... runs
-      # containers remotely, but a -v source path is still resolved on
-      # that remote host, not this runner.
+      # SSH só para ler o Secret do MinIO no cluster (kubectl). Não há mais
+      # `scp`: o build fica no runner e o `s3 sync` fala com o MinIO pela rede.
       - name: Set up SSH access to the VPS
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
@@ -159,77 +156,46 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
           echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
-          echo "DOCKER_HOST=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
 
-      - name: Copy the build onto the VPS
-        run: |
-          REMOTE_DIR="/tmp/${{ matrix.app }}-dist-${{ github.run_id }}"
-          ssh "ubuntu@$VPS_HOST" "rm -rf '$REMOTE_DIR'"
-          scp -r "modules/apps/${{ matrix.app }}/dist" "ubuntu@$VPS_HOST:$REMOTE_DIR"
-          echo "REMOTE_DIR=$REMOTE_DIR" >> "$GITHUB_ENV"
+      # O build NÃO é copiado para a VPS. Antes, `scp` existia só porque o
+      # `docker run -v` do `mc mirror` era resolvido no daemon REMOTO — com o
+      # daemon fora, o caminho do bind-mount não faz mais sentido. O `s3 sync`
+      # abaixo roda local no runner e fala com o MinIO pela rede.
 
-      # MinIO's own root credentials, already mirrored into Vaultwarden
-      # by secrets.tf's "minio" vault_seed group -- same reasoning as
-      # every other Terraform-generated secret this repo's CI reads
-      # from the vault instead of holding its own copy.
-      - name: Fetch secrets from Vaultwarden
+      # Credenciais do MinIO vêm do Secret do CLUSTER (fonte da verdade), não
+      # do Vaultwarden: o `fetch_vault_secret.sh` fazia `docker run` no daemon
+      # da VPS. Ver `.github/scripts/cluster-secret-env.sh`.
+      - name: Fetch MinIO credentials from the cluster
         env:
-          NETWORK_NAME: apps
-          # Vaultwarden e POD desde 2026-10-23; o nome `vaultwarden` na rede
-          # `apps` so resolve para o container de ROLLBACK (parado). NodePort
-          # fixo do Service em `persistence` -- ver fetch_vault_secret.sh.
-          VAULTWARDEN_UPSTREAM: host.docker.internal:30822
-          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
-          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "MINIO_ROOT_USER=MINIO_ROOT_USER MINIO_ROOT_PASSWORD=MINIO_ROOT_PASSWORD"
+          CLUSTER_SECRET: minio
         run: |
           set -o pipefail
-          modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
+          .github/scripts/cluster-secret-env.sh | while IFS='=' read -r k v; do
             echo "::add-mask::$v"
             echo "${k}=${v}" >> "$GITHUB_ENV"
           done
 
-      # --delete makes this a true mirror, not just an upload: an
-      # asset from a previous build that's no longer referenced (Vite
-      # content-hashes filenames, so every build's chunks are new
-      # names) gets deleted from the bucket instead of accumulating
-      # forever.
+      # --delete makes this a true mirror, not just an upload: an asset from a
+      # previous build that's no longer referenced (Vite content-hashes
+      # filenames, so every build's chunks are new names) gets deleted from the
+      # bucket instead of accumulating forever.
       #
-      # aws-cli, not minio/mc: `minio/mc` saiu do Docker Hub (404) e o
-      # `quay.io/minio/*` responde 401, então não há mais imagem de `mc`
-      # puxável. O `amazon/aws-cli` é público -- e isso importa aqui, porque
-      # este `docker run` roda no daemon da VPS (DOCKER_HOST=ssh), sem
-      # credencial de registry: o pull só passa sendo anônimo. Fala a mesma
-      # API S3 e também adivinha o Content-Type pela extensão, que é do que o
-      # ingress depende ao servir os objetos direto do MinIO.
+      # `aws` CLI NATIVO no runner, não `docker run amazon/aws-cli`: o
+      # container era a única forma porque o `-v` do bind-mount era resolvido no
+      # daemon da VPS (que morreu). O runner é Ubuntu e já traz o `aws` CLI
+      # instalado. Ele também adivinha o Content-Type pela extensão, que é do
+      # que o ingress depende ao servir os objetos direto do MinIO.
+      #
+      # O endpoint é o NOME PÚBLICO do MinIO (via ingress/Cloudflare), não o
+      # NodePort: `172.18.0.1:30900` só existia de dentro da rede Docker `apps`,
+      # e o NodePort é bloqueado pelo firewall para origens externas.
       - name: Mirror the build into MinIO
         env:
           AWS_ACCESS_KEY_ID: ${{ env.MINIO_ROOT_USER }}
           AWS_SECRET_ACCESS_KEY: ${{ env.MINIO_ROOT_PASSWORD }}
           AWS_DEFAULT_REGION: us-east-1
-          # NodePort do Service `minio` no k3s (9000 -> 30900).
-          #
-          # Por que não `http://minio:9000`: esse nome resolve pelo DNS do
-          # Docker para o CONTAINER, que desde 2026-10-23 é só o rollback. O CI
-          # continuaria publicando num container ocioso enquanto o site serve do
-          # pod — verde, sem erro, e o bucket servido nunca recebia o build.
-          # `172.18.0.1` é o gateway da rede `apps` no host, então o NodePort
-          # é alcançável de dentro dela (verificado: resposta S3 real).
-          #
-          # Quando o container do minio sair de vez, o nome `minio` volta a ser
-          # resolvível pelo Service do cluster para pods — mas continuaria NÃO
-          # resolvendo para containers Docker, porque o DNS do Docker não conhece
-          # o cluster. Por isso o endereço explícito, e não o nome.
-          MINIO_ENDPOINT: http://172.18.0.1:30900
+          MINIO_ENDPOINT: https://minio.giomartins.dev
         run: |
-          docker run --rm --network apps \
-            -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
-            -v "$REMOTE_DIR:/dist" \
-            amazon/aws-cli:latest \
-            s3 sync /dist "s3://${{ matrix.app }}" \
-              --endpoint-url "$MINIO_ENDPOINT" --delete
+          aws s3 sync "modules/apps/${{ matrix.app }}/dist" "s3://${{ matrix.app }}" \
+            --endpoint-url "$MINIO_ENDPOINT" --delete
 
-      - name: Clean up the copy on the VPS
-        if: always()
-        run: ssh "ubuntu@$VPS_HOST" "rm -rf '$REMOTE_DIR'"

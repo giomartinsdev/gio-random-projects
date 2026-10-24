@@ -29,28 +29,10 @@ env:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    # arm64 NATIVO -- sem QEMU, sem daemon da VPS (ver go-ci-cd.yml).
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      # registry.giomartins.dev:5000 is plain HTTP (Phase 1), which dockerd
-      # rejects unless allow-listed as insecure; `docker login` goes through
-      # the runner's dockerd.
-      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
-        run: |
-          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
-          sudo systemctl restart docker
-
-      - uses: docker/setup-buildx-action@v3
-        with:
-          buildkitd-config-inline: |
-            [registry."registry.giomartins.dev:5000"]
-              http = true
-              insecure = true
 
       - name: Set up SSH access to the VPS
         env:
@@ -61,90 +43,40 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          echo "DOCKER_HOST=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
-
-      - name: Fetch registry credentials from Vaultwarden
-        env:
-          NETWORK_NAME: apps
-          # Vaultwarden e POD desde 2026-10-23; o nome `vaultwarden` na rede
-          # `apps` so resolve para o container de ROLLBACK (parado). NodePort
-          # fixo do Service em `persistence` -- ver fetch_vault_secret.sh.
-          VAULTWARDEN_UPSTREAM: host.docker.internal:30822
-          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
-          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
-        run: |
-          set -o pipefail
-          modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
-            echo "::add-mask::$v"
-            echo "${k}=${v}" >> "$GITHUB_ENV"
-          done
-
-      - name: Log in to registry.giomartins.dev:5000
-        uses: docker/login-action@v3
-        with:
-          registry: registry.giomartins.dev:5000
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ env.REGISTRY_PASSWORD }}
+          echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
 
       # O Dockerfile do tag pinado builda o SPA (yarn) e copia o build pro
       # nginx, mas fixa node:18 — que não instala mais (uma dep transitiva
       # exige node >= 20). Sobrescrevemos com stacks/excalidraw/Dockerfile
-      # (node:22), como o maus faz com o dele. Clone no tag pinado e builda de lá.
+      # (node:22). Clone no tag pinado e builda de lá.
       - name: Fetch upstream at the pinned tag
         run: |
           git clone --depth 1 --branch "$EXCALIDRAW_VERSION" \
             https://github.com/excalidraw/excalidraw.git _excalidraw-upstream
           cp stacks/excalidraw/Dockerfile _excalidraw-upstream/Dockerfile
 
+      # Mesma action dos outros: túnel do registry + credencial do cluster +
+      # BuildKit com netns do host + cache no Actions.
+      #
+      # ATENÇÃO: aqui NÃO há bump de digest. O manifesto do excalidraw usa TAG
+      # fixa (`excalidraw:v0.18.1`), não digest — a versão é escolhida por
+      # input, então o deploy é "escolher a tag no manifesto e commitar", não
+      # "seguir o :latest". Por isso o workflow só publica e não tem job de
+      # deploy (ver a nota no fim do arquivo).
       - name: Build and push excalidraw (arm64)
-        uses: docker/build-push-action@v6
+        uses: ./.github/actions/build-push-cluster
         with:
+          vps-host: ${{ secrets.VPS_HOST }}
+          app: excalidraw
           context: _excalidraw-upstream
-          file: _excalidraw-upstream/Dockerfile
-          push: true
-          platforms: linux/arm64
-          cache-from: type=gha,scope=excalidraw
-          cache-to: type=gha,mode=max,scope=excalidraw
-          tags: |
-            registry.giomartins.dev:5000/excalidraw:latest
-            registry.giomartins.dev:5000/excalidraw:${{ env.EXCALIDRAW_VERSION }}
+          dockerfile: _excalidraw-upstream/Dockerfile
+          cache-scope: excalidraw
 
-  # Redeploy do Dockhand, mesmo desenho dos outros workflows (webhook do
-  # git stack pelo loopback do VPS via SSH, secret como header
-  # x-gitlab-token). Desde a migração o excalidraw vive no stack agregado
-  # `project-apps` (stacks/project-apps.yml).
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    concurrency:
-      group: dockhand-deploy-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-      - name: Set up SSH access to the VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-
-      - name: Trigger Dockhand redeploy
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          DOCKHAND_WEBHOOK_SECRET: ${{ secrets.DOCKHAND_WEBHOOK_SECRET }}
-          # Id do stack `project-apps` (excalidraw morava no stack 19 antes
-          # da migração de 2026-10-18; ver stacks/README.md).
-          STACK_ID: "22"
-        run: |
-          if [ -z "$DOCKHAND_WEBHOOK_SECRET" ]; then
-            echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a imagem já foi publicada)."
-            exit 0
-          fi
-          echo "== redeploy stack id=$STACK_ID (excalidraw)"
-          out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 -X POST -H 'x-gitlab-token: $DOCKHAND_WEBHOOK_SECRET' 'http://127.0.0.1:8093/api/git/stacks/$STACK_ID/webhook'")
-          echo "$out"
-          echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack $STACK_ID (excalidraw)"; exit 1; }
+  # SEM job de deploy: o excalidraw é a exceção do parque. O manifesto fixa
+  # TAG (`excalidraw:v0.18.1`), escolhida por input deste workflow — não
+  # `:latest`. Publicar a imagem não deve mexer no que está no ar: a troca de
+  # versão é uma decisão explícita (editar a tag no manifesto + commit), e é o
+  # ArgoCD que aplica.
+  #
+  # Antes havia um webhook do Dockhand aqui, que recriava um container
+  # `profiles: ["retired"]` — no-op desde a migração.

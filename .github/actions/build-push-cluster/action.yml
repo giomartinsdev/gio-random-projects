@@ -1,0 +1,110 @@
+name: Build and push to the cluster registry
+description: >
+  Constrói arm64 no runner nativo, publica no registry que vive dentro do
+  cluster (por túnel SSH) e devolve o digest. Substitui o trio
+  QEMU + daemon-da-VPS + webhook-do-Dockhand.
+
+# Por que action composta, e não copiar e colar em 4 workflows: o pedaço é
+# idêntico em todos, e a parte que mais custa é a que não pode divergir — o
+# túnel. Uma cópia com um `-L` errado falha só no dia do build, no CI, longe
+# daqui.
+#
+# O que o chamador faz ANTES: `actions/checkout` e a chave SSH (o túnel e a
+# leitura do Secret precisam dela).
+
+inputs:
+  vps-host:
+    description: Host da VPS (dono do túnel até o registry e do kubectl).
+    required: true
+  app:
+    description: Nome do app = nome do repositório no registry.
+    required: true
+  context:
+    description: Diretório de contexto do build.
+    required: false
+    default: "."
+  dockerfile:
+    description: >
+      Caminho do Dockerfile, relativo à RAIZ do repositório (mesmo quando o
+      contexto aponta para outro diretório). Obrigatório: um `file` vazio
+      sobrescreveria o default do build-push-action e o build falharia.
+    required: true
+  cache-scope:
+    description: Escopo do cache de camadas no Actions.
+    required: false
+    default: ""
+
+outputs:
+  digest:
+    description: Digest do manifesto publicado.
+    value: ${{ steps.build.outputs.digest }}
+
+runs:
+  using: composite
+  steps:
+    # O runner `ubuntu-24.04-arm` é arm64 NATIVO: não há QEMU, não há
+    # `DOCKER_HOST`, e o daemon da VPS não participa de nada.
+    - name: Open the registry tunnel
+      shell: bash
+      run: |
+        # O registry é `hostPort: 5000` na VPS, HTTP puro, e NÃO precisa estar
+        # aberto na internet: o túnel traz a porta para o loopback do runner.
+        # Assim a credencial de push nunca cruza a rede em claro (armadilha 31)
+        # e o Docker trata `localhost:5000` como inseguro por padrão, sem
+        # precisar mexer em `daemon.json`.
+        ssh -f -N -o BatchMode=yes -o ExitOnForwardFailure=yes \
+          -L 5000:127.0.0.1:5000 "ubuntu@${{ inputs.vps-host }}"
+        for _ in $(seq 1 20); do
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://127.0.0.1:5000/v2/ || true)
+          # 200 (sem auth) ou 401 (com auth) provam que o túnel está de pé.
+          case "$code" in
+            200|401) echo "túnel do registry pronto (HTTP $code)"; exit 0 ;;
+          esac
+          sleep 1
+        done
+        echo "::error::túnel do registry não subiu"
+        exit 1
+
+    - name: Fetch the registry credentials from the cluster
+      shell: bash
+      env:
+        CLUSTER_SECRET: registry
+      run: |
+        # Fonte da verdade: o Secret que os pods usam em `imagePullSecrets`.
+        # Antes vinha do Vaultwarden, mas o `fetch_vault_secret.sh` fazia
+        # `docker run` no daemon da VPS — exatamente o que saiu do ar.
+        set -o pipefail
+        "${{ github.action_path }}/../../scripts/cluster-secret-env.sh" \
+        | while IFS='=' read -r k v; do
+            echo "::add-mask::$v"
+            echo "${k}=${v}" >> "$GITHUB_ENV"
+          done
+
+    - name: Log in through the tunnel
+      uses: docker/login-action@v3
+      with:
+        registry: localhost:5000
+        username: ${{ env.REGISTRY_USERNAME }}
+        password: ${{ env.REGISTRY_PASSWORD }}
+
+    # BuildKit isolado é obrigatório para `cache-to: type=gha` (o driver
+    # `docker` embutido recusa export de cache). Mas ele põe o BuildKit num
+    # container com netns própria, onde `localhost:5000` NÃO é o túnel —
+    # `network=host` faz o BuildKit enxergar o loopback do runner.
+    - uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: network=host
+
+    - name: Build and push ${{ inputs.app }}
+      id: build
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.dockerfile }}
+        push: true
+        platforms: linux/arm64
+        cache-from: type=gha,scope=${{ inputs.cache-scope || inputs.app }}
+        cache-to: type=gha,mode=max,scope=${{ inputs.cache-scope || inputs.app }}
+        tags: |
+          localhost:5000/${{ inputs.app }}:latest
+          localhost:5000/${{ inputs.app }}:${{ github.sha }}

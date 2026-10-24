@@ -18,6 +18,10 @@ name: Python deploy
 # ts-frontend-ci-cd.yml — each language keeps its own pipeline because
 # the test/build steps never generalize for free.
 #
+# O deploy commita o digest de volta em `main` (default do repo é `read`).
+permissions:
+  contents: write
+
 on:
   push:
     branches: [main]
@@ -106,7 +110,8 @@ jobs:
   build-and-push:
     needs: discover
     if: needs.discover.outputs.apps != '[]'
-    runs-on: ubuntu-latest
+    # arm64 NATIVO (grátis/ilimitado em repo público) -- ver go-ci-cd.yml.
+    runs-on: ubuntu-24.04-arm
     # Um push novo cancela o build do anterior (ver go-ci-cd.yml). O grupo
     # inclui o APP: sem ele, os jobs da mesma matrix entram no mesmo grupo e
     # cancelam uns aos outros. O deploy fica de fora: ele compartilha o
@@ -163,202 +168,87 @@ jobs:
           pip install -q $pkg_args "${{ github.workspace }}/modules/apps/${{ matrix.app }}[dev]"
           python -m pytest -q
 
-      # Same reasoning as go-ci-cd.yml: the VPS is arm64, this runner
-      # is amd64, and QEMU is what lets BuildKit produce an arm64 image
-      # at all (python:3.12-slim is multi-arch, so no base-image swap
-      # needed -- QEMU just runs the pip install layer arm-native).
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      # registry.giomartins.dev:5000 is plain HTTP (Phase 1 — see
-      # modules/infra/terraform/README.md); same daemon.json dance as
-      # go-ci-cd.yml, needed before docker/login-action works at all.
-      - name: Allow the runner's dockerd to talk to the registry over plain HTTP
-        run: |
-          echo '{"insecure-registries": ["registry.giomartins.dev:5000"]}' | sudo tee /etc/docker/daemon.json > /dev/null
-          sudo systemctl restart docker
-
-      - uses: docker/setup-buildx-action@v3
-        with:
-          buildkitd-config-inline: |
-            [registry."registry.giomartins.dev:5000"]
-              http = true
-              insecure = true
-
-      # Same vault-backed credentials as go-ci-cd.yml's step of the
-      # same name -- no GitHub-secret copy of the registry password.
-      - name: Set up SSH access to the VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          echo "DOCKER_HOST=ssh://ubuntu@$VPS_HOST" >> "$GITHUB_ENV"
-
-      - name: Fetch registry credentials from Vaultwarden
-        env:
-          NETWORK_NAME: apps
-          # Vaultwarden e POD desde 2026-10-23; o nome `vaultwarden` na rede
-          # `apps` so resolve para o container de ROLLBACK (parado). NodePort
-          # fixo do Service em `persistence` -- ver fetch_vault_secret.sh.
-          VAULTWARDEN_UPSTREAM: host.docker.internal:30822
-          VAULTWARDEN_CLIENT_ID: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_ID }}
-          VAULTWARDEN_CLIENT_SECRET: ${{ secrets.TF_VAULTWARDEN_API_CLIENT_SECRET }}
-          VAULTWARDEN_MASTER_PASSWORD: ${{ secrets.TF_VAULTWARDEN_ACCOUNT_PASSWORD }}
-          ITEM_MAP: "REGISTRY_USERNAME=REGISTRY_USERNAME REGISTRY_PASSWORD=REGISTRY_PASSWORD"
-        run: |
-          set -o pipefail
-          modules/infra/terraform/scripts/fetch_vault_secret.sh | while IFS='=' read -r k v; do
-            echo "::add-mask::$v"
-            echo "${k}=${v}" >> "$GITHUB_ENV"
-          done
-
-      - name: Log in to registry.giomartins.dev:5000
-        uses: docker/login-action@v3
-        with:
-          registry: registry.giomartins.dev:5000
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ env.REGISTRY_PASSWORD }}
-
-      # Repo-root context (see the header note): the Dockerfile copies
-      # vendored files from paths above the app dir.
+      # Build + push + digest. Toda a mecânica (túnel do registry, credencial
+      # vinda do Secret do cluster, BuildKit com netns do host, cache no
+      # Actions) vive em `.github/actions/build-push-cluster` — ver o
+      # cabeçalho de go-ci-cd.yml para o porquê de cada peça.
+      #
+      # O que saiu daqui: `setup-qemu` (runner é arm64 nativo),
+      # `insecure-registries` no daemon.json, `DOCKER_HOST=ssh://` (build era
+      # no daemon da VPS) e `fetch_vault_secret.sh` (fazia `docker run`).
       - name: Build and push ${{ matrix.app }}
-        uses: docker/build-push-action@v6
+        id: build
+        uses: ./.github/actions/build-push-cluster
         with:
+          vps-host: ${{ secrets.VPS_HOST }}
+          app: ${{ matrix.app }}
+          # Contexto na raiz: o Dockerfile copia arquivos de `packages/`.
           context: .
-          file: modules/apps/${{ matrix.app }}/Dockerfile
-          push: true
-          platforms: linux/arm64
-          # Cache de camadas no cache do Actions (ver go-ci-cd.yml). O `pip
-          # install` do app e da lib compartilhada é a camada cara: sem cache,
-          # todo push baixa e reinstala as dependências de novo.
-          cache-from: type=gha,scope=py-${{ matrix.app }}
-          cache-to: type=gha,mode=max,scope=py-${{ matrix.app }}
-          tags: |
-            registry.giomartins.dev:5000/${{ matrix.app }}:latest
-            registry.giomartins.dev:5000/${{ matrix.app }}:${{ github.sha }}
+          dockerfile: modules/apps/${{ matrix.app }}/Dockerfile
+          cache-scope: py-${{ matrix.app }}
 
-  # Redeploy da stack no Dockhand depois de buildar/pushar a imagem -- mesmo
-  # desenho do go-ci-cd.yml (webhook do git stack via loopback SSH, secret
-  # DOCKHAND_WEBHOOK_SECRET como header x-gitlab-token). Desde a migração
-  # para os stacks agregados, todos os apps Python caem no stack
-  # `project-apps` (stacks/project-apps.yml), id 22.
+      - name: Hand the digest to the deploy job
+        run: echo "${{ steps.build.outputs.digest }}" > "$RUNNER_TEMP/digest.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.app }}
+          path: ${{ runner.temp }}/digest.txt
+          retention-days: 1
+
+  # Deploy = gravar o digest no manifesto e commitar (ArgoCD aplica).
+  # Antes: webhook do Dockhand + prova por `docker ps`. Os containers que ele
+  # procurava não existem mais (todos `profiles: ["retired"]`), então o job
+  # falharia sempre. Ver go-ci-cd.yml.
   deploy:
     needs: [discover, build-and-push]
     if: needs.discover.outputs.apps != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     concurrency:
-      group: dockhand-deploy-${{ github.ref }}
+      group: image-deploy-${{ github.ref }}
       cancel-in-progress: false
     steps:
-      - name: Set up SSH access to the VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Trigger Dockhand redeploy
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          DOCKHAND_WEBHOOK_SECRET: ${{ secrets.DOCKHAND_WEBHOOK_SECRET }}
-          APPS: ${{ needs.discover.outputs.apps }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+
+      - name: Record each digest in git
         run: |
-          if [ -z "$DOCKHAND_WEBHOOK_SECRET" ]; then
-            echo "::warning::DOCKHAND_WEBHOOK_SECRET não configurado; pulando redeploy (a :latest já foi publicada)."
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # `bump-digest.sh` só PREPARA (`git add`); o commit é um só, aqui.
+          # Um commit por app daria N pushes concorrentes em `main`.
+          for d in "$RUNNER_TEMP"/digests/digest-*/; do
+            app=$(basename "$d"); app=${app#digest-}
+            digest=$(tr -d '\r\n' < "${d}digest.txt")
+            [ -n "$digest" ] || { echo "::error::digest vazio para $app"; exit 1; }
+            echo "== $app -> $digest"
+            .github/scripts/bump-digest.sh "$app" "$digest"
+          done
+          if git diff --cached --quiet; then
+            echo "nenhum manifesto mudou"
             exit 0
           fi
-          # §10.4-4/§10.4-5. Every app the discover step can emit needs an
-          # entry here -- an app missing from this map is the §14 risk
-          # "build verde, nada sobe", so a discovered app with no id fails
-          # loudly below instead of reporting success.
-          #   [finance-api]=22 -- the numeric id of the `project-apps` stack
-          #   (stacks/project-apps.yml, env 1/prd, repo 1), criado 2026-10-18
-          #   na migração que agregou os stacks por dominio.
-          #   Only readable from the Dockhand UI after login: never invent one.
-          #   [finance-customersupport-worker]=22 -- SAME stack (one compose, one
-          #   webhook), so it reuses the project-apps id: deploying the worker is
-          #   deploying the stack. An app with no id here fails loudly below.
-          declare -A STACK=( [finance-api]=22 [finance-customersupport-worker]=22 [finance-openfinance-worker]=22 )
-          if [ -z "$APPS" ] || [ "$APPS" = "[]" ]; then
-            echo "nada a deployar (nenhum app descoberto)"
-            exit 0
+          git commit -m "deploy: imagens arm64 do CI ($(date -u +%Y-%m-%dT%H:%MZ))"
+
+      - name: Push the digest commits
+        run: |
+          set -euo pipefail
+          if [ -z "$(git log "origin/${GITHUB_REF_NAME}..HEAD" --oneline)" ]; then
+            echo "nada a publicar (digests já estavam no git)"; exit 0
           fi
-          # An app that built with no id mapped is a failure, not a quiet skip:
-          # the image was published and nothing will pick it up. `nada a
-          # deployar` is reserved for the genuinely empty case above.
-          pairs=""
-          for a in $(echo "$APPS" | jq -r '.[]'); do
-            id="${STACK[$a]}"
-            if [ -z "$id" ]; then
-              echo "::error::$a built, but STACK has no id for it: the image was published and no stack will redeploy (§10.4-4/5). Add [${a}]=<id> to STACK."
-              exit 1
+          for i in 1 2 3 4; do
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "digest publicado"; exit 0
             fi
-            pairs="$pairs $a=$id"
+            echo "  push falhou (tentativa $i); rebase e repete"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            sleep $((i * 3))
           done
-          ids=$(for p in $pairs; do echo "${p#*=}"; done | sort -u)
-          # O guarda de baixo roda depois dos webhooks: o nome do container e o
-          # `container_name` do compose (`finance-api`), identico
-          # ao app nos dois casos descobertos hoje. Um app novo cujo
-          # container_name difira do nome do app precisa da sua propria linha.
-          for id in $ids; do
-            echo "== redeploy stack id=$id"
-            out=$(ssh "ubuntu@$VPS_HOST" "curl -sS -m 900 -X POST -H 'x-gitlab-token: $DOCKHAND_WEBHOOK_SECRET' 'http://127.0.0.1:8093/api/git/stacks/$id/webhook'")
-            echo "$out" | head -c 600; echo
-            echo "$out" | grep -q '"success":true' || { echo "::error::webhook falhou para o stack $id"; exit 1; }
-            # §10.4-4/§10.4-5, segunda metade. `success:true` sozinho nao prova
-            # deploy: quando a stack ja esta no commit, o Dockhand devolve
-            # {"success":true,...,"skipped":true} e NADA sobe -- e este job
-            # ficava verde com a imagem recem-publicada e nenhum container.
-            # `skipped:true` para um id que acabou de receber webhook significa
-            # exatamente "nada foi deployado", entao e falha, nao sucesso.
-            if echo "$out" | grep -q '"skipped":true'; then
-              echo "::error::stack $id devolveu skipped:true: a stack ja estava neste commit, entao a imagem publicada por este run NAO foi deployada (§10.4-4). Force o redeploy ou mude a stack de commit."
-              exit 1
-            fi
-          done
-          running=$(ssh "ubuntu@$VPS_HOST" "docker ps --format '{{.Names}}'") || {
-            echo "::error::nao consegui listar containers no host ($VPS_HOST) para provar o deploy"
-            exit 1
-          }
-          for p in $pairs; do
-            a="${p%%=*}"; pid="${p#*=}"
-            echo "$running" | grep -qx "$a" || {
-              echo "::error::stack $pid respondeu success, mas nenhum container \"$a\" esta rodando: a imagem foi publicada e nada subiu."
-              exit 1
-            }
-            echo "ok: $a rodando"
-          done
-
-          # Orfaos de rename de servico. O `up -d --remove-orphans` do Dockhand
-          # ja remove containers cujo servico saiu do compose (mesmo projeto),
-          # mas um orfao sobrevivente e uma falha SILENCIOSA e grave: no caso
-          # `finance-whatsapp-worker` -> `finance-customersupport-worker`, os
-          # DOIS consumiriam a mesma fila do Evolution e cada mensagem cairia
-          # em um (metade do atendimento some). Removemos explicitamente o
-          # legado conhecido, se ainda existir, e provamos que sumiu.
-          #
-          # A lista e de nomes LEGADOS ja aposentados; um rename novo adiciona
-          # o nome antigo aqui. Remover um nome que nao existe e no-op.
-          for legacy in finance-whatsapp-worker; do
-            if ssh "ubuntu@$VPS_HOST" "docker ps -a --format '{{.Names}}'" | grep -qx "$legacy"; then
-              echo "== orfao de rename detectado: $legacy; removendo"
-              ssh "ubuntu@$VPS_HOST" "docker rm -f '$legacy'" >/dev/null || {
-                echo "::error::nao consegui remover o orfao $legacy: ele pode estar consumindo a fila em paralelo."
-                exit 1
-              }
-              ssh "ubuntu@$VPS_HOST" "docker ps -a --format '{{.Names}}'" | grep -qx "$legacy" && {
-                echo "::error::$legacy ainda existe apos docker rm -f."
-                exit 1
-              }
-              echo "ok: orfao $legacy removido"
-            fi
-          done
-
+          echo "::error::não consegui publicar o commit dos digests"
+          exit 1

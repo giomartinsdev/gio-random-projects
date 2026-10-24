@@ -14,13 +14,13 @@ on:
     paths:
       - 'gitops/**'
       - 'stacks/**'
-      - '.github/workflows/gitops-validate.yml'
+      - '.github/**'
   push:
     branches: [main]
     paths:
       - 'gitops/**'
       - 'stacks/**'
-      - '.github/workflows/gitops-validate.yml'
+      - '.github/**'
   workflow_dispatch:
 
 permissions:
@@ -106,3 +106,37 @@ jobs:
             https://github.com/mikefarah/yq/releases/download/v4.52.5/yq_linux_amd64
           sudo chmod +x /usr/bin/yq
           ./gitops/bootstrap/checa-profiles.sh stacks
+
+      # `bump-digest.sh` e `cluster-secret-env.sh` rodam em TODO deploy de
+      # imagem. Um erro de sintaxe aqui so apareceria no proximo push de app --
+      # ou pior, no meio de um deploy, depois do registry ja ter recebido a
+      # imagem. `bash -n` e barato e pega isso no PR.
+      - name: Sintaxe dos scripts de CI
+        run: |
+          set -euo pipefail
+          for f in .github/scripts/*.sh; do
+            bash -n "$f"
+            echo "ok: $f"
+          done
+
+      - name: A action composta esta coerente
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/valida-action.py
+
+      # Guarda contra o acoplamento que o descomissionamento removeu: nenhum
+      # workflow pode voltar a depender do daemon Docker da VPS (build agora e
+      # no runner; push vai por tunel SSH) nem do webhook do Dockhand (o deploy
+      # e o commit do digest; o ArgoCD aplica).
+      - name: Nenhum workflow depende do Docker da VPS nem do Dockhand
+        run: |
+          set -euo pipefail
+          if grep -rn 'DOCKER_HOST=ssh://' .github/workflows/ 2>/dev/null; then
+            echo "::error::O Docker da VPS foi descomissionado. Build no runner (ubuntu-24.04-arm) + push por tunel SSH."
+            exit 1
+          fi
+          if grep -rn 'api/git/stacks/.*/webhook' .github/workflows/ 2>/dev/null; then
+            echo "::error::O Dockhand foi descomissionado. O deploy e o commit do digest; o ArgoCD aplica."
+            exit 1
+          fi
+          echo "nenhum acoplamento com o daemon da VPS"
