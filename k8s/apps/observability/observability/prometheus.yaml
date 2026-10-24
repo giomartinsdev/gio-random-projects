@@ -63,14 +63,22 @@ data:
         static_configs:
           - targets: ["10.0.0.209:10250"]
         metric_relabel_configs:
-          # O cadvisor emite uma série por cgroup (system.slice, kubepods.slice,
-          # kubepods-besteffort.slice, ...) com `container=""`. São ~40% das
-          # séries e nenhum painel as usa: o dashboard agrupa por namespace/pod.
-          - source_labels: [container]
+          # ## O filtro é `namespace=""`, NÃO `container=""`
+          #
+          # O cadvisor emite série por cgroup: `system.slice`, `kubepods.slice`,
+          # `kubepods-besteffort.slice`, ... Todas têm `namespace=""` e nenhum
+          # painel as usa — o dashboard agrupa por namespace/pod. Cortá-las tira
+          # ~40% das séries.
+          #
+          # A tentação é filtrar por `container=""`. **Errado**: as métricas de
+          # REDE (`container_network_*`) são medidas no sandbox do pod e têm
+          # `container=""` SEMPRE, inclusive nas séries boas. Filtrar por
+          # `container` apagou 100% de `container_network_receive_bytes_total`
+          # e o painel de rede ficou `No data` com o scrape `up`. Medido em
+          # 2026-10-24: 0 séries de rede com o filtro antigo, 15 namespaces com
+          # `namespace!=""`.
+          - source_labels: [namespace]
             regex: ""
-            action: drop
-          - source_labels: [id]
-            regex: "/"
             action: drop
           # `image` no cadvisor carrega o digest completo, que muda a cada push.
           # Como label de série isso estoura a cardinalidade; o painel usa o
