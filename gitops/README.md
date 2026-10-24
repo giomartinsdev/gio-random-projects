@@ -1936,6 +1936,61 @@ Armadilha do caminho: `nginx.org/proxy-buffering` quer **booleano**
 com `must be a boolean`. E o chart ignora `controller.service.nodePorts` no
 primeiro install (as portas saem aleatórias; anote as reais no log).
 
+#### A armadilha do `websocket-services` em rota que não é WebSocket (2026-10-24)
+
+Horas depois do cutover, `ai.giomartins.dev` passou a devolver **`400` com 0
+bytes de corpo** de forma intermitente (`48` de `119` requests do opencode), e
+`502` quando o abort caía no meio do stream. O sintoma parecia rede: `502` em
+**1.05s** (tempo fixo) e `400` em **0.057s** — reset de conexão, não erro de
+aplicação.
+
+Investigação, do mais barato ao decisivo:
+
+1. **`10/10` no pod direto** (sem proxy), **falha só passando pelo NIC** →
+   não é o 9router nem o Cloudflare.
+2. **`400` com `0` bytes** no access log = nginx fechando **antes** de
+   encaminhar. Reproduzido com JSON truncado; `400` com corpo = app.
+3. Correlação nos logs do 9router: os requests que falhavam chegavam com
+   `"connection": "close"` e `content-length: 481954` (~480KB — o histórico que
+   o opencode manda).
+4. **Diff de annotations**: três probes idênticos, mudando uma annotation por
+   vez. 15 requests intercaladas, body de 480KB:
+
+   | probe | annotations | resultado |
+   |---|---|---|
+   | `plain` | só `client-max-body-size` | **15/15 → 200** |
+   | `snip` | + `location-snippets` | 8/8 → 200 |
+   | `ws` | + `websocket-services` | **9/15 → 200, 6/15 → 400** |
+   | `ai` | produção, com `websocket-services` | 12/15 → 200, 3/15 → 400 |
+
+**Causa:** `nginx.org/websocket-services` emite
+
+```nginx
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection $connection_upgrade;
+```
+
+e o map global do NIC é `default upgrade; '' close;`. Request normal de LLM não
+manda `Upgrade`, então `Connection` resolvia para **`close`** — e o 9router
+abortava a leitura do corpo grande (ou o stream, se já estava em curso).
+
+**Fix:** remover a annotation do `ai` — o 9router é HTTP + SSE, não WebSocket.
+Medido depois: **20/20** na origem e **10/10** via Cloudflare (antes: 12/15 e
+3/10). Se um path específico precisar de WS, a saída é um `location ~ ^/<path>$`
+aninhado só ali, não no host inteiro.
+
+**Lição:** `websocket-services` não é "grátis" — ela fixa `Connection: close`
+em **todo** request que não é upgrade. Em host com POST grande e app sensível a
+`Connection`, isso é uma falha intermitente que não aparece em matriz de status
+code (os 3 hosts testados respondem `200` na maioria das vezes). Vale a mesma
+regra do `X-Forwarded-Proto`: **paridade de status ≠ paridade de comportamento**;
+a diferença só aparece com body do tamanho real do cliente.
+
+Ficaram com a annotation os hosts que realmente usam WS (grafana live,
+shell/log do rancher, adminer, terminal do db-mcp) — todos com corpo pequeno,
+onde `Connection: close` só custa keepalive. `plain` provou que dá para viver
+sem ela onde não há WS.
+
 #### `ingress-nginx` foi removido (a dívida morreu)
 
 O controller EOL (`kubernetes/ingress-nginx`) foi instalado em 2026-10-23 e
