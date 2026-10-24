@@ -71,6 +71,12 @@ jobs:
           fi
           for d in $dirs; do
             echo "::group::$d"
+            if [ "$d" = "gitops/apps/applications/routes-applications" ]; then
+              # Diagnóstico do schema de CRD do NIC (remover após estabilizar
+              # o gate): mostra que os JSONs estão no checkout e forçar o
+              # kubeconform a imprimir a resolução do path desse app.
+              ls -la .github/schemas/ || echo "::warning::schemas dir ausente no checkout"
+            fi
             kubectl kustomize "$d" > /tmp/rendered.yaml
             if [ ! -s /tmp/rendered.yaml ]; then
               echo "::error::$d renderizou vazio"
