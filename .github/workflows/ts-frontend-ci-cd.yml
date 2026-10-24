@@ -186,16 +186,34 @@ jobs:
       # instalado. Ele também adivinha o Content-Type pela extensão, que é do
       # que o ingress depende ao servir os objetos direto do MinIO.
       #
-      # O endpoint é o NOME PÚBLICO do MinIO (via ingress/Cloudflare), não o
-      # NodePort: `172.18.0.1:30900` só existia de dentro da rede Docker `apps`,
-      # e o NodePort é bloqueado pelo firewall para origens externas.
+      # O endpoint é um TÚNEL SSH para o NodePort do S3 (30900), não
+      # `https://minio.giomartins.dev`. Duas razões, ambas descobertas
+      # quando o mirror começou a falhar com "maximum recursion depth
+      # exceeded" (o parser do aws-cli engasgando com o HTML do redirect):
+      #
+      #   1. `minio.giomartins.dev` está atrás do Cloudflare Access — o
+      #      `aws` CLI não faz o fluxo SSO, recebe 302 e tenta seguir;
+      #   2. o Ingress daquele host aponta para o CONSOLE (9001), não para
+      #      a API S3 (9000). Bucket não existe na porta do console.
+      #
+      # O NodePort continua fechado para origens externas (é o que o
+      # firewall garante), então o túnel é o único caminho sem expor a API
+      # S3 na internet. Ele pega carona no SSH que o job já tem.
       - name: Mirror the build into MinIO
         env:
           AWS_ACCESS_KEY_ID: ${{ env.MINIO_ROOT_USER }}
           AWS_SECRET_ACCESS_KEY: ${{ env.MINIO_ROOT_PASSWORD }}
           AWS_DEFAULT_REGION: us-east-1
-          MINIO_ENDPOINT: https://minio.giomartins.dev
+          MINIO_ENDPOINT: http://127.0.0.1:19000
         run: |
+          ssh -fN -o BatchMode=yes -o ExitOnForwardFailure=yes \
+            -L 19000:127.0.0.1:30900 "ubuntu@$VPS_HOST"
+          trap 'pkill -f "ssh -fN.*19000:127.0.0.1:30900"' EXIT
+          # O túnel é assíncrono; sem isto o aws-cli pode correr na frente.
+          for _ in $(seq 1 20); do
+            curl -sf -o /dev/null "$MINIO_ENDPOINT/minio/health/live" && break
+            sleep 0.5
+          done
           aws s3 sync "apps/${{ matrix.app }}/dist" "s3://${{ matrix.app }}" \
             --endpoint-url "$MINIO_ENDPOINT" --delete
 
