@@ -1858,6 +1858,23 @@ Fase azul primeiro: NIC em NodePort (31528/31759) com os 17 hosts + matriz de
 Resultado medido: **17/17 hosts com paridade**, incluindo `tela-api` 404, e a
 sessão do próprio agente (que atravessa `ai.giomartins.dev`) sobreviveu.
 
+#### O regresso que a matriz não pegava: `X-Forwarded-Proto` no rancher
+
+A matriz deparidade usava **status code**, e o bug do rancher não muda status
+nenhum: o NIC injeta `X-Forwarded-Proto $scheme` em toda location; o
+Cloudflare fala HTTP com a origem, então `scheme=http` — e o Rancher passa a
+gerar URLs absolutas `http://rancher…` nos endpoints da API, que o browser
+corta como **mixed content** (a UI mostra `Network Error` minutos depois de
+aparentemente tudo funcionar). O legado fixava o header em `https` **com um
+comentário de 6 linhas prevendo exatamente isto** — e a migração estava
+completa quando isso apareceu. Fix: `action.proxy.requestHeaders.set` no
+`vs-rancher` — que no conf gerado **substitui** (não duplica) o default do
+NIC: uma linha só, `X-Forwarded-Proto "https"`. Lição dupla: (1) paridade de
+status ≠ paridade de conteúdo — headers absolutos de apps SPA são o lugar
+onde migração de proxy quebra silenciosa; (2) o comentário que explica um
+header estranho num ConfigMap velho é documentation operacional — leia antes
+de trocar o motor.
+
 #### `ingress-nginx` foi removido (a dívida morreu)
 
 O controller EOL (`kubernetes/ingress-nginx`) foi instalado em 2026-10-23 e
