@@ -1,0 +1,142 @@
+# node-exporter — o disco e a CPU do HOST, que o k3s não expõe.
+#
+# ## Por que ele existe
+#
+# O k3s desabilita o coletor `node` do kubelet: `node_filesystem_*`,
+# `node_cpu_seconds_total`, `node_memory_*`, `node_load*` não existem neste
+# cluster. Sem eles não há como responder "o disco está enchendo?" nem "o host
+# está com folga?" — e é exatamente isso que precede um incidente: PVC cheio,
+# node OOM, disco 100% derrubando o k3s.
+#
+# O cadvisor dá `container_fs_usage_bytes{device="/dev/sda1"}` para o disco do
+# host, mas só o total do device: sem inodes, sem mountpoint, sem I/O por
+# device, sem load. O node-exporter cobre o que falta.
+#
+# ## DaemonSet, hostPath read-only, sem hostNetwork
+#
+# DaemonSet porque métrica de nó é por nó (um pod por nó, inclusive quando
+# entrar o segundo). `hostPath` read-only em /proc e /sys é o único jeito de
+# ler o host de dentro de um pod — e é leitura, não escrita.
+#
+# `hostNetwork: true` é a escolha padrão do node-exporter para que
+# `node_network_*` reflita as interfaces do host e não do veth do pod. Sem
+# isto as interfaces aparecem como `eth0@if12` e a soma não fecha com o `df`.
+#
+# ## O `--path.rootfs`
+#
+# Sem `--path.rootfs=/host`, as métricas de filesystem são do rootfs DO POD
+# (overlay em cima do node), não do `/dev/sda1` do host. É o erro clássico:
+# `node_filesystem_avail_bytes` mostra 4GB quando o disco tem 113GB livres.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: node-exporter
+  labels:
+    app.kubernetes.io/name: node-exporter
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+  labels:
+    app.kubernetes.io/name: node-exporter
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: node-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: node-exporter
+    spec:
+      serviceAccountName: node-exporter
+      # Tolerar tudo: o node-exporter precisa rodar até em nó com taint (o
+      # master/control-plane tem `node-role.kubernetes.io/control-plane:NoSchedule`
+      # no k3s). Se ele não roda num nó, o disco daquele nó fica invisível.
+      tolerations:
+        - operator: Exists
+      hostNetwork: true
+      hostPID: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: node-exporter
+          # Digest, não tag.
+          image: prom/node-exporter@sha256:2e9d73002adb973441ec1c815a8e7e7c2465f5e535d859d16ee395f2ceb857c7
+          args:
+            # Ver comentário no header: sem isto, filesystem é do pod.
+            - "--path.rootfs=/host"
+            - "--path.procfs=/host/proc"
+            - "--path.sysfs=/host/sys"
+            # Só os coletores com painel. `buddyinfo`, `zswap`, `mdadm`,
+            # `xfs`/`btrfs` ficam de fora: cada um adiciona série e nenhum
+            # tem painel neste cluster (o FS é ext4 em /dev/sda1).
+            - "--collector.disable-defaults"
+            - "--collector.cpu"
+            - "--collector.meminfo"
+            - "--collector.filesystem"
+            - "--collector.diskstats"
+            - "--collector.loadavg"
+            - "--collector.netdev"
+            - "--collector.stat"
+            - "--collector.uname"
+            - "--collector.time"
+          ports:
+            # `hostPort` seria redundante com `hostNetwork: true` — e o k8s
+            # recusa os dois juntos no mesmo pod em alguns casos. Com
+            # hostNetwork o container já escuta em :9100 do host.
+            - name: metrics
+              containerPort: 9100
+          resources:
+            requests:
+              cpu: 10m
+              memory: 20Mi
+            limits:
+              # Medido: ~18Mi em regime com os 9 coletores acima.
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: sys
+              mountPath: /host/sys
+              readOnly: true
+            - name: root
+              mountPath: /host
+              readOnly: true
+              # `RootFs` precisa ver o device real, não o overlay do pod.
+              mountPropagation: HostToContainer
+      volumes:
+        - name: proc
+          hostPath:
+            path: /proc
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: root
+          hostPath:
+            path: /
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-exporter
+  labels:
+    app.kubernetes.io/name: node-exporter
+spec:
+  # ClusterIP normal: o Prometheus raspa por DNS. Com hostNetwork o pod também
+  # responde em :9100 do host, mas o Service é o caminho estável — sobrevive a
+  # troca de nó.
+  selector:
+    app.kubernetes.io/name: node-exporter
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics

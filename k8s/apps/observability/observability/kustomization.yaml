@@ -48,6 +48,7 @@ resources:
   - alloy-logs.yaml
   - alloy-service.yaml
   - kube-state-metrics.yaml
+  - node-exporter.yaml
 
 commonLabels:
   app.kubernetes.io/part-of: giomartins

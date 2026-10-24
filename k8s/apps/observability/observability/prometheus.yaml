@@ -41,6 +41,44 @@ data:
         static_configs:
           - targets: ["kube-state-metrics:8080"]
 
+      - job_name: node-exporter
+        static_configs:
+          - targets: ["node-exporter:9100"]
+        # O node-exporter é o ÚNICO lugar com disco/memória/load do HOST: o k3s
+        # não habilita o coletor `node` do kubelet. Sem ele, "o disco está
+        # enchendo?" é pergunta sem resposta.
+        metric_relabel_configs:
+          # Só o filesystem raiz. O node-exporter reporta um `node_filesystem_*`
+          # por mountpoint, incluindo os ~12 loop devices do snap (que enchem e
+          # esvaziam sozinhos e fariam o alerta de disco disparar à toa).
+          - source_labels: [mountpoint]
+            regex: "/"
+            action: keep
+
+      # ## O kubelet `/metrics` — os volumes dos PVCs
+      #
+      # Diferente do cadvisor: este endpoint tem `kubelet_volume_stats_*`, o
+      # disco REAL de cada PVC (usado, disponível, inodes) reportado pelo
+      # kubelet. É o que responde "o volume do postgres está enchendo?".
+      #
+      # O `/metrics` do kubelet no k3s não traz `node_cpu_*`/`node_memory_*`
+      # (coletor de nó desabilitado) — para isso serve o node-exporter. Aqui só
+      # interessam as métricas de volume.
+      - job_name: kubelet
+        scheme: https
+        authorization:
+          credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        tls_config:
+          insecure_skip_verify: true
+        static_configs:
+          - targets: ["10.0.0.209:10250"]
+        metric_relabel_configs:
+          # O `/metrics` do kubelet tem ~1000 séries de apiserver/etcd/runtime
+          # que ninguém aqui usa. Manter só volume_stats e log filesystem.
+          - source_labels: [__name__]
+            regex: "kubelet_volume_stats_.*|kubelet_container_log_filesystem_used_bytes"
+            action: keep
+
       # ## O kubelet, via cadvisor — e por que este job existe
       #
       # O kubelet devolve 401 sem bearer token. Em vez de montar Secret com
@@ -63,20 +101,28 @@ data:
         static_configs:
           - targets: ["10.0.0.209:10250"]
         metric_relabel_configs:
-          # ## O filtro é `namespace=""`, NÃO `container=""`
+          # ## Quais séries de `namespace=""` sobrevivem
           #
           # O cadvisor emite série por cgroup: `system.slice`, `kubepods.slice`,
           # `kubepods-besteffort.slice`, ... Todas têm `namespace=""` e nenhum
           # painel as usa — o dashboard agrupa por namespace/pod. Cortá-las tira
           # ~40% das séries.
           #
-          # A tentação é filtrar por `container=""`. **Errado**: as métricas de
-          # REDE (`container_network_*`) são medidas no sandbox do pod e têm
+          # **Exceção: `container_fs_*`.** O disco do host é reportado por
+          # DEVICE (`device="/dev/sda1"`), não por pod — logo `namespace=""`
+          # sempre. É a única fonte de disco do host no cadvisor (85.7GB de
+          # 206.9GB medidos). Cortar por namespace apagaria justamente o número
+          # que o dashboard de alerta precisa. O relabel abaixo preserva essas
+          # séries e só derruba as demais de `namespace=""`.
+          #
+          # A tentação era filtrar por `container=""`. **Errado**: as métricas
+          # de REDE (`container_network_*`) são medidas no sandbox do pod e têm
           # `container=""` SEMPRE, inclusive nas séries boas. Filtrar por
           # `container` apagou 100% de `container_network_receive_bytes_total`
-          # e o painel de rede ficou `No data` com o scrape `up`. Medido em
-          # 2026-10-24: 0 séries de rede com o filtro antigo, 15 namespaces com
-          # `namespace!=""`.
+          # e o painel de rede ficou `No data` com o scrape `up`.
+          - source_labels: [__name__, namespace]
+            regex: "container_fs_.*;.*"
+            action: keep
           - source_labels: [namespace]
             regex: ""
             action: drop
