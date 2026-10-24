@@ -139,6 +139,7 @@ jobs:
         uses: ./.github/actions/build-push-cluster
         with:
           vps-host: ${{ secrets.VPS_HOST }}
+          vps-ssh-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           app: ${{ matrix.app }}
           context: modules/apps/${{ matrix.app }}
           dockerfile: modules/apps/${{ matrix.app }}/Dockerfile

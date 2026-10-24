@@ -16,6 +16,13 @@ inputs:
   vps-host:
     description: Host da VPS (dono do túnel até o registry e do kubectl).
     required: true
+  vps-ssh-key:
+    description: >
+      Chave privada SSH para a VPS. A action instala em `~/.ssh/id_ed25519`
+      e faz o `known_hosts` — assim nenhum workflow precisa repetir isso (e
+      esquecer era o erro fácil: sem a chave o túnel morre com "Host key
+      verification failed").
+    required: true
   app:
     description: Nome do app = nome do repositório no registry.
     required: true
@@ -42,6 +49,21 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Install the SSH key
+      shell: bash
+      env:
+        VPS_SSH_KEY: ${{ inputs.vps-ssh-key }}
+        VPS_HOST: ${{ inputs.vps-host }}
+      run: |
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+        # `ssh-keyscan` direto no known_hosts: fixar a chave do host é o que
+        # impede o túnel de aceitar um host trocado no meio do caminho.
+        ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+        echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
+
     # O runner `ubuntu-24.04-arm` é arm64 NATIVO: não há QEMU, não há
     # `DOCKER_HOST`, e o daemon da VPS não participa de nada.
     - name: Open the registry tunnel

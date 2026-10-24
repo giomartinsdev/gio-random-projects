@@ -34,17 +34,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up SSH access to the VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
-
       # O Dockerfile do tag pinado builda o SPA (yarn) e copia o build pro
       # nginx, mas fixa node:18 — que não instala mais (uma dep transitiva
       # exige node >= 20). Sobrescrevemos com stacks/excalidraw/Dockerfile
@@ -67,6 +56,7 @@ jobs:
         uses: ./.github/actions/build-push-cluster
         with:
           vps-host: ${{ secrets.VPS_HOST }}
+          vps-ssh-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           app: excalidraw
           context: _excalidraw-upstream
           dockerfile: _excalidraw-upstream/Dockerfile

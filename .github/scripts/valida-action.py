@@ -11,7 +11,7 @@ import sys
 
 PATH = ".github/actions/build-push-cluster/action.yml"
 
-REQUIRED_INPUTS = {"vps-host", "app", "dockerfile"}
+REQUIRED_INPUTS = {"vps-host", "vps-ssh-key", "app", "dockerfile"}
 # `context` e `cache-scope` têm default; os demais não têm.
 OPTIONAL_INPUTS = {"context", "cache-scope"}
 

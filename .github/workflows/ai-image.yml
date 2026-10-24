@@ -41,21 +41,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up SSH access to the VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
-
       - name: Build and push decision (arm64)
         uses: ./.github/actions/build-push-cluster
         with:
           vps-host: ${{ secrets.VPS_HOST }}
+          vps-ssh-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           app: decision
           context: stacks/ai/decision
           dockerfile: stacks/ai/decision/Dockerfile
@@ -69,17 +59,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up SSH access to the VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
-
       - name: Build and push 9router (arm64)
         # O clone fica em `_9router-upstream/`, então buildamos de lá com o
         # Dockerfile do upstream já patchado.
@@ -91,6 +70,7 @@ jobs:
         uses: ./.github/actions/build-push-cluster
         with:
           vps-host: ${{ secrets.VPS_HOST }}
+          vps-ssh-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           app: 9router
           context: _9router-upstream
           dockerfile: _9router-upstream/Dockerfile
