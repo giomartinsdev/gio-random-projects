@@ -34,7 +34,7 @@ spec:
           # (verificado comparando config digest de todas as 56 tags). O digest
           # é imutável e é exatamente o que está rodando hoje — sem risco de
           # subir código diferente do que atende gente.
-          image: registry.giomartins.dev:5000/domain-api@sha256:f59520314e9e1f2241e569b3f5f5c433d581932102fe6f1a4c8c2cd97d749bbf
+          image: registry.giomartins.dev:5000/domain-api@sha256:fea17865c9d42b4e9907d6f4ba14e86ea96538d548ebdc8ce082a8a94eb535b2
           ports:
             - name: http
               containerPort: 8000
