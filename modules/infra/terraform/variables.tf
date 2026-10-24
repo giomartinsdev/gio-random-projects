@@ -51,6 +51,7 @@ variable "excluded_hostnames" {
     "db-mcp.giomartins.dev",      # MCP do banco: cliente não-browser (agente) não completa redirect de SSO; o gateway nginx valida um token bearer próprio (stack db-mcp, MCP_DB_TOKEN)
     "draw.giomartins.dev",        # Excalidraw (stacks/excalidraw.yml): lousa pública -- qualquer pessoa entra sem conta (mesmo modelo do tela, compartilhar o link é o produto), então sem Access
     "rancher.giomartins.dev",     # Rancher: agentes de cluster e webhooks do próprio Rancher são clientes não-browser e não completam um redirect de SSO Google; o login admin+senha do Rancher é a camada de autenticação
+    "argo.giomartins.dev",        # ArgoCD: CLI e webhooks do GitHub são clientes não-browser e não completam redirect de SSO Google; o login admin+bcrypt do argocd-secret (e o RBAC dele) é a camada de autenticação
   ]
 }
 

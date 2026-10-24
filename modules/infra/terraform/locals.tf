@@ -192,6 +192,23 @@ locals {
       hostname = "rancher.giomartins.dev"
       port     = 31844
     },
+    {
+      # UI do ArgoCD -- o grafo/sync/diff/rollback das Applications do
+      # gitops/. Ingress nativo em gitops/apps/argocd/argocd-ui/ aponta pro
+      # Service `argocd-server` (:80 do Service = 8080 HTTP do pod, porque o
+      # argocd-server roda com `server.insecure=true`); o TLS termina no
+      # Cloudflare, como nos outros hosts.
+      #
+      # PROPOSITALMENTE fora do Cloudflare Access (excluded_hostnames): o
+      # ArgoCD tem login proprio (admin + bcrypt em argocd-secret), a CLI e
+      # os webhooks do GitHub falam com ele sem browser, e um redirect de SSO
+      # Google quebraria ambos. Mesma logica do rancher acima.
+      #
+      # A porta aqui e a do ingress (:80), nao a do pod: com Ingress nativo,
+      # quem roteia por Host header e o NIC, nao este mapa.
+      hostname = "argo.giomartins.dev"
+      port     = 80
+    },
   ]
 
   # Hosts that need a DNS record pointing straight at the VPS but are NOT
