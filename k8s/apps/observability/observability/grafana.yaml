@@ -163,6 +163,10 @@ spec:
               mountPath: /etc/grafana/provisioning/dashboards/apps-overview.json
               readOnly: true
               subPath: apps-overview.json
+            - name: cluster-dashboard-json
+              mountPath: /etc/grafana/provisioning/dashboards/cluster-overview.json
+              readOnly: true
+              subPath: cluster-overview.json
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -176,6 +180,10 @@ spec:
         - name: dashboard-json
           configMap:
             name: grafana-dashboard-apps-overview
+        # O dashboard de cluster é outro arquivo, outro ConfigMap. Mesmo motivo.
+        - name: cluster-dashboard-json
+          configMap:
+            name: grafana-dashboard-cluster-overview
 ---
 apiVersion: v1
 kind: Service

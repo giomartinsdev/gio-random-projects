@@ -1,9 +1,29 @@
-# O dashboard real, versionado. Entra como ConfigMap proprio porque e dado,
-# nao configuracao: o provisioner do Grafana le todo *.json deste diretorio.
+# O dashboard de APPS, versionado.
 #
-# O conteudo e copia byte a byte de stacks/observability/apps-overview.json --
-# gerado a partir dele, nao redigitado. Se o dashboard mudar, regerar em vez de
-# editar aqui a mao.
+# ## O que este dashboard responde
+#
+# "A minha aplicação está funcionando?" — request rate, erro 5xx, latência,
+# runtime Go, traces, logs. NÃO responde "o cluster está saudável?"; para isso
+# existe o `cluster-dashboard.yaml` (uid `cluster-overview`), com link no topo.
+#
+# ## A migração que este arquivo exigiu
+#
+# Este JSON nasceu na era Docker: os painéis de log consultavam
+# `{job="docker"}` no Loki e o painel de "serviços DOWN" usava `up{job=~"$job"}`
+# no Prometheus. Nenhum dos dois existe mais:
+#
+#   1. O alloy em Docker foi descomissionado. Hoje `loki.source.kubernetes`
+#      escreve com `job="kubernetes"` e os labels `namespace`/`pod`/`container`.
+#      Toda query de log passou de `job=docker` para `job=kubernetes`.
+#
+#   2. `up` só cobre os 5 targets ESTÁTICOS do Prometheus (ele mesmo, alloy,
+#      grafana, loki, tempo). As apps enviam métrica por remote-write e nunca
+#      aparecem em `up` — o painel antigo mostrava sempre 0 e dava falsa
+#      tranquilidade. Agora o sinal de "app de pé" é o readinessProbe do pod
+#      (`kube_pod_container_status_ready`), que é o que o Service usa de fato.
+#
+# Entra como ConfigMap próprio porque é dado, não configuração: o provisioner
+# do Grafana lê todo *.json deste diretório.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -20,6 +40,9 @@ data:
       "schemaVersion": 39,
       "refresh": "30s",
       "time": { "from": "now-6h", "to": "now" },
+      "links": [
+        { "title": "Cluster k3s", "url": "/d/cluster-overview", "type": "link", "icon": "external link", "targetBlank": false }
+      ],
       "templating": {
         "list": [
           {
@@ -57,8 +80,8 @@ data:
             "label": "Container (logs)",
             "type": "query",
             "datasource": { "type": "loki", "uid": "loki" },
-            "definition": "label_values({job=`docker`}, container)",
-            "query": { "query": "label_values({job=`docker`}, container)", "refId": "var-container" },
+            "definition": "label_values({job=`kubernetes`}, container)",
+            "query": { "query": "label_values({job=`kubernetes`}, container)", "refId": "var-container" },
             "refresh": 2,
             "includeAll": true,
             "allValue": ".*",
@@ -83,8 +106,8 @@ data:
       "panels": [
         {
           "id": 1,
-          "title": "Serviços DOWN",
-          "description": "Quantos dos serviços filtrados estão com scrape falhando (up == 0). 0 = tudo saudável.",
+          "title": "Apps com pod não-ready",
+          "description": "Containers das apps cujo readinessProbe está falhando. Antes este painel usava `up{job=~\"$job\"}`, mas `up` só cobre os 5 targets estáticos do Prometheus (ele mesmo, alloy, grafana, loki, tempo) — as apps chegam por remote-write e NUNCA aparecem em `up`. O sinal honesto de 'app de pé' é o readinessProbe do pod.",
           "type": "stat",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 5, "w": 3, "x": 0, "y": 0 },
@@ -97,7 +120,7 @@ data:
           },
           "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
           "targets": [
-            { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(up{job=~\"$job\"} == bool 0) or vector(0)", "instant": true }
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "count(kube_pod_container_status_ready{namespace=\"applications\"} == 0) or vector(0)", "instant": true }
           ]
         },
         {
@@ -443,7 +466,7 @@ data:
           },
           "options": { "legend": { "displayMode": "hidden", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
           "targets": [
-            { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum by (container) (count_over_time({job=`docker`, container=~\"$container\"}[$__interval]))", "queryType": "range", "legendFormat": "{{container}}" }
+            { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum by (container) (count_over_time({job=`kubernetes`, container=~\"$container\"}[$__interval]))", "queryType": "range", "legendFormat": "{{container}}" }
           ]
         },
         {
@@ -455,8 +478,8 @@ data:
           "fieldConfig": { "defaults": {}, "overrides": [] },
           "options": { "showTime": true, "showLabels": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true },
           "targets": [
-            { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{job=`docker`, container=~\"$container\", level=~\"$level\"}", "queryType": "range" },
-            { "refId": "B", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{job=`docker`, container=~\"$container\"} |= `ERROR`", "queryType": "range" }
+            { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{job=`kubernetes`, container=~\"$container\", level=~\"$level\"}", "queryType": "range" },
+            { "refId": "B", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{job=`kubernetes`, container=~\"$container\"} |= `ERROR`", "queryType": "range" }
           ]
         },
         {
@@ -468,7 +491,7 @@ data:
           "fieldConfig": { "defaults": {}, "overrides": [] },
           "options": { "showTime": true, "showLabels": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true },
           "targets": [
-            { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{job=`docker`, container=~\"$container\"}", "queryType": "range" }
+            { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{job=`kubernetes`, container=~\"$container\"}", "queryType": "range" }
           ]
         },
     
@@ -482,7 +505,8 @@ data:
         },
         {
           "id": 51,
-          "title": "Scrape health (infra)",
+          "title": "Scrape health",
+          "description": "Todos os targets do Prometheus. Antes a lista era fixa (grafana|loki|prometheus|tempo|alloy) e escondia kubelet/cadvisor/kube-state-metrics quando eles caíam — justamente os que alimentam o dashboard de cluster. `up` sem filtro mostra quem sumiu.",
           "type": "state-timeline",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 8, "w": 6, "x": 0, "y": 42 },
@@ -498,7 +522,7 @@ data:
           },
           "options": { "mergeValues": true, "showValue": "auto", "alignValue": "left", "legend": { "displayMode": "list", "placement": "bottom" } },
           "targets": [
-            { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "up{job=~\"grafana|loki|prometheus|tempo|alloy\"}", "legendFormat": "{{job}}" }
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "up", "legendFormat": "{{job}}" }
           ]
         },
         {

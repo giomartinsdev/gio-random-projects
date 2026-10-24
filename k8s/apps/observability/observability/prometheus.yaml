@@ -41,27 +41,18 @@ data:
         static_configs:
           - targets: ["kube-state-metrics:8080"]
 
-      # ## O kubelet, por proxy — e por que não `https://<node>:10250` direto
+      # ## O kubelet, via cadvisor — e por que este job existe
       #
-      # O kubelet responde 401 sem token válido. Em vez de montar um
-      # `bearer_token_file` (que exige um Secret com o token do SA do
-      # Prometheus), a API do Kubernetes faz o proxy: `/api/v1/nodes/<node>/proxy`
-      # autentica com o token do SA do Prometheus, e o Prometheus só precisa de
-      # RBAC (`nodes/proxy: get`). É o mesmo padrão do prometheus-operator, com
-      # menos peça móvel.
+      # O kubelet devolve 401 sem bearer token. Em vez de montar Secret com
+      # token, o RBAC (`nodes/proxy: get`) autoriza o Prometheus a falar direto
+      # no `:10250` com o token do próprio SA, montado pelo
+      # `automountServiceAccountToken: true`. Medido: `up == 1` com este setup.
       #
-      # `role: pod` (cadvisor) dá CPU/mem/rede por container com `namespace` e
-      # `pod` nos labels; `role: node` (kubelet) dá o `/metrics` do kubelet,
-      # usado só para o painel de "kubelet está coletando?".
-      - job_name: kubelet
-        scheme: https
-        authorization:
-          credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
-        tls_config:
-          insecure_skip_verify: true
-        static_configs:
-          - targets: ["10.0.0.209:10250"]
-
+      # Só `metrics_path: /metrics/cadvisor` é usado. O `/metrics` do kubelet
+      # no k3s NÃO traz `node_cpu_seconds_total` / `node_memory_*` (o k3s
+      # desabilita o coletor de nó), então um job separado só gastaria scrape.
+      # Capacidade do nó vem de `kube_node_status_capacity` (KSM) e consumo de
+      # pod vem daqui.
       - job_name: cadvisor
         scheme: https
         metrics_path: /metrics/cadvisor

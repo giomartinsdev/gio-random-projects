@@ -44,6 +44,7 @@ resources:
   - tempo.yaml
   - grafana.yaml
   - dashboard.yaml
+  - cluster-dashboard.yaml
   - alloy-logs.yaml
   - alloy-service.yaml
   - kube-state-metrics.yaml

@@ -1,0 +1,557 @@
+# Dashboard do CLUSTER k3s — nó, workloads, capacidade e saúde.
+#
+# ## Por que um dashboard separado do "Apps Overview"
+#
+# O Apps Overview responde "a minha aplicação está funcionando?" — request
+# rate, erro HTTP, latência, logs da app. Este responde "o cluster que roda
+# essas apps está saudável?" — CPU/memória por namespace, pod reiniciando,
+# Deployment com réplica faltando, PVC sem bind, nó sem condição Ready.
+#
+# Misturar os dois num só dashboard deixava a primeira dobra cheia de painel
+# de infra e a pergunta operacional ("a app está de pé?") exigia rolar. Dois
+# dashboards, cada um com um público.
+#
+# ## As medições que ancoram cada painel
+#
+# Medido em 2026-10-24 no cluster vivo (arm64, 1 nó, 24Gi RAM, 4 vCPU):
+#   kube_pod_info                          → 55 pods
+#   kube_deployment_status_replicas        → 51 workloads
+#   kube_persistentvolumeclaim_status_phase → 15 PVCs, todos Bound
+#   sum(kube_pod_container_status_restarts_total) → 91
+#   sum(container_memory_working_set_bytes{namespace!=""}) → 7.2 GB
+#
+# ## O nó NÃO tem métrica de CPU/memória
+#
+# O k3s não habilita o coletor `node` do kubelet: `node_cpu_seconds_total`,
+# `node_memory_*` e `node_load*` não existem neste cluster. Por isso o painel
+# de nó usa `kube_node_status_capacity` (capacidade declarada) e a soma do
+# cadvisor por pod (consumo real). Não invente painel de "load average": o
+# dado não existe.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-cluster-overview
+  labels:
+    app.kubernetes.io/name: grafana
+data:
+  cluster-overview.json: |
+    {
+      "title": "Cluster k3s",
+      "uid": "cluster-overview",
+      "tags": ["observability", "kubernetes", "cluster"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "links": [
+        { "title": "Apps Overview", "url": "/d/apps-overview", "type": "link", "icon": "external link", "targetBlank": false }
+      ],
+      "templating": {
+        "list": [
+          {
+            "name": "namespace",
+            "label": "Namespace",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "definition": "label_values(kube_pod_info, namespace)",
+            "query": { "query": "label_values(kube_pod_info, namespace)", "refId": "var-namespace" },
+            "refresh": 2,
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true,
+            "sort": 1,
+            "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+            "options": []
+          },
+          {
+            "name": "pod",
+            "label": "Pod",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "definition": "label_values(kube_pod_info{namespace=~\"$namespace\"}, pod)",
+            "query": { "query": "label_values(kube_pod_info{namespace=~\"$namespace\"}, pod)", "refId": "var-pod" },
+            "refresh": 2,
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true,
+            "sort": 1,
+            "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+            "options": []
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 100,
+          "type": "row",
+          "title": "Nó — capacidade e saúde",
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "panels": []
+        },
+        {
+          "id": 1,
+          "title": "Nó Ready",
+          "description": "Condição Ready do nó (kube_node_status_condition). 1 = Ready. Um nó NotReady para de aceitar pods e o ingress perde o backend.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 5, "w": 4, "x": 0, "y": 1 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] },
+              "mappings": [ { "type": "value", "options": { "0": { "text": "NOT READY", "color": "red" }, "1": { "text": "READY", "color": "green" } } } ]
+            },
+            "overrides": []
+          },
+          "options": { "colorMode": "background", "graphMode": "none", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "count(kube_node_status_condition{condition=\"Ready\",status=\"true\"} == 1)", "instant": true }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Pods rodando",
+          "description": "Pods em fase Running. Medido: 54 num total de 55.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 5, "w": 4, "x": 4, "y": 1 },
+          "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
+          "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "count(kube_pod_info{namespace=~\"$namespace\"} and on (pod, namespace) kube_pod_status_phase{phase=\"Running\"} == 1)", "instant": true }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Pods Pending",
+          "description": "Aguardando agendamento. >0 por muito tempo = falta de recurso, PVC sem bind, ou node selector impossível.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 5, "w": 4, "x": 8, "y": 1 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 } ] }
+            },
+            "overrides": []
+          },
+          "options": { "colorMode": "background", "graphMode": "none", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "count(kube_pod_info{namespace=~\"$namespace\"} and on (pod, namespace) kube_pod_status_phase{phase=\"Pending\"} == 1) or vector(0)", "instant": true }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Containers não-ready",
+          "description": "Containers cujo readinessProbe falha. É o sinal que antecede um pod sair do Service — o ingress para de mandar tráfego antes de o pod cair.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 5, "w": 4, "x": 12, "y": 1 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 } ] }
+            },
+            "overrides": []
+          },
+          "options": { "colorMode": "background", "graphMode": "none", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "count(kube_pod_container_status_ready{namespace=~\"$namespace\"} == 0) or vector(0)", "instant": true }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Restarts (total)",
+          "description": "Soma de restarts de container desde que o pod nasceu. Crescente = algo reiniciando. Medido: 91 no cluster.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 5, "w": 4, "x": 16, "y": 1 },
+          "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null } ] } }, "overrides": [] },
+          "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(kube_pod_container_status_restarts_total{namespace=~\"$namespace\"})", "instant": true }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "PVCs Bound",
+          "description": "PVCs com volume ligado. Um PVC Pending significa pod preso esperando disco — e o Deployment nunca fica Ready.",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 5, "w": 4, "x": 20, "y": 1 },
+          "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
+          "options": { "colorMode": "value", "graphMode": "none", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "count(kube_persistentvolumeclaim_status_phase{phase=\"Bound\"})", "instant": true }
+          ]
+        },
+
+        {
+          "id": 7,
+          "title": "Memória usada por namespace",
+          "description": "Soma de working_set dos containers, por namespace. Working set é o que conta para o OOM killer — RSS não é suficiente porque page cache reivindicável não derruba o pod.",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
+          "fieldConfig": {
+            "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal", "group": "A" } } },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum by (namespace) (container_memory_working_set_bytes{namespace=~\"$namespace\", container!=\"\"})",
+              "legendFormat": "{{namespace}}"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "title": "CPU usada por namespace",
+          "description": "Taxa de CPU consumida. `container!=\"\"` filtra os cgroups raiz (pod e slice), que somariam tudo duas vezes.",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
+          "fieldConfig": {
+            "defaults": { "unit": "cores", "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal", "group": "A" } } },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum by (namespace) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", container!=\"\"}[$__rate_interval]))",
+              "legendFormat": "{{namespace}}"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "title": "Memória: uso vs capacidade do nó",
+          "description": "Linha = soma do consumption real; área tracejada = allocatable declarado pelo kubelet em kube_node_status_allocatable. A distância é o headroom. Medido: 25.1 Gi allocatable, 7.2 Gi em uso.",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 13 },
+          "fieldConfig": {
+            "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 2, "showPoints": "never" } },
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "usado" }, "properties": [ { "id": "custom.fillOpacity", "value": 20 } ] },
+              { "matcher": { "id": "byName", "options": "allocatable" }, "properties": [ { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } } ] }
+            ]
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(container_memory_working_set_bytes{namespace!=\"\", container!=\"\"})",
+              "legendFormat": "usado"
+            },
+            {
+              "refId": "B",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(kube_node_status_allocatable{resource=\"memory\"})",
+              "legendFormat": "allocatable"
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "title": "Réplicas: desejadas vs prontas, por Deployment",
+          "description": "`spec_replicas` é o que o git manda; `ready_replicas` é o que está pronto. Divergência = Deployment progredindo ou travado. Este painel é o que responde \"o ArgoCD diz Synced mas a app está de pé?\".",
+          "type": "table",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 13 },
+          "fieldConfig": {
+            "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "faltando" },
+                "properties": [
+                  { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+                  { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.5 } ] } }
+                ]
+              }
+            ]
+          },
+          "options": { "showHeader": true, "sortBy": [ { "displayName": "faltando", "desc": true } ] },
+          "transformations": [
+            { "id": "merge", "options": {} },
+            { "id": "organize", "options": { "excludeByName": { "Time": true, "Value #A": true, "Value #B": true }, "renameByName": { "deployment": "deployment", "namespace": "namespace", "Value #A": "desejadas", "Value #B": "prontas" } } },
+            {
+              "id": "calculateField",
+              "options": {
+                "alias": "faltando",
+                "binary": { "left": "desejadas", "operator": "-", "right": "prontas" },
+                "mode": "binary",
+                "replaceFields": false
+              }
+            }
+          ],
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "kube_deployment_spec_replicas{namespace=~\"$namespace\"}",
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "refId": "B",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "kube_deployment_status_replicas_ready{namespace=~\"$namespace\"}",
+              "instant": true,
+              "format": "table"
+            }
+          ]
+        },
+
+        {
+          "id": 11,
+          "type": "row",
+          "title": "Workloads — quem está sofrendo",
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
+          "panels": []
+        },
+        {
+          "id": 12,
+          "title": "Restarts por pod (top 15)",
+          "description": "Só pods com restart > 0. Um pod com centenas de restarts é CrashLoopBackOff disfarçado — o Kubernetes mantém o container reiniciando e o status agregado não mostra.",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+          "fieldConfig": {
+            "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" } },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "topk(15, sum by (namespace, pod, container) (kube_pod_container_status_restarts_total{namespace=~\"$namespace\"}) > 0)",
+              "legendFormat": "{{namespace}}/{{pod}}/{{container}}"
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "title": "Fase dos pods",
+          "description": "Estado agregado por fase. O normal é quase tudo Running; um bloco de Succeeded são Jobs/CronJobs que terminaram.",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+          "fieldConfig": {
+            "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 25, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal", "group": "A" } } },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum by (phase) (kube_pod_status_phase{namespace=~\"$namespace\", phase=~\"Running|Pending|Failed|Unknown\"} == 1)",
+              "legendFormat": "{{phase}}"
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "title": "Memória por pod (top 15)",
+          "description": "Quem come memória. Cruze com o `limits` do manifesto: um pod sem limit pode crescer até o node OOM matar um vizinho.",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 },
+          "fieldConfig": {
+            "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" } },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "topk(15, sum by (namespace, pod) (container_memory_working_set_bytes{namespace=~\"$namespace\", container!=\"\"}))",
+              "legendFormat": "{{namespace}}/{{pod}}"
+            }
+          ]
+        },
+        {
+          "id": 15,
+          "title": "CPU por pod (top 15)",
+          "description": "Consumo em cores. Compare com `resources.limits.cpu` do manifesto: um pod batendo no limit tem throttling e latência p95 sobe antes de o erro aparecer.",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 },
+          "fieldConfig": {
+            "defaults": { "unit": "cores", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" } },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "topk(15, sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", container!=\"\"}[$__rate_interval])))",
+              "legendFormat": "{{namespace}}/{{pod}}"
+            }
+          ]
+        },
+
+        {
+          "id": 16,
+          "type": "row",
+          "title": "Rede e armazenamento",
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+          "panels": []
+        },
+        {
+          "id": 17,
+          "title": "Tráfego de rede por namespace",
+          "description": "RX/TX somados por namespace. Pico de RX sem request correspondente é retry ou amplificação; pico de TX sem app lenta costuma ser log verboso saindo do pod.",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 38 },
+          "fieldConfig": {
+            "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" } },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum by (namespace) (rate(container_network_receive_bytes_total{namespace=~\"$namespace\"}[$__rate_interval]))",
+              "legendFormat": "rx {{namespace}}"
+            },
+            {
+              "refId": "B",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum by (namespace) (rate(container_network_transmit_bytes_total{namespace=~\"$namespace\"}[$__rate_interval]))",
+              "legendFormat": "tx {{namespace}}"
+            }
+          ]
+        },
+        {
+          "id": 18,
+          "title": "PVC — fase e capacidade",
+          "description": "Estado de cada PersistentVolumeClaim. `Bound` é o único saudável; `Pending` = sem PV disponível. A capacidade vem do kubelet via KSM.",
+          "type": "table",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 },
+          "fieldConfig": {
+            "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "fase" },
+                "properties": [
+                  { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+                  { "id": "mappings", "value": [ { "type": "value", "options": { "Bound": { "color": "green", "index": 0 }, "Pending": { "color": "red", "index": 1 }, "Lost": { "color": "red", "index": 2 } } } ] }
+                ]
+              }
+            ]
+          },
+          "options": { "showHeader": true },
+          "transformations": [
+            { "id": "reduce", "options": { "reducers": ["lastNotNull"] } },
+            { "id": "organize", "options": { "excludeByName": { "Time": true }, "renameByName": { "namespace": "namespace", "persistentvolumeclaim": "pvc" } } }
+          ],
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "kube_persistentvolumeclaim_status_phase{phase=\"Bound\"} == 1",
+              "instant": true,
+              "format": "table"
+            }
+          ]
+        },
+
+        {
+          "id": 19,
+          "type": "row",
+          "title": "Pipeline de telemetria — está coletando?",
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 },
+          "panels": []
+        },
+        {
+          "id": 20,
+          "title": "Scrape health",
+          "description": "Cada target do Prometheus. Se `cadvisor` ou `kube-state-metrics` cair, os painéis acima ficam vazios — e a app continua funcionando. Saber distinguir \"cluster saudável\" de \"cego\" é o ponto deste painel.",
+          "type": "state-timeline",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 47 },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] },
+              "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } } ]
+            },
+            "overrides": []
+          },
+          "options": { "mergeValues": true, "showValue": "auto", "alignValue": "left", "legend": { "displayMode": "list", "placement": "bottom" } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "up", "legendFormat": "{{job}}" }
+          ]
+        },
+        {
+          "id": 21,
+          "title": "Custo da coleta",
+          "description": "Séries ativas e amostras ingeridas. O Prometheus tem `limits.memory: 512Mi` — quando a contagem de séries cresce sem controle, o processo é OOM-killed e o histórico tem buraco.",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 47 },
+          "fieldConfig": {
+            "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" } },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "prometheus_tsdb_head_series",
+              "legendFormat": "séries ativas"
+            },
+            {
+              "refId": "B",
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(prometheus_tsdb_head_samples_appended_total[$__rate_interval]))",
+              "legendFormat": "amostras/s"
+            }
+          ]
+        },
+
+        {
+          "id": 22,
+          "type": "row",
+          "title": "Como usar este dashboard",
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
+          "panels": []
+        },
+        {
+          "id": 23,
+          "title": "Receitas de diagnóstico",
+          "type": "text",
+          "datasource": { "type": "datasource", "uid": "grafana" },
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 56 },
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "options": {
+            "mode": "markdown",
+            "content": "# Diagnóstico a partir deste dashboard\n\n## A app está de pé mas o cluster não\n\n1. **Deployment com réplica faltando** → painel *Réplicas: desejadas vs prontas*. Ordenado por `faltando`. Se `faltando > 0`, o ArgoCD pode estar `Synced Healthy` e a app mesmo assim sem capacidade.\n2. **Pod reiniciando** → *Restarts por pod*. Um pod com centenas de restarts é CrashLoopBackOff. Veja o log dele no **Apps Overview** (filtro de Container).\n3. **PVC Pending** → *PVC — fase e capacidade*. Deployment preso esperando disco nunca fica Ready.\n\n## O cluster está lento\n\n1. **Memória** → *Memória por pod*. Cruze com `resources.limits` do manifesto em `k8s/apps/`.\n2. **CPU** → *CPU por pod*. Batendo no limit = throttling, e a latência p95 aparece no **Apps Overview** antes do erro.\n3. **Nome do namespace** → *Memória usada por namespace* mostra qual fatia está crescendo.\n\n## Nada aparece, mas a app responde\n\nÉ o caso mais traiçoeiro: os painéis ficam vazios e o cluster está bem. Olhe **Scrape health**:\n\n| target down | consequência | o que consertar |\n|---|---|---|\n| `cadvisor` | memória/CPU/rede por pod somem | token do SA, RBAC `nodes/proxy`, `:10250` inalcançável |\n| `kube-state-metrics` | réplicas, PVC, restarts somem | pod do KSM, ou RBAC sem `list/watch` nos recursos |\n| `prometheus` | tudo some | o próprio Prometheus |\n\n## O dado que NÃO existe aqui\n\nO k3s não habilita o coletor `node` do kubelet. **Não há** `node_cpu_seconds_total`, `node_memory_*` nem `node_load*` neste cluster. Por isso:\n\n- *Memória: uso vs capacidade* compara consumo real (cadvisor) com `kube_node_status_allocatable` (KSM).\n- Não existe painel de load average — inventar um exigiria instalar `node-exporter`.\n\n## Queries prontas (Explore → Prometheus)\n\n| Query | Para quê |\n|---|---|\n| `topk(10, sum by (pod) (container_memory_working_set_bytes{namespace=\"applications\", container!=\"\"}))` | quem come memória nas apps |\n| `kube_deployment_spec_replicas != on(namespace,deployment) kube_deployment_status_replicas_ready` | Deployments incompletos |\n| `kube_pod_container_status_restarts_total > 0` | pods que já reiniciaram |\n| `sum(rate(container_cpu_usage_seconds_total{container!=\"\"}[5m])) by (namespace)` | CPU por namespace |\n| `kube_persistentvolumeclaim_status_phase{phase!=\"Bound\"}` | PVC fora do normal |"
+          },
+          "targets": []
+        }
+      ]
+    }
