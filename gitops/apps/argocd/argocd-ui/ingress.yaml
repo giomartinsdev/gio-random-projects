@@ -1,0 +1,47 @@
+# A UI do ArgoCD — o grafo/sync/diff/rollback das 22 Applications no browser.
+#
+# ## Por que HTTP puro no backend
+#
+# O `argocd-server` roda com `server.insecure=true` (argocd-cmd-params-cm): o
+# pod fala HTTP no 8080, e o Service mapeia TANTO :80 quanto :443 para ele. Quem
+# termina o TLS é o Cloudflare (que fala HTTP com a origem, como em todos os
+# outros 17 hosts). Por isso NÃO há `nginx.org/ssl-services` aqui: um Ingress
+# apontando para `port: 443` com `ssl-services` faria o NIC tentar um handshake
+# TLS contra um listener HTTP e todo request morreria em 502.
+#
+# ## Por que o folder se chama `argocd/argocd-ui` e não `argocd/argocd`
+#
+# O AppSet usa o basename do folder como nome da Application, e o basename
+# precisa ser único em todo `gitops/apps/` (armadilha 41). `argocd-ui` é o nome
+# do recurso que mora aqui, não uma segunda instância do ArgoCD.
+#
+# ## O que ainda não é verdade
+#
+# O registro DNS (`argo.giomartins.dev`) é um passo manual no Cloudflare —
+# sem ele o Ingress existe e fica sem tráfego (o host não resolve). É o mesmo
+# modelo dos outros 17: DNS no Cloudflare, proxiado, e a origem é a :80 do NIC.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ing-argocd
+  annotations:
+    nginx.org/client-max-body-size: "50m"
+    # O WebSocket da UI: o terminal/logs e a barra de sync ao vivo usam upgrade.
+    nginx.org/websocket-services: "argocd-server"
+    nginx.org/location-snippets: "proxy_http_version 1.1;"
+spec:
+  ingressClassName: nic
+  rules:
+    - host: argo.giomartins.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  # :80 do Service = 8080 HTTP do pod (o :443 do Service aponta
+                  # para o MESMO 8080, que não fala TLS).
+                  number: 80

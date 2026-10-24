@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# A UI do ArgoCD exposta em `argo.giomartins.dev`.
+#
+# Não é GitOps de infraestrutura (o ArgoCD se gerencia fora do git de propósito:
+# quem reconcilia o reconciliador é o próprio helm/manifest do cluster, senão um
+# commit quebrado derruba o conserto). É só a porta HTTP da UI que já existe.
+#
+# O AppSet gera a Application `argocd-ui` a partir deste folder; o Ingress mora
+# no namespace `argocd` (Ingress nativo só referencia Service do próprio
+# namespace — e o Service `argocd-server` é de lá).
+namespace: argocd
+
+resources:
+  - ingress.yaml
