@@ -131,11 +131,20 @@ jobs:
       - name: Nenhum workflow depende do Docker da VPS nem do Dockhand
         run: |
           set -euo pipefail
-          if grep -rn 'DOCKER_HOST=ssh://' .github/workflows/ 2>/dev/null; then
+          # Ignora comentarios: os arquivos documentam o que saiu (o "porque"
+          # importa), e uma linha `# ... DOCKER_HOST=ssh://` explicando a
+          # remocao nao e acoplamento.
+          # `--exclude` do proprio validador: ele contem os padroes por
+          # definicao, e se auto-detectaria.
+          if grep -rn --exclude=gitops-validate.yml 'DOCKER_HOST=ssh://' \
+               .github/workflows/ 2>/dev/null \
+             | grep -vE ':[0-9]+:[[:space:]]*#' ; then
             echo "::error::O Docker da VPS foi descomissionado. Build no runner (ubuntu-24.04-arm) + push por tunel SSH."
             exit 1
           fi
-          if grep -rn 'api/git/stacks/.*/webhook' .github/workflows/ 2>/dev/null; then
+          if grep -rn --exclude=gitops-validate.yml 'api/git/stacks/.*/webhook' \
+               .github/workflows/ 2>/dev/null \
+             | grep -vE ':[0-9]+:[[:space:]]*#' ; then
             echo "::error::O Dockhand foi descomissionado. O deploy e o commit do digest; o ArgoCD aplica."
             exit 1
           fi
