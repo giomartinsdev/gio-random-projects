@@ -1,0 +1,90 @@
+# apps
+
+Each subfolder is an independently deployed app — touch only
+`domain-api/**` and only `domain-api` rebuilds, gets pushed to
+`registry.giomartins.dev`, and its digest is committed back to
+`k8s/apps/<ns>/<app>/` for ArgoCD to reconcile. Three pipelines, one
+per language+layer:
+
+- **`.github/workflows/go-ci-cd.yml`** — Go apps, auto-discovered by
+  `go.mod` (`domain-api`, `domain-worker`, `tela-api`).
+- **`.github/workflows/ts-frontend-ci-cd.yml`** — TypeScript SPAs
+  (`tela-frontend`, `hub-frontend`, `finance-frontend`), which need
+  `VITE_*` env vars baked into the bundle at build time. None of them
+  runs as a container: the build is mirrored straight into its own
+  MinIO bucket instead (see `infra/terraform/static_sites.tf`).
+- **`.github/workflows/python-ci-cd.yml`** — Python workers
+  (`finance-api`, `finance-customersupport-worker`,
+  `finance-openfinance-worker`), auto-discovered by `pyproject.toml`.
+
+Unlike Go, a `package.json` alone doesn't put a TypeScript app in the
+frontend pipeline — see `docs/novo-app-ci-cd.md` for the `ALLOWED_APPS`
+list that workflow actually reads.
+
+Folders are named `<bounded-context>-api` / `<bounded-context>-worker`
+— `domain-api`/`domain-worker` today, more pairs alongside them as new
+bounded contexts show up, rather than bare `api`/`worker` that would
+only ever fit one.
+
+- **`domain-api/`** — REST reads straight from Postgres; writes
+  publish a command and return 202, applied asynchronously by
+  `domain-worker`.
+- **`domain-worker/`** — the only writer, consumes commands off the
+  event bus, applies them, records an audit trail.
+- **`tela-api/`** / **`tela-frontend/`** — screen sharing at
+  `tela.giomartins.dev`: a Go SFU/signalling backend (its own
+  container) and its own separate React frontend (a static build in
+  MinIO, no container), talking to each other over CORS, own origins.
+  Shares nothing with the rest of this folder — no Postgres, no Better
+  Auth, no domain-api. See `tela-api/README.md` for how the SFU itself
+  works.
+- **`finance-api/`** / **`finance-customersupport-worker/`** / **`finance-frontend/`** — o
+  bounded context financeiro (gestão conversacional via WhatsApp, spec em
+  `docs/finance-system-spec.md`). `finance-api` é a ACL do contexto (Python
+  3.12 + FastAPI): valida o comando e o relaya ao `domain-api`, o dono da
+  persistência — **sem banco e sem broker** (regra de isolamento §1.1);
+  `finance-customersupport-worker` (Python, sem porta, sem host) consome os eventos da
+  **Evolution API** (o gateway WhatsApp que roda no stack `compute`) pelo
+  RabbitMQ e envia a resposta por `POST /message/sendText` — também sem banco;
+  `finance-frontend` é uma SPA React estática em bucket com a tela de operação
+  (liveness, chave de API, envio de comando). O contrato compartilhado vive em
+  `packages/finance-contracts/`.
+- **`hub-frontend/`** — o hub: chrome em volta das SPAs acima (sidebar +
+  um renderer que as iframeia) mais atalhos de nova aba para os painéis
+  protegidos por Access. Também é uma SPA estática em bucket.
+- **`uhumarketing-frontend/`** — POC de produto: uma plataforma de
+  marketing para pequenos negócios, com templates Meta, audiências,
+  envios e um editor de campanha em canvas livre no estilo n8n (regras
+  de descobrimento + outbound). Duas origens de dados, escolhidas em
+  Configurações: mock em `localStorage` (abre sem backend) ou o
+  `uhumarketing-api` (Postgres, fila, webhook). Roda só local com
+  `npm run dev` na porta 5180 — de propósito, ainda não entra no
+  `ALLOWED_APPS`, no ingress nem no hub. Ver
+  `uhumarketing-frontend/README.md`.
+- **`uhumarketing-api/`** — o backend da POC acima: Go + Postgres, um
+  processo com worker in-process, fila com `SKIP LOCKED`, webhook da Meta
+  e provedor `dry-run`/`live`. Fora do `compose.yaml` compartilhado e do
+  CI: sobe pelo próprio `compose.yaml` dentro do app, porque ainda é
+  experimento e não produto. Ver `uhumarketing-api/README.md`.
+
+`domain-api` and `domain-worker` are deliberately independent Go
+modules (each with its own `go.mod`) even though they agree on the
+same event-bus wire format — no shared package between them, so a
+change to one never forces a rebuild of the other. See either's own
+`internal/` package docs for the DDD layering (`domain` →
+`application` → `infrastructure`).
+
+## Running locally
+
+```
+cp .env.example .env   # set POSTGRES_PASSWORD, RABBITMQ_PASSWORD and DOMAIN_API_KEYS
+docker compose up --build
+```
+
+## Deploying
+
+`compose.yaml` here is local-dev only. In production every app is a pod:
+CI builds and pushes an image tagged with the digest on every push touching
+that app's folder, then commits the digest into `k8s/apps/<ns>/<app>/`.
+ArgoCD reconciles from there — nothing polls a registry, nothing calls
+`docker`. See [`../k8s/README.md`](../k8s/README.md).

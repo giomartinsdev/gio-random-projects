@@ -1,0 +1,173 @@
+# registry — o registry de imagens do cluster. Fatia 8.
+#
+# ## Por que este é o serviço mais perigoso de migrar
+#
+# Todo pod deste cluster nasce de uma imagem em `registry.giomartins.dev:5000`.
+# Se o registry morrer, os pods que JÁ estão rodando continuam rodando — mas
+# nenhum pod novo consegue subir, e o próprio Deployment do registry não é
+# exceção (ele usa `docker.io/library/registry`, de propósito: um registry que
+# depende de si mesmo para subir não sobe depois de um reboot).
+#
+# É o único serviço em que o rollback pode ser necessário para consertar o
+# rollback.
+#
+# ## O corte tem DOIS commits, de propósito
+#
+# Este arquivo, no primeiro commit, NÃO tem `hostPort: 5000` e o pod escuta só no
+# IP do pod. Nessa fase ele é inofensivo: o registry de produção continua sendo
+# o container Docker, que segura a 5000, e o `registry.giomartins.dev:5000` não
+# mudou de dono. Serve para provar, antes de qualquer corte:
+#
+#   - os 12 GB copiados abrem pelo registry do k8s (catálogo com os 39 nomes);
+#   - o `htpasswd` novo autentica com as MESMAS credenciais do container;
+#   - os digests de manifesto servidos pelo pod são idênticos aos do container.
+#
+# A verificação usa `kubectl port-forward`, e não um NodePort: a porta 30500
+# seria uma exposição pública nova de um serviço que hoje já é público na 5000
+# — não se cria exposição nova para testar.
+#
+# O segundo commit acrescenta `hostPort: 5000` e é o corte. Ele só pode ser
+# aplicado depois de `docker stop registry`, porque dois processos não podem
+# publicar a mesma porta. O container continua existindo, parado, e
+# `docker start registry` é o rollback completo.
+#
+# ## Por que `hostPort: 5000` no corte, e não NodePort
+#
+# O nome da imagem é o contrato: `registry.giomartins.dev:5000/domain-api@sha256:...`.
+# A porta 5000 está DENTRO da referência, gravada em 39 repositórios, nos
+# manifests do ArgoCD, no `imagePullSecret` e no CI do GitHub Actions (que
+# empurra imagem de um runner na internet, pelo IP público). Trocar para
+# `NodePort 30500` exigiria reescrever a referência em todos eles — e a
+# referência antiga quebraria no instante do corte.
+#
+# `hostPort` preserva o endereço exato: o pod publica a 5000 no host, e
+# `registry.giomartins.dev:5000` continua funcionando sem uma única edição.
+#
+# ## Por que `strategy: Recreate`
+#
+# Não é preferência: é obrigatório. Duas réplicas com `hostPort: 5000` no mesmo
+# nó não coexistem, e o rollout padrão (RollingUpdate) tentaria exatamente isso.
+# Com `Recreate` o pod antigo morre antes de o novo nascer — o que também é o
+# comportamento correto para um serviço que escreve num PVC `ReadWriteOnce`.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: registry-data
+  labels:
+    app.kubernetes.io/name: registry
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      # 12 Gi hoje (6.730 arquivos, 39 repositórios). 20Gi é folga para
+      # alguns meses de build; é reserva num disco de 108G livres, não alocação.
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  labels:
+    app.kubernetes.io/name: registry
+spec:
+  # `replicas: 1` é o estado final. O corte é feito por
+  # `k8s/bootstrap/corta-registry.sh`, que para o container Docker (dono da
+  # 5000), aplica este manifesto e prova um pull real. Enquanto o container
+  # existir e estiver de pé, esta réplica NÃO consegue subir: `hostPort: 5000`
+  # colidiria com ele. O script resolve a ordem.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: registry
+    spec:
+      containers:
+        - name: registry
+          # `docker.io`, NÃO o registry próprio. A regra vale para os outros 14
+          # serviços e é inversa aqui: o registry não pode puxar de si mesmo.
+          #
+          # Digest do índice que o Docker está rodando (o `Id` e o `RepoDigests`
+          # coincidem). A tag `2` sozinha seria móvel.
+          image: registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5000
+              # ## O CORTE
+              #
+              # Esta linha é a migração inteira. Enquanto o container Docker
+              # publica a 5000, ela impede o pod de subir (colisão de porta) —
+              # o que é a trava, não um bug. `corta-registry.sh` para o container
+              # primeiro, e a partir daí `registry.giomartins.dev:5000` é o pod.
+              hostPort: 5000
+          env:
+            # Os quatro vieram de `docker inspect registry`, não do Compose
+            # (o stack está escrito no host e não versionado). Reproduzir o
+            # ambiente real é o que garante que o registry do k8s aceite
+            # exatamente os mesmos `docker login` que o de hoje.
+            - name: REGISTRY_AUTH
+              value: htpasswd
+            - name: REGISTRY_AUTH_HTPASSWD_REALM
+              value: Registry Realm
+            - name: REGISTRY_AUTH_HTPASSWD_PATH
+              value: /auth/htpasswd
+            # Sem isto o registry devolve URLs absolutas construídas a partir do
+            # Host header, e o `docker pull` atrás de proxy recebe um endereço
+            # interno. O container em produção tem esta variável.
+            - name: REGISTRY_HTTP_RELATIVEURLS
+              value: "true"
+            # `docker exec registry ...` de GC depende disto. Desligado, a única
+            # forma de apagar um blob seria mexer no filesystem à mão.
+            - name: REGISTRY_STORAGE_DELETE_ENABLED
+              value: "true"
+          # TCP puro, e não `GET /v2/`: sem credencial o `/v2/` responde 401, que
+          # um probe HTTP trata como falha — o pod entraria em CrashLoop estando
+          # perfeitamente saudável (armadilha da família "401 não é erro").
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            # O container em Docker não tem limite. 512Mi é folga: o registry é
+            # um servidor de arquivos, e um push grande passa por streaming, não
+            # por memória.
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/registry
+            - name: auth
+              mountPath: /auth
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: registry-data
+        # O htpasswd NÃO está no git: o repositório é público, e um hash bcrypt
+        # de senha curta é quebrável offline. Vem de
+        # `k8s/bootstrap/sync-registry-auth.sh`, que o copia do volume Docker.
+        - name: auth
+          secret:
+            secretName: registry-auth
+            # 0444 e não 0400: o processo roda como root na imagem oficial, mas
+            # 0444 evita a classe de erro "permission denied" se a imagem mudar
+            # de usuário. O conteúdo é um hash, não a senha.
+            defaultMode: 0444

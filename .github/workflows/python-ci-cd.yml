@@ -1,8 +1,8 @@
 name: Python deploy
 
-# CI/CD for the Python workers under modules/apps/*/ (has both a
+# CI/CD for the Python workers under apps/*/ (has both a
 # Dockerfile and a pyproject.toml) — touch only
-# modules/apps/finance-customersupport-worker/** and only that image rebuilds,
+# apps/finance-customersupport-worker/** and only that image rebuilds,
 # gets pushed, and redeploys.
 #
 # The `paths:` filter lists EVERY vendored app explicitly, and that is
@@ -11,7 +11,7 @@ name: Python deploy
 # at all, so the image is never rebuilt and nothing reports a problem (§11-1).
 # finance-customersupport-worker/** IS listed below: the app exists in the repo
 # (the conversational consumer/gateway for the finance context, see
-# modules/apps/finance-customersupport-worker and stacks/finance.yml).
+# apps/finance-customersupport-worker and (arquivado) finance stack).
 # packages/** is a trigger too (§11-2): a change there rebuilds the apps that
 # import that package (map in the discover step below), never all of them.
 # Go apps go through go-ci-cd.yml, TypeScript frontends through
@@ -30,9 +30,9 @@ on:
       # line a push that only touched that app would never start a run, so the
       # app would build never and say nothing. The filter and the discover rule
       # have to name the same apps or one of them is dead code.
-      - "modules/apps/finance-api/**"
-      - "modules/apps/finance-customersupport-worker/**"
-      - "modules/apps/finance-openfinance-worker/**"
+      - "apps/finance-api/**"
+      - "apps/finance-customersupport-worker/**"
+      - "apps/finance-openfinance-worker/**"
       # Shared code lives in packages/ (§7). Without this, a commit that only
       # edits the shared contract triggers NOTHING and production keeps the
       # stale contract (§11-2) — the discover rule below needs the run to
@@ -41,7 +41,7 @@ on:
   workflow_dispatch:
     inputs:
       app:
-        description: "Build only this app (blank = all python apps under modules/apps/)"
+        description: "Build only this app (blank = all python apps under apps/)"
         required: false
 
 jobs:
@@ -56,7 +56,7 @@ jobs:
 
       - id: list
         run: |
-          all_apps=$(find modules/apps -mindepth 2 -maxdepth 2 -name pyproject.toml \
+          all_apps=$(find apps -mindepth 2 -maxdepth 2 -name pyproject.toml \
             -exec dirname {} \; | xargs -n1 basename | sort)
 
           if [ -n "${{ inputs.app }}" ]; then
@@ -77,8 +77,8 @@ jobs:
             for pkg in "${!PACKAGE_APPS[@]}"; do
               dependents="${PACKAGE_APPS[$pkg]}"
               for dependent in $dependents; do
-                [ -d "modules/apps/$dependent" ] || {
-                  echo "::error::$pkg maps to modules/apps/$dependent, which does not exist"
+                [ -d "apps/$dependent" ] || {
+                  echo "::error::$pkg maps to apps/$dependent, which does not exist"
                   exit 1
                 }
               done
@@ -86,7 +86,7 @@ jobs:
 
             apps=""
             for a in $all_apps; do
-              if echo "$changed" | grep -q "^modules/apps/$a/"; then
+              if echo "$changed" | grep -q "^apps/$a/"; then
                 apps="$apps $a"
                 continue
               fi
@@ -127,13 +127,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
-        if: hashFiles(format('modules/apps/{0}/pyproject.toml', matrix.app)) != ''
+        if: hashFiles(format('apps/{0}/pyproject.toml', matrix.app)) != ''
         with:
           python-version: "3.12"
 
       - name: Test (Python apps only — skipped for anything without a pyproject.toml)
-        if: hashFiles(format('modules/apps/{0}/pyproject.toml', matrix.app)) != ''
-        working-directory: modules/apps/${{ matrix.app }}
+        if: hashFiles(format('apps/{0}/pyproject.toml', matrix.app)) != ''
+        working-directory: apps/${{ matrix.app }}
         # Absolute path: cwd is the app dir, so a relative pip arg would
         # dead-end. The package itself is installed (not just its deps)
         # because the tests import the worker's own mapping code.
@@ -152,20 +152,20 @@ jobs:
           for pkg in "${{ github.workspace }}"/packages/*/; do
             [ -f "${pkg}pyproject.toml" ] || continue
             name=$(grep -m1 '^name = ' "${pkg}pyproject.toml" | cut -d'"' -f2)
-            if grep -q "\"${name}\"" "${{ github.workspace }}/modules/apps/${{ matrix.app }}/pyproject.toml"; then
+            if grep -q "\"${name}\"" "${{ github.workspace }}/apps/${{ matrix.app }}/pyproject.toml"; then
               echo "vendored dependency detected: ${name} -> ${pkg}"
               pkg_args="$pkg_args $pkg"
             fi
           done
 
-          pip install -q $pkg_args "${{ github.workspace }}/modules/apps/${{ matrix.app }}" pytest
+          pip install -q $pkg_args "${{ github.workspace }}/apps/${{ matrix.app }}" pytest
           # Os extras de dev (pytest-bdd, testcontainers, docker) trazem o BDD e
           # a infra real dos testes de integração. Sem eles, os cenários que usam
           # container se PULAM em silêncio -- e um teste que se pula não existe.
           # Por isso a instalação NÃO leva `|| true`: se falhar, o job vermelha em
           # vez de dar verde sem ter rodado os cenários.
           #
-          pip install -q $pkg_args "${{ github.workspace }}/modules/apps/${{ matrix.app }}[dev]"
+          pip install -q $pkg_args "${{ github.workspace }}/apps/${{ matrix.app }}[dev]"
           python -m pytest -q
 
       # Build + push + digest. Toda a mecânica (túnel do registry, credencial
@@ -185,7 +185,7 @@ jobs:
           app: ${{ matrix.app }}
           # Contexto na raiz: o Dockerfile copia arquivos de `packages/`.
           context: .
-          dockerfile: modules/apps/${{ matrix.app }}/Dockerfile
+          dockerfile: apps/${{ matrix.app }}/Dockerfile
           cache-scope: py-${{ matrix.app }}
 
       - name: Hand the digest to the deploy job

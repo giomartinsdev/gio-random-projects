@@ -1,0 +1,69 @@
+# resource.exclusions do ArgoCD — versão do cluster, sem EndpointSlice.
+#
+# ## Por que isto está no git
+#
+# O manifesto de instalação do ArgoCD traz, por padrão, `Endpoints` e
+# `EndpointSlice` nesta lista. São recursos que o control plane recria sozinho,
+# então observá-los gera evento sem parar — a exclusão é uma otimização
+# legítima.
+#
+# Só que ela quebra a ponte k8s -> Docker. O `Service` sobe, o `EndpointSlice`
+# manual *não* é aplicado, e as conexões caem em `connection refused` — com o
+# `Service` e o `Deployment` aparecendo `Synced`/`Healthy`. Nenhum erro visível.
+#
+# O cluster foi corrigido à mão (removendo o bloco que exclui esses dois kinds).
+# Isto aqui é a mesma correção, versionada: reinstalar o ArgoCD sem este arquivo
+# reintroduz a exclusão e derruba as 7 pontes em silêncio.
+#
+# ## Como aplicar
+#
+#   sudo ./k8s/bootstrap/argocd/apply-resource-exclusions.sh
+#
+# O script é idempotente e reinicia os componentes que leem o `argocd-cm`.
+#
+# ## Por que não é um `kubectl apply` de ConfigMap inteiro
+#
+# O `argocd-cm` tem outras chaves (`url`, `server.insecure`, `timeout.*`) que
+# não são nossas e não estão versionadas. Sobrescrever o ConfigMap inteiro
+# apagaria essas chaves. O script faz patch só da chave `resource.exclusions`.
+
+### Internal Kubernetes resources excluded reduce the number of watched events
+- apiGroups:
+  - coordination.k8s.io
+  kinds:
+  - Lease
+### Internal Kubernetes Authz/Authn resources excluded reduce the number of watched events
+- apiGroups:
+  - authentication.k8s.io
+  - authorization.k8s.io
+  kinds:
+  - SelfSubjectReview
+  - TokenReview
+  - LocalSubjectAccessReview
+  - SelfSubjectAccessReview
+  - SelfSubjectRulesReview
+  - SubjectAccessReview
+### Intermediate Certificate Request excluded reduce the number of watched events
+- apiGroups:
+  - certificates.k8s.io
+  kinds:
+  - CertificateSigningRequest
+- apiGroups:
+  - cert-manager.io
+  kinds:
+  - CertificateRequest
+### Kyverno intermediate and reporting resources excluded reduce the number of watched events and improve performance
+- apiGroups:
+  - kyverno.io
+  - reports.kyverno.io
+  - wgpolicyk8s.io
+  kinds:
+  - PolicyReport
+  - ClusterPolicyReport
+  - EphemeralReport
+  - ClusterEphemeralReport
+  - AdmissionReport
+  - ClusterAdmissionReport
+  - BackgroundScanReport
+  - ClusterBackgroundScanReport
+  - UpdateRequest

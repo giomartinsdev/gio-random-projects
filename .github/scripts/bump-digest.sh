@@ -3,7 +3,7 @@
 #
 # ## Por que isto existe
 #
-# Todo manifesto em `gitops/apps/` fixa **digest**, não tag:
+# Todo manifesto em `k8s/apps/` fixa **digest**, não tag:
 #
 #     image: registry.giomartins.dev:5000/domain-api@sha256:f5952031...
 #
@@ -50,7 +50,7 @@ REGISTRY_HOST="registry.giomartins.dev:5000"
 #
 # `while read` em vez de `mapfile`: o bash 3.2 do macOS (o script roda no
 # runner E na mão) não tem `mapfile`.
-FILES=$(grep -rl "^[[:space:]]*image: ${REGISTRY_HOST}/${APP}@" gitops/apps --include='*.yaml' 2>/dev/null || true)
+FILES=$(grep -rl "^[[:space:]]*image: ${REGISTRY_HOST}/${APP}@" k8s/apps --include='*.yaml' 2>/dev/null || true)
 
 if [ -z "$FILES" ]; then
   echo "::error::nenhum manifesto referencia ${REGISTRY_HOST}/${APP}@sha256:..."

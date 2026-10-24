@@ -1,5 +1,10 @@
 # Servidor de Minecraft na VPS (All the Mods 11)
 
+> **Nota (2026-10):** este servidor foi **descomissionado**. O documento fica
+> como registro de como estava montado (era Docker Compose; os `stacks/*.yml`
+> citados foram removidos do repo). Não reintroduza Docker no host sem desenhar
+> o caminho de volta antes.
+
 Estado em outubro/2026: servidor de **All the Mods 11** (ATM11) — modpack
 NeoForge de **293 mods** sobre **Minecraft 26.1.2** — rodando como **stack do
 Dockhand** (`stacks/minecraft.yml`) na VPS Oracle Ampere (arm64). Este documento
@@ -161,7 +166,7 @@ abertas:
 
 | Camada | Onde | Estado |
 |---|---|---|
-| iptables do host | `modules/infra/terraform/main.tf` → `firewall_rules` `"tcp 25565"`, aplicado pelo `host_baseline` | no código, aplicado |
+| iptables do host | `infra/terraform/main.tf` → `firewall_rules` `"tcp 25565"`, aplicado pelo `host_baseline` | no código, aplicado |
 | Oracle Security List | console OCI → Networking → VCN → Security Lists → Add Ingress Rule | **manual**, já aplicado |
 
 Regra na Security List: source `0.0.0.0/0`, protocolo **TCP**, porta `25565`.

@@ -1,115 +1,146 @@
 # Arquitetura
 
-Visão da arquitetura **de hoje** neste repositório: apps, comunicação e
-deploy. Cada diagrama abaixo foi conferido contra o código e os arquivos
-`stacks/*.yml` — quando divergir, o código manda.
+Visão **do que roda hoje**. Cada diagrama foi conferido contra o cluster vivo
+(`kubectl get pods -A`) e contra `k8s/apps/`. Quando divergir, o código manda —
+e se o código também divergir do cluster, o cluster é o bug.
 
-- **Stacks** (o que roda no host): `stacks/*.yml`, gerenciadas pelo Docker
-  Compose via **Dockhand** (git-backed). Desde 2026-10-18 os stacks por
-  domínio são agregados em `project-infra.yml` (infra/persistência/
-  observabilidade) e `project-apps.yml` (apps), via `include:` do Compose —
-  ver `stacks/README.md`.
-- **Apps** (o que é construído): `modules/apps/*`.
-- **Contrato compartilhado**: `packages/finance-contracts` (envelope + eventos
-  do contexto financeiro; importado por `finance-api` e pelo worker, nunca
-  copiado).
+- **Cluster**: k3s, um nó, arm64. Toda a carga em Kubernetes.
+- **Apps** (o que é construído): `apps/*` → imagens no registry.
+- **Manifests** (o que é reconciliado): `k8s/apps/<namespace>/<serviço>/`.
+- **Infra de nuvem**: `infra/terraform` — Cloudflare (DNS, Access, mTLS) e
+  baseline do host (firewall, pacotes).
+- **Contrato compartilhado**: `packages/finance-contracts` (envelope + eventos,
+  importado por `finance-api` e pelo worker, nunca copiado).
 
 ---
 
-## 1. Visão geral do host
+## 1. Visão geral
 
-Uma VPS (arm64) roda tudo em Docker Compose, na rede externa **`apps`**. O
-**ingress** (nginx, no stack `core`) é a única porta 80/443; ele roteia por
-hostname para cada serviço. Cloudflare fica na frente (DNS + Access). Os
-apps e a infra vivem em dois stacks agregados (`project-infra`,
-`project-apps`) que incluem os arquivos por domínio.
+Um VPS (arm64) roda um cluster k3s de um nó. O **Cloudflare** fica na frente
+de tudo (DNS + Access + TLS de borda). O tráfego entra pelo **ingress-nginx**
+(`IngressClass nic`, `hostNetwork`, dono da :80/:443) e vai por hostname para
+o Service certo. Um registro de container não existe mais: Docker zerado.
 
 ```mermaid
 flowchart TB
   net((Internet))
-  cf[["Cloudflare<br/>DNS + Access + Tunnel"]]
+  cf[["Cloudflare<br/>DNS + Access + TLS"]]
   net --> cf
 
-  subgraph VPS["VPS (arm64) · rede docker externa: apps"]
+  subgraph VPS["VPS (arm64) · k3s single-node"]
     direction TB
-    ingress["ingress (nginx:80)<br/>stack core"]
+    nic["ingress-nginx (class nic)<br/>hostNetwork :80/:443"]
 
-    subgraph core["stack core (boot, protegida)"]
-      registry["registry:5000"]
-      dockhand["dockhand<br/>deploy de stacks git"]
-      ingress
-    end
-
-    subgraph infra["stack project-infra (Dockhand id 21)"]
-      pg[("postgres:17<br/>db domain")]
-      rmq[("rabbitmq:4")]
-      minio[("minio<br/>buckets de frontend")]
-      vault["vaultwarden"]
-      evolution["evolution-api<br/>(gateway WhatsApp)"]
-      ninerouter["9router<br/>(proxy de IA)"]
-      graf["grafana"]
-      loki["loki / tempo / prometheus"]
-      alloy["alloy (OTLP)"]
-      dbmcp["db-mcp<br/>(leitura p/ agente)"]
-    end
-
-    subgraph apps["stack project-apps (Dockhand id 22)"]
+    subgraph applications["ns applications"]
       dapi["domain-api"]
       dworker["domain-worker"]
       fapi["finance-api"]
       fwk["finance-customersupport-worker"]
-      telaapi["tela-api"]
-      omb["maus (omb)"]
+      telaapi["tela-api + mediamtx + coturn"]
+      ninerouter["9router"]
+      evolution["evolution-api"]
       draw["excalidraw"]
     end
 
-    ingress -.proxy por hostname.-> dapi
-    ingress -.-> fapi
-    ingress -.-> evolution
-    ingress -.-> telaapi
-    ingress -.-> graf
+    subgraph persistence["ns persistence"]
+      pg[("postgres")]
+      rmq[("rabbitmq")]
+      minio[("minio")]
+      vw["vaultwarden"]
+      eredis[("evolution-redis")]
+    end
+
+    subgraph obs["ns observability"]
+      graf["grafana"]
+      loki["loki / tempo / prometheus"]
+      alloy["alloy (OTLP)"]
+    end
+
+    subgraph support["ns support"]
+      registry["registry"]
+      dbmcp["db-mcp + gateway"]
+      adminer["adminer"]
+    end
+
+    argocd["ns argocd<br/>ArgoCD (argo.giomartins.dev)"]
+    rancher["ns cattle-system<br/>Rancher"]
+    kubero["ns kubero<br/>Kubero"]
+
+    nic -.proxy por hostname.-> dapi
+    nic -.-> fapi
+    nic -.-> evolution
+    nic -.-> graf
+    nic -.-> argocd
+    nic -.-> rancher
   end
 
-  cf --> ingress
-  registry -->|pull :latest| apps
-  dockhand -.webhook de deploy.-> apps
+  cf --> nic
+  registry -->|pull| applications
+  argocd -.reconcilia.-> applications
+  argocd -.-> persistence
+  argocd -.-> obs
+  argocd -.-> support
 ```
 
 > **Frontends não são containers.** `tela-frontend`, `hub-frontend` e
 > `finance-frontend` são builds estáticos espelhados em buckets do MinIO; o
 > ingress serve o bucket direto.
->
-> **FC Clubs e Prospecta foram removidos** do repositório (2026-10): apps,
-> stacks, rotas do ingress, DNS/Access no Terraform e as tabelas nos schemas.
-> Os dados que já existiam no banco continuam lá — nada foi dropado.
+
+> **`nic` é o único ingress.** Traefik e servicelb estão desabilitados no k3s
+> (`--disable traefik --disable servicelb`) — dois controllers na :80 brigam.
 
 ---
 
-## 2. O contexto financeiro — fluxo WhatsApp (o coração)
+## 2. Como o deploy chega ao cluster
+
+Ninguém faz `kubectl apply` de workload. O caminho é git → imagem → digest →
+ArgoCD.
+
+```mermaid
+flowchart LR
+  push["push em main<br/>(muda apps/&lt;app&gt;/**)"]
+  push --> discover["discover<br/>(só os apps afetados)"]
+  discover --> build["build + test<br/>arm64 via QEMU"]
+  build --> reg[("registry.giomartins.dev<br/>:sha-&lt;commit&gt;")]
+  reg --> bump["commit do digest<br/>em k8s/apps/&lt;ns&gt;/&lt;app&gt;/"]
+  bump --> argo["ArgoCD detecta o commit"]
+  argo --> sync["kubectl apply (server-side)<br/>pelo sync loop"]
+  sync --> verify["Synced + Healthy"]
+```
+
+O ApplicationSet (`k8s/bootstrap/appset.yaml`) varre `k8s/apps/<ns>/*` e cria
+uma Application por diretório. **O basename do diretório é o nome da
+Application** — renomear pasta apaga a Application e pruna os recursos,
+inclusive PVC.
+
+O manifesto fixa **digest**, não tag. Tag `latest` num manifesto GitOps
+significa "o cluster deriva sozinho quando alguém publica".
+
+---
+
+## 3. O contexto financeiro — fluxo WhatsApp
 
 O usuário fala por WhatsApp; o `finance-customersupport-worker` é o
-**encarregado do atendimento** (conversa e avisos proativos). A
-`finance-api` é a **ACL** (sem banco, sem broker): valida e repassa. O
-`domain-api` é o front door do CQRS; o `domain-worker` é o **único
-escritor** do banco. `packages/finance-contracts` é o contrato único.
+**encarregado do atendimento**. A `finance-api` é a **ACL** (sem banco, sem
+broker): valida e repassa. O `domain-api` é o front door do CQRS; o
+`domain-worker` é o **único escritor** do banco.
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor U as Usuário (WhatsApp)
-  participant EV as Evolution API<br/>(project-infra)
-  participant W as finance-customersupport-worker<br/>(project-apps)
-  participant F as finance-api (ACL)<br/>(project-apps)
-  participant DA as domain-api<br/>(project-apps)
-  participant RMQ as RabbitMQ<br/>(project-infra)
-  participant DW as domain-worker<br/>(project-apps)
-  participant PG as Postgres<br/>(project-infra)
+  participant EV as Evolution API<br/>(applications)
+  participant W as finance-customersupport-worker
+  participant F as finance-api (ACL)
+  participant DA as domain-api
+  participant RMQ as RabbitMQ<br/>(persistence)
+  participant DW as domain-worker
+  participant PG as Postgres<br/>(persistence)
 
   U->>EV: mensagem de texto
   EV->>RMQ: exchange evolution<br/>routing evolution.messages.upsert
   RMQ->>W: consome evolution.messages.upsert
-
-  Note over W: NLU por regras → intent<br/>(despesa/receita/orçamento/leitura)
+  Note over W: NLU por regras → intent
 
   alt escrita (finance.*)
     W->>F: POST /commands {action, payload}
@@ -117,28 +148,26 @@ sequenceDiagram
     DA->>RMQ: publica em domain.commands
     RMQ->>DW: consome domain.commands.queue
     DW->>PG: aplica (idempotente) + audit_log
-    DW->>RMQ: publica evento (outbox durável)<br/>exchange domain.events
+    DW->>RMQ: publica evento (outbox durável)
     F-->>W: 202 accepted
     W-->>EV: sendText (resposta imediata)
   else leitura (finance.query.*)
     W->>F: POST /queries {action, payload}
     F->>DA: GET /finance/*
     DA->>PG: projeção (read-only)
-    DA-->>F: projeção JSON
-    F-->>W: projeção
+    F-->>W: projeção JSON
     W-->>EV: sendText ou sendMedia (card/PNG)
   end
 
-  RMQ->>W: consome domain.events<br/>(fila finance.customersupport.events)
-  Note over W: confirmação do próprio comando<br/>é suprimida (dedup), alerta de<br/>orçamento é sempre enviado
+  RMQ->>W: consome domain.events
+  Note over W: confirmação do próprio comando<br/>é suprimida (dedup)
   W-->>EV: sendText (aviso proativo)
   EV-->>U: resposta no WhatsApp
 ```
 
 **Regra de isolamento (§1.1):** nem a `finance-api` nem o worker têm
-`DATABASE_URL`, driver de banco ou publicador de comando. Só o `domain`
-(`domain.yml`, stack `project-apps`) toca o banco. O worker **consome**
-broker (Evolution + eventos de domínio) e **fala HTTP** com a ACL.
+`DATABASE_URL`, driver de banco ou publicador de comando. Só o `domain` toca o
+banco. O worker **consome** broker e **fala HTTP** com a ACL.
 
 ### Superfícies da ACL
 
@@ -148,7 +177,7 @@ flowchart LR
   subgraph ACL["finance-api (sem banco/broker)"]
     c["POST /commands<br/>→ /commands do domain-api (202)"]
     cs["POST /commands/sync<br/>→ /sync (200/422/504)"]
-    q["POST /queries<br/>→ GET /finance/* (§4.2)"]
+    q["POST /queries<br/>→ GET /finance/*"]
   end
   W -->|escrita| c
   W -->|escrita confirmada| cs
@@ -157,17 +186,17 @@ flowchart LR
 
 ---
 
-## 3. CQRS — broker e persistência (`domain.yml`, stack project-apps)
+## 4. CQRS — broker e persistência
 
-O `domain-api` publica comando; o `domain-worker` é o único escritor e
-publica eventos via **outbox durável** (o evento é gravado como pendente
-antes do publish; um relay reenvia o que ficou, at-least-once).
+O `domain-api` publica comando; o `domain-worker` é o único escritor e publica
+eventos via **outbox durável** (o evento é gravado como pendente antes do
+publish; um relay reenvia o que ficou, at-least-once).
 
 ```mermaid
 flowchart TB
   dapi["domain-api<br/>GETs + POST /commands + POST /sync"]
 
-  subgraph rabbit["RabbitMQ (project-infra)"]
+  subgraph rabbit["RabbitMQ (persistence)"]
     ex_cmd{{"exchange domain.commands<br/>(direct)"}}
     q_cmd["domain.commands.queue"]
     ex_ev{{"exchange domain.events<br/>(fanout)"}}
@@ -176,7 +205,7 @@ flowchart TB
   dworker["domain-worker<br/>(único escritor)"]
   outbox[("outbox<br/>pending → published")]
   pg[("Postgres · db domain")]
-  consumers["consumidores de eventos<br/>(finance-customersupport-worker, ...)"]
+  consumers["consumidores de eventos"]
 
   dapi -->|publish comando| ex_cmd
   ex_cmd --> q_cmd
@@ -189,49 +218,41 @@ flowchart TB
 
 ---
 
-## 4. Deploy / CI-CD
+## 5. Observabilidade
 
-Um pipeline por linguagem, auto-descoberto por arquivo (`go.mod`,
-`pyproject.toml`) ou lista explícita (frontends). Cada um builda, testa,
-publica `registry.giomartins.dev:5000/<app>:latest` + `:<sha>`, e chama o
-**webhook do stack no Dockhand** (via SSH loopback no host).
+Todo app emite traces/métricas OTLP para o **alloy** (`:4318`, público em
+`otel.giomartins.dev`); o stdout dos pods vai para o **loki**. Dashboards no
+**grafana** (`grafana.giomartins.dev`, atrás de Access + login). `domain-api` e
+o worker usam `OTEL_SERVICE_NAME` por serviço.
 
-```mermaid
-flowchart LR
-  push["push em main<br/>(muda modules/apps/&lt;app&gt;/**)"]
-  push --> discover["discover<br/>(só os apps afetados)"]
-  discover --> build["build + test<br/>arm64 via QEMU"]
-  build --> reg[("registry:5000<br/>:latest + :sha")]
-  reg --> webhook["webhook do stack<br/>no Dockhand (id 22)"]
-  webhook --> up["docker compose up -d<br/>--remove-orphans"]
-  up --> verify["prova: container rodando<br/>+ guard de órfão de rename"]
-```
-
-- **Go** (`go-ci-cd.yml`): `domain-api`, `domain-worker`, `tela-api`.
-- **Python** (`python-ci-cd.yml`): `finance-api`,
-  `finance-customersupport-worker`, `finance-openfinance-worker`.
-- **TypeScript** (`ts-frontend-ci-cd.yml`): builds estáticos → buckets do MinIO.
-- **Terraform** (`tf-ci-cd.yml`): Cloudflare DNS/Access + `host_baseline`.
-
-Todos os apps caem no **stack 22** (`project-apps`); o `ai-image.yml`
-(id 21, `project-infra`) é o único que aponta outro id.
+Estado (`loki-data`, `prometheus-data`, `grafana-data`, `tempo-data`,
+`alloy-state`) mora em PVCs no namespace `observability`.
 
 ---
 
-## 5. Observabilidade
+## 6. Ingress — o que decide o roteamento
 
-Todo app emite traces/métricas OTLP para o **alloy** (`:4318` e público em
-`otel.giomartins.dev`); o stdout de todo container vai para o **loki**.
-Dashboards no **grafana** (`grafana.giomartins.dev`, atrás de Access +
-login). O `domain-api` e o worker usam `OTEL_SERVICE_NAME` por serviço.
+Todo roteamento público é `Ingress` nativo (`networking.k8s.io/v1`) com
+annotations `nginx.org/*`. O padrão e as armadilhas medidas estão em
+[`../k8s/README.md`](../k8s/README.md) e nos comentários de
+`k8s/apps/persistence/routes-persistence/ingress.yaml`.
+
+Três regras que custam caro:
+
+1. **`nginx.org/websocket-services` em request sem `Upgrade` manda
+   `Connection: close`.** Já quebrou o 9router (abortava body de ~480 KB).
+2. **O upstream gerado inclui o nome do Ingress.** Renomear o Ingress quebra
+   snippets em silêncio — o reload falha e mantém a config anterior.
+3. **O NIC não emite `proxy_http_version 1.1`** em Ingress nativo; vai por
+   snippet em todos.
 
 ---
 
 ## Referências
 
-- `stacks/README.md` — os stacks, ordem de subida, segredos.
-- `modules/apps/README.md` — cada app.
-- `docs/finance-system-spec.md` — a spec do contexto financeiro (CQRS,
-  invariantes, plano de teste).
-- `modules/apps/domain-api/README.md` — contrato de escrita/leitura.
-- `modules/apps/finance-api/README.md` — a ACL (endpoints, relays).
+- [`../k8s/README.md`](../k8s/README.md) — operação do cluster e armadilhas
+- [`../apps/README.md`](../apps/README.md) — catálogo de apps
+- [`finance-system-spec.md`](finance-system-spec.md) — spec do contexto financeiro
+- [`novo-app-ci-cd.md`](novo-app-ci-cd.md) — criar app nova
+- [`../apps/domain-api/README.md`](../apps/domain-api/README.md) — contrato de escrita/leitura
+- [`../apps/finance-api/README.md`](../apps/finance-api/README.md) — a ACL

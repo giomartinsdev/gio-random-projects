@@ -1,0 +1,195 @@
+# Kubero — UI de PaaS sobre o cluster (o "Coolify do Kubernetes").
+#
+# O que ele é: interface web para ver pipelines, apps, addons, logs e console
+# de pod, deployando de git. Kubernetes-native (operator + UI, 2 containers),
+# guarda tudo no etcd do cluster — não precisa de banco extra.
+#
+# Por que não Coolify: o Coolify gerencia Docker via SSH. Ele não tem
+# Kubernetes como destino de deploy (a doc oficial diz "Coolify uses Docker
+# to run applications... on the servers you connect"). Rodá-lo aqui seria
+# criar um segundo plano de controle que compete com o k3s em vez de
+# cooperar. Kubero é o equivalente k8s-native do mesmo conceito.
+#
+# Relação com o ArgoCD (não é ou-um-ou-outro):
+#   - ArgoCD  = fonte da verdade declarativa. Reconcilia `k8s/apps/**`.
+#   - Kubero  = conveniência operacional. Deploya no cluster o que você
+#               apontar na UI, com build (nixpacks/buildpacks/Dockerfile).
+#   Os dois podem coexistir; a doc do Kubero cita ArgoCD explicitamente como
+#   forma de fazer IaC das pipelines dele.
+#
+# Pré-requisitos (já instalados): ingress-nginx (NodePort 30945/30421, para
+# não disputar a porta 80 com o nginx do host), metrics-server, cert-manager.
+---
+# Operator — CRDs + controlador. Sem ele, o CR `Kubero` abaixo não é
+# reconhecido pelo API server.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubero-operator-system
+---
+# NOTA sobre a imagem do kube-rbac-proxy:
+#
+# O `deploy/operator.yaml` oficial referencia
+# `gcr.io/kubebuilder/kube-rbac-proxy:v0.11.0`, que NÃO EXISTE MAIS — o GCR
+# removeu o repositório kubebuilder e o pull falha com "not found"
+# (ErrImagePull). Isso quebra a instalação oficial em qualquer cluster novo.
+#
+# Substituto: `quay.io/brancz/kube-rbac-proxy:v0.11.0`, do autor original da
+# ferramenta. Mesma versão, multi-arch (tem arm64, que é o caso da VPS
+# Oracle Ampere). Aplicado via `kubectl set image` no bootstrap; este
+# comentário existe para o próximo que for reinstalar do zero e bater no
+# mesmo erro.
+#
+# TODO: substituir o apply remoto do operator.yaml por um manifesto
+# vendorizado aqui, com a imagem já corrigida — hoje o bootstrap depende de
+# baixar o YAML do upstream e remendar a imagem.
+---
+# UI + CR. O operator observa este recurso e cria Deployment/Service/Ingress.
+apiVersion: application.kubero.dev/v1alpha1
+kind: Kubero
+metadata:
+  name: kubero
+  namespace: kubero
+spec:
+  replicaCount: 1
+
+  image:
+    # Tag fixa, não `latest`: com tag móvel o ArgoCD não vê diff e o cluster
+    # fica preso numa versão antiga em silêncio. Mesma regra do CI.
+    repository: ghcr.io/kubero-dev/kubero/kubero
+    tag: "v3.1.1"
+    pullPolicy: IfNotPresent
+
+  service:
+    port: 2000
+    type: ClusterIP
+
+  ingress:
+    # Desligado de propósito. O ingress-nginx do cluster escuta em NodePort
+    # (30945), não na 80 — a 80 é do nginx do host, que serve 20 domínios em
+    # Docker. Se o Kubero criasse um Ingress aqui, ele ficaria exposto por
+    # um caminho que ninguém alcança de fora (a security list da Oracle
+    # bloqueia 30000-32767).
+    #
+    # Quando houver um hostname (ex.: kubero.giomartins.dev), o caminho é o
+    # mesmo dos outros serviços: A record no Terraform + server{} no
+    # default.conf do nginx do host apontando para um NodePort fixo.
+    enabled: false
+    className: ""
+    hosts: []
+    tls: []
+
+  # Registry: desligado. As imagens que o Kubero precisa puxar já existem no
+  # registry local (giomartins.dev:5000), que roda em Docker no host. Subir
+  # um registry só dele criaria um segundo registry e um PVC — e o registry
+  # atual já é a fonte da verdade das imagens do projeto.
+  registry:
+    enabled: false
+    create: false
+
+  # Sem Prometheus dedicado: o cluster não tem kube-prometheus-stack (o
+  # Grafana atual só recebe métricas OTel das apps). Ligar isto exigiria
+  # subir a stack inteira (~1-2 GB) — decisão separada.
+  prometheus:
+    enabled: false
+
+  kubero:
+    namespace: kubero
+    context: inClusterContext
+
+    # StorageClass do PVC do banco interno (SQLite do Kubero: pipelines, apps,
+    # addons, histórico). Precisa ser explícito: o template upstream faz
+    # `storageClassName: ""` quando o campo está vazio, e string vazia
+    # significa "sem storage class" — o PVC fica Pending para sempre com
+    # "no persistent volumes available for this claim and no storage class is
+    # set". O cluster tem `local-path` como default, mas o template não herda
+    # o default; tem que ser nomeado.
+    database:
+      storageClassName: local-path
+      accessModes:
+        - ReadWriteOnce
+      size: 1Gi
+
+    # Preenchido no bootstrap a partir do secret `kubero-secrets`. Não
+    # coloque segredo aqui: o repositório é PÚBLICO.
+    sessionKey: ""
+    webhook_url: ""
+
+    auth:
+      # Sem SSO por enquanto. O login local do Kubero (criado no primeiro
+      # acesso) é a camada de autenticação. Quando for expor por domínio,
+      # o padrão do projeto é Cloudflare Access por fora (Google SSO) —
+      # como dockhand e vault.
+      github:
+        enabled: false
+      oauth2:
+        enabled: false
+
+    config:
+      kubero:
+        readonly: false
+        admin:
+          disabled: false
+        console:
+          # Console de pod pelo navegador. Ligado: é metade do motivo de
+          # existir uma UI (a outra é ver logs sem decorar kubectl).
+          enabled: true
+        banner:
+          show: false
+      # Sem cert-manager a emitir para o ingress do Kubero (ele está
+      # desligado). O TLS continua terminando no Cloudflare.
+      clusterissuer: letsencrypt-prod
+      notifications: []
+      templates:
+        enabled: true
+        catalogs:
+          - name: "Kubero"
+            description: "Kubero templates"
+            templateBasePath: "https://raw.githubusercontent.com/kubero-dev/kubero/main/services/"
+            index:
+              url: "https://raw.githubusercontent.com/kubero-dev/templates/main/index.json"
+              format: "json"
+          - name: "Kubero Frameworks"
+            description: "Kubero templates"
+            templateBasePath: "https://raw.githubusercontent.com/kubero-dev/kubero/main/services/"
+            index:
+              url: "https://raw.githubusercontent.com/kubero-dev/templates/main/index-frameworks.json"
+              format: "json"
+      # Sem buildPacks: eles assumem cluster multi-nó e buildam a imagem
+      # dentro do cluster (consumindo CPU/RAM do nó único). Para os serviços
+      # deste projeto o build continua no CI (GitHub Actions), que publica
+      # no registry local — o Kubero só puxa. Reative quando fizer sentido
+      # buildar dentro do cluster.
+      buildPacks: []
+      podSizeList:
+        # Ajustado ao nó único (4 vCPU / 24 GB, ~11 GB livres). Os defaults
+        # do upstream (small = 0.5Gi/250m, medium = 4Gi/2000m) assumem um
+        # cluster maior.
+        - name: small
+          description: "Small (CPU: 0.25, Memory: 0.5Gi)"
+          default: true
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 500m
+        - name: medium
+          description: "Medium (CPU: 1, Memory: 2Gi)"
+          resources:
+            requests:
+              memory: 1Gi
+              cpu: 500m
+            limits:
+              memory: 2Gi
+              cpu: 1000m
+        - name: large
+          description: "Large (CPU: 2, Memory: 4Gi)"
+          resources:
+            requests:
+              memory: 2Gi
+              cpu: 1000m
+            limits:
+              memory: 4Gi
+              cpu: 2000m

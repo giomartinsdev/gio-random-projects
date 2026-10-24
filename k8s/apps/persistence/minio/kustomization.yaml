@@ -1,0 +1,51 @@
+# minio — object storage S3 que serve os SPAs estáticos (fatia 5).
+#
+# ## O Service mudou de lugar, e isso é a migração em si
+#
+# Até agora o Service `minio` morava em `k8s/apps/bridges/`: sem selector, com
+# um `EndpointSlice` escrito à mão pelo timer do host apontando para o IP do
+# container Docker. Junto com ele havia uma linha `"minio:minio"` no
+# `sync-external-endpoints.sh`.
+#
+# Neste commit os três saem/entram ao mesmo tempo:
+#
+#   k8s/apps/bridges/minio.yaml        REMOVIDO
+#   sync-external-endpoints.sh            linha REMOVIDA
+#   k8s/apps/minio/                    Service COM selector
+#
+# Não é organização cosmética. Dois objetos com o mesmo nome no mesmo namespace
+# não coexistem, e um Service com selector ao lado de um EndpointSlice manual é
+# exatamente a armadilha 6: o `endpointslice-controller` vê o selector, cria um
+# slice próprio, e o slice manual com IP de container fica ao lado. O kube-proxy
+# escolhe um dos dois — e o sintoma é `connection refused` com ArgoCD `Synced`.
+#
+# ## Por que dá para fazer isso com o container ainda no ar
+#
+# O Deployment sobe com `replicas: 0`, então o Service fica sem endpoints. E
+# ninguém sente, porque **nada no cluster consome `minio`**:
+#
+#   pods do namespace (13)      -> zero env de S3/minio/9000
+#   containers Docker (32)      -> zero env de S3
+#   ingress                     -> fala `127.0.0.1:9000`, a porta do host
+#
+# O único consumidor real é externo ao cluster: o CI de frontend, que faz
+# `docker run --network apps ... s3 sync --endpoint-url http://minio:9000`.
+# Esse sai do caminho no cutover, não agora (ver deployment.yaml).
+#
+# ## `labels` e não `commonLabels`
+#
+# O Service aqui TEM selector — então commonLabels seria inofensivo. Mas o
+# namespace já é declarado abaixo, e manter a mesma forma dos outros diretórios
+# de app evita que alguém copie este arquivo para uma ponte e repita a
+# armadilha 6.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: persistence
+
+resources:
+  - deployment.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: giomartins

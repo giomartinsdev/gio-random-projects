@@ -4,7 +4,7 @@
 # later steps in the same job can use them like any other env var --
 # without a GH Actions secret ever holding the value, and without ever
 # touching vault.giomartins.dev or Cloudflare Access. Read-side sibling
-# of modules/infra/terraform/scripts/seed_vault.sh -- see that script
+# of infra/terraform/scripts/seed_vault.sh -- see that script
 # for why the tiny local self-signed-HTTPS proxy is unavoidable even
 # for purely-internal traffic (the bw CLI refuses non-HTTPS server
 # URLs outright).

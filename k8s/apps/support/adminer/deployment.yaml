@@ -1,0 +1,75 @@
+# adminer no cluster — UI web para inspecionar bancos.
+#
+# Roda em paralelo ao container Docker (stacks/compute.yml), que ainda serve
+# adminer.giomartins.dev -> 127.0.0.1:8092.
+#
+# ## A ponte com o postgres
+#
+# O adminer precisa alcançar o postgres, que continua em Docker. Pods NÃO
+# alcançam a rede Docker (a política FORWARD do iptables é DROP), então a ponte
+# é o Service sem selector `postgres` em k8s/apps/bridges/ — mantido pelo
+# timer sync-external-endpoints.
+#
+# Este manifesto NÃO define Service nem EndpointSlice: a fonte é única, em
+# bridges/. Antes havia um `postgres-external` aqui, que duplicava a ponte.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adminer
+  labels:
+    app.kubernetes.io/name: adminer
+    app.kubernetes.io/part-of: giomartins
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: adminer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: adminer
+    spec:
+      containers:
+        - name: adminer
+          # Digest da imagem que ESTÁ RODANDO no Docker agora, não a tag mais
+          # recente. Descoberto comparando o HTML: o container em produção
+          # serve Adminer 6.0.1; este manifesto estava em 6.1.2.
+          #
+          # Esse desvio violava o contrato do MIGRATION.md — migração de infra
+          # não mistura upgrade de versão, porque as duas mudanças têm rollbacks
+          # diferentes e um bug apareceria sem se saber qual das duas causou.
+          #
+          # `adminer:latest` local aponta para 6.0.1 (build de 2026-08-18), que
+          # não é a mesma imagem da tag `6.0.1` do Hub (build de 2026-09-17).
+          # Por isso o digest, e não a tag: é o único jeito de fixar exatamente
+          # o que atende gente hoje.
+          image: adminer@sha256:043db066c4532719f49e35355a620f0bbe48fc862f6bfccda72f441b162f092e
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          env:
+            # Sem isto, o adminer assume "localhost" e o usuário teria que
+            # digitar o servidor à mão a cada login. `postgres-external` é o
+            # nome do Service acima — resolve pelo DNS do cluster.
+            - name: ADMINER_DEFAULT_SERVER
+              value: "postgres"
+

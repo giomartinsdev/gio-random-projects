@@ -4,14 +4,14 @@ Como levar um projeto novo de zero até um domínio próprio rodando em
 produção, neste repositório. O caminho todo é: **descoberta automática →
 build da imagem → push no registry → `terraform apply`**.
 
-Se você quiser um exemplo completo para copiar, `modules/apps/tela-api` é o
+Se você quiser um exemplo completo para copiar, `apps/tela-api` é o
 mais recente e o mais autocontido (um container, um domínio, sem banco).
 
 ---
 
 ## 1. Onde o app mora
 
-Tudo vive em `modules/apps/<nome>/`. O `<nome>` da pasta vira o nome da
+Tudo vive em `apps/<nome>/`. O `<nome>` da pasta vira o nome da
 imagem (`registry.giomartins.dev/<nome>`) e do container — escolha com
 carinho, porque ele aparece em vários lugares.
 
@@ -23,8 +23,8 @@ explícita**:
 
 | Linguagem/camada | Workflow | Como decide quais apps buildar |
 | --- | --- | --- |
-| Go | `.github/workflows/go-ci-cd.yml` | qualquer pasta com `go.mod` em `modules/apps/<nome>/go.mod` |
-| Python | `.github/workflows/python-ci-cd.yml` | qualquer pasta com `pyproject.toml` em `modules/apps/<nome>/pyproject.toml` |
+| Go | `.github/workflows/go-ci-cd.yml` | qualquer pasta com `go.mod` em `apps/<nome>/go.mod` |
+| Python | `.github/workflows/python-ci-cd.yml` | qualquer pasta com `pyproject.toml` em `apps/<nome>/pyproject.toml` |
 | TypeScript frontend | `.github/workflows/ts-frontend-ci-cd.yml` | nome do app no `ALLOWED_APPS` do job `discover` |
 
 Um `package.json` sozinho não basta para o TypeScript pegar seu app.
@@ -34,17 +34,17 @@ repo hoje: um backend TS novo precisa do próprio workflow, no mesmo
 espírito do `ts-frontend-ci-cd.yml` mas sem os `VITE_*` — a config
 dele entra como env de runtime via Terraform.)
 
-Go continua auto-descoberto por `find modules/apps -mindepth 2
--maxdepth 2 -name go.mod`, **um nível abaixo de `modules/apps/`**:
+Go continua auto-descoberto por `find apps -mindepth 2
+-maxdepth 2 -name go.mod`, **um nível abaixo de `apps/`**:
 
 > Um app Go com frontend React põe o `package.json` em
-> `modules/apps/<nome>/client/package.json` (profundidade 3) — os
+> `apps/<nome>/client/package.json` (profundidade 3) — os
 > workflows TypeScript não enxergam essa profundidade, e o app builda só
 > pelo pipeline Go, um container, um build. É o que `tela-api` faz.
 
 ## 3. Dockerfile
 
-O build roda com `context: modules/apps/<nome>`, então tudo que você
+O build roda com `context: apps/<nome>`, então tudo que você
 `COPY` é relativo à pasta do app. Multi-stage, terminando em distroless:
 
 ```dockerfile
@@ -65,7 +65,7 @@ Não esqueça o `.dockerignore` (`node_modules`, artefatos de build).
 
 ## 4. Módulo Terraform
 
-Crie `modules/infra/terraform/modules/compute/apps/<nome>/` com
+Crie `infra/terraform/modules/compute/apps/<nome>/` com
 `main.tf`, `variables.tf`, `versions.tf` e `outputs.tf`. O mínimo:
 
 ```hcl
@@ -98,11 +98,11 @@ Portas já usadas hoje: 8000 (domain-api), 8007 (tela-api), 8018
 > `hub-frontend` (e `finance-frontend`) não seguem mais essa receita: são
 > builds estáticos espelhados direto num bucket do MinIO, sem container
 > nenhum rodando —
-> veja `modules/infra/terraform/static_sites.tf` e o README de
+> veja `infra/terraform/static_sites.tf` e o README de
 > `compute/services/ingress`. Se o app novo for só uma SPA estática sem
 > nenhuma parte de backend, esse é o caminho mais simples, não o daqui.
 
-Depois registre o módulo em `modules/infra/terraform/main.tf`:
+Depois registre o módulo em `infra/terraform/main.tf`:
 
 ```hcl
 module "compute_apps_<nome>" {
@@ -118,7 +118,7 @@ module "compute_apps_<nome>" {
 
 Duas edições, e as duas importam:
 
-**`modules/infra/terraform/locals.tf`** — a regra de ingress do túnel.
+**`infra/terraform/locals.tf`** — a regra de ingress do túnel.
 A porta tem que bater com o `external_port` do módulo:
 
 ```hcl
@@ -128,7 +128,7 @@ A porta tem que bater com o `external_port` do módulo:
 },
 ```
 
-**`modules/infra/terraform/variables.tf`** — se o app tem autenticação
+**`infra/terraform/variables.tf`** — se o app tem autenticação
 própria (ou é público de propósito), adicione o hostname em
 `excluded_hostnames`, senão o Cloudflare Access põe um login Google na
 frente e só a sua conta entra. Comente o porquê na mesma linha; toda
@@ -183,7 +183,7 @@ domínio de proxy do Discord).
 git add . && git commit -m "feat(<nome>): ..." && git push
 ```
 
-O push em `modules/apps/**` dispara o workflow certo sozinho. Só que na
+O push em `apps/**` dispara o workflow certo sozinho. Só que na
 primeira vez existe uma corrida: o workflow `tf-ci-cd` (que roda em
 mudanças de infra) pode tentar criar o container **antes** de a imagem
 existir no registry, e falha com `not found`. É esperado — o pipeline do
@@ -198,7 +198,7 @@ gh workflow run ts-frontend-ci-cd.yml -f app=<nome>
 ```
 
 Note que mudanças **só** em `.github/workflows/**` não disparam nada (o
-filtro de path é `modules/apps/**`) — nesses casos o `workflow_dispatch`
+filtro de path é `apps/**`) — nesses casos o `workflow_dispatch`
 acima é obrigatório.
 
 ## 9. Conferindo que subiu de verdade
@@ -213,7 +213,7 @@ curl -s https://<nome>.giomartins.dev/ | grep -o 'index-[A-Za-z0-9_-]*\.js'
 
 ## Checklist
 
-- [ ] `modules/apps/<nome>/` com `go.mod`, `pyproject.toml` **ou** `package.json` na raiz (não mais de um)
+- [ ] `apps/<nome>/` com `go.mod`, `pyproject.toml` **ou** `package.json` na raiz (não mais de um)
 - [ ] se for uma SPA: nome adicionado ao `ALLOWED_APPS` de `ts-frontend-ci-cd.yml` (um `package.json` sozinho não é suficiente)
 - [ ] `Dockerfile` + `.dockerignore`
 - [ ] módulo Terraform em `modules/compute/apps/<nome>/`

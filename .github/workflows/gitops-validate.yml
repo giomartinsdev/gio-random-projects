@@ -2,7 +2,7 @@
 #
 # Não valida Dockerfile nem testa código: isso é papel dos pipelines por
 # linguagem. Aqui o escopo é estreito — garantir que o que vai para
-# `gitops/` é YAML de Kubernetes sintaticamente válido e que o kustomize
+# `k8s/` é YAML de Kubernetes sintaticamente válido e que o kustomize
 # renderiza. Um manifesto quebrado mergeado em `main` não "falha o deploy"
 # de forma visível: o ArgoCD fica em `OutOfSync`/`SyncFailed` em silêncio e
 # o cluster continua na versão anterior. Este check é o que torna isso um
@@ -12,14 +12,14 @@ name: gitops-validate
 on:
   pull_request:
     paths:
-      - 'gitops/**'
-      - 'stacks/**'
+      - 'k8s/**'
+      - 'images/**'
       - '.github/**'
   push:
     branches: [main]
     paths:
-      - 'gitops/**'
-      - 'stacks/**'
+      - 'k8s/**'
+      - 'images/**'
       - '.github/**'
   workflow_dispatch:
 
@@ -67,9 +67,9 @@ jobs:
           # `bootstrap/` é um ApplicationSet (CRD do ArgoCD): não existe no
           # schema do Kubernetes puro, então validá-lo aqui falharia. Ele é
           # aplicado uma vez, à mão, e é validado pelo próprio ArgoCD.
-          dirs=$(find gitops/apps -name kustomization.yaml -exec dirname {} \; | sort)
+          dirs=$(find k8s/apps -name kustomization.yaml -exec dirname {} \; | sort)
           if [ -z "$dirs" ]; then
-            echo "nenhum app em gitops/apps/ — nada a validar"
+            echo "nenhum app em k8s/apps/ — nada a validar"
             exit 0
           fi
           for d in $dirs; do
@@ -106,9 +106,9 @@ jobs:
         run: |
           set -euo pipefail
           # Procura `image:` com `:latest` ou sem tag (que implica latest).
-          if grep -rnE '^\s*image:\s*[^[:space:]]+' gitops/apps \
+          if grep -rnE '^\s*image:\s*[^[:space:]]+' k8s/apps \
                | grep -E ':latest(\s|$)' ; then
-            echo "::error::Use tag imutável (semver/sha) em gitops/. 'latest' impede o ArgoCD de detectar builds novos."
+            echo "::error::Use tag imutável (semver/sha) em k8s/. 'latest' impede o ArgoCD de detectar builds novos."
             exit 1
           fi
           echo "nenhuma tag móvel encontrada"
@@ -125,7 +125,7 @@ jobs:
           sudo wget -qO /usr/bin/yq \
             https://github.com/mikefarah/yq/releases/download/v4.52.5/yq_linux_amd64
           sudo chmod +x /usr/bin/yq
-          ./gitops/bootstrap/checa-profiles.sh stacks
+          ./k8s/bootstrap/checa-profiles.sh stacks
 
       # `bump-digest.sh` e `cluster-secret-env.sh` rodam em TODO deploy de
       # imagem. Um erro de sintaxe aqui so apareceria no proximo push de app --

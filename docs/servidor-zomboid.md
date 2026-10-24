@@ -1,5 +1,7 @@
 # Servidor de Project Zomboid na VPS
 
+> **Nota (2026-10):** servidor **descomissionado**. Documento histórico.
+
 Estado em agosto/2026: servidor dedicado de **Project Zomboid B42**
 rodando **nativamente** na VPS Oracle Ampere (arm64) — **fora do
 Docker e fora do Terraform**, como serviço systemd gerenciado pelo

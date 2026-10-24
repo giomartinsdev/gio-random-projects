@@ -20,7 +20,7 @@ eggs/
 # lib/ and lib64/ deliberately NOT ignored here (removed from this
 # otherwise-generic Python template) -- this repo has no Python
 # package needing them ignored, and the bare pattern was silently
-# swallowing modules/apps/post-api/src/lib/*, a real TypeScript
+# swallowing apps/post-api/src/lib/*, a real TypeScript
 # source directory, never committed despite `git add` appearing to
 # succeed. Any /.../lib/ path anyone actually wants ignored later
 # should use an explicit path, not this repo-wide catch-all.
@@ -147,7 +147,7 @@ celerybeat.pid
 # RabbitMQ
 # Ancorados na raiz de propósito. Sem a "/" inicial, `rabbitmq/` casa com
 # QUALQUER diretório chamado `rabbitmq` em qualquer nível — e engoliu
-# `gitops/apps/rabbitmq/` inteiro, em silêncio: `git add` não reclamou, o
+# `k8s/apps/persistence/rabbitmq/` inteiro, em silêncio: `git add` não reclamou, o
 # commit ficou vazio para esse caminho, e o ArgoCD simplesmente gerou 12
 # Applications em vez de 13. O manifesto do broker nunca chegou ao remoto.
 /mnesia/
@@ -232,13 +232,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Node / npm (modules/apps/post-api)
+# Node / npm (apps/post-api)
 node_modules/
 npm-debug.log*
 .npm
 
-# Repo de terceiro clonado localmente para consulta (o client MIT que o
-# clubs-ingest vendoriza em modules/apps/clubs-ingest/src/clubs_ingest/).
-# Não versionar: é um repo com o próprio origin, e o que o produto usa já está
-# vendorizado com a licença ao lado.
-fc27-clubs-api/

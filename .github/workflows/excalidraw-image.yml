@@ -1,6 +1,6 @@
 name: Excalidraw image
 
-# Builda e publica a imagem do stack `excalidraw` (stacks/excalidraw.yml) e
+# Builda e publica a imagem do stack `excalidraw` (images/excalidraw) e
 # dispara o redeploy.
 #
 # Por que este workflow existe: o upstream excalidraw/excalidraw não publica
@@ -10,7 +10,7 @@ name: Excalidraw image
 #
 # Trigger manual de propósito (como maus/ai): até a primeira imagem existir no
 # registry interno, um push automático só dispararia um build QEMU longo. Para
-# bumps automáticos depois, adicione um arquivo stacks/excalidraw/VERSION e um
+# bumps automáticos depois, adicione um arquivo images/excalidraw/VERSION e um
 # push trigger nesse path.
 #
 # Depois do primeiro build: no Dockhand, deixe a stack `excalidraw` com
@@ -36,13 +36,13 @@ jobs:
 
       # O Dockerfile do tag pinado builda o SPA (yarn) e copia o build pro
       # nginx, mas fixa node:18 — que não instala mais (uma dep transitiva
-      # exige node >= 20). Sobrescrevemos com stacks/excalidraw/Dockerfile
+      # exige node >= 20). Sobrescrevemos com images/excalidraw/Dockerfile
       # (node:22). Clone no tag pinado e builda de lá.
       - name: Fetch upstream at the pinned tag
         run: |
           git clone --depth 1 --branch "$EXCALIDRAW_VERSION" \
             https://github.com/excalidraw/excalidraw.git _excalidraw-upstream
-          cp stacks/excalidraw/Dockerfile _excalidraw-upstream/Dockerfile
+          cp images/excalidraw/Dockerfile _excalidraw-upstream/Dockerfile
 
       # Mesma action dos outros: túnel do registry + credencial do cluster +
       # BuildKit com netns do host + cache no Actions.

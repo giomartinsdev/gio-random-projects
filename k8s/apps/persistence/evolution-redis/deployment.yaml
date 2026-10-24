@@ -1,0 +1,160 @@
+# evolution-redis — cache/sessão do Evolution API. O ÚLTIMO serviço que ainda
+# não tem equivalente em k8s.
+#
+# ## O que este Redis guarda (e por que não é "só cache")
+#
+# Medido em 2026-10-23, db 6:
+#
+#   evolution:instance:4b81fda4-...   HASH   860 campos   TTL -1 (persistente)
+#
+# O hash tem `pre-key-*`, `session-<jid>_1.0`, `tctoken-*`,
+# `app-state-sync-key-*`, `device-list-*`, `lid-mapping-*`. São as estruturas do
+# Baileys — as chaves de criptografia da sessão do WhatsApp. Perder isso exige
+# repareamento (QR novo) do número que atende produção.
+#
+# `CACHE_REDIS_SAVE_INSTANCES=false` no evolution-api sugere "não persiste
+# sessão", mas o que a flag controla é o registro da instância no cache, não o
+# armazenamento das chaves. O teste que decidiu está em
+# `k8s/apps/evolution-api/deployment.yaml`: `docker restart` do
+# evolution-api não pediu QR.
+#
+# ## Por que a janela deste serviço é DIFERENTE do postgres
+#
+# O postgres migrou com `stop → cp → start` porque não há como tirar uma cópia
+# consistente de um PGDATA em movimento. O Redis **tem replicação nativa**, e
+# os pods já alcançam o container pela ponte existente (`evolution-redis:6379`
+# é justamente o Service que esta migração vai substituir).
+#
+# Então a cópia aqui é por replicação, sem parar nada:
+#
+#   1. PVC + pod sobem VAZIOS (`replicas: 1` na janela). Um Redis vazio é
+#      inofensivo: ninguém aponta para ele ainda.
+#   2. De dentro do pod: `redis-cli REPLICAOF evolution-redis 6379`
+#      → o pod recebe o dataset completo do container, por db.
+#   3. Prova: `DBSIZE` e `HLEN` do hash batem com o container (1 / 860).
+#   4. `redis-cli REPLICAOF NO ONE` promove o pod a mestre (sai do read-only).
+#   5. Só então o Service ganha `selector`.
+#
+# Nenhum instante de indisponibilidade, e o container antigo permanece intacto
+# como rollback até o Service virar.
+#
+# ## Por que não copiar o volume com `cp -a`
+#
+# Funcionaria — é 2.1M. Mas exigiria parar o container e deixaria o
+# evolution-api sem cache durante a cópia, arriscando erro de escrita no meio
+# de uma conversa. A replicação chega ao mesmo estado sem essa janela. O
+# `copy-volume.sh` continua sem entrada para `evolution-redis` de propósito:
+# quem for copiar o volume à mão está seguindo um procedimento pior.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: evolution-redis-data
+  labels:
+    app.kubernetes.io/name: evolution-redis
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      # 2.1 MB hoje (AOF + dump.rdb). 1Gi é folga absurda para um cache de
+      # sessão, mas o `local-path` aloca por diretório e não por uso — pedir
+      # menos não economiza nada e arrisca encher se o AOF crescer.
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: evolution-redis
+  labels:
+    app.kubernetes.io/name: evolution-redis
+spec:
+  # 1 DESDE JÁ — e isto é uma diferença DELIBERADA em relação ao postgres.
+  #
+  # O postgres ficou em `replicas: 0` até a janela porque o entrypoint, ao ver o
+  # PVC vazio, roda `initdb` e cria um cluster novo que "se considera
+  # consistente" — e a cópia do banco real teria que sobrescrever um PGDATA já
+  # inicializado.
+  #
+  # Um Redis vazio não tem esse problema: é um mestre vazio e nada mais. E nada
+  # resolve para ele, porque o Service `evolution-redis` continua sendo a ponte
+  # para o container até o commit do cutover. Subir agora:
+  #
+  #   - vincula o PVC (senão `local-path`, que é WaitForFirstConsumer, o deixa
+  #     `Pending` e o Application fica `Progressing` sem motivo);
+  #   - permite testar a replicação FORA da janela, com calma;
+  #   - é destruído e reescrito inteiro pelo full-sync do `REPLICAOF`, então
+  #     qualquer lixo que ele grave antes é irrelevante.
+  #
+  # O full-sync do REPLICAOF apaga o dataset local antes de aplicar o do mestre,
+  # portanto não existe cenário em que dado do pod vazio se misture com o real.
+  replicas: 1
+  strategy:
+    # Duas instâncias no mesmo AOF escrevem arquivos conflitantes. Recreate é a
+    # única estratégia correta para armazenamento RWO.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: evolution-redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: evolution-redis
+    spec:
+      containers:
+        - name: evolution-redis
+          # Digest do índice multi-arch da imagem EM EXECUÇÃO no container
+          # (`redis:7-alpine`, REDIS_VERSION=7.4.11). Índice, não manifest de
+          # plataforma: contém linux/arm64 e linux/amd64.
+          #
+          # `7-alpine` é tag MÓVEL. A migração não mistura mudança de infra com
+          # upgrade de versão (ver "Contrato de imagem" no README) — e aqui isso
+          # importa mais que o normal: AOF gerado por 7.4 é lido por 7.4.
+          image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+          # `--appendonly yes` é o mesmo comando do Compose. SEM isto o Redis
+          # sobe só com RDB (snapshot a cada 60s/10000 escritas) e uma queda no
+          # meio perderia pre-keys recém-geradas.
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          # `redis-cli ping` responde PONG num Redis vazio e também num réplica
+          # em sincronia parcial. Prova que o PROCESSO está vivo, não que o
+          # dado certo está lá — é o mesmo falso positivo do `pg_isready` e do
+          # `rabbitmq-diagnostics ping`. A prova de dado é o `HLEN` da janela.
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 25m
+              # O dataset inteiro é 2.1M. 64Mi cobre o overhead do processo com
+              # folga de mais de 20x.
+              memory: 64Mi
+            limits:
+              # Teto para o caso de o AOF crescer sem reescrita (`auto-aof-rewrite`
+              # default é 100% de crescimento). Não é dimensionamento de carga:
+              # é um disjuntor para o Redis não competir com o Postgres.
+              memory: 256Mi
+          # NÃO declara `securityContext.runAsUser`. O entrypoint da imagem
+          # oficial, quando roda como root, faz `chown redis` no /data e depois
+          # `exec gosu redis`. Fixar `runAsUser: 999` faria esse chown falhar e
+          # o Redis não subiria com volume vindo de cópia. Mesma razão do
+          # postgres.
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: evolution-redis-data

@@ -1,0 +1,187 @@
+# minio — object storage S3. Serve os SPAs estáticos e é a fatia 5 da migração.
+#
+# ## O que foi medido antes de escrever isto
+#
+# Procurei em TODOS os containers e em TODOS os pods do namespace por
+# `minio`, `9000` e variáveis S3. Resultado: zero consumidores internos.
+#
+#   docker ps (32 containers)  -> nenhum com env de S3
+#   pods giomartins (13)       -> nenhum com env de S3
+#   ingress                    -> 4 server_blocks, todos do host
+#
+# Isso é diferente de todo outro serviço migrado até agora. O `minio` não é
+# dependência de aplicação: é um servidor de arquivos estáticos atrás do nginx.
+# Quem fala com ele é o navegador, via `tela`, `hub` e `finance` no ingress.
+#
+# Consequência para o cutover: não existe "migrar todos os consumidores
+# internos antes de desligar o container". O consumidor é o nginx, e ele é uma
+# linha. Mas também significa que um erro aqui é visível para o usuário final —
+# não para um worker.
+#
+# ## O volume tem 8 buckets, e 5 deles não estão no Compose
+#
+#   bet-frontend, buteco-class-frontend, buteco-media, cch-frontend,
+#   financas-frontend, finance-frontend, hub-frontend, tela-frontend
+#
+# O `minio-buckets` do Compose só cria 3 (tela, hub, finance). Os outros 5 são
+# resíduo de projetos antigos, ainda servindo (ou servindo ninguém). Copiar o
+# volume inteiro preserva todos — não cabe a esta migração decidir que são
+# lixo. Um `mc rb` aqui seria irreversível e fora de escopo.
+#
+# ## Por que o PVC não é `ReadWriteMany`
+#
+# `local-path` é `ReadWriteOnce` por construção. Uma réplica só. O MinIO em
+# modo single-node não escala horizontalmente sem erasure coding e um volume
+# por disco — outra arquitetura, outro risco, e nada aqui pede por isso.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  labels:
+    app.kubernetes.io/name: minio
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      # 8,1M hoje. 10Gi é folga confortável para um object store de SPAs; o
+      # custo é reserva em um disco de 136G livres, não alocação.
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  labels:
+    app.kubernetes.io/name: minio
+spec:
+  # Ativado em 2026-10-23 depois de o volume ser copiado com o container parado
+  # (7,5M -> 7,5M, idêntico) e o container religado antes deste pod subir.
+  # `replicas: 1` na primeira vez é uma prova, não um corte: o ingress ainda
+  # falava 127.0.0.1:9000 (container) enquanto o pod subia.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: minio
+          # NÃO é `minio/minio@sha256:...`. Aquele repositório saiu do Docker Hub
+          # e agora responde `pull access denied, repository does not exist`.
+          # O container em produção continuava rodando só porque a imagem estava
+          # no cache local do Docker — e o primeiro pod falhou com ErrImagePull,
+          # provando que "está rodando há 11 horas" não é prova de que a imagem
+          # é puxável.
+          #
+          # A imagem foi retaggeada para o registry próprio, que é o contrato
+          # deste repositório (`registry.giomartins.dev:5000/<app>:<tag>`):
+          # minio/minio@sha256:14cea... -> local, tag RELEASE.2025-09-07T16-13-09Z
+          #
+          # Consequência assumida: o cluster agora depende do registry local para
+          # subir o minio. Ele já dependia para todas as apps próprias; a diferença
+          # é que esta imagem não existe em mais lugar nenhum. Ver a dívida
+          # registrada no README.
+          image: registry.giomartins.dev:5000/minio:RELEASE.2025-09-07T16-13-09Z
+          imagePullPolicy: IfNotPresent
+
+          # Comando lido do container, não do Compose. O `--console-address`
+          # importa: sem ele o console sobe numa porta aleatória e o
+          # `minio.giomartins.dev` (que aponta para a 9001) para de funcionar
+          # sem nenhum erro.
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            # `MINIO_BROWSER=on` estava no container. Não afeta a API S3, mas
+            # afeta o console — e o console é o `minio.giomartins.dev`.
+            - name: MINIO_BROWSER
+              value: "on"
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: MINIO_ROOT_PASSWORD
+          ports:
+            - name: s3
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          # Três endpoints existem e respondem 200 no container atual. Uso
+          # `/minio/health/live` para liveness (processo vivo) e
+          # `/minio/health/ready` para readiness (pronto para servir). Trocar
+          # por `/minio/health/cluster` seria errado: single-node sem erasure
+          # coding pode reportar diferente, e ele mede topologia, não saúde.
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: s3
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: s3
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 25m
+              memory: 128Mi
+            # O Compose não define mem_limit. 1Gi é teto de segurança para
+            # servir arquivos estáticos; acima disso o problema não seria
+            # memória.
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minio-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  labels:
+    app.kubernetes.io/name: minio
+spec:
+  # NodePort 30900 para o ingress do host (que hoje fala 127.0.0.1:9000).
+  #
+  # O ClusterIP 9000 continua valendo, e é o que permite que o nome `minio`
+  # signifique a mesma coisa dentro do cluster. Hoje nenhum pod usa; amanhã,
+  # quando um SPA virar app, não muda nada.
+  #
+  # ATENÇÃO ao substituir a ponte: `k8s/apps/bridges/minio.yaml` precisa
+  # sair do git no MESMO commit que este arquivo entra. Dois Services com o
+  # nome `minio` não coexistem, e o ArgoCD ficaria com um deles órfão.
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: minio
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+      nodePort: 30900
+    # A 9001 fica SÓ como ClusterIP: quem consome o console é o navegador,
+    # via ingress. Mas o ingress precisa alcançar o pod, então ela também
+    # precisa de NodePort. 30901, espelhando o padrão 9001 -> 30901.
+    - name: console
+      port: 9001
+      targetPort: console
+      nodePort: 30901

@@ -1,7 +1,7 @@
 name: Go deploy
 
-# CI/CD for the Go apps under modules/apps/*/ (has both a Dockerfile
-# and a go.mod) — touch only modules/apps/domain-api/** and only the
+# CI/CD for the Go apps under apps/*/ (has both a Dockerfile
+# and a go.mod) — touch only apps/domain-api/** and only the
 # domain-api image rebuilds, gets pushed, and redeploys; same for
 # domain-worker. TypeScript apps go through ts-frontend-ci-cd.yml,
 # Python ones through python-ci-cd.yml — see either workflow's own
@@ -40,11 +40,11 @@ on:
   push:
     branches: [main]
     paths:
-      - "modules/apps/**"
+      - "apps/**"
   workflow_dispatch:
     inputs:
       app:
-        description: "Build only this app (blank = all apps under modules/apps/)"
+        description: "Build only this app (blank = all apps under apps/)"
         required: false
 
 jobs:
@@ -59,7 +59,7 @@ jobs:
 
       - id: list
         run: |
-          all_apps=$(find modules/apps -mindepth 2 -maxdepth 2 -name go.mod \
+          all_apps=$(find apps -mindepth 2 -maxdepth 2 -name go.mod \
             -exec dirname {} \; | xargs -n1 basename | sort)
 
           if [ -n "${{ inputs.app }}" ]; then
@@ -70,7 +70,7 @@ jobs:
             changed=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
             apps=""
             for a in $all_apps; do
-              if echo "$changed" | grep -q "^modules/apps/$a/"; then
+              if echo "$changed" | grep -q "^apps/$a/"; then
                 apps="$apps $a"
               fi
             done
@@ -106,14 +106,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
-        if: hashFiles(format('modules/apps/{0}/go.mod', matrix.app)) != ''
+        if: hashFiles(format('apps/{0}/go.mod', matrix.app)) != ''
         with:
           go-version: "1.25"
-          cache-dependency-path: modules/apps/${{ matrix.app }}/go.sum
+          cache-dependency-path: apps/${{ matrix.app }}/go.sum
 
       - name: Test (Go apps only — skipped for anything without a go.mod)
-        if: hashFiles(format('modules/apps/{0}/go.mod', matrix.app)) != ''
-        working-directory: modules/apps/${{ matrix.app }}
+        if: hashFiles(format('apps/{0}/go.mod', matrix.app)) != ''
+        working-directory: apps/${{ matrix.app }}
         # `-count=1` desliga o cache de RESULTADO de teste. Sem ele, o
         # `actions/setup-go` acima restaura GOCACHE entre runs e um teste de
         # integração pode aparecer "ok (cached)" sem ter rodado -- o
@@ -141,8 +141,8 @@ jobs:
           vps-host: ${{ secrets.VPS_HOST }}
           vps-ssh-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           app: ${{ matrix.app }}
-          context: modules/apps/${{ matrix.app }}
-          dockerfile: modules/apps/${{ matrix.app }}/Dockerfile
+          context: apps/${{ matrix.app }}
+          dockerfile: apps/${{ matrix.app }}/Dockerfile
           cache-scope: go-${{ matrix.app }}
 
       # O `digest` que o build-push-action devolve é o do manifesto que

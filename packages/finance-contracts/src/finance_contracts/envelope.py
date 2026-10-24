@@ -34,7 +34,7 @@ ENVELOPE_SCHEMA_VERSION: Final = "1"
 ACTION_MAX_LENGTH: Final = 128
 
 # The write doors of domain-api, as verified in
-# modules/apps/domain-api/internal/infrastructure/http/router.go.
+# apps/domain-api/internal/infrastructure/http/router.go.
 #
 # ``/commands`` is the **asynchronous envelope door** (added in slice 3): it
 # decodes the bare {action, payload} and answers ``202`` immediately, which is
@@ -116,7 +116,7 @@ SYNC_HTTP_TO_STATUS: Final[Mapping[int, str]] = {
 # today any of these reaches the worker and is answered as
 # ``unknown action: "finance..."`` -> 422 on /sync. That is the honest
 # current behaviour and is exactly what the ACL's tests assert; slice 2
-# (worker dispatch, .github/workflows, stacks/) is what makes them apply.
+# (worker dispatch, .github/workflows, k8s manifests) is what makes them apply.
 FINANCE_ACTION_PREFIX: Final = "finance."
 
 ACTION_REGISTER_TRANSACTION: Final = "finance.transaction.register"

@@ -1,6 +1,6 @@
 name: TypeScript frontend deploy
 
-# CI/CD for the TypeScript frontend apps under modules/apps/*/ --
+# CI/CD for the TypeScript frontend apps under apps/*/ --
 # tela-frontend (screen sharing's own page, split from tela-api),
 # finance-frontend and hub-frontend (the shell that renders the others).
 # go-ci-cd.yml/python-ci-cd.yml/tf-ci-cd.yml
@@ -11,24 +11,24 @@ name: TypeScript frontend deploy
 #
 # None of these runs as a container: all are plain static builds
 # mirrored into their own MinIO bucket, served by the ingress
-# (stacks/ingress/default.conf) proxying straight to MinIO's S3 API.
+# (arquivado, era stacks/ingress/default.conf) proxying straight to MinIO's S3 API.
 # The bucket and its public-read policy are infra, created once by the
-# minio-buckets one-shot in stacks/persistence.yml, not per push --
+# minio-buckets one-shot in arquivado (era stacks/persistence.yml), not per push --
 # same for the ingress route. This workflow just replaces a bucket's
 # contents with the latest build.
 #
 # ALLOWED_APPS below is the actual pipeline boundary -- add a new
 # frontend app there (and nowhere else) to bring it under this
 # pipeline; a package.json alone isn't enough, since that's equally
-# true of every non-frontend app in modules/apps/*/.
+# true of every non-frontend app in apps/*/.
 
 on:
   push:
     branches: [main]
     paths:
-      - "modules/apps/tela-frontend/**"
-      - "modules/apps/hub-frontend/**"
-      - "modules/apps/finance-frontend/**"
+      - "apps/tela-frontend/**"
+      - "apps/hub-frontend/**"
+      - "apps/finance-frontend/**"
   workflow_dispatch:
     inputs:
       app:
@@ -59,7 +59,7 @@ jobs:
             changed=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
             apps=""
             for a in $all_apps; do
-              if echo "$changed" | grep -q "^modules/apps/$a/"; then
+              if echo "$changed" | grep -q "^apps/$a/"; then
                 apps="$apps $a"
               fi
             done
@@ -94,10 +94,10 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: modules/apps/${{ matrix.app }}/package-lock.json
+          cache-dependency-path: apps/${{ matrix.app }}/package-lock.json
 
       - name: Install and test
-        working-directory: modules/apps/${{ matrix.app }}
+        working-directory: apps/${{ matrix.app }}
         run: |
           npm ci
           npx tsc -p tsconfig.json --noEmit
@@ -117,7 +117,7 @@ jobs:
       # origins as long as each is in its "authorized JavaScript origins";
       # the secret overrides exist for when a product gets its OWN client.
       - name: Resolve the app's Google OAuth client ID
-        working-directory: modules/apps/${{ matrix.app }}
+        working-directory: apps/${{ matrix.app }}
         run: |
           # The public fallback: the shared client whose JS origins include
           # finance.
@@ -134,7 +134,7 @@ jobs:
           echo "VITE_GOOGLE_CLIENT_ID=$id" >> "$GITHUB_ENV"
 
       - name: Build ${{ matrix.app }}
-        working-directory: modules/apps/${{ matrix.app }}
+        working-directory: apps/${{ matrix.app }}
         env:
           VITE_TELA_API_URL: https://tela-api.giomartins.dev
           VITE_OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.giomartins.dev
@@ -196,6 +196,6 @@ jobs:
           AWS_DEFAULT_REGION: us-east-1
           MINIO_ENDPOINT: https://minio.giomartins.dev
         run: |
-          aws s3 sync "modules/apps/${{ matrix.app }}/dist" "s3://${{ matrix.app }}" \
+          aws s3 sync "apps/${{ matrix.app }}/dist" "s3://${{ matrix.app }}" \
             --endpoint-url "$MINIO_ENDPOINT" --delete
 

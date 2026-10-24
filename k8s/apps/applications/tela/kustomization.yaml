@@ -1,0 +1,56 @@
+# tela — screen sharing (API + MediaMTX + coturn).
+#
+# ## Por que os três num diretório só
+#
+# Eles não são três serviços independentes: são um pipeline. O browser fala com
+# a `tela-api`, que fala com o `mediamtx` por loopback, e a mídia vai direto do
+# browser para a porta UDP do `mediamtx`, com o `coturn` como relay quando o
+# caminho direto falha. Subir um sem os outros não produz nada que funcione —
+# é a mesma razão de `domain/` conter a API e o worker num Application só.
+#
+# ## Por que `hostNetwork: true` nos três, e não `hostPort`
+#
+# No Compose os três são `network_mode: host`, e não é preguiça:
+#
+#   - o `mediamtx` anuncia candidatos ICE com o IP PÚBLICO (168.138.135.6) e
+#     precisa que a porta 8217 UDP/TCP seja a do host, senão o browser recebe
+#     um endereço que não roteia;
+#   - o `coturn` reserva uma faixa de relay (49160-49200 UDP) e precisa
+#     controlar as portas que anuncia;
+#   - a `tela-api` fala com os outros dois por `127.0.0.1`, porque em host
+#     networking não existe DNS de container para resolver `mediamtx`.
+#
+# `hostPort` chegaria às mesmas portas por DNAT, mas mudaria o endereço de
+# origem que os serviços veem e criaria a armadilha 31 de novo (DNAT fura o
+# `INPUT` do firewall). `hostNetwork` é o mesmo modelo de rede de hoje: o que o
+# firewall já permite continua valendo sem tocar em regra nenhuma.
+#
+# ## Sem Service, de propósito
+#
+# Nada dentro do cluster precisa alcançar estes três por nome: quem fala com a
+# `tela-api` é o ingress, que também é `hostNetwork` e chega por
+# `127.0.0.1:8007`. Um Service seria pior que inútil: com o pod em
+# `hostNetwork`, `podIP` é o IP do NÓ, então um NodePort faria DNAT para
+# `10.0.0.209:8007` — e a API escuta só em `127.0.0.1`, que não responde nesse
+# endereço. O Service ficaria `Synced`, os endpoints existiriam, e o host daria
+# 502. É o mesmo motivo de o `ingress` não ter Service (ver
+# `k8s/apps/support/ingress/deployment.yaml`).
+#
+# ## `replicas: 0` até o corte
+#
+# As portas são do host. Enquanto o Docker estiver de pé segurando 8217, 3478 e
+# 8007, um pod que tente bindar entra em `CrashLoop` por colisão — não por bug.
+# O corte é: parar os três containers primeiro, então virar as réplicas.
+# Rollback é o inverso e igualmente barato.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: applications
+
+resources:
+  - mediamtx.yaml
+  - coturn.yaml
+  - api.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: giomartins

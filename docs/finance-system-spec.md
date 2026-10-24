@@ -1,5 +1,11 @@
 # 💳 WhatsApp Financial Dashboard & Engine — Technical Specification
 
+> **Nota (2026-10):** esta spec descreve o desenho **quando foi decidido**, na
+> era Docker Compose. Ela cita `stacks/*.yml`, que não existem mais. Onde o
+> código divergiu, o código manda: hoje as apps são pods (`apps/` → imagens) e
+> os manifests vivem em `k8s/apps/`. A arquitetura atual está em
+> [`architecture.md`](architecture.md).
+
 > **Status:** rascunho para revisão · **Branch:** `feat/finance-whatsapp-system`
 > **Escopo desta spec:** desenho do domínio + o caminho real de deploy neste
 > repositório (stack Dockhand) + plano de teste.
@@ -186,7 +192,7 @@ criar um segundo CQRS:
 O contrato de escrita é o da casa e **vive no `domain-api`**: a `finance-api`
 traduz cada comando para o envelope `{action, payload}` (família `finance.*`) e
 faz o request. O contrato é o já documentado em
-`modules/apps/domain-api/README.md`:
+`apps/domain-api/README.md`:
 
 - `POST /sync` → `200` aplicado / `422` rejeitado / `504` timeout — e
   **timeout ≠ não-escrito**: o comando pode continuar na fila e ser aplicado
@@ -373,7 +379,7 @@ entra no financeiro e os dois apps ficam no `python-ci-cd.yml` (§11).
 
 ## 7. Estrutura no Monorepo (caminho real)
 
-Nada de `finance-system/apps/...`: o repo é `modules/apps/<nome>/`, e o nome da
+Nada de `finance-system/apps/...`: o repo é `apps/<nome>/`, e o nome da
 pasta **é** o nome da imagem e do container.
 
 ```
@@ -425,7 +431,7 @@ eventos de domínio — a fonte única que `finance-api` e worker importam).
 - Não há registry Python privado: `packages/` é instalado **por caminho** a partir
   da raiz (o contexto de build do Dockerfile é a raiz, ver abaixo).
 - Nada muda na **descoberta** do `python-ci-cd.yml`: ele acha *apps* por
-  `modules/apps/*/pyproject.toml`, então `packages/` **não** vira um app
+  `apps/*/pyproject.toml`, então `packages/` **não** vira um app
   deployado — é o que se quer. O que o CI precisa é tratar `packages/**` como
   gatilho de rebuild dos apps que o consomem (§11).
 
@@ -433,7 +439,7 @@ eventos de domínio — a fonte única que `finance-api` e worker importam).
 
 ```dockerfile
 # Contexto de build = RAIZ DO REPO (é o que o python-ci-cd.yml usa) — é o que
-# permite copiar packages/ e modules/apps/<nome> na mesma build.
+# permite copiar packages/ e apps/<nome> na mesma build.
 FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 RUN useradd --create-home app
@@ -442,7 +448,7 @@ WORKDIR /app
 # assim o pip satisfaz a dependência `finance-contracts` com o pacote local (não
 # há registry privado). Instalar o app sozinho falharia ao resolver essa dep.
 COPY packages/finance-contracts /tmp/finance-contracts
-COPY modules/apps/<nome> /tmp/app
+COPY apps/<nome> /tmp/app
 RUN pip install --no-cache-dir /tmp/finance-contracts /tmp/app \
     && rm -rf /tmp/finance-contracts /tmp/app
 USER app
@@ -609,7 +615,7 @@ gateway.
    compose file `finance.yml`, nome `finance`.
 3. Cadastrar as variáveis de stack da tabela §10.3.
 4. Ajustar o CI: `python-ci-cd.yml` — (a) adicionar
-   `modules/apps/finance-api/**` e `modules/apps/finance-customersupport-worker/**`
+   `apps/finance-api/**` e `apps/finance-customersupport-worker/**`
    ao filtro `paths:`; (b) adicionar as duas entradas ao
    `declare -A STACK=( ... )` do job `deploy`.
 5. Preencher o mapa do passo 4 com o **id numérico** da stack nova. Para o
@@ -618,7 +624,7 @@ gateway.
    + `dockhand ls`; o webhook sem segredo responde `401 Invalid webhook secret`,
    ou seja está registrado e alcançável). Logo `[finance-api]=14`.
    O `finance-customersupport-worker` fica **vazio de propósito** enquanto
-   `modules/apps/finance-customersupport-worker/` não existir: os dois serviços são
+   `apps/finance-customersupport-worker/` não existir: os dois serviços são
    o MESMO stack (um webhook só), e app descoberto sem id falha alto.
 6. `python-ci-cd.yml` já usa contexto de build = raiz do repo; **não** alterar.
 7. Primeiro deploy: rodar o workflow à mão
@@ -673,13 +679,13 @@ O worker **não publica porta** (não serve nada).
 
 No Terraform (que **segue** cuidando de DNS/Access):
 
-1. **`modules/infra/terraform/locals.tf`** — `finance-api.giomartins.dev` em
+1. **`infra/terraform/locals.tf`** — `finance-api.giomartins.dev` em
    `local.services` (porta 8018) e `finance.giomartins.dev` como **static site**
    (bucket `finance-frontend`). É **daqui** que sai o A record: `main.tf` monta
    `hostnames = concat([for s in local.services : s.hostname], [for s in
    local.static_sites : s.hostname])` e `modules/cloud/cloudflare/dns.tf` faz
    `for_each = toset(var.hostnames)`. Sem a entrada **não há DNS**.
-2. **`modules/infra/terraform/variables.tf`** — `finance-api.giomartins.dev` e
+2. **`infra/terraform/variables.tf`** — `finance-api.giomartins.dev` e
    `finance.giomartins.dev` em **`excluded_hostnames`**: a API tem auth própria
    (`X-API-Key`) e a SPA chama ela cross-origin pelo browser — um redirect de
    SSO Google quebraria toda chamada (mesma razão do `finance-api`); a SPA é
@@ -728,17 +734,17 @@ publica `:latest` + `:<sha>` e chama o webhook do Dockhand.
 
 Mudanças necessárias:
 
-1. **Filtro `paths:`** — hoje lista `modules/apps/finance-api/**`,
-   `modules/apps/finance-customersupport-worker/**` e
-   `modules/apps/finance-openfinance-worker/**`; inclui também
+1. **Filtro `paths:`** — hoje lista `apps/finance-api/**`,
+   `apps/finance-customersupport-worker/**` e
+   `apps/finance-openfinance-worker/**`; inclui também
    **`packages/finance-contracts/**`**.
 2. **`packages/**` como gatilho dos dependentes.** O `discover` só casa um app
-   quando o diff contém `^modules/apps/<app>/`. Um commit que mexe **só** em
+   quando o diff contém `^apps/<app>/`. Um commit que mexe **só** em
    `packages/finance-contracts/**` não rebuilda ninguém — e os dois apps importam
    aquele pacote, então produção ficaria com o contrato velho. Corrigir com uma
    regra explícita (mapa pacote→apps) somada ao filtro de apps.
 3. **Install local do `packages/` no job de teste.** Hoje é
-   `pip install "${{ github.workspace }}/modules/apps/${{ matrix.app }}"`; o pacote
+   `pip install "${{ github.workspace }}/apps/${{ matrix.app }}"`; o pacote
    compartilhado precisa entrar no mesmo comando
    (`... /packages/finance-contracts ...`), senão o `pytest` nem importa.
 4. **`declare -A STACK=( ... )`** no job `deploy` — `[finance-api]=14` e
@@ -754,8 +760,8 @@ se falhar, o job tem de ficar vermelho — *um teste que se pula não existe*.
 
 ### 11.2. Segredos no CI
 O repo busca credencial do registry no Vaultwarden via
-`modules/infra/terraform/scripts/fetch_vault_secret.sh`, com máscara
-`::add-mask::`. (Caminho com `modules/infra/...`: **não** existe `scripts/` na
+`infra/terraform/scripts/fetch_vault_secret.sh`, com máscara
+`::add-mask::`. (Caminho com `infra/...`: **não** existe `scripts/` na
 raiz — conferido.) Os segredos do financeiro (`EVOLUTION_API_KEY`, as chaves do
 `domain-api`/`finance-api`) entram como **variáveis de stack no Dockhand**
 (§10.3), não como GitHub Secret nem no compose.

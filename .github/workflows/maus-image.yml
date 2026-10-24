@@ -12,12 +12,12 @@ name: Maus image
 # Trigger is manual on purpose. Until the first arm64 image exists in the
 # registry, an automatic push trigger would only launch a 20-40 min QEMU
 # build that would fail. To make upstream bumps automatic later, add a
-# version file (e.g. stacks/maus/VERSION holding "v0.1.95") and a push path
+# version file (e.g. images/maus/VERSION holding "v0.1.95") and a push path
 # trigger; bumping the file then rebuilds.
 #
 # ## DESCOMISSIONADO em 2026-10-24
 #
-# O `maus` foi parado (ver stacks/maus.yml). Este workflow continua existindo
+# O `maus` foi parado (ver images/maus). Este workflow continua existindo
 # por um motivo só: se um dia o maus voltar (`--profile retired`), a imagem
 # arm64 precisa poder ser reconstruída — o upstream só publica amd64.
 #
@@ -56,5 +56,5 @@ jobs:
           dockerfile: _maus-upstream/Dockerfile
           cache-scope: maus
 
-  # SEM job de deploy: o maus está descomissionado (stacks/maus.yml com
+  # SEM job de deploy: o maus está descomissionado (images/maus com
   # `profiles: ["retired"]`). Publicar a imagem não deve ressuscitar nada.

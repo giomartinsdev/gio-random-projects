@@ -1,0 +1,44 @@
+# evolution-api — gateway WhatsApp (fatia 2 estendida).
+#
+# O Service mora aqui, e não em `bridges/`, porque a migração é a troca da ponte
+# por um Service com selector. Ver `k8s/apps/minio/kustomization.yaml` para o
+# raciocínio (dois Services com o mesmo nome não coexistem; Service com selector
+# ao lado de EndpointSlice manual é a armadilha 6).
+#
+# ## ATENÇÃO: este Service NÃO pode ser aplicado antes do Deployment estar pronto
+#
+# O nome `evolution-api` já existe no cluster, como PONTE sem selector apontando
+# para o container Docker (`k8s/apps/bridges/evolution-api.yaml`). Se este
+# arquivo entrar no git com o Deployment ainda em `replicas: 0`, o Service fica
+# sem endpoints e `finance-customersupport-worker` perde a API na hora.
+#
+# Ordem obrigatória, no mesmo commit:
+#
+#   1. copiar o volume (8K, vazio — irrelevante, mas o Compose o monta)
+#   2. `replicas: 1` e esperar `1/1 Running` + probe verde
+#   3. verificar que o pod conectou no Redis e reconectou a sessão
+#      (`/instance/fetchInstances` com a apikey -> connectionStatus: open)
+#   4. SÓ ENTÃO: `git rm bridges/evolution-api.yaml` + este Service + remover
+#      `"evolution-api:evolution-api"` do sync-external-endpoints.sh
+#
+# ## Por que NodePort e não só ClusterIP
+#
+# O `evolution.giomartins.dev` é servido pelo nginx do HOST
+# (`proxy_pass 127.0.0.1:8080`). Para o ingress alcançar o pod, precisa de um
+# NodePort. O ClusterIP 8080 continua valendo para quem está no cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: evolution-api
+  labels:
+    app.kubernetes.io/name: evolution-api
+spec:
+  # 8080 -> 30808 (convenção 80xx -> 308xx, como domain e finance-api).
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: evolution-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30808

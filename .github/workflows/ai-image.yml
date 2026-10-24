@@ -1,12 +1,12 @@
 name: AI image
 
-# Builda e publica as imagens do stack `ai` (stacks/ai.yml) e dispara o
+# Builda e publica as imagens do stack `ai` (images/ai) e dispara o
 # redeploy:
 #   - decision:  servidor System One self-hosted (jev-style, CPU). É só o
-#                Dockerfile de stacks/ai/decision + o `pip install` do
+#                Dockerfile de images/ai/decision + o `pip install` do
 #                jev-style[torch] — base python:3.12-slim é multi-arch.
 #   - 9router:   o upstream (decolua/9router) + o provider LOCAL `decision`
-#                embutido no registry (stacks/ai/9router/decision.js). O
+#                embutido no registry (images/ai/9router/decision.js). O
 #                registry é BUNDLED no build do Next (.next/server), então um
 #                overlay em runtime não pega — tem que rebuildar a partir do
 #                fonte com o arquivo já injetado. Mesmo padrão do maus-image.yml.
@@ -47,8 +47,8 @@ jobs:
           vps-host: ${{ secrets.VPS_HOST }}
           vps-ssh-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           app: decision
-          context: stacks/ai/decision
-          dockerfile: stacks/ai/decision/Dockerfile
+          context: images/ai/decision
+          dockerfile: images/ai/decision/Dockerfile
           cache-scope: ai-decision
 
   # ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ jobs:
         #
         # NÃO há bump de digest: o `9router` que roda no cluster é
         # `ghcr.io/decolua/9router` (imagem pública do upstream, ver
-        # gitops/apps/applications/9router/). Esta imagem local só existe como
+        # k8s/apps/applications/9router/). Esta imagem local só existe como
         # rollback/experimento do stack `ai`, que não está habilitado.
         uses: ./.github/actions/build-push-cluster
         with:
@@ -76,7 +76,7 @@ jobs:
           dockerfile: _9router-upstream/Dockerfile
           cache-scope: ai-9router
 
-  # SEM job de deploy: o stack `ai` NÃO está habilitado (ver stacks/project-infra.yml
+  # SEM job de deploy: o stack `ai` NÃO está habilitado (ver k8s/LAYOUT.yaml
   # — `ai.yml` fica fora até as imagens existirem, e o `9router` que roda no
   # cluster vem do ghcr). O webhook do Dockhand que existia aqui recriava
   # containers `profiles: ["retired"]` — no-op.

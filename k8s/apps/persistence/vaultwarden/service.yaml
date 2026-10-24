@@ -1,0 +1,50 @@
+# Service `vaultwarden` — o servidor do cluster (substitui a ponte).
+#
+# ## Por que `type: NodePort`
+#
+# O consumidor interno (`vaultwarden-api`) é pod e usa ClusterIP. O NodePort
+# existe por causa do ingress: `vault.giomartins.dev` é servido pelo nginx do
+# HOST, que só enxerga pods por NodePort. Antes apontava para `127.0.0.1:8222`,
+# que era o docker-proxy do container.
+#
+# Convenção `8xxx -> 308xx`: 8222 -> 30822 (verificado livre).
+#
+# Sem este NodePort, `vault.giomartins.dev` continuaria servindo o container
+# ANTIGO depois do cutover — com o pod do lado que o `vaultwarden-api` usa.
+# Seriam dois Vaultwarden, e o usuário veria um "não existe essa senha" que
+# aparece e desaparece conforme a rota. Pior que ficar sem UI.
+#
+# ## Por que este arquivo é a troca, e não um arquivo novo
+#
+# Ao contrário de `postgres`/`rabbitmq`/`minio`, a ponte do vaultwarden nunca
+# morou em `k8s/apps/bridges/`: ela nasceu aqui, no diretório do app, com
+# `giomartins.dev/bridge: docker` e sem selector. Então a "transição de 6 linhas"
+# prometida no comentário original é este mesmo arquivo, reescrito.
+#
+# Consequência prática: NÃO há `git rm bridges/vaultwarden.yaml` a fazer. A troca
+# é um commit só, com este arquivo + `k8s/apps/vaultwarden/deployment.yaml`
+# em `replicas: 1`.
+#
+# ## Por que só pode entrar depois do pod estar de pé
+#
+# Com selector, o Service deixa de usar o EndpointSlice manual do timer. Se
+# entrasse antes do pod, ficaria com ZERO endpoints e o `vaultwarden-api` levaria
+# `connection refused`. A ordem é: pod `1/1` e provado (feito), depois este
+# arquivo.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vaultwarden
+  labels:
+    app.kubernetes.io/name: vaultwarden
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: vaultwarden
+  ports:
+    # Nome idêntico ao `ports[].name` do Deployment: o kube-proxy casa Service e
+    # EndpointSlice por NOME de porta, não por número (armadilha 5).
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30822
