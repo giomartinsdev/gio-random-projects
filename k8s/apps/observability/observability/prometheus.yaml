@@ -47,22 +47,11 @@ data:
         # O node-exporter é o ÚNICO lugar com disco/memória/load do HOST: o k3s
         # não habilita o coletor `node` do kubelet. Sem ele, "o disco está
         # enchendo?" é pergunta sem resposta.
-        metric_relabel_configs:
-          # Só o filesystem raiz. O node-exporter reporta um `node_filesystem_*`
-          # por mountpoint, incluindo os ~12 loop devices do snap (que enchem e
-          # esvaziam sozinhos e fariam o alerta de disco disparar à toa).
-          #
-          # O `keep` é restrito por `__name__` de propósito. Sem o prefixo, a
-          # regra casaria com TODA métrica do job — e `node_cpu_*`,
-          # `node_memory_*`, `node_load*` não têm label `mountpoint`, então
-          # todas seriam descartadas. Medido: sem o prefixo, só filesystem
-          # chegava no Prometheus.
-          - source_labels: [__name__, mountpoint]
-            regex: "node_filesystem_.*;/"
-            action: keep
-          - source_labels: [__name__]
-            regex: "node_filesystem_.*"
-            action: drop
+        #
+        # O filtro de mountpoint fica no EXPORTER
+        # (`--collector.filesystem.mount-points-include`), não aqui. Um `keep`
+        # neste job descartaria toda série sem label `mountpoint` — CPU,
+        # memória e load — e só o filesystem chegaria no Prometheus. Medido.
 
       # ## O kubelet `/metrics` — os volumes dos PVCs
       #
