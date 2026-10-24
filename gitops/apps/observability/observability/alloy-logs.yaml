@@ -38,12 +38,10 @@
 #
 #   - `otelcol.receiver.otlp` — traces e métricas dos pods e das SPAs.
 #   - `loki.source.kubernetes` — logs dos pods, via API (o ServiceAccount tem
-#     `pods` e `pods/log`).
-#   - `loki.source.docker` — os containers que ainda estão em Docker, via
-#     `hostPath: /var/run/docker.sock`.
+#     `pods` e `pods/log`). É a ÚNICA fonte de logs hoje.
 #
-# O último sai quando o último container sair. Enquanto houver `ingress`,
-# `registry` ou `9router` em Docker, ele é a única forma de ler aquele stdout.
+# `loki.source.docker` (e o `hostPath: /var/run/docker.sock`) saiu em
+# 2026-10-24, com o descomissionamento: não há mais container para ler.
 #
 # ## Por que o alloy em Docker não serve para isso
 #

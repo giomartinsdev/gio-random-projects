@@ -11,10 +11,9 @@
 # `OTEL_EXPORTER_OTLP_ENDPOINT`. O Service saiu de `bridges/` no mesmo dia, ao
 # ganhar selector (ver `alloy-service.yaml`).
 #
-# O container `alloy` em Docker continua de pé como rollback e ainda lê
-# `docker.sock`. Ele não recebe mais OTLP. Sai quando o último container sair —
-# e enquanto estiver lá, os logs dos containers são ingeridos duas vezes (dois
-# Lokis, labels `job=docker`), custo de ~2 GB, não corrupção.
+# O container `alloy` em Docker FOI DESCOMISSIONADO em 2026-10-24, junto com o
+# daemon: o `hostPath: /var/run/docker.sock` que ele montava deixou de existir.
+# O `alloy-logs` (pods, via API do Kubernetes) é a única fonte de logs agora.
 #
 # ## O que ficou de fora
 #
