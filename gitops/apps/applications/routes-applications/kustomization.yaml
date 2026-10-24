@@ -8,4 +8,5 @@ namespace: applications
 
 resources:
   - routes.yaml
+  - ingress.yaml
   - tela-api.yaml

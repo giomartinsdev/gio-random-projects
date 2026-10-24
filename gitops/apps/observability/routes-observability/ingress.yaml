@@ -1,0 +1,55 @@
+# Rotas públicas do namespace observability — Ingress NATIVO (2026-10-24).
+#
+# Padrões comuns (por que Ingress nativo, snippet aninhado, nome determinístico
+# do upstream, proxy_http_version 1.1) estão em
+# `gitops/apps/persistence/routes-persistence/ingress.yaml`.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ing-grafana
+  annotations:
+    nginx.org/client-max-body-size: "50m"
+    # O grafana abre WebSocket em /api/live/ws (Live). Sem 1.1 o upgrade morre
+    # em 1.0; sem o annotation os headers Upgrade/Connection não são emitidos.
+    nginx.org/websocket-services: "grafana"
+    nginx.org/location-snippets: "proxy_http_version 1.1;"
+spec:
+  ingressClassName: nic-blue
+  rules:
+    - host: grafana.giomartins.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000
+---
+# Endpoint OTLP consumido pelos browsers das SPAs (tela/hub/finance). O CORS do
+# receiver (alloy-otlp:4318) é a única barreira de origem — ver
+# `gitops/apps/observability/observability/alloy-logs.yaml`. POST com corpo
+# pequeno; não é host de WebSocket nem de streaming.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ing-otel
+  annotations:
+    nginx.org/client-max-body-size: "50m"
+    nginx.org/location-snippets: "proxy_http_version 1.1;"
+spec:
+  ingressClassName: nic-blue
+  rules:
+    - host: otel.giomartins.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: alloy-otlp
+                port:
+                  number: 4318

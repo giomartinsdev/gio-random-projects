@@ -1,0 +1,181 @@
+# Rotas públicas do namespace persistence — Ingress NATIVO (2026-10-24).
+#
+# ## Por que Ingress nativo e não VirtualServer
+#
+# Os hosts viveram 24h em VirtualServer (CRD do NIC) e foram migrados para
+# `Ingress` nativo por visibilidade: o Service Discovery → Ingress do Rancher
+# só lista o recurso nativo, e é a interface que se navega. O NIC (5.7.0)
+# processa os dois; as annotations `nginx.org/*` cobrem tudo o que o CRD
+# expressava. Os mecanismos não-triviais foram provados em produção ONTO o
+# NIC vivo ANTES do cutover (probe na rota `probe-ingress.giomartins.dev`,
+# host não-exposto):
+#
+#   - snippet aninhado intercepta a location gerada (tais o tela-api);
+#   - `rewrite ^ … break;` dentro da location (as SPAs);
+#   - nome do upstream é determinístico:
+#       `<ns>-<ingress>-<host>-<svc>-<port>` — snippets fazem proxy_pass
+#       para ele; trocar o NOME do Ingress quebra o snippet sem erro visível.
+#
+# ## Padrões destes 17 Ingress
+#
+#   - `proxy_http_version 1.1` no snippet de TODOS: o NIC não o emite no
+#     Ingress nativo (o default do nginx é 1.0) e o legado tinha 1.1 em todo
+#     bloco — WebSocket upgrade exige.
+#   - `nginx.org/websocket-services` em todo host: habilita os headers
+#     Upgrade/Connection (o `$connection_upgrade` vem de um map global que o
+#     NIC gera no nginx.conf — mesmo formato do legado).
+#   - `nginx.org/client-max-body-size: 50m` em todos (o legado era global).
+#   - lb-method não se fixa: o default do NIC é `random two least_conn`, o
+#     mesmo que ele renderizava nos VirtualServer.
+#   - Timeout de 1h só onde o legado tinha (db-mcp; rancher no folder do
+#     cattle-system).
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ing-vault
+  annotations:
+    nginx.org/client-max-body-size: "50m"
+    nginx.org/websocket-services: "vaultwarden"
+    nginx.org/location-snippets: "proxy_http_version 1.1;"
+spec:
+  ingressClassName: nic-blue
+  rules:
+    - host: vault.giomartins.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vaultwarden
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ing-minio
+  annotations:
+    nginx.org/client-max-body-size: "50m"
+    nginx.org/websocket-services: "minio"
+    nginx.org/location-snippets: "proxy_http_version 1.1;"
+spec:
+  ingressClassName: nic-blue
+  rules:
+    - host: minio.giomartins.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: minio
+                port:
+                  number: 9000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ing-rabbit
+  annotations:
+    nginx.org/client-max-body-size: "50m"
+    nginx.org/websocket-services: "rabbitmq"
+    nginx.org/location-snippets: "proxy_http_version 1.1;"
+spec:
+  ingressClassName: nic-blue
+  rules:
+    - host: rabbit.giomartins.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rabbitmq
+                port:
+                  number: 15672
+---
+# As três SPAs: servidas direto do bucket no MinIO (path-style), sem container.
+# A location `~` do snippet leva o asset real (com extensão) à chave literal e
+# tudo o resto cai no index.html — réplica do `default.conf` do legado, que por
+# sua vez é a mesma lógica que os VS serviram por 24h (paridade provada).
+#
+# O `proxy_pass` do snippet aponta para o UPSTREAM GERADO pelo NIC para o
+# backend `minio` deste próprio Ingress; o nome carrega host e nome-chave do
+# ingress. Renomear o ing- aqui quebra o conf de forma silenciosa (o reload
+# falha e o NIC RETÉM a config anterior — e a rota não muda nunca).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ing-tela-site
+  annotations:
+    nginx.org/client-max-body-size: "50m"
+    nginx.org/location-snippets: |
+      location ~ ^/.*\.[a-zA-Z0-9]+$ {
+        proxy_pass http://persistence-ing-tela-site-tela.giomartins.dev-minio-9000/tela-frontend$uri;
+      }
+      rewrite ^ /tela-frontend/index.html break;
+spec:
+  ingressClassName: nic-blue
+  rules:
+    - host: tela.giomartins.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: minio
+                port:
+                  number: 9000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ing-hub-site
+  annotations:
+    nginx.org/client-max-body-size: "50m"
+    nginx.org/location-snippets: |
+      location ~ ^/.*\.[a-zA-Z0-9]+$ {
+        proxy_pass http://persistence-ing-hub-site-hub.giomartins.dev-minio-9000/hub-frontend$uri;
+      }
+      rewrite ^ /hub-frontend/index.html break;
+spec:
+  ingressClassName: nic-blue
+  rules:
+    - host: hub.giomartins.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: minio
+                port:
+                  number: 9000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ing-finance-site
+  annotations:
+    nginx.org/client-max-body-size: "50m"
+    nginx.org/location-snippets: |
+      location ~ ^/.*\.[a-zA-Z0-9]+$ {
+        proxy_pass http://persistence-ing-finance-site-finance.giomartins.dev-minio-9000/finance-frontend$uri;
+      }
+      rewrite ^ /finance-frontend/index.html break;
+spec:
+  ingressClassName: nic-blue
+  rules:
+    - host: finance.giomartins.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: minio
+                port:
+                  number: 9000

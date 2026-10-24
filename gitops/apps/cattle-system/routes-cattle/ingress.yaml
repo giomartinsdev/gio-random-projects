@@ -1,0 +1,76 @@
+# A rota pública do Rancher — Ingress NATIVO morando em `cattle-system`.
+#
+# ## Por que este arquivo não está em `support`
+#
+# `Ingress` nativo é namespace-scoped: o `backend.service.name` resolve apenas
+# no namespace do próprio Ingress. O Rancher mora em `cattle-system`; o
+# VirtualServer anterior morava em `support` porque o upstream cross-ns
+# (`service: cattle-system/rancher`) era o truque que permitia. Aqui o caminho
+# limpo é o Ingress morar junto do Service — o folder `routes-cattle` gera uma
+# Application do AppSet como os outros.
+#
+# ## As duas armadilhas do Rancher, e como o snippet as resolve
+#
+# 1. **X-Forwarded-Proto.** O NIC injeta `$scheme` em toda location; o
+#    Cloudflare fala HTTP com a origem, então `scheme=http` — e o Rancher passa
+#    a gerar URLs absolutas `http://`, que o browser corta como mixed content
+#    (a UI mostra "Network Error" minutos depois). Aqui o snippet REPLICA o
+#    bloco legado do `default.conf`: fixa `https` e sobrescreve o default do
+#    NIC. O conjunto completo de `proxy_set_header` na location aninhada corta
+#    a herança dos headers da location externa — sem duplicar o XFP.
+#
+# 2. **TLS + SNI no upstream.** O Rancher só fala HTTPS e recusa handshake sem
+#    SNI. `proxy_ssl_server_name on` + `proxy_ssl_name $host` resolvem; o
+#    `proxy_ssl_verify off` é deliberado (certificado auto-assinado, perna de
+#    loopback — a verificação que importa acontece no navegador, que vê o
+#    Cloudflare). A annotation `nginx.org/ssl-services` é o que libera o
+#    `https://` no proxy_pass gerado.
+#
+# 3. **WebSocket e buffering.** O shell do pod no browser e o streaming de logs
+#    (`/v3/clusters/.../shell`, `/k8s/.../pods/.../log`) são WebSocket + stream
+#    longo: `proxy_buffering off` e 1h de read timeout, como no legado.
+#
+# O nome do upstream no `proxy_pass` do snippet é o que o NIC gera para ESTE
+# Ingress (`<ns>-<ingress>-<host>-<svc>-<port>`). Renomear o Ingress ou o host
+# quebra o snippet — e o reload falha retendo a config anterior (a rota não
+# muda, sem erro visível no cluster).
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ing-rancher
+  annotations:
+    nginx.org/client-max-body-size: "50m"
+    nginx.org/ssl-services: "rancher"
+    nginx.org/proxy-buffering: "false"
+    nginx.org/proxy-read-timeout: "3600"
+    nginx.org/location-snippets: |
+      location ~ ^/ {
+        proxy_pass https://cattle-system-ing-rancher-rancher.giomartins.dev-rancher-443;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_ssl_server_name on;
+        proxy_ssl_name $host;
+        proxy_ssl_verify off;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+      }
+spec:
+  ingressClassName: nic-blue
+  rules:
+    - host: rancher.giomartins.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rancher
+                port:
+                  number: 443
