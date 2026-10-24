@@ -47,13 +47,40 @@ export const MICROFRONTENDS: Microfrontend[] = [
   },
 ];
 
+// Order is by "what you'd open first", not alphabetical: the control
+// planes of the cluster, then the data layer, then the products.
+//
+// Removed on purpose (they 404/refuse after the k8s migration and would
+// give a dead SSO round-trip): dockhand (container at :8093 is gone --
+// every stack now lives in k8s/) and maus (OpenMausBot decommissioned).
 export const SHORTCUTS: Shortcut[] = [
+  {
+    id: "rancher",
+    name: "Rancher",
+    emoji: "🐄",
+    description: "plano de controle do cluster k3s",
+    url: "https://rancher.giomartins.dev",
+  },
+  {
+    id: "argo",
+    name: "ArgoCD",
+    emoji: "🔁",
+    description: "sync, diff e rollback do GitOps",
+    url: "https://argo.giomartins.dev",
+  },
   {
     id: "grafana",
     name: "Grafana",
     emoji: "📊",
-    description: "dashboards e métricas",
+    description: "dashboards, métricas e alertas",
     url: "https://grafana.giomartins.dev",
+  },
+  {
+    id: "github",
+    name: "GitHub",
+    emoji: "🐙",
+    description: "código dos apps e manifests do cluster",
+    url: "https://github.com/giomartinsdev/gio-random-projects",
   },
   {
     id: "minio",
@@ -63,18 +90,18 @@ export const SHORTCUTS: Shortcut[] = [
     url: "https://minio.giomartins.dev",
   },
   {
-    id: "dockhand",
-    name: "Dockhand",
-    emoji: "🐳",
-    description: "containers, stacks e imagens",
-    url: "https://dockhand.giomartins.dev",
-  },
-  {
     id: "adminer",
     name: "Adminer",
     emoji: "🗄️",
     description: "banco de dados (Postgres)",
     url: "https://adminer.giomartins.dev",
+  },
+  {
+    id: "rabbit",
+    name: "RabbitMQ",
+    emoji: "🐰",
+    description: "filas, exchanges e conexões do bus",
+    url: "https://rabbit.giomartins.dev",
   },
   {
     id: "vault",
@@ -91,18 +118,18 @@ export const SHORTCUTS: Shortcut[] = [
     url: "https://ai.giomartins.dev/dashboard",
   },
   {
-    id: "maus",
-    name: "OpenMausBot",
-    emoji: "🐭",
-    description: "sua equipe de bots de IA — chat, computador e apps",
-    url: "https://maus.giomartins.dev",
+    id: "evolution",
+    name: "Evolution",
+    emoji: "💬",
+    description: "instâncias do WhatsApp e seus webhooks",
+    url: "https://evolution.giomartins.dev/manager",
   },
   {
-    id: "rabbit",
-    name: "RabbitMQ",
-    emoji: "🐰",
-    description: "filas, exchanges e conexões do bus",
-    url: "https://rabbit.giomartins.dev",
+    id: "draw",
+    name: "Draw",
+    emoji: "✏️",
+    description: "lousa de diagramas (Excalidraw)",
+    url: "https://draw.giomartins.dev",
   },
 ];
 
