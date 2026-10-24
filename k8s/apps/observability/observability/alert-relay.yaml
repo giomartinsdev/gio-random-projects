@@ -215,7 +215,7 @@ spec:
             # O destinatário. Fica em ConfigMap (não é segredo: é o seu número),
             # e trocá-lo é editar uma linha no git — não recriar Secret.
             - name: ALERT_WHATSAPP_NUMBER
-              value: "5521982397951"
+              value: "5521981962914"
             - name: EVOLUTION_API_KEY
               # A chave é a MESMA do Evolution, no namespace `applications`.
               # `secretKeyRef` NÃO cruza namespace: o Secret tem que existir
