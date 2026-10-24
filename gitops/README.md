@@ -852,9 +852,9 @@ que ninguém escolheu abrir.
 
 Saídas, em ordem de custo:
 
-- regra no `INPUT` para a 5000 vinda de fora, deixando passar `127.0.0.1` e as
-  redes dos pods — o CI **precisa** dela aberta, então tem de ser por origem,
-  não cega;
+- ~~regra no `INPUT` para a 5000 vinda de fora~~ — **não funciona**, e eu tentei:
+  o pacote é DNAT'd e sai por `FORWARD`, então a regra no `INPUT` fica inerte
+  (o `curl` continuou devolvendo `401`). Ver "O conserto" abaixo;
 - pôr a 5000 atrás da Cloudflare com TLS (quebra o nome das 39 imagens:
   `registry.giomartins.dev:5000` viraria `registry.giomartins.dev`);
 - mover o push do CI para ghcr e deixar o registry só para pull interno.
@@ -863,6 +863,113 @@ Saídas, em ordem de custo:
 (`curl http://<ip-publico>:<porta>`), nunca só do host. Do host os dois parecem
 iguais, e o `iptables -S INPUT` mostra um `REJECT` que dá a falsa impressão de
 que tudo está fechado.
+
+### O conserto (2026-10-24): a porta fechou, o túnel ficou
+
+O descomissionamento do Docker resolveu esta armadilha **de graça**, porque
+tirou o motivo de a 5000 estar aberta: o CI não precisa mais falar com o
+registry pelo IP público.
+
+Antes, o push vinha de `DOCKER_HOST=ssh://`, ou seja, era resolvido no daemon da
+VPS e saía por **loopback**. Agora o build é no runner do GitHub e o push vai por
+**túnel SSH** (`ssh -L 5000:127.0.0.1:5000`) — loopback também, só que do outro
+lado. Ninguém, de fora, precisa da `5000`.
+
+Três detalhes que custaram tentativa:
+
+1. **`INPUT` não serve.** A primeira tentativa foi
+   `iptables -I INPUT -p tcp --dport 5000 -j DROP`. O `curl` de fora continuou
+   `401`. O `hostPort` do k3s faz DNAT e o pacote percorre `FORWARD`, não
+   `INPUT` — a regra nunca é consultada. (E o `FORWARD` do k3s tem um `ACCEPT`
+   por *mark* `0x20000` que vem do `CNI-HOSTPORT-SETMARK`, então "só dropar no
+   FORWARD" também é frágil: o k3s reordena a cadeia a cada boot.)
+2. **`raw/PREROUTING` é o lugar certo.** Ela é avaliada **antes** do DNAT e o
+   k3s não escreve nela (conferido: zero regras `KUBE*`/`CNI*` na tabela `raw`).
+   A regra fica `-A PREROUTING -i enp0s6 -p tcp --dport 5000 -j DROP`, seguindo
+   a convenção que já existia ali para as portas `80xx` (`-d 127.0.0.1/32 ! -i
+   lo ... -j DROP`).
+3. **Bloquear por interface, não por origem.** `-s 127.0.0.1 -j ACCEPT` antes do
+   `DROP` **não** protege o túnel: o pacote do túnel SSH chega pela `lo` já
+   reescrito, e quem precisa passar é o `k3s` no próprio host. `-i enp0s6` deixa
+   passar todo o tráfego local (loopback, pods) e barra só o que vem da
+   interface pública.
+
+**Prova, nos três caminhos**:
+
+| caminho | resultado |
+| --- | --- |
+| de fora (`registry.giomartins.dev:5000`, da minha máquina) | `000` (fechado) |
+| do host (`127.0.0.1:5000`, o que o containerd do k3s usa) | `401` (vivo) |
+| pelo túnel SSH (o que o CI usa) | `401` (vivo) |
+
+E o teste que importa não é o `curl`: foi **deletar o pod do `domain-api`** e ver
+o substituto subir `1/1 Running` — prova de que o pull da imagem continua
+funcionando com a porta fechada para a internet.
+
+**Lição para o próximo `hostPort`**: "fechar no `INPUT`" é a resposta intuitiva e
+está errada. O lugar é `raw/PREROUTING`, e a prova é `curl` de fora, não
+`iptables -S`.
+
+### O conserto quase reverteu ao boot (2026-10-24, mesmo dia)
+
+A regra do `raw/PREROUTING` **morreu no caso de teste não imaginado: o reboot**.
+Depois do primeiro reboot pós-conserto, `iptables -t raw -S PREROUTING | grep
+5000` dava **zero** — o registry voltou a ficar exposto (401 de fora).
+
+Causa raiz, achada no `netfilter-persistent`: o unit **falhou no boot com
+`status=4`** antes de o k3s subir, porque o `/etc/iptables/rules.v4` persistido
+incluía as chains do **k3s/kube-router/CNI** (`CNI-DN-*`, `KUBE-SERVICES`,
+`KUBE-NWPLCY-*`, `FLANNEL-*`), que referenciam interfaces (`cni0`, `veth*`,
+`flannel.1`) e ipsets (`KUBE-SRC-*`) **que só existem depois de o k3s criar**.
+O `iptables-restore` morre no meio do arquivo, antes de chegar às regras
+próprias que estavam logo no começo — e o resultado no boot é **zero regras**,
+não "regras parciais". O `iptables-restore --test` rodado com o cluster de pé
+passava, porque teste com o k3s vivo usa o estado do kernel como referência
+implícita — não simula o boot.
+
+**Como ficou (`rules.v4` reescrito em 2026-10-24, 01:57 UTC)**:
+
+- 1542 linhas → 64. Só tabelas com políticas `ACCEPT` + as regras próprias
+  (`raw`: os 12 DROPs — a 5000 e os anti-spoof `-d 127.0.0.1/32` das portas
+  `80xx`+`8090`; `filter`: o DROP 25565, os ACCEPTs de `3478`/`8217`/
+  `49160:49200`/`16261-2` — **que são as portas do `tela` em `hostNetwork`, não
+  lixo de jogo** —, ESTABLISHED, icmp, lo, 80/443/22, e a chain
+  `InstanceServices` da OCI, que é infraestrutura da imagem, removê-la é
+  avisado como perigo no próprio comment) + `*nat` só com políticas.
+- zero chains k3s/CNI/flannel/docker — **o k3s recria as dele sozinho no boot**;
+  o que o arquivo precisa guardar são só as regras de quem nunca reaparece.
+- `:FORWARD DROP` → `:FORWARD ACCEPT` no arquivo: o kernel vem rodando com
+  ACCEPT desde o reboot (o restore falhara), e mudar política no papel sem
+  testaria o boot é pedir o mesmo susto de novo.
+- REJECT halves de INPUT **deliberadamente fora** — ver dívida 24.
+
+**Prova de que o arquivo sobrevive ao boot sem reboot**: `iptables-restore
+--test` no arquivo novo passa **independente do estado do kernel**, porque o
+arquivo não referencia mais nada que o kernel não tenha antes do k3s. O teste
+da próxima reboot é de rotina, não de fé.
+
+**Ao vivo, sem reboot**: `iptables-restore` completo **não** — ele substituíria
+o conteúdo das tabelas e limparia as chains vivas do k3s (o restore duas tabelas
+vazias era justamente o risco: um arquivo de "tabelas vazias" passou no `--test`
+e estaria aplicável). Foi aplicado só o corte cirúrgico: os 12 DROPs na `raw` e
+o DROP 25565 no `INPUT` — regras que não tocam caminho nenhum do k8s (as portas
+delas não existem no cluster). Prova antes/depois, da minha máquina:
+
+| quando | `curl http://168.138.135.6:5000/v2/` |
+| --- | --- |
+| antes | `401` em 0,11s (porta aberta, auth parado) |
+| depois | `000` — connection timed out (DROP) |
+
+E de dentro, `127.0.0.1:5000` → `401` (o túnel CI e o containerd continuam
+vivos), cluster 18/18 depois.
+
+**Lição maior que a regra**: regras de firewall próprias (que **eu** escrevi) e
+regras que um **daemon** recria são coisas com ciclos de vida diferentes. O
+`netfilter-persistent save` com o k3s de pé captura a fotografia errada — as do
+demonio vão existir de novo sem o arquivo; as minhas não. A partir de agora:
+**nunca rodar `netfilter-persistent save` com o k3s ativo**; se precisar
+persistir uma regra, adicionar a linha à mão no `rules.v4` (e não inserir chain
+nem interface que só exista depois de algum serviço).
 
 **Prova do conserto da armadilha 30** (mesmo dia, `prova-restart-alloy.sh`): o
 pod foi **deletado e recriado** com o PVC montado. Resultado: 61 linhas de
@@ -1789,8 +1896,14 @@ Vaultwarden, `SLACK_*`, `GITHUB`-adjacent, senha do Grafana). Sem o snapshot,
 essas 23 seriam perdidas no `apt purge`. Foi por isso que o snapshot veio antes.
 
 `/opt/dockhand` (475 MB, arquivos mortos) e `/opt/stacks` (732 K, cópia
-desatualizada do git) **ficaram no disco**: o ganho de apagar é pequeno e o
-risco de precisar de um deploy-log antigo não é zero.
+desatualizada do git) ficaram no disco na primeira rodada: o ganho de apagar é
+pequeno e o risco de precisar de um deploy-log antigo não é zero.
+
+**Atualização no mesmo dia**: decisão do usuário, apagados — mas só depois do
+tar verificado. `/opt/k8s-backups/2026-10-24-pre-descomissionamento/vps-dockhand-stacks/`:
+`dockhand-full.tar.gz` (199 MB, 13.615 entradas) e `stacks.tar.gz` (132 K, 111),
+chmod 600/700, md5 registrados no log da sessão. O binário de 475 MB era o
+pequeno demais para justificar 475 MB de provedor de nostalgia.
 
 ### O CI sem o daemon
 
@@ -1827,6 +1940,35 @@ tela-api  rodando   @sha256:91f313c4...
 Não era regressão da faxina; era o estado desde a migração, com o CI verde por
 cima. `tela-api` continua no digest velho até alguém rodar o workflow dela (o
 bump agora existe).
+
+### Zomboid saiu também (2026-10-24)
+
+O Project Zomboid B42 não era Docker — era família de serviços **systemd
+nativos**: `zomboid-b42` (o jogo via `box64`, emulação x86_64 em ARM),
+`zomboid-b42-ciopfs` (um FUSE *case-insensitive* para os mods do workshop), os
+timers `zomboid-b42-watchdog` e `zomboid-b42-modupdate`, os scripts
+`zomboid-watchdog.sh`/`pz-boot-retry`/`pz-modupdate` e um `DepotDownloader` de
+83 MB que o modupdate usava.
+
+Mesma regra de sempre — nada apagado antes do backup verificado:
+
+1. **Descoberta**: `/opt/zomboid-server` (a instalação do servidor em si, que
+   seria o grosso do disco) **já não existia**. Era o motivo de o
+   `zomboid-b42-ciopfs` falhar com `Dependency failed` desde o reboot: o
+   mountpoint dos mods tinha sumido.
+2. **Backup** em
+   `/opt/k8s-backups/2026-10-24-pre-descomissionamento/`: `zomboid-data.tar.gz`
+   (saves e logs, 160 arquivos) e `zomboid-systemd.tar.gz` (13 arquivos: as 6
+   units, `zomboid-b42.env`, os 3 scripts, `common.sh` e `pz-rcon.py`), md5
+   conferido **antes** de qualquer `rm`.
+3. **Ordem**: timers desligados **primeiro** (o watchdog disparava às 01:37 UTC
+   e poderia ressuscitar o jogo no meio da remoção), depois services, units,
+   scripts, `/etc/zomboid-b42.env`, `/opt/depotdownloader`, os dados em
+   `/home/ubuntu/Zomboid`, e por fim `apt purge box64 ciopfs`.
+
+Custo mínimo: os saves tinham 44 MB; o disco foi a 79G → depois 78G (com a
+faxina do Dockhand). O cluster não sentiu: 18/18 Applications e zero pods fora
+de `Running`, conferidos após o fim.
 
 ### `9router` — migrado em 2026-10-23
 
@@ -2333,16 +2475,37 @@ Precisa de `\@`. Custou um teste que parecia passar (`exit 0`) e um
     ligado.**~~ **Resolvida de outro jeito, em 2026-10-24**: o `dockhand` foi
     desinstalado junto com o daemon, então não existe mais `crash`/`auto_update`
     às 03:00 UTC para dar falso alarme. A dívida deixou de ter onde acontecer.
-22. **`tela-api` roda um digest mais velho que o `:latest` do registry.**
-    Medido em 2026-10-24: pod em `@sha256:91f313c4...`, registry em
-    `@sha256:52326c1d...`. É resíduo do buraco da dívida 38/armadilha 38 (o
-    deploy do CI nunca escrevia o digest). O bump agora existe, mas **só roda
-    quando aquele workflow roda**: um build de `tela-api` corrige. Não é
-    urgente (o pod funciona), mas é drift conhecido — e drift não medido volta.
+22. ~~**`tela-api` roda um digest mais velho que o `:latest` do registry.**~~
+    **Resolvida em 2026-10-24**: um `workflow_dispatch` manual do `go-ci-cd`
+    (input `app=tela-api`, run 40052213763) buildou, commitou o digest e o
+    ArgoCD aplicou no ciclo seguinte — pod em
+    `@sha256:62c7c095...`, `Running`, e a API respondendo (`404` na raiz, o
+    comportamento normal dela). Prova de fim a fim do loop novo do CI num app
+    que nunca passou por ele.
 23. **`excalidraw` usa tag fixa (`v0.18.1`), não digest.** É de propósito (a
     versão é escolhida por input do workflow, e o manifesto é a decisão
     explícita de qual roda), mas viola o "contrato de imagem" do resto do repo e
     fica fora do gate que proíbe `:latest` — uma tag mutável passaria. A
     alternativa (digest + input) exige decidir o que "escolher versão" significa
     no GitOps. Registrado, não decidido.
+24. **O firewall de `INPUT` do host está desligado desde o reboot de
+    2026-10-24 — e a paralisação foi deliberada.** O `rules.v4` antigo tinha um
+    ruleset de verdade: ACCEPT de icmp/lo/22/80/443 e **REJECT no final** para
+    todo o resto. Como o `netfilter-persistent` falhou no boot (armadilha 31, o
+    capítulo "quase reverteu"), o kernel vem rodando com `INPUT ACCEPT`
+    **totalmente aberto** — o que protege a VPS hoje é só Security List da OCI.
+    O `raw/PREROUTING` (5000/80xx) foi reaplicado porque não toca caminho
+    nenhum do k8s; o firewall de INPUT inteiro é outro nível: sem um teste
+    com o k3s de pé, restaurar o REJECT pode quebrar pod→node (scrapes do
+    Prometheus no kubelet, fluxos que atravessam `INPUT` com dst do host) e o
+    `-A FORWARD -j REJECT` depende da ordem de inserção do kube-proxy, que
+    recolocar as regras dele no boot. **Falta decidir** (exige uma janela em
+    que reboot/teste sejam combinados, pós o trauma de 2026-10-24): (a) desenhar
+    o ruleset sabendo do k8s (p/ex. ACCEPT explícito para lo + ranges do
+    cluster 10.42.0.0/16 e 10.43.0.0/16 + 22/80/443, REJECT no final) e provar
+    com reboot agendado, ou (b) assumir a Security List da OCI como único
+    firewall e registrar a decisão no README. Enquanto isso, o vetor que
+    importava (registry na 5000) já está fechado na `raw` — que, agora, também
+    sobrevive ao boot: o arquivo persistido só guarda regra própria (dívida
+    resolvida em 31).
 
