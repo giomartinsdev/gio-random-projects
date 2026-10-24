@@ -64,4 +64,17 @@ spec:
   routes:
     - path: /
       action:
-        pass: rancher-tls
+        proxy:
+          upstream: rancher-tls
+          # O NIC injeta `X-Forwarded-Proto $scheme` em TODA location. Para o
+          # Rancher isso quebra a UI com "Network Error": o Cloudflare fala
+          # HTTP com a origem, `scheme` = http, e o Rancher passa a gerar
+          # URLs absolutas `http://` — que o browser bloqueia como mixed
+          # content. O bloco legado fixava o header em `https` por isso (
+          # comentário em `default.conf` na história do cutover). Aqui o
+          # `set` redefine o header no mesmo lugar.
+          requestHeaders:
+            set:
+              - name: X-Forwarded-Proto
+                value: https
+
