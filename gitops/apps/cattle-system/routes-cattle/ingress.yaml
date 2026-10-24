@@ -62,7 +62,7 @@ metadata:
         proxy_read_timeout 3600s;
       }
 spec:
-  ingressClassName: nic-blue
+  ingressClassName: nic
   rules:
     - host: rancher.giomartins.dev
       http:

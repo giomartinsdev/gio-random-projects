@@ -13,7 +13,7 @@ metadata:
     nginx.org/websocket-services: "domain-api"
     nginx.org/location-snippets: "proxy_http_version 1.1;"
 spec:
-  ingressClassName: nic-blue
+  ingressClassName: nic
   rules:
     - host: domain.giomartins.dev
       http:
@@ -39,7 +39,7 @@ metadata:
     nginx.org/websocket-services: "ninerouter"
     nginx.org/location-snippets: "proxy_http_version 1.1;"
 spec:
-  ingressClassName: nic-blue
+  ingressClassName: nic
   rules:
     - host: ai.giomartins.dev
       http:
@@ -61,7 +61,7 @@ metadata:
     nginx.org/websocket-services: "evolution-api"
     nginx.org/location-snippets: "proxy_http_version 1.1;"
 spec:
-  ingressClassName: nic-blue
+  ingressClassName: nic
   rules:
     - host: evolution.giomartins.dev
       http:
@@ -85,7 +85,7 @@ metadata:
     nginx.org/websocket-services: "excalidraw"
     nginx.org/location-snippets: "proxy_http_version 1.1;"
 spec:
-  ingressClassName: nic-blue
+  ingressClassName: nic
   rules:
     - host: draw.giomartins.dev
       http:
@@ -111,7 +111,7 @@ metadata:
     nginx.org/websocket-services: "finance-api"
     nginx.org/location-snippets: "proxy_http_version 1.1;"
 spec:
-  ingressClassName: nic-blue
+  ingressClassName: nic
   rules:
     - host: finance-api.giomartins.dev
       http:
@@ -157,7 +157,7 @@ metadata:
         proxy_set_header Connection $connection_upgrade;
       }
 spec:
-  ingressClassName: nic-blue
+  ingressClassName: nic
   rules:
     - host: tela-api.giomartins.dev
       http:

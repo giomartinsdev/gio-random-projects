@@ -7,5 +7,4 @@ kind: Kustomization
 namespace: observability
 
 resources:
-  - routes.yaml
   - ingress.yaml

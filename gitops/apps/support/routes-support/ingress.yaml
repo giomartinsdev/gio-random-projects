@@ -17,7 +17,7 @@ metadata:
     nginx.org/websocket-services: "adminer"
     nginx.org/location-snippets: "proxy_http_version 1.1;"
 spec:
-  ingressClassName: nic-blue
+  ingressClassName: nic
   rules:
     - host: adminer.giomartins.dev
       http:
@@ -47,7 +47,7 @@ metadata:
     nginx.org/websocket-services: "db-mcp-gateway"
     nginx.org/location-snippets: "proxy_http_version 1.1;"
 spec:
-  ingressClassName: nic-blue
+  ingressClassName: nic
   rules:
     - host: db-mcp.giomartins.dev
       http:
