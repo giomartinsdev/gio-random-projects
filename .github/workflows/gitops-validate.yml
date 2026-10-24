@@ -74,7 +74,18 @@ jobs:
             # `-strict` trata campo desconhecido como erro, e não só como
             # aviso: um typo em `readinessProbe` seria aceito em silêncio
             # pelo API server e ignorado no cluster.
+            #
+            # O segundo `-schema-location` cobre os CRDs do NIC
+            # (VirtualServer/VirtualServerRoute/Policy/...): o catálogo de
+            # schemas do kubeconform só tem recursos nativos. Os JSONs em
+            # `.github/schemas/` são gerados do próprio cluster — CRD
+            # instalado = schema que ele aceita — pelo script
+            # `.github/scripts/kubeconform-crds.py` (rodar após upgrade do
+            # NIC e commitar junto). `default` como primeira location mantém
+            # o catálogo nativo; CRD sem schema continua falhando o CI.
             kubeconform -strict -summary -kubernetes-version 1.36.0 \
+              -schema-location default \
+              -schema-location '.github/schemas/{{.Group}}_{{.ResourceKind}}.json' \
               -output text /tmp/rendered.yaml
             echo "::endgroup::"
           done
