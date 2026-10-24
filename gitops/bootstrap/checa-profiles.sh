@@ -13,10 +13,14 @@
 # ## Como ler a saida
 #
 # ESPERADO — estes devem continuar em Docker:
-#   maus.yml       omb, caddy, slack-bridge        (nao migrado, decisao)
-#   minecraft.yml  minecraft, mc-backup            (fora de escopo)
 #   core.yml       dockhand                        (UI do Docker, morre com ele)
-#   bootstrap.yml  network-init                    (cria a rede `apps`)
+#
+# `maus` e `minecraft` SAIRAM em 2026-10-24, descomissionados (parados +
+# `profiles: retired`). Antes eles eram a excecao legitima; agora sao mais
+# dois migrados-aposentados. Se um dia voltarem, e so remover a trava.
+#
+# Com isso, `project-apps` e `project-infra` ficam AMBOS sem servico vivo.
+# Ver divida 19: `no service selected` sai com exit 1.
 #
 # QUALQUER outro nome e um servico MIGRADO que vai ressuscitar as 03:00 UTC
 # e disputar porta com o pod. `include:` nao herda profile: ele precisa
@@ -46,7 +50,7 @@ DIR="${1:-stacks}"
 # `9router` do `compute.yml` ja tem a trava desde dfd597f. Se o `ai.yml` for
 # habilitado um dia, estes dois voltam -- mas entao o `9router` do
 # `compute.yml` precisa sair, senao brigam pela mesma porta e pelo mesmo volume.
-ESPERADOS="omb caddy slack-bridge minecraft mc-backup dockhand network-init"
+ESPERADOS="dockhand network-init"
 
 SAIDA=$(mktemp)
 trap 'rm -f "$SAIDA"' EXIT

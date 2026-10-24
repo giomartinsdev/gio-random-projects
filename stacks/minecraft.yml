@@ -1,5 +1,24 @@
 # minecraft.yml — All the Mods 11 (ATM11) num servidor NeoForge.
 #
+# ## DESCOMISSIONADO em 2026-10-24
+#
+# O servidor ficou 5 dias sem jogador (último: 2026-10-19) e ocupava 5,4 GB de
+# RAM. Decisão do usuário: parar, não migrar. Os dois containers foram parados
+# e ganharam `profiles: ["retired"]` — a trava real contra o `up` das 03:00 UTC
+# (o `restart: "no"` sozinho não segura o `--force-recreate` do Dockhand).
+#
+# ## O mundo está preservado, em três lugares
+#
+# - `/data/minecraft` no disco, como estava;
+# - `/opt/k8s-backups/2026-10-24-pre-descomissionamento/data.tar.gz` (4,8 GB,
+#   integridade verificada — inclui `/data/minecraft` e `/data/minecraft-backups`);
+# - `/data/minecraft-paper-26.3.tar.gz` e `/data/minecraft-backups` (604 MB),
+#   que já existiam.
+#
+# Para voltar: `docker compose --profile retired -f stacks/minecraft.yml up -d`.
+# Se o Docker já não existir no host, o caminho é subir `itzg/minecraft-server`
+# no k8s com um PVC apontando para uma cópia desses dados.
+#
 # Antes daqui era Paper puro. O pack ATM11 muda a natureza do servidor:
 # mods de verdade (293), não plugins — então não existe mais compatibilidade
 # com plugin de Paper e a whitelist passa a ser um MOD.
@@ -50,7 +69,8 @@ services:
     container_name: minecraft
     labels:
       giomartins.dev/project: minecraft
-    restart: unless-stopped
+    restart: "no"
+    profiles: ["retired"]   # descomissionado 2026-10-24
     stdin_open: true
     tty: true
     environment:
@@ -138,7 +158,8 @@ services:
     container_name: minecraft-backup
     labels:
       giomartins.dev/project: minecraft
-    restart: unless-stopped
+    restart: "no"
+    profiles: ["retired"]   # descomissionado 2026-10-24
     network_mode: service:minecraft
     depends_on:
       minecraft:

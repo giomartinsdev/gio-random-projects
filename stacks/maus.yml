@@ -2,6 +2,31 @@
 # como o produto de "coworkers de IA" (chat com um roster de bots, cada um com
 # sua personalidade, modelo, computador e apps conectados). Uma stack só.
 #
+# ## DESCOMISSIONADO em 2026-10-24
+#
+# O `omb` monta `/var/run/docker.sock`: ele **cria containers** como parte do
+# produto. Migrar isso para o k8s seria emular Docker dentro do Kubernetes —
+# decisão do usuário foi não migrar. Entre manter o maus e desligar o Docker,
+# ficou o Docker: os três containers foram parados e ganharam
+# `profiles: ["retired"]`, que é a trava real contra o `up` das 03:00 UTC.
+#
+# `restart: "no"` sozinho NÃO bastaria: ele rege crash pós-boot, não o
+# `compose up --force-recreate` do Dockhand. Ver armadilha 36.
+#
+# ## O que foi preservado
+#
+# - `/data` (14 GB) inteiro no disco, e 4,8 GB de backup verificado em
+#   `/opt/k8s-backups/2026-10-24-pre-descomissionamento/data.tar.gz`;
+# - `messages.db` com 5.177 mensagens (última em 2026-10-06) e os 52 repos de
+#   `vm-home` (2,9 GB de backup próprio — script pessoal, não imagem de VM);
+# - os volumes `maus-caddy-*` e `omb-data`.
+#
+# ## Para voltar (se um dia)
+#
+# `docker compose --profile retired -f stacks/maus.yml up -d`, ou religar o
+# daemon. Nada foi apagado — só parado.
+# sua personalidade, modelo, computador e apps conectados). Uma stack só.
+#
 # Por que dois containers: o harness do OpenMausBot SEMPRE liga em
 # 127.0.0.1:8799 (server/index.ts) — a confiança em loopback é o próprio modelo
 # de auth. Não dá pra ele ouvir em 0.0.0.0 e deixar o ingress bater direto nele
@@ -39,7 +64,8 @@ services:
     container_name: omb
     labels:
       giomartins.dev/project: maus
-    restart: unless-stopped
+    restart: "no"
+    profiles: ["retired"]   # descomissionado 2026-10-24
     init: true
     environment:
       OMB_PORT: "8799"
@@ -86,7 +112,8 @@ services:
     container_name: maus-caddy
     labels:
       giomartins.dev/project: maus
-    restart: unless-stopped
+    restart: "no"
+    profiles: ["retired"]   # descomissionado 2026-10-24
     # Mesma netns do omb: alcança o loopback e publica a porta declarada nele.
     network_mode: service:omb
     depends_on:
@@ -107,7 +134,8 @@ services:
     container_name: maus-slack-bridge
     labels:
       giomartins.dev/project: maus
-    restart: unless-stopped
+    restart: "no"
+    profiles: ["retired"]   # descomissionado 2026-10-24
     network_mode: service:omb
     depends_on:
       omb:

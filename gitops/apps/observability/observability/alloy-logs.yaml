@@ -241,36 +241,15 @@ data:
       // kubelet. Sem `kubeconfig_file`: nenhuma credencial em arquivo.
     }
 
-    // ---------------------------------------------------------------
-    // Containers que ainda estão em Docker, pelo socket montado.
-    // ---------------------------------------------------------------
-    discovery.docker "containers" {
-      host             = "unix:///var/run/docker.sock"
-      refresh_interval = "10s"
-    }
-
-    discovery.relabel "containers" {
-      targets = discovery.docker.containers.targets
-
-      rule {
-        source_labels = ["__meta_docker_container_name"]
-        regex         = "/(.*)"
-        target_label  = "container"
-      }
-
-      rule {
-        target_label = "job"
-        replacement  = "docker"
-      }
-    }
-
-    loki.source.docker "containers" {
-      host       = "unix:///var/run/docker.sock"
-      targets    = discovery.relabel.containers.output
-      labels     = { job = "docker" }
-      forward_to = [loki.process.logs.receiver]
-    }
-
+    // Pipeline Docker: REMOVIDO em 2026-10-24, com o descomissionamento.
+    // `discovery.docker` + `loki.source.docker` liam o stdout dos containers
+    // pelo `/var/run/docker.sock`. Sem containers e sem socket, o bloco só
+    // geraria erro de conexão. `loki.source.kubernetes` (acima) é independente:
+    // fala com a API pelo ServiceAccount, não pelo socket.
+    //
+    // Provado antes de remover: `up{job="docker"}` já não existia no Prometheus,
+    // e o Loki só tinha 6 séries `job=docker` — todas de containers PARADOS ou
+    // do `dockhand`, que sai junto com o daemon.
     // ---------------------------------------------------------------
     // Processamento e destino: idênticos aos do collector em Docker.
     // ---------------------------------------------------------------
@@ -404,11 +383,6 @@ spec:
               readOnly: true
             - name: state
               mountPath: /var/lib/alloy/data
-            # O socket do Docker continua sendo a única forma de ler o stdout
-            # dos containers que ainda não migraram. É superfície privilegiada
-            # e é dívida com prazo: sai quando o último container sair.
-            - name: docker-sock
-              mountPath: /var/run/docker.sock
       volumes:
         - name: config
           configMap:
@@ -419,7 +393,3 @@ spec:
           # dias atrás, que o Loki rejeita por `entry too far behind`.
           persistentVolumeClaim:
             claimName: alloy-state
-        - name: docker-sock
-          hostPath:
-            path: /var/run/docker.sock
-            type: Socket
