@@ -71,14 +71,12 @@ jobs:
           fi
           for d in $dirs; do
             echo "::group::$d"
+            kubectl kustomize "$d" > /tmp/rendered.yaml
             if [ "$d" = "gitops/apps/applications/routes-applications" ]; then
               # Diagnóstico do schema de CRD do NIC (remover após estabilizar
-              # o gate): GVK renderizado, presença do arquivo e tentativa de
-              # resolver a location SEM o `default` (isolar interplay do
-              # catálogo nativo vs custom).
-              echo "DEBUG pwd=$(pwd)"
-              head -4 /tmp/rendered.yaml || true
-              ls .github/schemas/k8s.nginx.org_VirtualServer.json
+              # o gate): GVK real do VS e tentativa de resolver a location
+              # SEM o `default` (isolar interplay catálogo nativo vs custom).
+              grep -m1 -B1 "kind: VirtualServer" /tmp/rendered.yaml | head -3
               kubeconform -strict -summary -kubernetes-version 1.36.0 \
                 -schema-location '.github/schemas/{{.Group}}_{{.ResourceKind}}.json' \
                 -output text /tmp/rendered.yaml || \
